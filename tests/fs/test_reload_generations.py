@@ -1,5 +1,6 @@
 """Reload scans must discover a single current generation of source modules."""
 
+import importlib
 import sys
 from pathlib import Path
 
@@ -211,3 +212,34 @@ async def test_scanned_symlink_target_is_refreshed(tmp_path: Path) -> None:
         assert {t.name for t in await client.list_tools()} == {"keep", "added"}
         with pytest.raises(ToolError, match="Unknown tool"):
             await client.call_tool("removed")
+
+
+@pytest.mark.parametrize("package", [False, True])
+async def test_application_helper_keeps_identity(
+    tmp_path: Path, package: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / f"shared_components_{tmp_path.name}"
+    root.mkdir()
+    if package:
+        (root / "__init__.py").write_text("")
+    helper = root / f"helper_{tmp_path.name}.py"
+    helper.write_text("SINGLETON = object()\nCACHE = {}\n")
+    monkeypatch.syspath_prepend(str(root.parent if package else root))
+    helper_name = f"{root.name}.{helper.stem}" if package else helper.stem
+    application_helper = importlib.import_module(helper_name)
+    application_helper.CACHE["state"] = "application state"
+    singleton = application_helper.SINGLETON
+    prefix = "." if package else ""
+    source = root / "tools.py"
+    source.write_text(
+        "from fastmcp.tools import tool\n"
+        f"from {prefix}{helper.stem} import CACHE\n"
+        "@tool\ndef shared_state() -> str:\n    return CACHE['state']\n"
+    )
+    provider = FileSystemProvider(root, reload=True)
+    async with Client(FastMCP(providers=[provider])) as client:
+        for _ in range(3):
+            assert sys.modules[helper_name] is application_helper
+            assert application_helper.SINGLETON is singleton
+            assert (await client.call_tool("shared_state")).data == "application state"
+            assert sys.modules[helper_name] is application_helper
