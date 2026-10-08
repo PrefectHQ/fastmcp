@@ -111,7 +111,7 @@ skill://pdf-processing/examples/sample.pdf
 ```
 
 <Note>
-Supporting-file access is confined to the skill directory. Requested paths are validated before any filesystem access: attempts to traverse out with `..`, inject an absolute path, or smuggle a null byte are rejected with a clear error, and symlinks that resolve outside the skill directory are refused.
+Skill files, including the main file, must resolve within the skill directory. Links to files within that directory are supported. Directory providers discover skill folders that resolve within each configured root; select a folder directly with `SkillProvider` to use a skill stored elsewhere.
 </Note>
 
 ## Provider Architecture

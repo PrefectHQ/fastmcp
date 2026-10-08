@@ -17,6 +17,7 @@ from mcp.server.streamable_http import (
 )
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
+from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.datastructures import Headers
 from starlette.middleware import Middleware
@@ -51,9 +52,12 @@ class FastMCPStreamableHTTPSessionManager(StreamableHTTPSessionManager):
         stateless: bool = False,
         security_settings: TransportSecuritySettings | None = None,
         retry_interval: int | None = None,
-        session_idle_timeout: float | None = None,
+        session_idle_timeout: float | Literal["auto"] | None = "auto",
     ) -> None:
         self._shared_event_store: EventStore | None = None
+        session_options: dict[str, Any] = {}
+        if session_idle_timeout != "auto":
+            session_options["session_idle_timeout"] = session_idle_timeout
         super().__init__(
             app=app,
             event_store=event_store,
@@ -61,7 +65,7 @@ class FastMCPStreamableHTTPSessionManager(StreamableHTTPSessionManager):
             stateless=stateless,
             security_settings=security_settings,
             retry_interval=retry_interval,
-            session_idle_timeout=session_idle_timeout,
+            **session_options,
         )
 
     @property
@@ -440,6 +444,28 @@ def create_base_app(
     )
 
 
+def _served_resource_metadata_url(
+    auth: AuthProvider, auth_routes: Sequence[BaseRoute], mcp_path: str
+) -> AnyHttpUrl | None:
+    """Return the RFC 9728 metadata URL that auth challenges may advertise.
+
+    The URL is derived from the provider's resource URL and is advertised only
+    when the provider contributes a route at that URL's path. A provider that
+    verifies tokens without serving protected resource metadata, such as a bare
+    `TokenVerifier` or a `MultiAuth` without a server, yields None so that the
+    challenge does not point clients at a URL that answers 404.
+    """
+    resource_url = auth._get_resource_url(mcp_path)
+    if resource_url is None:
+        return None
+    metadata_url = build_resource_metadata_url(resource_url)
+    metadata_path = urlsplit(str(metadata_url)).path
+    for route in auth_routes:
+        if isinstance(route, Route) and route.path == metadata_path:
+            return metadata_url
+    return None
+
+
 def create_sse_app(
     server: FastMCP[LifespanResultT],
     message_path: str,
@@ -512,10 +538,9 @@ def create_sse_app(
         server_routes.extend(auth_routes)
         server_middleware.extend(auth_middleware)
 
-        # Build RFC 9728-compliant metadata URL
-        resource_url = auth._get_resource_url(sse_path)
-        resource_metadata_url = (
-            build_resource_metadata_url(resource_url) if resource_url else None
+        # Advertise the RFC 9728 metadata URL only when the provider serves it
+        resource_metadata_url = _served_resource_metadata_url(
+            auth, auth_routes, sse_path
         )
 
         # Create protected SSE endpoint route
@@ -610,7 +635,7 @@ def create_streamable_http_app(
     host_origin_protection: HostOriginProtection = False,
     allowed_hosts: Sequence[str] | None = None,
     allowed_origins: Sequence[str] | None = None,
-    session_idle_timeout: float | None = None,
+    session_idle_timeout: float | Literal["auto"] | None = "auto",
 ) -> StarletteWithLifespan:
     """Return an instance of the StreamableHTTP server app.
 
@@ -637,8 +662,9 @@ def create_streamable_http_app(
             cross-origin responses.
         session_idle_timeout: Maximum time in seconds a session may remain idle
             before it is terminated. The deadline is pushed forward on every
-            request. When None, sessions never expire from inactivity. Not
-            supported in stateless mode.
+            request. Defaults to "auto", which uses the MCP SDK's default
+            (1800 seconds as of SDK 2.2). When None, sessions never expire
+            from inactivity. Only applies to stateful HTTP sessions.
 
     Returns:
         A Starlette application with StreamableHTTP support
@@ -659,10 +685,9 @@ def create_streamable_http_app(
         server_routes.extend(auth_routes)
         server_middleware.extend(auth_middleware)
 
-        # Build RFC 9728-compliant metadata URL
-        resource_url = auth._get_resource_url(streamable_http_path)
-        resource_metadata_url = (
-            build_resource_metadata_url(resource_url) if resource_url else None
+        # Advertise the RFC 9728 metadata URL only when the provider serves it
+        resource_metadata_url = _served_resource_metadata_url(
+            auth, auth_routes, streamable_http_path
         )
 
         # Create protected HTTP endpoint route

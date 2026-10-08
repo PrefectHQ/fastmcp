@@ -2,9 +2,10 @@
 
 import io
 import json as _json
+import re
 from email.message import Message
 from typing import Any, ClassVar
-from urllib.parse import quote, urljoin
+from urllib.parse import quote, unquote
 
 import httpx2
 from jsonschema_path import SchemaPath
@@ -15,6 +16,9 @@ from .models import HTTPRoute, ParameterInfo
 from .schemas import _combine_schemas_and_map_params, _ref_is_mergeable_object
 
 logger = get_logger(__name__)
+
+_MAX_PATH_DECODINGS = 32
+_PATH_TEMPLATE_PARAM = re.compile(r"\{([^{}]+)\}")
 
 
 def _query_scalar_to_str(value: Any) -> str:
@@ -201,14 +205,19 @@ class RequestDirector:
                 else:
                     json_body = body
             else:
-                content = body
+                # httpx rejects numbers and booleans as raw content
+                content = (
+                    _query_scalar_to_str(body)
+                    if isinstance(body, bool | int | float)
+                    else body
+                )
                 if raw_content_type is not None:
                     headers = dict(headers) if headers else {}
                     headers["Content-Type"] = raw_content_type
-                    if isinstance(body, str):
+                    if isinstance(content, str):
                         media_type = Message()
                         media_type["Content-Type"] = raw_content_type
-                        content = body.encode(
+                        content = content.encode(
                             media_type.get_content_charset() or "utf-8"
                         )
 
@@ -399,18 +408,48 @@ class RequestDirector:
 
         Returns:
             Complete URL with path parameters substituted
+
+        Raises:
+            ValueError: If the template has a parameter with no value
         """
+        missing = [
+            name
+            for name in dict.fromkeys(_PATH_TEMPLATE_PARAM.findall(path_template))
+            if name not in path_params
+        ]
+        if missing:
+            names = ", ".join(repr(name) for name in missing)
+            raise ValueError(f"Missing required path parameters: {{{names}}}")
+
         # Substitute path parameters with URL-encoding to prevent
         # path traversal and SSRF via crafted parameter values
         url_path = path_template
         for param_name, param_value in path_params.items():
             placeholder = f"{{{param_name}}}"
             if placeholder in url_path:
+                decoded = str(param_value)
+                for _ in range(_MAX_PATH_DECODINGS):
+                    if any(
+                        part in {".", ".."}
+                        for part in decoded.replace("\\", "/").split("/")
+                    ):
+                        raise ValueError(
+                            f"Path parameter '{param_name}' cannot contain dot segments"
+                        )
+                    expanded = unquote(decoded)
+                    if expanded == decoded:
+                        break
+                    decoded = expanded
+                else:
+                    raise ValueError(
+                        f"Path parameter '{param_name}' has too many encoding layers"
+                    )
                 safe_value = quote(str(param_value), safe="").replace(".", "%2E")
                 url_path = url_path.replace(placeholder, safe_value)
 
-        # Combine with base URL
-        return urljoin(base_url.rstrip("/") + "/", url_path.lstrip("/"))
+        # Combine with base URL. Plain concatenation: urljoin would read a
+        # leading "name:" segment (e.g. "/job-1:cancel") as a URL scheme.
+        return f"{base_url.rstrip('/')}/{url_path.lstrip('/')}"
 
 
 # Export public symbols

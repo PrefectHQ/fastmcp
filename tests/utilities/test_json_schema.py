@@ -382,6 +382,38 @@ class TestDereferenceRefs:
         assert "$defs" not in result
         assert "discriminator" in result["properties"]["item"]["properties"]
 
+    @pytest.mark.parametrize("name", ["default", "const", "enum", "examples"])
+    def test_strips_discriminator_under_property_named_like_a_keyword(self, name: str):
+        """A property named like a data keyword still holds a sub-schema."""
+        schema = {
+            "$defs": {
+                "Cat": {
+                    "type": "object",
+                    "properties": {"kind": {"const": "cat", "type": "string"}},
+                },
+                "Dog": {
+                    "type": "object",
+                    "properties": {"kind": {"const": "dog", "type": "string"}},
+                },
+            },
+            "type": "object",
+            "properties": {
+                name: {
+                    "anyOf": [{"$ref": "#/$defs/Cat"}, {"$ref": "#/$defs/Dog"}],
+                    "discriminator": {
+                        "mapping": {"cat": "#/$defs/Cat", "dog": "#/$defs/Dog"},
+                        "propertyName": "kind",
+                    },
+                },
+            },
+        }
+        result = dereference_refs(schema)
+
+        assert "$defs" not in result
+        assert "discriminator" not in result["properties"][name]
+        for variant in result["properties"][name]["anyOf"]:
+            assert variant["required"] == ["kind"]
+
 
 class TestCompressSchema:
     """Tests for the compress_schema function."""

@@ -437,6 +437,31 @@ class TestFile:
         file = File(data=b"test", format="pdf")
         assert file._mime_type == "application/pdf"
 
+    @pytest.mark.parametrize(
+        ("fmt", "mime_type"),
+        [
+            ("csv", "text/csv"),
+            ("HTML", "text/html"),
+            ("htm", "text/html"),
+            ("md", "text/markdown"),
+            ("markdown", "text/markdown"),
+            ("txt", "text/plain"),
+            ("pdf", "application/pdf"),
+        ],
+    )
+    def test_mime_type_from_format(self, fmt, mime_type):
+        """Text format aliases map to their canonical text/* MIME types."""
+        file = File(data=b"a,b", format=fmt)
+        assert file._mime_type == mime_type
+
+    def test_text_format_is_sent_as_text(self):
+        """A text/* format is embedded as text, not a base64 blob."""
+        file = File(data=b"a,b\n1,2\n", format="csv")
+        resource = file.to_resource_content().resource
+        assert isinstance(resource, TextResourceContents)
+        assert resource.mime_type == "text/csv"
+        assert resource.text == "a,b\n1,2\n"
+
     def test_file_initialization_with_name(self):
         """Test file initialization with a custom name."""
         file = File(data=b"test", name="custom")

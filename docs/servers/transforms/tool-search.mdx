@@ -30,7 +30,7 @@ FastMCP provides two search transforms, plus an experimental third. They share t
 
 ### Regex Search
 
-`RegexSearchTransform` matches tools against a regex pattern using case-insensitive `re.search`. It has zero overhead and no index to build, making it a good default when the LLM knows roughly what it's looking for.
+`RegexSearchTransform` matches tools against a regex pattern using case-insensitive search. It uses Pydantic's Rust regex engine and needs no index, making it a good default when the LLM knows roughly what it's looking for.
 
 ```python
 from fastmcp import FastMCP
@@ -66,7 +66,9 @@ result = await client.call_tool("search_tools", {"pattern": "send.*email|notify"
 # Returns: send_email
 ```
 
-Results are returned in catalog order. If the pattern is invalid regex, the search returns an empty list rather than raising an error.
+Results are returned in catalog order. Patterns follow [Rust regex syntax](https://docs.rs/regex/latest/regex/#syntax), with support for groups, alternation, repetition, character classes, anchors, and inline flags. Lookahead, lookbehind, and backreferences are unsupported. Invalid or unsupported patterns return an empty list rather than raising an error.
+
+If you previously used Python-specific syntax, rewrite those patterns using the supported syntax. For example, use `send.*email` instead of `send(?=.*email)` and `\z` instead of `\Z` for the end-of-text anchor. Python's `(?a)` ASCII-mode flag is unsupported.
 
 ### BM25 Search
 

@@ -272,7 +272,9 @@ class ClientToolsMixin:
             name=name,
             result=result,
             tool_output_schemas=self.session._tool_output_schemas,
-            list_tools_fn=self.session.list_tools,
+            # Fetch every page: a tool beyond the first page is otherwise never
+            # found, and its result is left unhydrated.
+            list_tools_fn=self.list_tools,
             client_name=self.name,
             raise_on_error=raise_on_error,
         )

@@ -131,9 +131,17 @@ class FunctionPrompt(Prompt):
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
-        # Reject functions with *args or **kwargs
+        # Reject signatures that cannot be represented by MCP's named
+        # prompt arguments
         sig = inspect.signature(fn)
         for param in sig.parameters.values():
+            if param.kind == inspect.Parameter.POSITIONAL_ONLY:
+                raise ValueError(
+                    "Functions with positional-only parameters are not "
+                    "supported as prompts because MCP passes prompt arguments "
+                    "by name. Replace them with standard parameters that can be "
+                    "passed as keywords."
+                )
             if param.kind == inspect.Parameter.VAR_POSITIONAL:
                 raise ValueError("Functions with *args are not supported as prompts")
             if param.kind == inspect.Parameter.VAR_KEYWORD:

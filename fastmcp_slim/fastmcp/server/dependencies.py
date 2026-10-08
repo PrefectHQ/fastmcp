@@ -773,20 +773,25 @@ def without_injected_parameters(
     async def wrapper(**user_kwargs: Any) -> Any:
         async with resolve_dependencies(fn, user_kwargs) as resolved_kwargs:
             if fn_is_async:
-                return await fn(**resolved_kwargs)
+                result = await fn(**resolved_kwargs)
             elif run_in_thread:
                 # Run sync functions in threadpool to avoid blocking the event loop
                 result = await call_sync_fn_in_threadpool(fn, **resolved_kwargs)
                 # Handle sync wrappers that return awaitables (e.g., partial(async_fn))
                 if inspect.isawaitable(result):
                     result = await result
-                return result
             else:
                 # Call inline on the event loop thread (thread affinity opt-in).
                 result = fn(**resolved_kwargs)
                 if inspect.isawaitable(result):
                     result = await result
-                return result
+            # Consume generators before dependencies are torn down so
+            # generator bodies still see open context-manager dependencies.
+            if inspect.isasyncgen(result):
+                return [item async for item in result]
+            if inspect.isgenerator(result):
+                return list(result)
+            return result
 
     # Resolve string annotations (from `from __future__ import annotations`) using
     # the original function's module context. The wrapper's __globals__ points to
