@@ -93,6 +93,38 @@ class TestCoerceValue:
     def test_string_preserves_numeric_looking_values(self):
         assert coerce_value("42", {"type": "string"}) == "42"
 
+    @pytest.mark.parametrize(
+        ("raw", "schema", "expected"),
+        [
+            ("[1, 2]", {"anyOf": [{"type": "array"}, {"type": "null"}]}, [1, 2]),
+            ('{"a": 1}', {"anyOf": [{"type": "null"}, {"type": "object"}]}, {"a": 1}),
+            ("42", {"anyOf": [{"type": "integer"}, {"type": "null"}]}, 42),
+            ("true", {"anyOf": [{"type": "boolean"}, {"type": "null"}]}, True),
+            ("[1, 2]", {"type": ["array", "null"]}, [1, 2]),
+            ("42", {"anyOf": [{"type": "string"}, {"type": "null"}]}, "42"),
+        ],
+    )
+    def test_optional_uses_non_null_type(self, raw, schema, expected):
+        """``X | None`` is coerced like ``X``."""
+        result = coerce_value(raw, schema)
+        assert result == expected
+        assert type(result) is type(expected)
+
+    def test_optional_invalid_value(self):
+        with pytest.raises(ValueError, match="Expected JSON array"):
+            coerce_value("not-json", {"anyOf": [{"type": "array"}, {"type": "null"}]})
+
+    @pytest.mark.parametrize(
+        "schema",
+        [
+            {"anyOf": [{"type": "integer"}, {"type": "string"}]},
+            {"anyOf": [{"type": "integer"}, {"type": "string"}, {"type": "null"}]},
+            {"type": ["integer", "string"]},
+        ],
+    )
+    def test_ambiguous_union_stays_string(self, schema):
+        assert coerce_value("42", schema) == "42"
+
 
 # ---------------------------------------------------------------------------
 # parse_tool_arguments
@@ -127,6 +159,22 @@ class TestParseToolArguments:
     def test_value_containing_equals(self):
         result = parse_tool_arguments(("query=a=b=c",), None, self.SCHEMA)
         assert result == {"query": "a=b=c"}
+
+    def test_optional_array_parsed_as_json(self):
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "tags": {
+                    "anyOf": [
+                        {"type": "array", "items": {"type": "string"}},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                },
+            },
+        }
+        result = parse_tool_arguments(('tags=["a", "b"]',), None, schema)
+        assert result == {"tags": ["a", "b"]}
 
     def test_invalid_arg_format_exits(self):
         with pytest.raises(SystemExit):
@@ -585,6 +633,11 @@ def _build_test_server() -> FastMCP:
         """Add two numbers."""
         return a + b
 
+    @server.tool
+    def total(values: list[int] | None = None) -> int:
+        """Sum an optional list of numbers."""
+        return sum(values or [])
+
     @server.resource("test://greeting")
     def greeting_resource() -> str:
         """A static greeting resource."""
@@ -660,6 +713,15 @@ class TestCallCommandCLI:
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["is_error"] is False
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_call_tool_optional_array(self, capsys: pytest.CaptureFixture[str]):
+        await call_command(
+            "fake://server", "total", "values=[1, 2, 3]", json_output=True
+        )
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == {"result": 6}
 
     @pytest.mark.usefixtures("_patch_client")
     async def test_call_tool_not_found(self):
