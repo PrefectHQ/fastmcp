@@ -681,6 +681,8 @@ async def run(
                 reload_cmd.extend(["--log-level", final_log_level])
             if final_no_banner:
                 reload_cmd.append("--no-banner")
+            if skip_source:
+                reload_cmd.append("--skip-source")
             reload_cmd.append("--no-reload")  # Prevent infinite spawning
             reload_cmd.append("--stateless")  # Stateless mode for reload compatibility
 
@@ -732,6 +734,8 @@ async def run(
             inner_cmd.append("--no-banner")
         if stateless:
             inner_cmd.append("--stateless")
+        if skip_source:
+            inner_cmd.append("--skip-source")
         # Add skip-env flag to prevent infinite recursion
         inner_cmd.append("--skip-env")
 
