@@ -515,6 +515,90 @@ _GOOSE_CONFIG = {
 
 
 class TestScanGoose:
+    @pytest.fixture(params=["linux", "win32"])
+    def goose_config_path(
+        self,
+        request: pytest.FixtureRequest,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> Path:
+        monkeypatch.setattr("fastmcp.cli.discovery.Path.home", lambda: tmp_path)
+        monkeypatch.setattr("fastmcp.cli.discovery.sys.platform", request.param)
+        config_root = tmp_path / "config-root"
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(config_root))
+        monkeypatch.setenv("APPDATA", str(config_root))
+        if request.param == "win32":
+            path = config_root / "Block" / "goose" / "config" / "config.yaml"
+        else:
+            path = config_root / "goose" / "config.yaml"
+        path.parent.mkdir(parents=True)
+        return path
+
+    @pytest.mark.parametrize(
+        "url", ["https://example.com/mcp", "https://example.com/sse"]
+    )
+    @pytest.mark.parametrize("headers", [None, {"X-Tenant": "test-only"}])
+    def test_streamable_http_discovery_and_resolution(
+        self,
+        goose_config_path: Path,
+        tmp_path: Path,
+        url: str,
+        headers: dict[str, str] | None,
+    ):
+        extension: dict[str, Any] = {
+            "enabled": True,
+            "type": "streamable_http",
+            "uri": url,
+        }
+        if headers is not None:
+            extension["headers"] = headers
+        config = {"extensions": {**_GOOSE_CONFIG["extensions"], "remote": extension}}
+        goose_config_path.write_text(yaml.dump(config), encoding="utf-8")
+
+        servers = {s.name: s for s in _scan_goose()}
+        assert set(servers) == {"tavily", "remote"}
+        remote = servers["remote"]
+        assert remote.qualified_name == "goose:remote"
+        assert remote.config_path == goose_config_path
+        assert isinstance(remote.config, RemoteMCPServer)
+        assert remote.config.url == url
+        assert remote.config.transport == "http"
+        assert remote.config.headers == (headers or {})
+        assert isinstance(servers["tavily"].config, StdioMCPServer)
+
+        transport = resolve_name("goose:remote", start_dir=tmp_path)
+        assert isinstance(transport, StreamableHttpTransport)
+        assert transport.url == url
+        assert transport.headers == (headers or {})
+
+    def test_skips_disabled_and_invalid_http_extensions(self, goose_config_path: Path):
+        goose_config_path.write_text(
+            yaml.dump(
+                {
+                    "extensions": {
+                        **_GOOSE_CONFIG["extensions"],
+                        "disabled-remote": {
+                            "enabled": False,
+                            "type": "streamable_http",
+                            "uri": "https://example.com/mcp",
+                        },
+                        "missing-uri": {"type": "streamable_http"},
+                        "invalid-headers": {
+                            "type": "streamable_http",
+                            "uri": "https://example.com/mcp",
+                            "headers": {"X-Tenant": []},
+                        },
+                        "legacy": {"type": "sse", "uri": "https://example.com/sse"},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        servers = {s.name: s for s in _scan_goose()}
+        assert set(servers) == {"tavily", "legacy"}
+        assert isinstance(servers["legacy"].config, RemoteMCPServer)
+        assert isinstance(servers["legacy"].config.to_transport(), SSETransport)
+
     def test_finds_stdio_extensions(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
