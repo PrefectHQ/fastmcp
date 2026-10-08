@@ -203,14 +203,19 @@ class RequestDirector:
                 else:
                     json_body = body
             else:
-                content = body
+                # httpx rejects numbers and booleans as raw content
+                content = (
+                    _query_scalar_to_str(body)
+                    if isinstance(body, bool | int | float)
+                    else body
+                )
                 if raw_content_type is not None:
                     headers = dict(headers) if headers else {}
                     headers["Content-Type"] = raw_content_type
-                    if isinstance(body, str):
+                    if isinstance(content, str):
                         media_type = Message()
                         media_type["Content-Type"] = raw_content_type
-                        content = body.encode(
+                        content = content.encode(
                             media_type.get_content_charset() or "utf-8"
                         )
 
