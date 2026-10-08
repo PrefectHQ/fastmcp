@@ -83,7 +83,16 @@ class TestDefaultValues:
 
 @pytest.mark.parametrize(
     "definition, token",
-    [("plain", "plain"), ("a/b", "a~1b"), ("a~b", "a~0b"), ("a~1b", "a~01b")],
+    [
+        ("plain", "plain"),
+        ("a/b", "a~1b"),
+        ("a~b", "a~0b"),
+        ("a~1b", "a~01b"),
+        ("a b", "a%20b"),
+        ("a%20b", "a%2520b"),
+        ("café", "caf%C3%A9"),
+        ("a/b", "a%7E1b"),
+    ],
 )
 def test_escaped_reference_tokens(definition: str, token: str):
     schema = {

@@ -77,6 +77,7 @@ from typing import (
     Union,
     cast,
 )
+from urllib.parse import unquote
 
 from pydantic import (
     AnyUrl,
@@ -401,7 +402,8 @@ def _schema_digest(schema: Mapping[str, Any] | bool) -> tuple[str, int]:
 
 def _resolve_ref(ref: str, schemas: Mapping[str, Any]) -> Mapping[str, Any]:
     """Resolve JSON Schema reference to target schema."""
-    path = ref.replace("#/", "").split("/")
+    # Decode the URI fragment before splitting and unescaping JSON Pointer tokens.
+    path = unquote(ref).removeprefix("#/").split("/")
     current = schemas
     for part in path:
         part = part.replace("~1", "/").replace("~0", "~")
