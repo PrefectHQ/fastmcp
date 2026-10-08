@@ -603,6 +603,35 @@ def _default_discovery_tools() -> list[DiscoveryToolFactory]:
     return [Search(), GetSchemas()]
 
 
+_DEFAULT_EXECUTE_DESCRIPTION = (
+    "Chain `await call_tool(...)` calls in one Python block; prefer returning the final answer from a single block.\n"
+    "Use `return` to produce output.\n"
+    "Only `call_tool(tool_name: str, params: dict) -> Any` is available in scope."
+)
+
+_EXECUTE_CODE_DESCRIPTION = (
+    "Python async code to execute tool calls via call_tool(name, arguments)"
+)
+
+
+def _build_discovery_tools(
+    factories: Sequence[DiscoveryToolFactory],
+    get_catalog: GetToolCatalog,
+    execute_tool_name: str,
+) -> list[Tool]:
+    """Build discovery tools and reject names that would shadow each other."""
+    tools = [factory(get_catalog) for factory in factories]
+    names = {t.name for t in tools}
+    if execute_tool_name in names:
+        raise ValueError(
+            f"Discovery tool name '{execute_tool_name}' "
+            f"collides with execute_tool_name."
+        )
+    if len(names) != len(tools):
+        raise ValueError("Discovery tools must have unique names.")
+    return tools
+
+
 class CodeMode(CatalogTransform):
     """Transform that collapses all tools into discovery + execute meta-tools.
 
@@ -641,18 +670,11 @@ class CodeMode(CatalogTransform):
 
     def _build_discovery_tools(self) -> list[Tool]:
         if self._built_discovery_tools is None:
-            tools = [
-                factory(self.get_tool_catalog) for factory in self._discovery_factories
-            ]
-            names = {t.name for t in tools}
-            if self.execute_tool_name in names:
-                raise ValueError(
-                    f"Discovery tool name '{self.execute_tool_name}' "
-                    f"collides with execute_tool_name."
-                )
-            if len(names) != len(tools):
-                raise ValueError("Discovery tools must have unique names.")
-            self._built_discovery_tools = tools
+            self._built_discovery_tools = _build_discovery_tools(
+                self._discovery_factories,
+                self.get_tool_catalog,
+                self.execute_tool_name,
+            )
         return self._built_discovery_tools
 
     async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
@@ -675,12 +697,7 @@ class CodeMode(CatalogTransform):
     def _build_execute_description(self) -> str:
         if self.execute_description is not None:
             return self.execute_description
-
-        return (
-            "Chain `await call_tool(...)` calls in one Python block; prefer returning the final answer from a single block.\n"
-            "Use `return` to produce output.\n"
-            "Only `call_tool(tool_name: str, params: dict) -> Any` is available in scope."
-        )
+        return _DEFAULT_EXECUTE_DESCRIPTION
 
     @staticmethod
     def _find_tool(name: str, tools: Sequence[Tool]) -> Tool | None:
@@ -700,14 +717,7 @@ class CodeMode(CatalogTransform):
         max_tool_calls = self.max_tool_calls
 
         async def execute(
-            code: Annotated[
-                str,
-                Field(
-                    description=(
-                        "Python async code to execute tool calls via call_tool(name, arguments)"
-                    )
-                ),
-            ],
+            code: Annotated[str, Field(description=_EXECUTE_CODE_DESCRIPTION)],
             ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> Any:
             """Execute tool calls using Python code."""

@@ -369,3 +369,77 @@ mcp = FastMCP(
 ```
 
 The `external_functions` dict contains async callables injected into the sandbox scope — `execute` uses this to provide `call_tool`.
+
+## Client-Side CodeMode
+
+<VersionBadge version="4.1.0" />
+
+You don't control every server your agent talks to, and most servers don't run CodeMode. `CodeModeClient` applies CodeMode on the client side instead. It wraps a `Client` and presents the same discovery and `execute` tools, so your agent gets on-demand discovery and chained calls against any MCP server, with no change on the server.
+
+The sandbox runs in your process. Each `call_tool()` inside it becomes an ordinary `tools/call` on the wrapped client, so the server never sees the generated code:
+
+```python
+import asyncio
+
+from fastmcp import Client
+from fastmcp.experimental.client.code_mode import CodeModeClient
+
+code_mode = CodeModeClient(Client("https://example.com/mcp"))
+
+code = """
+forecast = await call_tool("get_forecast", {"city": "Chicago"})
+return forecast["summary"]
+"""
+
+
+async def main() -> None:
+    async with code_mode:
+        tools = await code_mode.list_tools()  # search, get_schema, execute
+        result = await code_mode.call_tool("execute", {"code": code})
+        print(result.data)
+
+
+asyncio.run(main())
+```
+
+Give `list_tools()` to your model in place of the client's own tool list, and send the model's tool calls to `call_tool()`. Discovery tools read the wrapped client's tool list when they run, so tools the server adds after you connect show up in search results. Entering `CodeModeClient` as a context manager connects the wrapped client; you can also manage that connection yourself.
+
+### Across Several Servers
+
+Wrap a [`ClientGroup`](/clients/client-groups) to let one `execute` block chain tools from several servers. Code uses the group's namespaced tool names, and each call is routed to the server that advertised the tool:
+
+```python
+from fastmcp import Client, ClientGroup
+from fastmcp.experimental.client.code_mode import CodeModeClient
+
+group = ClientGroup(
+    {
+        "weather": Client("https://weather.example.com/mcp"),
+        "chat": Client("https://chat.example.com/mcp"),
+    }
+)
+code_mode = CodeModeClient(group)
+
+code = """
+forecast = await call_tool("weather_get_forecast", {"city": "Chicago"})
+return await call_tool("chat_post_message", {"text": forecast["summary"]})
+"""
+```
+
+### Configuration
+
+`CodeModeClient` accepts the same options as the `CodeMode` transform: `discovery_tools`, `sandbox_provider`, `execute_tool_name`, `execute_description`, and `max_tool_calls`. The [discovery patterns](#discovery-patterns), [custom discovery tools](#custom-discovery-tools), and [sandbox configuration](#sandbox-configuration) above apply unchanged:
+
+```python
+from fastmcp import Client
+from fastmcp.experimental.client.code_mode import CodeModeClient
+from fastmcp.experimental.transforms.code_mode import GetSchemas, Search
+
+code_mode = CodeModeClient(
+    Client("https://example.com/mcp"),
+    discovery_tools=[Search(default_detail="detailed"), GetSchemas()],
+    max_tool_calls=20,
+)
+```
+
+A failed `call_tool()` raises inside the sandbox, so the generated code can catch it. An uncaught failure makes `call_tool("execute", ...)` raise a `ToolError`; pass `raise_on_error=False` to get the error result back instead, or use `call_tool_mcp()` for the raw MCP result.
