@@ -13,6 +13,7 @@ from mcp_types import (
     SamplingMessage,
     TextContent,
     TextResourceContents,
+    ToolResultContent,
     ToolUseContent,
 )
 from openai import AsyncOpenAI
@@ -172,6 +173,64 @@ def test_convert_list_content_with_image_and_text():
             ),
         ],
     )
+
+
+def test_convert_tool_result_preserves_text():
+    msgs = OpenAISamplingHandler._convert_to_openai_messages(
+        system_prompt=None,
+        messages=[
+            SamplingMessage(
+                role="user",
+                content=ToolResultContent(
+                    type="tool_result",
+                    tool_use_id="call_1",
+                    content=[TextContent(type="text", text="result")],
+                ),
+            )
+        ],
+    )
+
+    assert msgs == [
+        {
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "content": "result",
+        }
+    ]
+
+
+@pytest.mark.parametrize("as_block_list", [False, True], ids=["single", "list"])
+@pytest.mark.parametrize(
+    "result_content",
+    [
+        pytest.param(
+            [ImageContent(type="image", data="YWJj", mime_type="image/png")],
+            id="image-only",
+        ),
+        pytest.param(
+            [
+                TextContent(type="text", text="caption"),
+                ImageContent(type="image", data="YWJj", mime_type="image/png"),
+            ],
+            id="text-and-image",
+        ),
+    ],
+)
+def test_convert_tool_result_rejects_unsupported_images(
+    as_block_list: bool, result_content: list[TextContent | ImageContent]
+):
+    tool_result = ToolResultContent(
+        type="tool_result", tool_use_id="call_1", content=result_content
+    )
+    message_content = [tool_result] if as_block_list else tool_result
+
+    with pytest.raises(
+        ValueError, match="ImageContent in tool results is not supported"
+    ):
+        OpenAISamplingHandler._convert_to_openai_messages(
+            system_prompt=None,
+            messages=[SamplingMessage(role="user", content=message_content)],
+        )
 
 
 def test_convert_image_in_assistant_message_raises():

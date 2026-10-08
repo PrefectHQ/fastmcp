@@ -7,6 +7,7 @@ from uuid import uuid4
 
 try:
     from google.genai import Client as GoogleGenaiClient
+    from google.genai import types as google_genai_types
     from google.genai.types import (
         Blob,
         Candidate,
@@ -52,6 +53,38 @@ from mcp_types import Tool as MCPTool
 
 from fastmcp.client._sdk_context_shim import LifespanContextT, RequestContext
 
+_GEMINI_FUNCTION_RESPONSE_IMAGE_MIME_TYPES = frozenset(
+    {"image/jpeg", "image/png", "image/webp"}
+)
+
+
+def _google_function_response_image_part(content: ImageContent) -> Any:
+    """Build a Gemini function-response image part when supported by the SDK."""
+    if content.mime_type not in _GEMINI_FUNCTION_RESPONSE_IMAGE_MIME_TYPES:
+        msg = (
+            "Unsupported image MIME type for Gemini function responses: "
+            f"{content.mime_type!r}"
+        )
+        raise ValueError(msg)
+
+    if "parts" not in getattr(FunctionResponse, "model_fields", {}):
+        msg = "The installed google-genai SDK does not support image function responses"
+        raise ValueError(msg)
+
+    blob_type = getattr(google_genai_types, "FunctionResponseBlob", None)
+    part_type = getattr(google_genai_types, "FunctionResponsePart", None)
+    if blob_type is None or part_type is None:
+        msg = "The installed google-genai SDK does not support image function responses"
+        raise ValueError(msg)
+
+    return part_type(
+        inline_data=blob_type(
+            data=base64.b64decode(content.data),
+            mime_type=content.mime_type,
+        )
+    )
+
+
 __all__ = ["GoogleGenaiSamplingHandler"]
 
 
@@ -94,8 +127,6 @@ class GoogleGenaiSamplingHandler:
         context: RequestContext[ServerSession, LifespanContextT]
         | RequestContext[ClientSession, LifespanContextT],
     ) -> CreateMessageResult | CreateMessageResultWithTools:
-        contents: list[Content] = _convert_messages_to_google_genai_content(messages)
-
         # Convert MCP tools to Google GenAI format
         google_tools: list[GoogleTool] | None = None
         tool_config: ToolConfig | None = None
@@ -108,6 +139,9 @@ class GoogleGenaiSamplingHandler:
 
         # Select the model based on preferences
         selected_model = self._get_model(model_preferences=params.model_preferences)
+        contents = _convert_messages_to_google_genai_content(
+            messages, model=selected_model
+        )
 
         # Configure thinking if a budget is specified
         thinking_config = (
@@ -202,6 +236,8 @@ def _sampling_content_to_google_genai_part(
     | AudioContent
     | ToolUseContent
     | ToolResultContent,
+    *,
+    allow_multimodal_tool_results: bool = False,
 ) -> Part:
     """Convert MCP content to Google GenAI Part."""
     if isinstance(content, TextContent):
@@ -238,12 +274,22 @@ def _sampling_content_to_google_genai_part(
         )
 
     if isinstance(content, ToolResultContent):
-        # Extract text from tool result content
+        # Google represents text in FunctionResponse.response and media in
+        # FunctionResponse.parts.
         result_parts: list[str] = []
+        image_parts: list[Any] = []
         if content.content:
             for item in content.content:
                 if isinstance(item, TextContent):
                     result_parts.append(item.text)
+                elif isinstance(item, ImageContent):
+                    if not allow_multimodal_tool_results:
+                        msg = (
+                            "ImageContent in tool results requires a Gemini 3 "
+                            "model for Google GenAI"
+                        )
+                        raise ValueError(msg)
+                    image_parts.append(_google_function_response_image_part(item))
                 else:
                     msg = f"Unsupported tool result content type: {type(item).__name__}"
                     raise ValueError(msg)
@@ -262,12 +308,13 @@ def _sampling_content_to_google_genai_part(
             # Fallback: use the full ID as the name
             function_name = tool_use_id
 
-        return Part(
-            function_response=FunctionResponse(
-                name=function_name,
-                response={"result": result_text},
-            )
-        )
+        response_kwargs: dict[str, Any] = {
+            "name": function_name,
+            "response": {"result": result_text},
+        }
+        if image_parts:
+            response_kwargs["parts"] = image_parts
+        return Part(function_response=FunctionResponse(**response_kwargs))
 
     msg = f"Unsupported content type: {type(content)}"
     raise ValueError(msg)
@@ -275,9 +322,13 @@ def _sampling_content_to_google_genai_part(
 
 def _convert_messages_to_google_genai_content(
     messages: Sequence[SamplingMessage],
+    *,
+    model: str | None = None,
 ) -> list[Content]:
     """Convert MCP messages to Google GenAI content."""
     google_messages: list[Content] = []
+    model_name = model.rsplit("/", 1)[-1].lower() if model else ""
+    allow_multimodal_tool_results = model_name.startswith("gemini-3")
 
     for message in messages:
         content = message.content
@@ -285,7 +336,11 @@ def _convert_messages_to_google_genai_content(
         # Handle list content (tool calls + results)
         if isinstance(content, list):
             parts: list[Part] = [
-                _sampling_content_to_google_genai_part(item) for item in content
+                _sampling_content_to_google_genai_part(
+                    item,
+                    allow_multimodal_tool_results=allow_multimodal_tool_results,
+                )
+                for item in content
             ]
 
             if message.role == "user":
@@ -298,7 +353,10 @@ def _convert_messages_to_google_genai_content(
             continue
 
         # Handle single content item
-        part = _sampling_content_to_google_genai_part(content)
+        part = _sampling_content_to_google_genai_part(
+            content,
+            allow_multimodal_tool_results=allow_multimodal_tool_results,
+        )
 
         if message.role == "user":
             google_messages.append(UserContent(parts=[part]))
