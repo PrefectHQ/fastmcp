@@ -9,7 +9,18 @@ tag: NEW
 
 **[v4.1.0: Fourth and One](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.0)**
 
-FastMCP 4.1.0 is a maintenance release at heart: a broad sweep of fixes across OpenAPI, proxies, auth, tasks, and the CLI, plus full Python 3.15 support. It doesn't change how most servers behave. A few security fixes do tighten inputs that FastMCP previously accepted, though, and our versioning policy keeps breaking changes out of patch releases, so this ships as a point-one release. The security changes: MultiAuth now qualifies client IDs by source, so existing MultiAuth sessions and tasks start new ownership scopes (finish pending tasks before upgrading). Regex tool search uses Pydantic's regex engine, which doesn't support lookarounds or backreferences. Skill files must resolve inside their configured directories. OpenAPI path parameters reject `.` and `..` segments. Separately, HTTP sessions now expire after the MCP SDK's 30-minute idle default instead of never, and CodeMode requires Monty 1.1, which renames `max_duration_secs` to `max_feed_duration_secs`. Thanks to our 48 contributors, including 21 first-time contributors!
+FastMCP 4.1.0 is a maintenance release at heart: a broad sweep of fixes across OpenAPI, proxies, auth, tasks, and the CLI, plus full Python 3.15 support. It doesn't change how most servers behave. A few security fixes do tighten inputs that FastMCP previously accepted, though, and our versioning policy keeps breaking changes out of patch releases, so this ships as a point-one release.
+
+Check these before upgrading:
+
+- **MultiAuth** now qualifies client IDs by source, so existing MultiAuth sessions and tasks start new ownership scopes. Finish pending tasks before upgrading.
+- **Regex tool search** uses Pydantic's regex engine, which doesn't support lookarounds or backreferences.
+- **Skill files** must resolve inside their configured directories.
+- **OpenAPI path parameters** reject `.` and `..` segments.
+- **HTTP sessions** now expire after the MCP SDK's 30-minute idle default instead of never.
+- **CodeMode** requires Monty 1.1, which renames `max_duration_secs` to `max_feed_duration_secs`.
+
+Thanks to our 48 contributors, including 21 first-time contributors!
 
 ### Breaking Changes ⚠️
 * fix(http): preserve the SDK's default session idle timeout by [@asts-top](https://github.com/asts-top) in [#5229](https://github.com/PrefectHQ/fastmcp/pull/5229)
