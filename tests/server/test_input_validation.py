@@ -29,7 +29,10 @@ from pydantic_core import PydanticCustomError
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError, ValidationError
+from fastmcp.server.middleware import Middleware
+from fastmcp.server.transforms import ToolTransform
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.tool_transform import ToolTransformConfig
 
 
 class UserProfile(BaseModel):
@@ -532,6 +535,73 @@ class TestEdgeCases:
 
 
 class TestExpectedToolFailureLogging:
+    @pytest.mark.parametrize("mask_error_details", [False, True])
+    @pytest.mark.parametrize(
+        "tool_path", ["direct", "transformed", "mounted", "middleware"]
+    )
+    async def test_tool_body_validation_error_returns_error_result(
+        self, mask_error_details: bool, tool_path: str, caplog
+    ):
+        class StoredRecord(BaseModel):
+            content: str
+
+        mcp = FastMCP("TestServer", mask_error_details=mask_error_details)
+
+        @mcp.tool
+        def load_record(record: dict[str, Any]) -> str:
+            return StoredRecord.model_validate(record).content
+
+        tool_name = "load_record"
+        server = mcp
+        if tool_path == "transformed":
+            mcp.add_transform(
+                ToolTransform(
+                    {"load_record": ToolTransformConfig(name="load_transformed")}
+                )
+            )
+            tool_name = "load_transformed"
+        elif tool_path == "mounted":
+            server = FastMCP("Parent", mask_error_details=mask_error_details)
+            server.mount(mcp, namespace="child")
+            tool_name = "child_load_record"
+        elif tool_path == "middleware":
+
+            class Reroute(Middleware):
+                async def on_call_tool(self, context, call_next):
+                    if context.message.name == "outer":
+                        return await context.fastmcp_context.fastmcp.call_tool(
+                            "load_record", {"record": {}}
+                        )
+                    return await call_next(context)
+
+            @mcp.tool
+            def outer() -> str:
+                return "not reached"
+
+            mcp.add_middleware(Reroute())
+            tool_name = "outer"
+
+        with caplog.at_level("DEBUG"):
+            async with Client(server) as client:
+                result = await client.call_tool(
+                    tool_name, {"record": {}}, raise_on_error=False
+                )
+
+        assert result.is_error
+        assert ("content" in str(result.content)) is not mask_error_details
+        assert not any(
+            "Invalid arguments for tool" in record.getMessage()
+            for record in caplog.records
+        )
+        error_records = [
+            record
+            for record in caplog.records
+            if record.levelname == "ERROR"
+            and record.getMessage().startswith("Error calling tool")
+            and record.exc_info
+        ]
+        assert len(error_records) == 1
+
     async def test_validation_error_logs_warning_without_traceback(self, caplog):
         mcp = FastMCP("TestServer", strict_input_validation=False)
 
