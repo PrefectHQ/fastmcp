@@ -499,7 +499,8 @@ class TestExpectedToolFailureLogging:
             record
             for record in caplog.records
             if record.levelname == "ERROR"
-            and record.getMessage() == f"Error calling tool {tool_name!r}"
+            and record.getMessage().startswith("Error calling tool")
+            and record.exc_info
         ]
         assert len(error_records) == 1
 

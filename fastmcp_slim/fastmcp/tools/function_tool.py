@@ -61,16 +61,10 @@ class _ToolBodyError(Exception):
     an argument-validation failure (a bad call). Errors a tool raises from its
     own body — e.g. constructing a model from upstream data — are a different
     class of problem (a server-side bug) that must not be reclassified as a bad
-    call. We wrap the body so those are tagged and can be told apart. See #4128.
+    call. We wrap the body so those are tagged and can be told apart. The tagged
+    error propagates out of the tool like any other body exception, so
+    `FastMCP.call_tool` masks, logs, and converts it to a `ToolError`. See #4128.
     """
-
-
-_TOOL_BODY_ERROR_MARKER = "_fastmcp_tool_body_error"
-
-
-def _is_tool_body_error(error: PydanticValidationError) -> bool:
-    """Return whether a pydantic error originated in a FunctionTool body."""
-    return getattr(error, _TOOL_BODY_ERROR_MARKER, False) is True
 
 
 @lru_cache(maxsize=5000)
@@ -93,7 +87,7 @@ def _wrap_body_errors(
             try:
                 return await fn(*args, **kwargs)
             except PydanticValidationError as e:
-                raise _ToolBodyError from e
+                raise _ToolBodyError(str(e)) from e
     else:
 
         def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -103,7 +97,7 @@ def _wrap_body_errors(
                     return list(result)
                 return result
             except PydanticValidationError as e:
-                raise _ToolBodyError from e
+                raise _ToolBodyError(str(e)) from e
 
     # Mirror the original callable so TypeAdapter builds the identical schema and
     # binds arguments the same way. Annotations must cover every signature
@@ -461,14 +455,6 @@ class FunctionTool(Tool):
             # downstream error taxonomy (e.g. Sentry filters) can treat it as a
             # client error rather than a server bug.
             raise ValidationError(str(e), log_level=logging.WARNING) from e
-        except _ToolBodyError as e:
-            # The tool's own body raised a pydantic ValidationError. Surface the
-            # original so it is treated as a server-side error, hiding the
-            # internal sentinel while preserving the error's own chained cause.
-            original = e.__cause__
-            assert original is not None
-            setattr(original, _TOOL_BODY_ERROR_MARKER, True)
-            raise original from original.__cause__
 
         return result
 
@@ -514,7 +500,7 @@ class FunctionTool(Tool):
         except PydanticValidationError as e:
             # A pydantic error from awaiting the result or materializing a
             # generator is body execution, not argument validation.
-            raise _ToolBodyError from e
+            raise _ToolBodyError(str(e)) from e
 
     @staticmethod
     async def _materialize_generator(result: Any) -> Any:

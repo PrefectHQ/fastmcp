@@ -21,7 +21,6 @@ from mcp_types import (
 )
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic import BaseModel
-from pydantic import ValidationError as PydanticValidationError
 
 from fastmcp.exceptions import (
     DisabledError,
@@ -38,7 +37,6 @@ from fastmcp.server.dependencies import (
     extract_version_spec,
 )
 from fastmcp.tools.base import InputRequiredToolResult, ToolResult
-from fastmcp.tools.function_tool import _is_tool_body_error
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -270,21 +268,6 @@ class MCPOperationsMixin:
                 # happened inside call_tool.
                 return mcp_types.CallToolResult(
                     content=[mcp_types.TextContent(type="text", text=str(e))],
-                    is_error=True,
-                )
-            except PydanticValidationError as e:
-                if not _is_tool_body_error(e):
-                    raise
-                # Argument-validation failures are converted to FastMCP's
-                # ValidationError before execution. A marked pydantic error
-                # came from a FunctionTool body and should reach MCP clients as
-                # an ordinary tool failure, even after middleware redirects.
-                logger.error(f"Error calling tool {key!r}", exc_info=True)
-                message = f"Error calling tool {key!r}"
-                if not self._mask_error_details:
-                    message = f"{message}: {e}"
-                return mcp_types.CallToolResult(
-                    content=[mcp_types.TextContent(type="text", text=message)],
                     is_error=True,
                 )
 
