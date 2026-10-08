@@ -438,11 +438,6 @@ async def tasks_update(
             next_leg,
             _task_key_ttl_seconds(docket),
         )
-        # The next leg reads the arguments through ``load_task_args``, so extend
-        # them over the new window as the leg pointer is advanced.
-        await refresh_args_ttl(
-            docket, task_scope, task_id, _task_key_ttl_seconds(docket)
-        )
         # The answered leg's surfaced keys are now superseded; drop them so they
         # are never reused (SEP-2663 L350).
         await clear_outstanding(docket, task_scope, task_id, leg_number)
