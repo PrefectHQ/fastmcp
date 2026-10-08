@@ -3,6 +3,7 @@ import sys
 from typing import Any
 from unittest.mock import patch
 
+import pytest
 from jsonref import replace_refs
 
 from fastmcp.utilities.json_schema import (
@@ -1025,6 +1026,95 @@ class TestResolveRootRef:
 
         # Should return original schema unchanged
         assert result is schema
+
+    @pytest.mark.parametrize(
+        ("defs_key", "pointers"),
+        [
+            ("$defs", ["#/$defs/Actual"]),
+            ("$defs", ["#/$defs/Alias", "#/$defs/Actual"]),
+            ("$defs", ["#/$defs/Alias1", "#/$defs/Alias2", "#/$defs/Actual"]),
+            (
+                "definitions",
+                ["#/definitions/Alias", "#/definitions/Actual"],
+            ),
+            (
+                "$defs",
+                ["#/$defs/Alias%20One", "#/$defs/Actual"],
+            ),
+            (
+                "$defs",
+                ["#/$defs/a~1b", "#/$defs/Actual"],
+            ),
+        ],
+    )
+    def test_follows_alias_chain_to_object_definition(
+        self, defs_key: str, pointers: list[str]
+    ):
+        decoded = {
+            "Alias%20One": "Alias One",
+            "a~1b": "a/b",
+        }
+        defs: dict[str, Any] = {
+            "Actual": {
+                "type": "object",
+                "properties": {"id": {"type": "string"}},
+                "required": ["id"],
+            }
+        }
+        for pointer, next_pointer in zip(pointers, pointers[1:], strict=False):
+            name = pointer.rsplit("/", 1)[1]
+            defs[decoded.get(name, name)] = {"$ref": next_pointer}
+        schema = {defs_key: defs, "$ref": pointers[0]}
+
+        result = resolve_root_ref(schema)
+
+        assert result["type"] == "object"
+        assert result["properties"] == {"id": {"type": "string"}}
+        assert result["required"] == ["id"]
+        assert "$ref" not in result
+        assert result[defs_key] == defs
+
+    def test_alias_chain_keeps_outer_siblings(self):
+        schema = {
+            "title": "Outer",
+            "$defs": {
+                "Alias": {
+                    "title": "Middle",
+                    "description": "Middle text",
+                    "$ref": "#/$defs/Actual",
+                },
+                "Actual": {
+                    "title": "Inner",
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                },
+            },
+            "$ref": "#/$defs/Alias",
+        }
+
+        result = resolve_root_ref(schema)
+
+        assert result["type"] == "object"
+        assert result["title"] == "Outer"
+        assert result["description"] == "Middle text"
+
+    @pytest.mark.parametrize(
+        "defs",
+        [
+            {"A": {"$ref": "#/$defs/A"}},
+            {"A": {"$ref": "#/$defs/B"}, "B": {"$ref": "#/$defs/A"}},
+            {
+                "A": {"$ref": "#/$defs/B"},
+                "B": {"$ref": "#/$defs/C"},
+                "C": {"$ref": "#/$defs/A"},
+            },
+            {"A": {"$ref": "#/$defs/Missing"}},
+        ],
+    )
+    def test_alias_cycle_or_missing_target_is_unchanged(self, defs: dict[str, Any]):
+        schema = {"$defs": defs, "$ref": "#/$defs/A"}
+
+        assert resolve_root_ref(schema) is schema
 
 
 class TestStripRemoteRefs:

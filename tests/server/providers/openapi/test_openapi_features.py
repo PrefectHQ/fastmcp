@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock
 import httpx2
 import pytest
 from httpx2 import Response
+from mcp_types import TextResourceContents
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -1090,6 +1091,55 @@ class TestResourceMimeType:
                 resources = await mcp_client.list_resources()
                 assert len(resources) == 1
                 assert resources[0].mime_type == "text/plain"
+
+    async def test_resource_plus_json_response_is_text(self):
+        """A +json response is read as JSON text, not a binary blob."""
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Status API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/status": {
+                    "get": {
+                        "operationId": "get_status",
+                        "responses": {
+                            "200": {
+                                "description": "Status",
+                                "content": {
+                                    "application/hal+json": {
+                                        "schema": {"type": "object"}
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        def handler(request: httpx2.Request) -> httpx2.Response:
+            return httpx2.Response(
+                200,
+                content=b'{"ok": true}',
+                headers={"content-type": "application/hal+json; charset=utf-8"},
+            )
+
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE)]
+        async with httpx2.AsyncClient(
+            base_url="https://api.example.com",
+            transport=httpx2.MockTransport(handler),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=spec, client=client, route_maps=route_maps
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+            async with Client(mcp) as mcp_client:
+                [content] = await mcp_client.read_resource("resource://get_status")
+
+        assert isinstance(content, TextResourceContents)
+        assert json.loads(content.text) == {"ok": True}
+        assert content.mime_type == "application/hal+json"
 
 
 class TestValidateOutput:

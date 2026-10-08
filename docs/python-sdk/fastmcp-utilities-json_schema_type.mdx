@@ -60,7 +60,7 @@ Example:
 
 ## Functions
 
-### `json_schema_to_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema_type.py#L164" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `json_schema_to_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema_type.py#L273" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 json_schema_to_type(schema: Mapping[str, Any] | bool, name: str | None = None) -> type
@@ -80,7 +80,8 @@ property or default to "Root".
 - A Python type (typically a dataclass for objects) with Pydantic validation
 
 **Raises:**
-- `ValueError`: If a name is provided for a non-object schema
+- `ValueError`: If a name is provided for a non-object schema, or if the
+schema is too deeply nested or too large to convert.
 
 **Examples:**
 
@@ -124,6 +125,39 @@ class Name:
 ```
 
 
+### `json_schema_to_type_adapter` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema_type.py#L361" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+json_schema_to_type_adapter(schema: Mapping[str, Any] | bool) -> TypeAdapter[Any]
+```
+
+
+Return a cached `TypeAdapter` for `json_schema_to_type(schema)`.
+
+Adapters are cached by schema content in a bounded cache, so the classes
+they hold are released when they are evicted.
+
+
+### `safe_create_model` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema_type.py#L777" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+safe_create_model(name: str, field_definitions: Mapping[str, tuple[Any, Any]]) -> type[BaseModel]
+```
+
+
+Create a Pydantic model whose field names come from untrusted input.
+
+Each property name only ever becomes a field. A reserved name is stored
+under a generated field name with the original name as its alias, so it
+validates and dumps (with `by_alias=True`) under its original name.
+
+**Args:**
+- `name`: The model class name.
+- `field_definitions`: Maps each property name to `(annotation, default)`,
+where `default` may be a `FieldInfo` or `...` for required fields.
+- `config`: Optional model configuration.
+
+
 ## Classes
 
-### `JSONSchema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema_type.py#L131" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `JSONSchema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema_type.py#L240" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>

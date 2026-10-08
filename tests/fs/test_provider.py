@@ -1,12 +1,23 @@
 """Tests for FileSystemProvider."""
 
 import asyncio
+import threading
 import time
 from pathlib import Path
+from unittest.mock import patch
+
+import anyio
+import pytest
+from anyio.abc import TaskStatus
+from anyio.to_thread import run_sync
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.providers import FileSystemProvider
+from fastmcp.server.providers.filesystem_discovery import (
+    DiscoveryResult,
+    discover_and_import,
+)
 
 
 class TestFileSystemProvider:
@@ -16,6 +27,61 @@ class TestFileSystemProvider:
         """Provider should work with empty directory."""
         provider = FileSystemProvider(tmp_path)
         assert repr(provider).startswith("FileSystemProvider")
+        assert provider.failed_files == {}
+
+    def test_provider_exposes_failed_files(self, tmp_path: Path):
+        """Provider should expose import failures from the initial load."""
+        broken_file = tmp_path / "broken.py"
+        broken_file.write_text("raise RuntimeError('broken import')")
+
+        provider = FileSystemProvider(tmp_path)
+
+        assert set(provider.failed_files) == {broken_file}
+        assert "broken import" in provider.failed_files[broken_file]
+
+        # The public value is a snapshot, not the provider's mutable state.
+        failures = provider.failed_files
+        assert isinstance(failures, dict)
+        failures.clear()
+        assert set(provider.failed_files) == {broken_file}
+
+    def test_provider_exposes_registration_failures(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Provider should expose registration failures alongside import failures."""
+        tool_file = tmp_path / "tool.py"
+        tool_file.write_text(
+            """\
+from fastmcp.tools import tool
+
+@tool
+def my_tool() -> str:
+    return "tool"
+"""
+        )
+
+        def fail_registration(self: FileSystemProvider, component: object) -> None:
+            raise RuntimeError("registration failed")
+
+        monkeypatch.setattr(
+            FileSystemProvider, "_register_component", fail_registration
+        )
+
+        provider = FileSystemProvider(tmp_path)
+
+        assert provider.failed_files == {tool_file: "RuntimeError: registration failed"}
+
+    async def test_failed_files_refresh_on_reload(self, tmp_path: Path):
+        """Reload mode should expose the latest load failures."""
+        broken_file = tmp_path / "broken.py"
+        broken_file.write_text("raise RuntimeError('broken import')")
+        provider = FileSystemProvider(tmp_path, reload=True)
+
+        assert set(provider.failed_files) == {broken_file}
+
+        broken_file.unlink()
+        assert await provider.list_tools() == []
+        assert provider.failed_files == {}
 
     def test_provider_discovers_tools(self, tmp_path: Path):
         """Provider should discover @tool decorated functions."""
@@ -281,6 +347,55 @@ def my_tool() -> str:
 
 class TestFileSystemProviderReloadRace:
     """Test that concurrent readers don't see empty components during reload."""
+
+    async def test_cancelled_reload_waits_for_discovery(self, tmp_path: Path) -> None:
+        """Cancellation must not release the lock while discovery is still running."""
+        (tmp_path / "tool.py").write_text(
+            "from fastmcp.tools import tool\n"
+            "@tool\n"
+            "def my_tool() -> str:\n"
+            "    return 'hello'\n"
+        )
+        provider = FileSystemProvider(tmp_path, reload=True)
+        discovery_started = threading.Event()
+        finish_discovery = threading.Event()
+        reload_exited = anyio.Event()
+
+        def slow_discovery(root: Path) -> DiscoveryResult:
+            discovery_started.set()
+            assert finish_discovery.wait(timeout=2)
+            return discover_and_import(root)
+
+        async def reload(
+            *, task_status: TaskStatus[anyio.CancelScope] = anyio.TASK_STATUS_IGNORED
+        ) -> None:
+            with anyio.CancelScope() as scope:
+                task_status.started(scope)
+                await provider.list_tools()
+            reload_exited.set()
+
+        async def read() -> None:
+            tools = await provider.list_tools()
+            assert [tool.name for tool in tools] == ["my_tool"]
+
+        with patch(
+            "fastmcp.server.providers.filesystem.discover_and_import",
+            side_effect=slow_discovery,
+        ) as discovery:
+            async with anyio.create_task_group() as tasks:
+                try:
+                    scope = await tasks.start(reload)
+                    assert await run_sync(discovery_started.wait, 2)
+                    scope.cancel()
+                    tasks.start_soon(read)
+                    await anyio.wait_all_tasks_blocked()
+                    exited_during_discovery = reload_exited.is_set()
+                finally:
+                    finish_discovery.set()
+
+            assert not exited_during_discovery
+            assert reload_exited.is_set()
+            assert discovery.call_count == 1
 
     async def test_concurrent_reader_never_sees_empty(self, tmp_path: Path):
         """A reader during reload should see either old or new components, never empty."""

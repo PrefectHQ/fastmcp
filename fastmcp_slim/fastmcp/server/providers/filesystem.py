@@ -27,10 +27,12 @@ Example:
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
+
+import anyio
+from anyio.to_thread import run_sync
 
 from fastmcp.prompts.base import Prompt
 from fastmcp.resources.base import Resource
@@ -96,9 +98,11 @@ class FileSystemProvider(LocalProvider):
         # Re-warn if file changes (mtime differs)
         self._warned_files: dict[Path, float] = {}
         # Lock for serializing reload operations (created lazily)
-        self._reload_lock: asyncio.Lock | None = None
+        self._reload_lock: anyio.Lock | None = None
         # Generation counter to deduplicate concurrent reloads
         self._reload_generation: int = 0
+        # Failures from the most recent discovery and registration pass
+        self._failed_files: dict[Path, str] = {}
 
         # Always load once at init to catch errors early
         self._load_components()
@@ -112,6 +116,7 @@ class FileSystemProvider(LocalProvider):
             logger.warning("FileSystemProvider root does not exist: %s", self._root)
 
         result = discover_and_import(self._root)
+        self._failed_files = dict(result.failed_files)
 
         # Log warnings for failed files (only once per file version)
         for file_path, error in result.failed_files.items():
@@ -134,7 +139,8 @@ class FileSystemProvider(LocalProvider):
         for file_path, component in result.components:
             try:
                 self._register_component(component)
-            except Exception:
+            except Exception as exc:
+                self._failed_files[file_path] = f"{type(exc).__name__}: {exc}"
                 logger.exception(
                     "Failed to register %s from %s",
                     getattr(component, "name", repr(component)),
@@ -159,6 +165,17 @@ class FileSystemProvider(LocalProvider):
         else:
             logger.debug("Ignoring unknown component type: %r", type(component))
 
+    @property
+    def failed_files(self) -> Mapping[Path, str]:
+        """Files that failed to import or register during the most recent load.
+
+        The returned mapping is a snapshot. Import failures are also logged as
+        warnings and registration failures as errors, but applications that
+        need a strict startup policy can inspect this property without
+        importing the modules again.
+        """
+        return dict(self._failed_files)
+
     async def _with_reload(self, coro_fn: Callable[..., Any], *args: Any) -> Any:
         """Acquire the reload lock, reload if needed, then run *coro_fn*.
 
@@ -173,9 +190,9 @@ class FileSystemProvider(LocalProvider):
         if not self._reload and self._loaded:
             return await coro_fn(*args)
 
-        # Create lock lazily (can't create in __init__ without event loop)
+        # Create the lock lazily in the active async backend.
         if self._reload_lock is None:
-            self._reload_lock = asyncio.Lock()
+            self._reload_lock = anyio.Lock()
 
         generation_before = self._reload_generation
 
@@ -183,7 +200,8 @@ class FileSystemProvider(LocalProvider):
             if not self._loaded or (
                 self._reload and self._reload_generation == generation_before
             ):
-                await asyncio.to_thread(self._load_components)
+                # Defer cancel-scope cancellation until component mutations finish.
+                await run_sync(self._load_components)
                 self._reload_generation += 1
             return await coro_fn(*args)
 

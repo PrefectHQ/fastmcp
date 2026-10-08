@@ -7,7 +7,7 @@ sidebarTitle: json_schema
 
 ## Functions
 
-### `replace_refs` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L7" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `replace_refs` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L10" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 replace_refs(*args: Any, **kwargs: Any) -> Any
@@ -17,7 +17,7 @@ replace_refs(*args: Any, **kwargs: Any) -> Any
 Call jsonref lazily while preserving the module's patchable boundary.
 
 
-### `require_discriminator_property` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L154" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `require_discriminator_property` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L251" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 require_discriminator_property(schema: dict[str, Any]) -> dict[str, Any]
@@ -34,7 +34,7 @@ model with ``union_tag_not_found``. No-op if there is no string
 ``propertyName``.
 
 
-### `dereference_refs` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L185" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `dereference_refs` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L282" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 dereference_refs(schema: dict[str, Any]) -> dict[str, Any]
@@ -50,9 +50,9 @@ description, default, examples) that Pydantic places alongside $ref.
 This is necessary because some MCP clients (e.g., VS Code Copilot) don't
 properly handle $ref in tool input schemas.
 
-For self-referencing/circular schemas where full dereferencing is not possible,
-this function falls back to resolving only the root-level $ref while preserving
-$defs for nested references.
+For circular schemas, and for schemas whose inlined form would be very large
+or deeply nested, this function falls back to resolving only the root-level
+$ref while preserving $defs for nested references.
 
 Only local ``$ref`` values (those starting with ``#``) are resolved.
 Remote URIs (``http://``, ``file://``, etc.) are stripped before
@@ -67,7 +67,7 @@ schemas from untrusted servers.
 - when no longer needed
 
 
-### `resolve_root_ref` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L336" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `resolve_root_ref` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L444" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resolve_root_ref(schema: dict[str, Any]) -> dict[str, Any]
@@ -89,7 +89,7 @@ the referenced definition while preserving $defs for nested references.
 - if no resolution is needed
 
 
-### `compress_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L750" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `compress_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L875" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 compress_schema(schema: dict[str, Any], prune_params: list[str] | None = None, prune_additional_properties: bool = False, prune_titles: bool = False, dereference: bool = False) -> dict[str, Any]

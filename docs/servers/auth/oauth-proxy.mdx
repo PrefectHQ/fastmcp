@@ -13,7 +13,7 @@ The OAuth proxy enables FastMCP servers to authenticate with OAuth providers tha
 
 MCP clients expect to register automatically and obtain credentials on the fly, but traditional providers require manual app registration through their developer consoles. The OAuth proxy bridges this gap by presenting a DCR-compliant interface to MCP clients while using your pre-registered credentials with the upstream provider. When a client attempts to register, the proxy returns your fixed credentials. When a client initiates authorization, the proxy handles the complexity of callback forwarding—storing the client's dynamic callback URL, using its own fixed callback with the provider, then forwarding back to the client after token exchange.
 
-This approach enables any MCP client (whether using random localhost ports or fixed URLs like Claude.ai) to authenticate with any traditional OAuth provider, all while maintaining full OAuth 2.1 and PKCE security.
+This approach enables any MCP client (whether using random localhost ports or fixed URLs like Claude.ai) to authenticate with traditional OAuth providers. By default, the proxy applies consent and browser-binding protections and forwards PKCE upstream. Options that disable these checks reduce the corresponding security protections, as described below.
 
 <Note>
   For providers that support OIDC discovery (Auth0, Google with OIDC
@@ -321,7 +321,7 @@ auth = OAuthProxy(..., client_storage=MemoryStore())
   Ordinary upstream OAuth consent is generally not equivalent. It typically authorizes FastMCP's shared upstream application without identifying the downstream MCP client or binding approval to that client's transaction. Use `"external"` only when your surrounding authorization system supplies those protections.
 
   **`False` — disable entirely:**
-  Authorization proceeds directly to the upstream provider without any consent UI. Logs a security warning. Only for local development or testing.
+  Authorization proceeds directly to the upstream provider without FastMCP's consent UI or browser-binding checks. This removes the proxy's protections against confused deputy and AS-in-the-middle attacks. Logs a security warning. Only for local development or testing.
 
   ```python
   # Development/testing only - skip consent screen
@@ -338,12 +338,14 @@ auth = OAuthProxy(..., client_storage=MemoryStore())
   ```
 
   <Warning>
-    Both `False` and `"external"` disable FastMCP's consent and browser-binding protections. `False` warns about this configuration; `"external"` suppresses the warning because it is an operator acknowledgment that equivalent protections exist elsewhere. Prefer the default `True` unless you own that external authorization flow.
+    Both `False` and `"external"` disable FastMCP's consent and browser-binding protections and reduce security unless equivalent checks are enforced elsewhere. `"external"` changes logging, not the authorization path: it does not make the flow safe, and FastMCP does not verify the external protections. Without equivalent enforcement, these modes leave the flow exposed to confused deputy and AS-in-the-middle attacks. Prefer the default `True`.
   </Warning>
 </ParamField>
 
 <ParamField body="consent_csp_policy" type="str | None" default="None">
   Content Security Policy for the consent page.
+
+  Setting `""` removes FastMCP's consent-page CSP, and a custom policy replaces the built-in policy. Disabling or weakening it reduces browser protections against content injection unless your deployment supplies an equivalent CSP header; FastMCP does not verify that header.
 
   - `None` (default): Uses the built-in CSP policy with appropriate directives for form submission
   - Empty string `""`: Disables CSP entirely (no meta tag rendered)
@@ -402,6 +404,39 @@ JWTVerifier(..., required_scopes = ["read:user", "write:data"])
 ```
 
 Dynamic clients created by the proxy will automatically include these scopes in their authorization requests. See the [Token Verification](#token-verification) section below for detailed setup.
+
+`required_scopes` and `valid_scopes` play different roles. `required_scopes` is what every token must carry, and it is the set the `WWW-Authenticate` challenge tells clients to request. `valid_scopes` is the catalog of scopes clients may request, advertised as `scopes_supported` in protected resource metadata. MCP clients that follow the challenge request only the required scopes, so a scope that appears only in `valid_scopes` stays optional.
+
+When your tools depend on scopes that clients won't know to ask for, you have two options. Adding them to `required_scopes` makes them mandatory, so token validation rejects any token without them. Overriding `get_challenge_scopes` asks clients to request them up front while validation stays on the narrower set. FastMCP calls the method with no argument for the server-wide challenge:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.google import GoogleProvider
+
+GMAIL_READONLY = "https://www.googleapis.com/auth/gmail.readonly"
+
+
+class GmailProvider(GoogleProvider):
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        if required_scopes is None:
+            return self.scopes_supported
+        return required_scopes
+
+
+auth = GmailProvider(
+    client_id="123456789.apps.googleusercontent.com",
+    client_secret="GOCSPX-abc123...",
+    base_url="http://localhost:8000",
+    required_scopes=["openid"],
+    valid_scopes=["openid", GMAIL_READONLY],
+)
+
+mcp = FastMCP("Gmail Server", auth=auth)
+```
+
+The override also sets the default challenge when the provider is wrapped in `MultiAuth`. Passing `required_scopes` to `MultiAuth` replaces it with exactly the scopes you pass.
 
 ### Custom Parameters
 
@@ -479,7 +514,7 @@ The client initiates OAuth by redirecting to the proxy's `/authorize` endpoint. 
 3. Shows the user a consent page with the client's details, redirect URI, and requested scopes
 4. If the user approves (or the client was previously approved), sets a consent binding cookie and redirects to the upstream provider using the fixed callback URL
 
-This dual-PKCE approach maintains end-to-end security at both the client-to-proxy and proxy-to-provider layers. The consent step protects against confused deputy attacks by ensuring you explicitly approve each client before it can complete authorization, and the consent binding cookie ensures that only the browser that approved consent can complete the callback.
+With the default configuration, this dual-PKCE approach protects both the client-to-proxy and proxy-to-provider layers. The consent step protects against confused deputy attacks by requiring explicit client approval, and the consent binding cookie ensures that only the browser that approved consent can complete the callback. `require_authorization_consent=False` and `"external"` skip both consent and cookie verification; `"remember"` can silently approve return visits and provides weaker protection than `True`.
 
 ### Callback Phase
 
@@ -558,6 +593,8 @@ The proxy issues its own refresh tokens that map to upstream refresh tokens. Whe
 ### PKCE Forwarding
 
 The OAuth proxy automatically handles PKCE (Proof Key for Code Exchange) when working with providers that support or require it. The proxy generates its own PKCE parameters to send upstream while separately validating the client's PKCE, ensuring end-to-end security at both layers.
+
+Setting `forward_pkce=False` removes PKCE from the proxy-to-provider exchange, reducing protection against upstream authorization-code interception. Client-to-proxy PKCE remains enforced. Use this override only for an upstream provider that cannot support PKCE.
 
 This is enabled by default via the `forward_pkce` parameter and works seamlessly with providers like Google, Azure AD, and GitHub. Only disable it for legacy providers that don't support PKCE:
 
@@ -781,6 +818,8 @@ Configure the following parameters together: provide a unique `jwt_signing_key` 
 
 A confused deputy attack allows a malicious client to steal your authorization by tricking you into granting it access under your identity.
 
+The consent and browser-session protections described here apply when `require_authorization_consent` is `True` or `"remember"`. Setting it to `False` or `"external"` disables both protections. Ordinary upstream OAuth consent generally approves FastMCP's shared upstream application, not the downstream MCP client's transaction, so it does not replace these checks.
+
 The OAuth proxy works by bridging DCR clients to traditional auth providers, which means that multiple MCP clients connect through a single upstream OAuth application. An attacker can exploit this shared application by registering a malicious client with their own redirect URI, then sending you an authorization link. When you click it, your browser goes through the OAuth flow—but since you may have already authorized this OAuth app before, the provider might auto-approve the request. The authorization code then gets sent to the attacker's redirect URI instead of a legitimate client, giving them access under your credentials.
 
 #### Mitigation
@@ -789,7 +828,7 @@ FastMCP's OAuth proxy defends against confused deputy attacks with two layers of
 
 **Consent screen.** Before any authorization happens, you see a consent page showing the client's details, redirect URI, and requested scopes. This gives you the opportunity to review and deny suspicious requests. By default (`require_authorization_consent=True`), the page is shown on every flow, which is the strongest protection. Setting `require_authorization_consent="remember"` approves previously-approved `(client_id, redirect_uri)` pairs silently on return visits, trading some protection for UX (see below). The consent mechanism is implemented with CSRF tokens and cryptographically signed cookies to prevent tampering.
 
-![](/assets/images/oauth-proxy-consent-screen.png)
+![Consent page listing the client name, redirect URI, and requested scopes with approve and deny buttons](/assets/images/oauth-proxy-consent-screen.png)
 
 The consent page automatically displays your server's name, icon, and website URL, if available. These visual identifiers help users confirm they're authorizing the correct server.
 

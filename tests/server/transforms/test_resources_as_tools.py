@@ -119,6 +119,50 @@ class TestListResourcesTool:
             assert uris == ["config://app"]
             assert templates == ["file://{path}"]
 
+    async def test_lists_highest_version_only(self):
+        """list_resources shows one entry per URI, like resources/list does."""
+        mcp = FastMCP("Test")
+
+        @mcp.resource("config://app", version="1.0")
+        def config_v1() -> str:
+            """Config v1."""
+            return "v1"
+
+        @mcp.resource("config://app", version="2.0")
+        def config_v2() -> str:
+            """Config v2."""
+            return "v2"
+
+        @mcp.resource("file://{path}", version="1.0")
+        def file_v1(path: str) -> str:
+            """File v1."""
+            return path
+
+        @mcp.resource("file://{path}", version="2.0")
+        def file_v2(path: str) -> str:
+            """File v2."""
+            return path
+
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("list_resources", {})
+            resources = json.loads(result.data)
+
+            assert resources == [
+                {
+                    "uri": "config://app",
+                    "name": "config_v2",
+                    "description": "Config v2.",
+                    "mime_type": "text/plain",
+                },
+                {
+                    "uri_template": "file://{path}",
+                    "name": "file_v2",
+                    "description": "File v2.",
+                },
+            ]
+
     async def test_empty_when_no_resources(self):
         """list_resources returns empty list when no resources exist."""
         mcp = FastMCP("Test")
