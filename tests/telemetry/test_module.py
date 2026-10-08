@@ -35,6 +35,39 @@ class TestGetAuthSpanAttributes:
         attrs = get_auth_span_attributes()
         assert attrs == {}
 
+    def test_prefers_subject_over_client_id(self):
+        from unittest.mock import patch
+
+        from fastmcp.server.auth.auth import AccessToken
+
+        token = AccessToken(
+            token="test-token",
+            client_id="oauth-client-id",
+            scopes=["read"],
+            subject="user-sub-123",
+        )
+        with patch(
+            "fastmcp.server.dependencies.get_access_token", return_value=token
+        ):
+            attrs = get_auth_span_attributes()
+        assert attrs["enduser.id"] == "user-sub-123"
+
+    def test_falls_back_to_client_id_without_subject(self):
+        from unittest.mock import patch
+
+        from fastmcp.server.auth.auth import AccessToken
+
+        token = AccessToken(
+            token="test-token",
+            client_id="oauth-client-id",
+            scopes=["read"],
+        )
+        with patch(
+            "fastmcp.server.dependencies.get_access_token", return_value=token
+        ):
+            attrs = get_auth_span_attributes()
+        assert attrs["enduser.id"] == "oauth-client-id"
+
 
 VALID_TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
 VALID_TRACESTATE = "congo=t61rcWkgMzE"
