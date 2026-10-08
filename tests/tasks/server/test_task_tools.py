@@ -21,7 +21,7 @@ from fastmcp_tasks.models import CreateTaskResult
 from pydantic import BaseModel, Field
 
 import fastmcp.tools.function_tool as function_tool
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ValidationError
 from fastmcp.tools.function_tool import _resolve_param_hints
 from fastmcp_tasks import TasksExtension
@@ -133,6 +133,64 @@ async def test_task_submission_honors_strict_input_validation():
         # Task submission must reject it too, before any task state is created.
         with pytest.raises(ValidationError):
             await submit_task(mcp, "square", {"n": "1"})
+
+
+async def test_task_submission_rejects_missing_and_unexpected_arguments():
+    """A call with a missing or unknown argument is rejected at submission.
+
+    The synchronous path raises a validation error for both. The task path must
+    too, rather than creating a task that only fails once a worker runs it.
+    """
+    mcp = FastMCP("argument-shape-task-server")
+    mcp.add_extension(TasksExtension())
+
+    @mcp.tool(task=True)
+    async def add(ctx: Context, a: int, b: int = 1) -> int:
+        return a + b
+
+    async with running_task_server(mcp):
+        for arguments in ({"b": 2}, {"a": 1, "c": 3}):
+            with pytest.raises(ValidationError):
+                await call_tool_without_optin(mcp, "add", arguments)
+            with pytest.raises(ValidationError):
+                await submit_task(mcp, "add", arguments)
+
+        final = await run_task(mcp, "add", {"a": 1})
+    assert final.status == "completed"
+    assert final.result is not None
+    assert final.result["structuredContent"] == {"result": 2}
+
+
+async def test_task_submission_uses_the_pydantic_definition_of_required():
+    """Submission agrees with the synchronous path on what is required.
+
+    ``Field(default=...)`` inside ``Annotated`` makes a parameter optional even
+    though the Python signature has no default, and ``x: str = Field(...)`` makes
+    a parameter required even though the Python signature does have one.
+    """
+    mcp = FastMCP("pydantic-required-task-server")
+    mcp.add_extension(TasksExtension())
+
+    @mcp.tool(task=True)
+    async def annotated_default(x: Annotated[int, Field(default=5)]) -> int:
+        return x
+
+    @mcp.tool(task=True)
+    async def described_query(query: str = Field(description="the query")) -> str:
+        return query
+
+    async with running_task_server(mcp):
+        sync_result = await call_tool_without_optin(mcp, "annotated_default", {})
+        final = await run_task(mcp, "annotated_default", {})
+        assert final.status == "completed"
+        assert final.result is not None
+        assert final.result["structuredContent"] == sync_result.structured_content
+        assert final.result["structuredContent"] == {"result": 5}
+
+        with pytest.raises(ValidationError):
+            await call_tool_without_optin(mcp, "described_query", {})
+        with pytest.raises(ValidationError):
+            await submit_task(mcp, "described_query", {})
 
 
 async def test_valid_argument_submits_under_strict_validation():
