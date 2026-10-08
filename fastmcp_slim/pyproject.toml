@@ -100,6 +100,7 @@ server = [
     "cyclopts>=4.0.0",
     "griffelib>=2.0.0",
     "jsonref>=1.1.0",
+    "jsonschema>=4.20.0",
     "jsonschema-path>=0.3.4",
     "joserfc>=1.5.0",
     "openapi-pydantic>=0.5.1",
