@@ -311,6 +311,12 @@ def _scan_goose() -> list[DiscoveredServer]:
             }
         elif ext_type == "sse" and "uri" in ext:
             servers[name] = {"url": ext["uri"], "transport": "sse"}
+            if isinstance(ext.get("headers"), dict):
+                servers[name]["headers"] = ext["headers"]
+        elif ext_type in ("streamable_http", "streamable-http", "http") and "uri" in ext:
+            servers[name] = {"url": ext["uri"], "transport": "http"}
+            if isinstance(ext.get("headers"), dict):
+                servers[name]["headers"] = ext["headers"]
 
     return _parse_mcp_servers(servers, source="goose", config_path=path)
 
