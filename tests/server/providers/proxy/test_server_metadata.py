@@ -484,6 +484,7 @@ async def test_stateful_pinned_metadata_uses_registered_client_lifecycle():
         name="stateful-proxy",
         client_factory=stateful_client.new_stateful,
         identity="upstream",
+        session_scope="operation",
     )
 
     async with Client(proxy, mode="auto") as client:

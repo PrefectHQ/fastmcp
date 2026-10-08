@@ -182,6 +182,7 @@ class FastMCPServerMiddleware:
         self, ctx: ServerRequestContext, call_next: CallNext
     ) -> HandlerResult:
         from fastmcp.server.dependencies import bind_request_context
+        from fastmcp.server.request_resources import request_resource_scope
 
         fastmcp = self._ref()
         with (
@@ -189,15 +190,16 @@ class FastMCPServerMiddleware:
             bind_request_context(ctx),
             self._seam_span(fastmcp, ctx),
         ):
-            if fastmcp is None:
-                return await call_next(ctx)
-            if ctx.method == "initialize" and ctx.request_id is not None:
-                return await self._run_initialize_mw(fastmcp, ctx, call_next)
-            if ctx.method == "server/discover" and ctx.request_id is not None:
-                return await self._run_discover_mw(fastmcp, ctx, call_next)
-            if ctx.request_id is not None and ctx.method in _INTERIOR_METHODS:
-                return await self._dispatch_component(fastmcp, ctx, call_next)
-            return await self._run_outer_mw(fastmcp, ctx, call_next, _raise=None)
+            async with request_resource_scope():
+                if fastmcp is None:
+                    return await call_next(ctx)
+                if ctx.method == "initialize" and ctx.request_id is not None:
+                    return await self._run_initialize_mw(fastmcp, ctx, call_next)
+                if ctx.method == "server/discover" and ctx.request_id is not None:
+                    return await self._run_discover_mw(fastmcp, ctx, call_next)
+                if ctx.request_id is not None and ctx.method in _INTERIOR_METHODS:
+                    return await self._dispatch_component(fastmcp, ctx, call_next)
+                return await self._run_outer_mw(fastmcp, ctx, call_next, _raise=None)
 
     async def _dispatch_component(
         self,
