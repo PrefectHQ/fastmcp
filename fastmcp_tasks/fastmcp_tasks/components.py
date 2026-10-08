@@ -22,6 +22,7 @@ because core still declares them.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -172,6 +173,18 @@ def coerce_task_arguments(
         component.fn, run_in_thread=component.run_in_thread
     )
     hints = _resolve_param_hints(wrapper_fn)
+
+    # The per-argument pass below only sees the names the client sent, so check
+    # the call shape (missing required, unexpected names) up front too. Left
+    # unchecked, the call is only rejected inside the worker, as a task that
+    # completes with an opaque error instead of a validation failure.
+    try:
+        inspect.signature(wrapper_fn).bind(**arguments)
+    except TypeError as e:
+        raise ValidationError(
+            f"Invalid arguments for tool {component.name!r}: {e}",
+            log_level=logging.WARNING,
+        ) from e
 
     coerced = dict(arguments)
     for name, value in arguments.items():
