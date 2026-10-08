@@ -407,6 +407,12 @@ class TestBuildClient:
         with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
             with warnings.catch_warnings(record=True) as emitted:
                 warnings.simplefilter("always")
+                # py-key-value-aio checks a non-runtime-checkable protocol on Python 3.15.
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"<class 'key_value\.aio\.protocols\.key_value\.AsyncKeyValue'> isn't explicitly decorated",
+                    category=DeprecationWarning,
+                )
                 first = _build_client(resolved, auth=auth).transport.auth
                 assert isinstance(first, OAuth)
                 await first.token_storage_adapter.set_tokens(tokens)
