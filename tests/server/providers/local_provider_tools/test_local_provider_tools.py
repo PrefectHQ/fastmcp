@@ -71,6 +71,57 @@ class TestToolReturnTypes:
         assert result.structured_content is None
         assert result.content[0].text == "Hello, world!"  # ty:ignore[unresolved-attribute]
 
+    async def test_bytes_in_dict(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def dict_tool() -> dict[str, bytes]:
+            return {"payload": b"\xff\xfe"}
+
+        result = await mcp.call_tool("dict_tool", {})
+        # non-UTF-8 bytes can't be structured JSON, so they base64-encode in
+        # the content like bare bytes instead of failing serialization
+        expected = base64.b64encode(b"\xff\xfe").decode()
+        text = result.content[0].text  # ty:ignore[unresolved-attribute]
+        assert json.loads(text) == {"payload": expected}
+        assert result.structured_content is None
+
+    async def test_utf8_bytes_in_dict(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def dict_tool() -> dict[str, bytes]:
+            return {"payload": b"Hello, world!"}
+
+        result = await mcp.call_tool("dict_tool", {})
+        assert result.structured_content == {"payload": "Hello, world!"}
+
+    async def test_bytes_in_list(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def list_tool() -> list[bytes]:
+            return [b"\xff\xfe"]
+
+        result = await mcp.call_tool("list_tool", {})
+        expected = base64.b64encode(b"\xff\xfe").decode()
+        text = result.content[0].text  # ty:ignore[unresolved-attribute]
+        assert json.loads(text) == [expected]
+        assert result.structured_content is None
+
+    async def test_utf8_bytes_in_list(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def list_tool() -> list[bytes]:
+            return [b"Hello, world!"]
+
+        result = await mcp.call_tool("list_tool", {})
+        # like bare bytes, a container of bytes has no structured content
+        assert result.structured_content is None
+        text = result.content[0].text  # ty:ignore[unresolved-attribute]
+        assert json.loads(text) == ["Hello, world!"]
+
     async def test_uuid(self):
         mcp = FastMCP()
 

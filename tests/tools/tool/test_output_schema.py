@@ -133,6 +133,27 @@ class TestToolFromFunctionOutputSchema:
         # Image, Audio, File types don't generate output schemas since they're converted to content directly
         assert tool.output_schema is None
 
+    @pytest.mark.parametrize(
+        "annotation",
+        [
+            bytes,
+            bytes | None,
+            dict[str, bytes],
+            list[bytes],
+            set[bytes],
+            tuple[bytes, ...],
+            dict[str, list[bytes]],
+            Annotated[dict[str, bytes], Field(description="binary payload")],
+        ],
+    )
+    async def test_bytes_return_annotation_no_output_schema(self, annotation):
+        def func() -> annotation:
+            return 1
+
+        tool = Tool.from_function(func)
+        # bytes can't be represented as structured JSON output, at any depth
+        assert tool.output_schema is None
+
     async def test_tool_result_return_annotation_no_output_schema(self):
         def func() -> ToolResult:
             return ToolResult(content="hello")
