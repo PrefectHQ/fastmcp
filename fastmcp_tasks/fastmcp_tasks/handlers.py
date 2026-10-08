@@ -457,7 +457,8 @@ async def tasks_cancel(server: FastMCP, task_id: str) -> CancelTaskResult:
     concurrently enqueuing the next one: whichever wins the lock runs to
     completion before the other, and the update rechecks the marker under the
     same lock. If the lock is wedged past its timeout, cancel proceeds
-    best-effort rather than hang.
+    best-effort rather than hang. A task that already completed or failed is
+    acknowledged but left as it is: terminal statuses are final.
     """
     docket = server._docket
     if docket is None:
@@ -474,6 +475,18 @@ async def tasks_cancel(server: FastMCP, task_id: str) -> CancelTaskResult:
         execution, _base_task_key, leg_number, _created_at, _poll = await _lookup_task(
             docket, task_scope, task_id
         )
+        # A task that already reached a terminal status stays there: the marker
+        # below outranks the execution state in tasks/get, so recording it now
+        # would replace a finished result or error with `cancelled`. A leg
+        # parked on input has a COMPLETED execution too, but it is not finished.
+        await execution.sync()
+        if execution.state in (ExecutionState.FAILED, ExecutionState.CANCELLED) or (
+            execution.state == ExecutionState.COMPLETED
+            and not await read_outstanding_inputs(
+                docket, task_scope, task_id, leg_number
+            )
+        ):
+            return CancelTaskResult()
         ttl_seconds = int(docket.execution_ttl.total_seconds())
         await mark_cancelled(docket, task_scope, task_id, ttl_seconds)
         await clear_outstanding(docket, task_scope, task_id, leg_number)
