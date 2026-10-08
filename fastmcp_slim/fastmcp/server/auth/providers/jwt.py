@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import time
 from dataclasses import dataclass
 from typing import Any, Literal, TypeAlias, cast
 
+import anyio
 import httpx2
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -234,6 +236,7 @@ class JWTVerifier(TokenVerifier):
         base_url: AnyHttpUrl | str | None = None,
         ssrf_safe: bool = False,
         http_client: httpx2.AsyncClient | None = None,
+        jwks_refresh_interval: float = 30.0,
     ):
         """
         Initialize a JWTVerifier configured to validate JWTs using either a static key or a JWKS endpoint.
@@ -254,10 +257,14 @@ class JWTVerifier(TokenVerifier):
                 the client is reused for JWKS fetches and the caller is responsible for
                 its lifecycle. When None (default), a fresh client is created per fetch.
                 Cannot be used with ssrf_safe=True.
+            jwks_refresh_interval: Minimum seconds between JWKS refresh attempts,
+                including failed attempts. Defaults to 30. Set to zero to refresh
+                on every cache miss. Known keys remain usable for the cache TTL.
 
         Raises:
             ValueError: If neither or both of `public_key` and `jwks_uri` are provided,
-                if `algorithm` is unsupported, or if `http_client` is provided with `ssrf_safe=True`.
+                if `algorithm` is unsupported, if `http_client` is provided with
+                `ssrf_safe=True`, or if `jwks_refresh_interval` is negative or non-finite.
         """
         if not public_key and not jwks_uri:
             raise ValueError("Either public_key or jwks_uri must be provided")
@@ -317,6 +324,9 @@ class JWTVerifier(TokenVerifier):
         self.algorithm = algorithm
         self.issuer = issuer
         self.audience = audience
+        if not math.isfinite(jwks_refresh_interval) or jwks_refresh_interval < 0:
+            raise ValueError("jwks_refresh_interval must be finite and non-negative")
+
         self.public_key = public_key
         self.jwks_uri = jwks_uri
         self.ssrf_safe = ssrf_safe
@@ -327,6 +337,9 @@ class JWTVerifier(TokenVerifier):
         self._jwks_cache: dict[str, str] = {}
         self._jwks_cache_time: float = 0
         self._cache_ttl = 3600  # 1 hour
+        self._jwks_refresh_interval = jwks_refresh_interval
+        self._jwks_last_refresh_attempt: float | None = None
+        self._jwks_refresh_lock = anyio.Lock()
 
     async def _get_verification_key(self, token: str) -> str | bytes:
         """Get the verification key for the token."""
@@ -343,11 +356,11 @@ class JWTVerifier(TokenVerifier):
             raise ValueError(f"Failed to extract key ID from token: {e}") from e
 
     async def _get_jwks_key(self, kid: str | None) -> str:
-        """Fetch key from JWKS with simple caching and SSRF protection."""
+        """Resolve a key, sharing refreshes and retaining fresh cached keys."""
         if not self.jwks_uri:
             raise ValueError("JWKS URI not configured")
 
-        current_time = time.time()
+        current_time = time.monotonic()
 
         # Check cache first
         if current_time - self._jwks_cache_time < self._cache_ttl:
@@ -357,6 +370,29 @@ class JWTVerifier(TokenVerifier):
                 # If no kid but only one key cached, use it
                 return next(iter(self._jwks_cache.values()))
 
+        async with self._jwks_refresh_lock:
+            current_time = time.monotonic()
+            fresh = current_time - self._jwks_cache_time < self._cache_ttl
+            if fresh:
+                if kid and kid in self._jwks_cache:
+                    return self._jwks_cache[kid]
+                if not kid and len(self._jwks_cache) == 1:
+                    return next(iter(self._jwks_cache.values()))
+
+            if (
+                self._jwks_last_refresh_attempt is not None
+                and current_time - self._jwks_last_refresh_attempt
+                < self._jwks_refresh_interval
+            ):
+                raise ValueError(
+                    "No matching fresh JWKS key; refresh available shortly"
+                )
+
+            self._jwks_last_refresh_attempt = current_time
+            return await self._refresh_jwks_key(kid)
+
+    async def _refresh_jwks_key(self, kid: str | None) -> str:
+        """Refresh the complete key set while holding the refresh lock."""
         # Fetch JWKS — with SSRF protection when enabled (untrusted URIs)
         try:
             jwks_data = await self._fetch_jwks()
@@ -367,7 +403,7 @@ class JWTVerifier(TokenVerifier):
             # key published by the authorization server would reject every
             # token, including ones signed by supported keys in the same set
             # (#4515).
-            self._jwks_cache = {}
+            keys: dict[str, str] = {}
             skipped_kids: set[str] = set()
             expected_key_type = _key_type_for_algorithm(self.algorithm)
             for key_data in jwks_data.get("keys", []):
@@ -395,12 +431,13 @@ class JWTVerifier(TokenVerifier):
                     continue
 
                 if key_kid:
-                    self._jwks_cache[key_kid] = public_key
+                    keys[key_kid] = public_key
                 else:
                     # Key without kid - use a default identifier
-                    self._jwks_cache["_default"] = public_key
+                    keys["_default"] = public_key
 
-            self._jwks_cache_time = current_time
+            self._jwks_cache = keys
+            self._jwks_cache_time = time.monotonic()
 
             # Select the appropriate key
             if kid:

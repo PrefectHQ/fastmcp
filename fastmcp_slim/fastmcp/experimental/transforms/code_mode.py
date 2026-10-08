@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 if TYPE_CHECKING:
     from pydantic_monty import ResourceLimits
 
+
 import anyio
 from mcp_types import TextContent
 from pydantic import Field
@@ -163,7 +164,7 @@ _UNSET = _UnsetType()
 
 
 _DEFAULT_LIMITS: "ResourceLimits" = {
-    "max_duration_secs": 30.0,
+    "max_feed_duration_secs": 30.0,
     "max_memory": 100_000_000,  # 100 MB
 }
 """Baseline limits applied when ``MontySandboxProvider`` is constructed
@@ -176,15 +177,19 @@ class MontySandboxProvider:
 
     Args:
         limits: Resource limits for sandbox execution. Supported keys:
-            `max_duration_secs` (float), `max_memory` (int),
+            `max_feed_duration_secs` (float), `max_turn_duration_secs` (float),
+            `max_memory` (int),
             `max_recursion_depth` (int), and `gc_interval` (int).
             Time, memory, and GC limits are optional; omit a key to disable
             it. Recursion depth defaults to Monty's standard maximum of 1,000.
+            Duration limits measure sandbox execution time, excluding time
+            waiting on host callbacks. The feed limit covers the whole execution;
+            the turn limit resets after each host round trip.
             Unsupported keys raise `ValueError` rather than being silently
             ignored.
 
             When the argument is omitted entirely, a conservative baseline
-            is applied (``max_duration_secs=30``, ``max_memory=100 MB``) so
+            is applied (``max_feed_duration_secs=30``, ``max_memory=100 MB``) so
             the out-of-box configuration is not unbounded. Pass
             ``limits=None`` to disable configurable time, memory, and GC
             limits, or a dict to set your own. Monty's standard recursion

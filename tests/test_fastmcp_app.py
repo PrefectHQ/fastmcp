@@ -491,9 +491,9 @@ class TestCallToolAppRouting:
         assert result.content[0].text == "saved bob"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_hashed_name_survives_namespace_mount(self):
-        """The hashed-name path bypasses display-layer transforms entirely.
-        A FastMCPApp mounted under a Namespace transform still has its
-        backend tools reachable via the same hash."""
+        """The hash identifies a tool independently of its name. A FastMCPApp
+        mounted under a Namespace transform still has its backend tools
+        reachable via the same hash."""
         from fastmcp.server.providers.addressing import hashed_backend_name
 
         app = FastMCPApp("crm")

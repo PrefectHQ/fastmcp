@@ -5,6 +5,7 @@ import pytest
 from mcp_types import EmbeddedResource, TextResourceContents
 from pydantic import Field
 
+from fastmcp import Client, FastMCP
 from fastmcp.prompts.base import (
     Message,
     Prompt,
@@ -781,6 +782,27 @@ class TestPromptResult:
         assert len(mcp_result.messages) == 2
         assert mcp_result.description == "Test"
         assert mcp_result.meta == {"key": "value"}
+
+
+class TestInternalMetaNotLeaked:
+    """FastMCP's private visibility marker must never reach the wire."""
+
+    async def test_visibility_marker_stripped_from_result_meta(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(meta={"team": "infra", "fastmcp": {"owner": "docs"}})
+        def greet(name: str) -> str:
+            return f"Hello {name}"
+
+        # Applying any visibility rule stamps the internal marker on meta
+        mcp.enable(names={"greet"})
+
+        async with Client(mcp) as client:
+            result = await client.get_prompt("greet", {"name": "Ada"})
+
+        assert result.meta is not None
+        assert result.meta["team"] == "infra"
+        assert result.meta["fastmcp"] == {"owner": "docs"}
 
 
 class TestPromptFieldDefaults:

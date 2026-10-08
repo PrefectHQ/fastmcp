@@ -130,8 +130,13 @@ Auto-reload is on by default — save a file and the MCP server restarts automat
 
 ```bash
 fastmcp dev inspector server.py
+fastmcp dev inspector server.py:create_server
 fastmcp dev inspector server.py --with-editable . --with pandas
 ```
+
+<Warning>
+When you pass a Python file, `fastmcp dev inspector` imports it without executing the `if __name__ == "__main__"` block. Setup in that block won't run, so tools registered there won't appear in the Inspector. Use a [factory function](#entrypoints) to run initialization before the server starts.
+</Warning>
 
 <Tip>
 The Inspector always runs your server via `uv run` in a subprocess — it never uses your local environment directly. Specify dependencies with `--with`, `--with-editable`, `--with-requirements`, or through a `fastmcp.json` file.

@@ -66,13 +66,17 @@ class _ToolBodyError(Exception):
 
 
 @lru_cache(maxsize=5000)
-def _wrap_body_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
+def _wrap_body_errors(
+    fn: Callable[..., Any], *, materialize_generators: bool = False
+) -> Callable[..., Any]:
     """Wrap ``fn`` so a ``pydantic.ValidationError`` raised by its body is
     re-raised as ``_ToolBodyError``.
 
     The wrapper preserves ``fn``'s signature and annotations so the cached
     ``TypeAdapter`` validates arguments identically — only body execution is
-    affected. Argument validation happens before the wrapper is called, so it
+    affected. When requested, sync generators are consumed during this same
+    invocation so dispatch and dependency lifetimes cover their bodies too.
+    Argument validation happens before the wrapper is called, so it
     keeps raising a bare ``pydantic.ValidationError``.
     """
     if is_coroutine_function(fn):
@@ -86,7 +90,10 @@ def _wrap_body_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
 
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
-                return fn(*args, **kwargs)
+                result = fn(*args, **kwargs)
+                if materialize_generators and inspect.isgenerator(result):
+                    return list(result)
+                return result
             except PydanticValidationError as e:
                 raise _ToolBodyError from e
 
@@ -378,8 +385,11 @@ class FunctionTool(Tool):
         """
         from fastmcp.server.dependencies import without_injected_parameters
 
+        # A sync generator's body runs during iteration, not creation. Consume
+        # it inside the original invocation, before dispatch/DI can finish.
+        body_fn = _wrap_body_errors(self.fn, materialize_generators=True)
         wrapper_fn = without_injected_parameters(
-            self.fn, run_in_thread=self.run_in_thread
+            body_fn, run_in_thread=self.run_in_thread
         )
         # Tag pydantic errors raised by the body so they can be distinguished
         # from argument-validation errors (which pydantic raises first). See #4128.
@@ -414,10 +424,14 @@ class FunctionTool(Tool):
         try:
             if self.timeout is not None:
                 try:
-                    with anyio.fail_after(self.timeout):
+                    with anyio.fail_after(self.timeout) as scope:
                         result = await self._execute(
                             type_adapter, exec_is_async, arguments, strict=strict
                         )
+                        # Worker threads shield cancellation until they finish.
+                        # Reject their result if execution outlasted the deadline.
+                        if anyio.current_time() >= scope.deadline:
+                            raise TimeoutError
                 except TimeoutError:
                     logger.warning(
                         f"Tool '{self.name}' timed out after {self.timeout}s. "

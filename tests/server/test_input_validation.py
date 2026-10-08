@@ -9,6 +9,7 @@ strict_input_validation=False, the default).
 import json
 from typing import Annotated, Any
 
+import httpx2
 import pytest
 from mcp.shared.exceptions import MCPError
 from mcp_types import TextContent
@@ -593,6 +594,31 @@ class TestExpectedToolFailureLogging:
         with caplog.at_level("DEBUG", logger="fastmcp.server.server"):
             async with Client(mcp) as client:
                 with pytest.raises(ToolError):
+                    await client.call_tool("do_thing", {})
+
+        records = [
+            r
+            for r in caplog.records
+            if r.getMessage() == "Error calling tool 'do_thing'"
+        ]
+        assert records, "expected an 'Error calling tool' log without traceback"
+        assert records[0].levelname == "ERROR"
+        assert not records[0].exc_info
+
+    async def test_upstream_http_status_error_logs_without_traceback(self, caplog):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def do_thing() -> str:
+            request = httpx2.Request("GET", "https://api.example.test/items")
+            response = httpx2.Response(404, request=request)
+            raise httpx2.HTTPStatusError(
+                "not found", request=request, response=response
+            )
+
+        with caplog.at_level("DEBUG", logger="fastmcp.server.server"):
+            async with Client(mcp) as client:
+                with pytest.raises(ToolError, match="not found"):
                     await client.call_tool("do_thing", {})
 
         records = [

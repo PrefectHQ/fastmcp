@@ -1,0 +1,25 @@
+---
+title: apps_dev_security
+sidebarTitle: apps_dev_security
+---
+
+# `fastmcp.cli.apps_dev_security`
+
+
+Browser session, Host, and Origin checks for the `fastmcp dev apps` host.
+
+## Classes
+
+### `DevSessionMiddleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/apps_dev_security.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Require a browser session started from the private startup URL.
+
+`GET /?token=...` with the startup token sets an HttpOnly, SameSite=Strict
+cookie and redirects to `/`. Every other request needs that cookie. The
+cookie holds a separate session secret: browsers send cookies to every
+port on the host, and the startup token must not reach other services. Every
+request must also name this server in its Host header, and browser
+requests must come from this origin: cookies do not distinguish ports on
+the same host, so the Origin and Fetch Metadata headers are checked too.
+
