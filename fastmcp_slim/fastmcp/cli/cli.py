@@ -1010,8 +1010,9 @@ async def inspect(
             console.print(f"  Server: [bold]{info.name}[/bold]")
             console.print(f"  Format: {format.value}")
         else:
-            # Output JSON to stdout
-            console.print(formatted_json.decode("utf-8"))
+            # Output JSON to stdout. The console would wrap long lines and
+            # interpret [markup], corrupting the JSON.
+            print(formatted_json.decode("utf-8"))
 
     except Exception as e:
         logger.exception(
