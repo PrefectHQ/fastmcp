@@ -67,6 +67,29 @@ mcp = FastMCP.from_openapi(
 )
 ```
 
+### Timeouts
+
+Requests from generated tools, resources, and resource templates use the timeout configured on the HTTP client you pass to `FastMCP.from_openapi()`. An `httpx2.AsyncClient` uses a five-second timeout for network inactivity by default. If your API takes longer to respond, configure the client before creating the MCP server:
+
+```python
+import httpx2
+from fastmcp import FastMCP
+
+api_client = httpx2.AsyncClient(
+    base_url="https://api.example.com",
+    timeout=30.0,
+)
+
+mcp = FastMCP.from_openapi(
+    openapi_spec=spec,
+    client=api_client,
+)
+```
+
+Use `timeout=None` on the HTTP client to disable timeouts, or an `httpx2.Timeout` instance to configure connect, read, write, and pool timeouts separately. See the [HTTPX2 timeout guide](https://pydantic.dev/docs/httpx2/advanced/timeouts/) for details.
+
+If you omit the `client` argument, FastMCP creates an HTTP client with a 30-second timeout using the first server URL in your OpenAPI specification.
+
 ## Route Mapping
 
 By default, FastMCP converts **every endpoint** in your OpenAPI specification into an MCP **Tool**. This provides a simple, predictable starting point that ensures all your API's functionality is immediately available to the vast majority of LLM clients which only support MCP tools.

@@ -95,6 +95,74 @@ def test_path_value_rejects_excessive_encoding_layers():
         )
 
 
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://api.example.com",
+        "https://api.example.com/",
+        "https://api.example.com/v1",
+        "https://api.example.com/v1/",
+    ],
+)
+@pytest.mark.parametrize(
+    "template,params,path",
+    [
+        ("/things:batchGet", {}, "/things:batchGet"),
+        ("/{job}:cancel", {"job": "abc123"}, "/abc123:cancel"),
+        ("/jobs/{job}:cancel", {"job": "abc123"}, "/jobs/abc123:cancel"),
+        ("/v1/things:search", {}, "/v1/things:search"),
+        ("things", {}, "/things"),
+    ],
+)
+def test_path_keeps_leading_segment_with_colon(
+    base_url: str, template: str, params: dict[str, str], path: str
+):
+    url = RequestDirector(SchemaPath.from_dict({}))._build_url(
+        template, params, base_url
+    )
+    assert url == base_url.rstrip("/") + path
+
+
+async def test_colon_path_segment_reaches_http_endpoint():
+    spec = {
+        "openapi": "3.1.0",
+        "info": {"title": "API", "version": "1"},
+        "paths": {
+            "/{job}:cancel": {
+                "post": {
+                    "operationId": "cancel_job",
+                    "parameters": [
+                        {
+                            "name": "job",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+    }
+    requests: list[httpx2.Request] = []
+
+    def capture(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(200, json={"ok": True})
+
+    async with httpx2.AsyncClient(
+        base_url="https://api.example.com/v1",
+        transport=httpx2.MockTransport(capture),
+    ) as http:
+        server = FastMCP.from_openapi(openapi_spec=spec, client=http)
+        async with Client(server) as client:
+            await client.call_tool("cancel_job", {"job": "abc123"})
+
+    assert [str(request.url) for request in requests] == [
+        "https://api.example.com/v1/abc123:cancel"
+    ]
+
+
 def test_path_template_requires_every_parameter_value():
     director = RequestDirector(SchemaPath.from_dict({}))
     with pytest.raises(

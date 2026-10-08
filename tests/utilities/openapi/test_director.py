@@ -363,6 +363,38 @@ class TestRequestDirector:
         assert request.content == expected
         assert request.headers["content-type"] == media_type
 
+    @pytest.mark.parametrize(
+        ("schema_type", "media_type", "body", "expected"),
+        [
+            ("integer", "text/plain", 42, b"42"),
+            ("number", "text/plain", 1.5, b"1.5"),
+            ("boolean", "text/plain", True, b"true"),
+            ("boolean", "text/plain", False, b"false"),
+            ("integer", "text/plain; charset=utf-8", 7, b"7"),
+        ],
+    )
+    def test_body_construction_scalar_raw_body(
+        self, director, schema_type, media_type, body, expected
+    ):
+        """A numeric or boolean body for a non-JSON media type is sent as text."""
+        route = HTTPRoute(
+            path="/value",
+            method="POST",
+            operation_id="set_value",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={media_type: {"type": schema_type}},
+            ),
+            parameter_map={
+                "content": {"location": "body", "openapi_name": "content"},
+            },
+        )
+
+        request = director.build(route, {"content": body}, "https://api.example.com")
+
+        assert request.content == expected
+        assert request.headers["content-type"] == media_type
+
     def test_body_construction_multiple_properties_non_object_schema(self, director):
         """Test body construction with multiple properties but non-object schema."""
         route = HTTPRoute(

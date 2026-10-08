@@ -375,6 +375,35 @@ class TestResourceTemplate:
                 name="test",
             )
 
+    async def test_function_with_positional_only_not_allowed(self):
+        def func(x: int, /) -> int:
+            return x
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                "Functions with positional-only parameters are not supported as "
+                "resource templates.*standard parameters"
+            ),
+        ):
+            ResourceTemplate.from_function(
+                fn=func,
+                uri_template="test://{x}",
+                name="test",
+            )
+
+    async def test_function_with_keyword_only_ok(self):
+        def func(x: int, *, y: int = 1) -> int:
+            return x + y
+
+        template = ResourceTemplate.from_function(
+            fn=func,
+            uri_template="test://{x}{?y}",
+            name="test",
+        )
+
+        assert await template.read({"x": "2", "y": "3"}) == 5
+
     async def test_function_with_varkwargs_ok(self):
         def func(x: int, **kwargs: int) -> int:
             return x + sum(kwargs.values())

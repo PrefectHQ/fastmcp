@@ -5,7 +5,7 @@ import json as _json
 import re
 from email.message import Message
 from typing import Any, ClassVar
-from urllib.parse import quote, unquote, urljoin
+from urllib.parse import quote, unquote
 
 import httpx2
 from jsonschema_path import SchemaPath
@@ -205,14 +205,19 @@ class RequestDirector:
                 else:
                     json_body = body
             else:
-                content = body
+                # httpx rejects numbers and booleans as raw content
+                content = (
+                    _query_scalar_to_str(body)
+                    if isinstance(body, bool | int | float)
+                    else body
+                )
                 if raw_content_type is not None:
                     headers = dict(headers) if headers else {}
                     headers["Content-Type"] = raw_content_type
-                    if isinstance(body, str):
+                    if isinstance(content, str):
                         media_type = Message()
                         media_type["Content-Type"] = raw_content_type
-                        content = body.encode(
+                        content = content.encode(
                             media_type.get_content_charset() or "utf-8"
                         )
 
@@ -442,8 +447,9 @@ class RequestDirector:
                 safe_value = quote(str(param_value), safe="").replace(".", "%2E")
                 url_path = url_path.replace(placeholder, safe_value)
 
-        # Combine with base URL
-        return urljoin(base_url.rstrip("/") + "/", url_path.lstrip("/"))
+        # Combine with base URL. Plain concatenation: urljoin would read a
+        # leading "name:" segment (e.g. "/job-1:cancel") as a URL scheme.
+        return f"{base_url.rstrip('/')}/{url_path.lstrip('/')}"
 
 
 # Export public symbols

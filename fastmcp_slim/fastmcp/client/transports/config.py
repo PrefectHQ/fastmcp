@@ -160,12 +160,6 @@ class MCPConfigTransport(ClientTransport):
             else "legacy"
         )
 
-        # Close transports retained from a previous connection before replacing
-        # them. The active connection's exit stack owns their normal cleanup.
-        for transport in self._transports:
-            await transport.close()
-        self._transports = []
-
         stack = contextlib.AsyncExitStack()
         await stack.__aenter__()
         try:

@@ -228,11 +228,17 @@ def _strip_discriminator(obj: Any) -> Any:
             obj = require_discriminator_property(obj)
         # Keys that hold instance data, not sub-schemas — don't recurse.
         _DATA_KEYS = {"default", "const", "examples", "enum"}
-        return {
-            k: (v if k in _DATA_KEYS else _strip_discriminator(v))
-            for k, v in obj.items()
-            if not (k == "discriminator" and skip)
-        }
+        result: dict[str, Any] = {}
+        for k, v in obj.items():
+            if k == "discriminator" and skip:
+                continue
+            if k in _SUBSCHEMA_MAP_KEYS and isinstance(v, dict):
+                # The keys here are user property/definition names, so one
+                # named like a keyword above still holds a sub-schema.
+                result[k] = {name: _strip_discriminator(sub) for name, sub in v.items()}
+            else:
+                result[k] = v if k in _DATA_KEYS else _strip_discriminator(v)
+        return result
     if isinstance(obj, list):
         return [_strip_discriminator(item) for item in obj]
     return obj

@@ -136,7 +136,7 @@ To use this in a client configuration file, add it to the `mcpServers` object in
 ```
 
 <Note>
-When using `--python`, `--project`, or `--with-requirements`, the generated configuration will include these options in the `uv run` command, ensuring your server runs with the correct Python version and dependencies.
+When using `--python`, `--project`, or `--with-requirements`, the generated configuration will include these options in the `uv run` command, ensuring your server runs with the correct Python version and dependencies. When you pass `--project`, `--python` is omitted because the project defines its own Python.
 </Note>
 
 <Note>
@@ -278,17 +278,6 @@ fastmcp install mcp-json api_server.py \
   --env TIMEOUT=30
 ```
 
-### Advanced Configuration
-
-```bash
-fastmcp install mcp-json ml_server.py \
-  --name "ML Analysis Server" \
-  --python 3.11 \
-  --with-requirements requirements.txt \
-  --project /home/user/ml-project \
-  --env GPU_DEVICE=0
-```
-
 Output:
 ```json
 {
@@ -314,6 +303,16 @@ Output:
 }
 ```
 
+### Advanced Configuration
+
+```bash
+fastmcp install mcp-json ml_server.py \
+  --name "ML Analysis Server" \
+  --with-requirements requirements.txt \
+  --project /home/user/ml-project \
+  --env GPU_DEVICE=0
+```
+
 The advanced configuration example generates:
 ```json
 {
@@ -321,14 +320,12 @@ The advanced configuration example generates:
     "command": "uv",
     "args": [
       "run",
-      "--python",
-      "3.11",
       "--project",
       "/home/user/ml-project",
       "--with",
       "fastmcp",
       "--with-requirements",
-      "requirements.txt",
+      "/home/user/requirements.txt",
       "fastmcp",
       "run",
       "/home/user/ml_server.py"

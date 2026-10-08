@@ -1300,6 +1300,55 @@ async def test_multi_server_session_persistence():
         )
 
 
+class ClosingFastMCPTransport(FastMCPTransport):
+    """In-memory backend that records `close()`, which tears down a subprocess."""
+
+    def __init__(self, mcp: FastMCP, closed: list[FastMCPTransport]):
+        super().__init__(mcp=mcp)
+        self.closed = closed
+
+    async def close(self):
+        self.closed.append(self)
+
+
+class ClosingInMemoryStdioMCPServer(InMemoryStdioMCPServer):
+    closed: Any  # the caller's list; typed Any so pydantic doesn't copy it
+
+    def to_transport(self) -> FastMCPTransport:
+        return ClosingFastMCPTransport(mcp=self.mcp, closed=self.closed)
+
+
+async def test_multi_server_clone_does_not_close_original_backends():
+    """A `new()` clone connects its own backends and leaves the original's alone."""
+    closed: list[FastMCPTransport] = []
+    config = MCPConfig(
+        mcpServers={
+            "server1": ClosingInMemoryStdioMCPServer(
+                mcp=_make_add_server(), closed=closed
+            ),
+            "server2": ClosingInMemoryStdioMCPServer(
+                mcp=_make_add_server(), closed=closed
+            ),
+        }
+    )
+
+    original = Client(config)
+    clone = original.new()
+
+    async with original:
+        async with clone:
+            assert closed == []
+            result = await original.call_tool("server1_add", {"a": 1, "b": 2})
+            assert result.data == 3
+
+        # Leaving the clone releases only the clone's two backends.
+        assert len(closed) == 2
+        result = await original.call_tool("server2_add", {"a": 1, "b": 2})
+        assert result.data == 3
+
+    assert len(closed) == 4
+
+
 async def test_single_server_config_transport():
     """Test that single-server configs delegate directly without creating a composite."""
     config = MCPConfig(

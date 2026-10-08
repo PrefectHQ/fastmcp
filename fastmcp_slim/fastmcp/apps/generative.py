@@ -101,8 +101,9 @@ class GenerativeUI(Provider):
         if self._setup_done:
             return
 
+        # CSP belongs on the renderer resource, not the tool (MCP Apps spec).
         csp = _build_csp()
-        app_config = AppConfig(resource_uri=_gen.RESOURCE_URI, csp=csp)
+        app_config = AppConfig(resource_uri=_gen.RESOURCE_URI)
 
         # -- generate_ui tool --
         # Wraps prefab_ui.generative.execute with sandbox lifecycle management.
