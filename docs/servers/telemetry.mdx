@@ -101,10 +101,10 @@ if __name__ == "__main__":
     mcp.run(transport="http")
 ```
 
-Set `FASTMCP_LOG_ENABLED=false` before starting the process so OpenTelemetry owns the logging configuration. FastMCP's default console configuration stops its log records from propagating to the root logger, where OpenTelemetry installs its handler. Disabling that configuration lets those records reach the handler; Python logging levels still control which records are emitted.
+Records from your own loggers, such as `inventory` above, reach OpenTelemetry without further FastMCP configuration. To export FastMCP's own `fastmcp.*` records as well, set `FASTMCP_LOG_ENABLED=false` before starting the process. FastMCP's default console configuration stops its records from propagating to the root logger, where OpenTelemetry installs its handler; disabling that configuration lets them through, and also silences FastMCP's console output. Python logging levels still control which records are emitted.
 
 ```bash
-export FASTMCP_LOG_ENABLED=false
+export FASTMCP_LOG_ENABLED=false  # optional, exports fastmcp.* records
 export OTEL_SERVICE_NAME=inventory
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 export OTEL_LOGS_EXPORTER=otlp
