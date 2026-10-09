@@ -718,14 +718,18 @@ def _single_pass_optimize(
             # still pins the referenced $def as "used".
             if prune_defs:
                 ref = node.get("$ref")
-                if isinstance(ref, str) and ref.startswith("#/$defs/"):
-                    referenced_def = ref.split("/")[-1]
-                    if current_def_name:
-                        # We're inside a $def, so this is a def->def reference
-                        def_dependencies[referenced_def].append(current_def_name)
-                    else:
-                        # We're in the main schema, so this is a root reference
-                        root_refs.add(referenced_def)
+                if isinstance(ref, str) and ref.startswith("#/"):
+                    parts = unquote(ref[2:]).split("/")
+                    if len(parts) >= 2 and parts[0] == "$defs":
+                        # Keep the owning definition even when the pointer
+                        # targets a nested schema within it.
+                        referenced_def = parts[1].replace("~1", "/").replace("~0", "~")
+                        if current_def_name:
+                            # We're inside a $def, so this is a def->def reference
+                            def_dependencies[referenced_def].append(current_def_name)
+                        else:
+                            # We're in the main schema, so this is a root reference
+                            root_refs.add(referenced_def)
 
             # Cleanups only run when we know this node is a schema, never on
             # user extension payloads (`json_schema_extra={"x-ui": {...}}`).
