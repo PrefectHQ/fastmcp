@@ -131,6 +131,11 @@ class TestFetchLatestVersion:
             version = _fetch_latest_version()
             assert version is None
 
+    def test_fetch_invalid_url(self):
+        """Invalid proxy environment must not prevent server startup."""
+        with patch("httpx2.get", side_effect=httpx2.InvalidURL("Invalid port: ':1]'")):
+            assert _fetch_latest_version() is None
+
     def test_fetch_invalid_response(self):
         """Invalid response returns None."""
         mock_response = MagicMock()
@@ -175,6 +180,26 @@ class TestFetchLatestVersion:
 
 
 class TestGetLatestVersion:
+    def test_invalid_url_returns_stale_cache(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        cache_file = tmp_path / "version_cache.json"
+        cache_file.write_text(
+            json.dumps(
+                {
+                    "latest_version": "2.4.0",
+                    "timestamp": time.time() - CACHE_TTL_SECONDS - 100,
+                }
+            )
+        )
+        monkeypatch.setattr(
+            "fastmcp.utilities.version_check._get_cache_path",
+            lambda include_prereleases=False: cache_file,
+        )
+
+        with patch("httpx2.get", side_effect=httpx2.InvalidURL("Invalid port: ':1]'")):
+            assert get_latest_version() == "2.4.0"
+
     def test_returns_cached_version_if_fresh(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
