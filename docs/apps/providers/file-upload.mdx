@@ -69,9 +69,11 @@ Both options default to `None`, keeping files for the server process's lifetime 
 
 ## Storage scoping
 
-By default, files are stored in memory and scoped by MCP session ID. Each session gets its own isolated file store — files uploaded in one conversation aren't visible in another.
+By default, files are stored in memory and scoped to the client that uploaded them, so one client's files aren't visible to another. How FastMCP identifies that client depends on the protocol version the connection negotiated.
 
-This works with **stdio**, **SSE**, and **stateful HTTP** transports, where sessions persist across requests.
+On a handshake-era connection (`mode="legacy"`, or a client that predates MCP 2026-07-28), files are scoped by MCP session ID. This works with **stdio**, **SSE**, and **stateful HTTP** transports, where sessions persist across requests.
+
+MCP 2026-07-28 connections, which FastMCP clients negotiate by default, have no session. Files are scoped to the authenticated user instead, the same identity [`UserSession`](/servers/sessions) uses. Without authentication, stdio servers keep one store for the process, because a stdio server serves a single client. An unauthenticated HTTP request carries nothing that identifies its client between requests, so the default storage rejects it with an error rather than sharing files across clients. Add [authentication](/servers/auth/authentication) to the server, or override `_get_scope_key`.
 
 <Warning>
 In **stateless HTTP** mode, each request creates a new session object with a new ID. Files stored during one request (e.g. the UI upload) will be invisible to the next request (e.g. the LLM calling `list_files`). You **must** override `_get_scope_key` to use a stable identifier like a user ID from your auth token.

@@ -386,6 +386,10 @@ async def enable_recent_tools(ctx: Context) -> str:
     return "Recent tools enabled"
 ```
 
+### Sessions on MCP 2026-07-28
+
+MCP 2026-07-28 connections, which FastMCP clients negotiate by default, have no session. On those connections, session rules are scoped to the authenticated user, the same identity [`UserSession`](/servers/sessions) uses, so they apply to every connection that user makes. Without authentication, stdio servers keep one set of rules for the process, because a stdio server serves a single client. An unauthenticated HTTP request carries nothing that identifies its client between requests, so `enable_components()`, `disable_components()`, and `reset_visibility()` raise an error rather than changing what every client sees.
+
 ### Automatic Notifications
 
 When session visibility changes, FastMCP automatically sends notifications to that session. Clients receive `ToolListChangedNotification`, `ResourceListChangedNotification`, and `PromptListChangedNotification` so they can refresh their component lists. These notifications go only to the affected session.

@@ -788,6 +788,31 @@ class Context:
             session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         return session_id
 
+    def _session_scope_key(self) -> str | None:
+        """Key for data that follows one client across requests.
+
+        On a handshake-era connection this is `session_id`. A 2026-07-28
+        connection has no session, so the scope is the authenticated user (the
+        identity `UserSession` keys on) or, on stdio and in-memory transports,
+        the server process, which serves a single client. Returns None for an
+        unauthenticated 2026-07-28 HTTP request, where nothing identifies the
+        client from one request to the next.
+
+        Raises:
+            RuntimeError if no session is available.
+        """
+        if not self._is_modern_protocol():
+            return self.session_id
+
+        from fastmcp.server.sessions import _principal_segment, current_principal
+
+        principal = current_principal()
+        if principal is not None:
+            return f"user:{_principal_segment(principal)}"
+        if self.transport in ("sse", "streamable-http"):
+            return None
+        return "process"
+
     @property
     def session(self) -> ServerSession:
         """Access to the underlying session for advanced usage.

@@ -23,7 +23,9 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> list[float]:
 
 
 def scope(name: str) -> Context:
-    return Mock(spec=Context, session_id=name)
+    context = Mock(spec=Context, session_id=name)
+    context._session_scope_key.return_value = name
+    return context
 
 
 async def test_total_size_uses_payload_sizes():
