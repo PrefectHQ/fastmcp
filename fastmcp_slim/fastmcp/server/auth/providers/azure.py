@@ -14,6 +14,7 @@ import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 
 from fastmcp.dependencies import Dependency
+from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.auth import MultiAuth
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
@@ -122,6 +123,7 @@ class AzureProvider(OAuthProxy):
         token_issuer: str | None = None,
         extra_authorize_params: dict[str, str] | None = None,
         http_client: httpx2.AsyncClient | None = None,
+        token_verifier: TokenVerifier | None = None,
         enable_cimd: bool = True,
     ) -> None:
         """Initialize Azure OAuth provider.
@@ -186,6 +188,8 @@ class AzureProvider(OAuthProxy):
             http_client: Optional httpx2.AsyncClient for connection pooling in JWKS fetches.
                 When provided, the client is reused for JWT key fetches and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per fetch.
+            token_verifier: Optional custom token verifier. When omitted, a JWTVerifier
+                is created from the Azure tenant and application configuration.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs (default True). Set to False to disable.
             fallback_refresh_token_expiry_seconds: Lifetime for the FastMCP-issued
@@ -235,26 +239,27 @@ class AzureProvider(OAuthProxy):
         # NOT standard OIDC scopes (openid, profile, email, offline_access).
         # Filter out OIDC scopes from validation - they'll still be sent to Azure
         # during authorization (handled by _prefix_scopes_for_azure).
-        validation_scopes = [
-            s for s in (parsed_required_scopes or []) if s not in OIDC_SCOPES
-        ]
-        if not validation_scopes:
-            raise ValueError(
-                "AzureProvider requires at least one non-OIDC scope in "
-                "required_scopes (e.g., 'read', 'write'). OIDC scopes like "
-                "'openid', 'profile', 'email', and 'offline_access' are not "
-                "included in Azure access token claims and cannot be used for "
-                "scope enforcement."
-            )
+        if token_verifier is None:
+            validation_scopes = [
+                s for s in (parsed_required_scopes or []) if s not in OIDC_SCOPES
+            ]
+            if not validation_scopes:
+                raise ValueError(
+                    "AzureProvider requires at least one non-OIDC scope in "
+                    "required_scopes (e.g., 'read', 'write'). OIDC scopes like "
+                    "'openid', 'profile', 'email', and 'offline_access' are not "
+                    "included in Azure access token claims and cannot be used for "
+                    "scope enforcement."
+                )
 
-        token_verifier = JWTVerifier(
-            jwks_uri=jwks_uri,
-            issuer=issuer,
-            audience=[client_id, self.identifier_uri],
-            algorithm="RS256",
-            required_scopes=validation_scopes,  # Only validate non-OIDC scopes
-            http_client=http_client,
-        )
+            token_verifier = JWTVerifier(
+                jwks_uri=jwks_uri,
+                issuer=issuer,
+                audience=[client_id, self.identifier_uri],
+                algorithm="RS256",
+                required_scopes=validation_scopes,
+                http_client=http_client,
+            )
 
         # Build Azure OAuth endpoints with tenant
         authorization_endpoint = (

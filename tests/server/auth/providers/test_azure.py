@@ -15,6 +15,7 @@ from mcp.server.auth.provider import (
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
+from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.oauth_proxy.models import ClientCode, UpstreamTokenSet
 from fastmcp.server.auth.providers.azure import AzureProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
@@ -66,6 +67,22 @@ class TestAzureProvider:
         # Check defaults
         assert provider._redirect_path == "/auth/callback"
         # Azure provider defaults are set but we can't easily verify them without accessing internals
+
+    def test_custom_token_verifier_is_used(self, memory_storage: MemoryStore):
+        verifier = TokenVerifier(required_scopes=["app-role"])
+
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            base_url="https://myserver.com",
+            required_scopes=["openid"],
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            token_verifier=verifier,
+        )
+
+        assert provider._token_validator is verifier
 
     def test_offline_access_automatically_included(self, memory_storage: MemoryStore):
         """Test that offline_access is automatically added to get refresh tokens."""
