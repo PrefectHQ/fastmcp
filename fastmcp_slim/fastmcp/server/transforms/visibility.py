@@ -311,9 +311,26 @@ if TYPE_CHECKING:
     from fastmcp.server.context import Context
 
 
+def _visibility_rules_key(context: Context) -> str | None:
+    """State-store key for this client's visibility rules.
+
+    None when the request carries no client identity to scope rules to (an
+    unauthenticated MCP 2026-07-28 HTTP request). Raises RuntimeError when no
+    session is available.
+    """
+    scope = context._session_scope_key()
+    if scope is None:
+        return None
+    return f"{scope}:_visibility_rules"
+
+
 async def get_visibility_rules(context: Context) -> list[dict[str, Any]]:
     """Load visibility rule dicts from session state."""
-    return await context.get_state("_visibility_rules") or []
+    key = _visibility_rules_key(context)
+    if key is None:
+        return []
+    result = await context.fastmcp._state_store.get(key=key)
+    return result.value if result is not None else []
 
 
 async def save_visibility_rules(
@@ -331,7 +348,21 @@ async def save_visibility_rules(
             If None, sends notifications for all types (safe default).
             If provided, only sends notifications for specified types.
     """
-    await context.set_state("_visibility_rules", rules)
+    from fastmcp.server.server import StateValue
+
+    key = _visibility_rules_key(context)
+    if key is None:
+        raise RuntimeError(
+            "Session visibility rules are scoped to a client, and this "
+            "unauthenticated request carries no client identity: MCP "
+            "2026-07-28 HTTP connections have no session. Add authentication "
+            "to the server to scope rules to each user."
+        )
+    await context.fastmcp._state_store.put(
+        key=key,
+        value=StateValue(value=rules),
+        ttl=context._STATE_TTL_SECONDS,
+    )
 
     # Send notifications based on components hint
     # Note: MCP has no separate template notification - templates use ResourceListChangedNotification
@@ -375,11 +406,9 @@ async def get_session_transforms(context: Context) -> list[Visibility]:
     """Get session-specific Visibility transforms from state store."""
     try:
         # Will raise RuntimeError if no session available
-        _ = context.session_id
+        rules = await get_visibility_rules(context)
     except RuntimeError:
         return []
-
-    rules = await get_visibility_rules(context)
     return create_visibility_transforms(rules)
 
 
