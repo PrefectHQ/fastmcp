@@ -70,6 +70,7 @@ ONE_MB_IN_BYTES = 1024 * 1024
 
 ANONYMOUS_AUTH_KEY = "__anonymous__"
 DEFAULT_VERSION_CACHE_KEY = "__default__"
+NO_SESSION_CACHE_KEY = "__no_session__"
 
 BaseModelT = TypeVar("BaseModelT", bound=FastMCPBaseModel)
 
@@ -263,6 +264,12 @@ class ResponseCachingMiddleware(Middleware):
       `auth=require_scopes(...)`) cannot leak across users with different
       permissions. Unauthenticated callers (including STDIO) share a single
       anonymous partition.
+    - `tools/call`, `resources/read`, and `prompts/get` entries are
+      additionally partitioned per MCP session (by the session's established
+      id), since a handler's result may depend on session-scoped state
+      (`Context.set_state` / `get_state`); one session's cached answer is
+      never served to another. Callers with no established session identity
+      share a single session-less partition.
     """
 
     def __init__(
@@ -473,7 +480,9 @@ class ResponseCachingMiddleware(Middleware):
             return await call_next(context)
 
         cache_key: str = _make_call_tool_cache_key(
-            msg=context.message, auth_key=_get_auth_partition_key()
+            msg=context.message,
+            auth_key=_get_auth_partition_key(),
+            session_key=_get_session_partition_key(context),
         )
 
         if cached_value := await self._call_tool_cache.get(key=cache_key):
@@ -533,7 +542,9 @@ class ResponseCachingMiddleware(Middleware):
             return await call_next(context)
 
         cache_key: str = _make_read_resource_cache_key(
-            msg=context.message, auth_key=_get_auth_partition_key()
+            msg=context.message,
+            auth_key=_get_auth_partition_key(),
+            session_key=_get_session_partition_key(context),
         )
         cached_value: CacheableResourceResult | None
 
@@ -574,7 +585,9 @@ class ResponseCachingMiddleware(Middleware):
             return await call_next(context)
 
         cache_key: str = _make_get_prompt_cache_key(
-            msg=context.message, auth_key=_get_auth_partition_key()
+            msg=context.message,
+            auth_key=_get_auth_partition_key(),
+            session_key=_get_session_partition_key(context),
         )
 
         if cached_value := await self._get_prompt_cache.get(key=cache_key):
@@ -664,6 +677,28 @@ def _get_auth_partition_key() -> str:
     return _hash_cache_key(token.token)
 
 
+def _get_session_partition_key(context: MiddlewareContext[Any]) -> str:
+    """Return a stable, hashed identifier for the current MCP session.
+
+    A handler's result (tool call, resource read, prompt get) may depend on
+    session-scoped state (`Context.set_state` / `get_state` are keyed by
+    session id), so those entries are partitioned per session: one session's
+    cached answer is never served to another session within the same auth
+    partition. Only an *established* session id partitions the key:
+    transports that build a fresh connection per request have no stable
+    session identity — and no session-scoped state — so those callers share
+    a single session-less partition rather than never hitting the cache.
+    """
+
+    fastmcp_context = context.fastmcp_context
+    if fastmcp_context is None:
+        return NO_SESSION_CACHE_KEY
+    session_id = fastmcp_context._established_session_id
+    if session_id is None:
+        return NO_SESSION_CACHE_KEY
+    return _hash_cache_key(session_id)
+
+
 def _get_component_version_cache_key(msg: mcp_types.RequestParams) -> str:
     """Return a cache partition for the requested component version."""
     if not msg.meta:
@@ -683,32 +718,38 @@ def _get_component_version_cache_key(msg: mcp_types.RequestParams) -> str:
 
 
 def _make_call_tool_cache_key(
-    msg: mcp_types.CallToolRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
+    msg: mcp_types.CallToolRequestParams,
+    auth_key: str = ANONYMOUS_AUTH_KEY,
+    session_key: str = NO_SESSION_CACHE_KEY,
 ) -> str:
     """Make a cache key for a tool call using name, version, and arguments."""
 
     return _hash_cache_key(
-        f"{auth_key}:{_get_component_version_cache_key(msg)}:{msg.name}:"
+        f"{auth_key}:{session_key}:{_get_component_version_cache_key(msg)}:{msg.name}:"
         f"{_get_arguments_str(msg.arguments)}"
     )
 
 
 def _make_read_resource_cache_key(
-    msg: mcp_types.ReadResourceRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
+    msg: mcp_types.ReadResourceRequestParams,
+    auth_key: str = ANONYMOUS_AUTH_KEY,
+    session_key: str = NO_SESSION_CACHE_KEY,
 ) -> str:
     """Make a cache key for a resource read using version and URI."""
 
     return _hash_cache_key(
-        f"{auth_key}:{_get_component_version_cache_key(msg)}:{msg.uri}"
+        f"{auth_key}:{session_key}:{_get_component_version_cache_key(msg)}:{msg.uri}"
     )
 
 
 def _make_get_prompt_cache_key(
-    msg: mcp_types.GetPromptRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
+    msg: mcp_types.GetPromptRequestParams,
+    auth_key: str = ANONYMOUS_AUTH_KEY,
+    session_key: str = NO_SESSION_CACHE_KEY,
 ) -> str:
     """Make a cache key for a prompt get using name, version, and arguments."""
 
     return _hash_cache_key(
-        f"{auth_key}:{_get_component_version_cache_key(msg)}:{msg.name}:"
+        f"{auth_key}:{session_key}:{_get_component_version_cache_key(msg)}:{msg.name}:"
         f"{_get_arguments_str(msg.arguments)}"
     )

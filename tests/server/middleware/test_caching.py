@@ -938,6 +938,17 @@ class TestCacheKeyGeneration:
         assert user_a != user_b
         assert user_a != anon
 
+    def test_call_tool_key_partitions_by_session(self):
+        msg = mcp_types.CallToolRequestParams(name="t", arguments={"a": 1})
+
+        sessionless = _make_call_tool_cache_key(msg)
+        session_a = _make_call_tool_cache_key(msg, session_key="session_a")
+        session_b = _make_call_tool_cache_key(msg, session_key="session_b")
+
+        assert session_a != session_b
+        assert session_a != sessionless
+        assert session_b != sessionless
+
     def test_read_resource_key_partitions_by_auth(self):
         msg = mcp_types.ReadResourceRequestParams(uri="file:///tmp/x")
 
@@ -946,6 +957,17 @@ class TestCacheKeyGeneration:
 
         assert user_a != user_b
 
+    def test_read_resource_key_partitions_by_session(self):
+        msg = mcp_types.ReadResourceRequestParams(uri="file:///tmp/x")
+
+        sessionless = _make_read_resource_cache_key(msg)
+        session_a = _make_read_resource_cache_key(msg, session_key="session_a")
+        session_b = _make_read_resource_cache_key(msg, session_key="session_b")
+
+        assert session_a != session_b
+        assert session_a != sessionless
+        assert session_b != sessionless
+
     def test_get_prompt_key_partitions_by_auth(self):
         msg = mcp_types.GetPromptRequestParams(name="p", arguments={"a": "1"})
 
@@ -953,6 +975,17 @@ class TestCacheKeyGeneration:
         user_b = _make_get_prompt_cache_key(msg, auth_key="user_b")
 
         assert user_a != user_b
+
+    def test_get_prompt_key_partitions_by_session(self):
+        msg = mcp_types.GetPromptRequestParams(name="p", arguments={"a": "1"})
+
+        sessionless = _make_get_prompt_cache_key(msg)
+        session_a = _make_get_prompt_cache_key(msg, session_key="session_a")
+        session_b = _make_get_prompt_cache_key(msg, session_key="session_b")
+
+        assert session_a != session_b
+        assert session_a != sessionless
+        assert session_b != sessionless
 
 
 class TestAuthAwareCaching:
@@ -1093,6 +1126,153 @@ class TestAuthAwareCaching:
             assert {p.name for p in prompts} == {"public_prompt"}
         finally:
             auth_context_var.reset(tok)
+
+
+class TestSessionAwareCaching:
+    """Cached handler results must not leak across MCP sessions.
+
+    Regression tests: the tools/call, resources/read, and prompts/get cache
+    keys were built from the auth partition, component version, and component
+    identity/arguments only. Handler results may depend on session-scoped
+    state (`Context.set_state`/`get_state` are keyed by session id), so one
+    session's cached answer was served to another session in the same auth
+    partition.
+    """
+
+    async def test_call_tool_cache_does_not_leak_across_sessions(self):
+        mcp_server = FastMCP("test")
+        mcp_server.add_middleware(ResponseCachingMiddleware())
+        recall_calls = 0
+
+        @mcp_server.tool
+        async def remember(key: str, value: str, ctx: Context) -> str:
+            await ctx.set_state(key, value)
+            return "stored"
+
+        @mcp_server.tool
+        async def recall(key: str, ctx: Context) -> str:
+            nonlocal recall_calls
+            recall_calls += 1
+            value = await ctx.get_state(key)
+            return value if value is not None else "<unset>"
+
+        # Session A stores its own value and recalls it, caching the answer.
+        # Pinned to legacy: session-scoped state persists across requests on a
+        # handshake-era connection, which this test needs to give each session
+        # its own value.
+        async with Client(mcp_server, mode="legacy") as session_a:
+            await session_a.call_tool(
+                "remember", {"key": "k", "value": "session-a-secret"}
+            )
+            recall_a = await session_a.call_tool("recall", {"key": "k"})
+            assert recall_a.content[0].text == "session-a-secret"
+
+        # Session B stores its own value; its recall must not be served
+        # session A's cached answer.
+        async with Client(mcp_server, mode="legacy") as session_b:
+            await session_b.call_tool(
+                "remember", {"key": "k", "value": "session-b-secret"}
+            )
+            recall_b = await session_b.call_tool("recall", {"key": "k"})
+            assert recall_b.content[0].text == "session-b-secret"
+
+        # Both sessions' recalls executed: A's populated the cache, B's was a
+        # session-scoped miss.
+        assert recall_calls == 2
+
+    async def test_call_tool_cache_still_hits_within_a_session(self):
+        mcp_server = FastMCP("test")
+        mcp_server.add_middleware(ResponseCachingMiddleware())
+        recall_calls = 0
+
+        @mcp_server.tool
+        async def remember(key: str, value: str, ctx: Context) -> str:
+            await ctx.set_state(key, value)
+            return "stored"
+
+        @mcp_server.tool
+        async def recall(key: str, ctx: Context) -> str:
+            nonlocal recall_calls
+            recall_calls += 1
+            value = await ctx.get_state(key)
+            return value if value is not None else "<unset>"
+
+        async with Client(mcp_server, mode="legacy") as client:
+            await client.call_tool("remember", {"key": "k", "value": "v"})
+            first = await client.call_tool("recall", {"key": "k"})
+            second = await client.call_tool("recall", {"key": "k"})
+
+        assert first.content[0].text == "v"
+        assert second.content[0].text == "v"
+        assert recall_calls == 1
+
+    async def test_read_resource_cache_does_not_leak_across_sessions(self):
+        mcp_server = FastMCP("test")
+        mcp_server.add_middleware(ResponseCachingMiddleware())
+        reads = 0
+
+        @mcp_server.tool
+        async def remember(key: str, value: str, ctx: Context) -> str:
+            await ctx.set_state(key, value)
+            return "stored"
+
+        @mcp_server.resource("data://memo")
+        async def memo(ctx: Context) -> str:
+            nonlocal reads
+            reads += 1
+            value = await ctx.get_state("k")
+            return value if value is not None else "<unset>"
+
+        # Pinned to legacy for the same reason as the tool tests above.
+        async with Client(mcp_server, mode="legacy") as session_a:
+            await session_a.call_tool(
+                "remember", {"key": "k", "value": "session-a-secret"}
+            )
+            read_a = await session_a.read_resource("data://memo")
+            assert read_a[0].text == "session-a-secret"
+
+        async with Client(mcp_server, mode="legacy") as session_b:
+            await session_b.call_tool(
+                "remember", {"key": "k", "value": "session-b-secret"}
+            )
+            read_b = await session_b.read_resource("data://memo")
+            assert read_b[0].text == "session-b-secret"
+
+        assert reads == 2
+
+    async def test_get_prompt_cache_does_not_leak_across_sessions(self):
+        mcp_server = FastMCP("test")
+        mcp_server.add_middleware(ResponseCachingMiddleware())
+        gets = 0
+
+        @mcp_server.tool
+        async def remember(key: str, value: str, ctx: Context) -> str:
+            await ctx.set_state(key, value)
+            return "stored"
+
+        @mcp_server.prompt
+        async def memo(ctx: Context) -> str:
+            nonlocal gets
+            gets += 1
+            value = await ctx.get_state("k")
+            return value if value is not None else "<unset>"
+
+        # Pinned to legacy for the same reason as the tool tests above.
+        async with Client(mcp_server, mode="legacy") as session_a:
+            await session_a.call_tool(
+                "remember", {"key": "k", "value": "session-a-secret"}
+            )
+            get_a = await session_a.get_prompt("memo")
+            assert get_a.messages[0].content.text == "session-a-secret"
+
+        async with Client(mcp_server, mode="legacy") as session_b:
+            await session_b.call_tool(
+                "remember", {"key": "k", "value": "session-b-secret"}
+            )
+            get_b = await session_b.get_prompt("memo")
+            assert get_b.messages[0].content.text == "session-b-secret"
+
+        assert gets == 2
 
 
 class CountingDownstream(Middleware):
