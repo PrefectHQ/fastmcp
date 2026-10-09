@@ -50,13 +50,70 @@ def _schema_has_structural_keys(schema: dict[str, Any]) -> bool:
 
 
 def _structural_kind(schema: dict[str, Any]) -> tuple[Any, ...]:
-    """Stable identity for a property's structural JSON Schema shape."""
-    for key in ("anyOf", "oneOf", "allOf", "$ref"):
+    """Type identity, excluding validation constraints and property metadata."""
+    for key in ("anyOf", "oneOf", "allOf"):
         if key in schema:
-            return (key, repr(schema[key]))
-    if "type" in schema:
-        return ("type", schema["type"])
-    return ()
+            branch_kinds: set[tuple[Any, ...]] = set()
+            for branch in schema[key]:
+                kind = _structural_kind(branch)
+                if key == "anyOf" and kind and kind[0] == "anyOf":
+                    branch_kinds.update(kind[1])
+                else:
+                    branch_kinds.add(kind)
+            if key == "anyOf" and len(branch_kinds) == 1:
+                return next(iter(branch_kinds))
+            return (key, frozenset(branch_kinds))
+    if "$ref" in schema:
+        return ("$ref", schema["$ref"])
+
+    schema_type = schema.get("type")
+    if schema_type is None:
+        # Mixed Literals omit type, so their values supply the primitive types.
+        values = schema.get("enum", [schema["const"]] if "const" in schema else [])
+        literal_types = {
+            type(None): "null",
+            bool: "boolean",
+            int: "integer",
+            float: "number",
+            str: "string",
+        }
+        if any(type(value) not in literal_types for value in values):
+            return ()
+        kinds = frozenset(("type", literal_types[type(value)]) for value in values)
+        if len(kinds) == 1:
+            return next(iter(kinds))
+        return ("anyOf", kinds) if kinds else ()
+
+    if isinstance(schema_type, list):
+        return (
+            "anyOf",
+            frozenset(
+                _structural_kind({**schema, "type": branch}) for branch in schema_type
+            ),
+        )
+    if schema_type == "array":
+        items = schema.get("items", {})
+        return (
+            "type",
+            "array",
+            _structural_kind(items) if isinstance(items, dict) else items,
+            tuple(_structural_kind(item) for item in schema.get("prefixItems", [])),
+        )
+    if schema_type == "object":
+        # Constrained dictionary keys put their value schema under patterns.
+        # The patterns constrain keys, but do not change their value types.
+        values = list(schema.get("patternProperties", {}).values())
+        if not values or "additionalProperties" in schema:
+            values.append(schema.get("additionalProperties", True))
+        return (
+            "type",
+            "object",
+            frozenset(
+                _structural_kind(value) if isinstance(value, dict) else value
+                for value in values
+            ),
+        )
+    return ("type", schema_type)
 
 
 # Context variable to store current transformed tool
