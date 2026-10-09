@@ -16,11 +16,16 @@ from dataclasses import dataclass, field
 from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import ModuleType
+from weakref import WeakSet
 
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Only modules loaded by discovery belong to reload scans. Application imports
+# retain their identity even when their source files are under a provider root.
+_discovered_modules: WeakSet[ModuleType] = WeakSet()
 
 
 @dataclass
@@ -139,8 +144,27 @@ def _private_package_prefix(directory: Path) -> str:
     return f"_fastmcp_pkg_{digest}"
 
 
+def _import_package_module(module_name: str, *, reuse_existing: bool) -> ModuleType:
+    existing = sys.modules.get(module_name)
+    if existing is not None:
+        if reuse_existing or existing not in _discovered_modules:
+            return existing
+        _remove_module(module_name, existing)
+    module = importlib.import_module(module_name)
+    _discovered_modules.add(module)
+    return module
+
+
+def _remove_module(name: str, module: ModuleType) -> None:
+    sys.modules.pop(name, None)
+    parent_name, _, child = name.rpartition(".")
+    parent = sys.modules.get(parent_name)
+    if parent is not None and getattr(parent, child, None) is module:
+        delattr(parent, child)
+
+
 def import_module_from_file(
-    file_path: Path, provider_root: Path | None = None
+    file_path: Path, provider_root: Path | None = None, *, reuse_existing: bool = False
 ) -> ModuleType:
     """Import a Python file as a module.
 
@@ -155,6 +179,7 @@ def import_module_from_file(
         file_path: Path to the Python file.
         provider_root: The provider's root directory. Prevents package root
             discovery from walking above this boundary into ancestor packages.
+        reuse_existing: Reuse modules imported earlier in the current scan.
 
     Returns:
         The imported module.
@@ -194,9 +219,9 @@ def import_module_from_file(
                 sys.modules[anchor] = anchor_module
             private_name = f"{anchor}.{module_name}"
             try:
-                if private_name in sys.modules:
-                    return importlib.reload(sys.modules[private_name])
-                return importlib.import_module(private_name)
+                return _import_package_module(
+                    private_name, reuse_existing=reuse_existing
+                )
             except ImportError as e:
                 raise ImportError(
                     f"Failed to import {module_name} from {file_path}: {e}"
@@ -209,10 +234,7 @@ def import_module_from_file(
             sys.path.insert(0, package_parent)
 
         try:
-            # If already imported, reload to pick up changes (for reload mode)
-            if module_name in sys.modules:
-                return importlib.reload(sys.modules[module_name])
-            return importlib.import_module(module_name)
+            return _import_package_module(module_name, reuse_existing=reuse_existing)
         except ImportError as e:
             raise ImportError(
                 f"Failed to import {module_name} from {file_path}: {e}"
@@ -255,19 +277,9 @@ def import_module_from_file(
                 raise ImportError(f"Cannot load spec for {file_path}")
 
             existing = sys.modules.get(module_name)
-            if existing is not None:
-                # Re-exec in place rather than importlib.reload: reload() re-finds
-                # the module by name via sys.path, which fails for private keys
-                # (the file is tool.py, not _fastmcp_tool_xxx.py).
-                existing.__spec__ = spec
-                existing.__loader__ = spec.loader
-                existing.__file__ = str(file_path)
-                try:
-                    spec.loader.exec_module(existing)
-                except Exception as e:
-                    raise ImportError(
-                        f"Failed to reload module {file_path}: {e}"
-                    ) from e
+            if existing is not None and (
+                reuse_existing or existing not in _discovered_modules
+            ):
                 return existing
 
             module = importlib.util.module_from_spec(spec)
@@ -280,6 +292,7 @@ def import_module_from_file(
                 sys.modules.pop(module_name, None)
                 raise ImportError(f"Failed to execute module {file_path}: {e}") from e
 
+            _discovered_modules.add(module)
             return module
         finally:
             if path_added:
@@ -407,13 +420,32 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
     return components
 
 
-def discover_and_import(root: Path) -> DiscoveryResult:
+def _invalidate_modules(root: Path, files: list[Path]) -> None:
+    # Clear scan-owned discovered files before importing any sibling, so an
+    # earlier file cannot retain an import from the previous generation.
+    # Shared helpers and package initializers loaded by the application stay put.
+    source_paths = {file.resolve() for file in files}
+    for name, module in sys.modules.copy().items():
+        if module not in _discovered_modules:
+            continue
+        source = getattr(module, "__file__", None)
+        if source is not None:
+            path = Path(source).resolve()
+            if path in source_paths or path.is_relative_to(root):
+                _remove_module(name, module)
+    importlib.invalidate_caches()
+
+
+def discover_and_import(root: Path, *, reload: bool = False) -> DiscoveryResult:
     """Discover files, import modules, and extract components.
 
     This is the main entry point for filesystem-based discovery.
 
     Args:
         root: Root directory to scan.
+        reload: Import scan-owned discovered files into fresh module objects,
+            reusing sibling imports made during the scan. Modules loaded by the
+            application are preserved.
 
     Returns:
         DiscoveryResult with components and any failed files.
@@ -423,14 +455,36 @@ def discover_and_import(root: Path) -> DiscoveryResult:
         The caller is responsible for logging/handling failures.
         Files with no components are silently skipped.
     """
-    result = DiscoveryResult()
+    files = discover_files(root)
+    if reload:
+        _invalidate_modules(root.resolve(), files)
+    return _discover_and_import(root, files, reuse_existing=reload)
 
-    for file_path in discover_files(root):
+
+def _discover_and_import(
+    root: Path, files: list[Path], *, reuse_existing: bool
+) -> DiscoveryResult:
+    result = DiscoveryResult()
+    existing_modules = sys.modules.copy()
+    source_paths = {file.resolve() for file in files}
+
+    for file_path in files:
         try:
-            module = import_module_from_file(file_path, provider_root=root)
+            module = import_module_from_file(
+                file_path, provider_root=root, reuse_existing=reuse_existing
+            )
         except Exception as e:
             result.failed_files[file_path] = str(e)
             continue
+        finally:
+            # A discovered sibling may be imported as a dependency before its
+            # own turn in the scan. Reuse it rather than executing it twice.
+            for name, imported in sys.modules.copy().items():
+                if imported is existing_modules.get(name):
+                    continue
+                source = getattr(imported, "__file__", None)
+                if source is not None and Path(source).resolve() in source_paths:
+                    _discovered_modules.add(imported)
 
         components = extract_components(module)
         for component in components:
