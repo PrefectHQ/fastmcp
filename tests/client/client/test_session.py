@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 import httpx2
 import pytest
@@ -257,6 +257,7 @@ class TestKeepAliveSessionsRespectClientOptions:
 
         task = asyncio.create_task(never_finishes())
         transport._connect_task = task
+        transport._session = cast(ClientSession, object())
         transport._session_options = options
 
         async def fake_disconnect():
