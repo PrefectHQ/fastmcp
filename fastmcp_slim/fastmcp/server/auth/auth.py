@@ -483,6 +483,15 @@ class AuthProvider(TokenVerifierProtocol):
         return resource_base_url
 
 
+class TokenVerificationError(RuntimeError):
+    """Token validity could not be determined because verification was unavailable.
+
+    Verifiers should raise this for operational failures such as an upstream
+    service outage or transport error. Returning ``None`` remains reserved for
+    credentials that were actually determined to be invalid or unacceptable.
+    """
+
+
 class TokenVerifier(AuthProvider):
     """Base class for token verifiers (Resource Servers).
 
@@ -845,10 +854,11 @@ class MultiAuth(AuthProvider):
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a token by trying the server, then each verifier in order.
 
-        Each source is tried independently. If a source raises an exception,
-        it is logged and treated as a non-match so that remaining sources
-        still get a chance to verify the token.
+        Each source is tried independently. Operational verification failures
+        do not prevent later sources from validating the token, but are
+        re-raised if no source ultimately succeeds.
         """
+        verification_error: TokenVerificationError | None = None
         for source_id, source in zip(self._source_ids, self._sources, strict=True):
             try:
                 result = await source.verify_token(token)
@@ -876,12 +886,23 @@ class MultiAuth(AuthProvider):
                             "original_client_id": original_client_id,
                         }
                     )
+            except TokenVerificationError as error:
+                if verification_error is None:
+                    verification_error = error
+                logger.debug(
+                    "Token verification unavailable for %s, trying next source",
+                    type(source).__name__,
+                    exc_info=True,
+                )
             except Exception:
                 logger.debug(
                     "Token verification failed for %s, trying next source",
                     type(source).__name__,
                     exc_info=True,
                 )
+
+        if verification_error is not None:
+            raise verification_error
 
         return None
 
