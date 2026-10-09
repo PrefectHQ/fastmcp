@@ -335,6 +335,11 @@ class PythonStdioTransport(StdioTransport):
         if args:
             full_args.extend(args)
 
+        # mcp.client.stdio spawns the child with a sanitized environment
+        # that drops PYTHONUTF8; default it back so a Windows code page
+        # cannot leak into log_file. An explicit env still wins.
+        env = {"PYTHONUTF8": "1", **(env or {})}
+
         super().__init__(
             command=python_cmd,
             args=full_args,
@@ -363,6 +368,10 @@ class FastMCPStdioTransport(StdioTransport):
             raise FileNotFoundError(f"Script not found: {script_path}")
         if not str(script_path).endswith(".py"):
             raise ValueError(f"Not a Python script: {script_path}")
+
+        # Same UTF-8 default as PythonStdioTransport: the `fastmcp` command
+        # is a Python entry point with the same sanitized child environment.
+        env = {"PYTHONUTF8": "1", **(env or {})}
 
         super().__init__(
             command="fastmcp",
