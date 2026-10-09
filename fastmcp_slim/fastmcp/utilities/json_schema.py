@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Sequence
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import unquote
 
@@ -59,6 +60,59 @@ _MAX_ROOT_REF_HOPS = 32
 
 class _CannotInline(Exception):
     """A schema's local references can't be inlined within the limits."""
+
+
+@dataclass(frozen=True)
+class _LiteralRef:
+    """A literal `$ref` string that reference processors must leave alone."""
+
+    value: str
+
+
+def _shield_literal_refs(
+    node: Any, *, in_schema: bool = True, in_literal: bool = False
+) -> Any:
+    """Keep references in instance values opaque without hiding their size."""
+    if isinstance(node, dict):
+        if in_literal:
+            return {
+                key: _LiteralRef(value)
+                if key == "$ref" and isinstance(value, str)
+                else _shield_literal_refs(value, in_schema=False, in_literal=True)
+                for key, value in node.items()
+            }
+        result = {}
+        for key, value in node.items():
+            if in_schema and key in _SUBSCHEMA_MAP_KEYS and isinstance(value, dict):
+                # These keys are property/definition names, not schema keywords.
+                result[key] = {
+                    name: _shield_literal_refs(sub) for name, sub in value.items()
+                }
+            else:
+                result[key] = _shield_literal_refs(
+                    value,
+                    in_schema=in_schema
+                    and key in _SUBSCHEMA_VALUE_KEYS | _SUBSCHEMA_LIST_KEYS,
+                    in_literal=in_schema and key in _LITERAL_KEYWORDS,
+                )
+        return result
+    if isinstance(node, list):
+        return [
+            _shield_literal_refs(item, in_schema=in_schema, in_literal=in_literal)
+            for item in node
+        ]
+    return node
+
+
+def _restore_literal_refs(node: Any) -> Any:
+    """Unwrap literal reference strings after inlining or a fallback."""
+    if isinstance(node, _LiteralRef):
+        return node.value
+    if isinstance(node, dict):
+        return {key: _restore_literal_refs(value) for key, value in node.items()}
+    if isinstance(node, list):
+        return [_restore_literal_refs(item) for item in node]
+    return node
 
 
 def _resolve_local_ref(
@@ -177,6 +231,8 @@ def _text_within_limit(schema: dict[str, Any]) -> bool:
             stack.extend(node)
         elif isinstance(node, str):
             total += len(node)
+        elif isinstance(node, _LiteralRef):
+            total += len(node.value)
         elif isinstance(node, bool) or node is None:
             total += 5
         elif isinstance(node, int):
@@ -227,7 +283,6 @@ def _strip_discriminator(obj: Any) -> Any:
         if skip:
             obj = require_discriminator_property(obj)
         # Keys that hold instance data, not sub-schemas — don't recurse.
-        _DATA_KEYS = {"default", "const", "examples", "enum"}
         result: dict[str, Any] = {}
         for k, v in obj.items():
             if k == "discriminator" and skip:
@@ -237,7 +292,7 @@ def _strip_discriminator(obj: Any) -> Any:
                 # named like a keyword above still holds a sub-schema.
                 result[k] = {name: _strip_discriminator(sub) for name, sub in v.items()}
             else:
-                result[k] = v if k in _DATA_KEYS else _strip_discriminator(v)
+                result[k] = v if k in _LITERAL_KEYWORDS else _strip_discriminator(v)
         return result
     if isinstance(obj, list):
         return [_strip_discriminator(item) for item in obj]
@@ -291,6 +346,8 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
     This function resolves $ref references that point to $defs, replacing them
     with the actual definition content while preserving sibling keywords (like
     description, default, examples) that Pydantic places alongside $ref.
+    References inside literal values (`default`, `const`, `enum`, `example`,
+    and `examples`) are preserved as data rather than resolved.
 
     This is necessary because some MCP clients (e.g., VS Code Copilot) don't
     properly handle $ref in tool input schemas.
@@ -319,6 +376,14 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         >>> resolved = dereference_refs(schema)
         >>> # Result: {"properties": {"cat": {"enum": ["a", "b"], "type": "string", "default": "a"}}}
     """
+    # jsonref treats every dictionary with a string `$ref` as a reference,
+    # including literal default/const/example values. Shield those before both
+    # remote-reference stripping and inlining, then restore on every exit path.
+    return _restore_literal_refs(_dereference_refs(_shield_literal_refs(schema)))
+
+
+def _dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
+    """Inline a schema whose literal reference strings have been shielded."""
     # Strip any remote $ref values before processing to prevent SSRF / LFI.
     schema = _strip_remote_refs(schema)
 
