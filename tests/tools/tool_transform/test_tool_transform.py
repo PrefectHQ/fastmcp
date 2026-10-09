@@ -5,7 +5,7 @@ import json
 import re
 import time
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import jsonschema
 import pytest
@@ -448,6 +448,40 @@ async def test_arg_transform_type_keeps_transform_fn_default():
     validator = jsonschema.Draft202012Validator(tool.parameters)
     assert validator.is_valid({})
     assert validator.is_valid({"x": 5})
+
+
+async def test_transform_fn_reannotation_preserves_parent_validation_keywords():
+    """transform_fn re-annotations must keep parent validation when the type kind is unchanged."""
+
+    @Tool.from_function
+    def parent(
+        mode: Literal["fast", "slow"],
+        n: Annotated[int, Field(ge=1, le=10)],
+        s: Annotated[str, Field(pattern=r"^[a-z]+$", min_length=3)],
+    ) -> str:
+        return f"{mode}:{n}:{s}"
+
+    async def child(mode: str, n: int, s: str) -> ToolResult:
+        return await forward(mode=mode, n=n, s=s)
+
+    tool = Tool.from_tool(
+        parent,
+        transform_fn=child,
+        transform_args={"mode": ArgTransform(description="how fast")},
+    )
+
+    props = tool.parameters["properties"]
+    assert props["mode"] == {
+        "description": "how fast",
+        "enum": ["fast", "slow"],
+        "type": "string",
+    }
+    assert props["n"] == {"maximum": 10, "minimum": 1, "type": "integer"}
+    assert props["s"] == {
+        "minLength": 3,
+        "pattern": "^[a-z]+$",
+        "type": "string",
+    }
 
 
 async def test_forward_with_argument_mapping(add_tool):

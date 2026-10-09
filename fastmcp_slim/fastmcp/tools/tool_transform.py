@@ -51,6 +51,16 @@ def _schema_has_structural_keys(schema: dict[str, Any]) -> bool:
     return any(key not in _PROPERTY_PRESERVE_KEYS for key in schema)
 
 
+def _structural_kind(schema: dict[str, Any]) -> tuple[Any, ...]:
+    """Stable identity for a property's structural JSON Schema shape."""
+    for key in ("anyOf", "oneOf", "allOf", "$ref"):
+        if key in schema:
+            return (key, repr(schema[key]))
+    if "type" in schema:
+        return ("type", schema["type"])
+    return ()
+
+
 # Context variable to store current transformed tool
 _current_tool: ContextVar[TransformedTool | None] = ContextVar(
     "_current_tool", default=None
@@ -959,7 +969,9 @@ class TransformedTool(Tool):
                         ):
                             continue
                         base_param[key] = value
-                elif _schema_has_structural_keys(base_param):
+                elif _schema_has_structural_keys(base_param) and _structural_kind(
+                    base_param
+                ) != _structural_kind(param_schema):
                     param_schema = _strip_structural_schema_keys(param_schema)
                     base_param.update(param_schema)
                 else:
