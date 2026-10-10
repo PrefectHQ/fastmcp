@@ -1,7 +1,7 @@
 {
   "schema": "fastmcp-maintenance/1",
   "publisher": "fastmcp-actions",
-  "as_of": "2026-10-10T13:11:35Z",
+  "as_of": "2026-10-10T21:11:47Z",
   "automations": [
     {
       "id": "issue-link-gate",
@@ -15,7 +15,7 @@
       "window": "7d",
       "counts": {
         "passed": 138,
-        "blocked": 102
+        "blocked": 105
       },
       "daily": [
         {
@@ -58,7 +58,7 @@
           "day": "2026-10-10",
           "succeeded": 2,
           "failed": 0,
-          "blocked": 1
+          "blocked": 4
         }
       ]
     },
@@ -73,7 +73,7 @@
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-label-triage.yml",
       "window": "7d",
       "counts": {
-        "succeeded": 243,
+        "succeeded": 248,
         "failed": 0
       },
       "daily": [
@@ -115,7 +115,7 @@
         },
         {
           "day": "2026-10-10",
-          "succeeded": 3,
+          "succeeded": 8,
           "failed": 0,
           "blocked": 0
         }
@@ -132,7 +132,7 @@
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-dedupe-issues.yml",
       "window": "7d",
       "counts": {
-        "succeeded": 88,
+        "succeeded": 90,
         "failed": 0
       },
       "daily": [
@@ -174,7 +174,7 @@
         },
         {
           "day": "2026-10-10",
-          "succeeded": 2,
+          "succeeded": 4,
           "failed": 0,
           "blocked": 0
         }
@@ -363,13 +363,13 @@
       "what": "`/marvin` on an issue or PR asks the bot to act; `/tidy` hides resolved review threads",
       "cadence": "on a maintainer's comment",
       "runs_on": "github-actions",
-      "state": "ok",
+      "state": "degraded",
       "last_ok_day": "2026-10-10",
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-comment-on-issue.yml",
       "window": "7d",
       "counts": {
         "succeeded": 92,
-        "failed": 45
+        "failed": 55
       },
       "daily": [
         {
@@ -411,7 +411,7 @@
         {
           "day": "2026-10-10",
           "succeeded": 2,
-          "failed": 0,
+          "failed": 10,
           "blocked": 0
         }
       ]
@@ -647,13 +647,13 @@
           "number": 5195,
           "title": "Fix TokenCache handling for expired access tokens",
           "url": "https://github.com/PrefectHQ/fastmcp/pull/5195",
-          "age_days": 18
+          "age_days": 19
         },
         {
           "number": 5234,
           "title": "fix(json-schema): apply a Draft-4 boolean exclusive bound to its sibling",
           "url": "https://github.com/PrefectHQ/fastmcp/pull/5234",
-          "age_days": 16
+          "age_days": 17
         }
       ],
       "id": "contributor-queue",
@@ -666,7 +666,7 @@
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/pulls?q=is%3Apr+is%3Aopen+label%3Amissing-issue-link",
       "window": "now",
       "counts": {
-        "waiting": 58,
+        "waiting": 60,
         "oldest_days": 31,
         "waiting_over_7_days": 14
       }
@@ -712,12 +712,12 @@
   "attention": {
     "schema": "fastmcp-attention/1",
     "repo": "PrefectHQ/fastmcp",
-    "as_of": "2026-10-10T13:09:36.108410+00:00",
+    "as_of": "2026-10-10T21:09:47.810963+00:00",
     "profile": "public-issue-signals",
     "judge": "jev",
     "assessment_model": "jev:jev-latest",
-    "judged": 332,
-    "examined": 332,
+    "judged": 334,
+    "examined": 334,
     "has_more": false,
     "selection": "newest open issues",
     "items": [
@@ -4335,6 +4335,84 @@
         "linked_prs": []
       },
       {
+        "number": 5660,
+        "title": "Resource template with a literal `?` is listed but can never be read",
+        "url": "https://github.com/PrefectHQ/fastmcp/issues/5660",
+        "updated_at": "2026-10-10T20:19:23+00:00",
+        "score": 8.4,
+        "kind": "bug",
+        "judged": true,
+        "assessment": {
+          "kind": {
+            "bug": 1.0,
+            "regression": 0.0,
+            "feature": 0.0,
+            "question": 0.0,
+            "docs": 0.0,
+            "other": 0.0
+          },
+          "repro": 0.97,
+          "actionable": 1.0,
+          "severity": 0.68,
+          "security": 0.04,
+          "spec": 0.76,
+          "downstream": 0.68
+        },
+        "input_digest": "830d02cd109b94af776eaeb739a9cdb7f0e43cd2e4c6e572b26687a5cfdc9cd3",
+        "reasons": [
+          {
+            "signal": "regression",
+            "text": "possible regression",
+            "contribution": 2.16
+          },
+          {
+            "signal": "severity",
+            "text": "potential impact",
+            "contribution": 2.04
+          },
+          {
+            "signal": "handled",
+            "text": "assigned or linked to a fix",
+            "contribution": -1.5
+          },
+          {
+            "signal": "repro",
+            "text": "reproduction provided",
+            "contribution": 1.46
+          },
+          {
+            "signal": "release_proximity",
+            "text": "reported near a relevant release",
+            "contribution": 1.3
+          },
+          {
+            "signal": "downstream",
+            "text": "downstream integration affected",
+            "contribution": 1.02
+          },
+          {
+            "signal": "actionable",
+            "text": "actionable report",
+            "contribution": 1.0
+          },
+          {
+            "signal": "spec",
+            "text": "protocol conformance",
+            "contribution": 0.76
+          },
+          {
+            "signal": "security",
+            "text": "security-sensitive report",
+            "contribution": 0.16
+          }
+        ],
+        "maintainer_replied": false,
+        "assigned": false,
+        "linked_prs": [
+          5661
+        ]
+      },
+      {
         "number": 3996,
         "title": "FastMCPProxy servers trigger Claude Desktop's \"Authentication required to use this tool\" prompt on first tool call, plain FastMCP servers don't",
         "url": "https://github.com/PrefectHQ/fastmcp/issues/3996",
@@ -5298,77 +5376,6 @@
         "linked_prs": [
           5507
         ]
-      },
-      {
-        "number": 5655,
-        "title": "Client drops typed additional properties from structured tool results",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/5655",
-        "updated_at": "2026-10-10T10:07:46+00:00",
-        "score": 7.81,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 1.0,
-            "regression": 0.0,
-            "feature": 0.0,
-            "question": 0.0,
-            "docs": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.97,
-          "actionable": 1.0,
-          "severity": 0.9166666666666666,
-          "security": 0.03,
-          "spec": 0.53,
-          "downstream": 0.11
-        },
-        "input_digest": "61ea00be884eac7f23375e0881650dffee75c9f2b7c33fc5637c1bbcd056c204",
-        "reasons": [
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 2.75
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.46
-          },
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 1.12
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.67
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.53
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.17
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 0.12
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": []
       },
       {
         "number": 4154,
@@ -9232,6 +9239,84 @@
         ]
       },
       {
+        "number": 5655,
+        "title": "Client drops typed additional properties from structured tool results",
+        "url": "https://github.com/PrefectHQ/fastmcp/issues/5655",
+        "updated_at": "2026-10-10T10:07:46+00:00",
+        "score": 6.31,
+        "kind": "bug",
+        "judged": true,
+        "assessment": {
+          "kind": {
+            "bug": 1.0,
+            "regression": 0.0,
+            "feature": 0.0,
+            "question": 0.0,
+            "docs": 0.0,
+            "other": 0.0
+          },
+          "repro": 0.97,
+          "actionable": 1.0,
+          "severity": 0.9166666666666666,
+          "security": 0.03,
+          "spec": 0.53,
+          "downstream": 0.11
+        },
+        "input_digest": "61ea00be884eac7f23375e0881650dffee75c9f2b7c33fc5637c1bbcd056c204",
+        "reasons": [
+          {
+            "signal": "severity",
+            "text": "potential impact",
+            "contribution": 2.75
+          },
+          {
+            "signal": "handled",
+            "text": "assigned or linked to a fix",
+            "contribution": -1.5
+          },
+          {
+            "signal": "repro",
+            "text": "reproduction provided",
+            "contribution": 1.46
+          },
+          {
+            "signal": "regression",
+            "text": "possible regression",
+            "contribution": 1.12
+          },
+          {
+            "signal": "actionable",
+            "text": "actionable report",
+            "contribution": 1.0
+          },
+          {
+            "signal": "release_proximity",
+            "text": "reported near a relevant release",
+            "contribution": 0.67
+          },
+          {
+            "signal": "spec",
+            "text": "protocol conformance",
+            "contribution": 0.53
+          },
+          {
+            "signal": "downstream",
+            "text": "downstream integration affected",
+            "contribution": 0.17
+          },
+          {
+            "signal": "security",
+            "text": "security-sensitive report",
+            "contribution": 0.12
+          }
+        ],
+        "maintainer_replied": false,
+        "assigned": false,
+        "linked_prs": [
+          5656
+        ]
+      },
+      {
         "number": 4054,
         "title": "Multiple auth handling bugs",
         "url": "https://github.com/PrefectHQ/fastmcp/issues/4054",
@@ -10193,6 +10278,84 @@
         "assigned": true,
         "linked_prs": [
           5647
+        ]
+      },
+      {
+        "number": 5657,
+        "title": "Root object schemas ignore const and enum constraints",
+        "url": "https://github.com/PrefectHQ/fastmcp/issues/5657",
+        "updated_at": "2026-10-10T17:00:10+00:00",
+        "score": 5.99,
+        "kind": "bug",
+        "judged": true,
+        "assessment": {
+          "kind": {
+            "bug": 1.0,
+            "regression": 0.0,
+            "feature": 0.0,
+            "question": 0.0,
+            "docs": 0.0,
+            "other": 0.0
+          },
+          "repro": 0.97,
+          "actionable": 1.0,
+          "severity": 0.7799999999999999,
+          "security": 0.09,
+          "spec": 0.35,
+          "downstream": 0.16
+        },
+        "input_digest": "61c8cdc400daa0985798460f788c99013f359fcee1de9b62ea6f0be1307c68fd",
+        "reasons": [
+          {
+            "signal": "severity",
+            "text": "potential impact",
+            "contribution": 2.34
+          },
+          {
+            "signal": "handled",
+            "text": "assigned or linked to a fix",
+            "contribution": -1.5
+          },
+          {
+            "signal": "repro",
+            "text": "reproduction provided",
+            "contribution": 1.46
+          },
+          {
+            "signal": "regression",
+            "text": "possible regression",
+            "contribution": 1.09
+          },
+          {
+            "signal": "actionable",
+            "text": "actionable report",
+            "contribution": 1.0
+          },
+          {
+            "signal": "release_proximity",
+            "text": "reported near a relevant release",
+            "contribution": 0.66
+          },
+          {
+            "signal": "security",
+            "text": "security-sensitive report",
+            "contribution": 0.36
+          },
+          {
+            "signal": "spec",
+            "text": "protocol conformance",
+            "contribution": 0.35
+          },
+          {
+            "signal": "downstream",
+            "text": "downstream integration affected",
+            "contribution": 0.24
+          }
+        ],
+        "maintainer_replied": false,
+        "assigned": false,
+        "linked_prs": [
+          5658
         ]
       },
       {
