@@ -674,8 +674,8 @@ def _object_schema_to_type(
     1. No ``properties`` with ``additionalProperties`` truthy — ``dict[str, T]``
        (``T = Any`` when ``additionalProperties is True``, else the value schema's type)
     2. No ``properties`` and no ``additionalProperties`` — ``dict[str, Any]``
-    3. Has ``properties`` and ``additionalProperties is True`` — Pydantic model
-       (so ``extra="allow"`` can preserve unknown keys)
+    3. Has ``properties`` and ``additionalProperties`` is true or a schema —
+       Pydantic model (so extra keys can be preserved and hydrated)
     4. Has ``properties`` otherwise — dataclass
 
     ``name`` is used as the generated class name for cases 3 and 4; it falls
@@ -694,7 +694,9 @@ def _object_schema_to_type(
     if not has_properties and not additional_props:
         return dict[str, Any]
 
-    if has_properties and additional_props is True:
+    if has_properties and (
+        additional_props is True or isinstance(additional_props, Mapping)
+    ):
         return _create_pydantic_model(schema, class_name, schemas, resolving_refs)
 
     return _create_dataclass(schema, class_name, schemas, resolving_refs)
@@ -875,6 +877,7 @@ def safe_create_model(
     field_definitions: Mapping[str, tuple[Any, Any]],
     *,
     config: ConfigDict | None = None,
+    extra_value_type: Any = None,
 ) -> type[BaseModel]:
     """Create a Pydantic model whose field names come from untrusted input.
 
@@ -887,6 +890,7 @@ def safe_create_model(
         field_definitions: Maps each property name to `(annotation, default)`,
             where `default` may be a `FieldInfo` or `...` for required fields.
         config: Optional model configuration.
+        extra_value_type: Optional annotation for values of additional properties.
     """
     fields: dict[str, Any] = {}
     for prop_name, (annotation, default) in field_definitions.items():
@@ -904,6 +908,8 @@ def safe_create_model(
             else:
                 default = Field(default=default, alias=prop_name)
         fields[field_name] = (annotation, default)
+    if extra_value_type is not None:
+        fields["__pydantic_extra__"] = (dict[str, extra_value_type], Field(init=False))
     return create_model(name, __config__=config, **fields)
 
 
@@ -998,7 +1004,18 @@ def _build_pydantic_model(
         else:
             field_definitions[prop_name] = (Union[field_type, type(None)], None)  # type: ignore[misc]  # noqa: UP007  # ty:ignore[invalid-type-form]
 
-    return safe_create_model(name, field_definitions, config=ConfigDict(extra="allow"))
+    additional_props = schema.get("additionalProperties")
+    extra_value_type = (
+        _schema_to_type(additional_props, schemas, resolving_refs)
+        if isinstance(additional_props, Mapping)
+        else None
+    )
+    return safe_create_model(
+        name,
+        field_definitions,
+        config=ConfigDict(extra="allow"),
+        extra_value_type=extra_value_type,
+    )
 
 
 def _create_dataclass(
