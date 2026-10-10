@@ -148,6 +148,43 @@ class TestTokenCacheTTL:
         key = cache._hash_token("tok")
         assert cache._entries[key].expires_at <= short_exp
 
+    def test_token_expired_at_epoch_is_not_cached(self):
+        cache = TokenCache(ttl_seconds=300, max_size=100)
+        cache.set("tok", _make_token(expires_at=0))
+
+        hit, result = cache.get("tok")
+
+        assert not hit
+        assert result is None
+        assert cache._hash_token("tok") not in cache._entries
+
+    def test_expired_token_replaces_existing_entry_with_miss(self):
+        cache = TokenCache(ttl_seconds=300, max_size=100)
+        cache.set("tok", _make_token(client_id="cached"))
+        cache.set("tok", _make_token(client_id="expired", expires_at=0))
+
+        hit, result = cache.get("tok")
+
+        assert not hit
+        assert result is None
+        assert cache._hash_token("tok") not in cache._entries
+
+    def test_expired_distinct_token_does_not_evict_valid_entry_when_full(self):
+        cache = TokenCache(ttl_seconds=300, max_size=1)
+        cache.set("valid", _make_token(client_id="cached"))
+
+        cache.set("expired", _make_token(client_id="expired", expires_at=0))
+
+        valid_hit, valid_result = cache.get("valid")
+        expired_hit, expired_result = cache.get("expired")
+
+        assert valid_hit
+        assert valid_result is not None
+        assert valid_result.client_id == "cached"
+        assert not expired_hit
+        assert expired_result is None
+        assert len(cache._entries) == 1
+
     def test_ttl_used_when_no_token_expiry(self):
         cache = TokenCache(ttl_seconds=60, max_size=100)
         before = time.time()
