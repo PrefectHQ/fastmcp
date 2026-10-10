@@ -98,6 +98,11 @@ def extract_exploded_query_params(uri_template: str) -> set[str]:
     return set()
 
 
+def _has_literal_query(uri_template: str) -> bool:
+    """Whether the template writes `?` as literal text, outside a `{?...}` block."""
+    return uri_template.count("?") > uri_template.count("{?")
+
+
 # RFC 3986 reserved characters, which stay as written in a template literal.
 _RESERVED = ":/?#[]@!$&'()*+,;="
 _PCT_TRIPLET = re.compile(r"%[0-9A-Fa-f]{2}")
@@ -219,7 +224,12 @@ def match_uri_template(
     # matched against the full URI.
     if "#" not in uri_template:
         uri = uri.partition("#")[0]
-    uri_path, _, query_string = uri.partition("?")
+    # Likewise a template that spells out a literal `?` (`search://items?q={q}`)
+    # carries its query in the path pattern, so there is nothing to split off.
+    if _has_literal_query(uri_template):
+        uri_path, query_string = uri, ""
+    else:
+        uri_path, _, query_string = uri.partition("?")
 
     # Match path parameters
     if regex is None:
@@ -352,6 +362,9 @@ def forward_uri(uri_template: str, params: dict[str, Any], uri: str) -> str:
     """
     path_template = re.sub(r"\{\?[^}]+\}", "", uri_template)
     forwarded = expand_uri_template(path_template, params)
+    if _has_literal_query(uri_template):
+        # The query is literal template text, so the expansion already has it.
+        return forwarded
     _, _, query = uri.partition("?")
     return f"{forwarded}?{query}" if query else forwarded
 
