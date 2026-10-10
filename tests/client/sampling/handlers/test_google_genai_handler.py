@@ -247,10 +247,11 @@ def test_sampling_content_to_google_genai_part_tool_result():
         content=[TextContent(type="text", text="Weather is sunny")],
     )
 
-    part = _sampling_content_to_google_genai_part(content)
+    part = _sampling_content_to_google_genai_part(
+        content, {"get_weather_abc123": "get_weather"}
+    )
 
     assert part.function_response is not None
-    # Function name is extracted from toolUseId by removing the UUID suffix
     assert part.function_response.name == "get_weather"
     assert part.function_response.response == {"result": "Weather is sunny"}
 
@@ -263,26 +264,40 @@ def test_sampling_content_to_google_genai_part_tool_result_empty():
         content=[],
     )
 
-    part = _sampling_content_to_google_genai_part(content)
+    part = _sampling_content_to_google_genai_part(
+        content, {"my_tool_xyz789": "my_tool"}
+    )
 
     assert part.function_response is not None
     assert part.function_response.name == "my_tool"
     assert part.function_response.response == {"result": ""}
 
 
-def test_sampling_content_to_google_genai_part_tool_result_no_underscore():
-    """Test ToolResultContent when toolUseId has no underscore (fallback)."""
+def test_sampling_content_to_google_genai_part_tool_result_uses_paired_name():
+    """Tool-use IDs are opaque and must resolve through their paired call."""
     content = ToolResultContent(
         type="tool_result",
-        tool_use_id="simplefunction",
+        tool_use_id="call_opaque_123",
         content=[TextContent(type="text", text="Result")],
     )
 
-    part = _sampling_content_to_google_genai_part(content)
+    part = _sampling_content_to_google_genai_part(
+        content, {"call_opaque_123": "lookup_customer"}
+    )
 
-    # When no underscore, the full ID is used as the name
     assert part.function_response is not None
-    assert part.function_response.name == "simplefunction"
+    assert part.function_response.name == "lookup_customer"
+
+
+def test_sampling_content_to_google_genai_part_tool_result_requires_matching_call():
+    content = ToolResultContent(
+        type="tool_result",
+        tool_use_id="call_opaque_123",
+        content=[TextContent(type="text", text="Result")],
+    )
+
+    with pytest.raises(ValueError, match="No matching ToolUseContent"):
+        _sampling_content_to_google_genai_part(content)
 
 
 def test_convert_messages_with_tool_use():
@@ -317,6 +332,15 @@ def test_convert_messages_with_tool_result():
     msgs = _convert_messages_to_google_genai_content(
         messages=[
             SamplingMessage(
+                role="assistant",
+                content=ToolUseContent(
+                    type="tool_use",
+                    id="get_weather_123",
+                    name="get_weather",
+                    input={},
+                ),
+            ),
+            SamplingMessage(
                 role="user",
                 content=ToolResultContent(
                     type="tool_result",
@@ -327,16 +351,89 @@ def test_convert_messages_with_tool_result():
         ],
     )
 
-    assert len(msgs) == 1
-    assert isinstance(msgs[0], UserContent)
-    assert msgs[0].parts[0].function_response is not None
-    assert msgs[0].parts[0].function_response.name == "get_weather"
+    assert len(msgs) == 2
+    assert isinstance(msgs[1], UserContent)
+    assert msgs[1].parts[0].function_response is not None
+    assert msgs[1].parts[0].function_response.name == "get_weather"
+
+
+def test_convert_messages_matches_multiple_tool_results_by_id():
+    msgs = _convert_messages_to_google_genai_content(
+        messages=[
+            SamplingMessage(
+                role="assistant",
+                content=[
+                    ToolUseContent(
+                        type="tool_use",
+                        id="call_opaque_123",
+                        name="lookup_customer",
+                        input={"id": "C-1"},
+                    ),
+                    ToolUseContent(
+                        type="tool_use",
+                        id="lookup_order_12345678",
+                        name="lookup_order",
+                        input={"id": "O-1"},
+                    ),
+                ],
+            ),
+            SamplingMessage(
+                role="user",
+                content=[
+                    ToolResultContent(
+                        type="tool_result",
+                        tool_use_id="lookup_order_12345678",
+                        content=[TextContent(type="text", text="order")],
+                    ),
+                    ToolResultContent(
+                        type="tool_result",
+                        tool_use_id="call_opaque_123",
+                        content=[TextContent(type="text", text="customer")],
+                    ),
+                ],
+            ),
+        ]
+    )
+
+    assert isinstance(msgs[0], ModelContent)
+    function_calls = [part.function_call for part in msgs[0].parts]
+    assert all(function_call is not None for function_call in function_calls)
+    assert [
+        function_call.name
+        for function_call in function_calls
+        if function_call is not None
+    ] == [
+        "lookup_customer",
+        "lookup_order",
+    ]
+    assert isinstance(msgs[1], UserContent)
+    function_responses = [part.function_response for part in msgs[1].parts]
+    assert all(
+        function_response is not None for function_response in function_responses
+    )
+    assert [
+        function_response.name
+        for function_response in function_responses
+        if function_response is not None
+    ] == [
+        "lookup_order",
+        "lookup_customer",
+    ]
 
 
 def test_convert_messages_with_multiple_content_blocks():
     """Test converting messages with multiple content blocks (list content)."""
     msgs = _convert_messages_to_google_genai_content(
         messages=[
+            SamplingMessage(
+                role="assistant",
+                content=ToolUseContent(
+                    type="tool_use",
+                    id="get_weather_xyz",
+                    name="get_weather",
+                    input={},
+                ),
+            ),
             SamplingMessage(
                 role="user",
                 content=[
@@ -351,11 +448,11 @@ def test_convert_messages_with_multiple_content_blocks():
         ],
     )
 
-    assert len(msgs) == 1
-    assert isinstance(msgs[0], UserContent)
-    assert len(msgs[0].parts) == 2
-    assert msgs[0].parts[0].text == "I need weather info."
-    assert msgs[0].parts[1].function_response is not None
+    assert len(msgs) == 2
+    assert isinstance(msgs[1], UserContent)
+    assert len(msgs[1].parts) == 2
+    assert msgs[1].parts[0].text == "I need weather info."
+    assert msgs[1].parts[1].function_response is not None
 
 
 def test_response_to_result_with_tools_text_only():
