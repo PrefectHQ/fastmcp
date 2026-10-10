@@ -355,7 +355,18 @@ def _convert_normalized(schema: dict[str, Any], name: str | None) -> type:
     try:
         # Always use the top-level schema for references
         if schema.get("type") == "object":
-            return _object_schema_to_type(schema, schemas=schema, name=name)
+            object_type = _object_schema_to_type(schema, schemas=schema, name=name)
+            if "const" in schema or "enum" in schema:
+                literal_adapter = TypeAdapter(_schema_to_type(schema, schemas=schema))
+
+                def validate_literal(value: Any) -> Any:
+                    if isinstance(object_type, type) and isinstance(value, object_type):
+                        return value
+                    literal_adapter.validate_python(value)
+                    return value
+
+                return Annotated[object_type, BeforeValidator(validate_literal)]  # type: ignore[return-value] # ty:ignore[invalid-type-form, invalid-return-type]
+            return object_type
         elif name:
             raise ValueError(f"Can not apply name to non-object schema: {name}")
         result = _schema_to_type(schema, schemas=schema)
