@@ -25,7 +25,7 @@ from fastmcp.utilities.async_utils import (
     is_coroutine_function,
 )
 from fastmcp.utilities.components import _convert_set_default_none
-from fastmcp.utilities.json_schema import compress_schema
+from fastmcp.utilities.json_schema import _METADATA_KEYS, compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     FastMCPBaseModel,
@@ -36,6 +36,84 @@ from fastmcp.utilities.types import (
 )
 
 logger = get_logger(__name__)
+
+# Metadata preserved when replacing a property's JSON Schema type.
+_PROPERTY_PRESERVE_KEYS = _METADATA_KEYS | frozenset({"default", "examples", "example"})
+
+
+def _strip_structural_schema_keys(schema: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in schema.items() if k in _PROPERTY_PRESERVE_KEYS}
+
+
+def _schema_has_structural_keys(schema: dict[str, Any]) -> bool:
+    return any(key not in _PROPERTY_PRESERVE_KEYS for key in schema)
+
+
+def _structural_kind(schema: dict[str, Any]) -> tuple[Any, ...]:
+    """Type identity, excluding validation constraints and property metadata."""
+    for key in ("anyOf", "oneOf", "allOf"):
+        if key in schema:
+            branch_kinds: set[tuple[Any, ...]] = set()
+            for branch in schema[key]:
+                kind = _structural_kind(branch)
+                if key == "anyOf" and kind and kind[0] == "anyOf":
+                    branch_kinds.update(kind[1])
+                else:
+                    branch_kinds.add(kind)
+            if key == "anyOf" and len(branch_kinds) == 1:
+                return next(iter(branch_kinds))
+            return (key, frozenset(branch_kinds))
+    if "$ref" in schema:
+        return ("$ref", schema["$ref"])
+
+    schema_type = schema.get("type")
+    if schema_type is None:
+        # Mixed Literals omit type, so their values supply the primitive types.
+        values = schema.get("enum", [schema["const"]] if "const" in schema else [])
+        literal_types = {
+            type(None): "null",
+            bool: "boolean",
+            int: "integer",
+            float: "number",
+            str: "string",
+        }
+        if any(type(value) not in literal_types for value in values):
+            return ()
+        kinds = frozenset(("type", literal_types[type(value)]) for value in values)
+        if len(kinds) == 1:
+            return next(iter(kinds))
+        return ("anyOf", kinds) if kinds else ()
+
+    if isinstance(schema_type, list):
+        return (
+            "anyOf",
+            frozenset(
+                _structural_kind({**schema, "type": branch}) for branch in schema_type
+            ),
+        )
+    if schema_type == "array":
+        items = schema.get("items", {})
+        return (
+            "type",
+            "array",
+            _structural_kind(items) if isinstance(items, dict) else items,
+            tuple(_structural_kind(item) for item in schema.get("prefixItems", [])),
+        )
+    if schema_type == "object":
+        # Constrained dictionary keys put their value schema under patterns.
+        # The patterns constrain keys, but do not change their value types.
+        values = list(schema.get("patternProperties", {}).values())
+        if not values or "additionalProperties" in schema:
+            values.append(schema.get("additionalProperties", True))
+        return (
+            "type",
+            "object",
+            frozenset(
+                _structural_kind(value) if isinstance(value, dict) else value
+                for value in values
+            ),
+        )
+    return ("type", schema_type)
 
 
 # Context variable to store current transformed tool
@@ -557,7 +635,14 @@ class TransformedTool(Tool):
                 # ArgTransform takes precedence over function signature
                 # Start with function schema as base, then override with transformed schema
                 final_schema = cls._merge_schema_with_precedence(
-                    parsed_fn.input_schema, schema
+                    parsed_fn.input_schema,
+                    schema,
+                    structural_override_properties=cls._arg_transform_type_override_names(
+                        transform_args
+                    ),
+                    explicit_required_properties=cls._arg_transform_explicit_required_names(
+                        transform_args
+                    ),
                 )
             else:
                 # With **kwargs, function can access all transformed params
@@ -566,7 +651,14 @@ class TransformedTool(Tool):
 
                 # Start with function schema as base, then override with transformed schema
                 final_schema = cls._merge_schema_with_precedence(
-                    parsed_fn.input_schema, schema
+                    parsed_fn.input_schema,
+                    schema,
+                    structural_override_properties=cls._arg_transform_type_override_names(
+                        transform_args
+                    ),
+                    explicit_required_properties=cls._arg_transform_explicit_required_names(
+                        transform_args
+                    ),
                 )
 
         # Additional validation: check for naming conflicts after transformation
@@ -836,8 +928,8 @@ class TransformedTool(Tool):
             # nested inside this property while $ref values still point to
             # "#/$defs/..." at the root, leaving the references dangling.
             extracted_defs = type_schema.pop("$defs", {})
-            # Update the schema with the type information from TypeAdapter
-            new_schema.update(type_schema)
+            preserved = _strip_structural_schema_keys(new_schema)
+            new_schema = {**type_schema, **preserved}
 
         # Handle examples transformation
         if transform.examples is not NotSet:
@@ -846,14 +938,52 @@ class TransformedTool(Tool):
         return new_name, new_schema, is_required, extracted_defs
 
     @staticmethod
+    def _arg_transform_type_override_names(
+        transform_args: dict[str, ArgTransform] | None,
+    ) -> frozenset[str]:
+        if not transform_args:
+            return frozenset()
+        names: set[str] = set()
+        for old_name, transform in transform_args.items():
+            if transform.hide or transform.type is NotSet:
+                continue
+            if transform.name is not NotSet and transform.name is not None:
+                names.add(transform.name)
+            else:
+                names.add(old_name)
+        return frozenset(names)
+
+    @staticmethod
+    def _arg_transform_explicit_required_names(
+        transform_args: dict[str, ArgTransform] | None,
+    ) -> frozenset[str]:
+        if not transform_args:
+            return frozenset()
+        names: set[str] = set()
+        for old_name, transform in transform_args.items():
+            if transform.hide or transform.required is NotSet or not transform.required:
+                continue
+            if transform.name is not NotSet and transform.name is not None:
+                names.add(transform.name)
+            else:
+                names.add(old_name)
+        return frozenset(names)
+
+    @staticmethod
     def _merge_schema_with_precedence(
-        base_schema: dict[str, Any], override_schema: dict[str, Any]
+        base_schema: dict[str, Any],
+        override_schema: dict[str, Any],
+        *,
+        structural_override_properties: frozenset[str] | None = None,
+        explicit_required_properties: frozenset[str] | None = None,
     ) -> dict[str, Any]:
         """Merge two schemas, with the override schema taking precedence.
 
         Args:
             base_schema: Base schema to start with
             override_schema: Schema that takes precedence for overlapping properties
+            structural_override_properties: Property names whose structural schema
+                comes from the override (e.g. ArgTransform(type=...) on the parent).
 
         Returns:
             Merged schema with override taking precedence
@@ -863,13 +993,38 @@ class TransformedTool(Tool):
 
         override_props = override_schema.get("properties", {})
         override_required = set(override_schema.get("required", []))
+        structural_override_properties = structural_override_properties or frozenset()
+        explicit_required_properties = explicit_required_properties or frozenset()
 
         # Override properties
         for param_name, param_schema in override_props.items():
             if param_name in merged_props:
-                # Merge the schemas, with override taking precedence
                 base_param = merged_props[param_name].copy()
-                base_param.update(param_schema)
+                if param_name in structural_override_properties:
+                    structural = {
+                        key: value
+                        for key, value in param_schema.items()
+                        if key not in _PROPERTY_PRESERVE_KEYS
+                    }
+                    preserved_override = _strip_structural_schema_keys(param_schema)
+                    preserved_base = _strip_structural_schema_keys(base_param)
+                    base_param = {**structural, **preserved_override}
+                    for key, value in preserved_base.items():
+                        if key in preserved_override:
+                            continue
+                        if (
+                            key == "default"
+                            and param_name in explicit_required_properties
+                        ):
+                            continue
+                        base_param[key] = value
+                elif _schema_has_structural_keys(base_param) and _structural_kind(
+                    base_param
+                ) != _structural_kind(param_schema):
+                    param_schema = _strip_structural_schema_keys(param_schema)
+                    base_param.update(param_schema)
+                else:
+                    base_param.update(param_schema)
                 merged_props[param_name] = base_param
             else:
                 merged_props[param_name] = param_schema.copy()
