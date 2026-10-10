@@ -201,7 +201,7 @@
                       "deployment/running-server",
                       "deployment/http",
                       "deployment/sandboxed-agents",
-                      "deployment/prefect-horizon",
+                      "deployment/fastmcp-gateway",
                       "deployment/server-configuration",
                       "servers/testing",
                       "servers/telemetry"
@@ -479,11 +479,15 @@
       "source": "/clients/generate-cli"
     },
     {
-      "destination": "/deployment/prefect-horizon",
+      "destination": "/deployment/fastmcp-gateway",
+      "source": "/deployment/prefect-horizon"
+    },
+    {
+      "destination": "/deployment/fastmcp-gateway",
       "source": "/deployment/fastmcp-cloud"
     },
     {
-      "destination": "/deployment/prefect-horizon",
+      "destination": "/deployment/fastmcp-gateway",
       "source": "/v2/deployment/fastmcp-cloud"
     },
     {
