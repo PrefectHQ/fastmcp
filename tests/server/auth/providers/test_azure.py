@@ -83,8 +83,31 @@ class TestAzureProvider:
         )
 
         assert provider._token_validator is verifier
-        assert provider.required_scopes == ["openid"]
+        assert provider.required_scopes == ["app-role"]
         assert provider.scopes_supported == ["openid"]
+        assert provider.get_challenge_scopes() == ["openid"]
+        assert provider._default_scope_str == "openid"
+
+    def test_custom_token_verifier_keeps_empty_configured_scopes(
+        self, memory_storage: MemoryStore
+    ):
+        verifier = TokenVerifier(required_scopes=["app-role"])
+
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            base_url="https://myserver.com",
+            required_scopes=[],
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            token_verifier=verifier,
+        )
+
+        assert provider.required_scopes == ["app-role"]
+        assert provider.scopes_supported == []
+        assert provider.get_challenge_scopes() == []
+        assert provider._default_scope_str == ""
 
     def test_offline_access_automatically_included(self, memory_storage: MemoryStore):
         """Test that offline_access is automatically added to get refresh tokens."""

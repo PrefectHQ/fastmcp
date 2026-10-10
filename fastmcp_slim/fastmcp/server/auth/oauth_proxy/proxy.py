@@ -457,7 +457,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 subject. When omitted, the grant is rejected as unsupported.
         """
 
-        default_scopes = valid_scopes or token_verifier.required_scopes
+        default_scopes = (
+            token_verifier.required_scopes if valid_scopes is None else valid_scopes
+        )
 
         # Always enable DCR since we implement it locally for MCP clients
         client_registration_options = ClientRegistrationOptions(
@@ -895,7 +897,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             "state": txn_id,
         }
 
-        scopes_to_use = transaction.get("scopes") or self.required_scopes or []
+        scopes_to_use = (
+            transaction.get("scopes") or self._get_default_authorization_scopes()
+        )
         if scopes_to_use:
             query_params["scope"] = " ".join(scopes_to_use)
 
@@ -917,6 +921,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         separator = "&" if "?" in self._upstream_authorization_endpoint else "?"
         return f"{self._upstream_authorization_endpoint}{separator}{urlencode(query_params)}"
+
+    def _get_default_authorization_scopes(self) -> list[str]:
+        return self.required_scopes
 
     # -------------------------------------------------------------------------
     # Client Registration (Local Implementation)
@@ -1194,7 +1201,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # authorized. Every later consumer — the consent screen, the issued
         # authorization code, token exchange, and refresh — reads this one value
         # instead of deciding for itself whether to substitute required_scopes.
-        effective_scopes = params.scopes or self.required_scopes or []
+        effective_scopes = params.scopes or self._get_default_authorization_scopes()
 
         transaction = OAuthTransaction(
             txn_id=txn_id,

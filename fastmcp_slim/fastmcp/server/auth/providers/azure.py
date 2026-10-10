@@ -301,7 +301,7 @@ class AzureProvider(OAuthProxy):
             valid_scopes=parsed_required_scopes,
             enable_cimd=enable_cimd,
         )
-        self.required_scopes = parsed_required_scopes or []
+        self._azure_configured_scopes = parsed_required_scopes or []
 
         authority_info = ""
         if base_authority != "login.microsoftonline.com":
@@ -313,6 +313,22 @@ class AzureProvider(OAuthProxy):
             f" and identifier_uri {self.identifier_uri}" if self.identifier_uri else "",
             authority_info,
         )
+
+    @property
+    def scopes_supported(self) -> list[str]:
+        return self._azure_configured_scopes
+
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        return (
+            self._azure_configured_scopes
+            if required_scopes is None
+            else required_scopes
+        )
+
+    def _get_default_authorization_scopes(self) -> list[str]:
+        return self._azure_configured_scopes
 
     @classmethod
     def from_b2c(
@@ -504,7 +520,9 @@ class AzureProvider(OAuthProxy):
         while keeping unprefixed scopes in the transaction for MCP clients.
         """
         # Get unprefixed scopes from transaction
-        unprefixed_scopes = transaction.get("scopes") or self.required_scopes or []
+        unprefixed_scopes = (
+            transaction.get("scopes") or self._azure_configured_scopes or []
+        )
 
         # Prefix scopes for Azure authorization request
         prefixed_scopes = self._prefix_scopes_for_azure(unprefixed_scopes)
@@ -537,7 +555,7 @@ class AzureProvider(OAuthProxy):
         # the MCP authorization request; use the provider's configured scopes
         # just like the authorize URL path does.
         prefixed_scopes = self._prefix_scopes_for_azure(
-            scopes or self.required_scopes or []
+            scopes or self._azure_configured_scopes or []
         )
 
         # Add OIDC scopes only (not other API scopes) to avoid AADSTS28000
@@ -566,7 +584,7 @@ class AzureProvider(OAuthProxy):
 
         # Some clients omit the scope parameter on the MCP authorization request;
         # use the provider's configured scopes just like the authorize URL path does.
-        requested_scopes = scopes or self.required_scopes or []
+        requested_scopes = scopes or self._azure_configured_scopes or []
 
         # Filter out any additional_authorize_scopes that may have been stored
         additional_scopes_set = set(self.additional_authorize_scopes or [])
