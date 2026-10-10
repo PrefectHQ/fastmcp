@@ -73,7 +73,7 @@
       {
         "href": "https://www.prefect.io/horizon?utm_source=gofastmcp&utm_medium=docs&utm_campaign=docs_horizon&utm_content=header",
         "icon": "cloud",
-        "label": "Prefect Horizon"
+        "label": "FastMCP Gateway"
       }
     ],
     "primary": {
