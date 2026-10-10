@@ -15,6 +15,7 @@ from mcp.server.auth.provider import (
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
+from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.oauth_proxy.models import ClientCode, UpstreamTokenSet
 from fastmcp.server.auth.providers.azure import AzureProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
@@ -66,6 +67,47 @@ class TestAzureProvider:
         # Check defaults
         assert provider._redirect_path == "/auth/callback"
         # Azure provider defaults are set but we can't easily verify them without accessing internals
+
+    def test_custom_token_verifier_is_used(self, memory_storage: MemoryStore):
+        verifier = TokenVerifier(required_scopes=["app-role"])
+
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            base_url="https://myserver.com",
+            required_scopes=["openid"],
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            token_verifier=verifier,
+        )
+
+        assert provider._token_validator is verifier
+        assert provider.required_scopes == ["app-role"]
+        assert provider.scopes_supported == ["openid"]
+        assert provider.get_challenge_scopes() == ["openid"]
+        assert provider._default_scope_str == "openid"
+
+    def test_custom_token_verifier_keeps_empty_configured_scopes(
+        self, memory_storage: MemoryStore
+    ):
+        verifier = TokenVerifier(required_scopes=["app-role"])
+
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            base_url="https://myserver.com",
+            required_scopes=[],
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            token_verifier=verifier,
+        )
+
+        assert provider.required_scopes == ["app-role"]
+        assert provider.scopes_supported == []
+        assert provider.get_challenge_scopes() == []
+        assert provider._default_scope_str == ""
 
     def test_offline_access_automatically_included(self, memory_storage: MemoryStore):
         """Test that offline_access is automatically added to get refresh tokens."""
@@ -1177,6 +1219,30 @@ class TestAzureProviderFromB2C:
 
         assert isinstance(provider._token_validator, JWTVerifier)
         assert provider._token_validator.issuer == explicit_issuer
+
+    def test_b2c_preserves_custom_verifier_issuer(self, memory_storage: MemoryStore):
+        custom_issuer = "https://custom.issuer.example/v2.0"
+        verifier = JWTVerifier(
+            public_key="test-secret",
+            algorithm="HS256",
+            issuer=custom_issuer,
+            required_scopes=["app-role"],
+        )
+
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="client-id",
+            client_secret="secret",
+            required_scopes=["read"],
+            base_url="https://myserver.com",
+            token_verifier=verifier,
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert provider._token_validator is verifier
+        assert verifier.issuer == custom_issuer
 
     def test_b2c_custom_domain(self, memory_storage: MemoryStore):
         """from_b2c() uses custom_domain in place of {tenant}.b2clogin.com."""

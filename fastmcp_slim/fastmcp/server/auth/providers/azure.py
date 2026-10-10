@@ -14,6 +14,7 @@ import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 
 from fastmcp.dependencies import Dependency
+from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.auth import MultiAuth
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
@@ -122,6 +123,7 @@ class AzureProvider(OAuthProxy):
         token_issuer: str | None = None,
         extra_authorize_params: dict[str, str] | None = None,
         http_client: httpx2.AsyncClient | None = None,
+        token_verifier: TokenVerifier | None = None,
         enable_cimd: bool = True,
     ) -> None:
         """Initialize Azure OAuth provider.
@@ -186,6 +188,8 @@ class AzureProvider(OAuthProxy):
             http_client: Optional httpx2.AsyncClient for connection pooling in JWKS fetches.
                 When provided, the client is reused for JWT key fetches and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per fetch.
+            token_verifier: Optional custom token verifier. When omitted, a JWTVerifier
+                is created from the Azure tenant and application configuration.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs (default True). Set to False to disable.
             fallback_refresh_token_expiry_seconds: Lifetime for the FastMCP-issued
@@ -235,26 +239,27 @@ class AzureProvider(OAuthProxy):
         # NOT standard OIDC scopes (openid, profile, email, offline_access).
         # Filter out OIDC scopes from validation - they'll still be sent to Azure
         # during authorization (handled by _prefix_scopes_for_azure).
-        validation_scopes = [
-            s for s in (parsed_required_scopes or []) if s not in OIDC_SCOPES
-        ]
-        if not validation_scopes:
-            raise ValueError(
-                "AzureProvider requires at least one non-OIDC scope in "
-                "required_scopes (e.g., 'read', 'write'). OIDC scopes like "
-                "'openid', 'profile', 'email', and 'offline_access' are not "
-                "included in Azure access token claims and cannot be used for "
-                "scope enforcement."
-            )
+        if token_verifier is None:
+            validation_scopes = [
+                s for s in (parsed_required_scopes or []) if s not in OIDC_SCOPES
+            ]
+            if not validation_scopes:
+                raise ValueError(
+                    "AzureProvider requires at least one non-OIDC scope in "
+                    "required_scopes (e.g., 'read', 'write'). OIDC scopes like "
+                    "'openid', 'profile', 'email', and 'offline_access' are not "
+                    "included in Azure access token claims and cannot be used for "
+                    "scope enforcement."
+                )
 
-        token_verifier = JWTVerifier(
-            jwks_uri=jwks_uri,
-            issuer=issuer,
-            audience=[client_id, self.identifier_uri],
-            algorithm="RS256",
-            required_scopes=validation_scopes,  # Only validate non-OIDC scopes
-            http_client=http_client,
-        )
+            token_verifier = JWTVerifier(
+                jwks_uri=jwks_uri,
+                issuer=issuer,
+                audience=[client_id, self.identifier_uri],
+                algorithm="RS256",
+                required_scopes=validation_scopes,
+                http_client=http_client,
+            )
 
         # Build Azure OAuth endpoints with tenant
         authorization_endpoint = (
@@ -296,6 +301,7 @@ class AzureProvider(OAuthProxy):
             valid_scopes=parsed_required_scopes,
             enable_cimd=enable_cimd,
         )
+        self._azure_configured_scopes = parsed_required_scopes or []
 
         authority_info = ""
         if base_authority != "login.microsoftonline.com":
@@ -307,6 +313,22 @@ class AzureProvider(OAuthProxy):
             f" and identifier_uri {self.identifier_uri}" if self.identifier_uri else "",
             authority_info,
         )
+
+    @property
+    def scopes_supported(self) -> list[str]:
+        return self._azure_configured_scopes
+
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        return (
+            self._azure_configured_scopes
+            if required_scopes is None
+            else required_scopes
+        )
+
+    def _get_default_authorization_scopes(self) -> list[str]:
+        return self._azure_configured_scopes
 
     @classmethod
     def from_b2c(
@@ -379,6 +401,7 @@ class AzureProvider(OAuthProxy):
         if kwargs.get("extra_authorize_params") is None:
             kwargs["extra_authorize_params"] = {}
 
+        custom_token_verifier = kwargs.get("token_verifier")
         provider = cls(
             client_id=client_id,
             client_secret=client_secret,
@@ -390,7 +413,9 @@ class AzureProvider(OAuthProxy):
             token_issuer=token_issuer,
             **kwargs,
         )
-        if isinstance(provider._token_validator, JWTVerifier):
+        if custom_token_verifier is None and isinstance(
+            provider._token_validator, JWTVerifier
+        ):
             provider._token_validator.issuer = token_issuer
         provider._obo_supported = False
         return provider
@@ -495,7 +520,9 @@ class AzureProvider(OAuthProxy):
         while keeping unprefixed scopes in the transaction for MCP clients.
         """
         # Get unprefixed scopes from transaction
-        unprefixed_scopes = transaction.get("scopes") or self.required_scopes or []
+        unprefixed_scopes = (
+            transaction.get("scopes") or self._azure_configured_scopes or []
+        )
 
         # Prefix scopes for Azure authorization request
         prefixed_scopes = self._prefix_scopes_for_azure(unprefixed_scopes)
@@ -528,7 +555,7 @@ class AzureProvider(OAuthProxy):
         # the MCP authorization request; use the provider's configured scopes
         # just like the authorize URL path does.
         prefixed_scopes = self._prefix_scopes_for_azure(
-            scopes or self.required_scopes or []
+            scopes or self._azure_configured_scopes or []
         )
 
         # Add OIDC scopes only (not other API scopes) to avoid AADSTS28000
@@ -557,7 +584,7 @@ class AzureProvider(OAuthProxy):
 
         # Some clients omit the scope parameter on the MCP authorization request;
         # use the provider's configured scopes just like the authorize URL path does.
-        requested_scopes = scopes or self.required_scopes or []
+        requested_scopes = scopes or self._azure_configured_scopes or []
 
         # Filter out any additional_authorize_scopes that may have been stored
         additional_scopes_set = set(self.additional_authorize_scopes or [])

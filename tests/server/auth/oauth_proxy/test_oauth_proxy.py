@@ -105,6 +105,26 @@ class TestOAuthProxyInitialization:
         )
         assert proxy._default_scope_str == "openid"
 
+    def test_explicit_empty_valid_scopes_do_not_fall_back_to_required_scopes(
+        self, jwt_verifier
+    ):
+        jwt_verifier.required_scopes = ["app-role"]
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://api.example.com",
+            valid_scopes=[],
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+
+        assert proxy.client_registration_options is not None
+        assert proxy.client_registration_options.default_scopes == []
+        assert proxy._default_scope_str == ""
+
     def test_update_default_scopes_updates_scope_str(self, jwt_verifier):
         """update_default_scopes should update the internal default scope string."""
         proxy = OAuthProxy(
