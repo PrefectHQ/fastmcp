@@ -1052,6 +1052,25 @@ class TestMalformedURITemplates:
         )
         assert result == {"id": "a#b"}
 
+    def test_literal_query_in_template_still_matches(self):
+        result = match_uri_template(
+            "search://items?q=abc",
+            "search://items?q={q}",
+        )
+        assert result == {"q": "abc"}
+
+    def test_literal_query_in_template_rejects_other_query(self):
+        result = match_uri_template(
+            "search://items?page=abc",
+            "search://items?q={q}",
+        )
+        assert result is None
+
+    def test_literal_query_in_template_round_trips_reserved_value(self):
+        template = "search://items?q={q}"
+        uri = expand_uri_template(template, {"q": "a b&c=d/e"})
+        assert match_uri_template(uri, template) == {"q": "a b&c=d/e"}
+
     def test_query_param_with_blank_and_present_values(self):
         """Mix of blank and non-blank query values are both surfaced."""
         result = match_uri_template(
@@ -1750,3 +1769,32 @@ class TestNonExplodedListQueryParams:
             [contents] = await client.read_resource(uri)
             assert isinstance(contents, TextResourceContents)
             assert contents.text == expected
+
+
+class TestLiteralQueryInTemplate:
+    """A template may spell its query out literally: `search://items?q={q}`."""
+
+    @pytest.mark.parametrize("via", ["direct", "mount", "proxy"])
+    async def test_template_with_literal_query_is_readable(self, via: str):
+        child = FastMCP("child")
+
+        @child.resource("search://items?q={q}")
+        def search(q: str) -> str:
+            return f"q={q}"
+
+        uri = "search://items?q=abc"
+        if via == "direct":
+            server = child
+        elif via == "mount":
+            server = FastMCP("parent")
+            server.mount(child, namespace="ns")
+            uri = "search://ns/items?q=abc"
+        else:
+            server = create_proxy(child)
+
+        async with Client(server) as client:
+            [template] = await client.list_resource_templates()
+            assert template.uriTemplate == uri.replace("abc", "{q}")
+            [contents] = await client.read_resource(uri)
+            assert isinstance(contents, TextResourceContents)
+            assert contents.text == "q=abc"
