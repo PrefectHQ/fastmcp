@@ -301,6 +301,7 @@ class AzureProvider(OAuthProxy):
             valid_scopes=parsed_required_scopes,
             enable_cimd=enable_cimd,
         )
+        self.required_scopes = parsed_required_scopes or []
 
         authority_info = ""
         if base_authority != "login.microsoftonline.com":
@@ -384,6 +385,7 @@ class AzureProvider(OAuthProxy):
         if kwargs.get("extra_authorize_params") is None:
             kwargs["extra_authorize_params"] = {}
 
+        custom_token_verifier = kwargs.get("token_verifier")
         provider = cls(
             client_id=client_id,
             client_secret=client_secret,
@@ -395,7 +397,9 @@ class AzureProvider(OAuthProxy):
             token_issuer=token_issuer,
             **kwargs,
         )
-        if isinstance(provider._token_validator, JWTVerifier):
+        if custom_token_verifier is None and isinstance(
+            provider._token_validator, JWTVerifier
+        ):
             provider._token_validator.issuer = token_issuer
         provider._obo_supported = False
         return provider

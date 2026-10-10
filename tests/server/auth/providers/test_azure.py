@@ -83,6 +83,8 @@ class TestAzureProvider:
         )
 
         assert provider._token_validator is verifier
+        assert provider.required_scopes == ["openid"]
+        assert provider.scopes_supported == ["openid"]
 
     def test_offline_access_automatically_included(self, memory_storage: MemoryStore):
         """Test that offline_access is automatically added to get refresh tokens."""
@@ -1194,6 +1196,30 @@ class TestAzureProviderFromB2C:
 
         assert isinstance(provider._token_validator, JWTVerifier)
         assert provider._token_validator.issuer == explicit_issuer
+
+    def test_b2c_preserves_custom_verifier_issuer(self, memory_storage: MemoryStore):
+        custom_issuer = "https://custom.issuer.example/v2.0"
+        verifier = JWTVerifier(
+            public_key="test-secret",
+            algorithm="HS256",
+            issuer=custom_issuer,
+            required_scopes=["app-role"],
+        )
+
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="client-id",
+            client_secret="secret",
+            required_scopes=["read"],
+            base_url="https://myserver.com",
+            token_verifier=verifier,
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert provider._token_validator is verifier
+        assert verifier.issuer == custom_issuer
 
     def test_b2c_custom_domain(self, memory_storage: MemoryStore):
         """from_b2c() uses custom_domain in place of {tenant}.b2clogin.com."""
