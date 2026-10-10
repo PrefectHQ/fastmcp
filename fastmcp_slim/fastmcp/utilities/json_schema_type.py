@@ -992,6 +992,8 @@ def _build_pydantic_model(
         if isinstance(prop_schema, bool):
             field_type = _schema_to_type(prop_schema, schemas, resolving_refs)
             prop_schema = {}
+        elif prop_schema.get("$ref") == "#" and schema is schemas:
+            field_type = ForwardRef(name)
         else:
             field_type = _schema_to_type(prop_schema, schemas, resolving_refs)
 
@@ -1005,15 +1007,19 @@ def _build_pydantic_model(
             field_definitions[prop_name] = (Union[field_type, type(None)], None)  # type: ignore[misc]  # noqa: UP007  # ty:ignore[invalid-type-form]
 
     additional_props = schema.get("additionalProperties")
-    extra_value_type = (
-        _schema_to_type(additional_props, schemas, resolving_refs)
-        if isinstance(additional_props, Mapping)
-        else None
-    )
+    extra_value_type = None
+    if isinstance(additional_props, Mapping):
+        if additional_props.get("$ref") == "#" and schema is schemas:
+            # A root self-reference must use the generated (possibly overridden) name.
+            extra_value_type = ForwardRef(name)
+        else:
+            extra_value_type = _schema_to_type(
+                additional_props, schemas, resolving_refs
+            )
     return safe_create_model(
         name,
         field_definitions,
-        config=ConfigDict(extra="allow"),
+        config=ConfigDict(extra="allow", validate_default=extra_value_type is not None),
         extra_value_type=extra_value_type,
     )
 
