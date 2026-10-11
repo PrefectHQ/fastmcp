@@ -193,6 +193,21 @@ class TestResponseLimitingMiddleware:
         assert isinstance(first, TextContent)
         assert "[Response truncated" in first.text
 
+    def test_truncated_serialized_size_fits_within_max_size(self):
+        """Truncated results must fit within max_size when serialized.
+
+        Regression test for #5285: truncation previously bounded only the
+        UTF-8 bytes of the text block, ignoring JSON escaping overhead, so
+        escape-heavy content serialized well over max_size.
+        """
+        import pydantic_core
+
+        for payload in ("A" * 10_000, "\x01" * 10_000, '"\\\né🌍' * 2_000):
+            middleware = ResponseLimitingMiddleware(max_size=1000)
+            result = middleware._truncate_to_result(payload)
+            size = len(pydantic_core.to_json(result, fallback=str))
+            assert size <= 1000
+
     def test_utf8_truncation_preserves_characters(self):
         """Test that UTF-8 truncation doesn't break multi-byte characters."""
         middleware = ResponseLimitingMiddleware(max_size=100)
