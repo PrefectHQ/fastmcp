@@ -108,10 +108,16 @@ async def test_listing_refresh_replaces_stale_entries():
 
     server._local_provider.remove_tool("temp")
 
+    # Removal evicts the cache entry immediately, not only after the next
+    # listing — a stale schema could otherwise keep header-validating a tool
+    # that no longer exists.
+    assert _hook(server)("temp") is None
+    assert _hook(server)("keep") is not None
+
     async with Client(server) as client:
         await client.list_tools()
 
-    # The listing refresh replaces the whole map, so removed tools drop out.
+    # The listing refresh replaces the whole map, so removed tools stay out.
     assert _hook(server)("temp") is None
     assert _hook(server)("keep") is not None
 

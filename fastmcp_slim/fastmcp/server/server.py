@@ -330,6 +330,14 @@ class _SchemaCacheLocalProvider(LocalProvider):
             self._schema_cache[added.name] = schema
         return added
 
+    def remove_tool(self, name: str, version: str | None = None) -> None:
+        super().remove_tool(name, version=version)
+        # Evict immediately: a stale schema would let Mcp-Param header
+        # validation reject calls for a tool that no longer exists (or no
+        # longer has this schema) until the next listing. A miss is fail-open,
+        # so dropping the entry is always the safe direction.
+        self._schema_cache.pop(name, None)
+
 
 class StateValue(FastMCPBaseModel):
     """Wrapper for stored context state values."""
