@@ -54,6 +54,10 @@ class ClientGroup:
         self._tool_routes: dict[str, ToolRoute] = {}
         self._catalog_loaded = False
         self._route_lock = anyio.Lock()
+        # Keep explicit refresh fetches and commits in the same order; this is
+        # separate from _route_lock because lazy discovery calls list_tools()
+        # while holding that lock.
+        self._refresh_lock = anyio.Lock()
         # Member closes handed off by exiting contexts; referenced until done.
         self._closers: set[asyncio.Task[bool | None]] = set()
 
@@ -192,30 +196,32 @@ class ClientGroup:
         cache hits when staleness within the server's hint is acceptable.
         """
         self._require_connected()
-        tools: list[mcp_types.Tool] = []
-        routes: dict[str, ToolRoute] = {}
-        clients = list(self._clients.items())
-        tool_lists = await gather(
-            client.list_tools(cache_mode=cache_mode) for _, client in clients
-        )
+        async with self._refresh_lock:
+            self._require_connected()
+            tools: list[mcp_types.Tool] = []
+            routes: dict[str, ToolRoute] = {}
+            clients = list(self._clients.items())
+            tool_lists = await gather(
+                client.list_tools(cache_mode=cache_mode) for _, client in clients
+            )
 
-        for (server_name, client), server_tools in zip(
-            clients, tool_lists, strict=True
-        ):
-            for tool in server_tools:
-                public_name = f"{server_name}_{tool.name}"
-                if public_name in routes:
-                    raise ValueError(f"Tool name collision: {public_name!r}")
-                routes[public_name] = ToolRoute(
-                    server_name=server_name,
-                    client=client,
-                    upstream_name=tool.name,
-                )
-                tools.append(tool.model_copy(update={"name": public_name}))
+            for (server_name, client), server_tools in zip(
+                clients, tool_lists, strict=True
+            ):
+                for tool in server_tools:
+                    public_name = f"{server_name}_{tool.name}"
+                    if public_name in routes:
+                        raise ValueError(f"Tool name collision: {public_name!r}")
+                    routes[public_name] = ToolRoute(
+                        server_name=server_name,
+                        client=client,
+                        upstream_name=tool.name,
+                    )
+                    tools.append(tool.model_copy(update={"name": public_name}))
 
-        self._tool_routes = routes
-        self._catalog_loaded = True
-        return tools
+            self._tool_routes = routes
+            self._catalog_loaded = True
+            return tools
 
     async def resolve_tool(self, name: str) -> ToolRoute:
         """Resolve a public tool name to its client and upstream identity.
