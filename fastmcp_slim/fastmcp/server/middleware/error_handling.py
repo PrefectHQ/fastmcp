@@ -13,6 +13,9 @@ from fastmcp.exceptions import NotFoundError
 
 from .middleware import CallNext, Middleware, MiddlewareContext
 
+_MAX_ERROR_STATS = 1000
+_OTHER_ERROR_STATS_KEY = "<other>"
+
 
 class ErrorHandlingMiddleware(Middleware):
     """Middleware that provides consistent error handling and logging.
@@ -61,7 +64,16 @@ class ErrorHandlingMiddleware(Middleware):
 
         # Track error counts
         error_key = f"{error_type}:{method}"
-        self.error_counts[error_key] = self.error_counts.get(error_key, 0) + 1
+        if error_key in self.error_counts:
+            self.error_counts[error_key] += 1
+        elif len(self.error_counts) < _MAX_ERROR_STATS - 1:
+            self.error_counts[error_key] = 1
+        else:
+            # Method names come from incoming requests. Keep the statistics map
+            # bounded even when callers send a new unsupported method each time.
+            self.error_counts[_OTHER_ERROR_STATS_KEY] = (
+                self.error_counts.get(_OTHER_ERROR_STATS_KEY, 0) + 1
+            )
 
         base_message = f"Error in {method}: {error_type}: {error!s}"
 
@@ -121,7 +133,11 @@ class ErrorHandlingMiddleware(Middleware):
             raise transformed_error from error
 
     def get_error_stats(self) -> dict[str, int]:
-        """Get error statistics for monitoring."""
+        """Get error statistics for monitoring.
+
+        The map is capped at 1000 entries. Errors that would exceed the cap are
+        counted together under ``<other>``.
+        """
         return self.error_counts.copy()
 
 
