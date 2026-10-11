@@ -1071,6 +1071,27 @@ class TestMalformedURITemplates:
         uri = expand_uri_template(template, {"q": "a b&c=d/e"})
         assert match_uri_template(uri, template) == {"q": "a b&c=d/e"}
 
+    def test_literal_query_in_template_round_trips_empty_value(self):
+        template = "search://items?q={q}"
+        uri = expand_uri_template(template, {"q": ""})
+        assert uri == "search://items?q="
+        assert match_uri_template(uri, template) == {"q": ""}
+
+    def test_literal_query_in_template_rejects_extra_key(self):
+        """A raw `&` starts another key, so it never ends up inside the value."""
+        result = match_uri_template(
+            "search://items?q=abc&page=2",
+            "search://items?q={q}",
+        )
+        assert result is None
+
+    def test_literal_query_in_template_with_two_keys(self):
+        result = match_uri_template(
+            "search://items?q=a/b&page=2",
+            "search://items?q={q}&page={page}",
+        )
+        assert result == {"q": "a/b", "page": "2"}
+
     def test_query_param_with_blank_and_present_values(self):
         """Mix of blank and non-blank query values are both surfaced."""
         result = match_uri_template(
@@ -1794,7 +1815,7 @@ class TestLiteralQueryInTemplate:
 
         async with Client(server) as client:
             [template] = await client.list_resource_templates()
-            assert template.uriTemplate == uri.replace("abc", "{q}")
+            assert template.uri_template == uri.replace("abc", "{q}")
             [contents] = await client.read_resource(uri)
             assert isinstance(contents, TextResourceContents)
             assert contents.text == "q=abc"

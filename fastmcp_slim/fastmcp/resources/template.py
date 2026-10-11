@@ -169,6 +169,7 @@ def build_regex(template: str) -> re.Pattern[str] | None:
     - `{var}` - simple path parameter
     - `{var*}` - wildcard path parameter (captures multiple segments)
     - `{?var1,var2}` - query parameters (ignored in path matching)
+    - `?key={var}` - a query written out literally; `{var}` is that key's value
 
     Hyphens in parameter names are normalized to underscores in regex group
     names so that matched groups are valid Python identifiers.
@@ -181,6 +182,9 @@ def build_regex(template: str) -> re.Pattern[str] | None:
 
     parts = re.split(r"(\{[^}]+\})", template_without_query)
     pattern = ""
+    # Past a literal `?` a placeholder is a query value: it may be empty, may
+    # hold `/`, and ends at the next `&`.
+    in_query = False
     for part in parts:
         if part.startswith("{") and part.endswith("}"):
             name = part[1:-1]
@@ -188,11 +192,15 @@ def build_regex(template: str) -> re.Pattern[str] | None:
                 name = name[:-1]
                 group = name.replace("-", "_")
                 pattern += f"(?P<{group}>.+)"
+            elif in_query:
+                group = name.replace("-", "_")
+                pattern += f"(?P<{group}>[^&]*)"
             else:
                 group = name.replace("-", "_")
                 pattern += f"(?P<{group}>[^/]+)"
         else:
             pattern += _literal_pattern(part)
+            in_query = in_query or "?" in part
     try:
         return re.compile(f"^{pattern}$")
     except re.error:
