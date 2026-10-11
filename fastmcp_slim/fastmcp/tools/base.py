@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import inspect
+import json
+import math
 from collections.abc import Callable
+from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -30,6 +33,7 @@ from pydantic import (
 )
 from pydantic.json_schema import SkipJsonSchema
 
+from fastmcp.exceptions import ToolError
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
@@ -73,8 +77,52 @@ def default_serializer(data: Any) -> str:
     return _JSONABLE_ADAPTER.dump_json(data, fallback=str).decode()
 
 
+@lru_cache(maxsize=5000)
+def _get_json_serializer(annotation: Any) -> pydantic_core.SchemaSerializer:
+    """Build a serializer that follows the real JSON serialization contract.
+
+    `ser_json_inf_nan="constants"` keeps non-finite floats as NaN/Infinity JSON
+    tokens instead of silently rewriting them to null, so the tokens that reach
+    the wire can be rejected at the JSON boundary (see `_reject_nonfinite`).
+    The schema is the annotation's own, so custom serializers and explicit
+    per-model policies keep control of their output.
+    """
+    return pydantic_core.SchemaSerializer(
+        get_cached_typeadapter(annotation).core_schema,
+        config={"ser_json_inf_nan": "constants"},
+    )
+
+
+def _reject_nonfinite(value: Any, path: str = "$") -> None:
+    """Raise ToolError if a non-finite float survived JSON serialization.
+
+    JSON cannot represent NaN or Infinity. A non-finite float in the parsed
+    output means the value would reach the client as an invalid JSON literal
+    (or be silently rewritten to null by stricter serializers). Values the
+    serialization contract legitimately converted — custom serializers or
+    explicit per-model `ser_json_inf_nan` policies — never appear here.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ToolError(
+            f"Tool result contains a non-finite float ({value!r}) at {path}; "
+            "JSON cannot represent NaN or Infinity"
+        )
+    if isinstance(value, dict):
+        for key, item in value.items():
+            _reject_nonfinite(item, f"{path}.{key}")
+    elif isinstance(value, list | tuple):
+        for index, item in enumerate(value):
+            _reject_nonfinite(item, f"{path}[{index}]")
+
+
 def _serialize_to_jsonable(data: Any, annotation: Any = Any) -> Any:
-    """Serialize through Pydantic, falling back for unsupported annotations."""
+    """Serialize through the real JSON serialization contract.
+
+    The value is serialized to JSON and parsed back, so the output is exactly
+    what would go on the wire. JSON cannot represent NaN or Infinity: rather
+    than letting them be silently rewritten to null, any non-finite float that
+    survives serialization is rejected. Falls back for unsupported annotations.
+    """
     if (
         annotation is inspect.Signature.empty
         or annotation is None
@@ -82,14 +130,20 @@ def _serialize_to_jsonable(data: Any, annotation: Any = Any) -> Any:
         or annotation is ...
         or isinstance(annotation, str)
     ):
-        adapter = _JSONABLE_ADAPTER
+        serializer = _get_json_serializer(Any)
     else:
         try:
-            return get_cached_typeadapter(annotation).dump_python(data, mode="json")
+            serializer = _get_json_serializer(annotation)
         except PydanticSchemaGenerationError:
-            adapter = _JSONABLE_ADAPTER
+            serializer = _get_json_serializer(Any)
 
-    return adapter.dump_python(data, mode="json")
+    payload = serializer.to_json(data)
+    value = json.loads(payload)
+    # Only walk the structure when a NaN/Infinity token was emitted; the
+    # substring check keeps clean results on the cheap path.
+    if b"NaN" in payload or b"Infinity" in payload:
+        _reject_nonfinite(value)
+    return value
 
 
 class ToolResult(BaseModel):
