@@ -456,6 +456,16 @@ class LowLevelServer(_Server[LifespanResultT]):
         # Store a weak reference to FastMCP to avoid circular references
         self._fastmcp_ref: weakref.ref[FastMCP] = weakref.ref(fastmcp)
 
+        # mcp>=2.3 validates Mcp-Param-* headers on `tools/call` against the
+        # called tool's input schema. Without this sync hook the SDK falls back
+        # to a full `tools/list` per call — running every FastMCP list
+        # middleware and provider enumeration on each tool invocation (#5652).
+        # FastMCP tool resolution is async, so the hook serves FastMCP's
+        # wire-schema cache (seeded at registration, refreshed on every
+        # `tools/list`) instead of resolving through providers here.
+        if hasattr(self, "get_tool_input_schema"):
+            self.get_tool_input_schema = fastmcp._get_tool_input_schema
+
         # FastMCP servers support notifications for all components. v2 derives
         # capabilities from registered handlers + protocol_version, but legacy
         # clients still read NotificationOptions at create_initialization_options
