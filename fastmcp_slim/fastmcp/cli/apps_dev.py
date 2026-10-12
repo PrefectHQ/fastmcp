@@ -37,7 +37,6 @@ import signal
 import sys
 import tarfile
 import tempfile
-import time
 import webbrowser
 from pathlib import Path
 from typing import Any
@@ -52,6 +51,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, Response, StreamingResponse
 from starlette.routing import Route
 
+from fastmcp.cli.apps_dev_log import _log_response_bytes, _MessageLog
 from fastmcp.cli.apps_dev_security import DevSessionMiddleware
 from fastmcp.utilities.json_schema_type import safe_create_model
 from fastmcp.utilities.logging import get_logger
@@ -69,123 +69,6 @@ def _json_for_script(value: Any) -> str:
         .replace("\u2028", "\\u2028")
         .replace("\u2029", "\\u2029")
     )
-
-
-# ---------------------------------------------------------------------------
-# MCP message log (captures proxy traffic for the dev UI log panel)
-# ---------------------------------------------------------------------------
-
-
-class _MessageLog:
-    """In-memory buffer of MCP JSON-RPC messages flowing through the proxy."""
-
-    def __init__(self) -> None:
-        self._entries: list[dict[str, Any]] = []
-        self._counter = 0
-        self._request_methods: dict[int | str, str] = {}
-        self._request_times: dict[int | str, float] = {}
-
-    def log_request(self, body: dict[str, Any]) -> None:
-        method = body.get("method", "unknown")
-        jsonrpc_id = body.get("id")
-        timestamp = time.time()
-        if jsonrpc_id is not None:
-            self._request_methods[jsonrpc_id] = method
-            self._request_times[jsonrpc_id] = timestamp
-        self._counter += 1
-        self._entries.append(
-            {
-                "id": self._counter,
-                "timestamp": timestamp,
-                "direction": "request",
-                "method": method,
-                "body": body,
-            }
-        )
-
-    def log_response(self, body: dict[str, Any]) -> None:
-        # Server-initiated notifications have "method" but no "id"
-        if "method" in body and "id" not in body:
-            self._counter += 1
-            self._entries.append(
-                {
-                    "id": self._counter,
-                    "timestamp": time.time(),
-                    "direction": "notification",
-                    "method": body.get("method", "unknown"),
-                    "body": body,
-                }
-            )
-            return
-
-        jsonrpc_id = body.get("id")
-        method = (
-            self._request_methods.pop(jsonrpc_id, None)
-            if jsonrpc_id is not None
-            else None
-        )
-        request_time = (
-            self._request_times.pop(jsonrpc_id, None)
-            if jsonrpc_id is not None
-            else None
-        )
-        timestamp = time.time()
-        duration_ms = (
-            round((timestamp - request_time) * 1000, 1) if request_time else None
-        )
-        self._counter += 1
-        self._entries.append(
-            {
-                "id": self._counter,
-                "timestamp": timestamp,
-                "direction": "response",
-                "method": method,
-                "body": body,
-                "duration_ms": duration_ms,
-            }
-        )
-
-    def get_since(self, since_id: int = 0) -> list[dict[str, Any]]:
-        return [e for e in self._entries if e["id"] > since_id]
-
-    def log_bridge(self, body: dict[str, Any]) -> None:
-        method = body.get("method", "unknown")
-        self._counter += 1
-        self._entries.append(
-            {
-                "id": self._counter,
-                "timestamp": time.time(),
-                "direction": "bridge",
-                "method": method,
-                "body": body,
-            }
-        )
-
-    def clear(self) -> None:
-        self._entries.clear()
-        self._request_methods.clear()
-        self._request_times.clear()
-
-
-def _log_response_bytes(log: _MessageLog, raw: bytes, content_type: str) -> None:
-    """Parse accumulated proxy response bytes and log as message entries."""
-    if not raw:
-        return
-    try:
-        if "text/event-stream" in content_type:
-            for line in raw.decode("utf-8", errors="replace").splitlines():
-                if line.startswith("data: "):
-                    with contextlib.suppress(json.JSONDecodeError):
-                        log.log_response(json.loads(line[6:]))
-        else:
-            body = json.loads(raw)
-            if isinstance(body, list):
-                for item in body:
-                    log.log_response(item)
-            else:
-                log.log_response(body)
-    except (json.JSONDecodeError, TypeError):
-        pass
 
 
 _EXT_APPS_VERSION = "1.0.1"
@@ -607,6 +490,7 @@ _LOG_PANEL_HTML = """\
 <script>
 (function() {
   var lastId = 0, totalCount = 0, panelWidth = 360;
+  var maxRenderedEntries = 500;
   var panel = document.getElementById("mcp-log-panel");
   var entries = document.getElementById("mcp-log-entries");
   var countEl = document.getElementById("mcp-log-count");
@@ -892,6 +776,9 @@ _LOG_PANEL_HTML = """\
           el.classList.add("new");
           if (!shouldShow(el)) el.style.display = "none";
           entries.appendChild(el);
+        }
+        while (entries.children.length > maxRenderedEntries) {
+          entries.removeChild(entries.firstElementChild);
         }
         if (atBottom || (firstPoll && panelVisible)) entries.scrollTop = entries.scrollHeight;
         firstPoll = false;
@@ -1558,7 +1445,7 @@ def _make_dev_app(
         body = await request.body()
 
         # Log MCP requests
-        if body and request.method == "POST":
+        if log_panel and body and request.method == "POST":
             try:
                 req_json = json.loads(body)
                 if isinstance(req_json, list):
@@ -1593,7 +1480,7 @@ def _make_dev_app(
             try:
                 async for chunk in resp.aiter_bytes():
                     yield chunk
-                    if is_sse:
+                    if log_panel and is_sse:
                         # Parse SSE events incrementally
                         sse_buf += chunk.decode("utf-8", errors="replace")
                         while "\r\n\r\n" in sse_buf or "\n\n" in sse_buf:
@@ -1608,7 +1495,7 @@ def _make_dev_app(
                                 if line.startswith("data: "):
                                     with contextlib.suppress(json.JSONDecodeError):
                                         message_log.log_response(json.loads(line[6:]))
-                    else:
+                    elif log_panel:
                         buf.append(chunk)
             except (
                 httpx2.RemoteProtocolError,
@@ -1619,7 +1506,7 @@ def _make_dev_app(
                 pass  # Connection closed during shutdown — not an error
             finally:
                 # Log non-SSE responses (JSON) after stream completes
-                if buf:
+                if log_panel and buf:
                     _log_response_bytes(message_log, b"".join(buf), "application/json")
                 with contextlib.suppress(Exception):
                     await resp.aclose()
@@ -1674,7 +1561,8 @@ def _make_dev_app(
     async def api_logs_bridge(request: Request) -> Response:
         """Log a bridge message (postMessage between app iframe and host)."""
         data = await request.json()
-        message_log.log_bridge(data.get("body", data))
+        if log_panel:
+            message_log.log_bridge(data.get("body", data))
         return Response(content="{}", media_type="application/json")
 
     async def api_logs_clear(request: Request) -> Response:
