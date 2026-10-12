@@ -1229,7 +1229,7 @@ async def _list_tools(mcp_url: str) -> list[dict[str, Any]]:
         # Unpack by position so the dev server works across SDK versions;
         # a strict 2-tuple unpack would raise here and the picker would
         # silently report "No UI tools found".
-        async with streamable_http_client(mcp_url) as streams:  # noqa: SIM117
+        async with streamable_http_client(mcp_url) as streams:
             read, write = streams[0], streams[1]
             async with ClientSession(read, write) as session:
                 await session.initialize()
@@ -1250,7 +1250,7 @@ async def _read_mcp_resource(mcp_url: str, uri: str) -> str | None:
 
     try:
         # See _list_tools: unpack by position for SDK-version tolerance.
-        async with streamable_http_client(mcp_url) as streams:  # noqa: SIM117
+        async with streamable_http_client(mcp_url) as streams:
             read, write = streams[0], streams[1]
             async with ClientSession(read, write) as session:
                 await session.initialize()

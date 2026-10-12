@@ -713,8 +713,8 @@ class TestListToolsSdkTolerance:
     ):
         import contextlib
 
-        import mcp.client.streamable_http as streamable_http_module
         import mcp as mcp_module
+        import mcp.client.streamable_http as streamable_http_module
 
         @contextlib.asynccontextmanager
         async def fake_streams(url: str):
