@@ -51,9 +51,11 @@ def linkify(body: str) -> str:
         r"by ((?:@[\w-]+(?:, (?:and )?| and )?)+) in https://github\.com/"
         + re.escape(REPO)
         + r"/pull/(\d+)",
-        lambda match: "by "
-        + re.sub(r"@([\w-]+)", r"[@\1](https://github.com/\1)", match[1])
-        + f" in [#{match[2]}](https://github.com/{REPO}/pull/{match[2]})",
+        lambda match: (
+            "by "
+            + re.sub(r"@([\w-]+)", r"[@\1](https://github.com/\1)", match[1])
+            + f" in [#{match[2]}](https://github.com/{REPO}/pull/{match[2]})"
+        ),
         body,
     )
     body = re.sub(
