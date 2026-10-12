@@ -86,7 +86,11 @@ def load_and_merge_config(
                         adapter = get_cached_typeadapter(MCPServerConfig)
                         config = adapter.validate_python(data)
 
-                        # Apply deployment settings
+                        # Apply deployment settings. A deployment cwd changes the
+                        # working directory, so pin the config path first or the
+                        # relative spec no longer resolves afterwards.
+                        config_path = config_path.resolve()
+                        resolved_spec = str(config_path)
                         if config.deployment:
                             config.deployment.apply_runtime_settings(config_path)
 
