@@ -46,9 +46,7 @@ class TestGetAuthSpanAttributes:
             scopes=["read"],
             subject="user-sub-123",
         )
-        with patch(
-            "fastmcp.server.dependencies.get_access_token", return_value=token
-        ):
+        with patch("fastmcp.server.dependencies.get_access_token", return_value=token):
             attrs = get_auth_span_attributes()
         assert attrs["enduser.id"] == "user-sub-123"
 
@@ -62,9 +60,7 @@ class TestGetAuthSpanAttributes:
             client_id="oauth-client-id",
             scopes=["read"],
         )
-        with patch(
-            "fastmcp.server.dependencies.get_access_token", return_value=token
-        ):
+        with patch("fastmcp.server.dependencies.get_access_token", return_value=token):
             attrs = get_auth_span_attributes()
         assert attrs["enduser.id"] == "oauth-client-id"
 
