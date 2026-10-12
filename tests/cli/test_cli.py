@@ -606,6 +606,23 @@ def test_tool(x: int) -> int:
         assert "MCP" in captured.out
         assert "Use --format [fastmcp|mcp] for complete JSON output" in captured.out
 
+    async def test_inspect_command_text_summary_keeps_brackets(self, tmp_path, capsys):
+        """Square brackets in server metadata are shown literally, not parsed as markup."""
+        server_file = tmp_path / "test_server.py"
+        server_file.write_text("""
+import fastmcp
+
+mcp = fastmcp.FastMCP("demo [dev]", instructions="Use [path] or see [/docs]")
+""")
+
+        command, bound, _ = app.parse_args(["inspect", str(server_file)])
+
+        await command(**bound.arguments)
+
+        captured = capsys.readouterr()
+        assert "demo [dev]" in captured.out
+        assert "Use [path] or see [/docs]" in captured.out
+
     async def test_inspect_command_with_real_server(self, tmp_path):
         """Test inspect command with a real server file."""
         # Create a real server file
