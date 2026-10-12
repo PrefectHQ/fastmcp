@@ -37,12 +37,19 @@ from fastmcp.server.auth.ssrf import (
     ssrf_safe_fetch_response,
     validate_url,
 )
+from fastmcp.utilities.auth import decode_jwt_header
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
     from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 logger = get_logger(__name__)
+
+# Signing algorithms accepted for private_key_jwt assertions: the RSA and EC
+# families whose public keys can be published in a client's JWKS.
+ASSERTION_ALGORITHMS = frozenset(
+    {"RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512"}
+)
 
 
 def _jwk_to_pem(key_data: dict[str, Any]) -> str:
@@ -550,16 +557,27 @@ class CIMDAssertionValidator:
         # Periodic cleanup of expired JTIs
         self._maybe_cleanup()
 
-        # 1. Validate CIMD document has key material and get/create verifier
+        # 1. Validate CIMD document has key material and get/create verifier.
+        # The verifier only accepts keys of the type its algorithm needs, so
+        # taking the algorithm from the header cannot widen what the client's
+        # own JWKS permits.
+        try:
+            algorithm = decode_jwt_header(assertion).get("alg")
+        except (ValueError, AttributeError) as e:
+            raise ValueError(f"Invalid JWT assertion: {e}") from e
+        if algorithm not in ASSERTION_ALGORITHMS:
+            raise ValueError(f"Unsupported assertion algorithm: {algorithm!r}")
+
         if cimd_doc.jwks_uri:
             jwks_uri_str = str(cimd_doc.jwks_uri)
-            cache_key = f"{jwks_uri_str}|{client_id}|{token_endpoint}"
+            cache_key = f"{jwks_uri_str}|{client_id}|{token_endpoint}|{algorithm}"
             verifier = self._verifier_cache.get(cache_key)
             if verifier is None:
                 verifier = _JWTVerifier(
                     jwks_uri=jwks_uri_str,
                     issuer=client_id,
                     audience=token_endpoint,
+                    algorithm=algorithm,
                     ssrf_safe=True,
                 )
                 if len(self._verifier_cache) >= self._verifier_cache_max_size:
@@ -573,6 +591,7 @@ class CIMDAssertionValidator:
                 public_key=public_key,
                 issuer=client_id,
                 audience=token_endpoint,
+                algorithm=algorithm,
             )
         else:
             raise ValueError(
