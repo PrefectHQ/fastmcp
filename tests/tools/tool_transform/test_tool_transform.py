@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 
 import pytest
-from mcp_types import TextContent
+from mcp_types import Icon, TextContent
 from pydantic import BaseModel, ConfigDict, Field, with_config
 
 from fastmcp import FastMCP
@@ -101,6 +101,18 @@ def test_from_tool_decorated_function_preserves_metadata():
 
     transformed = Tool.from_tool(search)
     assert transformed.parent_tool.description == "Custom description"
+
+
+def test_from_tool_preserves_icons():
+    icons = [Icon(src="https://example.com/search.png")]
+
+    @tool(icons=icons)
+    def search(q: str) -> list[str]:
+        return []
+
+    transformed = Tool.from_tool(search, name="find_items")
+    assert transformed.icons == icons
+    assert transformed.to_mcp_tool().icons == icons
 
 
 async def test_from_tool_decorated_function_runs(add_tool):
