@@ -900,11 +900,11 @@ async def test_transform_fn_depends_is_resolved():
 async def test_transform_fn_generators_are_materialized():
     """Generator transform_fn bodies are consumed like plain tool bodies (#5668)."""
 
-    def gen_sync(**kwargs) -> list[str]:
+    def gen_sync(**kwargs) -> list[str]:  # ty:ignore[invalid-return-type]
         yield "a1"
         yield "a2"
 
-    async def gen_async(**kwargs) -> list[str]:
+    async def gen_async(**kwargs) -> list[str]:  # ty:ignore[invalid-return-type]
         yield "a1"
         yield "a2"
 
@@ -913,12 +913,8 @@ async def test_transform_fn_generators_are_materialized():
 
     parent_tool = Tool.from_function(parent)
     mcp = FastMCP()
-    mcp.add_tool(
-        Tool.from_tool(parent_tool, transform_fn=gen_sync, name="t_sync")
-    )
-    mcp.add_tool(
-        Tool.from_tool(parent_tool, transform_fn=gen_async, name="t_async")
-    )
+    mcp.add_tool(Tool.from_tool(parent_tool, transform_fn=gen_sync, name="t_sync"))
+    mcp.add_tool(Tool.from_tool(parent_tool, transform_fn=gen_async, name="t_async"))
 
     async with Client(mcp) as client:
         sync_res = await client.call_tool("t_sync", {})
