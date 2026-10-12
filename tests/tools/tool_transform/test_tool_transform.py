@@ -895,3 +895,33 @@ async def test_transform_fn_depends_is_resolved():
     async with Client(mcp) as client:
         result = await client.call_tool("transformed", {"x": 3})
     assert result.data == 63
+
+
+async def test_transform_fn_generators_are_materialized():
+    """Generator transform_fn bodies are consumed like plain tool bodies (#5668)."""
+
+    def gen_sync(**kwargs) -> list[str]:
+        yield "a1"
+        yield "a2"
+
+    async def gen_async(**kwargs) -> list[str]:
+        yield "a1"
+        yield "a2"
+
+    def parent() -> str:
+        return "p"
+
+    parent_tool = Tool.from_function(parent)
+    mcp = FastMCP()
+    mcp.add_tool(
+        Tool.from_tool(parent_tool, transform_fn=gen_sync, name="t_sync")
+    )
+    mcp.add_tool(
+        Tool.from_tool(parent_tool, transform_fn=gen_async, name="t_async")
+    )
+
+    async with Client(mcp) as client:
+        sync_res = await client.call_tool("t_sync", {})
+        assert sync_res.structured_content == {"result": ["a1", "a2"]}
+        async_res = await client.call_tool("t_async", {})
+        assert async_res.structured_content == {"result": ["a1", "a2"]}

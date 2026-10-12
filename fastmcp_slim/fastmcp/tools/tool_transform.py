@@ -369,6 +369,14 @@ class TransformedTool(Tool):
                 if inspect.isawaitable(result):
                     result = await result
 
+            # Generator bodies are supported for plain tools; materialize them
+            # here too. Without this, a sync generator is never consumed (empty
+            # result) and an async generator is serialized as its repr.
+            if inspect.isasyncgen(result):
+                result = [item async for item in result]
+            elif inspect.isgenerator(result):
+                result = list(result)
+
             # A multi-round-trip ask (SEP-2322) is not output data: it must
             # reach the wire handler intact, never reshaped by output_schema
             # (which would rebuild it as a plain empty ToolResult and drop the
