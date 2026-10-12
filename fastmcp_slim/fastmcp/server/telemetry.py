@@ -48,8 +48,9 @@ def get_auth_span_attributes() -> dict[str, str]:
     try:
         token = get_access_token()
         if token:
-            if token.client_id:
-                attrs["enduser.id"] = token.client_id
+            user_id = token.subject or token.client_id
+            if user_id:
+                attrs["enduser.id"] = user_id
             if token.scopes:
                 attrs["enduser.scope"] = " ".join(token.scopes)
     except RuntimeError:
