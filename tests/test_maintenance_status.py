@@ -119,9 +119,11 @@ def test_missing_path_filtered_checks_are_not_reported(status_module, monkeypatc
     monkeypatch.setattr(
         status_module,
         "gh_json",
-        lambda *args: {"sha": "head", "html_url": "commit"}
-        if args[-1].endswith("commits/main")
-        else {"workflow_runs": []},
+        lambda *args: (
+            {"sha": "head", "html_url": "commit"}
+            if args[-1].endswith("commits/main")
+            else {"workflow_runs": []}
+        ),
     )
     assert [c["name"] for c in status_module.main_health()["checks"]] == [
         "Tests",
