@@ -37,16 +37,67 @@ from fastmcp.utilities.mime import resolve_ui_mime_type
 from fastmcp.utilities.types import get_cached_typeadapter
 
 
+def _extract_uri_template_params(uri_template: str, pattern: str) -> set[str]:
+    """Extract parameter names from a URI template matching a given brace pattern.
+
+    Supports RFC 6570 syntax:
+    - {?var1,var2} - query parameters
+    - {&var} - reserved expansion
+    - {+var} - literal-plus expansion
+    - {#var} - fragment expansion
+    - {.var} - file-name extension
+    - {/var} - path-segment expansion
+    - {;var} - form-style query
+    - {a,b} - set expansion
+    """
+    # Match {?...} query params
+    query_match = re.search(r"\{\?([^}]+)\}", uri_template)
+    if query_match:
+        return {p.strip().removesuffix("*") for p in query_match.group(1).split(",")}
+    # Match level-3 operators: {&var}, {+var}, {#var}, {.var}, {/var}, {;var}
+    level3_matches = re.findall(r"\{([&#;./+][^\}]+)\}", uri_template)
+    params: set[str] = set()
+    for name in level3_matches:
+        # Strip the operator prefix
+        var_name = name[1:] if name and name[0] in "&#;./+" else name
+        if var_name:
+            params.add(var_name)
+    # Match set expansion {a,b}
+    set_matches = re.findall(r"\{([a-zA-Z_][a-zA-Z0-9_,]*)\}", uri_template)
+    for name in set_matches:
+        if "," in name:
+            for item in name.split(","):
+                item = item.strip()
+                if item:
+                    params.add(item)
+    return params
+
+
 def extract_query_params(uri_template: str) -> set[str]:
     """Extract query parameter names from RFC 6570 `{?param1,param2}` syntax.
 
     The explode modifier is stripped, so `{?tags*}` yields `{"tags"}`. Use
     `extract_exploded_query_params` to find which names carried it.
+
+    Also extracts parameter names from RFC 6570 level-3 operators:
+    `{&var}`, `{+var}`, `{#var}`, `{.var}`, `{/var}`, `{;var}`
+    and set expansion `{a,b}`.
     """
-    match = re.search(r"\{\?([^}]+)\}", uri_template)
-    if match:
-        return {p.strip().removesuffix("*") for p in match.group(1).split(",")}
-    return set()
+    # Use the helper to extract all param names, then filter to only those
+    # that come from query-relevant syntax ({?...} and {;var})
+    all_params = _extract_uri_template_params(uri_template, "query")
+    # Specifically keep {?...} and {;var} params; level-3 operators like {&var}
+    # are handled via the param name matching in match_uri_template
+    result: set[str] = set()
+    # Extract from {?...} syntax
+    qmatch = re.search(r"\{\?([^}]+)\}", uri_template)
+    if qmatch:
+        result.update({p.strip().removesuffix("*") for p in qmatch.group(1).split(",")})
+    # Extract from {;var} form-style query syntax
+    smatch = re.search(r"\{;([^\}]+)\}", uri_template)
+    if smatch:
+        result.update({p.strip().removesuffix("*") for p in smatch.group(1).split(",")})
+    return result
 
 
 def _is_list_only(annotation: Any) -> bool:
@@ -156,6 +207,22 @@ def _literal_pattern(text: str) -> str:
     return "".join(pattern)
 
 
+_LEVEL3_OPERATORS = frozenset("&#;./+")
+_LEVEL3_PREFIX_PATTERN = re.compile(r"^([&#;./+])(.*)$")
+
+
+def _strip_level3_operator(name: str) -> tuple[str, bool]:
+    """Strip a level-3 RFC 6570 operator prefix from a parameter name.
+
+    Returns (var_name, found) where var_name is the name after the operator
+    prefix, and found is True if a level-3 operator prefix was present.
+    """
+    m = _LEVEL3_PREFIX_PATTERN.match(name)
+    if m:
+        return m.group(2), True
+    return name, False
+
+
 @functools.lru_cache(maxsize=4096)
 def build_regex(template: str) -> re.Pattern[str] | None:
     """Build regex pattern for URI template, handling RFC 6570 syntax.
@@ -164,6 +231,9 @@ def build_regex(template: str) -> re.Pattern[str] | None:
     - `{var}` - simple path parameter
     - `{var*}` - wildcard path parameter (captures multiple segments)
     - `{?var1,var2}` - query parameters (ignored in path matching)
+    - RFC 6570 level-3 operators: `{&var}`, `{+var}`, `{#var}`,
+      `{.var}`, `{/var}`, `{;var}`
+    - `{a,b}` - set expansion
 
     Hyphens in parameter names are normalized to underscores in regex group
     names so that matched groups are valid Python identifiers.
@@ -179,10 +249,22 @@ def build_regex(template: str) -> re.Pattern[str] | None:
     for part in parts:
         if part.startswith("{") and part.endswith("}"):
             name = part[1:-1]
+
+            # Handle RFC 6570 level-3 operators: &, +, #, ., /, ;
+            # These operators affect URI expansion but are not path params,
+            # so we skip them in the path regex and rely on query param extraction.
+            if name.startswith("&") or name.startswith("+") or name.startswith("#") or name.startswith(".") or name.startswith("/") or name.startswith(";"):
+                # Skip level-3 operator groups in path regex;
+                # the parameter name will be extracted via extract_query_params
+                continue
+
             if name.endswith("*"):
                 name = name[:-1]
                 group = name.replace("-", "_")
                 pattern += f"(?P<{group}>.+)"
+            elif "," in name:
+                # Set expansion {a,b}: treat as literal
+                pattern += _literal_pattern("{" + name + "}")
             else:
                 group = name.replace("-", "_")
                 pattern += f"(?P<{group}>[^/]+)"
