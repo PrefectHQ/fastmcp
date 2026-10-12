@@ -13,13 +13,24 @@ import pytest
 from fastmcp import FastMCP
 
 
+@pytest.fixture(scope="module")
+def github_api_schema() -> dict[str, Any]:
+    response = httpx2.get(
+        "https://raw.githubusercontent.com/github/rest-api-description/refs/heads/main/descriptions-next/ghes-3.17/ghes-3.17.json",
+        timeout=30.0,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 class TestOpenAPIPerformance:
     """Performance tests for OpenAPI parsing with real-world large schemas."""
 
-    # 10 second maximum timeout for this test no matter what
     @pytest.mark.integration
-    @pytest.mark.timeout(10)
-    async def test_github_api_schema_performance(self):
+    @pytest.mark.timeout(10, func_only=True)
+    async def test_github_api_schema_performance(
+        self, github_api_schema: dict[str, Any]
+    ):
         """
         Test that GitHub's full API schema parses quickly.
 
@@ -34,19 +45,11 @@ class TestOpenAPIPerformance:
         rather a canary to ensure we don't regress significantly.
         """
 
-        # Download the full GitHub API schema (typically ~10MB)
-        response = httpx2.get(
-            "https://raw.githubusercontent.com/github/rest-api-description/refs/heads/main/descriptions-next/ghes-3.17/ghes-3.17.json",
-            timeout=30.0,  # Allow time for download
-        )
-        response.raise_for_status()
-        schema = response.json()
-
         # Time the parsing operation
         start_time = time.time()
 
         # This should complete quickly with our optimizations
-        mcp_server = FastMCP.from_openapi(schema, httpx2.AsyncClient())
+        mcp_server = FastMCP.from_openapi(github_api_schema, httpx2.AsyncClient())
 
         elapsed_time = time.time() - start_time
 

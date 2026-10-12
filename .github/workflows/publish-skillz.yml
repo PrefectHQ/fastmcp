@@ -1,0 +1,54 @@
+name: Publish authoring skill
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - skills/fastmcp-server/**
+      - .github/scripts/publish_skillz.py
+      - .github/workflows/publish-skillz.yml
+  pull_request:
+    paths:
+      - skills/fastmcp-server/**
+      - .github/scripts/publish_skillz.py
+      - .github/workflows/publish-skillz.yml
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Compare without publishing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-skillz-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: "3.12"
+      - name: Compare public records without credentials
+        run: uv run .github/scripts/publish_skillz.py --dry-run
+
+  publish:
+    needs: validate
+    if: github.repository == 'PrefectHQ/fastmcp' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: "3.12"
+      - name: Publish changed skill
+        env:
+          SKILLZ_APP_PASSWORD: ${{ secrets.SKILLZ_APP_PASSWORD }}
+        run: uv run .github/scripts/publish_skillz.py
