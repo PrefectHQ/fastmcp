@@ -489,3 +489,29 @@ class TestTransportIntegration:
             result = await client.call_tool("get_transport", {})
             assert observed_transport == "streamable-http"
             assert result.data == "streamable-http"
+
+
+class TestContextLogExtra:
+    async def test_log_extra_with_log_record_attribute_names(self):
+        """`extra` keys that collide with LogRecord attributes must not fail the call."""
+        from fastmcp import Client
+
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        async def emit(ctx: Context) -> str:
+            await ctx.info("hello", extra={"name": "job-1", "module": "billing"})
+            return "ok"
+
+        received = []
+
+        async def log_handler(message):
+            received.append(message.data)
+
+        async with Client(mcp, log_handler=log_handler) as client:
+            result = await client.call_tool("emit", {})
+
+        assert result.data == "ok"
+        assert received == [
+            {"msg": "hello", "extra": {"name": "job-1", "module": "billing"}}
+        ]
