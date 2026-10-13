@@ -223,6 +223,10 @@ class MCPServerConfig(BaseModel):
     def from_file(cls, file_path: Path) -> MCPServerConfig:
         """Load configuration from a JSON file.
 
+        Relative ``source.path`` and ``environment.requirements`` values are
+        anchored to the configuration file's directory. Other runtime paths,
+        such as ``deployment.cwd``, retain their own resolution semantics.
+
         Args:
             file_path: Path to the configuration file
 
@@ -234,13 +238,28 @@ class MCPServerConfig(BaseModel):
             json.JSONDecodeError: If the file is not valid JSON
             pydantic.ValidationError: If the configuration is invalid
         """
+        file_path = file_path.expanduser().resolve()
         if not file_path.exists():
             raise FileNotFoundError(f"Configuration file not found: {file_path}")
 
         with file_path.open("r", encoding="utf-8") as f:
             data = json.load(f)
 
-        return cls.model_validate(data)
+        config = cls.model_validate(data)
+        config_dir = file_path.parent
+
+        source_path = Path(config.source.path).expanduser()
+        if not source_path.is_absolute():
+            config.source.path = str((config_dir / source_path).resolve())
+
+        requirements = config.environment.requirements
+        if requirements is not None:
+            requirements = requirements.expanduser()
+            if not requirements.is_absolute():
+                requirements = (config_dir / requirements).resolve()
+            config.environment.requirements = requirements
+
+        return config
 
     @classmethod
     def from_cli_args(
