@@ -895,3 +895,105 @@ async def test_transform_fn_depends_is_resolved():
     async with Client(mcp) as client:
         result = await client.call_tool("transformed", {"x": 3})
     assert result.data == 63
+
+
+async def test_transform_fn_generators_are_materialized():
+    """Generator transform_fn bodies are consumed like plain tool bodies (#5668)."""
+
+    def gen_sync(**kwargs) -> list[str]:  # ty:ignore[invalid-return-type]
+        yield "a1"
+        yield "a2"
+
+    async def gen_async(**kwargs) -> list[str]:  # ty:ignore[invalid-return-type]
+        yield "a1"
+        yield "a2"
+
+    def parent() -> str:
+        return "p"
+
+    parent_tool = Tool.from_function(parent)
+    mcp = FastMCP()
+    mcp.add_tool(Tool.from_tool(parent_tool, transform_fn=gen_sync, name="t_sync"))
+    mcp.add_tool(Tool.from_tool(parent_tool, transform_fn=gen_async, name="t_async"))
+
+    async with Client(mcp) as client:
+        # Non-empty generators are materialized to lists
+        sync_res = await client.call_tool("t_sync", {})
+        assert sync_res.structured_content == {"result": ["a1", "a2"]}
+        assert isinstance(sync_res.content[0], TextContent)
+        assert sync_res.content[0].text == '["a1","a2"]'
+
+        async_res = await client.call_tool("t_async", {})
+        assert async_res.structured_content == {"result": ["a1", "a2"]}
+        assert isinstance(async_res.content[0], TextContent)
+        assert async_res.content[0].text == '["a1","a2"]'
+
+
+async def test_transform_fn_empty_generators():
+    """Empty generators are materialized to empty lists (#5668)."""
+
+    def gen_empty(**kwargs) -> list[str]:  # ty:ignore[invalid-return-type]
+        # Empty generator - no yields, just return
+        if False:  # type: ignore[unreachable]
+            yield
+
+    async def gen_empty_async(**kwargs) -> list[str]:  # ty:ignore[invalid-return-type]
+        # Empty async generator - no yields, just return
+        if False:  # type: ignore[unreachable]
+            yield
+
+    def parent() -> str:
+        return "p"
+
+    parent_tool = Tool.from_function(parent)
+    mcp = FastMCP()
+    mcp.add_tool(Tool.from_tool(parent_tool, transform_fn=gen_empty, name="t_empty"))
+    mcp.add_tool(
+        Tool.from_tool(parent_tool, transform_fn=gen_empty_async, name="t_empty_async")
+    )
+
+    async with Client(mcp) as client:
+        # Empty generators are materialized to empty lists
+        empty_res = await client.call_tool("t_empty", {})
+        assert empty_res.structured_content == {"result": []}
+
+        empty_async_res = await client.call_tool("t_empty_async", {})
+        assert empty_async_res.structured_content == {"result": []}
+
+
+async def test_transform_fn_generators_with_context_injection():
+    """Generator transform_fn with context injection still materializes (#5668)."""
+    mcp = FastMCP()
+
+    @mcp.tool
+    def base(x: int) -> int:
+        return x
+
+    def gen_with_ctx(x: int, ctx: Context) -> list[int]:  # ty:ignore[invalid-return-type]
+        assert isinstance(ctx, Context)
+        yield x * 2
+        yield x * 3
+
+    async def gen_async_with_ctx(x: int, ctx: Context) -> list[int]:  # ty:ignore[invalid-return-type]
+        assert isinstance(ctx, Context)
+        yield x * 2
+        yield x * 3
+
+    parent = await mcp.get_tool("base")
+    assert parent is not None
+
+    mcp.add_tool(Tool.from_tool(parent, name="t_sync_ctx", transform_fn=gen_with_ctx))
+    mcp.add_tool(
+        Tool.from_tool(parent, name="t_async_ctx", transform_fn=gen_async_with_ctx)
+    )
+
+    async with Client(mcp) as client:
+        sync_res = await client.call_tool("t_sync_ctx", {"x": 5})
+        assert sync_res.structured_content == {"result": [10, 15]}
+        assert isinstance(sync_res.content[0], TextContent)
+        assert sync_res.content[0].text == "[10,15]"
+
+        async_res = await client.call_tool("t_async_ctx", {"x": 5})
+        assert async_res.structured_content == {"result": [10, 15]}
+        assert isinstance(async_res.content[0], TextContent)
+        assert async_res.content[0].text == "[10,15]"
