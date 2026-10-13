@@ -308,7 +308,8 @@ class _SchemaCacheLocalProvider(LocalProvider):
     cache, so the SDK's `get_tool_input_schema` hook (Mcp-Param header
     validation, mcp>=2.3) can resolve locally-registered tools before the first
     `tools/list`. The cache dict is owned by the FastMCP server and shared by
-    reference; it is replaced by value (`clear` + `update`) on every listing."""
+    reference; listings merge into it by value (`update`, never `clear`), so an
+    auth-scoped listing cannot drop another principal's cached schemas."""
 
     def __init__(
         self,
@@ -332,11 +333,28 @@ class _SchemaCacheLocalProvider(LocalProvider):
 
     def remove_tool(self, name: str, version: str | None = None) -> None:
         super().remove_tool(name, version=version)
-        # Evict immediately: a stale schema would let Mcp-Param header
-        # validation reject calls for a tool that no longer exists (or no
-        # longer has this schema) until the next listing. A miss is fail-open,
-        # so dropping the entry is always the safe direction.
-        self._schema_cache.pop(name, None)
+        # Evict only when no version of the tool remains: a version-scoped
+        # removal can leave other versions live under the same logical name,
+        # in which case re-seed from the surviving tool instead. A stale schema
+        # would let Mcp-Param header validation reject calls for a tool that
+        # no longer exists (or no longer has this schema) until the next
+        # listing; a miss is fail-open, so dropping the entry is always the
+        # safe direction.
+        surviving = [
+            component
+            for component in self._components.values()
+            if isinstance(component, Tool) and component.name == name
+        ]
+        if not surviving:
+            self._schema_cache.pop(name, None)
+            return
+        latest = max(surviving, key=lambda t: t.version or "")
+        try:
+            schema = latest.to_mcp_tool(name=latest.name).input_schema
+        except Exception:
+            return
+        if isinstance(schema, dict):
+            self._schema_cache[name] = schema
 
 
 class StateValue(FastMCPBaseModel):

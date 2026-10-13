@@ -464,7 +464,18 @@ class LowLevelServer(_Server[LifespanResultT]):
         # wire-schema cache (seeded at registration, refreshed on every
         # `tools/list`) instead of resolving through providers here.
         if hasattr(self, "get_tool_input_schema"):
-            self.get_tool_input_schema = fastmcp._get_tool_input_schema
+
+            def _get_tool_input_schema(name: str) -> dict[str, Any] | None:
+                # A bound method would hold a strong reference back to the
+                # FastMCP instance and recreate the cycle the weakref above
+                # exists to avoid; resolve through the weakref instead and
+                # fail open (no validation) if the server is gone.
+                resolved = self._fastmcp_ref()
+                if resolved is None:
+                    return None
+                return resolved._get_tool_input_schema(name)
+
+            self.get_tool_input_schema = _get_tool_input_schema
 
         # FastMCP servers support notifications for all components. v2 derives
         # capabilities from registered handlers + protocol_version, but legacy

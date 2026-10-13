@@ -11,6 +11,7 @@ covers proxied and mounted tools).
 from importlib.metadata import version
 
 import pytest
+from packaging.version import Version
 from starlette.testclient import TestClient
 
 from fastmcp import Client, FastMCP
@@ -18,9 +19,9 @@ from fastmcp.server.middleware import Middleware
 from fastmcp.tools import Tool
 from fastmcp.tools.tool_transform import ArgTransform
 
-MCP_SUPPORTS_PARAM_HOOK = (
-    tuple(int(part) for part in version("mcp").split(".")[:2]) >= (2, 3)
-)
+# Version-parse through packaging so pre-release mcp builds (e.g. "2.3rc1")
+# do not blow up int().
+MCP_SUPPORTS_PARAM_HOOK = Version(version("mcp")) >= Version("2.3")
 
 pytestmark = pytest.mark.skipif(
     not MCP_SUPPORTS_PARAM_HOOK,
@@ -61,7 +62,11 @@ async def test_transformed_schema_is_served():
 
     base = Tool.from_function(add, name="add")
     renamed = Tool.from_tool(
-        base, transform_args={"old_x": ArgTransform(name="x"), "old_y": ArgTransform(name="y")}
+        base,
+        transform_args={
+            "old_x": ArgTransform(name="x"),
+            "old_y": ArgTransform(name="y"),
+        },
     )
     server.add_tool(renamed)
 
@@ -117,7 +122,8 @@ async def test_listing_refresh_replaces_stale_entries():
     async with Client(server) as client:
         await client.list_tools()
 
-    # The listing refresh replaces the whole map, so removed tools stay out.
+    # The removal evicted "temp" and the listing (which cannot see it anymore)
+    # merges without resurrecting it, so it stays out.
     assert _hook(server)("temp") is None
     assert _hook(server)("keep") is not None
 
@@ -167,3 +173,59 @@ def test_tools_call_does_not_run_list_middleware():
 
     # The argument-bearing call must not have run the tools/list handler.
     assert listings == 0
+
+
+async def test_auth_scoped_listing_does_not_evict_other_schemas():
+    """An auth-filtered `tools/list` must not clear other principals' schemas.
+
+    The cache is one shared server-wide dict: a listing visible to only one
+    client (here: middleware filtering the catalog) merges into it instead of
+    replacing it, so another client's already-cached schema keeps validating
+    Mcp-Param headers instead of silently fail-opening (#5666 review).
+    """
+
+    server = FastMCP("t")
+
+    @server.tool
+    def alpha(x: int) -> int:
+        return x
+
+    @server.tool
+    def beta(y: int) -> int:
+        return y
+
+    class OnlyBeta(Middleware):
+        async def on_list_tools(self, context, call_next):
+            return [tool for tool in await call_next(context) if tool.name == "beta"]
+
+    server.add_middleware(OnlyBeta())
+
+    async with Client(server) as client:
+        listed = await client.list_tools()
+
+    assert [tool.name for tool in listed] == ["beta"]
+    # The scoped listing serves beta but must not evict alpha's schema.
+    assert _hook(server)("beta") is not None
+    assert _hook(server)("alpha") is not None
+    assert "x" in _hook(server)("alpha")["properties"]
+
+
+async def test_version_scoped_removal_keeps_surviving_version():
+    """Evicting on remove_tool must not go further than the removed version."""
+
+    server = FastMCP("t")
+    server.add_tool(Tool.from_function(lambda: "v1", name="dup", version="1.0"))
+    server.add_tool(Tool.from_function(lambda: "v2", name="dup", version="2.0"))
+
+    schema = _hook(server)("dup")
+    assert schema is not None
+
+    # Removing one version re-seeds the cache from the surviving version
+    # instead of evacuating the logical name.
+    server._local_provider.remove_tool("dup", version="2.0")
+    schema = _hook(server)("dup")
+    assert schema is not None
+
+    # Removing the last version evicts the entry entirely.
+    server._local_provider.remove_tool("dup", version="1.0")
+    assert _hook(server)("dup") is None
