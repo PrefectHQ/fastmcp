@@ -451,6 +451,7 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
         return base
 
     annotated: Any = Annotated[str, StringConstraints(**constraints)]
+    unsupported_pattern: Any = None
 
     if "pattern" in constraints:
         try:
@@ -466,6 +467,7 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
                 stacklevel=2,
             )
             pattern_field = Field(json_schema_extra={"x-unsupported-pattern": pattern})
+            unsupported_pattern = pattern_field
             if constraints:
                 annotated = Annotated[
                     str, StringConstraints(**constraints), pattern_field
@@ -475,7 +477,12 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
 
     if base is str:
         return annotated
-    return _constrain_raw_string(base, **constraints)
+    constrained = _constrain_raw_string(base, **constraints)
+    if unsupported_pattern is None:
+        return constrained
+    # The dropped pattern stays visible for the shapes a `format` maps to a
+    # non-str type too, as the module docstring's third point promises.
+    return Annotated[constrained, unsupported_pattern]  # type: ignore[valid-type]
 
 
 @lru_cache(maxsize=1024)
