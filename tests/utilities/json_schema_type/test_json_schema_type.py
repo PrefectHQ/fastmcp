@@ -183,6 +183,23 @@ class TestBooleanSchemas:
         assert obj.level == "info"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         assert obj.app == "myapp"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
 
+    def test_issue_5737_declared_default_hydrated_with_additional_properties(self):
+        """Defaults of declared fields hydrate like explicit values (#5737)."""
+        from datetime import date
+
+        schema = {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "day": {"type": "string", "format": "date", "default": "2026-10-13"}
+            },
+        }
+        validator = TypeAdapter(json_schema_to_type(schema))
+        assert validator.validate_python({}).day == date(2026, 10, 13)  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert validator.validate_python({"day": "2026-10-13"}).day == date(  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            2026, 10, 13
+        )
+
 
 class TestConstrainedTypes:
     def test_constant(self):

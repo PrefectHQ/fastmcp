@@ -992,7 +992,10 @@ def _build_pydantic_model(
         # Handle defaults
         default_value = prop_schema.get("default", MISSING)
         if default_value is not MISSING:
-            field_definitions[prop_name] = (field_type, default_value)
+            field_definitions[prop_name] = (
+                field_type,
+                Field(default=default_value, validate_default=True),
+            )
         elif prop_name in required:
             field_definitions[prop_name] = (field_type, ...)
         else:
