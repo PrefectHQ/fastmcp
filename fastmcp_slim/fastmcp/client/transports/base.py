@@ -17,6 +17,8 @@ from mcp.client.session import (
 )
 from typing_extensions import TypedDict, Unpack
 
+from fastmcp.client._version_pin import version_pinned
+
 # TypeVar for preserving specific ClientTransport subclass types
 ClientTransportT = TypeVar("ClientTransportT", bound="ClientTransport")
 
@@ -38,6 +40,29 @@ class ClientSessionKwargs(TypedDict, total=False):
     result_claims: Mapping[str, Sequence[ResultClaim[Any]]] | None
 
 
+class VersionAwareClientSession(ClientSession):
+    """A session that skips output-schema revalidation for pinned tool calls.
+
+    ``ClientSession.call_tool`` revalidates a tool's structured content against
+    the output schema the server advertised, looked up by tool *name*. That
+    cache holds only the highest version's schema, so a version-pinned call --
+    which the server executes as the requested version -- would be checked
+    against a schema that does not describe its result.
+
+    The pinned version's schema is not obtainable over the wire today (a
+    ``tools/list`` carrying ``_meta.fastmcp.version`` still answers with the
+    highest version), so the check is skipped for exactly those calls. Every
+    other call validates as before.
+    """
+
+    async def validate_tool_result(
+        self, name: str, result: mcp_types.CallToolResult
+    ) -> None:
+        if version_pinned.get():
+            return
+        await super().validate_tool_result(name, result)
+
+
 @dataclass(frozen=True)
 class TransportOptions:
     """How one client wants its connection built.
@@ -48,9 +73,11 @@ class TransportOptions:
     settings must preserve the existing options rather than replace the bundle.
 
     Attributes:
-        session_class: The ClientSession class to instantiate. Proxies supply a
-            session that skips output-schema validation, since they relay
-            results rather than consume them.
+        session_class: The ClientSession class to instantiate. The default
+            skips output-schema validation for a version-pinned tool call,
+            whose result no advertised schema describes; proxies additionally
+            supply a session that skips it for every result, since they relay
+            rather than consume them.
         forward_incoming_headers: Whether to forward eligible inbound HTTP
             headers upstream, including authorization. Hop-specific HTTP headers
             and MCP transport, routing, and event-stream state are excluded
@@ -67,7 +94,7 @@ class TransportOptions:
             client's own session and era.
     """
 
-    session_class: type[ClientSession] = ClientSession
+    session_class: type[ClientSession] = VersionAwareClientSession
     forward_incoming_headers: bool = False
     backend_mode: str | None = None
 

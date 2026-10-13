@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     import datetime
 
     from fastmcp.client.client import CallToolResult, Client
+from fastmcp.client._version_pin import version_pinned
 from fastmcp.client.progress import ProgressHandler
 from fastmcp.client.telemetry import client_span
 from fastmcp.exceptions import ToolError
@@ -220,23 +221,39 @@ class ClientToolsMixin:
                     allow_claimed=has_claims,
                 )
 
-            first = await self._await_with_session_monitoring(_retry(None, None))
-            driven = await self._await_with_session_monitoring(
-                self._drive_input_required(first, _retry)
+            # A pinned call runs a specific version on the server, but the
+            # session's output-schema cache only holds the highest version's
+            # schema, so the SDK's result revalidation has nothing correct to
+            # check it against. Mark the call for the duration of the request;
+            # the session skips that one check and nothing else. (#5721)
+            fastmcp_meta = (meta or {}).get("fastmcp")
+            pin_token = (
+                version_pinned.set(True)
+                if isinstance(fastmcp_meta, dict)
+                and fastmcp_meta.get("version") is not None
+                else None
             )
-            if isinstance(driven, mcp_types.CallToolResult):
-                result = driven
-            else:
-                # A claimed extension result (SEP-2133): resolve it through the
-                # owning extension's resolver into an ordinary CallToolResult.
-                # Resolution issues further session requests of its own (result
-                # validation lists tools; a resolver may make more), so it needs
-                # the same session monitoring as the calls above — otherwise a
-                # transport-level failure can kill the session runner while this
-                # await waits forever.
-                result = await self._await_with_session_monitoring(
-                    self._resolve_claimed_result(name, driven, read_timeout_seconds)
+            try:
+                first = await self._await_with_session_monitoring(_retry(None, None))
+                driven = await self._await_with_session_monitoring(
+                    self._drive_input_required(first, _retry)
                 )
+                if isinstance(driven, mcp_types.CallToolResult):
+                    result = driven
+                else:
+                    # A claimed extension result (SEP-2133): resolve it through the
+                    # owning extension's resolver into an ordinary CallToolResult.
+                    # Resolution issues further session requests of its own (result
+                    # validation lists tools; a resolver may make more), so it needs
+                    # the same session monitoring as the calls above — otherwise a
+                    # transport-level failure can kill the session runner while this
+                    # await waits forever.
+                    result = await self._await_with_session_monitoring(
+                        self._resolve_claimed_result(name, driven, read_timeout_seconds)
+                    )
+            finally:
+                if pin_token is not None:
+                    version_pinned.reset(pin_token)
 
             # Reflect tool-level errors on the span so callers see ERROR
             # status even though the MCP protocol call itself succeeded.
@@ -256,6 +273,7 @@ class ClientToolsMixin:
         name: str,
         result: mcp_types.CallToolResult,
         raise_on_error: bool = False,
+        version_pinned: bool = False,
     ) -> CallToolResult:
         """Parse an mcp_types.CallToolResult into our CallToolResult dataclass.
 
@@ -263,6 +281,9 @@ class ClientToolsMixin:
             name: Tool name (for schema lookup)
             result: Raw MCP protocol result
             raise_on_error: Whether to raise ToolError on errors
+            version_pinned: Whether the call requested a specific tool version.
+                A pinned result is not coerced through the cached schema; see
+                the module-level parser.
 
         Returns:
             CallToolResult: Parsed result with structured data
@@ -277,6 +298,7 @@ class ClientToolsMixin:
             list_tools_fn=self.list_tools,
             client_name=self.name,
             raise_on_error=raise_on_error,
+            version_pinned=version_pinned,
         )
 
     async def call_tool(
@@ -335,7 +357,10 @@ class ClientToolsMixin:
             meta=request_meta or None,
         )
         return await self._parse_call_tool_result(
-            name, result, raise_on_error=raise_on_error
+            name,
+            result,
+            raise_on_error=raise_on_error,
+            version_pinned=version is not None,
         )
 
 
@@ -346,6 +371,7 @@ async def _parse_call_tool_result(
     list_tools_fn: Any,  # Callable[[], Awaitable[None]]
     client_name: str | None = None,
     raise_on_error: bool = False,
+    version_pinned: bool = False,
 ) -> CallToolResult:
     """Parse an mcp_types.CallToolResult into our CallToolResult dataclass.
 
@@ -356,6 +382,9 @@ async def _parse_call_tool_result(
         list_tools_fn: Async function to refresh tool schemas if needed
         client_name: Optional client name for logging
         raise_on_error: Whether to raise ToolError on errors
+        version_pinned: Whether the call requested a specific tool version. The
+            cached schema describes the highest version, so a pinned result is
+            hydrated from ``structured_content`` as it arrived instead.
 
     Returns:
         CallToolResult: Parsed result with structured data
@@ -380,36 +409,47 @@ async def _parse_call_tool_result(
             )
             wrap_from_meta = fastmcp_meta.get("wrap_result", False)
 
-            # Ensure the schema cache is populated for type validation.
-            # When meta tells us the result is wrapped we can skip the
-            # schema check for *wrap detection*, but we still need the
-            # schema for proper type coercion (e.g. list → set, str → datetime).
-            if name not in tool_output_schemas:
-                await list_tools_fn()
-
-            if wrap_from_meta:
-                # Meta tells us the result is wrapped — unwrap and validate.
-                structured_content = result.structured_content.get("result")
-            elif name in tool_output_schemas:
-                output_schema = tool_output_schemas.get(name)
-                if output_schema and output_schema.get("x-fastmcp-wrap-result"):
+            if version_pinned:
+                # The cached schema describes the highest version, not the one
+                # this call pinned, so coercing through it would reject content
+                # that is valid for the version that ran. The result meta still
+                # says whether the server wrapped it; nothing else is applied.
+                if wrap_from_meta:
                     structured_content = result.structured_content.get("result")
                 else:
                     structured_content = result.structured_content
-            else:
-                structured_content = result.structured_content
-
-            # Type-validate through the schema if available.
-            output_schema = tool_output_schemas.get(name)
-            if output_schema:
-                if wrap_from_meta or output_schema.get("x-fastmcp-wrap-result"):
-                    output_schema = output_schema.get("properties", {}).get(
-                        "result", output_schema
-                    )
-                type_adapter = json_schema_to_type_adapter(output_schema)
-                data = type_adapter.validate_python(structured_content)
-            else:
                 data = structured_content
+            else:
+                # Ensure the schema cache is populated for type validation.
+                # When meta tells us the result is wrapped we can skip the
+                # schema check for *wrap detection*, but we still need the
+                # schema for proper type coercion (e.g. list → set, str → datetime).
+                if name not in tool_output_schemas:
+                    await list_tools_fn()
+
+                if wrap_from_meta:
+                    # Meta tells us the result is wrapped — unwrap and validate.
+                    structured_content = result.structured_content.get("result")
+                elif name in tool_output_schemas:
+                    output_schema = tool_output_schemas.get(name)
+                    if output_schema and output_schema.get("x-fastmcp-wrap-result"):
+                        structured_content = result.structured_content.get("result")
+                    else:
+                        structured_content = result.structured_content
+                else:
+                    structured_content = result.structured_content
+
+                # Type-validate through the schema if available.
+                output_schema = tool_output_schemas.get(name)
+                if output_schema:
+                    if wrap_from_meta or output_schema.get("x-fastmcp-wrap-result"):
+                        output_schema = output_schema.get("properties", {}).get(
+                            "result", output_schema
+                        )
+                    type_adapter = json_schema_to_type_adapter(output_schema)
+                    data = type_adapter.validate_python(structured_content)
+                else:
+                    data = structured_content
         except Exception as e:
             logger.error(
                 f"[{client_name or 'client'}] Error parsing structured content: {e}"
