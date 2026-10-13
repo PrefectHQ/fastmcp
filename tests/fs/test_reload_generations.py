@@ -1,14 +1,23 @@
 """Reload scans must discover a single current generation of source modules."""
 
+import asyncio
 import importlib
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.providers import FileSystemProvider
+
+
+class ReloadControl(ModuleType):
+    started: threading.Event
+    release: threading.Event
 
 
 def write_tools(path: Path, generation: int, removed: bool, added: bool) -> None:
@@ -243,3 +252,85 @@ async def test_application_helper_keeps_identity(
             assert application_helper.SINGLETON is singleton
             assert (await client.call_tool("shared_state")).data == "application state"
             assert sys.modules[helper_name] is application_helper
+
+
+async def test_default_scan_reuses_sibling_imports_from_current_scan(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "default_sibling_components"
+    root.mkdir()
+    helper_name = f"z_helper_{tmp_path.name}"
+    (root / f"{helper_name}.py").write_text("CACHE = {}\n")
+    (root / "a_consumer.py").write_text(
+        "from fastmcp.tools import tool\n"
+        f"from {helper_name} import CACHE\n"
+        "@tool\ndef write_cache() -> str:\n"
+        "    CACHE['value'] = 'persisted'\n"
+        "    return 'written'\n"
+        "@tool\ndef read_cache() -> str:\n"
+        f"    from {helper_name} import CACHE as current_cache\n"
+        "    return current_cache.get('value', 'missing')\n"
+    )
+    provider = FileSystemProvider(root)
+
+    async with Client(FastMCP(providers=[provider])) as client:
+        await client.call_tool("write_cache")
+        assert (await client.call_tool("read_cache")).data == "persisted"
+
+
+async def test_overlapping_reload_providers_wait_for_in_progress_import(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "concurrent_reload_components"
+    root.mkdir()
+    control_name = f"reload_control_{tmp_path.name}"
+    control = ReloadControl(control_name)
+    control.started = threading.Event()
+    control.release = threading.Event()
+    monkeypatch.setitem(sys.modules, control_name, control)
+    (root / "component.py").write_text(
+        "from fastmcp.tools import tool\n"
+        f"import {control_name} as control\n"
+        "control.started.set()\n"
+        "control.release.wait(timeout=10)\n"
+        "@tool\ndef available() -> str:\n"
+        "    return 'ready'\n"
+    )
+    second_started = threading.Event()
+
+    def build_second_provider() -> FileSystemProvider:
+        second_started.set()
+        return FileSystemProvider(root, reload=True)
+
+    other_root = tmp_path / "independent_components"
+    other_root.mkdir()
+    (other_root / "other.py").write_text(
+        "from fastmcp.tools import tool\n"
+        "@tool\ndef independent() -> str:\n"
+        "    return 'independent'\n"
+    )
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        first_future = executor.submit(FileSystemProvider, root, reload=True)
+        assert await asyncio.to_thread(control.started.wait, 5)
+        second_future = executor.submit(build_second_provider)
+        assert await asyncio.to_thread(second_started.wait, 5)
+        independent_future = executor.submit(
+            FileSystemProvider, other_root, reload=True
+        )
+        try:
+            await asyncio.sleep(0.1)
+            assert not second_future.done()
+            independent = await asyncio.wait_for(
+                asyncio.wrap_future(independent_future), timeout=2
+            )
+            assert {tool.name for tool in await independent.list_tools()} == {
+                "independent"
+            }
+        finally:
+            control.release.set()
+        first = await asyncio.wrap_future(first_future)
+        second = await asyncio.wrap_future(second_future)
+
+    assert {tool.name for tool in await first.list_tools()} == {"available"}
+    assert {tool.name for tool in await second.list_tools()} == {"available"}

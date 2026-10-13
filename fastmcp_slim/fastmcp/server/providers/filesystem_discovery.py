@@ -12,11 +12,12 @@ import contextlib
 import hashlib
 import importlib.util
 import sys
+import threading
 from dataclasses import dataclass, field
 from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import ModuleType
-from weakref import WeakSet
+from weakref import WeakSet, WeakValueDictionary
 
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
@@ -26,6 +27,30 @@ logger = get_logger(__name__)
 # Only modules loaded by discovery belong to reload scans. Application imports
 # retain their identity even when their source files are under a provider root.
 _discovered_modules: WeakSet[ModuleType] = WeakSet()
+
+
+class _RootDiscoveryLock:
+    """Serialize scans that share Python module names under one provider root."""
+
+    def __init__(self) -> None:
+        self.lock = threading.RLock()
+
+
+_root_discovery_locks: WeakValueDictionary[Path, _RootDiscoveryLock] = (
+    WeakValueDictionary()
+)
+_root_discovery_locks_guard = threading.Lock()
+
+
+def _get_root_discovery_lock(root: Path) -> _RootDiscoveryLock:
+    """Return a shared lock for this root without serializing unrelated roots."""
+    root = root.resolve()
+    with _root_discovery_locks_guard:
+        lock = _root_discovery_locks.get(root)
+        if lock is None:
+            lock = _RootDiscoveryLock()
+            _root_discovery_locks[root] = lock
+        return lock
 
 
 @dataclass
@@ -454,10 +479,16 @@ def discover_and_import(root: Path, *, reload: bool = False) -> DiscoveryResult:
         The caller is responsible for logging/handling failures.
         Files with no components are silently skipped.
     """
-    files = discover_files(root)
-    if reload:
-        _invalidate_modules(root.resolve(), files)
-    return _discover_and_import(root, files, reuse_existing=reload)
+    root = root.resolve()
+    # Imports from sibling files use the same Python module namespace. Keep scans
+    # of one root atomic so another provider cannot expose a partially executed
+    # module. Different roots can still scan concurrently.
+    discovery_lock = _get_root_discovery_lock(root)
+    with discovery_lock.lock:
+        files = discover_files(root)
+        if reload:
+            _invalidate_modules(root, files)
+        return _discover_and_import(root, files, reuse_existing=reload)
 
 
 def _discover_and_import(
@@ -466,12 +497,16 @@ def _discover_and_import(
     result = DiscoveryResult()
     existing_modules = sys.modules.copy()
     source_paths = {file.resolve() for file in files}
+    scan_modules: dict[Path, ModuleType] = {}
 
     for file_path in files:
         try:
-            module = import_module_from_file(
-                file_path, provider_root=root, reuse_existing=reuse_existing
-            )
+            source_path = file_path.resolve()
+            module = scan_modules.get(source_path)
+            if module is None:
+                module = import_module_from_file(
+                    file_path, provider_root=root, reuse_existing=reuse_existing
+                )
         except Exception as e:
             result.failed_files[file_path] = str(e)
             continue
@@ -484,6 +519,7 @@ def _discover_and_import(
                 source = getattr(imported, "__file__", None)
                 if source is not None and Path(source).resolve() in source_paths:
                     _discovered_modules.add(imported)
+                    scan_modules.setdefault(Path(source).resolve(), imported)
 
         components = extract_components(module)
         for component in components:
