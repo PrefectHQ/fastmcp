@@ -83,11 +83,8 @@ def extract_query_params(uri_template: str) -> set[str]:
     `{&var}`, `{+var}`, `{#var}`, `{.var}`, `{/var}`, `{;var}`
     and set expansion `{a,b}`.
     """
-    # Use the helper to extract all param names, then filter to only those
-    # that come from query-relevant syntax ({?...} and {;var})
-    all_params = _extract_uri_template_params(uri_template, "query")
-    # Specifically keep {?...} and {;var} params; level-3 operators like {&var}
-    # are handled via the param name matching in match_uri_template
+    # Extract params from query-relevant syntax ({?...} and {;var})
+    # Level-3 operators like {&var} are handled via the param name matching in match_uri_template
     result: set[str] = set()
     # Extract from {?...} syntax
     qmatch = re.search(r"\{\?([^}]+)\}", uri_template)
@@ -253,7 +250,7 @@ def build_regex(template: str) -> re.Pattern[str] | None:
             # Handle RFC 6570 level-3 operators: &, +, #, ., /, ;
             # These operators affect URI expansion but are not path params,
             # so we skip them in the path regex and rely on query param extraction.
-            if name.startswith("&") or name.startswith("+") or name.startswith("#") or name.startswith(".") or name.startswith("/") or name.startswith(";"):
+            if name.startswith(("&", "+", "#", ".", "/", ";")):
                 # Skip level-3 operator groups in path regex;
                 # the parameter name will be extracted via extract_query_params
                 continue
