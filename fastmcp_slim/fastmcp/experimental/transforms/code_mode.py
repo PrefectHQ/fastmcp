@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import json
+import sys
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 
@@ -375,7 +376,8 @@ class Search:
         if search_fn is None:
             from fastmcp.server.transforms.search.bm25 import BM25SearchTransform
 
-            _bm25 = BM25SearchTransform(max_results=default_limit or 50)
+            # Search applies the per-call limit after ranking all matches.
+            _bm25 = BM25SearchTransform(max_results=sys.maxsize)
             search_fn = _bm25._search
         self._search_fn = search_fn
         self._name = name
