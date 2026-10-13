@@ -11,6 +11,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict, Field
 
 from fastmcp import Client, FastMCP
+from fastmcp.tools import ToolResult
 
 
 class Reading(BaseModel):
@@ -64,6 +65,21 @@ async def test_typed_extra_fields_survive_tool_result_hydration(shape: str) -> N
 
 
 class TestStructuredResultHydration:
+    async def test_invalid_typed_extra_is_rejected_before_hydration(self):
+        mcp = FastMCP()
+        payload = {"name": "cache", "hits": "many"}
+
+        @mcp.tool(output_schema=Counters.model_json_schema())
+        def invalid_counters() -> ToolResult:
+            return ToolResult(content=[], structured_content=payload)
+
+        async with Client(mcp) as client:
+            with pytest.raises(
+                RuntimeError,
+                match="Invalid structured content returned by tool invalid_counters",
+            ):
+                await client.call_tool("invalid_counters")
+
     async def test_annotated_scalar_formats_arrive_as_python_types(self):
         mcp = FastMCP()
 
