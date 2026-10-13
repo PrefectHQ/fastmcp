@@ -20,6 +20,7 @@ from fastmcp.tools.base import (
     ToolResult,
 )
 from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
+from fastmcp.tools.function_tool import FunctionTool, _wrap_body_errors
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -361,21 +362,26 @@ class TransformedTool(Tool):
         try:
             from fastmcp.server.dependencies import without_injected_parameters
 
-            fn = without_injected_parameters(self.fn)
-            if is_coroutine_function(fn):
+            # Wrap sync functions to materialize generators in threadpool,
+            # aligning with FunctionTool's approach to avoid blocking the event loop
+            fn_is_async = is_coroutine_function(self.fn)
+            body_fn = (
+                self.fn
+                if fn_is_async
+                else _wrap_body_errors(self.fn, materialize_generators=True)
+            )
+            fn = without_injected_parameters(body_fn)
+
+            if fn_is_async:
                 result = await fn(**arguments)
             else:
                 result = await call_sync_fn_in_threadpool(fn, **arguments)
                 if inspect.isawaitable(result):
                     result = await result
 
-            # Generator bodies are supported for plain tools; materialize them
-            # here too. Without this, a sync generator is never consumed (empty
-            # result) and an async generator is serialized as its repr.
-            if inspect.isasyncgen(result):
-                result = [item async for item in result]
-            elif inspect.isgenerator(result):
-                result = list(result)
+            # Materialize any remaining generators (async generators for async functions,
+            # or generators from awaitable sync functions). Reuses FunctionTool's helper.
+            result = await FunctionTool._materialize_generator(result)
 
             # A multi-round-trip ask (SEP-2322) is not output data: it must
             # reach the wire handler intact, never reshaped by output_schema
