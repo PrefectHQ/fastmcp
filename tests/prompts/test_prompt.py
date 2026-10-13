@@ -64,6 +64,27 @@ class TestRenderPrompt:
         with pytest.raises(ValueError):
             await prompt.render(arguments=dict(age=40))
 
+    async def test_fn_with_positional_only_parameters_not_allowed(self):
+        def fn(name: str, /, age: int = 30) -> str:
+            return f"Hello, {name}! You're {age} years old."
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                "Functions with positional-only parameters are not supported as "
+                "prompts.*standard parameters"
+            ),
+        ):
+            Prompt.from_function(fn)
+
+    async def test_fn_with_keyword_only_parameters(self):
+        def fn(name: str, *, age: int = 30) -> str:
+            return f"Hello, {name}! You're {age} years old."
+
+        prompt = Prompt.from_function(fn)
+        result = await prompt.render(arguments=dict(name="World", age=40))
+        assert result.messages == [Message("Hello, World! You're 40 years old.")]
+
     async def test_fn_returns_message_list(self):
         async def fn() -> list[Message]:
             return [Message("Hello, world!")]

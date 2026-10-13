@@ -600,7 +600,7 @@ class RemoteAuthProvider(AuthProvider):
         translator = getattr(self.token_verifier, "get_challenge_scopes", None)
         if translator is None:
             return effective_scopes
-        return translator(effective_scopes)
+        return translator(required_scopes)
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify token using the configured token verifier."""
@@ -826,8 +826,8 @@ class MultiAuth(AuthProvider):
     ) -> list[str]:
         """Select challenge scopes through an unambiguous auth source.
 
-        Without a `required_scopes` override, the server selects its own default
-        challenge, including any customization of this hook.
+        Without a `required_scopes` override, the server or sole verifier selects
+        its own default challenge, including any customization of this hook.
         """
         if required_scopes is None:
             required_scopes = self._required_scopes_override
@@ -839,7 +839,7 @@ class MultiAuth(AuthProvider):
         if len(self.verifiers) == 1:
             translator = getattr(self.verifiers[0], "get_challenge_scopes", None)
             if translator is not None:
-                return translator(effective_scopes)
+                return translator(required_scopes)
         return effective_scopes
 
     async def verify_token(self, token: str) -> AccessToken | None:

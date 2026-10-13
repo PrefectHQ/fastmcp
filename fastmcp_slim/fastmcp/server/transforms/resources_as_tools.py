@@ -25,8 +25,9 @@ import json
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Annotated, Any
 
-from mcp_types import ToolAnnotations
+from mcp_types import InputRequiredResult, ToolAnnotations
 
+from fastmcp.resources.base import InputRequiredResourceResult
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.tools.base import Tool
@@ -141,7 +142,7 @@ class ResourcesAsTools(Transform):
 
         async def read_resource(
             uri: Annotated[str, "The URI of the resource to read"],
-        ) -> str:
+        ) -> str | InputRequiredResult:
             """Read a resource by its URI.
 
             For static resources, provide the exact URI. For templated
@@ -152,6 +153,8 @@ class ResourcesAsTools(Transform):
             """
             ctx = get_context()
             result = await ctx.fastmcp.read_resource(uri)
+            if isinstance(result, InputRequiredResourceResult):
+                return result.input_required
             return _format_result(result)
 
         return Tool.from_function(fn=read_resource, annotations=_DEFAULT_ANNOTATIONS)

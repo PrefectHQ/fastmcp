@@ -317,10 +317,27 @@ def _build_client(
 # ---------------------------------------------------------------------------
 
 
+def _unwrap_nullable(schema: dict[str, Any]) -> dict[str, Any]:
+    """Reduce an optional schema (``X | None``) to the schema for ``X``."""
+
+    if "anyOf" in schema:
+        non_null = [s for s in schema["anyOf"] if s.get("type") != "null"]
+        if len(non_null) == 1:
+            return non_null[0]
+
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        non_null_types = [t for t in schema_type if t != "null"]
+        if len(non_null_types) == 1:
+            return {**schema, "type": non_null_types[0]}
+
+    return schema
+
+
 def coerce_value(raw: str, schema: dict[str, Any]) -> Any:
     """Coerce a string CLI value according to a JSON-Schema type hint."""
 
-    schema_type = schema.get("type", "string")
+    schema_type = _unwrap_nullable(schema).get("type", "string")
 
     if schema_type == "integer":
         try:

@@ -1,8 +1,10 @@
+import json
 from pathlib import Path
 
 import pytest
 
 from fastmcp.cli.install import install_app
+from fastmcp.cli.install.mcp_json import install_mcp_json
 from fastmcp.cli.install.shared import validate_server_name
 from fastmcp.cli.install.stdio import install_stdio
 
@@ -313,6 +315,28 @@ class TestMcpJsonInstall:
         )
 
         assert bound.arguments["copy"] is True
+
+    def test_install_mcp_json_stdout_is_valid_json(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """Long paths and bracketed values must reach stdout unchanged."""
+        server_dir = tmp_path / "a-long-directory-name" / "another-long-directory-name"
+        server_dir.mkdir(parents=True)
+        server_file = server_dir / "server.py"
+        server_file.write_text("# placeholder")
+
+        result = install_mcp_json(
+            file=server_file,
+            server_object=None,
+            name="test-server",
+            env_vars={"PATTERN": "[red]value[/red]"},
+        )
+
+        assert result is True
+        config = json.loads(capsys.readouterr().out)
+        server_config = config["test-server"]
+        assert server_config["args"][-1] == str(server_file.resolve())
+        assert server_config["env"] == {"PATTERN": "[red]value[/red]"}
 
 
 class TestStdioInstall:
