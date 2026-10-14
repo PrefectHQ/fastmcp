@@ -6,7 +6,10 @@ from typing import Any
 
 from fastmcp.utilities.logging import get_logger
 
-from .json_schema_converter import convert_openapi_schema_to_json_schema
+from .json_schema_converter import (
+    convert_openapi_schema_to_json_schema,
+    resolve_definition_pointer,
+)
 from .models import HTTPRoute, JsonSchema, ResponseInfo
 
 logger = get_logger(__name__)
@@ -310,7 +313,11 @@ def _allof_members(
                 if ref.startswith(prefix):
                     name = ref.removeprefix(prefix)
                     dependencies.add(name)
-                    referenced = schema_defs.get(name) if name not in refs else None
+                    referenced = (
+                        resolve_definition_pointer(schema_defs, name)
+                        if name not in refs
+                        else None
+                    )
                     contextual |= name in refs
                     break
         children: list[tuple[dict[str, Any], set[str]]] = []

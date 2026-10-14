@@ -331,6 +331,25 @@ def _needs_recursive_processing(
     return False
 
 
+def resolve_definition_pointer(definitions: dict[str, Any] | None, pointer: str) -> Any:
+    """Look up ``pointer``, the part of a ``#/$defs/...`` reference after
+    ``#/$defs/``, in ``definitions``.
+
+    The pointer can continue into a definition, as in
+    ``Pet/properties/status``. Returns None when any segment is missing.
+    """
+    node: Any = definitions or {}
+    for segment in pointer.split("/"):
+        key = segment.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, dict):
+            node = node.get(key)
+        elif isinstance(node, list) and key.isdigit() and int(key) < len(node):
+            node = node[int(key)]
+        else:
+            return None
+    return node
+
+
 def _scope_schemas(
     schema: dict[str, Any],
     definitions: dict[str, Any] | None,
@@ -349,7 +368,7 @@ def _scope_schemas(
     ref = schema.get("$ref")
     if isinstance(ref, str) and ref.startswith("#/$defs/") and ref not in seen_refs:
         seen_refs.add(ref)
-        target = (definitions or {}).get(ref[len("#/$defs/") :])
+        target = resolve_definition_pointer(definitions, ref[len("#/$defs/") :])
         if isinstance(target, dict):
             yield from _scope_schemas(target, definitions, seen_refs)
     all_of = schema.get("allOf")
