@@ -87,7 +87,12 @@ class VersionFilter(Transform):
     async def get_tool(
         self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
     ) -> Tool | None:
-        return await call_next(name, version=self._spec.intersect(version))
+        tool = await call_next(name, version=self._spec.intersect(version))
+        if tool is None or self._spec.matches(
+            tool.version, match_none=self.include_unversioned
+        ):
+            return tool
+        return None
 
     # -------------------------------------------------------------------------
     # Resources
@@ -107,7 +112,12 @@ class VersionFilter(Transform):
         *,
         version: VersionSpec | None = None,
     ) -> Resource | None:
-        return await call_next(uri, version=self._spec.intersect(version))
+        resource = await call_next(uri, version=self._spec.intersect(version))
+        if resource is None or self._spec.matches(
+            resource.version, match_none=self.include_unversioned
+        ):
+            return resource
+        return None
 
     # -------------------------------------------------------------------------
     # Resource Templates
@@ -129,7 +139,12 @@ class VersionFilter(Transform):
         *,
         version: VersionSpec | None = None,
     ) -> ResourceTemplate | None:
-        return await call_next(uri, version=self._spec.intersect(version))
+        template = await call_next(uri, version=self._spec.intersect(version))
+        if template is None or self._spec.matches(
+            template.version, match_none=self.include_unversioned
+        ):
+            return template
+        return None
 
     # -------------------------------------------------------------------------
     # Prompts
@@ -145,4 +160,9 @@ class VersionFilter(Transform):
     async def get_prompt(
         self, name: str, call_next: GetPromptNext, *, version: VersionSpec | None = None
     ) -> Prompt | None:
-        return await call_next(name, version=self._spec.intersect(version))
+        prompt = await call_next(name, version=self._spec.intersect(version))
+        if prompt is None or self._spec.matches(
+            prompt.version, match_none=self.include_unversioned
+        ):
+            return prompt
+        return None

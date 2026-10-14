@@ -13,7 +13,7 @@ for validation with Pydantic. It supports:
 
 - Basic types (string, number, integer, boolean, null)
 - Complex types (arrays, objects)
-- Format constraints (date-time, email, uri)
+- Format constraints (date-time, date, time, duration, uuid, email, uri)
 - Numeric constraints (minimum, maximum, multipleOf)
 - String constraints (minLength, maxLength, pattern)
 - Array constraints (minItems, maxItems, uniqueItems)
@@ -60,7 +60,7 @@ Example:
 
 ## Functions
 
-### `json_schema_to_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema_type.py#L273" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `json_schema_to_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema_type.py#L279" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 json_schema_to_type(schema: Mapping[str, Any] | bool, name: str | None = None) -> type
@@ -125,7 +125,7 @@ class Name:
 ```
 
 
-### `json_schema_to_type_adapter` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema_type.py#L361" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `json_schema_to_type_adapter` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema_type.py#L367" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 json_schema_to_type_adapter(schema: Mapping[str, Any] | bool) -> TypeAdapter[Any]
@@ -138,7 +138,7 @@ Adapters are cached by schema content in a bounded cache, so the classes
 they hold are released when they are evicted.
 
 
-### `safe_create_model` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema_type.py#L777" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `safe_create_model` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema_type.py#L873" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 safe_create_model(name: str, field_definitions: Mapping[str, tuple[Any, Any]]) -> type[BaseModel]
@@ -160,4 +160,4 @@ where `default` may be a `FieldInfo` or `...` for required fields.
 
 ## Classes
 
-### `JSONSchema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema_type.py#L240" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `JSONSchema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema_type.py#L246" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>

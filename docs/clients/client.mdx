@@ -11,46 +11,56 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 The `fastmcp.Client` class provides a programmatic interface for interacting with any MCP server. It handles protocol details and connection management automatically, letting you focus on the operations you want to perform.
 
-The FastMCP Client is designed for deterministic, controlled interactions rather than autonomous behavior, making it ideal for testing MCP servers during development, building deterministic applications that need reliable MCP interactions, and creating the foundation for agentic or LLM-based clients with structured, type-safe operations.
-
-<Note>
-This is a programmatic client that requires explicit function calls and provides direct control over all MCP operations. Use it as a building block for higher-level systems.
-</Note>
+Use it to add MCP tools to a Python script, web application, or AI agent. Your application chooses which operations to call; the client discovers and executes them on the server.
 
 ## Creating a Client
 
-You provide a server source and the client automatically infers the appropriate transport mechanism.
+You provide a server source and the client automatically infers the appropriate transport mechanism. This example calls an inventory tool from ordinary Python code and uses its result in the application:
 
 ```python
-from pathlib import Path
 import asyncio
+
 from fastmcp import Client, FastMCP
 
-# In-memory server (ideal for testing)
-server = FastMCP("TestServer")
-client = Client(server)
+server = FastMCP("Inventory")
 
-# HTTP server
-client = Client("https://example.com/mcp")
 
-# Local Python script
-client = Client(Path("my_mcp_server.py"))
+@server.tool
+def stock_count(sku: str) -> int:
+    """Return the available stock for a product."""
+    return {"WIDGET": 12}.get(sku, 0)
+
 
 async def main():
-    async with client:
-        # List available operations
-        tools = await client.list_tools()
-        resources = await client.list_resources()
-        prompts = await client.list_prompts()
+    async with Client(server) as client:
+        result = await client.call_tool("stock_count", {"sku": "WIDGET"})
+        print(f"Available stock: {result.data}")  # Available stock: 12
 
-        # Execute operations
-        result = await client.call_tool("example_tool", {"param": "value"})
-        print(result)
 
 asyncio.run(main())
 ```
 
 All client operations require using the `async with` context manager for proper connection lifecycle management.
+
+## Use Cases
+
+### Applications and Scripts
+
+Call a known tool with `call_tool()` when your application already knows what work to do, such as checking inventory before preparing an order. Use `result.data` for Python values, or `result.content` when you need the MCP content blocks, including text, images, and other media. The same client API works with an in-memory server, a local subprocess, or a remote HTTP server; choose the connection in [Transports](/clients/transports).
+
+### AI Agents and Chat Applications
+
+Use `list_tools()` to discover each tool's name, description, and `input_schema`, then adapt those definitions to your model SDK's tool format. When the model requests a tool call, pass its name and parsed arguments to `call_tool()` and return the result to the model in the SDK's expected format. Your application owns the conversation loop and decides which tools it permits the model to call.
+
+See [Calling Tools](/clients/tools) for discovery, result formats, and error handling. [Client Groups](/clients/client-groups) let an agent use tools from several independently configured servers through one catalog.
+
+### Testing Servers
+
+Pass your server instance to `Client(server)` in a test to exercise tool discovery and execution without starting a network listener. Assert the returned values just as your application would. The [server testing guide](/servers/testing) shows how to share a client through pytest fixtures.
+
+### Discovering and Downloading Skills
+
+An agent can also use the client to retrieve instructions and supporting files from servers that expose skills as resources. The [skills client utilities](/servers/providers/skills#client-utilities) provide `list_skills()` for discovery, `get_skill_manifest()` for inspecting files, and `download_skill()` or `sync_skills()` for saving them locally.
 
 ## Choosing a Transport
 

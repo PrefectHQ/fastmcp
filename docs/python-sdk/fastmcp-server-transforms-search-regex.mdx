@@ -10,11 +10,12 @@ Regex-based search transform.
 
 ## Classes
 
-### `RegexSearchTransform` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/search/regex.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `RegexSearchTransform` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/search/regex.py#L16" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Search transform using regex pattern matching.
 
 Tools are matched against their name, description, and parameter
-information using ``re.search`` with ``re.IGNORECASE``.
+information using Pydantic's Rust regex engine with case-insensitive
+matching. Lookarounds and backreferences are not supported.
 

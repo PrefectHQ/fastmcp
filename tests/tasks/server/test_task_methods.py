@@ -113,6 +113,40 @@ async def test_tasks_cancel_transitions_to_cancelled():
         assert final.status in {"cancelled", "completed"}
 
 
+async def test_tasks_cancel_leaves_completed_task_completed():
+    """Cancelling a finished task keeps its `completed` status and result."""
+    mcp = _methods_server()
+    async with running_task_server(mcp):
+        finished = await run_task(mcp, "quick_tool", {"value": 21})
+        assert finished.status == "completed"
+
+        await cancel_task(mcp, finished.task_id)
+
+        after = await get_task(mcp, finished.task_id)
+        assert after.status == "completed"
+        assert after.result == finished.result
+
+
+async def test_tasks_cancel_leaves_failed_task_failed():
+    """Cancelling a task that already failed keeps its `failed` status and error."""
+    mcp = FastMCP("cancel-failed-test")
+    mcp.add_extension(TasksExtension())
+
+    @mcp.tool(task=True)
+    async def protocol_error_tool() -> str:
+        raise MCPError(code=-32000, message="backend unavailable")
+
+    async with running_task_server(mcp):
+        failed = await run_task(mcp, "protocol_error_tool", {})
+        assert failed.status == "failed"
+
+        await cancel_task(mcp, failed.task_id)
+
+        after = await get_task(mcp, failed.task_id)
+        assert after.status == "failed"
+        assert after.error == failed.error
+
+
 async def test_worker_keeps_running_after_cancel_before_task_starts(
     monkeypatch: pytest.MonkeyPatch,
 ):

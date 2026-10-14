@@ -23,7 +23,7 @@ the app name + tool name). CSP on the resource is the tool's
 
 ## Functions
 
-### `synthesize_prefab_resources` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/prefab_synthesis.py#L201" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `synthesize_prefab_resources` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/prefab_synthesis.py#L213" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 synthesize_prefab_resources(server: FastMCP) -> list[Resource]
@@ -33,7 +33,7 @@ synthesize_prefab_resources(server: FastMCP) -> list[Resource]
 Return fresh synthetic Prefab resources for all prefab tools. Pure.
 
 
-### `synthesize_prefab_resource_by_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/prefab_synthesis.py#L216" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `synthesize_prefab_resource_by_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/prefab_synthesis.py#L228" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 synthesize_prefab_resource_by_uri(server: FastMCP, uri: str) -> Resource | None
@@ -43,14 +43,14 @@ synthesize_prefab_resource_by_uri(server: FastMCP, uri: str) -> Resource | None
 Intercept a Prefab renderer URI and synthesize on demand.
 
 
-### `rewrite_tool_meta_for_wire` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/prefab_synthesis.py#L229" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `rewrite_tool_meta_for_wire` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/prefab_synthesis.py#L241" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 rewrite_tool_meta_for_wire(tool: Tool) -> Tool
 ```
 
 
-Return a model_copy with the per-tool URI and CSP stripped.
+Return a model_copy with the per-tool URI and resource-only fields stripped.
 
 Reads the hash from the tool's own meta. If no hash is found,
 returns the tool unchanged. Produces a fresh copy — the original

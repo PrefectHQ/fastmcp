@@ -16,6 +16,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.auth.middleware import RequireAuthMiddleware
 from fastmcp.server.server import FastMCP
+from fastmcp.utilities.versions import VersionSpec
 
 
 def set_up_component_manager(
@@ -171,7 +172,11 @@ def _make_endpoint(server: FastMCP, component_type: str, action: str):
 
         # Call server.enable() or server.disable()
         method = getattr(server, action)
-        method(names={name} if name else None, version=version, components=components)
+        method(
+            names={name} if name else None,
+            version=VersionSpec(eq=version) if version else None,
+            components=components,
+        )
 
         return JSONResponse(
             {"message": f"{action.capitalize()}d {component_type}: {name}"}

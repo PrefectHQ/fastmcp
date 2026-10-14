@@ -394,7 +394,7 @@ For HTTP request access that works regardless of MCP session availability (when 
 
 Clients can send contextual information with their requests using the `meta` parameter. This metadata is accessible through `ctx.request_context.meta` and is available for all MCP operations (tools, resources, prompts).
 
-The `meta` field is `None` when clients don't provide metadata. When provided, metadata is accessible via attribute access (e.g., `meta.user_id`) rather than dictionary access. The structure of metadata is determined by the client making the request.
+The `meta` field is `None` when the request carries no metadata. Otherwise it is a plain `dict`, so read values with `meta.get("user_id")`; attribute access such as `meta.user_id` raises `AttributeError`. Alongside the client's own keys, the dictionary can include protocol-level keys such as `progressToken`. The structure of the client's metadata is determined by the client making the request.
 
 ```python
 @mcp.tool
@@ -405,9 +405,9 @@ def send_email(to: str, subject: str, body: str, ctx: Context) -> str:
     meta = ctx.request_context.meta
 
     if meta:
-        # Meta is accessed as an object with attribute access
-        user_id = meta.user_id if hasattr(meta, 'user_id') else None
-        trace_id = meta.trace_id if hasattr(meta, 'trace_id') else None
+        # Meta is a plain dict
+        user_id = meta.get("user_id")
+        trace_id = meta.get("trace_id")
 
         # Use metadata for logging, observability, etc.
         if trace_id:

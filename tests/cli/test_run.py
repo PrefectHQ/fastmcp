@@ -997,6 +997,45 @@ class TestRunWithReloadWithServerArgs:
             "--stateless",
         ]
 
+    @pytest.mark.parametrize("reload", [False, True])
+    async def test_run_with_needs_uv_forwards_skip_source_flag(self, reload):
+        """`--skip-source` should survive the uv-wrapped subprocess path."""
+        mock_config = MagicMock()
+        mock_config.deployment.transport = None
+        mock_config.deployment.host = None
+        mock_config.deployment.port = None
+        mock_config.deployment.path = None
+        mock_config.deployment.log_level = None
+        mock_config.deployment.args = ()
+        mock_config.environment.build_command = lambda cmd: ["uv", "run", *cmd]
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with (
+            patch(
+                "fastmcp.cli.cli.load_and_merge_config",
+                return_value=(mock_config, "server.py"),
+            ),
+            patch(
+                "fastmcp.cli.cli.subprocess.run", return_value=mock_result
+            ) as mock_run,
+            patch(
+                "fastmcp.cli.run.run_with_reload", new_callable=AsyncMock
+            ) as mock_reload,
+        ):
+            if reload:
+                await run("server.py", skip_source=True, reload=True)
+                cmd = mock_reload.call_args.args[0]
+            else:
+                with pytest.raises(SystemExit):
+                    await run("server.py", skip_source=True)
+                cmd = mock_run.call_args.args[0]
+
+        assert cmd[:4] == ["uv", "run", "fastmcp", "run"]
+        assert "--skip-source" in cmd
+        assert cmd.index("--skip-source") < cmd.index("--skip-env")
+
 
 class TestInspectorModuleMode:
     """Test the inspector command's module-mode handling."""
