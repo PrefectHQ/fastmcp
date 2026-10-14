@@ -118,11 +118,12 @@ class LogData:
     extra: Mapping[str, Any] | None = None
 
 
-# Names a `LogRecord` already uses; `Logger.log(extra=...)` raises KeyError when
-# `extra` contains one of them.
-_LOG_RECORD_RESERVED_KEYS = frozenset(
-    logging.makeLogRecord({}).__dict__.keys() | {"message", "asctime"}
-)
+def _log_record_reserved_keys() -> set[str]:
+    """Names a `LogRecord` already uses; `Logger.log(extra=...)` raises KeyError
+    when `extra` contains one of them. Read from the active record factory, since
+    applications can install one that adds attributes."""
+    return {*logging.makeLogRecord({}).__dict__, "message", "asctime"}
+
 
 _mcp_level_to_python_level = {
     "debug": logging.DEBUG,
@@ -1352,14 +1353,11 @@ async def _log_to_server_and_client(
 
     # The client receives `data.extra` in full; only the server-side log record
     # can't carry keys that collide with its own attributes.
+    reserved = _log_record_reserved_keys() if data.extra else set()
     to_client_logger.log(
         level=_mcp_level_to_python_level[level],
         msg=f"{msg_prefix}: {data.msg}",
-        extra={
-            k: v
-            for k, v in (data.extra or {}).items()
-            if k not in _LOG_RECORD_RESERVED_KEYS
-        },
+        extra={k: v for k, v in (data.extra or {}).items() if k not in reserved},
     )
 
     # Deprecated upstream in SDK v2 but deliberately kept per compat directive;

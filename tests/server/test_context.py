@@ -515,3 +515,38 @@ class TestContextLogExtra:
         assert received == [
             {"msg": "hello", "extra": {"name": "job-1", "module": "billing"}}
         ]
+
+    async def test_log_extra_with_attribute_from_custom_record_factory(self):
+        """Attributes added by a record factory installed later are reserved too."""
+        import logging
+
+        from fastmcp import Client
+
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        async def emit(ctx: Context) -> str:
+            await ctx.info("hello", extra={"request_id": "r-1"})
+            return "ok"
+
+        received = []
+
+        async def log_handler(message):
+            received.append(message.data)
+
+        previous = logging.getLogRecordFactory()
+
+        def factory(*args, **kwargs):
+            record = previous(*args, **kwargs)
+            record.request_id = "from-factory"
+            return record
+
+        logging.setLogRecordFactory(factory)
+        try:
+            async with Client(mcp, log_handler=log_handler) as client:
+                result = await client.call_tool("emit", {})
+        finally:
+            logging.setLogRecordFactory(previous)
+
+        assert result.data == "ok"
+        assert received == [{"msg": "hello", "extra": {"request_id": "r-1"}}]
