@@ -330,3 +330,20 @@ def test_relative_config_path_survives_deployment_cwd(tmp_path, monkeypatch):
     config = load_mcp_server_config(Path(server_spec))
     assert config.deployment.cwd == "work"
     assert Path.cwd() == work_dir.resolve()
+
+
+def test_config_symlink_keeps_its_own_name(tmp_path, monkeypatch):
+    """A symlinked config keeps the link's name, so the spec is still read as JSON."""
+    target = tmp_path / "config.txt"
+    target.write_text(json.dumps({"source": {"path": "server.py"}}))
+    (tmp_path / "server.py").write_text("# Server")
+    link = tmp_path / "fastmcp.json"
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available")
+    monkeypatch.chdir(tmp_path)
+
+    _, server_spec = load_and_merge_config("fastmcp.json")
+
+    assert Path(server_spec) == link
