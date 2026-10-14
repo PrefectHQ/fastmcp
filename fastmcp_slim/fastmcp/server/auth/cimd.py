@@ -565,7 +565,7 @@ class CIMDAssertionValidator:
             algorithm = decode_jwt_header(assertion).get("alg")
         except (ValueError, AttributeError) as e:
             raise ValueError(f"Invalid JWT assertion: {e}") from e
-        if algorithm not in ASSERTION_ALGORITHMS:
+        if not isinstance(algorithm, str) or algorithm not in ASSERTION_ALGORITHMS:
             raise ValueError(f"Unsupported assertion algorithm: {algorithm!r}")
 
         if cimd_doc.jwks_uri:

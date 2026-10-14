@@ -443,6 +443,28 @@ class TestCIMDAssertionValidator:
                 assertion, client_id, token_endpoint, cimd_doc_with_inline_jwks
             )
 
+    @pytest.mark.parametrize("alg", [[], {}, None, 256])
+    async def test_rejects_non_string_assertion_algorithm(
+        self, validator, cimd_doc_with_inline_jwks, alg
+    ):
+        """A header whose alg is not a string is an invalid assertion, not a crash."""
+        import base64
+        import json
+
+        def segment(data: dict) -> str:
+            raw = json.dumps(data).encode()
+            return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+        assertion = f"{segment({'alg': alg, 'typ': 'JWT'})}.{segment({})}.c2ln"
+
+        with pytest.raises(ValueError, match="Unsupported assertion algorithm"):
+            await validator.validate_assertion(
+                assertion,
+                "https://example.com/client.json",
+                "https://oauth.example.com/token",
+                cimd_doc_with_inline_jwks,
+            )
+
 
 class TestCIMDClientManager:
     """Tests for CIMDClientManager."""
