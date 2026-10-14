@@ -77,6 +77,7 @@ def clean_schema_for_display(schema: JsonSchema | None) -> JsonSchema | None:
 # Keywords whose value is a single subschema
 _SUBSCHEMA_KEYWORDS = (
     "propertyNames",
+    "contentSchema",
     "not",
     "if",
     "then",

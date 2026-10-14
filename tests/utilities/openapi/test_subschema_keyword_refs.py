@@ -23,6 +23,7 @@ DEFS_REF = {"$ref": "#/$defs/Reserved"}
         "unevaluatedItems",
         "unevaluatedProperties",
         "propertyNames",
+        "contentSchema",
     ],
 )
 def test_single_schema_keyword_refs_are_rewritten(keyword: str):
