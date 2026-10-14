@@ -88,6 +88,18 @@ _SUBSCHEMA_KEYWORDS = (
 )
 
 
+def _ref_component_name(ref: str) -> str | None:
+    """Return the component schema a local `$ref` points into, if any.
+
+    The name is the segment after `#/$defs/` or `#/components/schemas/`, so
+    `#/$defs/Pet/properties/status` needs the `Pet` definition.
+    """
+    for prefix in ("#/$defs/", "#/components/schemas/"):
+        if ref.startswith(prefix):
+            return ref.removeprefix(prefix).split("/")[0] or None
+    return None
+
+
 def _replace_ref_with_defs(
     info: dict[str, Any], description: str | None = None
 ) -> dict[str, Any]:
@@ -114,8 +126,11 @@ def _replace_ref_with_defs(
     if ref_path := schema.get("$ref"):
         if isinstance(ref_path, str):
             if ref_path.startswith("#/components/schemas/"):
-                schema_name = ref_path.split("/")[-1]
-                schema["$ref"] = f"#/$defs/{schema_name}"
+                # Keep the whole pointer: one into a component, such as
+                # #/components/schemas/Pet/properties/status, has the same path
+                # under $defs.
+                pointer = ref_path.removeprefix("#/components/schemas/")
+                schema["$ref"] = f"#/$defs/{pointer}"
             elif not ref_path.startswith("#/"):
                 raise ValueError(
                     f"External or non-local reference not supported: {ref_path}. "
@@ -755,8 +770,10 @@ def _combine_schemas_and_map_params(
                 if isinstance(value, dict):
                     if "$ref" in value and isinstance(value["$ref"], str):
                         ref = value["$ref"]
-                        if ref.startswith("#/$defs/"):
-                            used_refs.add(ref.split("/")[-1])
+                        if ref.startswith("#/$defs/") and (
+                            name := _ref_component_name(ref)
+                        ):
+                            used_refs.add(name)
                     for v in value.values():
                         find_refs_in_value(v)
                 elif isinstance(value, list):
@@ -944,7 +961,8 @@ def extract_output_schema_from_responses(
     if "$ref" in output_schema and schema_definitions:
         ref_path = output_schema["$ref"]
         if ref_path.startswith("#/$defs/"):
-            schema_name = ref_path.split("/")[-1]
+            # Only a reference to a whole definition can be replaced by it.
+            schema_name = ref_path.removeprefix("#/$defs/")
             if schema_name in schema_definitions:
                 # Replace $ref with the actual schema definition
                 output_schema = _replace_ref_with_defs(schema_definitions[schema_name])
