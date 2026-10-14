@@ -99,7 +99,8 @@ class TestUnsupportedLevel3Operators:
             return f"File: {path}"
 
         with pytest.raises(
-            ValueError, match=r"RFC 6570 level-3 operators \{\+\.\.\.\} are not supported"
+            ValueError,
+            match=r"RFC 6570 level-3 operators \{\+\.\.\.\} are not supported",
         ):
             ResourceTemplate.from_function(
                 fn=get_file,
@@ -114,7 +115,8 @@ class TestUnsupportedLevel3Operators:
             return f"Doc: {doc}, Section: {section}"
 
         with pytest.raises(
-            ValueError, match=r"RFC 6570 level-3 operators \{#\.\.\.\} are not supported"
+            ValueError,
+            match=r"RFC 6570 level-3 operators \{#\.\.\.\} are not supported",
         ):
             ResourceTemplate.from_function(
                 fn=get_section,
@@ -129,7 +131,8 @@ class TestUnsupportedLevel3Operators:
             return f"Base: {base}, Segment: {segment}"
 
         with pytest.raises(
-            ValueError, match=r"RFC 6570 level-3 operators \{/\.\.\.\} are not supported"
+            ValueError,
+            match=r"RFC 6570 level-3 operators \{/\.\.\.\} are not supported",
         ):
             ResourceTemplate.from_function(
                 fn=get_resource,
@@ -144,7 +147,8 @@ class TestUnsupportedLevel3Operators:
             return f"File: {name}.{ext}"
 
         with pytest.raises(
-            ValueError, match=r"RFC 6570 level-3 operators \{\.\.\.\.\} are not supported"
+            ValueError,
+            match=r"RFC 6570 level-3 operators \{\.\.\.\.\} are not supported",
         ):
             ResourceTemplate.from_function(
                 fn=get_file,
@@ -159,7 +163,8 @@ class TestUnsupportedLevel3Operators:
             return f"ID: {id}, Path: {path}"
 
         with pytest.raises(
-            ValueError, match=r"RFC 6570 level-3 operators \{\+\.\.\.\} are not supported"
+            ValueError,
+            match=r"RFC 6570 level-3 operators \{\+\.\.\.\} are not supported",
         ):
             ResourceTemplate.from_function(
                 fn=get_resource,
