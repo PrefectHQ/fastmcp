@@ -883,6 +883,31 @@ class TestPrompts:
             proxy_result = await client.list_prompts()
         assert proxy_result == result
 
+    async def test_list_prompts_keeps_argument_titles(self):
+        """A backend's argument titles reach the proxy's clients."""
+        from fastmcp.prompts import Prompt
+        from fastmcp.prompts.base import PromptArgument
+
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        prompt = Prompt.from_function(greet)
+        prompt = prompt.model_copy(
+            update={
+                "arguments": [
+                    PromptArgument(name="name", title="Your name", required=True)
+                ]
+            }
+        )
+        backend = FastMCP("Backend")
+        backend.add_prompt(prompt)
+
+        async with Client(create_proxy(backend)) as client:
+            (listed,) = await client.list_prompts()
+        assert listed.arguments == [
+            mcp_types.PromptArgument(name="name", title="Your name", required=True)
+        ]
+
     async def test_render_prompt_same_as_original(
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
     ):
