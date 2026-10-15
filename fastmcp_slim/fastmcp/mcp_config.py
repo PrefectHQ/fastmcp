@@ -140,7 +140,11 @@ class _TransformingMCPServerMixin(BaseModel):
         transport = cast("ClientTransport", super().to_transport())  # ty: ignore[unresolved-attribute]
         # The proxy that wraps this client forwards the initialize handshake and
         # server-initiated features, which require the legacy era.
-        client = Client(transport=transport, name=client_name, mode="legacy")
+        config = cast("MCPServerTypes", self)
+        timeout = config.timeout / 1000 if config.timeout is not None else None
+        client = Client(
+            transport=transport, name=client_name, mode="legacy", timeout=timeout
+        )
         wrapped_mcp_server = create_proxy(client, name=server_name)
 
         if self.include_tags is not None:
@@ -181,6 +185,8 @@ class StdioMCPServer(BaseModel):
     """MCP server configuration for stdio transport.
 
     This is the canonical configuration format for MCP servers using stdio transport.
+    `timeout` sets the per-request timeout in milliseconds when used in an
+    `MCPConfig`. It takes precedence over the client timeout; zero disables it.
     """
 
     # Required fields
@@ -230,6 +236,8 @@ class RemoteMCPServer(BaseModel):
     """MCP server configuration for HTTP/SSE transport.
 
     This is the canonical configuration format for MCP servers using remote transports.
+    `timeout` sets the per-request timeout in milliseconds when used in an
+    `MCPConfig`. It takes precedence over the client timeout; zero disables it.
     """
 
     # Required fields
