@@ -9,7 +9,7 @@ from typing import Literal
 from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.aggregate import AggregateProvider
-from fastmcp.server.providers.skills._common import SkillPathError, resolve_within
+from fastmcp.server.providers.skills._common import SkillPathError
 from fastmcp.server.providers.skills.skill_provider import SkillProvider
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec
@@ -87,9 +87,11 @@ class SkillsDirectoryProvider(AggregateProvider):
                 continue
 
             for skill_dir in root.iterdir():
+                # Skill folders may be links to directories elsewhere; the skill's
+                # own files must still resolve within the folder it links to.
                 try:
-                    skill_dir = resolve_within(root, skill_dir.name)
-                except (SkillPathError, OSError, RuntimeError):
+                    skill_dir = skill_dir.resolve(strict=True)
+                except (OSError, RuntimeError):
                     logger.warning(
                         f"Skipping skill directory that cannot be used: {skill_dir.name}"
                     )

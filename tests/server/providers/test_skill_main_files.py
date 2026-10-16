@@ -7,7 +7,7 @@ from mcp.types import TextResourceContents
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.providers.skills import SkillProvider, SkillsDirectoryProvider
-from fastmcp.server.providers.skills._common import SkillPathError, resolve_within
+from fastmcp.server.providers.skills._common import SkillPathError
 
 
 def make_skill(path: Path, content: str = "# Instructions") -> Path:
@@ -41,20 +41,16 @@ async def test_main_file_is_checked_again_when_read(tmp_path: Path) -> None:
         await resource.read()
 
 
-@pytest.mark.parametrize("entry_link", [False, True])
-async def test_directory_keeps_other_skills_when_an_entry_is_outside(
-    tmp_path: Path, entry_link: bool
+async def test_directory_keeps_other_skills_when_a_main_file_is_outside(
+    tmp_path: Path,
 ) -> None:
     root = tmp_path / "skills"
     root.mkdir()
     make_skill(root / "ordinary")
     outside = make_skill(tmp_path / "other")
-    if entry_link:
-        (root / "linked").symlink_to(outside, target_is_directory=True)
-    else:
-        linked = make_skill(root / "linked")
-        (linked / "SKILL.md").unlink()
-        (linked / "SKILL.md").symlink_to(outside / "SKILL.md")
+    linked = make_skill(root / "linked")
+    (linked / "SKILL.md").unlink()
+    (linked / "SKILL.md").symlink_to(outside / "SKILL.md")
 
     provider = SkillsDirectoryProvider(root)
     resources = await provider.list_resources()
@@ -112,30 +108,17 @@ async def test_directory_links_within_root_remain_discoverable(tmp_path: Path) -
     }
 
 
-async def test_directory_keeps_the_selected_target_when_a_link_changes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+async def test_directory_discovers_skill_folders_linked_from_elsewhere(
+    tmp_path: Path,
 ) -> None:
     root = tmp_path / "skills"
     root.mkdir()
-    selected = make_skill(root / "selected", "# Selected instructions")
-    other = make_skill(tmp_path / "other", "# Other instructions")
-    link = root / "linked"
-    link.symlink_to(selected, target_is_directory=True)
-
-    def select_path(base: Path, name: str) -> Path:
-        resolved = resolve_within(base, name)
-        if name == "linked":
-            link.unlink()
-            link.symlink_to(other, target_is_directory=True)
-        return resolved
-
-    monkeypatch.setattr(
-        "fastmcp.server.providers.skills.directory_provider.resolve_within", select_path
-    )
+    make_skill(tmp_path / "checkout")
+    (root / "checkout").symlink_to(tmp_path / "checkout", target_is_directory=True)
     resources = await SkillsDirectoryProvider(root).list_resources()
     assert {resource.name for resource in resources} == {
-        "selected/SKILL.md",
-        "selected/_manifest",
+        "checkout/SKILL.md",
+        "checkout/_manifest",
     }
 
 
