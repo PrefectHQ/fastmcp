@@ -67,6 +67,7 @@ class StdioTransport(ClientTransport):
         self.log_file = log_file
 
         self._session: ClientSession | None = None
+        self._session_future: asyncio.Future[ClientSession] | None = None
         self._session_options: TransportOptions | None = None
         self._active_sessions = 0
         self._connect_lock = anyio.Lock()
@@ -126,40 +127,49 @@ class StdioTransport(ClientTransport):
             ):
                 await self.disconnect()
 
-            if self._connect_task is not None:
-                return
+            # Preserve the established connect() return value when a ready
+            # keep-alive session is reused. connect_session() yields _session.
+            if self._session is not None:
+                return None
 
-            session_future: asyncio.Future[ClientSession] = asyncio.Future()
+            session_future: asyncio.Future[ClientSession] | None = self._session_future
+            if self._connect_task is None:
+                session_future = asyncio.Future()
+                self._session_future = session_future
 
-            # Recorded before the connect completes: while it is in flight the
-            # session already belongs to these options, and a concurrent caller
-            # comparing against an unset value would read it as a mismatch and
-            # tear down the connection being established.
-            self._session_options = options
+                # Recorded before the connect completes: while it is in flight
+                # the session already belongs to these options, and a
+                # concurrent caller comparing against an unset value would read
+                # it as a mismatch and tear down the connection being established.
+                self._session_options = options
 
-            # start the connection task
-            self._connect_task = asyncio.create_task(
-                _stdio_transport_connect_task(
-                    command=self.command,
-                    args=self.args,
-                    env=self.env,
-                    cwd=self.cwd,
-                    log_file=self.log_file,
-                    # TODO(ty): remove when ty supports Unpack[TypedDict] inference
-                    session_kwargs=session_kwargs,  # type: ignore[arg-type]
-                    transport_options=options,
-                    ready_event=self._ready_event,
-                    stop_event=self._stop_event,
-                    session_future=session_future,
+                # Start the connection task.
+                self._connect_task = asyncio.create_task(
+                    _stdio_transport_connect_task(
+                        command=self.command,
+                        args=self.args,
+                        env=self.env,
+                        cwd=self.cwd,
+                        log_file=self.log_file,
+                        # TODO(ty): remove when ty supports Unpack[TypedDict] inference
+                        session_kwargs=session_kwargs,  # type: ignore[arg-type]
+                        transport_options=options,
+                        ready_event=self._ready_event,
+                        stop_event=self._stop_event,
+                        session_future=session_future,
+                    )
                 )
-            )
+
+            if session_future is None:
+                raise RuntimeError("Stdio connection has no session future")
 
             # wait for the client to be ready before returning
             await self._ready_event.wait()
 
             # Check if connect task completed with an exception (early failure)
-            if self._connect_task.done():
-                exception = self._connect_task.exception()
+            connect_task = self._connect_task
+            if connect_task is not None and connect_task.done():
+                exception = connect_task.exception()
                 if exception is not None:
                     raise exception
 
@@ -191,6 +201,7 @@ class StdioTransport(ClientTransport):
         # reset variables and events for potential future reconnects
         self._connect_task = None
         self._session = None
+        self._session_future = None
         self._session_options = None
         self._stop_event = anyio.Event()
         self._ready_event = anyio.Event()
