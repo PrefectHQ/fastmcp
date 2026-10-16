@@ -812,6 +812,30 @@ On every platform, FastMCP deterministically derives `jwt_signing_key` from `ups
 **For production:**
 Configure the following parameters together: provide a unique `jwt_signing_key` (for signing FastMCP JWTs), and a shared `client_storage` backend (for storing tokens). Both are required for production deployments. Use a network-accessible storage backend like Redis or DynamoDB rather than local disk storage. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** (see the `client_storage` parameter documentation above for examples). The keys accept any secret string and derive proper cryptographic keys using HKDF. See [OAuth Token Security](/deployment/http#oauth-token-security) and [Storage Backends](/servers/storage-backends) for complete production setup.
 
+#### Expired state cleanup
+
+The default file store accumulates expired entries on disk (authorization transaction state, auth codes, upstream tokens, and JTI mappings). FastMCP reaps them once when the proxy is constructed. Entries without a TTL (e.g. DCR client registrations) are left untouched, and a custom `client_storage` is never culled.
+
+For long-lived deployments that rarely restart, schedule your own culls with the public hook:
+
+```python
+import asyncio
+
+from fastmcp.server.auth import OAuthProxy
+
+auth = OAuthProxy(...)  # default file store
+
+
+async def cull_hourly():
+    while True:
+        await asyncio.sleep(3600)
+        await auth.cull_expired_oauth_state()
+
+
+# Start this in your server lifespan (or any scheduler you already run)
+# and cancel it when the server shuts down.
+```
+
 ### Confused Deputy Attacks
 
 <VersionBadge version="2.13.0" />
