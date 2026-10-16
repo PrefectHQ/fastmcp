@@ -295,6 +295,35 @@ class TestMiddlewareHooks:
         result = list_prompts_calls[0].result
         assert isinstance(result, list)
 
+    async def test_list_hooks_receive_typed_request_messages(
+        self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
+    ):
+        async with Client(mcp_server) as client:
+            await client.list_tools()
+            await client.list_resources()
+            await client.list_resource_templates()
+            await client.list_prompts()
+
+        expected = [
+            ("on_list_tools", mcp_types.ListToolsRequest, "tools/list"),
+            ("on_list_resources", mcp_types.ListResourcesRequest, "resources/list"),
+            (
+                "on_list_resource_templates",
+                mcp_types.ListResourceTemplatesRequest,
+                "resources/templates/list",
+            ),
+            ("on_list_prompts", mcp_types.ListPromptsRequest, "prompts/list"),
+        ]
+        for hook, message_cls, method in expected:
+            calls = recording_middleware.get_calls(hook=hook)
+            assert len(calls) > 0
+            message = calls[0].context.message
+            assert isinstance(message, message_cls), (
+                f"{hook} received {type(message).__name__}, "
+                f"expected {message_cls.__name__}"
+            )
+            assert message.method == method
+
     async def test_initialize(
         self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
     ):
