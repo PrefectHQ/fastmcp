@@ -1531,6 +1531,20 @@ class FastMCP(
                         raise ToolError(f"Error calling tool {name!r}") from e
                     raise ToolError(f"Error calling tool {name!r}: {e}") from e
 
+    async def _check_resource_access(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> None:
+        async with fastmcp.server.context.Context(fastmcp=self) as ctx:
+            context = MiddlewareContext(
+                message=mcp_types.ReadResourceRequestParams(
+                    uri=uri, _meta=_version_request_meta(version)
+                ),
+                method="resources/read",
+                fastmcp_context=ctx,
+            )
+            for middleware in self.middleware:
+                await middleware.check_resource_access(context)
+
     async def read_resource(
         self,
         uri: str,

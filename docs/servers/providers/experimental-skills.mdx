@@ -1,0 +1,82 @@
+---
+title: Experimental Skills Extension
+sidebarTitle: Skills Extension (Experimental)
+description: Publish filesystem skills through standard MCP skills discovery
+icon: flask
+---
+
+The existing `SkillsDirectoryProvider` can opt into experimental Skills discovery, letting clients discover filesystem skills through `skills/list` and `skills/get`, with frontmatter and a complete file manifest. Files remain ordinary MCP resources, readable through `resources/read`.
+
+<Warning>
+This API is experimental and may change without a deprecation period. It builds on the [MCP Skills extension](https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx). Directory reads, host-side activation, approval, installation, and execution are not implemented.
+</Warning>
+
+## Publish skills
+
+Set `experimental_skills=True` on `SkillsDirectoryProvider`, register it directly on your server, and register `SkillsExtension` with the same provider instance. The configured directory contains skill directories; each skill needs a UTF-8 `SKILL.md` with valid Agent Skills frontmatter.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.skills.extension import SkillsExtension
+from fastmcp.server.providers.skills import SkillsDirectoryProvider
+
+mcp = FastMCP("Skills")
+skills = SkillsDirectoryProvider("./skills", experimental_skills=True)
+mcp.add_provider(skills)
+mcp.add_extension(SkillsExtension(providers=[skills]))
+
+if __name__ == "__main__":
+    mcp.run(transport="http")
+```
+
+For example, `skills/review/SKILL.md` can contain:
+
+```markdown
+---
+name: review
+description: Review a code change for correctness and compatibility.
+---
+
+Read the changed code and verify the behavior it promises.
+```
+
+Its URI is `skill://review/SKILL.md`. A nested skill at `skills/team/review/SKILL.md` uses `skill://team/review/SKILL.md`. Parent manifests include all supporting files, including nested skills; each nested skill also has its own discovery entry.
+
+The default `supporting_files="template"` exposes the main files and existing synthetic `_manifest` entries as resources and supporting files through resource templates. Use `supporting_files="resources"` to include each supporting file in `resources/list`.
+
+## Discover and read
+
+Explicitly enable the typed client extension and use a modern protocol connection. Listing retrieves metadata; read only the files you need.
+
+```python
+from fastmcp import Client
+from fastmcp.skills import SkillsClientExtension
+
+async def inspect_skills() -> None:
+    async with Client(
+        "http://localhost:8000/mcp",
+        mode="auto",
+        extensions=[SkillsClientExtension()],
+    ) as client:
+        entries = await client.list_skills()
+        for entry in entries:
+            print(entry.uri, entry.frontmatter.description)
+```
+
+`client.get_skill(uri)` refreshes one entry. Each static manifest includes the URI, byte size, and SHA-256 digest of every file. A host must verify resource contents against those records before using them, preserve the originating server's identity, and apply the extension's approval rules. The typed client methods transport entries; they do not activate or approve skills.
+
+## Validation and updates
+
+Listing scans the directories and hashes their current bytes. Looking up a skill by URI hashes only that skill; resource reads resolve their path directly without scanning the skill collection. Reads remain live, preserving CRLF newlines and binary content. If a file changes between discovery and reading, the host detects the mismatch and refreshes the entry. This is a point-in-time manifest, not an atomic filesystem snapshot.
+
+Malformed skills are omitted with a warning. Duplicate root-relative skill paths are all omitted. Frontmatter must have unique string keys and JSON-compatible values; timestamps, binary scalars, non-finite numbers, and recursive aliases are rejected. Skill roots and their contents must not be symbolic links.
+
+The entire entry is omitted when any supporting resource or template is unavailable to the caller or resolves to a different backing file. Resource reads claimed by the extension bypass `ResponseCachingMiddleware`, so refreshing a manifest cannot leave the host repeatedly receiving old cached bytes.
+
+## Supported composition
+
+Use directly registered providers with `experimental_skills=True`. Server and provider transforms, namespacing, mounted skill sources, and proxies are not supported. Resource authorization uses `Middleware.check_resource_access`, the policy hook also called by the default `on_read_resource`. `AuthMiddleware` implements this hook, including transport handling and scope checks. Custom resource authorization should implement this hook; custom `on_read_resource` overrides must call `super()` to apply it. Arbitrary restrictions or content changes in other middleware hooks cannot be inferred by discovery and are unsupported unless the middleware keeps the skill metadata consistent.
+
+Without `experimental_skills=True`, the [Skills Provider](/servers/providers/skills) keeps its existing behavior, including permissive frontmatter, synthetic `_manifest` resources, first-root duplicate precedence, and the `reload` setting. Opting in enables strict validation, nested skill identities, duplicate rejection, and live byte-preserving reads. The same `SkillProvider` resource implementation serves both modes, including the existing synthetic `_manifest`. Strict frontmatter validation only determines eligibility for `skills/list` and `skills/get`; files without valid frontmatter remain readable as ordinary resources. The main file must be `SKILL.md`. Experimental reads are always live, regardless of `reload`.
+
+Removing the extension registration disables standard skills discovery while the provider continues serving resources in its selected mode.

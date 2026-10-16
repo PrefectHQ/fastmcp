@@ -236,6 +236,10 @@ class ServerExtension:
         """
         return {}
 
+    def requires_live_resource(self, uri: str) -> bool:
+        """Whether an extension requires this resource to bypass response caching."""
+        return False
+
     def methods(self) -> Sequence[MethodBinding]:
         """New request methods this extension serves (additive)."""
         return ()
