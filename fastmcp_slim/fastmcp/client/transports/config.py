@@ -1,4 +1,5 @@
 import contextlib
+import datetime
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
@@ -30,6 +31,47 @@ if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
 
 logger = get_logger(__name__)
+
+
+def config_entry_timeout_seconds(config: MCPServerTypes) -> tuple[bool, float | None]:
+    """Request timeout for one config entry, if it sets `timeout`.
+
+    Returns (is_set, seconds). Config entries declare `timeout` in
+    milliseconds; the client session takes seconds. A set entry overrides the
+    client-level default for that entry's session; an unset entry leaves it
+    untouched. Zero means disabled (None), matching `Client(timeout=...)`
+    semantics — and it still overrides, so it must stay distinguishable
+    from unset.
+    """
+    ms = getattr(config, "timeout", None)
+    if ms is None:
+        return (False, None)
+    if isinstance(ms, datetime.timedelta):
+        seconds = ms.total_seconds()
+    else:
+        seconds = float(ms) / 1000.0
+    return (True, None if seconds == 0 else seconds)
+
+
+def frontend_timeout_seconds(
+    aggregate: float | None,
+    entries,
+) -> float | None:
+    """Frontend session timeout when config entries set their own timeout.
+
+    The frontend session fronts every backend leg: a stale aggregate default
+    would kill a lengthened/disabled entry override before the backend's own
+    limit applies. When no entry sets a timeout the aggregate is untouched;
+    otherwise the frontend allows the largest configured value (or nothing,
+    when the aggregate is disabled or any entry disables its leg — backend
+    legs still enforce their own limits).
+    """
+    sets = [s for e in entries for s in [config_entry_timeout_seconds(e)] if s[0]]
+    if not sets:
+        return aggregate
+    if aggregate is None or any(s is None for _, s in sets):
+        return None
+    return max([aggregate] + [s for _, s in sets])
 
 
 class MCPConfigTransport(ClientTransport):
@@ -135,6 +177,13 @@ class MCPConfigTransport(ClientTransport):
     ) -> AsyncIterator[ClientSession]:
         # Single server - delegate directly to pre-created transport
         if len(self.config.mcpServers) == 1:
+            entry = next(iter(self.config.mcpServers.values()))
+            is_set, entry_timeout = config_entry_timeout_seconds(entry)
+            if is_set:
+                session_kwargs = {
+                    **session_kwargs,
+                    "read_timeout_seconds": entry_timeout,
+                }
             async with self.transport.connect_session(
                 transport_options=transport_options, **session_kwargs
             ) as session:
@@ -203,7 +252,14 @@ class MCPConfigTransport(ClientTransport):
                 )
 
             async with FastMCPTransport(mcp=composite).connect_session(
-                transport_options=transport_options, **session_kwargs
+                transport_options=transport_options,
+                **{
+                    **session_kwargs,
+                    "read_timeout_seconds": frontend_timeout_seconds(
+                        session_kwargs.get("read_timeout_seconds"),
+                        self.config.mcpServers.values(),
+                    ),
+                },
             ) as session:
                 yield session
         finally:
@@ -358,8 +414,11 @@ class MCPConfigTransport(ClientTransport):
             client_kwargs["forward_incoming_headers"] = (
                 transport_options.forward_incoming_headers
             )
+        entry_is_set, entry_timeout = config_entry_timeout_seconds(config)
         client = StatefulProxyClient(
-            transport=transport, timeout=timeout, **client_kwargs
+            transport=transport,
+            timeout=entry_timeout if entry_is_set else timeout,
+            **client_kwargs,
         )
         # Connect the client *before* create_proxy so _create_client_factory
         # detects it as connected and reuses it for all tool calls, preserving

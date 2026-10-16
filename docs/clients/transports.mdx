@@ -237,6 +237,24 @@ async with client:
     answer = await client.call_tool("assistant_ask", {"question": "What?"})
 ```
 
+### Per-Server Timeouts
+
+Each server entry accepts an optional `timeout` in milliseconds. When set, it
+overrides the client-level default for that entry's session; when omitted, the
+client default applies unchanged.
+
+```python
+config = {
+    "mcpServers": {
+        "weather": {
+            "url": "https://weather.example.com/mcp",
+            "transport": "http",
+            "timeout": 5000,
+        },
+    }
+}
+```
+
 ### Tool Transformations
 
 FastMCP supports tool transformations within the configuration. You can change names, descriptions, tags, and arguments for tools from a server.

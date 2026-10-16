@@ -16,6 +16,7 @@ from mcp.client.caching import CacheMode
 
 from fastmcp.client.client import CallToolResult, Client, ConnectMode
 from fastmcp.client.progress import ProgressHandler
+from fastmcp.client.transports.config import config_entry_timeout_seconds
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.utilities.async_utils import gather
 
@@ -88,7 +89,12 @@ class ClientGroup:
             configured_mode = (server.model_extra or {}).get("mode", default_mode)
             if not isinstance(configured_mode, str):
                 raise TypeError(f"Protocol mode for server {name!r} must be a string")
-            clients[name] = Client(server.to_transport(), mode=configured_mode)
+            entry_is_set, entry_timeout = config_entry_timeout_seconds(server)
+            clients[name] = Client(
+                server.to_transport(),
+                mode=configured_mode,
+                **({"timeout": entry_timeout} if entry_is_set else {}),
+            )
 
         return cls(clients)
 
