@@ -152,3 +152,21 @@ async def test_directory_keeps_valid_skills_when_a_link_cannot_resolve(
         "ordinary/SKILL.md",
         "ordinary/_manifest",
     }
+
+
+async def test_main_file_stays_in_the_loaded_directory_after_a_link_swap(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "skills"
+    root.mkdir()
+    skill = make_skill(root / "skill")
+    outside = make_skill(tmp_path / "other", "# Other instructions")
+    provider = SkillsDirectoryProvider(root)
+    resource = await provider.get_resource("skill://skill/SKILL.md")
+    assert resource is not None
+    (skill / "SKILL.md").unlink()
+    skill.rmdir()
+    skill.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(SkillPathError):
+        await resource.read()

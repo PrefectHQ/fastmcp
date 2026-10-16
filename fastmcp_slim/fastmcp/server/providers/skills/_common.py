@@ -79,11 +79,14 @@ class SkillPathError(ValueError):
 
 
 def resolve_within(base: Path, relative: str | Path) -> Path:
-    """Resolve `relative` under `base`, rejecting paths that escape `base`."""
-    resolved_base = base.resolve()
-    path = (resolved_base / relative).resolve()
-    if not path.is_relative_to(resolved_base):
-        raise SkillPathError(f"Path {relative} escapes {resolved_base}")
+    """Resolve `relative` under `base`, rejecting paths that escape `base`.
+
+    `base` must already be resolved. It is not resolved again, so replacing it
+    with a link after it was selected cannot move the containment boundary.
+    """
+    path = (base / relative).resolve()
+    if not path.is_relative_to(base):
+        raise SkillPathError(f"Path {relative} escapes {base}")
     return path
 
 
