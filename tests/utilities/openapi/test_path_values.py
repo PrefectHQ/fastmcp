@@ -5,7 +5,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
 
-import httpx2
+import httpx
 import pytest
 from jsonschema_path import SchemaPath
 
@@ -74,7 +74,7 @@ async def test_path_value_is_checked_before_backend_request(tmp_path: Path):
         },
     }
     try:
-        async with httpx2.AsyncClient(
+        async with httpx.AsyncClient(
             base_url=f"http://127.0.0.1:{backend.server_port}"
         ) as http:
             server = FastMCP.from_openapi(spec, client=http)
