@@ -165,6 +165,24 @@ class TestValidateURL:
         with pytest.raises(SSRFError, match="must have a host"):
             await validate_url("https:///path")
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            pytest.param("https://example.com:70000/path", id="port-out-of-range"),
+            pytest.param("https://example.com:abc/path", id="port-non-numeric"),
+        ],
+    )
+    async def test_malformed_port_rejected_as_ssrf_error(self, url: str):
+        """Malformed ports must surface as SSRFError, not a bare ValueError.
+
+        Regression test: reading parsed.port outside the urlparse guard let
+        urllib's ValueError escape, which callers (e.g. the OAuth proxy CIMD
+        path) only translate SSRFError from — surfacing as HTTP 500 instead
+        of a clean client error.
+        """
+        with pytest.raises(SSRFError, match="Invalid URL"):
+            await validate_url(url)
+
     async def test_root_path_rejected_when_required(self):
         """Root paths should be rejected when require_path=True."""
         with patch(

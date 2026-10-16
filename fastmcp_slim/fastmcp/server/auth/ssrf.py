@@ -291,6 +291,10 @@ async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
     """
     try:
         parsed = urlparse(url)
+        # Accessing .port raises ValueError for out-of-range or non-numeric
+        # ports (e.g. https://example.com:70000/), so read it inside the
+        # guard instead of below: an invalid URL must surface as SSRFError.
+        port = parsed.port or 443
     except (ValueError, AttributeError) as e:
         raise SSRFError(f"Invalid URL: {e}") from e
 
@@ -304,7 +308,6 @@ async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
         raise SSRFError("URL must have a non-root path")
 
     hostname = parsed.hostname or parsed.netloc
-    port = parsed.port or 443
     path = parsed.path + ("?" + parsed.query if parsed.query else "")
 
     # Proxy mode (FASTMCP_SSRF_TRUST_PROXY): a trusted outbound proxy owns DNS and
