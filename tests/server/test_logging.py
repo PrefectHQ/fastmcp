@@ -29,34 +29,42 @@ async def test_uvicorn_logging_default_level(
     mock_server_instance = AsyncMock()
     mock_uvicorn_server_constructor.return_value = mock_server_instance
     serve_finished_event = anyio.Event()
-    mock_server_instance.serve.side_effect = serve_finished_event.wait
+    serve_started_event = anyio.Event()
+
+    async def serve():
+        serve_started_event.set()
+        await serve_finished_event.wait()
+
+    mock_server_instance.serve.side_effect = serve
 
     test_log_level = "warning"
 
     server_task = asyncio.create_task(
         mcp_server.run_http_async(log_level=test_log_level, port=8003)
     )
-    await mcp_server._started.wait()
-
-    mock_uvicorn_config_constructor.assert_called_once()
-    _, kwargs_config = mock_uvicorn_config_constructor.call_args
-
-    assert kwargs_config.get("log_level") == test_log_level.lower()
-    assert "log_config" not in kwargs_config
-
-    mock_uvicorn_server_constructor.assert_called_once_with(
-        mock_uvicorn_config_constructor.return_value
-    )
-    mock_server_instance.serve.assert_awaited_once()
-
-    # Signal the mock to finish and cancel with timeout
-    # Required for uvicorn 0.39+ due to context isolation
-    serve_finished_event.set()
-    server_task.cancel()
     try:
-        await asyncio.wait_for(server_task, timeout=2.0)
-    except (asyncio.CancelledError, asyncio.TimeoutError):
-        pass
+        await serve_started_event.wait()
+
+        mock_uvicorn_config_constructor.assert_called_once()
+        _, kwargs_config = mock_uvicorn_config_constructor.call_args
+
+        assert kwargs_config.get("log_level") == test_log_level.lower()
+        assert "log_config" not in kwargs_config
+
+        mock_uvicorn_server_constructor.assert_called_once_with(
+            mock_uvicorn_config_constructor.return_value
+        )
+        mock_server_instance.serve.assert_awaited_once()
+
+    finally:
+        # Signal the mock to finish and cancel with timeout
+        # Required for uvicorn 0.39+ due to context isolation
+        serve_finished_event.set()
+        server_task.cancel()
+        try:
+            await asyncio.wait_for(server_task, timeout=2.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            pass
 
 
 @patch("fastmcp.server.mixins.transport.uvicorn.Server")
@@ -70,7 +78,13 @@ async def test_uvicorn_logging_with_custom_log_config(
     mock_server_instance = AsyncMock()
     mock_uvicorn_server_constructor.return_value = mock_server_instance
     serve_finished_event = anyio.Event()
-    mock_server_instance.serve.side_effect = serve_finished_event.wait
+    serve_started_event = anyio.Event()
+
+    async def serve():
+        serve_started_event.set()
+        await serve_finished_event.wait()
+
+    mock_server_instance.serve.side_effect = serve
 
     sample_log_config = {
         "version": 1,
@@ -101,27 +115,29 @@ async def test_uvicorn_logging_with_custom_log_config(
             uvicorn_config={"log_config": sample_log_config}, port=8004
         )
     )
-    await mcp_server._started.wait()
-
-    mock_uvicorn_config_constructor.assert_called_once()
-    _, kwargs_config = mock_uvicorn_config_constructor.call_args
-
-    assert kwargs_config.get("log_config") == sample_log_config
-    assert "log_level" not in kwargs_config
-
-    mock_uvicorn_server_constructor.assert_called_once_with(
-        mock_uvicorn_config_constructor.return_value
-    )
-    mock_server_instance.serve.assert_awaited_once()
-
-    # Signal the mock to finish and cancel with timeout
-    # Required for uvicorn 0.39+ due to context isolation
-    serve_finished_event.set()
-    server_task.cancel()
     try:
-        await asyncio.wait_for(server_task, timeout=2.0)
-    except (asyncio.CancelledError, asyncio.TimeoutError):
-        pass
+        await serve_started_event.wait()
+
+        mock_uvicorn_config_constructor.assert_called_once()
+        _, kwargs_config = mock_uvicorn_config_constructor.call_args
+
+        assert kwargs_config.get("log_config") == sample_log_config
+        assert "log_level" not in kwargs_config
+
+        mock_uvicorn_server_constructor.assert_called_once_with(
+            mock_uvicorn_config_constructor.return_value
+        )
+        mock_server_instance.serve.assert_awaited_once()
+
+    finally:
+        # Signal the mock to finish and cancel with timeout
+        # Required for uvicorn 0.39+ due to context isolation
+        serve_finished_event.set()
+        server_task.cancel()
+        try:
+            await asyncio.wait_for(server_task, timeout=2.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            pass
 
 
 @patch("fastmcp.server.mixins.transport.uvicorn.Server")
@@ -135,7 +151,13 @@ async def test_uvicorn_logging_custom_log_config_overrides_log_level_param(
     mock_server_instance = AsyncMock()
     mock_uvicorn_server_constructor.return_value = mock_server_instance
     serve_finished_event = anyio.Event()
-    mock_server_instance.serve.side_effect = serve_finished_event.wait
+    serve_started_event = anyio.Event()
+
+    async def serve():
+        serve_started_event.set()
+        await serve_finished_event.wait()
+
+    mock_server_instance.serve.side_effect = serve
 
     sample_log_config = {
         "version": 1,
@@ -169,24 +191,26 @@ async def test_uvicorn_logging_custom_log_config_overrides_log_level_param(
             port=8005,
         )
     )
-    await mcp_server._started.wait()
-
-    mock_uvicorn_config_constructor.assert_called_once()
-    _, kwargs_config = mock_uvicorn_config_constructor.call_args
-
-    assert kwargs_config.get("log_config") == sample_log_config
-    assert "log_level" not in kwargs_config
-
-    mock_uvicorn_server_constructor.assert_called_once_with(
-        mock_uvicorn_config_constructor.return_value
-    )
-    mock_server_instance.serve.assert_awaited_once()
-
-    # Signal the mock to finish and cancel with timeout
-    # Required for uvicorn 0.39+ due to context isolation
-    serve_finished_event.set()
-    server_task.cancel()
     try:
-        await asyncio.wait_for(server_task, timeout=2.0)
-    except (asyncio.CancelledError, asyncio.TimeoutError):
-        pass
+        await serve_started_event.wait()
+
+        mock_uvicorn_config_constructor.assert_called_once()
+        _, kwargs_config = mock_uvicorn_config_constructor.call_args
+
+        assert kwargs_config.get("log_config") == sample_log_config
+        assert "log_level" not in kwargs_config
+
+        mock_uvicorn_server_constructor.assert_called_once_with(
+            mock_uvicorn_config_constructor.return_value
+        )
+        mock_server_instance.serve.assert_awaited_once()
+
+    finally:
+        # Signal the mock to finish and cancel with timeout
+        # Required for uvicorn 0.39+ due to context isolation
+        serve_finished_event.set()
+        server_task.cancel()
+        try:
+            await asyncio.wait_for(server_task, timeout=2.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            pass

@@ -44,16 +44,29 @@ def task_server() -> FastMCP:
     return mcp
 
 
-async def test_call_tool_timeout_bounds_total_task_drive(task_server: FastMCP):
-    """A per-call timeout bounds the whole tasked drive, not just one poll.
+async def test_call_tool_timeout_bounds_total_task_drive():
+    """A per-call timeout bounds the whole tasked drive, not just one poll."""
+    server = FastMCP("task-timeout")
+    server.add_extension(TasksExtension())
+    running = asyncio.Event()
+    release = asyncio.Event()
+    completed = asyncio.Event()
 
-    The tool runs far longer than the timeout while each individual poll answers
-    instantly; the transparent path must still abort once total execution passes
-    the deadline, matching the synchronous `tools/call` timeout contract.
-    """
-    async with Client(task_server, mode="auto") as client:
-        with pytest.raises((TimeoutError, MCPError)):
-            await client.call_tool("slow", {}, timeout=0.3)
+    @server.tool(task=True)
+    async def slow() -> str:
+        running.set()
+        await release.wait()
+        completed.set()
+        return "done"
+
+    async with Client(server, mode="auto") as client:
+        try:
+            with pytest.raises((TimeoutError, MCPError)):
+                await client.call_tool("slow", {}, timeout=0.3)
+            assert running.is_set()
+            assert not completed.is_set()
+        finally:
+            release.set()
 
 
 async def test_call_tool_transparently_completes_a_task(task_server: FastMCP):
