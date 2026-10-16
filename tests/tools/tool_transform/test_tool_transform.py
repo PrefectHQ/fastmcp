@@ -1,7 +1,9 @@
 """Core tool transform functionality."""
 
+import asyncio
 import json
 import re
+import time
 from dataclasses import dataclass
 from typing import Annotated, Any
 
@@ -895,3 +897,114 @@ async def test_transform_fn_depends_is_resolved():
     async with Client(mcp) as client:
         result = await client.call_tool("transformed", {"x": 3})
     assert result.data == 63
+
+
+async def test_transform_fn_sync_generator_yields_values():
+    """A sync generator transform_fn's yielded values reach the client.
+
+    A generator body runs during iteration, not creation. FunctionTool
+    materializes generator bodies inside the invocation; TransformedTool's
+    direct dispatch must do the same or every yielded value is silently
+    lost (empty content, empty structured output).
+    """
+    mcp = FastMCP()
+
+    @mcp.tool
+    def base() -> list[str]:
+        return []
+
+    def gen_fn():
+        yield "a1"
+        yield "b1"
+
+    parent = await mcp.get_tool("base")
+    assert parent is not None
+    mcp.add_tool(Tool.from_tool(parent, name="gen_sync", transform_fn=gen_fn))
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("gen_sync", {})
+    assert result.data == ["a1", "b1"]
+    assert result.structured_content == {"result": ["a1", "b1"]}
+
+
+async def test_transform_fn_async_generator_yields_values():
+    """An async generator transform_fn's yielded values reach the client.
+
+    Async generator functions are not coroutine functions, so without
+    materialization the async generator object is serialized as its repr
+    and the structured-content check fails outright.
+    """
+    mcp = FastMCP()
+
+    @mcp.tool
+    def base() -> list[str]:
+        return []
+
+    async def gen_fn():
+        yield "a1"
+        yield "b1"
+
+    parent = await mcp.get_tool("base")
+    assert parent is not None
+    mcp.add_tool(Tool.from_tool(parent, name="gen_async", transform_fn=gen_fn))
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("gen_async", {})
+    assert result.data == ["a1", "b1"]
+    assert result.structured_content == {"result": ["a1", "b1"]}
+
+
+async def test_transform_fn_blocking_sync_generator_does_not_stall_event_loop():
+    """A blocking sync generator transform_fn body runs on a worker thread.
+
+    A generator body runs during iteration, not creation, so materializing it
+    on the event loop would freeze every concurrent request for the full body
+    duration. Like a plain FunctionTool body, it must be consumed inside the
+    same threadpool call that created it.
+    """
+    loop = asyncio.get_running_loop()
+    per_item_block = 0.06
+    item_count = 5
+    total_block = per_item_block * item_count
+
+    def gen_fn():
+        for i in range(item_count):
+            time.sleep(per_item_block)
+            yield f"s{i}"
+
+    mcp = FastMCP()
+
+    @mcp.tool
+    def base() -> list[str]:
+        return []
+
+    parent = await mcp.get_tool("base")
+    assert parent is not None
+    mcp.add_tool(Tool.from_tool(parent, name="gen_blocking", transform_fn=gen_fn))
+
+    max_gap = 0.0
+
+    async def heartbeat() -> None:
+        nonlocal max_gap
+        while True:
+            tick = loop.time()
+            await asyncio.sleep(0.005)
+            max_gap = max(max_gap, loop.time() - tick)
+
+    async with Client(mcp) as client:
+        await client.call_tool("gen_blocking", {})  # warm up call machinery
+        heartbeat_task = asyncio.create_task(heartbeat())
+        try:
+            started = loop.time()
+            result = await client.call_tool("gen_blocking", {})
+            elapsed = loop.time() - started
+        finally:
+            heartbeat_task.cancel()
+
+    assert result.data == [f"s{i}" for i in range(item_count)]
+    # The body really ran to completion for its full blocking duration...
+    assert elapsed >= total_block
+    # ...but the event loop kept servicing concurrent tasks throughout. With
+    # materialization on the event loop the heartbeat stalls for ~total_block;
+    # the 1/4 threshold keeps plenty of headroom on a loaded CI runner.
+    assert max_gap < total_block / 4

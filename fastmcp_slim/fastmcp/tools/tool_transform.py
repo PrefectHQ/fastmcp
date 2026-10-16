@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import inspect
 from collections.abc import Callable
 from contextvars import ContextVar
@@ -20,6 +21,7 @@ from fastmcp.tools.base import (
     ToolResult,
 )
 from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
+from fastmcp.tools.function_tool import FunctionTool, _materialize_sync_generator
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -283,6 +285,24 @@ def _apply_meta_override(
     return merged
 
 
+def _wrap_materialize_generators(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap ``fn`` so a sync generator it returns is consumed inside the call.
+
+    A generator body runs during iteration, not creation: materializing it
+    within this wrapper keeps the body — and any blocking work it does — under
+    the same invocation and worker thread that created it, instead of stalling
+    the event loop after the call returns. This mirrors how ``FunctionTool``
+    consumes generator tool bodies via ``_wrap_body_errors(...,
+    materialize_generators=True)`` before dispatching to the threadpool.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        return _materialize_sync_generator(fn(*args, **kwargs))
+
+    return wrapper
+
+
 class TransformedTool(Tool):
     """A tool that is transformed from another tool.
 
@@ -365,9 +385,21 @@ class TransformedTool(Tool):
             if is_coroutine_function(fn):
                 result = await fn(**arguments)
             else:
-                result = await call_sync_fn_in_threadpool(fn, **arguments)
+                # A sync generator's body runs during iteration, not creation.
+                # Consume it inside the same threadpool call that created it,
+                # so a blocking body stalls a worker thread instead of the
+                # event loop.
+                result = await call_sync_fn_in_threadpool(
+                    _wrap_materialize_generators(fn), **arguments
+                )
                 if inspect.isawaitable(result):
                     result = await result
+            # Async generators may await between items, so they cannot be
+            # consumed inside the sync worker wrapper above: materialize them
+            # here on the event loop — still inside this invocation so its
+            # yielded values become the result while _current_tool is still
+            # set for forward()/forward_raw().
+            result = await FunctionTool._materialize_generator(result)
 
             # A multi-round-trip ask (SEP-2322) is not output data: it must
             # reach the wire handler intact, never reshaped by output_schema
