@@ -309,16 +309,24 @@ def _needs_recursive_processing(
 def _scope_schemas(
     schema: dict[str, Any],
     definitions: dict[str, Any] | None,
-    seen_refs: frozenset[str] = frozenset(),
+    seen_refs: set[str] | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Yield ``schema`` and the schemas describing the same instance through a
-    local ``$ref`` or an ``allOf`` member (reference cycles are skipped)."""
+    local ``$ref`` or an ``allOf`` member.
+
+    Each reference target is visited once per walk, which skips reference
+    cycles and keeps targets shared by several members (a diamond of ``allOf``
+    references) from being walked once per path to them.
+    """
+    if seen_refs is None:
+        seen_refs = set()
     yield schema
     ref = schema.get("$ref")
     if isinstance(ref, str) and ref.startswith("#/$defs/") and ref not in seen_refs:
+        seen_refs.add(ref)
         target = (definitions or {}).get(ref[len("#/$defs/") :])
         if isinstance(target, dict):
-            yield from _scope_schemas(target, definitions, seen_refs | {ref})
+            yield from _scope_schemas(target, definitions, seen_refs)
     all_of = schema.get("allOf")
     for member in all_of if isinstance(all_of, list) else []:
         if isinstance(member, dict):
