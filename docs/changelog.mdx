@@ -5,6 +5,30 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v3.4.9" description="2026-10-16">
+
+**[v3.4.9: Contain Yourself](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.9)**
+
+This release backports security fixes from 4.1: OpenAPI path parameters reject `.` and `..` segments, a skill's `SKILL.md` must stay inside its skill folder, regex tool search is bounded in time and pattern length, and JWT verifiers share JWKS refreshes instead of fetching on every unknown key ID. All 3.x users are encouraged to upgrade. Thanks to our 6 contributors, including 3 first-time contributors.
+
+### Security 🔒
+* [3.x] Backport OpenAPI dot-segment and skill containment fixes by [@zzstoatzz](https://github.com/zzstoatzz), [@GEONWOOHAN](https://github.com/GEONWOOHAN), and [@avrlab233](https://github.com/avrlab233) in [#5765](https://github.com/PrefectHQ/fastmcp/pull/5765)
+* [3.x] Bound regex tool search with Pydantic's regex engine and a time budget by [@zzstoatzz](https://github.com/zzstoatzz) and [@SAYUTIM](https://github.com/SAYUTIM) in [#5768](https://github.com/PrefectHQ/fastmcp/pull/5768)
+### Fixes 🐞
+* [3.x] Share JWKS refreshes across key lookups by [@zzstoatzz](https://github.com/zzstoatzz) and [@YuvalElbar6](https://github.com/YuvalElbar6) in [#5769](https://github.com/PrefectHQ/fastmcp/pull/5769)
+### Docs 📚
+* docs: credit contributors in v3.4.8 changelog entries by [@jlowin](https://github.com/jlowin) in [#5450](https://github.com/PrefectHQ/fastmcp/pull/5450)
+
+
+## New Contributors
+* @avrlab233 made their first contribution in [#5765](https://github.com/PrefectHQ/fastmcp/pull/5765)
+* @SAYUTIM made their first contribution in [#5768](https://github.com/PrefectHQ/fastmcp/pull/5768)
+* @YuvalElbar6 made their first contribution in [#5769](https://github.com/PrefectHQ/fastmcp/pull/5769)
+
+**Full Changelog**: [v3.4.8...v3.4.9](https://github.com/PrefectHQ/fastmcp/compare/v3.4.8...v3.4.9)
+
+</Update>
+
 <Update label="v3.4.8" description="2026-10-04">
 
 **[v3.4.8: Long Arm of the Patch](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.8)**
