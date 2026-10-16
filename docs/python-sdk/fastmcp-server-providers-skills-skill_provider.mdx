@@ -10,7 +10,7 @@ Basic skill provider for handling a single skill folder.
 
 ## Classes
 
-### `SkillResource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L37" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SkillResource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A resource representing a skill's main file or manifest.
@@ -18,13 +18,13 @@ A resource representing a skill's main file or manifest.
 
 **Methods:**
 
-#### `get_meta` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_meta` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L44" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_meta(self) -> dict[str, Any]
 ```
 
-#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L52" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L53" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read(self) -> str | bytes | ResourceResult
@@ -33,7 +33,7 @@ read(self) -> str | bytes | ResourceResult
 Read the resource content.
 
 
-### `SkillFileTemplate` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L72" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SkillFileTemplate` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L75" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A template for accessing files within a skill.
@@ -41,7 +41,7 @@ A template for accessing files within a skill.
 
 **Methods:**
 
-#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L80" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult
@@ -50,7 +50,7 @@ read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult
 Read a file from the skill directory.
 
 
-#### `create_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `create_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L114" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_resource(self, uri: str, params: dict[str, Any]) -> Resource
@@ -62,7 +62,7 @@ Note: This is not typically used since _read() handles file reading directly.
 Provided for compatibility with the ResourceTemplate interface.
 
 
-### `SkillFileResource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L139" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SkillFileResource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L142" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A resource representing a specific file within a skill.
@@ -70,13 +70,13 @@ A resource representing a specific file within a skill.
 
 **Methods:**
 
-#### `get_meta` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L145" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_meta` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L148" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_meta(self) -> dict[str, Any]
 ```
 
-#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L153" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L156" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read(self) -> str | bytes | ResourceResult
@@ -85,7 +85,7 @@ read(self) -> str | bytes | ResourceResult
 Read the file content.
 
 
-### `SkillProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L177" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SkillProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L180" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Provider that exposes a single skill folder as MCP resources.
@@ -111,7 +111,7 @@ manifest) are exposed to clients\:
 
 **Methods:**
 
-#### `skill_info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L269" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `skill_info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py#L272" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 skill_info(self) -> SkillInfo
