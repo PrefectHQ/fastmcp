@@ -25,11 +25,13 @@ a default, so a subclass overrides only what it needs.
 
 from __future__ import annotations
 
+import copy
 import weakref
-from collections.abc import Awaitable, Callable, Mapping, Sequence
-from contextlib import AbstractAsyncContextManager, nullcontext
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from contextlib import AbstractAsyncContextManager, contextmanager, nullcontext
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
 
 from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
@@ -42,7 +44,7 @@ from mcp_types import (
 from mcp_types.methods import SPEC_CLIENT_METHODS
 from pydantic import BaseModel
 
-from fastmcp.server.dependencies import _lift_meta, bind_request_context
+from fastmcp.server.dependencies import _lift_meta, bind_request_context, get_context
 
 if TYPE_CHECKING:
     from fastmcp.server.context import Context
@@ -71,6 +73,53 @@ ExtensionRequestHandler: TypeAlias = Callable[
 # A tools/call interceptor's continuation: awaiting it runs the rest of the
 # interceptor chain and, finally, the tool body.
 ToolCallContinuation: TypeAlias = Callable[[], Awaitable["ToolCallOutcome"]]
+
+# During mounted tool execution, the parent already applied its propagated
+# extensions. Carry ownership through nested delegation without suppressing
+# independent calls to other servers or calls back to the parent.
+_delegated_extension_scope: ContextVar[tuple[FastMCP, frozenset[str]] | None] = (
+    ContextVar("fastmcp_delegated_extension_scope", default=None)
+)
+
+_extension_dispatch_scope: ContextVar[tuple[FastMCP, frozenset[str]] | None] = (
+    ContextVar("fastmcp_extension_dispatch_scope", default=None)
+)
+
+
+@contextmanager
+def _extension_tool_call_scope(server: FastMCP) -> Iterator[None]:
+    """Claim pending delegation for this dispatch, isolating independent calls."""
+    delegated = _delegated_extension_scope.get()
+    identifiers = (
+        delegated[1]
+        if delegated is not None and delegated[0] is server
+        else frozenset()
+    )
+    pending_token = _delegated_extension_scope.set(None)
+    dispatch_token = _extension_dispatch_scope.set((server, identifiers))
+    try:
+        yield
+    finally:
+        _extension_dispatch_scope.reset(dispatch_token)
+        _delegated_extension_scope.reset(pending_token)
+
+
+@contextmanager
+def _delegate_extension_interceptors(server: FastMCP) -> Iterator[None]:
+    try:
+        caller = get_context().fastmcp
+    except RuntimeError:
+        yield
+        return
+    identifiers = frozenset(caller._extensions)
+    inherited = _extension_dispatch_scope.get()
+    if inherited is not None and inherited[0] is caller:
+        identifiers |= inherited[1]
+    token = _delegated_extension_scope.set((server, identifiers))
+    try:
+        yield
+    finally:
+        _delegated_extension_scope.reset(token)
 
 
 @dataclass(frozen=True)
@@ -125,7 +174,25 @@ class ServerExtension:
     #: Reverse-DNS extension identifier, advertised under `ServerCapabilities.extensions`.
     identifier: str
 
+    #: Allow providers and mounted servers to register this extension automatically.
+    #: Opt in only when applying it to the receiving server's entire component
+    #: registry is safe. Extensions with server-wide side effects stay explicit.
+    auto_register: ClassVar[bool] = False
+
     _server_ref: weakref.ref[FastMCP] | None = None
+
+    def clone(self) -> ServerExtension:
+        """Return an unbound instance with the same configuration.
+
+        Automatic registration clones bundled extensions so each server owns
+        its instance. The default deep-copies instance attributes and clears
+        the server binding. Override to reconstruct configuration when the
+        extension owns objects that cannot be deep-copied or runtime state
+        that should be reset.
+        """
+        extension = copy.deepcopy(self)
+        extension._server_ref = None
+        return extension
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)

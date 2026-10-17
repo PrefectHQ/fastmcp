@@ -231,6 +231,31 @@ class TestParallelCalls:
 
 
 @pytest.mark.timeout(15)
+class TestAdvertisedCapabilities:
+    async def test_stdio_advertises_list_changed_for_all_components(self, tmp_path):
+        """stdio advertises the same list_changed capabilities as other transports."""
+        script = tmp_path / "server.py"
+        script.write_text(
+            "from fastmcp import FastMCP\n"
+            "mcp = FastMCP()\n"
+            "mcp.run(show_banner=False)\n",
+            encoding="utf-8",
+        )
+
+        client = Client(PythonStdioTransport(script_path=script), mode="legacy")
+        async with client:
+            assert client.initialize_result is not None
+            capabilities = client.initialize_result.capabilities
+
+        assert capabilities.tools is not None
+        assert capabilities.tools.list_changed is True
+        assert capabilities.resources is not None
+        assert capabilities.resources.list_changed is True
+        assert capabilities.prompts is not None
+        assert capabilities.prompts.list_changed is True
+
+
+@pytest.mark.timeout(15)
 class TestKeepAlive:
     # https://github.com/PrefectHQ/fastmcp/issues/581
 

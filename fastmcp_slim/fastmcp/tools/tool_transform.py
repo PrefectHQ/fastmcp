@@ -19,7 +19,7 @@ from fastmcp.tools.base import (
     Tool,
     ToolResult,
 )
-from fastmcp.tools.function_parsing import ParsedFunction
+from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -359,10 +359,13 @@ class TransformedTool(Tool):
 
         token = _current_tool.set(self)
         try:
-            if is_coroutine_function(self.fn):
-                result = await self.fn(**arguments)
+            from fastmcp.server.dependencies import without_injected_parameters
+
+            fn = without_injected_parameters(self.fn)
+            if is_coroutine_function(fn):
+                result = await fn(**arguments)
             else:
-                result = await call_sync_fn_in_threadpool(self.fn, **arguments)
+                result = await call_sync_fn_in_threadpool(fn, **arguments)
                 if inspect.isawaitable(result):
                     result = await result
 
@@ -380,13 +383,15 @@ class TransformedTool(Tool):
             if isinstance(result, ToolResult):
                 if self.output_schema is None:
                     return result
-                elif self.output_schema.get(
-                    "type"
-                ) != "object" and not self.output_schema.get("x-fastmcp-wrap-result"):
+                elif not _is_object_schema(
+                    self.output_schema
+                ) and not self.output_schema.get("x-fastmcp-wrap-result"):
                     # Non-object explicit schemas disable structured content
                     return ToolResult(
                         content=result.content,
                         structured_content=None,
+                        is_error=result.is_error,
+                        meta=result.meta,
                     )
                 else:
                     return result

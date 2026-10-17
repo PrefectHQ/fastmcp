@@ -1,491 +1,252 @@
 ---
 title: "Tests"
-description: "Testing patterns and requirements for FastMCP"
+description: "Verify FastMCP behavior through real clients, HTTP applications, and targeted regressions"
 icon: vial
 ---
 
-import { VersionBadge } from "/snippets/version-badge.mdx"
+Test the behavior a user relies on through the smallest boundary that exercises it. Most FastMCP tests can use a real server and client in memory. HTTP and subprocess helpers cover behavior that depends on those transports.
 
-Good tests are the foundation of reliable software. In FastMCP, we treat tests as first-class documentation that demonstrates how features work while protecting against regressions. Every new capability needs comprehensive tests that demonstrate correctness.
+## Run tests
 
-## FastMCP Tests
-
-### Running Tests
+Install the repository dependencies before running tests:
 
 ```bash
-# Run all tests
+uv sync
 uv run pytest -n auto
-
-# Run specific test file
-uv run pytest tests/server/test_auth.py
-
-# Run with coverage
-uv run pytest --cov=fastmcp
-
-# Skip integration tests for faster runs
-uv run pytest -m "not integration"
-
-# Skip tests that spawn processes
-uv run pytest -m "not integration and not client_process and not subprocess_heavy"
 ```
 
-Tests should complete in under 1 second unless marked as integration tests. This speed encourages running them frequently, catching issues early.
-
-### Test Organization
-
-Our test organization mirrors the source package structure, creating a predictable mapping between code and tests. When you're working on `fastmcp_slim/fastmcp/server/auth.py`, you'll find its tests in `tests/server/test_auth.py`. In rare cases tests are split further - for example, the OpenAPI tests are so comprehensive they're split across multiple files.
-
-### Test Markers
-
-We use pytest markers to categorize tests that require special resources or take longer to run:
-
-```python
-from pathlib import Path
-@pytest.mark.integration
-async def test_github_api_integration():
-    """Test GitHub API integration with real service."""
-    token = os.getenv("FASTMCP_GITHUB_TOKEN")
-    if not token:
-        pytest.skip("FASTMCP_GITHUB_TOKEN not available")
-    
-    # Test against real GitHub API
-    client = GitHubClient(token)
-    repos = await client.list_repos("prefecthq")
-    assert "fastmcp" in [repo.name for repo in repos]
-
-@pytest.mark.client_process
-async def test_stdio_transport():
-    """Test STDIO transport with separate process."""
-    # This spawns a subprocess
-    async with Client(Path("examples/simple_echo.py")) as client:
-        result = await client.call_tool("echo", {"message": "test"})
-        assert result.content[0].text == "test"
-```
-
-A third marker, `subprocess_heavy`, exists specifically for Windows CI stability. See [Windows CI and Test Parallelism](#windows-ci-and-test-parallelism) below for when to use it and why it exists.
-
-### Windows CI and Test Parallelism
-
-Windows CI ran the unit suite serially for months. [#2715](https://github.com/PrefectHQ/fastmcp/pull/2715) tried enabling `pytest-xdist` parallelism there in December 2025; [#2726](https://github.com/PrefectHQ/fastmcp/pull/2726) reverted it the next day because "Windows tests continue to fail with intermittent worker crashes." [#4554](https://github.com/PrefectHQ/fastmcp/pull/4554) re-enabled it after removing most of the subprocess pressure that caused those crashes, taking the Windows unit step from roughly 460s to 175s.
-
-That pressure came from three sources, all addressed by #4554: most HTTP tests moved in-process via `asgi_client` instead of binding real sockets, stdio lifecycle tests spawn a minimal stdlib responder (`tests/client/minimal_stdio_server.py`, ~0.03s to start) instead of a subprocess that runs `import fastmcp` (~0.7s), and roughly 80 real `sleep()` calls became deterministic waits on the condition each test actually cared about. Fewer, cheaper subprocesses competing under parallel workers left fewer chances for a worker to die.
-
-#### The `subprocess_heavy` marker
-
-One class of test still spawns a full Python interpreter that imports FastMCP — checking that a bare install doesn't need optional dependencies, or that a decorator works from a fresh process. Each spawn pays a full interpreter's startup and memory footprint, and a 2-core Windows runner already running 2 xdist workers has little headroom left to absorb that. These tests carry `@pytest.mark.subprocess_heavy` and run in the existing serial `client_process` CI step instead of alongside the parallel workers — `.github/actions/run-pytest/action.yml` routes `client_process or subprocess_heavy` to that step (`MAX_PROCS=0`) and excludes both markers from the parallel unit step.
-
-If a test runs `subprocess.run([sys.executable, "-c", ...])`, or otherwise starts a fresh interpreter that imports `fastmcp`, mark it `subprocess_heavy`. A subprocess that runs a minimal stdlib script with no FastMCP import doesn't need the marker — it's the interpreter startup and import that's expensive, not the subprocess itself.
-
-#### This is a mitigation, not a proof
-
-There is no root-cause diagnosis behind this fix, only a plausible one. During validation, one Windows run genuinely crashed a worker on `test_fastmcp_imports_without_legacy_httpx` — a fresh-interpreter test — with pytest-xdist reporting `worker 'gw1' crashed while running '...'` after execnet's channel saw `ConnectionResetError: [WinError 10054]`. Nothing in that log says *why* the worker died: memory exhaustion, handle exhaustion, and some Windows-specific `subprocess`/`execnet` interaction are all still consistent with what was observed. Marking the fresh-interpreter tests `subprocess_heavy` made the crash stop recurring, but "it stopped" is not the same as "we know why."
-
-Treat the next Windows worker crash as a test of this diagnosis. **If it lands on a test that is not a fresh-interpreter spawner, the `subprocess_heavy` theory was wrong** — the real problem is subprocess-under-xdist on Windows more generally, and isolating one marker's worth of tests was never going to fix that. The fallback is one conditional back in `run-pytest/action.yml`, restoring the pre-#4554 behavior:
+During development, run the owning test module or select a behavior by name:
 
 ```bash
-PARALLEL_FLAGS=""
-if [ "$MAX_PROCS" != "0" ] && [ "${{ runner.os }}" != "Windows" ]; then
-  PARALLEL_FLAGS="--numprocesses auto --maxprocesses $MAX_PROCS --dist worksteal"
-fi
+uv run pytest tests/client/client/test_client.py -n 0
+uv run pytest tests/server -k list_tools -n 0
 ```
 
-#### Two traps that aren't Windows-specific
+Use `-n 0` for a single process when debugging. The full suite uses pytest-xdist for parallel execution. To run the same marker selection as the unit CI job:
 
-Two test-authoring bugs surfaced while validating this change. Neither is about Windows or parallelism, but both are worth watching for anywhere a real `sleep()` gets replaced with a wait:
-
-- **Match the wait condition to the assertion.** A test waited for "any callback fired," then asserted that a `completed` callback existed. That races, because an earlier `working` notification satisfies the wait before the `completed` one arrives. A deterministic wait is only as good as the condition it waits on — wait for the thing you actually assert.
-- **Don't assert on incidental timing.** A crash-recovery test asserted "at least one concurrent request fails" while a subprocess restarts, which quietly depended on the restart being slow. Once restart got faster, recovery could beat every in-flight request and the test started failing because the behavior *improved*. Assert the invariant instead: no hang, and no result served by the dead process.
-
-## Writing Tests
-
-
-### Test Requirements
-
-Following these practices creates maintainable, debuggable test suites that serve as both documentation and regression protection.
-
-#### Single Behavior Per Test
-
-Each test should verify exactly one behavior. When it fails, you need to know immediately what broke. A test that checks five things gives you five potential failure points to investigate. A test that checks one thing points directly to the problem.
-
-<CodeGroup>
-
-```python Good: Atomic Test
-async def test_tool_registration():
-    """Test that tools are properly registered with the server."""
-    mcp = FastMCP("test-server")
-    
-    @mcp.tool
-    def add(a: int, b: int) -> int:
-        return a + b
-    
-    tools = mcp.list_tools()
-    assert len(tools) == 1
-    assert tools[0].name == "add"
+```bash
+uv run pytest -n auto -m "not integration and not client_process and not subprocess_heavy and not conformance"
 ```
 
-```python Bad: Multi-Behavior Test
-async def test_server_functionality():
-    """Test multiple server features at once."""
-    mcp = FastMCP("test-server")
-    
-    # Tool registration
-    @mcp.tool
-    def add(a: int, b: int) -> int:
-        return a + b
-    
-    # Resource creation
-    @mcp.resource("config://app")
-    def get_config():
-        return {"version": "1.0"}
-    
-    # Authentication setup
-    mcp.auth = BearerTokenProvider({"token": "user"})
-    
-    # What exactly are we testing? If this fails, what broke?
-    assert mcp.list_tools()
-    assert mcp.list_resources()
-    assert mcp.auth is not None
+The default timeout is five seconds, and `asyncio_mode = "auto"` enables async tests without `@pytest.mark.asyncio`. These settings and the registered markers live in [pyproject.toml](https://github.com/PrefectHQ/fastmcp/blob/main/pyproject.toml).
+
+### Test organization and markers
+
+Extend the module that owns the behavior, using nearby tests and fixtures as the starting point. The test tree generally mirrors the library: authentication tests are under `tests/server/auth/`, client tests under `tests/client/`, and resource tests under `tests/resources/`.
+
+| Marker | Use |
+| --- | --- |
+| `integration` | Tests needing integration resources or longer execution; CI gives this group a longer timeout. |
+| `client_process` | Tests spawning client processes through stdio. |
+| `subprocess_heavy` | Tests starting a fresh Python interpreter that imports FastMCP. |
+| `conformance` | MCP conformance tests requiring Node.js and npx. |
+
+The [pytest CI action](https://github.com/PrefectHQ/fastmcp/blob/main/.github/actions/run-pytest/action.yml) runs `client_process` and `subprocess_heavy` serially and excludes them from parallel unit tests. A minimal stdlib subprocess does not need `subprocess_heavy` merely because it is a subprocess. Use the marker when the fresh interpreter imports FastMCP.
+
+A marker selects a CI group; it does not itself change the local timeout. To reproduce the integration group's timeout locally:
+
+```bash
+uv run pytest -m integration --timeout=30 -n 0
 ```
 
-</CodeGroup>
+## Write a regression that proves the contract
 
-#### Self-Contained Setup
+First establish the promised behavior from the public API, docs, protocol, and relevant maintainer decisions. A reproducible result is not automatically a bug. Once the contract is clear, run the regression on the unchanged base and confirm that it fails for the intended reason, then run it with the fix. An import error or broken fixture is not evidence of the reported defect.
 
-Every test must create its own setup. Tests should be runnable in any order, in parallel, or in isolation. When a test fails, you should be able to run just that test to reproduce the issue.
+Assert values and types that distinguish the correct result from the bug. For example, Python equality treats `True` and `1` as equal, so a JSON type-preservation test needs a type assertion too. Avoid assertions that only check whether some result exists when the result's contents are the contract.
 
-<CodeGroup>
+Keep each test focused on one behavior, with as many assertions as that behavior needs. Parameterize variations of the same contract; separate unrelated cases. Include omitted defaults and explicit overrides when both enter the changed branch.
 
-```python Good: Self-Contained
-async def test_tool_execution_with_error():
-    """Test that tool errors are properly handled."""
-    mcp = FastMCP("test-server")
-    
-    @mcp.tool
-    def divide(a: int, b: int) -> float:
-        if b == 0:
-            raise ValueError("Cannot divide by zero")
-        return a / b
-    
-    async with Client(mcp) as client:
-        with pytest.raises(Exception):
-            await client.call_tool("divide", {"a": 10, "b": 0})
-```
+Use function-scoped setup and temporary paths so tests work independently and in parallel. Prefer events or waits for the exact condition being asserted to arbitrary sleeps. When diagnosing a failure, separate an assertion failure from a worker crash or infrastructure error; reproduce a supposedly pre-existing failure on the unchanged base before calling it unrelated.
 
-```python Bad: Test Dependencies
-# Global state that tests depend on
-test_server = None
+## Test through an in-memory client
 
-def test_setup_server():
-    """Setup for other tests."""
-    global test_server
-    test_server = FastMCP("shared-server")
-
-def test_server_works():
-    """Test server functionality."""
-    # Depends on test_setup_server running first
-    assert test_server is not None
-```
-
-</CodeGroup>
-
-#### Clear Intent
-
-Test names and assertions should make the verified behavior obvious. A developer reading your test should understand what feature it validates and how that feature should behave.
+`Client(server)` exercises real FastMCP dispatch and protocol behavior without opening a socket. This complete test checks how arguments and results travel through the client:
 
 ```python
-async def test_authenticated_tool_requires_valid_token():
-    """Test that authenticated users can access protected tools."""
-    mcp = FastMCP("test-server")
-    mcp.auth = BearerTokenProvider({"secret-token": "test-user"})
-    
-    @mcp.tool
-    def protected_action() -> str:
-        return "success"
-    
-    async with Client(mcp, auth=BearerAuth("secret-token")) as client:
-        result = await client.call_tool("protected_action", {})
-        assert result.content[0].text == "success"
+from fastmcp import Client, FastMCP
+
+
+async def test_add_returns_sum() -> None:
+    server = FastMCP("Calculator")
+
+    @server.tool
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    async with Client(server) as client:
+        result = await client.call_tool("add", {"a": 2, "b": 3})
+
+    assert result.data == 5
+    assert type(result.data) is int
 ```
 
-#### Using Fixtures
+Save examples as a test module in the repository and run them with `uv run pytest path/to/test_example.py -n 0`. Use the existing fixture patterns for the subsystem instead of mocking the FastMCP method under test.
 
-Use fixtures to create reusable data, server configurations, or other resources for your tests. Note that you should **not** open FastMCP clients in your fixtures as it can create hard-to-diagnose issues with event loops.
+### Failure behavior
+
+Assert the exception users receive, including a meaningful message when that is part of the behavior:
 
 ```python
 import pytest
-from fastmcp import FastMCP, Client
 
-@pytest.fixture
-def weather_server():
-    server = FastMCP("WeatherServer")
-    
+from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ToolError
+
+
+async def test_division_by_zero_is_reported() -> None:
+    server = FastMCP("Calculator")
+
     @server.tool
-    def get_temperature(city: str) -> dict:
-        temps = {"NYC": 72, "LA": 85, "Chicago": 68}
-        return {"city": city, "temp": temps.get(city, 70)}
-    
-    return server
+    def divide(a: float, b: float) -> float:
+        if b == 0:
+            raise ValueError("Cannot divide by zero")
+        return a / b
 
-async def test_temperature_tool(weather_server):
-    async with Client(weather_server) as client:
-        result = await client.call_tool("get_temperature", {"city": "LA"})
-        assert result.data == {"city": "LA", "temp": 85}
+    async with Client(server) as client:
+        with pytest.raises(ToolError, match="Cannot divide by zero"):
+            await client.call_tool("divide", {"a": 10, "b": 0})
 ```
 
-#### Effective Assertions
+### Reusable fixtures
 
-Assertions should be specific and provide context on failure. When a test fails during CI, the assertion message should tell you exactly what went wrong.
+Build the server in a fixture and manage the client context in the test. This keeps connection ownership and cleanup visible:
 
 ```python
-# Basic assertion - minimal context on failure
-assert result.status == "success"
+import pytest
 
-# Better - explains what was expected
-assert result.status == "success", f"Expected successful operation, got {result.status}: {result.error}"
+from fastmcp import Client, FastMCP
+
+
+@pytest.fixture
+def weather_server() -> FastMCP:
+    server = FastMCP("Weather")
+
+    @server.tool
+    def temperature(city: str) -> int:
+        return {"NYC": 72, "LA": 85}[city]
+
+    return server
+
+
+@pytest.mark.parametrize(("city", "expected"), [("NYC", 72), ("LA", 85)])
+async def test_temperature(weather_server: FastMCP, city: str, expected: int) -> None:
+    async with Client(weather_server) as client:
+        result = await client.call_tool("temperature", {"city": city})
+
+    assert result.data == expected
 ```
 
-Try not to have too many assertions in a single test unless you truly need to check various aspects of the same behavior. In general, assertions of different behaviors should be in separate tests.
+### Schema snapshots
 
-#### Inline Snapshots
-
-FastMCP uses `inline-snapshot` for testing complex data structures. On first run of `pytest --inline-snapshot=create` with an empty `snapshot()`, pytest will auto-populate the expected value. To update snapshots after intentional changes, run `pytest --inline-snapshot=fix`. This is particularly useful for testing JSON schemas and API responses.
+Use the repository's `inline-snapshot` conventions for complex structures. Inspect each generated expectation against the contract before accepting it. This example checks the schema returned through the protocol:
 
 ```python
 from inline_snapshot import snapshot
 
-async def test_tool_schema_generation():
-    """Test that tool schemas are generated correctly."""
-    mcp = FastMCP("test-server")
-    
-    @mcp.tool
-    def calculate_tax(amount: float, rate: float = 0.1) -> dict:
-        """Calculate tax on an amount."""
-        return {"amount": amount, "tax": amount * rate, "total": amount * (1 + rate)}
-    
-    tools = mcp.list_tools()
-    schema = tools[0].input_schema
-    
-    # First run: snapshot() is empty, gets auto-populated
-    # Subsequent runs: compares against stored snapshot
-    assert schema == snapshot({
-        "type": "object", 
-        "properties": {
-            "amount": {"type": "number"}, 
-            "rate": {"type": "number", "default": 0.1}
-        }, 
-        "required": ["amount"]
-    })
-```
+from fastmcp import Client, FastMCP
 
-### In-Memory Testing
 
-FastMCP uses in-memory transport for testing, where servers and clients communicate directly. The majority of functionality can be tested in a deterministic fashion this way. We use more complex setups only when testing transports themselves.
+async def test_tool_input_schema() -> None:
+    server = FastMCP("Calculator")
 
-The in-memory transport runs the real MCP protocol implementation without network overhead. Instead of deploying your server or managing network connections, you pass your server instance directly to the client. Everything runs in the same Python process - you can set breakpoints anywhere and step through with your debugger.
-
-```python
-from fastmcp import FastMCP, Client
-
-# Create your server
-server = FastMCP("WeatherServer")
-
-@server.tool
-def get_temperature(city: str) -> dict:
-    """Get current temperature for a city"""
-    temps = {"NYC": 72, "LA": 85, "Chicago": 68}
-    return {"city": city, "temp": temps.get(city, 70)}
-
-async def test_weather_operations():
-    # Pass server directly - no deployment needed
-    async with Client(server) as client:
-        result = await client.call_tool("get_temperature", {"city": "NYC"})
-        assert result.data == {"city": "NYC", "temp": 72}
-```
-
-This pattern makes tests deterministic and fast - typically completing in milliseconds rather than seconds.
-
-### Mocking External Dependencies
-
-FastMCP servers are standard Python objects, so you can mock external dependencies using your preferred approach:
-
-```python
-from unittest.mock import AsyncMock
-
-async def test_database_tool():
-    server = FastMCP("DataServer")
-    
-    # Mock the database
-    mock_db = AsyncMock()
-    mock_db.fetch_users.return_value = [
-        {"id": 1, "name": "Alice"},
-        {"id": 2, "name": "Bob"}
-    ]
-    
     @server.tool
-    async def list_users() -> list:
-        return await mock_db.fetch_users()
-    
+    def double(value: int) -> int:
+        return value * 2
+
     async with Client(server) as client:
-        result = await client.call_tool("list_users", {})
-        assert len(result.data) == 2
-        assert result.data[0]["name"] == "Alice"
-        mock_db.fetch_users.assert_called_once()
+        tools = await client.list_tools()
+
+    assert tools[0].input_schema == snapshot(
+        {
+            "type": "object",
+            "properties": {"value": {"type": "integer"}},
+            "required": ["value"],
+            "additionalProperties": False,
+        }
+    )
 ```
 
-### Testing Network Transports
+The repository disables snapshot updates by default. For an intentional change, run the relevant module with `--inline-snapshot=fix` and review the diff. Use `--inline-snapshot=create` when populating a new empty snapshot.
 
-In-memory testing covers most unit testing needs, but some behavior only exists over HTTP: middleware, authentication, session management, header handling, and SSE streaming. To test those, serve your server over HTTP with `asgi_client`.
+## Test HTTP behavior without a socket
 
-#### Testing Over HTTP
-
-<VersionBadge version="3.5.0" />
-
-`asgi_client` builds your server's real Starlette app, starts its lifespan, and hands you a connected `Client` that talks to it over the full HTTP stack. The one thing it skips is the socket: requests are dispatched straight into the ASGI application on the current event loop, so there is no port to bind, no uvicorn to start, and no connection to negotiate. Everything else — middleware, authentication, session management, SSE framing — runs exactly as it does in production.
+Use `asgi_client` when the subject is HTTP routing, headers, authentication, or streaming. It builds the real application and starts its lifespan, then sends requests directly through ASGI in the same process:
 
 ```python
 from fastmcp import FastMCP
 from fastmcp.utilities.tests import asgi_client
 
-def create_test_server() -> FastMCP:
-    server = FastMCP("TestServer")
+
+async def test_greet_over_http() -> None:
+    server = FastMCP("Greeting")
 
     @server.tool
     def greet(name: str) -> str:
         return f"Hello, {name}!"
 
-    return server
+    async with asgi_client(server) as client:
+        result = await client.call_tool("greet", {"name": "World"})
 
-async def test_greet_over_http():
-    async with asgi_client(create_test_server()) as client:
-        greeting = await client.call_tool("greet", {"name": "World"})
-        assert greeting.data == "Hello, World!"
+    assert result.data == "Hello, World!"
 ```
 
-Pass `transport="sse"` to exercise the SSE app instead of streamable HTTP, `path=` to serve on a custom path, `headers=` and `auth=` to configure the client's requests, and any other keyword argument to configure the `Client` itself.
+Pass `headers=` or `auth=` to configure requests, `path=` for a custom MCP route, or `transport="sse"` to exercise the SSE application. Other client options, such as `timeout=`, go to `Client`.
+
+### Multiple clients and raw requests
+
+Use `asgi_server` when a test needs several clients or raw HTTP responses. Each `client()` call creates its own client. `http_client()` returns an `httpx2.AsyncClient` bound to the same application; an ordinary network client cannot reach this in-process server.
 
 ```python
-async def test_tenant_header_is_visible_to_tools():
-    async with asgi_client(
-        create_test_server(),
-        headers={"X-Tenant-ID": "acme"},
-        timeout=5,
-    ) as client:
-        await client.list_tools()
-```
-
-#### Sharing One Server Across Tests
-
-When several tests share a server but each needs its own client, use `asgi_server` in a fixture. It yields an `ASGIServer`, whose `client()` method produces a fresh client — with its own session — on demand.
-
-```python
-import pytest
 from fastmcp import FastMCP
-from fastmcp.utilities.tests import ASGIServer, asgi_server
+from fastmcp.utilities.tests import asgi_server
 
-@pytest.fixture
-async def http_server():
-    server = FastMCP("TestServer")
 
-    @server.tool
-    def greet(name: str) -> str:
-        return f"Hello, {name}!"
+async def test_two_clients_share_the_application() -> None:
+    server = FastMCP("Empty")
 
-    async with asgi_server(server) as running_server:
-        yield running_server
+    async with asgi_server(server) as running:
+        async with running.client() as first, running.client() as second:
+            assert await first.list_tools() == []
+            assert await second.list_tools() == []
 
-async def test_greet(http_server: ASGIServer):
-    async with http_server.client() as client:
-        greeting = await client.call_tool("greet", {"name": "World"})
-        assert greeting.data == "Hello, World!"
-
-async def test_sessions_are_isolated(http_server: ASGIServer):
-    async with (
-        http_server.client(mode="legacy") as first,
-        http_server.client(mode="legacy") as second,
-    ):
-        assert await first.ping() is True
-        assert await second.ping() is True
+        async with running.http_client() as http:
+            response = await http.get("/missing")
+            assert response.status_code == 404
 ```
 
-Sessions belong to the handshake era of the MCP protocol, and so does `ping`, so a test that is about session behavior pins `mode="legacy"`. Every keyword argument `client()` doesn't consume itself is passed straight to `Client`. See [protocol negotiation](/clients/client#protocol-negotiation).
+A test specifically about legacy MCP sessions or `ping` should pass `mode="legacy"` to the client. The modern protocol era is sessionless; see [protocol negotiation](/clients/client#protocol-negotiation). For custom client transports, `running.transport()` returns a transport wired to the same application.
 
-For assertions about raw HTTP — status codes, response headers, metadata endpoints — `http_client()` returns an `httpx.AsyncClient` bound to the same app. Because nothing is listening on the network, this is the only way to make raw requests; a plain `httpx.AsyncClient()` cannot reach the server.
+## Test external and process boundaries
 
-```python
-async def test_unauthenticated_request_is_rejected(http_server: ASGIServer):
-    async with http_server.http_client() as http:
-        response = await http.post(http_server.url, json={"jsonrpc": "2.0", "id": 1})
-        assert response.status_code in (400, 401)
-```
+Mock external services at their boundary, while keeping the FastMCP path real. For outgoing HTTP requests, use `httpx2.MockTransport` and assert the method, URL, headers, or body that matter. Do not mock the framework function whose behavior the test is meant to verify.
 
-If you need to build the client transport yourself, `transport()` returns a `StreamableHttpTransport` or `SSETransport` already wired to the in-process app.
-
-#### Testing on a Real Port
-
-<VersionBadge version="2.13.0" />
-
-`run_server_async` starts a real uvicorn server on a real TCP port as a task in the current process and yields its URL. Reach for it only when the subject of the test is the network itself — real sockets, TLS, or a server that must be reachable by something other than an in-process client.
+Use `run_server_async` when the network itself is the subject: a socket, TLS, or a client outside the in-process application. It starts uvicorn in the current process and cleans it up on exit:
 
 ```python
-from fastmcp import FastMCP, Client
+from fastmcp import Client, FastMCP
 from fastmcp.utilities.tests import run_server_async
 
-async def test_server_binds_a_real_port():
-    server = FastMCP("TestServer")
+
+async def test_server_accepts_network_requests() -> None:
+    server = FastMCP("Empty")
 
     async with run_server_async(server) as url:
-        assert url.startswith("http://127.0.0.1:")
         async with Client(url) as client:
             assert await client.list_tools() == []
 ```
 
-#### Subprocess Testing (Special Cases)
+Use `run_server_in_process` only when process isolation is part of the test. Follow nearby subprocess fixtures for startup, transport selection, and cleanup. Stdio lifecycle tests can use `tests/client/minimal_stdio_server.py` when a minimal MCP responder suffices; use a real FastMCP subprocess when its behavior is what you need to test.
 
-For tests that require complete process isolation (like STDIO transport or testing subprocess behavior), use `run_server_in_process`:
+## Check documentation examples
 
-```python
-import pytest
-from fastmcp.utilities.tests import run_server_in_process
-from fastmcp import FastMCP, Client
-from fastmcp.client.transports import StreamableHttpTransport
-
-def run_server(host: str, port: int) -> None:
-    """Function to run in subprocess."""
-    server = FastMCP("TestServer")
-    
-    @server.tool
-    def greet(name: str) -> str:
-        return f"Hello, {name}!"
-    
-    server.run(host=host, port=port)
-
-@pytest.fixture
-async def http_server():
-    """Fixture that runs server in subprocess."""
-    with run_server_in_process(run_server, transport="http") as url:
-        yield f"{url}/mcp"
-
-async def test_http_transport(http_server: str):
-    """Test actual HTTP transport behavior."""
-    async with Client(
-        transport=StreamableHttpTransport(http_server)
-    ) as client:
-        tools = await client.list_tools()
-        assert "greet" in [tool.name for tool in tools]
-```
-
-The `run_server_in_process` utility handles server lifecycle, port allocation, and cleanup automatically. Use this only when subprocess isolation is truly necessary, as it's slower and harder to debug than in-process testing. FastMCP uses the `client_process` marker to isolate these tests in CI.
-
-### Documentation Testing
-
-Documentation requires the same validation as code. The `just docs` command launches a local Mintlify server that renders your documentation exactly as users will see it:
+Run the documentation checks from the repository root:
 
 ```bash
-# Start local documentation server with hot reload
-just docs
-
-# Or run Mintlify directly
-mintlify dev
+just docs-broken-links
+uv run pytest tests/docs -n 0
 ```
 
-The local server watches for changes and automatically refreshes. This preview catches formatting issues and helps you see documentation as users will experience it.
+The docs tests parse Python fences and resolve FastMCP imports. They do not execute every example or detect every missing non-import name, so run changed examples yourself. Use `just docs` to preview rendering. Without just, run `npx --yes mint@latest broken-links` or `npx --yes mint@latest dev` from `docs/`.
+
+See the [Contributing Guide](/development/contributing#implement-and-verify) for the full checks required before committing.

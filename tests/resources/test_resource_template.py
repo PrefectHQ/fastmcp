@@ -14,6 +14,7 @@ from fastmcp.resources.template import (
     expand_uri_template,
     match_uri_template,
 )
+from fastmcp.resources.types import BinaryResource, TextResource
 from fastmcp.server import create_proxy
 
 
@@ -373,6 +374,35 @@ class TestResourceTemplate:
                 uri_template="test://{x}/{args*}",
                 name="test",
             )
+
+    async def test_function_with_positional_only_not_allowed(self):
+        def func(x: int, /) -> int:
+            return x
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                "Functions with positional-only parameters are not supported as "
+                "resource templates.*standard parameters"
+            ),
+        ):
+            ResourceTemplate.from_function(
+                fn=func,
+                uri_template="test://{x}",
+                name="test",
+            )
+
+    async def test_function_with_keyword_only_ok(self):
+        def func(x: int, *, y: int = 1) -> int:
+            return x + y
+
+        template = ResourceTemplate.from_function(
+            fn=func,
+            uri_template="test://{x}{?y}",
+            name="test",
+        )
+
+        assert await template.read({"x": "2", "y": "3"}) == 5
 
     async def test_function_with_varkwargs_ok(self):
         def func(x: int, **kwargs: int) -> int:
@@ -980,6 +1010,48 @@ class TestMalformedURITemplates:
         assert result is not None
         assert result == {"id": "42", "format": ""}
 
+    def test_fragment_does_not_prevent_match(self):
+        result = match_uri_template(
+            "test://items/42#section",
+            "test://items/{id}",
+        )
+        assert result == {"id": "42"}
+
+    def test_query_fragment_is_not_part_of_param(self):
+        result = match_uri_template(
+            "test://items?filter=active#section",
+            "test://items{?filter}",
+        )
+        assert result == {"filter": "active"}
+
+    def test_fragment_after_path_param_and_query(self):
+        result = match_uri_template(
+            "test://items/42?format=json#section",
+            "test://items/{id}{?format}",
+        )
+        assert result == {"id": "42", "format": "json"}
+
+    def test_literal_fragment_in_template_still_matches(self):
+        result = match_uri_template(
+            "test://items/42#details",
+            "test://items/{id}#details",
+        )
+        assert result == {"id": "42"}
+
+    def test_literal_fragment_in_template_rejects_other_fragment(self):
+        result = match_uri_template(
+            "test://items/42#other",
+            "test://items/{id}#details",
+        )
+        assert result is None
+
+    def test_encoded_hash_stays_in_path_param(self):
+        result = match_uri_template(
+            "test://items/a%23b",
+            "test://items/{id}",
+        )
+        assert result == {"id": "a#b"}
+
     def test_query_param_with_blank_and_present_values(self):
         """Mix of blank and non-blank query values are both surfaced."""
         result = match_uri_template(
@@ -1452,6 +1524,25 @@ class TestInternalMetaNotLeaked:
 
         async with Client(mcp) as client:
             result = await client.read_resource(read_uri)
+
+        assert result[0].meta is None
+
+    @pytest.mark.parametrize(
+        "resource",
+        [
+            TextResource(uri="data://text", name="text", text="value"),
+            BinaryResource(uri="data://binary", name="binary", data=b"value"),
+        ],
+    )
+    async def test_visibility_marker_stripped_from_static_resource_meta(
+        self, resource: TextResource | BinaryResource
+    ):
+        mcp = FastMCP()
+        mcp.add_resource(resource)
+        mcp.enable(names={str(resource.uri)})
+
+        async with Client(mcp) as client:
+            result = await client.read_resource(str(resource.uri))
 
         assert result[0].meta is None
 

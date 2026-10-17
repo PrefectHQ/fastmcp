@@ -60,7 +60,10 @@ except ImportError as _exc:
     ) from _exc
 
 import base64
+import math
 from datetime import datetime, timezone
+from threading import RLock
+from time import monotonic
 from typing import Any
 
 from fastmcp.apps.app import FastMCPApp
@@ -106,6 +109,10 @@ class FileUpload(FastMCPApp):
     model-visible tools for listing and reading uploaded files.
 
     Files are scoped by MCP session and stored in memory by default.
+    Set `max_total_size` to limit decoded file bytes across all scopes or
+    `file_ttl_seconds` to expire files by age since upload. Both default to
+    None. Expired files are removed on storage operations, without a timer.
+    These options apply to the default in-memory storage methods.
     Override ``on_store``, ``on_list``, and ``on_read`` for custom
     persistence (filesystem, S3, database, etc.). Each method receives
     the current ``Context``, giving access to session ID, auth tokens,
@@ -137,6 +144,8 @@ class FileUpload(FastMCPApp):
         name: str = "Files",
         *,
         max_file_size: int = 10 * 1024 * 1024,
+        max_total_size: int | None = None,
+        file_ttl_seconds: float | None = None,
         title: str = "File Upload",
         description: str = (
             "Drop files to upload them to the server. "
@@ -145,8 +154,17 @@ class FileUpload(FastMCPApp):
         ),
         drop_label: str = "Drop files here",
     ) -> None:
+        if max_total_size is not None and max_total_size < 0:
+            raise ValueError("max_total_size must be nonnegative")
+        if file_ttl_seconds is not None and (
+            not math.isfinite(file_ttl_seconds) or file_ttl_seconds <= 0
+        ):
+            raise ValueError("file_ttl_seconds must be positive and finite")
         super().__init__(name)
         self._max_file_size = max_file_size
+        self._max_total_size = max_total_size
+        self._file_ttl_seconds = file_ttl_seconds
+        self._store_lock = RLock()
         self._title = title
         self._description = description
         self._drop_label = drop_label
@@ -180,6 +198,17 @@ class FileUpload(FastMCPApp):
         except RuntimeError:
             return "__default__"
 
+    def _prune_expired(self, now: float) -> None:
+        """Remove expired files while holding the default storage lock."""
+        if self._file_ttl_seconds is None:
+            return
+        for scope, entries in list(self._store.items()):
+            for name, entry in list(entries.items()):
+                if entry["_expires_at"] <= now:
+                    del entries[name]
+            if not entries:
+                del self._store[scope]
+
     def on_store(
         self,
         files: list[dict[str, Any]],
@@ -195,23 +224,56 @@ class FileUpload(FastMCPApp):
 
         Override this method for custom persistence. The default
         implementation stores files in memory, scoped by
-        ``_get_scope_key(ctx)``.
+        ``_get_scope_key(ctx)``. The optional `max_total_size` applies to
+        decoded file bytes across every scope. An entire batch is rejected
+        when its final contents would exceed the limit, including replacements.
 
         Returns:
             List of file summary dicts (``name``, ``type``, ``size``,
             ``size_display``, ``uploaded_at``).
         """
         scope = self._get_scope_key(ctx)
-        session_files = self._store.setdefault(scope, {})
-        for f in files:
-            session_files[f["name"]] = {
-                "name": f["name"],
-                "size": f["size"],
-                "type": f["type"],
-                "data": f["data"],
-                "uploaded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            }
-        return [_make_summary(e) for e in session_files.values()]
+        with self._store_lock:
+            now = monotonic()
+            self._prune_expired(now)
+            updates: dict[str, dict[str, Any]] = {}
+            for f in files:
+                entry = {
+                    "name": f["name"],
+                    "size": f["size"],
+                    "type": f["type"],
+                    "data": f["data"],
+                    "uploaded_at": datetime.now(timezone.utc).isoformat(
+                        timespec="seconds"
+                    ),
+                }
+                if self._file_ttl_seconds is not None:
+                    entry["_expires_at"] = now + self._file_ttl_seconds
+                updates[f["name"]] = entry
+
+            session_files = self._store.get(scope, {})
+            if self._max_total_size is not None:
+                total_size = sum(
+                    max(0, _b64_decoded_size(entry["data"]))
+                    for entries in self._store.values()
+                    for entry in entries.values()
+                )
+                for name, entry in updates.items():
+                    total_size += max(0, _b64_decoded_size(entry["data"]))
+                    if name in session_files:
+                        total_size -= max(
+                            0, _b64_decoded_size(session_files[name]["data"])
+                        )
+                if total_size > self._max_total_size:
+                    raise ValueError(
+                        "Files exceed total storage size "
+                        f"({_format_size(total_size)} > "
+                        f"{_format_size(self._max_total_size)})"
+                    )
+
+            session_files = self._store.setdefault(scope, {})
+            session_files.update(updates)
+            return [_make_summary(e) for e in session_files.values()]
 
     def on_list(self, ctx: Context) -> list[dict[str, Any]]:
         """List all stored files.
@@ -226,8 +288,10 @@ class FileUpload(FastMCPApp):
             List of file summary dicts.
         """
         scope = self._get_scope_key(ctx)
-        session_files = self._store.get(scope, {})
-        return [_make_summary(e) for e in session_files.values()]
+        with self._store_lock:
+            self._prune_expired(monotonic())
+            session_files = self._store.get(scope, {})
+            return [_make_summary(e) for e in session_files.values()]
 
     def on_read(self, name: str, ctx: Context) -> dict[str, Any]:
         """Read a file's contents by name.
@@ -249,11 +313,13 @@ class FileUpload(FastMCPApp):
             ValueError: If the file is not found.
         """
         scope = self._get_scope_key(ctx)
-        session_files = self._store.get(scope, {})
-        if name not in session_files:
-            available = list(session_files.keys())
-            raise ValueError(f"File {name!r} not found. Available: {available}")
-        entry = session_files[name]
+        with self._store_lock:
+            self._prune_expired(monotonic())
+            session_files = self._store.get(scope, {})
+            if name not in session_files:
+                available = list(session_files.keys())
+                raise ValueError(f"File {name!r} not found. Available: {available}")
+            entry = session_files[name]
         result: dict[str, Any] = {
             "name": entry["name"],
             "size": entry["size"],

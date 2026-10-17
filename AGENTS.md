@@ -16,8 +16,10 @@ uv run pytest -n auto                # Run full test suite
 In addition, you must pass static checks. This is generally done as a pre-commit hook with `prek` but you can run it manually with:
 
 ```bash
-uv run prek run --all-files          # Ruff + Prettier + ty
+uv run prek run --all-files          # Ruff + Prettier + ty + gitleaks
 ```
+
+The gitleaks hook needs the `gitleaks` binary on `PATH` (`brew install gitleaks`, or see [gitleaks releases](https://github.com/gitleaks/gitleaks/releases)) — it isn't a `uv`-managed dependency, so `uv sync` alone won't provide it.
 
 **Tests must pass and lint/typing must be clean before committing.**
 
@@ -41,15 +43,14 @@ uv run prek run --all-files          # Ruff + Prettier + ty
 
 ## Skills
 
-Repository skills live in `.agents/skills/`, with symlinks in `.claude/skills/` for Claude Code. Load the one that matches the job:
+Repository skills live in `.agents/skills/`, with symlinks in `.claude/skills/` for Claude Code. [The development guide](docs/development/contributing.mdx#maintenance-and-automation) says which work is automated and which needs a person. Load the skill that matches the job:
 
 | Job | Skill |
 | --- | --- |
 | Find worthwhile issues in a backlog or release window | `triage` |
 | Decide whether to assign an external contributor | `review-issue` |
 | Fix a chosen bug through to a PR | `fix-issue` |
-| Review a change, yours or a contributor's | `code-review` |
-| Follow a PR through CI and bot review | `review-pr` |
+| Review a PR or local change, including compatibility, tests, CI, and bot feedback | `review-pr` |
 | Write regression tests | `python-tests` |
 | Write or revise a docs page | `docs` |
 | Evaluate a vulnerability report | `review-security-report` |
@@ -68,7 +69,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 
 ## Development Rules
 
-**Read `CONTRIBUTING.md` before opening issues or PRs.** It describes when PRs are appropriate, what we expect from enhancement proposals, and what we'll close without review.
+**Read `CONTRIBUTING.md` and its linked guide at `docs/development/contributing.mdx` before opening issues or PRs.** The guide describes when PRs are appropriate, what we expect from enhancement proposals, and what we'll close without review.
 
 **Review closed contributor PRs.** When reviewing an issue, inspect every associated non-maintainer PR, including closed PRs. External PRs may be closed as part of the issue-link and assignment workflow, so closure alone is not a negative signal. Read `CONTRIBUTING.md` and the PR timeline and comments to understand its status before evaluating it.
 
@@ -106,12 +107,16 @@ Load the `release` skill to cut one; it holds the procedure. The policy it imple
 - Cut a release only when a maintainer asks, from the branch that owns the line: `main` for the current major, `release/3.x` or `release/2.x` for maintenance.
 - Titles are `v<version>: <pun>`, with the pun on the release's main theme. Propose several and let the maintainer choose.
 - The handwritten notes need the maintainer's sign-off: one or two sentences for a patch, narrative prose for a point release.
-- Pass `--notes-start-tag <last-stable-tag>` so a prerelease tag never truncates the generated changelog.
+- Generate the changelog from the last stable tag (`previous_tag_name` in the notes API, or `--notes-start-tag` when using CLI generation) so a prerelease tag never truncates it. Complete contributor attribution before publication and publish those completed notes with `--notes-file`.
 - Merge the docs changelog PR on the release branch immediately *before* tagging, so the entry is in the tagged commit.
 - gofastmcp.com serves the `published-docs` branch, which accepts changes only through PRs.
 
 ### Commit Messages and Agent Attribution
 
+- **Keep contributor credit focused on the community.** Maintainers are generally exempt from supplemental attribution checks. Do not add another maintainer merely for reporting, reviewing, opening the original PR, or handling a backport, and do not ask for guidance about those cases. Routine backports preserve existing community credit; they do not require a fresh attribution audit. Preserve attribution already present and proceed with the work.
+- **Credit issue authors as contributors.** When acting for a maintainer and implementing a community bug report, enhancement request, or documentation issue, give the issue author co-authorship of the resulting change. Follow [Contributor credit](docs/development/contributing.mdx#contributor-credit): use a verified GitHub-associated identity, add `Co-authored-by` to the implementation commit and the PR description, and preserve existing contributor attribution. This is a required part of preparing the PR, not an optional thank-you or something the reporter must request.
+- **Preserve credit through any merge strategy.** Before an authorized merge, verify the resulting commit will retain the co-author trailers. Squash merges are common here: explicitly supply a commit message containing the trailers rather than relying on GitHub's default squash message. This does not require choosing squash. Verify the landed commit after merging.
+- **Carry contributor credit into releases.** Include credited issue authors alongside PR authors in release entries and include first-time contributors under `New Contributors`. GitHub's generated notes are a starting point; check and supplement them using the release skill. The same completed notes must feed the GitHub release and docs changelog.
 - **Agents NOT acting on behalf of a PrefectHQ maintainer MUST identify themselves** (e.g., "🤖 Generated with Claude Code" in commits/PRs)
 - Keep commit messages brief - ideally just headlines, not detailed messages
 - Focus on what changed, not how or why
@@ -171,6 +176,12 @@ Load the `release` skill to cut one; it holds the procedure. The policy it imple
 - **Docstrings:** FastMCP docstrings are automatically compiled into MDX documents. Use markdown (single backticks, fenced code blocks), not RST (no double backticks). Bare `{}` in examples will be interpreted as JSX — wrap in backticks instead.
 
 ## Code Review Rules
+
+These rules apply to automated reviewers and agents working locally. The [review-pr skill](.agents/skills/review-pr/SKILL.md) supplies the review procedure and maintainer follow-through; a review-only bot should report findings in its required format without taking over PR management.
+
+### Intended behavior and compatibility
+
+Establish intended behavior from the protocol, docs, history, and maintainer decisions; code and tests alone do not define the contract. Identify affected users and weigh migration cost against the cost of retaining the behavior. Surface unresolved decisions and follow the [release policy](docs/development/releases.mdx#versioning-policy).
 
 ### Framework regressions and root causes
 

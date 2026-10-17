@@ -1,14 +1,23 @@
 """Tests for FileSystemProvider."""
 
 import asyncio
+import threading
 import time
 from pathlib import Path
+from unittest.mock import patch
 
+import anyio
 import pytest
+from anyio.abc import TaskStatus
+from anyio.to_thread import run_sync
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.providers import FileSystemProvider
+from fastmcp.server.providers.filesystem_discovery import (
+    DiscoveryResult,
+    discover_and_import,
+)
 
 
 class TestFileSystemProvider:
@@ -339,6 +348,55 @@ def my_tool() -> str:
 class TestFileSystemProviderReloadRace:
     """Test that concurrent readers don't see empty components during reload."""
 
+    async def test_cancelled_reload_waits_for_discovery(self, tmp_path: Path) -> None:
+        """Cancellation must not release the lock while discovery is still running."""
+        (tmp_path / "tool.py").write_text(
+            "from fastmcp.tools import tool\n"
+            "@tool\n"
+            "def my_tool() -> str:\n"
+            "    return 'hello'\n"
+        )
+        provider = FileSystemProvider(tmp_path, reload=True)
+        discovery_started = threading.Event()
+        finish_discovery = threading.Event()
+        reload_exited = anyio.Event()
+
+        def slow_discovery(root: Path) -> DiscoveryResult:
+            discovery_started.set()
+            assert finish_discovery.wait(timeout=2)
+            return discover_and_import(root)
+
+        async def reload(
+            *, task_status: TaskStatus[anyio.CancelScope] = anyio.TASK_STATUS_IGNORED
+        ) -> None:
+            with anyio.CancelScope() as scope:
+                task_status.started(scope)
+                await provider.list_tools()
+            reload_exited.set()
+
+        async def read() -> None:
+            tools = await provider.list_tools()
+            assert [tool.name for tool in tools] == ["my_tool"]
+
+        with patch(
+            "fastmcp.server.providers.filesystem.discover_and_import",
+            side_effect=slow_discovery,
+        ) as discovery:
+            async with anyio.create_task_group() as tasks:
+                try:
+                    scope = await tasks.start(reload)
+                    assert await run_sync(discovery_started.wait, 2)
+                    scope.cancel()
+                    tasks.start_soon(read)
+                    await anyio.wait_all_tasks_blocked()
+                    exited_during_discovery = reload_exited.is_set()
+                finally:
+                    finish_discovery.set()
+
+            assert not exited_during_discovery
+            assert reload_exited.is_set()
+            assert discovery.call_count == 1
+
     async def test_concurrent_reader_never_sees_empty(self, tmp_path: Path):
         """A reader during reload should see either old or new components, never empty."""
         (tmp_path / "tool.py").write_text(
@@ -453,6 +511,31 @@ def get_profile(user_id: str) -> str:
             # Read with parameter
             result = await client.read_resource("users://123/profile")
             assert "123" in str(result)
+
+    async def test_resource_template_security_via_provider(self, tmp_path: Path):
+        """FileSystemProvider should honor the security policy of @resource templates."""
+        (tmp_path / "secure_templates.py").write_text(
+            """\
+from fastmcp.resources import ResourceSecurity, resource
+
+@resource("git://diff/{ref}", security=ResourceSecurity(exempt_params={"ref"}))
+def exempt(ref: str) -> str:
+    return f"exempt:{ref}"
+
+@resource("git://log/{ref}")
+def screened(ref: str) -> str:
+    return f"screened:{ref}"
+"""
+        )
+
+        mcp = FastMCP("TestServer", providers=[FileSystemProvider(tmp_path)])
+
+        async with Client(mcp) as client:
+            result = await client.read_resource("git://diff/..%2Fx")
+            assert result[0].text == "exempt:../x"
+
+            with pytest.raises(Exception, match="Resource not found"):
+                await client.read_resource("git://log/..%2Fx")
 
     async def test_provider_with_prompts(self, tmp_path: Path):
         """FileSystemProvider should work with prompts."""

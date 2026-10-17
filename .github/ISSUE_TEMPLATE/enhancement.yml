@@ -10,6 +10,8 @@ body:
 
         Enhancement issues are the **primary way** features and improvements get into FastMCP. Maintainers use well-written issues to implement changes that fit the codebase's patterns and ship quickly. A clear issue here is more impactful than a PR — see [CONTRIBUTING.md](../../CONTRIBUTING.md) for why.
 
+        **Contributor credit:** If your request leads to a merged change implemented by a maintainer, we'll credit you as a co-author of the merged commit and in the release notes, including as a new contributor if this is your first contribution. You don't need to implement the change. Opening an issue does not guarantee implementation.
+
         ### Before you submit
 
         - 🔍 **Check if this has already been requested** — search existing issues first

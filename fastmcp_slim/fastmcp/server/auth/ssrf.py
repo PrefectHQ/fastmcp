@@ -13,6 +13,10 @@ passed to httpx2 explicitly with ``trust_env`` disabled, so the request is prova
 routed through the proxy rather than predicted to be — NO_PROXY is not evaluated in
 this mode. If no proxy is configured, the fetch is refused rather than sent direct
 with the blocklist disabled.
+
+Proxy-trust mode removes FastMCP's DNS/IP checks and pinning. SSRF protection
+then depends on the proxy's destination restrictions, which FastMCP does not
+verify; configuring a proxy alone does not establish equivalent protection.
 """
 
 from __future__ import annotations

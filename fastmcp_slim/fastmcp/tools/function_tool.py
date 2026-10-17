@@ -28,6 +28,7 @@ from mcp_types import Icon, ToolAnnotations
 from pydantic import Field, TypeAdapter
 from pydantic import ValidationError as PydanticValidationError
 from pydantic.json_schema import SkipJsonSchema
+from pydantic_core import to_json
 
 from fastmcp.decorators import get_fastmcp_meta
 from fastmcp.exceptions import ValidationError
@@ -61,18 +62,24 @@ class _ToolBodyError(Exception):
     an argument-validation failure (a bad call). Errors a tool raises from its
     own body — e.g. constructing a model from upstream data — are a different
     class of problem (a server-side bug) that must not be reclassified as a bad
-    call. We wrap the body so those are tagged and can be told apart. See #4128.
+    call. We wrap the body so those are tagged and can be told apart. The tagged
+    error propagates out of the tool like any other body exception, so
+    `FastMCP.call_tool` masks, logs, and converts it to a `ToolError`. See #4128.
     """
 
 
 @lru_cache(maxsize=5000)
-def _wrap_body_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
+def _wrap_body_errors(
+    fn: Callable[..., Any], *, materialize_generators: bool = False
+) -> Callable[..., Any]:
     """Wrap ``fn`` so a ``pydantic.ValidationError`` raised by its body is
     re-raised as ``_ToolBodyError``.
 
     The wrapper preserves ``fn``'s signature and annotations so the cached
     ``TypeAdapter`` validates arguments identically — only body execution is
-    affected. Argument validation happens before the wrapper is called, so it
+    affected. When requested, sync generators are consumed during this same
+    invocation so dispatch and dependency lifetimes cover their bodies too.
+    Argument validation happens before the wrapper is called, so it
     keeps raising a bare ``pydantic.ValidationError``.
     """
     if is_coroutine_function(fn):
@@ -81,14 +88,17 @@ def _wrap_body_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
             try:
                 return await fn(*args, **kwargs)
             except PydanticValidationError as e:
-                raise _ToolBodyError from e
+                raise _ToolBodyError(str(e)) from e
     else:
 
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
-                return fn(*args, **kwargs)
+                result = fn(*args, **kwargs)
+                if materialize_generators and inspect.isgenerator(result):
+                    return list(result)
+                return result
             except PydanticValidationError as e:
-                raise _ToolBodyError from e
+                raise _ToolBodyError(str(e)) from e
 
     # Mirror the original callable so TypeAdapter builds the identical schema and
     # binds arguments the same way. Annotations must cover every signature
@@ -136,6 +146,38 @@ def _strict_input_validation() -> Literal[True] | None:
     if context is None or not context.fastmcp.strict_input_validation:
         return None
     return True
+
+
+def _is_json_data(value: Any) -> bool:
+    """Whether *value* is built only from types a JSON parser produces."""
+    if value is None or isinstance(value, (str, int, float)):
+        return True
+    if isinstance(value, list):
+        return all(_is_json_data(item) for item in value)
+    if isinstance(value, dict):
+        return all(
+            isinstance(key, str) and _is_json_data(item) for key, item in value.items()
+        )
+    return False
+
+
+def _validate_input(
+    type_adapter: TypeAdapter[Any], value: Any, *, strict: bool | None
+) -> Any:
+    """Validate tool input with *type_adapter*, honoring ``strict``.
+
+    Tool arguments are JSON, but pydantic's strict mode on Python input only
+    accepts already-built objects: an enum member, a ``datetime``, a ``UUID``, a
+    dataclass instance, a ``tuple`` or ``set``. Their JSON spellings, which the
+    input schema tells clients to send, would never validate. Strict validation
+    of JSON data therefore runs in JSON mode, which still rejects lax coercions
+    such as the string ``"10"`` for an ``int``. Python objects passed by an
+    in-process caller are validated as Python, since serializing them can lose
+    information (a ``SecretStr`` serializes masked).
+    """
+    if not strict or not _is_json_data(value):
+        return type_adapter.validate_python(value, strict=strict)
+    return type_adapter.validate_json(to_json(value), strict=True)
 
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -378,8 +420,11 @@ class FunctionTool(Tool):
         """
         from fastmcp.server.dependencies import without_injected_parameters
 
+        # A sync generator's body runs during iteration, not creation. Consume
+        # it inside the original invocation, before dispatch/DI can finish.
+        body_fn = _wrap_body_errors(self.fn, materialize_generators=True)
         wrapper_fn = without_injected_parameters(
-            self.fn, run_in_thread=self.run_in_thread
+            body_fn, run_in_thread=self.run_in_thread
         )
         # Tag pydantic errors raised by the body so they can be distinguished
         # from argument-validation errors (which pydantic raises first). See #4128.
@@ -414,10 +459,14 @@ class FunctionTool(Tool):
         try:
             if self.timeout is not None:
                 try:
-                    with anyio.fail_after(self.timeout):
+                    with anyio.fail_after(self.timeout) as scope:
                         result = await self._execute(
                             type_adapter, exec_is_async, arguments, strict=strict
                         )
+                        # Worker threads shield cancellation until they finish.
+                        # Reject their result if execution outlasted the deadline.
+                        if anyio.current_time() >= scope.deadline:
+                            raise TimeoutError
                 except TimeoutError:
                     logger.warning(
                         f"Tool '{self.name}' timed out after {self.timeout}s. "
@@ -439,13 +488,6 @@ class FunctionTool(Tool):
             # downstream error taxonomy (e.g. Sentry filters) can treat it as a
             # client error rather than a server bug.
             raise ValidationError(str(e), log_level=logging.WARNING) from e
-        except _ToolBodyError as e:
-            # The tool's own body raised a pydantic ValidationError. Surface the
-            # original so it is treated as a server-side error, hiding the
-            # internal sentinel while preserving the error's own chained cause.
-            original = e.__cause__
-            assert original is not None
-            raise original from original.__cause__
 
         return result
 
@@ -473,14 +515,14 @@ class FunctionTool(Tool):
         # needs to handle async and threadpool-sync under a timeout.
         if exec_is_async:
             # Argument validation is synchronous; the body runs on await below.
-            result = type_adapter.validate_python(arguments, strict=strict)
+            result = _validate_input(type_adapter, arguments, strict=strict)
         elif self.run_in_thread:
             # Sync function: run in threadpool to avoid blocking the event loop.
             result = await call_sync_fn_in_threadpool(
-                type_adapter.validate_python, arguments, strict=strict
+                _validate_input, type_adapter, arguments, strict=strict
             )
         else:
-            result = type_adapter.validate_python(arguments, strict=strict)
+            result = _validate_input(type_adapter, arguments, strict=strict)
 
         try:
             if inspect.isawaitable(result):
@@ -491,7 +533,7 @@ class FunctionTool(Tool):
         except PydanticValidationError as e:
             # A pydantic error from awaiting the result or materializing a
             # generator is body execution, not argument validation.
-            raise _ToolBodyError from e
+            raise _ToolBodyError(str(e)) from e
 
     @staticmethod
     async def _materialize_generator(result: Any) -> Any:

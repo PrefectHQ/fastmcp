@@ -367,11 +367,16 @@ class OIDCProxy(OAuthProxy):
                 When "external", authorization follows the same direct path as False,
                 but the warning is suppressed as an operator acknowledgment that
                 equivalent protections are enforced externally.
+                False and "external" disable FastMCP's consent and browser-binding
+                protections, reducing security unless equivalent checks exist elsewhere.
+                FastMCP does not provide or verify those external checks.
                 SECURITY WARNING: Only set to False for local development or testing environments.
             consent_csp_policy: Content Security Policy for the consent page.
                 If None (default), uses the built-in CSP policy with appropriate directives.
                 If empty string "", disables CSP entirely (no meta tag is rendered).
                 If a non-empty string, uses that as the CSP policy value.
+                Disabling or weakening CSP reduces browser content-injection protections
+                unless the deployment supplies an equivalent CSP header.
             extra_authorize_params: Additional parameters to forward to the upstream authorization endpoint.
                 Useful for provider-specific parameters like prompt=consent or access_type=offline.
                 Example: {"prompt": "consent", "access_type": "offline"}

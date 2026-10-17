@@ -13,6 +13,7 @@ from typing_extensions import override
 
 from fastmcp.exceptions import ResourceError
 from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
+from fastmcp.utilities.components import public_result_meta
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -28,7 +29,9 @@ class TextResource(Resource):
         return ResourceResult(
             contents=[
                 ResourceContent(
-                    content=self.text, mime_type=self.mime_type, meta=self.meta
+                    content=self.text,
+                    mime_type=self.mime_type,
+                    meta=public_result_meta(self.meta),
                 )
             ]
         )
@@ -44,7 +47,9 @@ class BinaryResource(Resource):
         return ResourceResult(
             contents=[
                 ResourceContent(
-                    content=self.data, mime_type=self.mime_type, meta=self.meta
+                    content=self.data,
+                    mime_type=self.mime_type,
+                    meta=public_result_meta(self.meta),
                 )
             ]
         )

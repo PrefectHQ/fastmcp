@@ -28,7 +28,7 @@ from pydantic.json_schema import SkipJsonSchema
 from typing_extensions import Self
 
 from fastmcp.utilities.authorization import AuthCheck
-from fastmcp.utilities.components import FastMCPComponent
+from fastmcp.utilities.components import FastMCPComponent, public_result_meta
 
 
 class ResourceContent(pydantic.BaseModel):
@@ -239,34 +239,6 @@ class InputRequiredResourceResult(ResourceResult):
         )
 
 
-def _public_content_meta(meta: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Strip FastMCP's internal bookkeeping out of component meta.
-
-    Component `meta` carries private entries under the `fastmcp` namespace
-    (e.g. `_internal.visibility`) that must never reach the wire. Listings
-    already filter these via `FastMCPComponent.get_meta()`; content items
-    served by `resources/read` need the same treatment.
-
-    Returns None when nothing public remains, so resources without user
-    metadata keep an absent `_meta` rather than an empty object.
-    """
-    if not meta:
-        return None
-
-    public = dict(meta)
-    fastmcp_meta = public.get("fastmcp")
-    if isinstance(fastmcp_meta, dict):
-        public_fastmcp = {
-            key: value for key, value in fastmcp_meta.items() if not key.startswith("_")
-        }
-        if public_fastmcp:
-            public["fastmcp"] = public_fastmcp
-        else:
-            public.pop("fastmcp")
-
-    return public or None
-
-
 def convert_raw_to_resource_result(
     raw_value: Any,
     *,
@@ -294,7 +266,7 @@ def convert_raw_to_resource_result(
         # handler unwraps it.
         return InputRequiredResourceResult(raw_value)
 
-    meta = _public_content_meta(meta)
+    meta = public_result_meta(meta)
 
     # For plain str/bytes returns, wrap in ResourceContent with the
     # component's MIME type and meta so the wire response carries the

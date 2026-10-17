@@ -25,7 +25,8 @@ _WINDOWS_ACL_SCRIPT = r"""
 $ErrorActionPreference = "Stop"
 $path = $env:FASTMCP_STATE_PATH
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-$acl = Get-Acl -LiteralPath $path
+$item = Get-Item -LiteralPath $path -Force
+$acl = $item.GetAccessControl("Access")
 $acl.SetAccessRuleProtection($true, $false)
 foreach ($existingRule in @($acl.Access)) {
     $acl.RemoveAccessRuleSpecific($existingRule)
@@ -50,7 +51,7 @@ if ([System.IO.Directory]::Exists($path)) {
 }
 
 $acl.AddAccessRule($rule)
-Set-Acl -LiteralPath $path -AclObject $acl
+$item.SetAccessControl($acl)
 """
 
 

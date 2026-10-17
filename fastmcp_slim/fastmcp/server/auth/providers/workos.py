@@ -11,11 +11,11 @@ Choose based on your WorkOS setup and authentication requirements.
 from __future__ import annotations
 
 import contextlib
-from typing import Literal
+from typing import Annotated, Literal
 
 import httpx2
 from key_value.aio.protocols import AsyncKeyValue
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, TypeAdapter, UrlConstraints
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
@@ -26,6 +26,10 @@ from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+_AUTHKIT_AUTHORIZATION_SERVER_URL_ADAPTER = TypeAdapter(
+    Annotated[AnyHttpUrl, UrlConstraints(preserve_empty_path=True)]
+)
 
 
 class WorkOSTokenVerifier(TokenVerifier):
@@ -385,7 +389,11 @@ class AuthKitProvider(RemoteAuthProvider):
         # Initialize RemoteAuthProvider with AuthKit as the authorization server
         super().__init__(
             token_verifier=token_verifier,
-            authorization_servers=[AnyHttpUrl(self.authkit_domain)],
+            authorization_servers=[
+                _AUTHKIT_AUTHORIZATION_SERVER_URL_ADAPTER.validate_python(
+                    self.authkit_domain
+                )
+            ],
             base_url=self.base_url,
             resource_base_url=resource_base_url,
             scopes_supported=scopes_supported,

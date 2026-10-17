@@ -420,7 +420,7 @@ class AnthropicSamplingHandler:
         elif message.stop_reason == "max_tokens":
             stop_reason = "maxTokens"
         elif message.stop_reason == "stop_sequence":
-            stop_reason = "endTurn"
+            stop_reason = "stopSequence"
         else:
             stop_reason = "endTurn"
 

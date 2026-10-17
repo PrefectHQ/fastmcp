@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import anyio
 import uvicorn
-from mcp.server.lowlevel.server import NotificationOptions
 from mcp.server.stdio import stdio_server
 from mcp.server.streamable_http import EventStore
 from starlette.middleware import Middleware as ASGIMiddleware
@@ -246,11 +245,7 @@ class TransportMixin:
                         await self._mcp_server.run(
                             read_stream,
                             write_stream,
-                            self._mcp_server.create_initialization_options(
-                                notification_options=NotificationOptions(
-                                    tools_changed=True
-                                ),
-                            ),
+                            self._mcp_server.create_initialization_options(),
                         )
         finally:
             reset_transport(token)
@@ -381,7 +376,7 @@ class TransportMixin:
         host_origin_protection: HostOriginProtection | None = None,
         allowed_hosts: list[str] | None = None,
         allowed_origins: list[str] | None = None,
-        session_idle_timeout: float | None = None,
+        session_idle_timeout: float | Literal["auto"] | None = None,
     ) -> StarletteWithLifespan:
         """Create a Starlette app using the specified HTTP transport.
 
@@ -408,7 +403,9 @@ class TransportMixin:
                 cross-origin responses.
             session_idle_timeout: Maximum time in seconds a streamable-HTTP
                 session may remain idle before it is terminated. When None,
-                falls back to the ``http_session_idle_timeout`` setting.
+                falls back to the `http_session_idle_timeout` setting.
+                "auto" uses the MCP SDK's default. To disable the timeout,
+                set `FASTMCP_HTTP_SESSION_IDLE_TIMEOUT=none`.
 
         Returns:
             A Starlette application configured with the specified transport
@@ -464,6 +461,21 @@ class TransportMixin:
                 auth=self.auth,
                 debug=fastmcp.settings.debug,
                 middleware=middleware,
+                host_origin_protection=(
+                    host_origin_protection
+                    if host_origin_protection is not None
+                    else fastmcp.settings.http_host_origin_protection
+                ),
+                allowed_hosts=(
+                    allowed_hosts
+                    if allowed_hosts is not None
+                    else fastmcp.settings.http_allowed_hosts
+                ),
+                allowed_origins=(
+                    allowed_origins
+                    if allowed_origins is not None
+                    else fastmcp.settings.http_allowed_origins
+                ),
             )
         else:
             raise ValueError(f"Unknown transport: {transport}")

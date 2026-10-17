@@ -26,7 +26,7 @@ from pydantic import Field
 from pydantic.json_schema import SkipJsonSchema
 
 from fastmcp.utilities.authorization import AuthCheck
-from fastmcp.utilities.components import FastMCPComponent
+from fastmcp.utilities.components import FastMCPComponent, public_result_meta
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     FastMCPBaseModel,
@@ -327,7 +327,11 @@ class Prompt(FastMCPComponent):
             return InputRequiredPromptResult(raw_value)
 
         if isinstance(raw_value, str):
-            return PromptResult(raw_value, description=self.description, meta=self.meta)
+            return PromptResult(
+                raw_value,
+                description=self.description,
+                meta=public_result_meta(self.meta),
+            )
 
         if isinstance(raw_value, list | tuple):
             messages: list[Message] = []
@@ -341,7 +345,11 @@ class Prompt(FastMCPComponent):
                         f"messages[{i}] must be Message or str, got {type(item).__name__}. "
                         f"Use Message({item!r}) to wrap the value."
                     )
-            return PromptResult(messages, description=self.description, meta=self.meta)
+            return PromptResult(
+                messages,
+                description=self.description,
+                meta=public_result_meta(self.meta),
+            )
 
         raise TypeError(
             f"Prompt must return str, list[Message], or PromptResult, "

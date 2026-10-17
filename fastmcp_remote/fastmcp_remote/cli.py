@@ -23,6 +23,7 @@ from fastmcp import Client
 from fastmcp.client.auth import OAuth
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
 from fastmcp.server import create_proxy
+from fastmcp.server.providers.proxy import FastMCPProxy
 from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.tools import Tool
 from fastmcp.utilities.versions import VersionSpec
@@ -259,15 +260,19 @@ def build_transport(config: RemoteConfig) -> SSETransport | StreamableHttpTransp
     )
 
 
-async def run(config: RemoteConfig) -> None:
-    client = Client(build_transport(config))
+def build_proxy(client: Client, ignore_tools: Sequence[str]) -> FastMCPProxy:
     server = create_proxy(
         client,
         name="fastmcp-remote",
         provider_error_strategy="raise",
     )
-    if config.ignore_tools:
-        server.add_transform(IgnoreTools(config.ignore_tools))
+    if ignore_tools:
+        server.add_transform(IgnoreTools(ignore_tools))
+    return server
+
+
+async def run(config: RemoteConfig) -> None:
+    server = build_proxy(Client(build_transport(config)), config.ignore_tools)
     await server.run_async(
         transport="stdio",
         show_banner=config.show_banner,

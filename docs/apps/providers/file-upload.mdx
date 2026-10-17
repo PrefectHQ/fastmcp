@@ -48,6 +48,25 @@ FileUpload(
 
 The `max_file_size` limit is enforced both in the UI (the DropZone rejects oversized files) and on the server (the `store_files` tool validates before calling `on_store`).
 
+### Retention in memory
+
+Set `max_total_size` to cap the combined decoded file bytes in the default in-memory store across every session. A batch is accepted in full or rejected; replacing a filename uses the size of its final contents. This limit counts file contents, rather than base64 encoding overhead or file metadata.
+
+Set `file_ttl_seconds` to expire files after a fixed age since upload. Replacing a file starts a new expiry period; reading it does not. Expired files are removed across all scopes when the default storage methods store, list, or read files. Cleanup runs on these operations, without a background timer.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.apps.file_upload import FileUpload
+
+mcp = FastMCP("My Server")
+mcp.add_provider(FileUpload(
+    max_total_size=50 * 1024 * 1024,
+    file_ttl_seconds=3600,
+))
+```
+
+Both options default to `None`, keeping files for the server process's lifetime without an aggregate size limit. `max_total_size` accepts a nonnegative integer; `file_ttl_seconds` accepts a positive, finite duration. These controls apply to the default in-memory methods. If you override the storage methods, your implementation sets its own retention policy.
+
 ## Storage scoping
 
 By default, files are stored in memory and scoped by MCP session ID. Each session gets its own isolated file store — files uploaded in one conversation aren't visible in another.

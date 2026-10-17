@@ -85,14 +85,18 @@ async def gather(
         List of results in the same order as input awaitables.
     """
     results: list[T | BaseException] = []
+    cancelled: BaseException | None = None
 
     async def run_at(i: int, aw: Awaitable[T]) -> None:
+        nonlocal cancelled
         try:
             results[i] = await aw
         except BaseException as e:
             if return_exceptions:
                 results[i] = e
             else:
+                if cancelled is None and isinstance(e, anyio.get_cancelled_exc_class()):
+                    cancelled = e
                 raise
 
     pending = enumerate(awaitables)
@@ -117,4 +121,7 @@ async def gather(
                         remaining.close()
                 raise
 
+    # Task groups suppress child cancellation, but incomplete results are invalid.
+    if cancelled is not None:
+        raise cancelled
     return results

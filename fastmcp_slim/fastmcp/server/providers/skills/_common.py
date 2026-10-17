@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from mcp.shared.path_security import PathEscapeError, safe_join
 
 
 @dataclass
@@ -102,7 +103,10 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     remaining = content[3 + end_match.end() :]
 
     try:
-        parsed = yaml.load(frontmatter_text, Loader=yaml.BaseLoader)
+        # yaml.BaseLoader resolves everything to plain strings and never
+        # constructs Python objects, unlike yaml.Loader/UnsafeLoader/FullLoader
+        # - it's the loader SafeLoader itself is built on top of.
+        parsed = yaml.load(frontmatter_text, Loader=yaml.BaseLoader)  # noqa: S506
     except (yaml.YAMLError, RecursionError):
         # Prefer partial recovery over discarding every key (issue #4416 review).
         return _parse_frontmatter_line_based(frontmatter_text), remaining
@@ -111,6 +115,18 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
         return {}, remaining
 
     return parsed, remaining
+
+
+def resolve_within(base: Path, relative: str) -> Path:
+    """Resolve `relative` under `base`, rejecting paths that escape `base`.
+
+    `base` must already be resolved. The containment check uses it as given, so
+    replacing it with a link after it was selected cannot move the boundary.
+    """
+    path = safe_join(base, relative)
+    if not path.is_relative_to(base):
+        raise PathEscapeError(f"Path {path} escapes base {base}")
+    return path
 
 
 def compute_file_hash(path: Path) -> str:

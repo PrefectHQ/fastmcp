@@ -11,6 +11,10 @@ FastMCP 4 absorbs almost all of this for you. Field access is bridged so your ex
 
 The sections below cover what FastMCP handles for you, the changes you must make in your own code, the surfaces removed outright in 4.0, the behavior shifts that compile fine but act differently, and the deprecation timeline for the compatibility shims.
 
+<Note>
+If your server imports `FastMCP` from `mcp.server.fastmcp`, it is using FastMCP 1.0 from MCP SDK v1, not standalone FastMCP 3 — even if the `fastmcp` 3.x package is installed. Follow [Upgrading from MCP SDK v1](/getting-started/upgrading/from-mcp-sdk-v1), which changes the import to `from fastmcp import FastMCP` and moves `host` and `port` from `FastMCP(...)` to `mcp.run(transport="http", ...)`.
+</Note>
+
 ## Install FastMCP 4
 
 FastMCP 4 is a stable release:
@@ -34,6 +38,9 @@ You are upgrading an MCP server or client from FastMCP 3.x to FastMCP 4, which i
 FIRST, fetch https://gofastmcp.com/getting-started/upgrading/from-fastmcp-3 — it explains every item below, with the replacement code. Fetch https://gofastmcp.com for anything the guide doesn't cover. Do not invent a FastMCP API you have not confirmed in the docs.
 
 Then search the provided code for each signal below. Most FastMCP 3 servers upgrade untouched, so report only what you actually find.
+
+WRONG STARTING VERSION
+- `from mcp.server.fastmcp import FastMCP` means the server uses FastMCP 1.0 from MCP SDK v1, not standalone FastMCP 3. Stop and use https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk-v1 instead; that guide also covers `host` and `port` passed to `FastMCP(...)`.
 
 ENVIRONMENT
 - a pydantic pin below 2.12

@@ -86,6 +86,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
         client_auth_method: ClientAuthMethod = "client_secret_basic",
         timeout_seconds: int = 10,
         required_scopes: list[str] | None = None,
+        audience: str | list[str] | None = None,
         base_url: AnyHttpUrl | str | None = None,
         cache_ttl_seconds: int | None = None,
         max_cache_size: int | None = None,
@@ -102,6 +103,9 @@ class IntrospectionTokenVerifier(TokenVerifier):
                 uses HTTP Basic Auth header, "client_secret_post" sends credentials in POST body
             timeout_seconds: HTTP request timeout in seconds (default: 10)
             required_scopes: Required scopes for all tokens (optional)
+            audience: Expected audience or list of allowed audiences. When set,
+                the response must include a matching string or array of strings
+                in `aud`. None leaves audience selection to the authorization server.
             base_url: Base URL for TokenVerifier protocol
             cache_ttl_seconds: How long to cache introspection results in seconds.
                 Caching is disabled by default (None) to preserve real-time
@@ -137,6 +141,14 @@ class IntrospectionTokenVerifier(TokenVerifier):
                 f"Must be {options}."
             )
         self.client_auth_method: ClientAuthMethod = client_auth_method
+
+        if audience is not None:
+            audiences = [audience] if isinstance(audience, str) else audience
+            if not audiences or any(
+                not isinstance(value, str) or not value for value in audiences
+            ):
+                raise ValueError("audience must contain nonempty strings")
+        self.audience = audience
 
         self.timeout_seconds = timeout_seconds
         self._http_client = http_client
@@ -263,6 +275,28 @@ class IntrospectionTokenVerifier(TokenVerifier):
                             "Token validation failed: expired token for client %s",
                             client_id,
                         )
+                        return None
+
+                if self.audience is not None:
+                    aud = introspection_data.get("aud")
+                    token_audiences = [aud] if isinstance(aud, str) else aud
+                    expected_audiences = (
+                        [self.audience]
+                        if isinstance(self.audience, str)
+                        else self.audience
+                    )
+                    if (
+                        not isinstance(token_audiences, list)
+                        or not token_audiences
+                        or any(
+                            not isinstance(value, str) or not value
+                            for value in token_audiences
+                        )
+                        or not any(
+                            value in token_audiences for value in expected_audiences
+                        )
+                    ):
+                        self.logger.debug("Token introspection audience mismatch")
                         return None
 
                 # Extract scopes

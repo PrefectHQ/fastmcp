@@ -235,6 +235,42 @@ class TestErrorHandlingMiddleware:
         assert "Invalid params: test error" in exc_info.value.error.message
         assert "Error in test_method: ToolError: test error" in caplog.text
 
+    @pytest.mark.parametrize(
+        ("transform_errors", "error"),
+        [
+            (False, ToolError("tool failed")),
+            (True, MCPError(code=-32000, message="already an MCP error")),
+        ],
+    )
+    async def test_on_message_untransformed_error_keeps_its_cause(
+        self, mock_context, transform_errors: bool, error: Exception
+    ):
+        """An error re-raised as-is must not become its own cause."""
+        original = ConnectionError("upstream unreachable")
+        error.__cause__ = original
+        middleware = ErrorHandlingMiddleware(transform_errors=transform_errors)
+        mock_call_next = AsyncMock(side_effect=error)
+
+        with pytest.raises(type(error)) as exc_info:
+            await middleware.on_message(mock_context, mock_call_next)
+
+        assert exc_info.value is error
+        assert exc_info.value.__cause__ is original
+
+    async def test_on_message_transformed_error_is_caused_by_original(
+        self, mock_context
+    ):
+        """A transformed error still chains to the error it replaces."""
+        original = ValueError("test error")
+        middleware = ErrorHandlingMiddleware()
+        mock_call_next = AsyncMock(side_effect=original)
+
+        with pytest.raises(MCPError) as exc_info:
+            await middleware.on_message(mock_context, mock_call_next)
+
+        assert exc_info.value is not original
+        assert exc_info.value.__cause__ is original
+
     def test_get_error_stats(self, mock_context):
         """Test getting error statistics."""
         middleware = ErrorHandlingMiddleware()
@@ -599,6 +635,34 @@ class TestRetryMiddlewareIntegration:
             assert result.data == "success"
 
         # Tool should have been called 3 times: 2 failures + 1 success
+        assert call_count == 3
+
+    async def test_retry_sees_cause_through_untransformed_error_handling(self):
+        """ErrorHandlingMiddleware(transform_errors=False) further in must leave
+        the tool error's cause intact for the retry decision."""
+        call_count = 0
+        server = FastMCP("RetryThroughErrorHandlingTest")
+        server.add_middleware(
+            RetryMiddleware(
+                max_retries=3,
+                base_delay=0.01,
+                retry_exceptions=(ConnectionError,),
+            )
+        )
+        server.add_middleware(ErrorHandlingMiddleware(transform_errors=False))
+
+        @server.tool
+        def fails_then_succeeds() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ConnectionError("transient failure")
+            return "success"
+
+        async with Client(server) as client:
+            result = await client.call_tool("fails_then_succeeds")
+            assert result.data == "success"
+
         assert call_count == 3
 
     async def test_retry_middleware_with_permanent_failures(self):

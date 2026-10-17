@@ -163,6 +163,23 @@ class TestImage:
         image = Image(data=b"test", format="jpeg")
         assert image._mime_type == "image/jpeg"
 
+    @pytest.mark.parametrize(
+        "fmt,mime_type",
+        [
+            ("jpg", "image/jpeg"),
+            ("JPG", "image/jpeg"),
+            ("svg", "image/svg+xml"),
+            ("tif", "image/tiff"),
+            ("png", "image/png"),
+            ("avif", "image/avif"),
+        ],
+    )
+    def test_mime_type_from_format(self, fmt, mime_type):
+        """Format aliases map to the same MIME type as the matching file extension."""
+        image = Image(data=b"test", format=fmt)
+        assert image._mime_type == mime_type
+        assert image.to_image_content().mime_type == mime_type
+
     def test_missing_data_and_path_raises_error(self):
         """Test that error is raised when neither path nor data is provided."""
         with pytest.raises(ValueError, match="Either path or data must be provided"):
@@ -419,6 +436,31 @@ class TestFile:
         """Test file initialization with a specific format."""
         file = File(data=b"test", format="pdf")
         assert file._mime_type == "application/pdf"
+
+    @pytest.mark.parametrize(
+        ("fmt", "mime_type"),
+        [
+            ("csv", "text/csv"),
+            ("HTML", "text/html"),
+            ("htm", "text/html"),
+            ("md", "text/markdown"),
+            ("markdown", "text/markdown"),
+            ("txt", "text/plain"),
+            ("pdf", "application/pdf"),
+        ],
+    )
+    def test_mime_type_from_format(self, fmt, mime_type):
+        """Text format aliases map to their canonical text/* MIME types."""
+        file = File(data=b"a,b", format=fmt)
+        assert file._mime_type == mime_type
+
+    def test_text_format_is_sent_as_text(self):
+        """A text/* format is embedded as text, not a base64 blob."""
+        file = File(data=b"a,b\n1,2\n", format="csv")
+        resource = file.to_resource_content().resource
+        assert isinstance(resource, TextResourceContents)
+        assert resource.mime_type == "text/csv"
+        assert resource.text == "a,b\n1,2\n"
 
     def test_file_initialization_with_name(self):
         """Test file initialization with a custom name."""

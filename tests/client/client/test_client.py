@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import datetime
 from collections.abc import AsyncIterator
 from typing import Any, cast
 
@@ -9,7 +10,7 @@ import anyio
 import pytest
 from mcp import ClientSession, MCPError
 from mcp_types import TextContent
-from pydantic import AnyUrl
+from pydantic import AnyUrl, BaseModel
 
 import fastmcp
 from fastmcp.client import Client
@@ -18,6 +19,8 @@ from fastmcp.client.transports import (
     FastMCPTransport,
 )
 from fastmcp.server.server import FastMCP
+from fastmcp.tools import ToolResult
+from fastmcp.tools.base import Tool
 from tests.conftest import user_meta
 
 
@@ -868,6 +871,73 @@ async def test_client_does_not_unwrap_dict_result():
         assert user_meta(result.meta) is None
 
 
+async def test_client_decodes_empty_structured_content():
+    """An empty object is a valid structured result, not a missing one (issue #5287)."""
+    server = FastMCP()
+
+    class Empty(BaseModel):
+        pass
+
+    @server.tool
+    def empty_dict() -> dict[str, str]:
+        return {}
+
+    @server.tool
+    def empty_model() -> Empty:
+        return Empty()
+
+    client = Client(transport=FastMCPTransport(server))
+    async with client:
+        dict_result = await client.call_tool("empty_dict", {})
+        assert dict_result.structured_content == {}
+        assert dict_result.data == {}
+        assert type(dict_result.data) is dict
+
+        model_result = await client.call_tool("empty_model", {})
+        assert model_result.structured_content == {}
+        assert model_result.data == {}
+        assert type(model_result.data) is dict
+
+
+@pytest.mark.parametrize("structured_content", [{}, {"value": "present"}, None])
+async def test_client_structured_content_without_output_schema(structured_content):
+    server = FastMCP()
+
+    @server.tool(output_schema=None)
+    def raw_result() -> ToolResult:
+        return ToolResult(content=[], structured_content=structured_content)
+
+    async with Client(server) as client:
+        result = await client.call_tool("raw_result")
+
+    assert result.structured_content == structured_content
+    assert result.data == structured_content
+    assert type(result.data) is type(structured_content)
+
+
+@pytest.mark.parametrize("list_first", [False, True])
+async def test_client_hydrates_data_for_tool_beyond_first_list_page(list_first: bool):
+    """A tool's output schema is found even when it is not on the first page."""
+    server = FastMCP(list_page_size=1)
+
+    @server.tool
+    def first() -> int:
+        return 1
+
+    @server.tool
+    def when() -> datetime.datetime:
+        return datetime.datetime(2026, 1, 1, 12, 0)
+
+    async with Client(server) as client:
+        if list_first:
+            await client.list_tools()
+        result = await client.call_tool("when")
+
+    assert result.structured_content == {"result": "2026-01-01T12:00:00"}
+    assert result.data == datetime.datetime(2026, 1, 1, 12, 0)
+    assert type(result.data) is datetime.datetime
+
+
 async def test_client_list_dict_return_type():
     """list[dict] return type should produce list of dicts, not Root() objects (issue #3867)."""
     server = FastMCP()
@@ -884,6 +954,40 @@ async def test_client_list_dict_return_type():
     async with client:
         result = await client.call_tool("get_temperatures", {})
         assert result.data == [{"city": "NYC", "temp": 72}, {"city": "LA", "temp": 85}]
+
+
+async def test_client_decodes_unique_object_array():
+    """Object arrays with uniqueItems should populate CallToolResult.data."""
+    server = FastMCP()
+
+    async def list_users() -> dict:
+        return {"users": [{"id": 1, "admin": True}, {"id": 2, "admin": False}]}
+
+    server.add_tool(
+        Tool.from_function(
+            list_users,
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "users": {
+                        "type": "array",
+                        "uniqueItems": True,
+                        "items": {"type": "object"},
+                    }
+                },
+                "required": ["users"],
+            },
+        )
+    )
+
+    async with Client(server) as client:
+        result = await client.call_tool("list_users", {})
+
+    assert result.data is not None
+    assert result.data.users == [
+        {"id": 1, "admin": True},
+        {"id": 2, "admin": False},
+    ]
 
 
 def test_client_new_preserves_internal_task_extension(fastmcp_server):
