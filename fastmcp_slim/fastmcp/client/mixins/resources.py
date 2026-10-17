@@ -229,10 +229,10 @@ class ClientResourcesMixin:
             RuntimeError: If called while the client is not connected.
             MCPError: If the request results in a TimeoutError | JSONRPCError
         """
-        # SDK v2: the wire `uri` is a plain string, but resources are stored
-        # under the AnyUrl-normalized form (e.g. a trailing slash for authority
-        # URIs), so normalize through AnyUrl to keep server-side lookups aligned.
-        uri_str = str(AnyUrl(uri)) if isinstance(uri, str) else str(uri)
+        # Preserve the exact URI string: normalizing through AnyUrl collapses
+        # empty path segments (e.g. `file://code//docs` -> `file://code/docs`),
+        # breaking round-trips for advertised namespaced `file:///` resources.
+        uri_str = str(uri)
         with client_span(
             "resources/read",
             "resources/read",
@@ -296,7 +296,7 @@ class ClientResourcesMixin:
 
         if isinstance(uri, str):
             try:
-                uri = AnyUrl(uri)  # Ensure AnyUrl
+                AnyUrl(uri)  # Validate without mangling the wire string
             except Exception as e:
                 raise ValueError(
                     f"Provided resource URI is invalid: {str(uri)!r}"

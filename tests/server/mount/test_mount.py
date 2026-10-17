@@ -634,3 +634,43 @@ class TestMaskErrorDetailsMismatchWarning:
 
         parent.mount(child, "ns")
         assert child._mask_error_details is False
+
+
+class TestNamespacedFileResourceRead:
+    """High-level client must read advertised namespaced file:// resources."""
+
+    async def test_read_advertised_namespaced_file_resource(self):
+        child = FastMCP("Child")
+
+        @child.resource("file:///docs/readme.txt")
+        def readme() -> str:
+            return "documentation"
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="code")
+
+        async with Client(parent) as client:
+            uri = (await client.list_resources())[0].uri
+            assert str(uri) == "file://code//docs/readme.txt"
+            contents = await client.read_resource(uri)
+            assert contents[0].text == "documentation"
+
+
+class TestNamespacedFileResourceTemplateRead:
+    """High-level client must read advertised namespaced file:// resource templates."""
+
+    async def test_read_advertised_namespaced_file_template(self):
+        child = FastMCP("Child")
+
+        @child.resource("file:///{name}.txt")
+        def file_template(name: str) -> str:
+            return f"content of {name}"
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="docs")
+
+        async with Client(parent) as client:
+            template = (await client.list_resource_templates())[0]
+            assert template.uri_template == "file://docs//{name}.txt"
+            contents = await client.read_resource("file://docs//config.txt")
+            assert contents[0].text == "content of config"
