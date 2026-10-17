@@ -147,6 +147,25 @@ class TestFetchLatestVersion:
 
         assert _fetch_latest_version() is None
 
+    @pytest.mark.parametrize("proxy", ["ftp://proxy.example:21", "://"])
+    def test_fetch_unsupported_proxy_scheme(
+        self, monkeypatch: pytest.MonkeyPatch, proxy: str
+    ):
+        """A proxy scheme the HTTP client rejects returns None."""
+        for key in (
+            "HTTP_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+        ):
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv("NO_PROXY", raising=False)
+        monkeypatch.delenv("no_proxy", raising=False)
+        monkeypatch.setenv("HTTPS_PROXY", proxy)
+
+        assert _fetch_latest_version() is None
+
     def test_fetch_invalid_response(self):
         """Invalid response returns None."""
         mock_response = MagicMock()
