@@ -81,6 +81,8 @@ async with client:
 
 Tool execution returns a `CallToolResult` object. The `.data` property provides fully hydrated Python objects including complex types like datetimes and UUIDs, reconstructed from the server's output schema.
 
+Pydantic models can combine named fields with typed additional properties. The client retains those additional fields in `.data` and hydrates their values using the advertised schema, including inside nested objects and lists.
+
 ```python
 from datetime import datetime
 from uuid import UUID
