@@ -2,7 +2,12 @@
 
 import json
 
-from fastmcp import FastMCP
+import pytest
+from mcp_types import TextResourceContents
+from pydantic import AnyUrl
+
+from fastmcp import Client, FastMCP
+from fastmcp.server import create_proxy
 
 
 class TestResourcesAndTemplates:
@@ -213,3 +218,261 @@ class TestMountedResourceTemplateQueryParams:
 
         result = await main.read_resource("resource://api/data/42?limit=5")
         assert result.contents[0].content == "id=42 format=json limit=5"
+
+
+@pytest.mark.parametrize("namespace", [None, "code", "localhost"])
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("reader", ["read_resource", "read_resource_mcp"])
+@pytest.mark.parametrize("proxy", [False, True])
+async def test_client_reads_advertised_file_resource(
+    namespace: str | None,
+    mode: str,
+    reader: str,
+    proxy: bool,
+) -> None:
+    child = FastMCP("Child")
+
+    @child.resource("file:///docs/readme.txt")
+    def readme() -> str:
+        return "documentation"
+
+    parent = FastMCP("Parent")
+    parent.mount(create_proxy(child) if proxy else child, namespace=namespace)
+
+    async with Client(parent, mode=mode) as client:
+        resources = await client.list_resources()
+        assert len(resources) == 1
+        uri = resources[0].uri
+        expected_uri = (
+            f"file://{namespace}//docs/readme.txt"
+            if namespace
+            else "file:///docs/readme.txt"
+        )
+        assert str(uri) == expected_uri
+
+        raw = await client.session.read_resource(str(uri))
+        assert isinstance(raw.contents[0], TextResourceContents)
+        assert raw.contents[0].text == "documentation"
+
+        if reader == "read_resource":
+            contents = await client.read_resource(uri)
+        else:
+            result = await client.read_resource_mcp(uri)
+            contents = result.contents
+        assert len(contents) == 1
+        assert isinstance(contents[0], TextResourceContents)
+        assert contents[0].text == "documentation"
+
+
+@pytest.mark.parametrize("namespace", [None, "code", "localhost"])
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("reader", ["read_resource", "read_resource_mcp"])
+@pytest.mark.parametrize("proxy", [False, True])
+async def test_client_reads_advertised_file_template(
+    namespace: str | None,
+    mode: str,
+    reader: str,
+    proxy: bool,
+) -> None:
+    child = FastMCP("Child")
+
+    @child.resource("file:///docs/{name}.txt")
+    def document(name: str) -> str:
+        return f"documentation:{name}"
+
+    parent = FastMCP("Parent")
+    parent.mount(create_proxy(child) if proxy else child, namespace=namespace)
+
+    async with Client(parent, mode=mode) as client:
+        templates = await client.list_resource_templates()
+        assert len(templates) == 1
+        uri = templates[0].uri_template.replace("{name}", "readme")
+        expected_uri = (
+            f"file://{namespace}//docs/readme.txt"
+            if namespace
+            else "file:///docs/readme.txt"
+        )
+        assert uri == expected_uri
+
+        raw = await client.session.read_resource(uri)
+        assert isinstance(raw.contents[0], TextResourceContents)
+        assert raw.contents[0].text == "documentation:readme"
+
+        if reader == "read_resource":
+            contents = await client.read_resource(uri)
+        else:
+            result = await client.read_resource_mcp(uri)
+            contents = result.contents
+        assert len(contents) == 1
+        assert isinstance(contents[0], TextResourceContents)
+        assert contents[0].text == "documentation:readme"
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("reader", ["read_resource", "read_resource_mcp"])
+async def test_client_reads_http_resource_without_trailing_slash(
+    mode: str,
+    reader: str,
+) -> None:
+    server = FastMCP("HTTPResource")
+
+    @server.resource("http://example.test")
+    def document() -> str:
+        return "documentation"
+
+    async with Client(server, mode=mode) as client:
+        if reader == "read_resource":
+            contents = await client.read_resource("http://example.test")
+        else:
+            result = await client.read_resource_mcp("http://example.test")
+            contents = result.contents
+
+        assert len(contents) == 1
+        assert isinstance(contents[0], TextResourceContents)
+        assert contents[0].text == "documentation"
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("template", [False, True])
+async def test_namespaced_file_read_does_not_alias_parent_resource(
+    mode: str, template: bool
+) -> None:
+    parent = FastMCP("Parent")
+
+    @parent.resource("file://code/docs/readme.txt")
+    def parent_document() -> str:
+        return "parent"
+
+    child = FastMCP("Child")
+    if template:
+
+        @child.resource("file:///docs/{name}.txt")
+        def child_template(name: str) -> str:
+            return f"child:{name}"
+
+        expected = "child:readme"
+    else:
+
+        @child.resource("file:///docs/readme.txt")
+        def child_document() -> str:
+            return "child"
+
+        expected = "child"
+
+    parent.mount(child, namespace="code")
+
+    async with Client(parent, mode=mode) as client:
+        for uri, text in [
+            ("file://code/docs/readme.txt", "parent"),
+            ("file://code//docs/readme.txt", expected),
+        ]:
+            raw = await client.session.read_resource(uri)
+            assert isinstance(raw.contents[0], TextResourceContents)
+            assert raw.contents[0].text == text
+
+            contents = await client.read_resource(uri)
+            assert len(contents) == 1
+            assert isinstance(contents[0], TextResourceContents)
+            assert contents[0].text == text
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("proxy", [False, True])
+async def test_client_reads_nested_namespaced_file_template(
+    mode: str, proxy: bool
+) -> None:
+    child = FastMCP("Child")
+
+    @child.resource("file:///docs/{name}.txt")
+    def document(name: str) -> str:
+        return f"documentation:{name}"
+
+    middle = FastMCP("Middle")
+    middle.mount(child, namespace="code")
+    parent = FastMCP("Parent")
+    parent.mount(create_proxy(middle) if proxy else middle, namespace="outer")
+
+    async with Client(parent, mode=mode) as client:
+        templates = await client.list_resource_templates()
+        assert len(templates) == 1
+        uri = templates[0].uri_template.replace("{name}", "readme")
+        assert uri == "file://outer/code//docs/readme.txt"
+        contents = await client.read_resource(uri)
+        assert len(contents) == 1
+        assert isinstance(contents[0], TextResourceContents)
+        assert contents[0].text == "documentation:readme"
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("proxy", [False, True])
+async def test_client_preserves_resource_uri_normalization(
+    mode: str, proxy: bool
+) -> None:
+    server = FastMCP("NormalizedResources")
+
+    @server.resource("http://example.test")
+    def document() -> str:
+        return "documentation"
+
+    @server.resource("http://example.test/docs/{name}")
+    def http_template(name: str) -> str:
+        return name
+
+    @server.resource("file:///docs/read me.txt")
+    def file_document() -> str:
+        return "file documentation"
+
+    async with Client(create_proxy(server) if proxy else server, mode=mode) as client:
+        for uri, text in [
+            ("http://example.test", "documentation"),
+            ("http://EXAMPLE.TEST/docs/readme", "readme"),
+            ("file:///docs/read me.txt", "file documentation"),
+        ]:
+            contents = await client.read_resource(uri)
+            assert len(contents) == 1
+            assert isinstance(contents[0], TextResourceContents)
+            assert contents[0].text == text
+            result = await client.read_resource_mcp(uri)
+            assert isinstance(result.contents[0], TextResourceContents)
+            assert result.contents[0].text == text
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("reader", ["read_resource", "read_resource_mcp"])
+@pytest.mark.parametrize("template", [False, True])
+@pytest.mark.parametrize("as_anyurl", [False, True])
+@pytest.mark.parametrize("uri", ["file:///docs/readme.txt", "file:////docs/readme.txt"])
+async def test_client_normalizes_file_uri_without_authority(
+    mode: str, reader: str, template: bool, as_anyurl: bool, uri: str
+) -> None:
+    server = FastMCP("File URI aliases")
+    if template:
+
+        @server.resource("file:///docs/{name}.txt")
+        def document_template(name: str) -> str:
+            return f"documentation:{name}"
+
+        expected = "documentation:readme"
+    else:
+
+        @server.resource("file:///docs/readme.txt")
+        def document() -> str:
+            return "documentation"
+
+        expected = "documentation"
+
+    async with Client(server, mode=mode) as client:
+        raw = await client.session.read_resource("file:///docs/readme.txt")
+        assert isinstance(raw.contents[0], TextResourceContents)
+        assert raw.contents[0].text == expected
+
+        requested = AnyUrl(uri) if as_anyurl else uri
+        if reader == "read_resource":
+            contents = await client.read_resource(requested)
+        else:
+            result = await client.read_resource_mcp(requested)
+            contents = result.contents
+
+        assert len(contents) == 1
+        assert isinstance(contents[0], TextResourceContents)
+        assert contents[0].text == expected
