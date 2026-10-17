@@ -69,8 +69,48 @@ def _default_title(name: str) -> str:
     return name.replace("_", " ").replace("-", " ").title()
 
 
+def _encode_non_utf8_bytes(value: Any) -> Any:
+    """Base64-encode bytes that can't decode as UTF-8, at any depth.
+
+    JSON serialization renders bytes as their UTF-8 text and errors on
+    binary data, so non-UTF-8 bytes nested in a dict or list would fail
+    serialization of the whole result. Encoding those leaves first gives
+    containers of binary data the base64 fallback a bare bytes result
+    already has.
+    """
+    if isinstance(value, bytes):
+        try:
+            value.decode("utf-8")
+        except UnicodeDecodeError:
+            import base64
+
+            return base64.b64encode(value).decode("ascii")
+        return value
+    if isinstance(value, dict):
+        return {
+            _encode_non_utf8_bytes(key): _encode_non_utf8_bytes(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_encode_non_utf8_bytes(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_encode_non_utf8_bytes(item) for item in value)
+    if isinstance(value, set):
+        return {_encode_non_utf8_bytes(item) for item in value}
+    if isinstance(value, frozenset):
+        return frozenset(_encode_non_utf8_bytes(item) for item in value)
+    return value
+
+
 def default_serializer(data: Any) -> str:
-    return _JSONABLE_ADAPTER.dump_json(data, fallback=str).decode()
+    try:
+        return _JSONABLE_ADAPTER.dump_json(data, fallback=str).decode()
+    except pydantic_core.PydanticSerializationError:
+        # non-UTF-8 bytes anywhere in the value fail JSON serialization;
+        # base64-encode them and retry
+        return _JSONABLE_ADAPTER.dump_json(
+            _encode_non_utf8_bytes(data), fallback=str
+        ).decode()
 
 
 def _serialize_to_jsonable(data: Any, annotation: Any = Any) -> Any:
