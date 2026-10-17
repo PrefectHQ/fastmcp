@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from fastmcp.resources.template import ResourceTemplate
     from fastmcp.server.extensions import ServerExtension
     from fastmcp.server.server import FastMCP
+    from fastmcp.skills._source import _SkillSource
     from fastmcp.tools.base import Tool
 
 logger = logging.getLogger(__name__)
@@ -97,6 +98,20 @@ class AggregateProvider(Provider):
         self.provider_error_strategy = provider_error_strategy
         self.providers: list[Provider] = list(providers or [])
         self._extension_scopes: list[_ExtensionScope] = []
+
+    def _get_skills_source(self) -> _SkillSource | None:
+        from fastmcp.skills._providers import _AggregateSkills, _transformed
+
+        sources = [
+            source
+            for provider in self.providers
+            if (source := provider._get_skills_source()) is not None
+        ]
+        if not sources:
+            return None
+        return _transformed(
+            _AggregateSkills(sources, error_strategy=self.provider_error_strategy), self
+        )
 
     def required_extensions(self) -> Sequence[ServerExtension]:
         """Collect bundled extensions from children in provider order."""

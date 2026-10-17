@@ -73,6 +73,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from fastmcp.client.transports import ClientTransport
+    from fastmcp.skills._proxy import _ProxySkillSource
+    from fastmcp.skills._source import _SkillSource
 
 logger = get_logger(__name__)
 
@@ -906,6 +908,14 @@ class ProxyProvider(Provider):
         self._resources_cache: _CacheEntry[Resource] | None = None
         self._templates_cache: _CacheEntry[ResourceTemplate] | None = None
         self._prompts_cache: _CacheEntry[Prompt] | None = None
+        self._skills_source: _ProxySkillSource | None = None
+
+    def _get_skills_source(self) -> _SkillSource:
+        from fastmcp.skills._proxy import _ProxySkillSource
+
+        if self._skills_source is None:
+            self._skills_source = _ProxySkillSource(self)
+        return self._skills_source
 
     async def _get_client(self) -> Client:
         """Gets a client instance by calling the sync or async factory."""
@@ -1126,6 +1136,7 @@ class _UpstreamServerMetadata:
     instructions: str | None
     server_info: mcp_types.Implementation | None
     meta: dict[str, Any]
+    capabilities: mcp_types.ServerCapabilities
 
     @classmethod
     def from_result(
@@ -1140,6 +1151,7 @@ class _UpstreamServerMetadata:
                 server_info.model_copy(deep=True) if server_info is not None else None
             ),
             meta=deepcopy(result.meta or {}),
+            capabilities=result.capabilities.model_copy(deep=True),
         )
 
     @classmethod
@@ -1206,19 +1218,26 @@ class ProxyMetadataMiddleware(Middleware):
     async def _read_upstream(
         self, client: Client, context: Context | None
     ) -> _UpstreamServerMetadata | None:
+        key = f"_fastmcp_proxy_metadata:{id(self.provider)}"
         if context is not None:
+            if key in context._request_state:
+                return cast(_UpstreamServerMetadata | None, context._request_state[key])
             _stash_proxy_request_context(client, context)
 
         try:
             if client.is_connected():
-                return await self._read_connected(client)
-            async with client:
-                return await self._read_connected(client)
+                result = await self._read_connected(client)
+            else:
+                async with client:
+                    result = await self._read_connected(client)
         except (MCPError, *_PROXY_TRANSPORT_ERRORS) as error:
             if isinstance(error, RuntimeError) and not _has_transport_cause(error):
                 raise
             logger.debug("Could not read upstream server metadata: %r", error)
-            return None
+            result = None
+        if context is not None:
+            context._request_state[key] = result
+        return result
 
     def _updates(
         self,

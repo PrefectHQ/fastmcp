@@ -28,6 +28,7 @@ from fastmcp.utilities.versions import VersionSpec
 if TYPE_CHECKING:
     from fastmcp.server.extensions import ServerExtension
     from fastmcp.server.server import FastMCP
+    from fastmcp.skills._source import _SkillSource
 
 
 # -----------------------------------------------------------------------------
@@ -413,6 +414,14 @@ class FastMCPProvider(Provider):
         """
         super().__init__()
         self.server = server
+
+    def _get_skills_source(self) -> _SkillSource | None:
+        from fastmcp.skills._providers import _ServerSkills, _transformed
+
+        source = self.server._get_skills_source()
+        if source is None:
+            return None
+        return _transformed(_ServerSkills(source, self.server), self)
 
     def required_extensions(self) -> Sequence[ServerExtension]:
         """Expose the mounted server's bundled and auto-registerable extensions."""

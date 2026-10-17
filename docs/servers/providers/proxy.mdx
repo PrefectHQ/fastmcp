@@ -330,6 +330,25 @@ Proxied components follow standard prefixing rules:
 | Resources | `protocol://{prefix}/path` |
 | Templates | `protocol://{prefix}/...` |
 
+## Skills
+
+When a backend advertises the experimental [Skills extension](/servers/providers/experimental-skills), its proxy automatically advertises and forwards `skills/list` and `skills/get` on modern MCP connections. The same behavior applies when you add a `ProxyProvider` to an existing server.
+
+Create the proxy as usual. FastMCP discovers Skills support through the backend's normal discovery response; the proxy needs no additional extension registration.
+
+```python
+from fastmcp.server import create_proxy
+
+proxy = create_proxy("http://localhost:8000/mcp")
+
+if __name__ == "__main__":
+    proxy.run(transport="http", port=8001)
+```
+
+Mounted namespaces apply consistently to the skill and its manifest's resource URIs. Skill files continue through the existing resource proxy and are read only when requested. Resource permissions hide a skill if the caller is denied any of its files.
+
+Forwarded results retain backend cache durations and application metadata, with private cache scope because proxy permissions can depend on the caller. Catalogs combined from multiple backends use the server's default private, zero-duration cache policy. After a manifest refresh, its files bypass `ResponseCachingMiddleware` for the provider's metadata-cache lifetime, so refreshed metadata can be paired with current bytes.
+
 ## Mirrored Components
 
 <VersionBadge version="2.10.5" />

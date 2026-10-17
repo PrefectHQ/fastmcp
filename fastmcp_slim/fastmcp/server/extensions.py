@@ -229,6 +229,10 @@ class ServerExtension:
             )
         return server
 
+    async def _is_supported(self, context: ServerRequestContext[Any, Any]) -> bool:
+        """Whether this registration can be advertised for the current request."""
+        return True
+
     def settings(self) -> dict[str, Any]:
         """Per-extension settings advertised at `capabilities.extensions[identifier]`.
 

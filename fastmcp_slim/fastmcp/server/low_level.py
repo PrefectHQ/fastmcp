@@ -347,8 +347,8 @@ class FastMCPServerMiddleware:
             )
             raw = await call_next(replace(ctx, params=params))
             if isinstance(raw, mcp_types.DiscoverResult):
-                return raw
-            if isinstance(raw, Mapping):
+                result = raw
+            elif isinstance(raw, Mapping):
                 result = dict(raw)
                 result_type = result.get("resultType")
                 if (
@@ -356,11 +356,34 @@ class FastMCPServerMiddleware:
                     and result_type not in mcp_types.CORE_RESULT_TYPES
                 ):
                     return result
-                return mcp_types.DiscoverResult.model_validate(result)
-            raise TypeError(
-                "server/discover handler returned "
-                f"{type(raw).__name__}; expected DiscoverResult or mapping"
-            )
+                result = mcp_types.DiscoverResult.model_validate(result)
+            else:
+                raise TypeError(
+                    "server/discover handler returned "
+                    f"{type(raw).__name__}; expected DiscoverResult or mapping"
+                )
+            unsupported = {
+                extension.identifier
+                for extension in fastmcp._extensions.values()
+                if not await extension._is_supported(ctx)
+            }
+            if unsupported:
+                result = result.model_copy(
+                    update={
+                        "capabilities": result.capabilities.model_copy(
+                            update={
+                                "extensions": {
+                                    key: settings
+                                    for key, settings in (
+                                        result.capabilities.extensions or {}
+                                    ).items()
+                                    if key not in unsupported
+                                }
+                            }
+                        )
+                    }
+                )
+            return result
 
         async with Context(fastmcp=fastmcp, session=ctx.session) as fastmcp_ctx:
             mw_context = MiddlewareContext(

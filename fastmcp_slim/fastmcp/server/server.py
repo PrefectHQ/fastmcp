@@ -523,6 +523,13 @@ class FastMCP(
         # Set up MCP protocol handlers
         self._setup_handlers()
 
+        from fastmcp.skills.extension import _ProxySkillsExtension
+
+        forwarding = _ProxySkillsExtension()
+        if forwarding.identifier not in self._extensions:
+            self._install_extension(forwarding)
+            self._auto_extensions.add(forwarding.identifier)
+
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.name!r})"
 

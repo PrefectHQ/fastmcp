@@ -233,9 +233,10 @@ def test_duplicate_explicit_registration_still_raises():
 
 def test_same_bundled_configuration_is_deduplicated(caplog: pytest.LogCaptureFixture):
     server = FastMCP("root")
+    defaults = server._extensions.copy()
     with caplog.at_level(logging.WARNING):
         server.add_provider(AggregateProvider([BundledProvider(), BundledProvider()]))
-    assert len(server._extensions) == 1
+    assert set(server._extensions) == {*defaults, EXT_ID}
     assert "Conflicting" not in caplog.text
 
 
@@ -484,13 +485,14 @@ async def test_failed_bundle_rolls_back_all_extensions_and_handlers():
         identifier = "com.example/explicit"
 
     root = FastMCP("root")
+    defaults, automatic = root._extensions.copy(), root._auto_extensions.copy()
     bundle = AggregateProvider(
         [BundledProvider(), BundledProvider(ExplicitExtension())]
     )
     with pytest.raises(ValueError, match="does not allow automatic registration"):
         root.add_provider(bundle)
-    assert root._extensions == {}
-    assert root._auto_extensions == set()
+    assert root._extensions == defaults
+    assert root._auto_extensions == automatic
     assert root._mcp_server.get_request_handler("bundled/inspect") is None
     assert len(root.providers) == 1
     # A corrected attempt must work without stale methods or duplicate IDs.
@@ -548,10 +550,11 @@ def test_invalid_clone_rejected_without_rebinding_source(invalid_clone: str):
     extension = InvalidCloneExtension()
     child.add_extension(extension)
     root = FastMCP("root")
+    defaults = root._extensions.copy()
     with pytest.raises(ValueError, match="separate extension with the same identifier"):
         root.mount(child)
     assert extension.server is child
-    assert root._extensions == {}
+    assert root._extensions == defaults
 
 
 async def test_explicit_child_extension_added_after_mount_is_discovered():
@@ -584,12 +587,13 @@ async def test_mounted_child_lifespan_cannot_introduce_a_new_root_extension():
         yield
 
     child = FastMCP("child", lifespan=lifespan)
+    defaults = child._extensions.copy()
     root = FastMCP("root")
     root.mount(child)
     with pytest.raises(RuntimeError, match="unavailable in a running server"):
         async with root._lifespan_manager():
             pass
-    assert child._extensions == {}
+    assert child._extensions == defaults
     assert len(child.providers) == 1
 
 
@@ -625,11 +629,12 @@ async def test_running_aggregate_rejects_new_extension_without_exposing_componen
     if wrapped:
         composed = AggregateProvider([aggregate.wrap_transform(Namespace("ns"))])
     root = FastMCP("root", providers=[composed])
+    defaults = root._extensions.copy()
     async with Client(root, mode="auto") as client:
         with pytest.raises(RuntimeError, match="unavailable in a running server"):
             aggregate.add_provider(provider)
         assert await client.list_tools() == []
-        assert root._extensions == {}
+        assert root._extensions == defaults
     assert aggregate.providers == []
 
 
@@ -756,6 +761,7 @@ async def test_nested_child_setup_preserves_ancestor_interceptor_configuration()
         return "marker"
 
     middle = FastMCP("middle")
+    defaults = middle._extensions.copy()
     middle.mount(child)
     root = FastMCP("root")
     root.mount(middle)
@@ -765,7 +771,7 @@ async def test_nested_child_setup_preserves_ancestor_interceptor_configuration()
         child_extension = child._extensions[EXT_ID]
         assert isinstance(child_extension, AuditExtension)
         assert child_extension.calls == []
-    assert middle._extensions == {}
+    assert middle._extensions == defaults
 
 
 async def test_delegation_preserves_programmatic_calls_from_child_middleware():
@@ -813,10 +819,11 @@ async def test_aggregate_setup_cannot_introduce_a_new_root_extension():
 
     aggregate.add_provider(SetupProvider())
     root = FastMCP("root", providers=[aggregate])
+    defaults = root._extensions.copy()
     with pytest.raises(RuntimeError, match="unavailable in a running server"):
         async with root._lifespan_manager():
             pass
-    assert root._extensions == {}
+    assert root._extensions == defaults
     assert len(aggregate.providers) == 1
 
 
@@ -841,6 +848,7 @@ async def test_lifespan_cannot_introduce_a_root_extension_via_a_later_sibling(
         FastMCP("later") if target_kind == "mounted_server" else AggregateProvider()
     )
     root = FastMCP("root", providers=[MutatingProvider(target)])
+    defaults = root._extensions.copy()
     if isinstance(target, FastMCP):
         root.mount(target)
     else:
@@ -849,7 +857,7 @@ async def test_lifespan_cannot_introduce_a_root_extension_via_a_later_sibling(
     with pytest.raises(RuntimeError, match="lifespan has already started"):
         async with root._lifespan_manager():
             pass
-    assert root._extensions == {}
+    assert root._extensions == defaults
 
 
 async def test_lifespan_can_add_a_bundle_the_root_already_supports_to_a_later_sibling():
@@ -873,11 +881,12 @@ async def test_aggregate_startup_rejects_new_extension_on_a_later_descendant(
     if wrapped:
         composed = AggregateProvider([aggregate.wrap_transform(Namespace("ns"))])
     root = FastMCP("root", providers=[composed])
+    defaults = root._extensions.copy()
 
     with pytest.raises(RuntimeError, match="unavailable in a running server"):
         async with root._lifespan_manager():
             pass
-    assert root._extensions == {}
+    assert root._extensions == defaults
     assert aggregate._extension_scopes == []
 
 

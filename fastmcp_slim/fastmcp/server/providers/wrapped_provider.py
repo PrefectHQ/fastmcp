@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from fastmcp.server.extensions import ServerExtension
     from fastmcp.server.server import FastMCP
     from fastmcp.server.transforms import Transform
+    from fastmcp.skills._source import _SkillSource
     from fastmcp.tools.base import Tool
     from fastmcp.utilities.components import FastMCPComponent
 
@@ -47,6 +48,12 @@ class _WrappedProvider(Provider):
         # Add the transform to this provider's transform list
         # It will be applied via the normal transform chain
         self._transforms.append(transform)
+
+    def _get_skills_source(self) -> _SkillSource | None:
+        from fastmcp.skills._providers import _transformed
+
+        source = self._inner._get_skills_source()
+        return _transformed(source, self) if source is not None else None
 
     def required_extensions(self) -> Sequence[ServerExtension]:
         """Preserve bundled extensions through transforms and namespaces."""

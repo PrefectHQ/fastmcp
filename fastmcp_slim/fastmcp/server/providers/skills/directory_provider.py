@@ -13,7 +13,6 @@ from anyio.to_thread import run_sync
 from mcp.server.context import ServerRequestContext
 from mcp.shared.path_security import PathEscapeError, safe_join
 
-from fastmcp.exceptions import AuthorizationError
 from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.dependencies import get_context
@@ -26,14 +25,15 @@ from fastmcp.server.providers.skills.skill_provider import (
     SkillResource,
 )
 from fastmcp.skills._snapshot import Snapshot, snapshot
-from fastmcp.skills.models import Skill
+from fastmcp.skills._source import _Catalog, _Lookup, _SkillSource
+from fastmcp.skills.models import GetSkillResult, ListSkillsResult, Skill
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec
 
 logger = get_logger(__name__)
 
 
-class SkillsDirectoryProvider(AggregateProvider):
+class SkillsDirectoryProvider(AggregateProvider, _SkillSource):
     """Provider that scans directories and creates a SkillProvider per skill folder.
 
     This extends AggregateProvider to combine multiple SkillProviders into one.
@@ -388,38 +388,39 @@ class SkillsDirectoryProvider(AggregateProvider):
                 params = component.matches(uri)
                 if params is None or component.skill_info.path / params["path"] != path:
                     return None
-            try:
-                await server._check_resource_access(uri)
-            except AuthorizationError:
-                return None
         return snap.entry
 
     async def _list_skill_entries(
         self, context: ServerRequestContext[Any, Any]
-    ) -> Sequence[Skill]:
+    ) -> _Catalog:
         entries = []
         for snap in await run_sync(self._snapshots):
             entry = await self._visible_entry(snap)
             if entry is not None:
                 entries.append(entry)
-        return entries
+        return _Catalog(
+            ListSkillsResult(skills=entries), tuple(await self._skill_uris())
+        )
 
     async def _get_skill_entry(
         self, uri: str, context: ServerRequestContext[Any, Any]
-    ) -> Skill | None:
+    ) -> _Lookup:
         parts = self._uri_parts(uri)
         if parts is None or parts[-1] != "SKILL.md":
-            return None
+            return _Lookup()
         name = "/".join(parts[:-1])
         directories = self._directories_for_name(name)
         if len(directories) != 1:
-            return None
+            return _Lookup(matches=len(directories))
         try:
             snap = await run_sync(snapshot, directories[0], name)
         except (OSError, ValueError, yaml.YAMLError, RecursionError) as exc:
             logger.warning("Omitting invalid skill %s: %s", directories[0], exc)
-            return None
-        return await self._visible_entry(snap)
+            return _Lookup(matches=1)
+        entry = await self._visible_entry(snap)
+        return _Lookup(
+            matches=1, result=GetSkillResult(skill=entry) if entry is not None else None
+        )
 
     def _owns_skill_resource(self, uri: str) -> bool:
         parts = self._uri_parts(uri)

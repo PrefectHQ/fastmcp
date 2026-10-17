@@ -1,35 +1,47 @@
-"""Private source contract consumed by `SkillsExtension`."""
+"""Private, dependency-light source contract for resource-backed Skills."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any, Protocol, runtime_checkable
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any
 
 from mcp.server.context import ServerRequestContext
 
-from fastmcp.skills.models import Skill
+from fastmcp.skills.models import GetSkillResult, ListSkillsResult
 
 
-@runtime_checkable
-class _SkillSource(Protocol):
-    """A provider capable of producing caller-scoped Skills entries."""
+@dataclass(frozen=True)
+class _Catalog:
+    result: ListSkillsResult
+    identities: tuple[str, ...]
 
-    async def _list_skill_entries(
-        self, context: ServerRequestContext[Any, Any]
-    ) -> Sequence[Skill]: ...
 
-    async def _get_skill_entry(
-        self, uri: str, context: ServerRequestContext[Any, Any]
-    ) -> Skill | None: ...
+@dataclass(frozen=True)
+class _Lookup:
+    matches: int = 0
+    result: GetSkillResult | None = None
+
+
+class _SkillSource(ABC):
+    """Keep identity before authorization alongside the typed protocol result."""
+
+    async def _is_supported(self, context: ServerRequestContext[Any, Any]) -> bool:
+        return True
 
     def _validate_skill_source(self) -> None:
-        """Reject sources that have not opted into protocol publication."""
-        ...
-
-    async def _skill_uris(self, uri: str | None = None) -> Sequence[str]:
-        """Return identities before authorization/validation, preserving duplicates."""
-        ...
+        """Reject source configurations that cannot publish a Skills catalog."""
+        return None
 
     def _owns_skill_resource(self, uri: str) -> bool:
-        """Whether manifest coherence requires this URI to be read live."""
-        ...
+        return False
+
+    @abstractmethod
+    async def _list_skill_entries(
+        self, context: ServerRequestContext[Any, Any]
+    ) -> _Catalog: ...
+
+    @abstractmethod
+    async def _get_skill_entry(
+        self, uri: str, context: ServerRequestContext[Any, Any]
+    ) -> _Lookup: ...
