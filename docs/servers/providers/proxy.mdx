@@ -199,7 +199,9 @@ backend = ProxyClient(
 
 <VersionBadge version="4.0.0" />
 
-A proxy passes a backend's tool results through untouched, including results that don't match the output schema the backend advertised. Deciding whether a server honored its own contract belongs to the client consuming the result, and that client validates for itself.
+A proxy does not validate backend tool results against the advertised output schema. Deciding whether a server honored its own contract belongs to the client consuming the result, and that client validates for itself.
+
+When a 2026-07-28 backend returns structured content with a non-object schema, a 2026-07-28 caller receives the original schema and value. Earlier MCP clients require an object output schema, so the proxy advertises a `result` property and wraps the structured value under that key. FastMCP clients still expose the original value through `CallToolResult.data`.
 
 This matters when a backend's declared schema is subtly wrong — an enum missing a variant it actually returns, say. A proxy that enforced the schema would replace the backend's working response with an error of its own, and the client would never see what the backend actually said.
 

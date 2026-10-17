@@ -103,7 +103,13 @@ from fastmcp.server.transforms import (
 )
 from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
-from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.base import (
+    InputRequiredToolResult,
+    RawStructuredToolResult,
+    Tool,
+    ToolResult,
+)
+from fastmcp.tools.function_parsing import _is_object_schema
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.components import FastMCPComponent, _coerce_version
@@ -1464,7 +1470,44 @@ class FastMCP(
                     raise NotFoundError(f"Unknown tool: {name!r}")
                 span.set_attributes(tool.get_span_attributes())
                 try:
-                    return await tool._run(arguments or {})
+                    result = await tool._run(arguments or {})
+                    if (
+                        ctx.request_context is not None
+                        and not ctx._is_modern_protocol()
+                        and tool.output_schema is not None
+                        and not _is_object_schema(tool.output_schema)
+                        and isinstance(result, ToolResult)
+                        and not isinstance(result, InputRequiredToolResult)
+                        and (
+                            result.structured_content is not None
+                            or isinstance(result, RawStructuredToolResult)
+                        )
+                    ):
+                        fastmcp_meta = (
+                            result.meta.get("fastmcp") if result.meta else None
+                        )
+                        if not (
+                            isinstance(fastmcp_meta, dict)
+                            and fastmcp_meta.get("wrap_result") is True
+                        ):
+                            meta = dict(result.meta or {})
+                            meta["fastmcp"] = {
+                                **(
+                                    fastmcp_meta
+                                    if isinstance(fastmcp_meta, dict)
+                                    else {}
+                                ),
+                                "wrap_result": True,
+                            }
+                            result = ToolResult(
+                                content=result.content,
+                                structured_content={
+                                    "result": result.structured_content
+                                },
+                                meta=meta,
+                                is_error=result.is_error,
+                            )
+                    return result
                 except ValidationError as e:
                     cause = e.__cause__
                     if isinstance(cause, PydanticValidationError):

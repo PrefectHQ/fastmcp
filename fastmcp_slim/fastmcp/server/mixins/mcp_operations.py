@@ -37,6 +37,7 @@ from fastmcp.server.dependencies import (
     extract_version_spec,
 )
 from fastmcp.tools.base import InputRequiredToolResult, ToolResult
+from fastmcp.tools.function_parsing import _is_object_schema
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -145,7 +146,39 @@ class MCPOperationsMixin:
             tools = dedupe_with_versions(
                 list(await self.list_tools()), lambda t: t.name
             )
-            sdk_tools = [tool.to_mcp_tool(name=tool.name) for tool in tools]
+            sdk_tools = []
+            for tool in tools:
+                output_schema = tool.output_schema
+                if (
+                    ctx.protocol_version not in MODERN_PROTOCOL_VERSIONS
+                    and output_schema is not None
+                ):
+                    if _is_object_schema(output_schema) and "type" not in output_schema:
+                        # An implicit object schema is valid JSON Schema, but
+                        # legacy MCP requires a literal object type at the root.
+                        output_schema = {"type": "object", **output_schema}
+                    elif not _is_object_schema(output_schema):
+                        output_schema = {
+                            "type": "object",
+                            "properties": {"result": output_schema},
+                            "required": ["result"],
+                            "x-fastmcp-wrap-result": True,
+                            # Local references inside the original schema still
+                            # resolve from the document root after wrapping.
+                            **(
+                                {"$defs": output_schema["$defs"]}
+                                if "$defs" in output_schema
+                                else {}
+                            ),
+                            **(
+                                {"definitions": output_schema["definitions"]}
+                                if "definitions" in output_schema
+                                else {}
+                            ),
+                        }
+                sdk_tools.append(
+                    tool.to_mcp_tool(name=tool.name, outputSchema=output_schema)
+                )
             cursor = params.cursor if params else None
             page, next_cursor = _apply_pagination(
                 sdk_tools, cursor, self._list_page_size

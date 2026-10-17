@@ -381,6 +381,10 @@ class TransformedTool(Tool):
 
             # If transform function returns ToolResult, respect our output_schema setting
             if isinstance(result, ToolResult):
+                if self.output_schema == self.parent_tool.output_schema:
+                    # A forwarding transform inherits its parent's result
+                    # shape, including modern raw values and legacy wrappers.
+                    return result
                 if self.output_schema is None:
                     return result
                 elif not _is_object_schema(
