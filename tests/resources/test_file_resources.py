@@ -179,3 +179,26 @@ class TestFileResource:
         )
         result = await resource.read()
         assert result.contents[0].content == content
+
+    async def test_read_preserves_meta(self, temp_file: Path):
+        """FileResource read should preserve public metadata."""
+        resource = FileResource(
+            uri=FileUrl(temp_file.as_uri()),
+            path=temp_file,
+            meta={"custom": "keep"},
+        )
+        result = await resource.read()
+        assert result.contents[0].meta == {"custom": "keep"}
+
+    async def test_read_binary_preserves_meta(self, tmp_path: Path):
+        """Binary FileResource read should preserve public metadata."""
+        file = tmp_path / "bin.dat"
+        file.write_bytes(b"\x00\x01")
+        resource = FileResource(
+            uri=FileUrl("file:///test/bin"),
+            path=file,
+            is_binary=True,
+            meta={"custom": "keep"},
+        )
+        result = await resource.read()
+        assert result.contents[0].meta == {"custom": "keep"}

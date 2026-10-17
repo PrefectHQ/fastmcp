@@ -1,9 +1,18 @@
+from pathlib import Path
+
 import mcp_types
 import pytest
 from pydantic import AnyUrl, BaseModel
 
 from fastmcp import Client, FastMCP
-from fastmcp.resources import Resource, ResourceContent, ResourceResult
+from fastmcp.resources import (
+    DirectoryResource,
+    FileResource,
+    HttpResource,
+    Resource,
+    ResourceContent,
+    ResourceResult,
+)
 from fastmcp.resources.function_resource import FunctionResource
 from tests.conftest import user_meta
 
@@ -371,3 +380,55 @@ class TestResourceMetaPropagation:
             result = await client.read_resource_mcp("test://json-meta")
             assert len(result.contents) == 1
             assert result.contents[0].meta == {"csp": "default-src 'none'"}
+
+    async def test_built_in_resources_preserve_component_meta(self, tmp_path: Path):
+        """Built-in FileResource and DirectoryResource should propagate component meta to content."""
+        file = tmp_path / "test.txt"
+        file.write_text("hello")
+
+        mcp = FastMCP()
+        mcp.add_resource(
+            FileResource(uri="test://file", path=file, meta={"file_key": "file_val"})
+        )
+        mcp.add_resource(
+            DirectoryResource(
+                uri="test://dir", path=tmp_path, meta={"dir_key": "dir_val"}
+            )
+        )
+
+        async with Client(mcp) as client:
+            file_res = await client.read_resource_mcp("test://file")
+            assert file_res.contents[0].meta == {"file_key": "file_val"}
+
+            dir_res = await client.read_resource_mcp("test://dir")
+            assert dir_res.contents[0].meta == {"dir_key": "dir_val"}
+
+    async def test_http_resource_preserves_component_meta(self, monkeypatch):
+        """HttpResource should propagate component meta to content."""
+        import httpx2
+
+        class MockResponse:
+            text = '{"status": "ok"}'
+
+            def raise_for_status(self):
+                pass
+
+        class MockAsyncClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url):
+                return MockResponse()
+
+        monkeypatch.setattr(httpx2, "AsyncClient", MockAsyncClient)
+
+        res = HttpResource(
+            uri="test://http",
+            url="https://api.example.com/data",
+            meta={"http_key": "http_val"},
+        )
+        result = await res.read()
+        assert result.contents[0].meta == {"http_key": "http_val"}
