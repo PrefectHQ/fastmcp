@@ -408,6 +408,73 @@ def test_convert_messages_with_tool_result_content():
     ]
 
 
+@pytest.mark.parametrize(
+    ("result_content", "expected_content"),
+    [
+        pytest.param(
+            [ImageContent(type="image", data="YWJj", mime_type="image/png")],
+            [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": "YWJj",
+                    },
+                }
+            ],
+            id="image-only",
+        ),
+        pytest.param(
+            [
+                TextContent(type="text", text="caption"),
+                ImageContent(type="image", data="YWJj", mime_type="image/jpeg"),
+            ],
+            [
+                {"type": "text", "text": "caption"},
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": "YWJj",
+                    },
+                },
+            ],
+            id="text-and-image",
+        ),
+    ],
+)
+@pytest.mark.parametrize("as_block_list", [False, True], ids=["single", "list"])
+def test_convert_tool_result_preserves_nested_images(
+    result_content: list[TextContent | ImageContent],
+    expected_content: list[dict[str, Any]],
+    as_block_list: bool,
+):
+    tool_result = ToolResultContent(
+        type="tool_result", tool_use_id="toolu_image", content=result_content
+    )
+    message_content = [tool_result] if as_block_list else tool_result
+
+    messages = AnthropicSamplingHandler._convert_to_anthropic_messages(
+        messages=[SamplingMessage(role="user", content=message_content)]
+    )
+
+    assert messages == [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_image",
+                    "content": expected_content,
+                    "is_error": False,
+                }
+            ],
+        }
+    ]
+
+
 def test_convert_messages_raises_on_unsupported_content_type():
     """Unsupported content types should raise ValueError.
 

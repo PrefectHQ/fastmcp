@@ -93,6 +93,18 @@ def _audio_content_to_openai_part(
     )
 
 
+def _tool_result_content_to_openai_text(content: Sequence[Any]) -> str:
+    """Convert text-only OpenAI tool output and reject images explicitly."""
+    result_texts: list[str] = []
+    for item in content:
+        if isinstance(item, ImageContent):
+            msg = "ImageContent in tool results is not supported by OpenAI"
+            raise ValueError(msg)
+        if isinstance(item, TextContent):
+            result_texts.append(item.text)
+    return "\n".join(result_texts)
+
+
 class OpenAISamplingHandler:
     """Sampling handler that uses the OpenAI API."""
 
@@ -230,14 +242,7 @@ class OpenAISamplingHandler:
                         content_parts.append(_audio_content_to_openai_part(item))
                     elif isinstance(item, ToolResultContent):
                         # Collect tool results (added after assistant message)
-                        content_text = ""
-                        if item.content:
-                            result_texts = [
-                                sub_item.text
-                                for sub_item in item.content
-                                if isinstance(sub_item, TextContent)
-                            ]
-                            content_text = "\n".join(result_texts)
+                        content_text = _tool_result_content_to_openai_text(item.content)
                         tool_messages.append(
                             ChatCompletionToolMessageParam(
                                 role="tool",
@@ -319,17 +324,11 @@ class OpenAISamplingHandler:
 
             # Handle ToolResultContent (user's tool results)
             if isinstance(content, ToolResultContent):
-                # Extract text parts from the content list
-                result_texts: list[str] = []
-                if content.content:
-                    for item in content.content:
-                        if isinstance(item, TextContent):
-                            result_texts.append(item.text)
                 openai_messages.append(
                     ChatCompletionToolMessageParam(
                         role="tool",
                         tool_call_id=content.tool_use_id,
-                        content="\n".join(result_texts),
+                        content=_tool_result_content_to_openai_text(content.content),
                     )
                 )
                 continue
