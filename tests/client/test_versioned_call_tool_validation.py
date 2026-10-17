@@ -117,3 +117,43 @@ async def test_concurrent_pinned_calls_leave_the_schema_cache_intact(
         # And the cache is still consulted for an ordinary call.
         result = await client.call_tool("value")
         assert result.data == "hello"
+
+
+async def test_pinned_call_does_not_exempt_a_nested_client_call() -> None:
+    """The marker is scoped to the session that made the pinned call.
+
+    With the in-memory transport the server handler runs in the caller's
+    context, so a process-wide flag would also exempt an unrelated ``Client``
+    call made from inside that handler. Those still validate.
+    """
+    inner = FastMCP("inner")
+
+    @inner.tool
+    def liar() -> int:
+        """Declares int, returns a string."""
+        return "oops"  # type: ignore[return-value]
+
+    validated: list[bool] = []
+
+    outer = FastMCP("outer")
+
+    @outer.tool(name="probe", version="1.0")
+    async def probe_v1() -> int:
+        async with Client(inner) as nested:
+            try:
+                await nested.call_tool("liar")
+            except RuntimeError:
+                validated.append(True)
+            else:
+                validated.append(False)
+        return 1
+
+    @outer.tool(name="probe", version="2.0")
+    def probe_v2() -> int:
+        return 2
+
+    async with Client(outer) as client:
+        result = await client.call_tool("probe", version="1.0")
+
+    assert result.data == 1
+    assert validated == [True]

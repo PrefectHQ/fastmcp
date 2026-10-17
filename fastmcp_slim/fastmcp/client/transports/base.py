@@ -58,7 +58,7 @@ class VersionAwareClientSession(ClientSession):
     async def validate_tool_result(
         self, name: str, result: mcp_types.CallToolResult
     ) -> None:
-        if version_pinned.get():
+        if version_pinned.get() is self:
             return
         await super().validate_tool_result(name, result)
 

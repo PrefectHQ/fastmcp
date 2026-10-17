@@ -228,7 +228,7 @@ class ClientToolsMixin:
             # the session skips that one check and nothing else. (#5721)
             fastmcp_meta = (meta or {}).get("fastmcp")
             pin_token = (
-                version_pinned.set(True)
+                version_pinned.set(self.session)
                 if isinstance(fastmcp_meta, dict)
                 and fastmcp_meta.get("version") is not None
                 else None
