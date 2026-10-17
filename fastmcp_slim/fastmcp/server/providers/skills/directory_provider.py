@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
-from mcp.shared.path_security import PathEscapeError, safe_join
+from mcp.shared.path_security import PathEscapeError
 
 from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
@@ -88,9 +88,11 @@ class SkillsDirectoryProvider(AggregateProvider):
                 continue
 
             for skill_dir in root.iterdir():
+                # Skill folders may be links to directories elsewhere; the skill's
+                # own files must still resolve within the folder it links to.
                 try:
-                    skill_dir = safe_join(root, skill_dir.name)
-                except (PathEscapeError, OSError, RuntimeError):
+                    skill_dir = skill_dir.resolve(strict=True)
+                except (OSError, RuntimeError):
                     logger.warning(
                         f"Skipping skill directory that cannot be used: {skill_dir.name}"
                     )

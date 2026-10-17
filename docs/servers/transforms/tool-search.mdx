@@ -66,7 +66,9 @@ result = await client.call_tool("search_tools", {"pattern": "send.*email|notify"
 # Returns: send_email
 ```
 
-Results are returned in catalog order. Patterns follow [Rust regex syntax](https://docs.rs/regex/latest/regex/#syntax), with support for groups, alternation, repetition, character classes, anchors, and inline flags. Lookahead, lookbehind, and backreferences are unsupported. Invalid or unsupported patterns return an empty list rather than raising an error.
+Results are returned in catalog order. Patterns follow [Rust regex syntax](https://docs.rs/regex/latest/regex/#syntax), with support for groups, alternation, repetition, character classes, anchors, and inline flags. Lookahead, lookbehind, and backreferences are unsupported. Invalid or unsupported patterns, and patterns longer than 1,000 characters, return an empty list rather than raising an error.
+
+A search stops after about a second and returns the matches it found up to that point, so a costly pattern can't hold the server. Ordinary patterns finish far sooner, even across catalogs with thousands of tools. When a search stops early, the server logs a warning.
 
 If you previously used Python-specific syntax, rewrite those patterns using the supported syntax. For example, use `send.*email` instead of `send(?=.*email)` and `\z` instead of `\Z` for the end-of-text anchor. Python's `(?a)` ASCII-mode flag is unsupported.
 
