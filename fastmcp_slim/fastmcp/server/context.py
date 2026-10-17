@@ -789,6 +789,51 @@ class Context:
         return session_id
 
     @property
+    def _established_session_id(self) -> str | None:
+        """Get the session's stable id when one is already established.
+
+        Unlike `session_id`, this never generates an id: a generated id is
+        fresh on every request for transports that build a new connection
+        per request, which would fragment anything keyed per session.
+        Returns the id that session-scoped state is keyed by — the cached
+        state prefix, the connection's negotiated session id, the request's
+        `mcp-session-id` header, or a background task's captured id — or
+        None when none is established.
+        """
+        request_ctx = self.request_context
+        if request_ctx is not None:
+            session = request_ctx.session
+        elif self._session is not None:
+            session = self._session
+        else:
+            # Background task: the submitting request's stable session id
+            # was captured in the task snapshot.
+            from fastmcp.server.dependencies import _background_task_session_id
+
+            return _background_task_session_id.get()
+
+        # Same resolution order as `session_id`, without its generate-and-
+        # cache tail.
+        connection = getattr(session, "_connection", None)
+
+        if connection is not None:
+            cached = connection.state.get("_fastmcp_state_prefix")
+            if cached is not None:
+                return cached
+        session_cached = getattr(session, "_fastmcp_state_prefix", None)
+        if session_cached is not None:
+            return session_cached
+
+        session_id: str | None = None
+        if connection is not None:
+            session_id = connection.session_id
+        if session_id is None and request_ctx is not None:
+            request = request_ctx.request
+            if request:
+                session_id = request.headers.get("mcp-session-id")
+        return session_id
+
+    @property
     def session(self) -> ServerSession:
         """Access to the underlying session for advanced usage.
 
