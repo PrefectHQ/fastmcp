@@ -355,7 +355,15 @@ def _convert_normalized(schema: dict[str, Any], name: str | None) -> type:
     try:
         # Always use the top-level schema for references
         if schema.get("type") == "object":
-            return _object_schema_to_type(schema, schemas=schema, name=name)
+            object_type = _object_schema_to_type(schema, schemas=schema, name=name)
+            if not schema.get("properties") and ("const" in schema or "enum" in schema):
+                return Annotated[
+                    object_type,  # ty:ignore[invalid-type-form]
+                    BeforeValidator(
+                        lambda value: _validate_object_literals(value, schema)
+                    ),
+                ]  # type: ignore[return-value] # ty:ignore[invalid-return-type]
+            return object_type
         elif name:
             raise ValueError(f"Can not apply name to non-object schema: {name}")
         result = _schema_to_type(schema, schemas=schema)
@@ -557,6 +565,18 @@ def _json_values_equal(left: Any, right: Any) -> bool:
         )
 
     return left == right
+
+
+def _validate_object_literals(value: Any, schema: Mapping[str, Any]) -> Any:
+    """Validate raw object literals before hydration changes their representation."""
+    if isinstance(value, Mapping):
+        if "const" in schema and not _json_values_equal(value, schema["const"]):
+            raise ValueError("Object does not match const")
+        if "enum" in schema and not any(
+            _json_values_equal(value, allowed) for allowed in schema["enum"]
+        ):
+            raise ValueError("Object does not match any enum value")
+    return value
 
 
 def _json_value_key(value: Any) -> tuple[Any, ...]:
@@ -998,7 +1018,23 @@ def _build_pydantic_model(
         else:
             field_definitions[prop_name] = (Union[field_type, type(None)], None)  # type: ignore[misc]  # noqa: UP007  # ty:ignore[invalid-type-form]
 
-    return safe_create_model(name, field_definitions, config=ConfigDict(extra="allow"))
+    cls = safe_create_model(name, field_definitions, config=ConfigDict(extra="allow"))
+    if "const" in schema or "enum" in schema:
+
+        def validate_literals(value: Any) -> Any:
+            return _validate_object_literals(value, schema)
+
+        return create_model(
+            name,
+            __base__=cls,
+            __validators__={
+                "_validate_object_literals": cast(
+                    Callable[..., Any],
+                    model_validator(mode="before")(validate_literals),
+                )
+            },
+        )
+    return cls
 
 
 def _create_dataclass(
@@ -1110,6 +1146,7 @@ def _build_dataclass(
     @classmethod
     def _apply_defaults(cls, data: Mapping[str, Any]):
         if isinstance(data, dict):
+            _validate_object_literals(data, original_schema)
             return _merge_defaults(data, original_schema)
         return data
 
