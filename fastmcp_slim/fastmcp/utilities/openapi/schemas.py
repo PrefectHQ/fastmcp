@@ -837,20 +837,15 @@ def extract_output_schema_from_responses(
     ]
 
     schema = None
-    for content_type in json_compatible_types:
-        if content_type in response_info.content_schema:
-            schema = response_info.content_schema[content_type]
+    for content_type, s in response_info.content_schema.items():
+        base_type = content_type.split(";")[0].strip().lower()
+        if base_type in json_compatible_types or base_type.endswith("+json"):
+            if isinstance(s, dict) and s.get("format") == "binary":
+                continue
+            schema = s
             break
 
-    # If no JSON-compatible type found, try the first available content type
-    if schema is None and response_info.content_schema:
-        first_content_type = next(iter(response_info.content_schema))
-        schema = response_info.content_schema[first_content_type]
-        logger.debug(
-            f"Using non-JSON content type for output schema: {first_content_type}"
-        )
-
-    if not schema or not isinstance(schema, dict):
+    if schema is None or not isinstance(schema, dict):
         return None
 
     # Convert refs if needed
