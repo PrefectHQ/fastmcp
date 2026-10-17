@@ -463,8 +463,8 @@ class FastMCP(
 
         if tools:
             for tool in tools:
-                if not isinstance(tool, Tool):
-                    tool = Tool.from_function(tool)
+                # add_tool() applies the server-wide tasks default to tools
+                # without an explicit task setting.
                 self.add_tool(tool)
 
         self.strict_input_validation: bool = (
@@ -1775,13 +1775,18 @@ class FastMCP(
         The tool function can optionally request a Context object by adding a parameter
         with the Context type annotation. See the @tool decorator for examples.
 
+        Tools without an explicit task setting inherit the server-wide default
+        (``FastMCP(tasks=...)``), the same as tools registered via ``@mcp.tool``.
+
         Args:
             tool: The Tool instance or @tool-decorated function to register
 
         Returns:
             The tool instance that was added to the server.
         """
-        return self._local_provider.add_tool(tool)
+        return self._local_provider.add_tool(
+            tool, default_task=self._support_tasks_by_default
+        )
 
     @overload
     def tool(
