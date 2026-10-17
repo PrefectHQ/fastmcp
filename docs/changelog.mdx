@@ -5,6 +5,29 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.1.1" description="2026-10-17">
+
+**[v4.1.1: Regex Marks the Spot](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.1)**
+
+Regex tool search now rejects patterns over 1,000 characters and stops after about a second, and `SkillsDirectoryProvider` discovers skill folders that are links again, including links to folders outside the skills root; a skill's own files must still resolve inside the folder it links to. All 4.x users are encouraged to upgrade. Thanks to our 4 contributors, including 1 first-time contributor.
+
+### Security 🔒
+* Keep linked skill folders discoverable by [@zzstoatzz](https://github.com/zzstoatzz) in [#5766](https://github.com/PrefectHQ/fastmcp/pull/5766)
+* Bound regex tool search by pattern length and time by [@zzstoatzz](https://github.com/zzstoatzz) and [@SAYUTIM](https://github.com/SAYUTIM) in [#5771](https://github.com/PrefectHQ/fastmcp/pull/5771)
+### Fixes 🐞
+* Keep an unparseable proxy setting from aborting the update check by [@zzstoatzz](https://github.com/zzstoatzz) and [@ker2xu](https://github.com/ker2xu) in [#5639](https://github.com/PrefectHQ/fastmcp/pull/5639)
+* Keep the JWKS refresh lock clear of subclass attributes by [@zzstoatzz](https://github.com/zzstoatzz) in [#5770](https://github.com/PrefectHQ/fastmcp/pull/5770)
+### Examples & Contrib 💡
+* fix: convert version query param to VersionSpec in component manager routes by [@BlueX888](https://github.com/BlueX888) in [#5575](https://github.com/PrefectHQ/fastmcp/pull/5575)
+
+
+## New Contributors
+* @ker2xu made their first contribution in [#5639](https://github.com/PrefectHQ/fastmcp/pull/5639)
+
+**Full Changelog**: [v4.1.0...v4.1.1](https://github.com/PrefectHQ/fastmcp/compare/v4.1.0...v4.1.1)
+
+</Update>
+
 <Update label="v4.1.0" description="2026-10-08">
 
 **[v4.1.0: Fourth and One](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.0)**
