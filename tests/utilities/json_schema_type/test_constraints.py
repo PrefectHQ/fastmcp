@@ -133,6 +133,56 @@ class TestNumberConstraints:
             validator.validate_python(100)
 
 
+class TestDraftFourExclusiveBounds:
+    """A boolean exclusiveMinimum/exclusiveMaximum tightens its numeric sibling."""
+
+    def test_boolean_exclusive_maximum_excludes_sibling(self):
+        validator = TypeAdapter(
+            json_schema_to_type(
+                {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "exclusiveMaximum": True,
+                }
+            )
+        )
+        assert validator.validate_python(3) == 3
+        with pytest.raises(ValidationError):
+            validator.validate_python(5)
+
+    def test_boolean_exclusive_minimum_excludes_sibling(self):
+        validator = TypeAdapter(
+            json_schema_to_type(
+                {
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 9,
+                    "exclusiveMinimum": True,
+                }
+            )
+        )
+        assert validator.validate_python(6) == 6
+        with pytest.raises(ValidationError):
+            validator.validate_python(5)
+
+    def test_boolean_false_keeps_sibling_inclusive(self):
+        validator = TypeAdapter(
+            json_schema_to_type(
+                {"type": "integer", "maximum": 5, "exclusiveMaximum": False}
+            )
+        )
+        assert validator.validate_python(5) == 5
+        with pytest.raises(ValidationError):
+            validator.validate_python(6)
+
+    def test_boolean_exclusive_bound_without_sibling_constrains_nothing(self):
+        validator = TypeAdapter(
+            json_schema_to_type({"type": "integer", "exclusiveMaximum": True})
+        )
+        assert validator.validate_python(1000) == 1000
+
+
 class TestStringFormatConstraints:
     """String keywords apply to the raw string whatever its `format` (#4404)."""
 
