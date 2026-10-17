@@ -1,4 +1,6 @@
+import asyncio
 import functools
+import threading
 from typing import Annotated
 from urllib.parse import quote
 
@@ -242,6 +244,25 @@ class TestResourceTemplate:
         # read() returns raw bytes
         result = await resource.read()
         assert result == b"test"
+
+    async def test_sync_template_runs_concurrently(self):
+        """Sync template functions run in the threadpool and don't block each other."""
+        num_calls = 3
+        barrier = threading.Barrier(num_calls, timeout=0.5)
+
+        def concurrent_template(id: str) -> str:
+            barrier.wait()
+            return id
+
+        template = ResourceTemplate.from_function(
+            fn=concurrent_template, uri_template="data://{id}"
+        )
+
+        # Raises BrokenBarrierError if the reads run one at a time on the loop
+        results = await asyncio.gather(
+            *(template.read(arguments={"id": str(i)}) for i in range(num_calls))
+        )
+        assert results == [str(i) for i in range(num_calls)]
 
     async def test_basemodel_conversion(self):
         """Test handling of BaseModel types."""
