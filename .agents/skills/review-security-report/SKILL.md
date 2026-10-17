@@ -27,7 +27,9 @@ Use the smallest end-to-end reproduction against a supported release. Record:
   impact.
 
 A non-default configuration may still be vulnerable; a default may intentionally delegate a
-security decision elsewhere.
+security decision elsewhere. Apply the configuration-caused check in
+[AGENTS.md](../../../AGENTS.md#configuration-caused-reports) before treating a non-default setup as
+FastMCP's to fix.
 
 ## Identify the responsible layer
 
