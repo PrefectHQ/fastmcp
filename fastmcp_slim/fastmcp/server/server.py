@@ -1775,8 +1775,12 @@ class FastMCP(
         The tool function can optionally request a Context object by adding a parameter
         with the Context type annotation. See the @tool decorator for examples.
 
-        Tools without an explicit task setting inherit the server-wide default
-        (`FastMCP(tasks=...)`), the same as tools registered via `@mcp.tool`.
+        Plain functions, and functions whose `@tool` decorator left `task`
+        unset, inherit the server-wide default (`FastMCP(tasks=...)`) — the
+        same as tools registered via `@mcp.tool`. An already-constructed
+        `Tool` instance is registered as-is: its `task_config` is used as-is,
+        whether or not it was set explicitly (a `Tool` built without `task=`
+        carries `forbidden`, indistinguishable from an explicit `task=False`).
 
         Args:
             tool: The Tool instance or @tool-decorated function to register

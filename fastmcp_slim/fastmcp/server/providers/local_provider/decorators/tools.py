@@ -125,7 +125,9 @@ class ToolDecoratorMixin:
                 task setting (plain functions, or functions whose decorator
                 left `task` unset). `None` keeps the historical default of
                 `False` (forbidden). An already-constructed `Tool` instance
-                is registered as-is — its `task_config` is explicit by then.
+                is registered as-is — its `task_config` is used as-is, whether or
+                not it was set explicitly (e.g. `Tool.from_function(fn)`
+                without `task=` also materializes `forbidden`).
         """
         enabled = True
         if not isinstance(tool, Tool):
