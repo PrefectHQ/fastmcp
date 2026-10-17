@@ -877,3 +877,16 @@ class TestProxyMode:
         mock_resolve.assert_called_once()
         assert mock_client_class.call_args[1]["proxy"] is None
         assert mock_client_class.call_args[1]["trust_env"] is True
+
+    @pytest.mark.parametrize(
+        "invalid_url",
+        [
+            "https://example.com:70000/doc.json",
+            "https://example.com:abc/doc.json",
+            "https://example.com:-1/doc.json",
+        ],
+    )
+    def test_validate_url_malformed_port_raises_ssrf_error(self, invalid_url: str):
+        """Regression test for #5764: malformed port raises SSRFError instead of bare ValueError."""
+        with pytest.raises(SSRFError, match="Invalid URL port"):
+            validate_url(invalid_url)
