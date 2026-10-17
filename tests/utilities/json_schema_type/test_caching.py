@@ -165,3 +165,61 @@ async def test_client_root_reference_context(model: bool) -> None:
             assert result.data is not None
             assert result.data.record.value == value
             assert type(result.data.record.value) is type(value)
+
+
+async def test_client_hydration_with_ref_into_array() -> None:
+    from datetime import date
+
+    from fastmcp.tools import ToolResult
+
+    server = FastMCP(dereference_schemas=False)
+    schema = {
+        "type": "object",
+        "properties": {
+            "template": {
+                "anyOf": [{"type": "string", "format": "date"}, {"type": "null"}]
+            },
+            "day": {"$ref": "#/properties/template/anyOf/0"},
+        },
+        "required": ["day"],
+    }
+
+    @server.tool(output_schema=schema)
+    def get_day() -> ToolResult:
+        return ToolResult(structured_content={"day": "2026-10-17"})
+
+    async with Client(server) as client:
+        result = await client.call_tool("get_day")
+    assert not result.is_error
+    assert result.data is not None
+    assert result.data.day == date(2026, 10, 17)
+
+
+def test_ref_into_array_positions_and_invalid_indices() -> None:
+    from datetime import date
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "tuple_prop": {
+                "type": "array",
+                "prefixItems": [
+                    {"type": "integer"},
+                    {"type": "string", "format": "date"},
+                ],
+            },
+            "first": {"$ref": "#/properties/tuple_prop/prefixItems/0"},
+            "second": {"$ref": "#/properties/tuple_prop/prefixItems/1"},
+            "out_of_range": {"$ref": "#/properties/tuple_prop/prefixItems/99"},
+            "negative": {"$ref": "#/properties/tuple_prop/prefixItems/-1"},
+            "leading_zero": {"$ref": "#/properties/tuple_prop/prefixItems/01"},
+        },
+        "required": ["first", "second"],
+    }
+    adapter = json_schema_type.json_schema_to_type_adapter(schema)
+    result = adapter.validate_python(
+        {"first": "42", "second": "2026-10-17", "out_of_range": "anything"}
+    )
+    assert result.first == 42
+    assert result.second == date(2026, 10, 17)
+    assert result.out_of_range == "anything"
