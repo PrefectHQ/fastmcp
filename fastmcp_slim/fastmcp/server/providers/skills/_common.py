@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from mcp.shared.path_security import PathEscapeError, safe_join
 
 
 @dataclass
@@ -114,6 +115,18 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
         return {}, remaining
 
     return parsed, remaining
+
+
+def resolve_within(base: Path, relative: str) -> Path:
+    """Resolve `relative` under `base`, rejecting paths that escape `base`.
+
+    `base` must already be resolved. The containment check uses it as given, so
+    replacing it with a link after it was selected cannot move the boundary.
+    """
+    path = safe_join(base, relative)
+    if not path.is_relative_to(base):
+        raise PathEscapeError(f"Path {path} escapes base {base}")
+    return path
 
 
 def compute_file_hash(path: Path) -> str:
