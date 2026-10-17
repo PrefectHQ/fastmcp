@@ -76,7 +76,15 @@ class TaskConfig:
         if isinstance(fn_to_check, staticmethod):
             fn_to_check = fn_to_check.__func__
 
-        if not is_coroutine_function(fn_to_check):
+        # Async generators are async even though is_coroutine_function
+        # returns False for them, exactly as the timeout check in
+        # FunctionTool.from_function already allows for. Nothing about
+        # them is sync: the generator's iteration has checkpoints, and its
+        # result is materialized into a single value before it is used.
+        if not (
+            is_coroutine_function(fn_to_check)
+            or inspect.isasyncgenfunction(fn_to_check)
+        ):
             raise ValueError(
                 f"'{name}' uses a sync function but has task execution enabled. "
                 "Background tasks require async functions."
