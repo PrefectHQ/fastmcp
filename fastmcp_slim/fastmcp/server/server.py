@@ -1776,7 +1776,7 @@ class FastMCP(
         with the Context type annotation. See the @tool decorator for examples.
 
         Tools without an explicit task setting inherit the server-wide default
-        (``FastMCP(tasks=...)``), the same as tools registered via ``@mcp.tool``.
+        (`FastMCP(tasks=...)`), the same as tools registered via `@mcp.tool`.
 
         Args:
             tool: The Tool instance or @tool-decorated function to register

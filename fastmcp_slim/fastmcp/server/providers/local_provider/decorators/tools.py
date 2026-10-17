@@ -123,9 +123,9 @@ class ToolDecoratorMixin:
             tool: The Tool instance or function to register.
             default_task: Task config applied when the tool carries no explicit
                 task setting (plain functions, or functions whose decorator
-                left ``task`` unset). ``None`` keeps the historical default of
-                ``False`` (forbidden). An already-constructed ``Tool`` instance
-                is registered as-is — its ``task_config`` is explicit by then.
+                left `task` unset). `None` keeps the historical default of
+                `False` (forbidden). An already-constructed `Tool` instance
+                is registered as-is — its `task_config` is explicit by then.
         """
         enabled = True
         if not isinstance(tool, Tool):
