@@ -404,14 +404,43 @@ def _schema_digest(schema: Mapping[str, Any] | bool) -> tuple[str, int]:
     return hashlib.sha256(encoded).hexdigest(), len(encoded)
 
 
-def _resolve_ref(ref: str, schemas: Mapping[str, Any]) -> Mapping[str, Any]:
+def _resolve_ref(ref: str, schemas: Mapping[str, Any]) -> Mapping[str, Any] | bool:
     """Resolve JSON Schema reference to target schema."""
-    path = ref.replace("#/", "").split("/")
-    current = schemas
-    for part in path:
-        part = part.replace("~1", "/").replace("~0", "~")
-        current = current.get(part, {})
-    return current
+    if not isinstance(ref, str) or not ref.startswith("#/"):
+        return {}
+    path = ref.removeprefix("#/").split("/")
+    current: Any = schemas
+    hops = 0
+    i = 0
+    while i < len(path):
+        while (
+            current is not schemas
+            and isinstance(current, Mapping)
+            and isinstance(current.get("$ref"), str)
+            and current["$ref"].startswith("#/")
+        ):
+            hops += 1
+            if hops > _MAX_CONVERSION_DEPTH:
+                return {}
+            inner_path = current["$ref"].removeprefix("#/").split("/")
+            path = inner_path + path[i:]
+            current = schemas
+            i = 0
+        part = path[i].replace("~1", "/").replace("~0", "~")
+        i += 1
+        if isinstance(current, Mapping):
+            current = current.get(part, {})
+        elif isinstance(current, (list, tuple)):
+            if part == "0" or (
+                part.isascii() and part.isdigit() and not part.startswith("0")
+            ):
+                index = int(part)
+                current = current[index] if index < len(current) else {}
+            else:
+                return {}
+        else:
+            return {}
+    return current if isinstance(current, (Mapping, bool)) else {}
 
 
 def _count(value: Any, *, maximum: bool = False) -> Any:
@@ -1049,7 +1078,8 @@ def _build_dataclass(
             return ForwardRef(sanitized_name)
         if ref in resolving_refs:
             return Any
-        schema = _resolve_ref(ref, schemas)
+        resolved = _resolve_ref(ref, schemas)
+        schema = resolved if isinstance(resolved, Mapping) else {}
         resolving_refs = resolving_refs | {ref}
 
     properties = schema.get("properties", {})
