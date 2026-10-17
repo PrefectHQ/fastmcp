@@ -7,9 +7,11 @@ and positional item schema the server emits has to survive that round trip.
 from datetime import date, datetime, time, timedelta
 from uuid import UUID
 
-from pydantic import BaseModel
+import pytest
+from pydantic import BaseModel, ConfigDict, Field
 
 from fastmcp import Client, FastMCP
+from fastmcp.tools import ToolResult
 
 
 class Reading(BaseModel):
@@ -20,7 +22,64 @@ class Reading(BaseModel):
     ident: UUID
 
 
+class Counters(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    __pydantic_extra__: dict[str, int] = Field(init=False)
+    name: str
+
+
+class CounterCollection(BaseModel):
+    counters: list[Counters]
+
+
+@pytest.mark.parametrize("shape", ["model", "list", "nested"])
+async def test_typed_extra_fields_survive_tool_result_hydration(shape: str) -> None:
+    mcp = FastMCP()
+    counters = Counters(name="cache", hits=12, misses=3)
+
+    @mcp.tool
+    def model_result() -> Counters:
+        return counters
+
+    @mcp.tool
+    def list_result() -> list[Counters]:
+        return [counters]
+
+    @mcp.tool
+    def nested_result() -> CounterCollection:
+        return CounterCollection(counters=[counters])
+
+    async with Client(mcp) as client:
+        result = await client.call_tool(f"{shape}_result")
+
+    data = result.data
+    if shape == "list":
+        data = data[0]
+    elif shape == "nested":
+        data = data.counters[0]
+
+    assert data.name == "cache"
+    assert data.hits == 12
+    assert type(data.hits) is int
+    assert data.misses == 3
+
+
 class TestStructuredResultHydration:
+    async def test_invalid_typed_extra_is_rejected_before_hydration(self):
+        mcp = FastMCP()
+        payload = {"name": "cache", "hits": "many"}
+
+        @mcp.tool(output_schema=Counters.model_json_schema())
+        def invalid_counters() -> ToolResult:
+            return ToolResult(content=[], structured_content=payload)
+
+        async with Client(mcp) as client:
+            with pytest.raises(
+                RuntimeError,
+                match="Invalid structured content returned by tool invalid_counters",
+            ):
+                await client.call_tool("invalid_counters")
+
     async def test_annotated_scalar_formats_arrive_as_python_types(self):
         mcp = FastMCP()
 
