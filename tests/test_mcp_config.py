@@ -1259,6 +1259,113 @@ async def test_multi_server_timeout_propagation():
         )
 
 
+async def _captured_session_kwargs(transport: MCPConfigTransport, **session_kwargs):
+    """Run a single-server connect_session against a fake inner transport and
+    return the session kwargs the inner transport actually received."""
+    captured: dict[str, Any] = {}
+
+    @asynccontextmanager
+    async def fake_connect_session(*, transport_options=None, **kwargs):
+        captured.update(kwargs)
+        yield AsyncMock()
+
+    with patch.object(transport.transport, "connect_session", fake_connect_session):
+        async with transport.connect_session(**session_kwargs):
+            pass
+    return captured
+
+
+async def test_single_server_entry_timeout_reaches_session():
+    """A config entry's `timeout` (milliseconds) becomes the session read
+    timeout (seconds) for the single-server path (#5754)."""
+    config = MCPConfig(
+        mcpServers={
+            "remote": RemoteMCPServer(url="http://example.invalid/mcp", timeout=30000)
+        }
+    )
+    transport = MCPConfigTransport(config)
+
+    captured = await _captured_session_kwargs(transport, read_timeout_seconds=None)
+
+    assert captured["read_timeout_seconds"] == 30.0
+
+
+async def test_single_server_stdio_entry_timeout_reaches_session():
+    config = MCPConfig(
+        mcpServers={"local": StdioMCPServer(command="echo", args=["hi"], timeout=1500)}
+    )
+    transport = MCPConfigTransport(config)
+
+    captured = await _captured_session_kwargs(transport, read_timeout_seconds=None)
+
+    assert captured["read_timeout_seconds"] == 1.5
+
+
+async def test_single_server_entry_timeout_overrides_client_timeout():
+    """The entry is the more specific setting: it wins over a client-level
+    timeout passed in the session kwargs."""
+    config = MCPConfig(
+        mcpServers={
+            "remote": RemoteMCPServer(url="http://example.invalid/mcp", timeout=30000)
+        }
+    )
+    transport = MCPConfigTransport(config)
+
+    captured = await _captured_session_kwargs(transport, read_timeout_seconds=5.0)
+
+    assert captured["read_timeout_seconds"] == 30.0
+
+
+async def test_single_server_without_entry_timeout_keeps_client_timeout():
+    config = MCPConfig(
+        mcpServers={"remote": RemoteMCPServer(url="http://example.invalid/mcp")}
+    )
+    transport = MCPConfigTransport(config)
+
+    captured = await _captured_session_kwargs(transport, read_timeout_seconds=5.0)
+    assert captured["read_timeout_seconds"] == 5.0
+
+    captured = await _captured_session_kwargs(transport, read_timeout_seconds=None)
+    assert captured["read_timeout_seconds"] is None
+
+
+async def test_multi_server_entry_timeout_applies_per_server():
+    """Each composite backend gets its own entry timeout when it declares one,
+    and the client-level timeout otherwise (#5754)."""
+    config = MCPConfig(
+        mcpServers={
+            "server1": StdioMCPServer(command="echo", args=["test"], timeout=2000),
+            "server2": StdioMCPServer(command="echo", args=["test"]),
+        }
+    )
+    transport = MCPConfigTransport(config)
+
+    mock_create_proxy = AsyncMock(
+        return_value=(AsyncMock(), AsyncMock(), FastMCP(name="MockProxy"))
+    )
+
+    with (
+        patch.object(transport, "_create_proxy", mock_create_proxy),
+        patch(
+            "fastmcp.client.transports.FastMCPTransport.connect_session"
+        ) as mock_connect,
+    ):
+        mock_session = AsyncMock()
+        mock_connect.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_connect.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        async with transport.connect_session(read_timeout_seconds=42.0):
+            pass
+
+    timeouts = {}
+    for call in mock_create_proxy.call_args_list:
+        name = call[0][0]
+        call_timeout = call[0][2] if len(call[0]) > 2 else call.kwargs.get("timeout")
+        timeouts[name] = call_timeout
+
+    assert timeouts == {"server1": 2.0, "server2": 42.0}
+
+
 def _make_session_server() -> FastMCP:
     app = FastMCP()
 

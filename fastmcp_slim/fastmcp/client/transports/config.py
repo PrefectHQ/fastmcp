@@ -32,6 +32,18 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def _entry_timeout_seconds(config: MCPServerTypes) -> float | None:
+    """The per-server read timeout a config entry declares, in seconds.
+
+    Config entries declare `timeout` in milliseconds (the `mcp.json`
+    convention the config format follows); session read timeouts are seconds.
+    Returns None when the entry declares no timeout.
+    """
+    if config.timeout is None:
+        return None
+    return config.timeout / 1000
+
+
 class MCPConfigTransport(ClientTransport):
     """Transport for connecting to one or more MCP servers defined in an MCPConfig.
 
@@ -135,6 +147,13 @@ class MCPConfigTransport(ClientTransport):
     ) -> AsyncIterator[ClientSession]:
         # Single server - delegate directly to pre-created transport
         if len(self.config.mcpServers) == 1:
+            # An entry-level `timeout` is the more specific setting, so it wins
+            # over the client-level timeout the session kwargs carry (#5754).
+            entry_timeout = _entry_timeout_seconds(
+                next(iter(self.config.mcpServers.values()))
+            )
+            if entry_timeout is not None:
+                session_kwargs["read_timeout_seconds"] = entry_timeout
             async with self.transport.connect_session(
                 transport_options=transport_options, **session_kwargs
             ) as session:
@@ -249,10 +268,13 @@ class MCPConfigTransport(ClientTransport):
 
         for name, server_config, transport in backends:
             try:
+                # An entry-level `timeout` applies to this backend alone;
+                # backends without one keep the client-level timeout (#5754).
+                entry_timeout = _entry_timeout_seconds(server_config)
                 connected_transport, client, proxy = await self._create_proxy(
                     name,
                     server_config,
-                    timeout,
+                    entry_timeout if entry_timeout is not None else timeout,
                     stack,
                     current_mode,
                     transport=transport,
