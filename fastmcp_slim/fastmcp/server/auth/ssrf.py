@@ -294,9 +294,17 @@ async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
         # Accessing .port raises ValueError for out-of-range or non-numeric
         # ports (e.g. https://example.com:70000/), so read it inside the
         # guard instead of below: an invalid URL must surface as SSRFError.
-        port = parsed.port or 443
+        port = parsed.port
     except (ValueError, AttributeError) as e:
         raise SSRFError(f"Invalid URL: {e}") from e
+
+    if port is None:
+        port = 443
+    elif port == 0:
+        # parsed.port == 0 means the URL explicitly pinned port 0
+        # (e.g. https://example.com:0/path); don't silently rewrite it
+        # to 443 — the pinned port must match the requested one.
+        raise SSRFError("Invalid URL: port 0 is not valid")
 
     if parsed.scheme != "https":
         raise SSRFError(f"URL must use HTTPS, got: {parsed.scheme}")

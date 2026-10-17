@@ -170,6 +170,7 @@ class TestValidateURL:
         [
             pytest.param("https://example.com:70000/path", id="port-out-of-range"),
             pytest.param("https://example.com:abc/path", id="port-non-numeric"),
+            pytest.param("https://example.com:0/path", id="port-zero"),
         ],
     )
     async def test_malformed_port_rejected_as_ssrf_error(self, url: str):
@@ -178,7 +179,8 @@ class TestValidateURL:
         Regression test: reading parsed.port outside the urlparse guard let
         urllib's ValueError escape, which callers (e.g. the OAuth proxy CIMD
         path) only translate SSRFError from — surfacing as HTTP 500 instead
-        of a clean client error.
+        of a clean client error. Port 0 is likewise rejected instead of being
+        silently pinned to 443.
         """
         with pytest.raises(SSRFError, match="Invalid URL"):
             await validate_url(url)
