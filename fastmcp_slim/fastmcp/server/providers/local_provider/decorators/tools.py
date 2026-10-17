@@ -109,10 +109,23 @@ class ToolDecoratorMixin:
     - Tool decorator (@provider.tool)
     """
 
-    def add_tool(self: LocalProvider, tool: Tool | Callable[..., Any]) -> Tool:
+    def add_tool(
+        self: LocalProvider,
+        tool: Tool | Callable[..., Any],
+        *,
+        default_task: bool | TaskConfig | None = None,
+    ) -> Tool:
         """Add a tool to this provider's storage.
 
         Accepts either a Tool object or a decorated function with __fastmcp__ metadata.
+
+        Args:
+            tool: The Tool instance or function to register.
+            default_task: Task config applied when the tool carries no explicit
+                task setting (plain functions, or functions whose decorator
+                left `task` unset). `None` keeps the historical default of
+                `False` (forbidden). An already-constructed `Tool` instance
+                is registered as-is — its `task_config` is explicit by then.
         """
         enabled = True
         if not isinstance(tool, Tool):
@@ -121,7 +134,11 @@ class ToolDecoratorMixin:
 
             fmeta = get_fastmcp_meta(tool)
             if fmeta is not None and isinstance(fmeta, ToolMeta):
-                resolved_task = fmeta.task if fmeta.task is not None else False
+                resolved_task = (
+                    fmeta.task
+                    if fmeta.task is not None
+                    else (default_task if default_task is not None else False)
+                )
                 enabled = fmeta.enabled
 
                 # Merge ToolMeta.app into the meta dict
@@ -152,7 +169,10 @@ class ToolDecoratorMixin:
                     run_in_thread=fmeta.run_in_thread,
                 )
             else:
-                tool = Tool.from_function(tool)
+                tool = Tool.from_function(
+                    tool,
+                    task=default_task if default_task is not None else None,
+                )
         added = self._add_component(tool)
         if added is not tool:
             # on_duplicate="ignore" kept the existing tool; the new one was
