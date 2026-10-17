@@ -76,3 +76,18 @@ def test_dropping_the_pattern_keeps_the_other_constraints() -> None:
         TypeAdapter(_type(schema)).validate_python(
             "2f1a4e6c-0f4d-4b7a-9c2e-8d1b3a5c7e9f"
         )
+
+
+def test_format_with_unsupported_pattern_keeps_type_identity() -> None:
+    """Repeated conversions return the same type.
+
+    `_constrain_raw_string` is cached so a schema seen on every call maps to one
+    type; wrapping its result in an uncached `Annotated[..., Field(...)]` broke
+    that identity for the `format` route.
+    """
+    schema = {"type": "string", "format": "uuid", "pattern": "(?!x)"}
+
+    first = json_schema_to_type(schema)
+    second = json_schema_to_type(schema)
+
+    assert first is second
