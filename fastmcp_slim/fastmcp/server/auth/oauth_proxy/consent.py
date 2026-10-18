@@ -74,6 +74,19 @@ def _consent_state_base_name(csrf_token: str) -> str:
     return f"{_CONSENT_STATE_COOKIE_BASE}_{digest}"
 
 
+def _consent_token_for(csrf_token: str) -> str:
+    """Consent binding token for an approval made with `csrf_token`.
+
+    Derived rather than random so that every submit of the same form yields
+    the same binding. A double-clicked Approve sends two submits that can
+    overlap in any order, and the browser keeps whichever binding cookie it
+    applies last; with a fresh token per submit, that cookie could disagree
+    with the one the transaction stored, and the callback would reject the
+    flow. Only the browser the form was rendered for knows the CSRF token.
+    """
+    return hashlib.sha256(f"consent-binding:{csrf_token}".encode()).hexdigest()
+
+
 class ConsentMixin:
     """Mixin class providing consent management functionality for OAuthProxy.
 
@@ -600,21 +613,24 @@ class ConsentMixin:
         txn_model: OAuthTransaction,
         csrf_token: str,
         *,
-        repeat: bool = False,
-        legacy_csrf: bool = False,
+        legacy_csrf: bool,
     ) -> RedirectResponse:
         """Record this browser's approval of a transaction and redirect upstream.
 
-        A repeat keeps the consent token its approval issued instead of rotating
-        it: the browser keeps whichever binding cookie it applies last, and a new
-        token would leave that cookie disagreeing with the one the callback
-        checks.
+        Repeating an approval with the same form is answered exactly as the
+        approval was, since the consent token is derived from the CSRF token.
         """
         txn = txn_model.model_dump()
-        consent_token = txn_model.consent_token
-        if not repeat or consent_token is None:
-            consent_token = secrets.token_urlsafe(32)
+        consent_token = _consent_token_for(csrf_token)
+        # A page rendered before the CSRF store kept its token on the
+        # transaction. Retire it there along with the approval, so a repeat
+        # of this submit is recognised as a repeat rather than a new approval.
+        retire_legacy = legacy_csrf and txn_model.csrf_token is not None
+        if txn_model.consent_token != consent_token or retire_legacy:
             txn_model.consent_token = consent_token
+            if retire_legacy:
+                txn_model.csrf_token = None
+                txn_model.csrf_expires_at = None
             await self._transaction_store.put(key=txn_id, value=txn_model, ttl=15 * 60)
 
         upstream_url = self._build_upstream_authorize_url(txn_id, txn)
@@ -702,28 +718,39 @@ class ConsentMixin:
         holds_state_cookie = state_entry is not None and hmac.compare_digest(
             state_entry[0], txn_id
         )
+        holds_legacy_cookie = bool(csrf_token) and csrf_token in (
+            self._decode_list_cookie(request, _CONSENT_STATE_COOKIE_BASE)
+        )
 
         if not csrf_valid:
             # Approving retires the token, so a double-clicked Approve sends a
             # second submit the token no longer covers, and the browser shows
             # the response to that one rather than following the first one's
-            # redirect. If this browser proves it made the approval, with the
-            # state cookie the approval clears or the binding cookie it sets
-            # (whichever it holds depends on whether the first response arrived
-            # first), answer the repeat the way the approval was answered.
+            # redirect. If this token made the approval, and this browser proves
+            # it holds the form, with the state cookie the approval clears or
+            # the binding cookie it sets (whichever it holds depends on whether
+            # the first response arrived first), answer the repeat the way the
+            # approval was answered.
             consent_token = txn_model.consent_token
             if (
                 action == "approve"
+                and csrf_token
                 and consent_token is not None
+                and hmac.compare_digest(consent_token, _consent_token_for(csrf_token))
                 and (
                     holds_state_cookie
+                    or holds_legacy_cookie
                     or self._verify_consent_binding_cookie(
                         request, txn_id, consent_token
                     )
                 )
             ):
                 return await self._approve_consent(
-                    request, txn_id, txn_model, csrf_token, repeat=True
+                    request,
+                    txn_id,
+                    txn_model,
+                    csrf_token,
+                    legacy_csrf=holds_legacy_cookie,
                 )
             return create_secure_html_response(
                 "<h1>Error</h1><p>Invalid or expired consent token</p>", status_code=400
@@ -733,12 +760,7 @@ class ConsentMixin:
         # Without this, an attacker who knows their own tx_id/csrf_token can
         # CSRF the victim's browser into approving consent, bypassing the
         # consent binding cookie protection.
-        if legacy_csrf:
-            cookie_ok = csrf_token in self._decode_list_cookie(
-                request, _CONSENT_STATE_COOKIE_BASE
-            )
-        else:
-            cookie_ok = holds_state_cookie
+        cookie_ok = holds_legacy_cookie if legacy_csrf else holds_state_cookie
         if not cookie_ok:
             logger.warning(
                 "CSRF double-submit check failed for transaction %s "
