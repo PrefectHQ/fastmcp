@@ -630,10 +630,20 @@ class Context:
         # Resolve the client-requested minimum level (set via logging/setLevel),
         # keyed by session id, falling back to the server's configured default.
         min_level = self.fastmcp.client_log_level
-        session = self.session
-        session_min = self.fastmcp._client_log_levels.get(
-            _log_level_session_key(session)
-        )
+        try:
+            session = self.session
+        except RuntimeError:
+            from fastmcp.server.dependencies import _background_task_session_id
+
+            task_session_id = _background_task_session_id.get()
+            if task_session_id is None:
+                raise
+            session = None
+            session_min = self.fastmcp._client_log_levels.get(task_session_id)
+        else:
+            session_min = self.fastmcp._client_log_levels.get(
+                _log_level_session_key(session)
+            )
         if session_min is not None:
             min_level = session_min
 
@@ -1328,7 +1338,7 @@ def _log_level_session_key(session: ServerSession) -> str:
 
 async def _log_to_server_and_client(
     data: LogData,
-    session: ServerSession,
+    session: ServerSession | None,
     level: LoggingLevel,
     logger_name: str | None = None,
     related_request_id: str | None = None,
@@ -1349,6 +1359,10 @@ async def _log_to_server_and_client(
         msg=f"{msg_prefix}: {data.msg}",
         extra=data.extra,
     )
+
+    # Background workers have no live MCP session or client back-channel.
+    if session is None:
+        return
 
     # Deprecated upstream in SDK v2 but deliberately kept per compat directive;
     # removed with the multi-round-trip follow-up.

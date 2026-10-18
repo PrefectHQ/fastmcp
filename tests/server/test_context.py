@@ -489,3 +489,18 @@ class TestTransportIntegration:
             result = await client.call_tool("get_transport", {})
             assert observed_transport == "streamable-http"
             assert result.data == "streamable-http"
+
+
+async def test_background_context_logging_without_session():
+    from fastmcp.server.dependencies import _background_task_session_id
+
+    context = Context(
+        fastmcp=FastMCP("test"),
+        task_id="task-1",
+        origin_request_id="request-1",
+    )
+    token = _background_task_session_id.set("session-1")
+    try:
+        await context.info("worker progress")
+    finally:
+        _background_task_session_id.reset(token)
