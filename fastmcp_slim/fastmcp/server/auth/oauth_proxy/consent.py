@@ -74,19 +74,6 @@ def _consent_state_base_name(csrf_token: str) -> str:
     return f"{_CONSENT_STATE_COOKIE_BASE}_{digest}"
 
 
-def _consent_token_for(csrf_token: str) -> str:
-    """Consent binding token for an approval made with `csrf_token`.
-
-    Derived rather than random so that every submit of the same form yields
-    the same binding. A double-clicked Approve sends two submits that can
-    overlap in any order, and the browser keeps whichever binding cookie it
-    applies last; with a fresh token per submit, that cookie could disagree
-    with the one the transaction stored, and the callback would reject the
-    flow. Only the browser the form was rendered for knows the CSRF token.
-    """
-    return hashlib.sha256(f"consent-binding:{csrf_token}".encode()).hexdigest()
-
-
 class ConsentMixin:
     """Mixin class providing consent management functionality for OAuthProxy.
 
@@ -137,6 +124,21 @@ class ConsentMixin:
         if self._upstream_client_secret is not None:
             return self._upstream_client_secret.get_secret_value().encode()
         return self._jwt_signing_key
+
+    def _consent_token_for(self: OAuthProxy, csrf_token: str) -> str:
+        """Consent binding token for an approval made with `csrf_token`.
+
+        Derived rather than random so that every submit of the same form yields
+        the same binding. A double-clicked Approve sends two submits that can
+        overlap in any order, and the browser keeps whichever binding cookie it
+        applies last; with a fresh token per submit, that cookie could disagree
+        with the one the transaction stored, and the callback would reject the
+        flow. Keyed with the cookie signing key, so only the server can compute
+        it, even from a known CSRF token.
+        """
+        key = self._cookie_signing_key()
+        message = f"consent-binding:{csrf_token}".encode()
+        return hmac.new(key, message, hashlib.sha256).hexdigest()
 
     def _sign_cookie(self: OAuthProxy, payload: str) -> str:
         """Sign a cookie payload with HMAC-SHA256.
@@ -621,7 +623,7 @@ class ConsentMixin:
         approval was, since the consent token is derived from the CSRF token.
         """
         txn = txn_model.model_dump()
-        consent_token = _consent_token_for(csrf_token)
+        consent_token = self._consent_token_for(csrf_token)
         # A page rendered before the CSRF store kept its token on the
         # transaction. Retire it there along with the approval, so a repeat
         # of this submit is recognised as a repeat rather than a new approval.
@@ -736,7 +738,9 @@ class ConsentMixin:
                 action == "approve"
                 and csrf_token
                 and consent_token is not None
-                and hmac.compare_digest(consent_token, _consent_token_for(csrf_token))
+                and hmac.compare_digest(
+                    consent_token, self._consent_token_for(csrf_token)
+                )
                 and (
                     holds_state_cookie
                     or holds_legacy_cookie
