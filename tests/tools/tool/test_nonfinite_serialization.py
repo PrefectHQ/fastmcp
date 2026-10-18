@@ -145,3 +145,82 @@ class TestSerializeToJsonableUnit:
     def test_tool_result_structured_content_rejects_non_finite(self):
         with pytest.raises(ToolError, match="non-finite"):
             ToolResult(structured_content={"v": float("nan")})
+
+
+class TestDocumentedResidualBehavior:
+    """Documented trade-offs that remain by design (see follow-up issues).
+
+    These tests pin the *current* behavior so any future policy change is a
+    conscious, reviewed decision rather than a silent drift.
+    """
+
+    async def test_default_base_model_policy_still_nulls_silently(self):
+        """A plain BaseModel's embedded config wins over the outer constants policy.
+
+        pydantic's per-model default (`ser_json_inf_nan="null"`) rewrites the
+        non-finite float to valid-JSON ``null``, so the substring guard never
+        fires and the caller gets ``{"mean": null}`` — not a ToolError. This is
+        the documented judgment call: overriding a model's embedded config from
+        outside is at odds with preserving model control.
+        """
+
+        class Stats(BaseModel):
+            mean: float
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def stats() -> Stats:
+            return Stats(mean=float("nan"))
+
+        async with Client(mcp) as client:
+            # Not rejected at the serialization boundary — the model's own
+            # default policy governed — so the null reaches the client and
+            # fails *its* output-schema validation with an error that never
+            # mentions nan.
+            with pytest.raises(RuntimeError, match="None is not of type 'number'"):
+                await client.call_tool("stats", {})
+
+        # Pin the boundary behavior: no ToolError, just the model's null.
+        assert _serialize_to_jsonable(Stats(mean=float("nan")), Stats) == {
+            "mean": None
+        }
+
+    def test_default_serializer_rewrites_non_finite_to_null(self):
+        """`default_serializer` (the text-content path) still nulls non-finites.
+
+        It goes through pydantic's default JSON policy, so it can disagree with
+        the structured path this PR fixed. Tracked as a follow-up.
+        """
+        from fastmcp.tools.base import default_serializer
+
+        assert default_serializer({"mean": float("nan")}) == '{"mean":null}'
+
+    async def test_unserializable_result_falls_back_to_text_content_softly(self):
+        """A value the structured serializer cannot handle becomes content-only.
+
+        `convert_result` catches the serialization error and returns text
+        content with `is_error` false — a soft success. This is the leftover
+        text-path risk: a non-finite value that fails structured serialization
+        surfaces as text, never as a tool error (follow-up: fail the text path
+        too, e.g. an `inf_nan_mode="error"`-style check).
+        """
+
+        class Unserializable:
+            def __str__(self):
+                return "nan"
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def weird():
+            return Unserializable()
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("weird", {})
+
+        assert result.is_error is False
+        assert result.structured_content is None
+        # The text content went through the default JSON serializer, which
+        # stringifies the value ("nan" as a JSON string), with no error raised.
+        assert result.content[0].text == '"nan"'
