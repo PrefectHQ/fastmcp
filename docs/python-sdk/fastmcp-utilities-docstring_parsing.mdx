@@ -26,8 +26,10 @@ parse_docstring(fn: Callable[..., Any]) -> ParsedDocstring
 Parse a function's docstring into a summary and parameter descriptions.
 
 Tries Google, NumPy, and Sphinx parsers in order, using the first one that
-successfully extracts parameter descriptions. If none do, returns the full
-docstring as the description with no parameter descriptions.
+recognizes a structured section (parameters, returns, raises, and so on).
+The description is the free-form text before the first such section. If no
+parser recognizes a section, returns the full docstring as the description
+with no parameter descriptions.
 
 
 ## Classes

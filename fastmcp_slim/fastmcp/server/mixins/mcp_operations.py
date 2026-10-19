@@ -31,7 +31,11 @@ from fastmcp.exceptions import (
 from fastmcp.prompts.base import InputRequiredPromptResult
 from fastmcp.resources.base import InputRequiredResourceResult
 from fastmcp.server.completions import CompletionValues, normalize_completion
-from fastmcp.server.dependencies import bind_request_context, extract_version_spec
+from fastmcp.server.dependencies import (
+    _serving_client_tool_call,
+    bind_request_context,
+    extract_version_spec,
+)
 from fastmcp.tools.base import InputRequiredToolResult, ToolResult
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
@@ -243,7 +247,8 @@ class MCPOperationsMixin:
             version = _version_from_ctx(ctx)
 
             try:
-                result = await self.call_tool(key, arguments, version=version)
+                with _serving_client_tool_call():
+                    result = await self.call_tool(key, arguments, version=version)
             except (DisabledError, NotFoundError):
                 # Unknown/disabled tool: return an error result (matching the
                 # v1 SDK's call_tool behavior) so the client surfaces a
@@ -412,6 +417,14 @@ class MCPOperationsMixin:
             )
             session_id = _log_level_session_key(rc.session)
             self._client_log_levels[session_id] = params.level
+            if session_id != "__no_session__":
+                connection = rc.session._connection
+                cleanup_key = "_fastmcp_log_level_cleanup_registered"
+                if not connection.state.get(cleanup_key):
+                    connection.exit_stack.callback(
+                        self._client_log_levels.pop, session_id, None
+                    )
+                    connection.state[cleanup_key] = True
             return EmptyResult()
 
     async def _on_complete(

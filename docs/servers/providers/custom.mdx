@@ -109,6 +109,12 @@ mcp = FastMCP("MyServer")
 mcp.add_provider(DatabaseProvider(db_url))
 ```
 
+### Bundled Extensions
+
+<VersionBadge version="4.1.0" />
+
+If your components depend on an MCP extension, bundle it with the provider through [`required_extensions()`](/servers/extensions#provider-extensions). Adding the provider then registers its protocol support on the receiving server, including when the provider is composed through aggregates or mounted servers. The extensions guide covers the opt-in flag and how callers configure bundled extensions.
+
 ## A Simple Provider
 
 Here's a minimal provider that serves tools from a dictionary:

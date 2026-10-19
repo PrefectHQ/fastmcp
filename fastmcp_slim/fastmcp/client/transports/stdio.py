@@ -220,8 +220,13 @@ class StdioTransport(ClientTransport):
 
     def __del__(self):
         """Ensure that we send a disconnection signal to the transport task if we are being garbage collected."""
-        if not self._stop_event.is_set():
-            self._stop_event.set()
+        # Subclasses validate the command before calling super().__init__, so an
+        # object whose construction raised has no `_stop_event`. Guard instead of
+        # letting the interpreter print "Exception ignored in: __del__" over the
+        # error the caller is actually meant to see.
+        stop_event = getattr(self, "_stop_event", None)
+        if stop_event is not None and not stop_event.is_set():
+            stop_event.set()
 
     def __repr__(self) -> str:
         return (
@@ -330,6 +335,11 @@ class PythonStdioTransport(StdioTransport):
         if args:
             full_args.extend(args)
 
+        # mcp.client.stdio spawns the child with a sanitized environment
+        # that drops PYTHONUTF8; default it back so a Windows code page
+        # cannot leak into log_file. An explicit env still wins.
+        env = {"PYTHONUTF8": "1", **(env or {})}
+
         super().__init__(
             command=python_cmd,
             args=full_args,
@@ -358,6 +368,10 @@ class FastMCPStdioTransport(StdioTransport):
             raise FileNotFoundError(f"Script not found: {script_path}")
         if not str(script_path).endswith(".py"):
             raise ValueError(f"Not a Python script: {script_path}")
+
+        # Same UTF-8 default as PythonStdioTransport: the `fastmcp` command
+        # is a Python entry point with the same sanitized child environment.
+        env = {"PYTHONUTF8": "1", **(env or {})}
 
         super().__init__(
             command="fastmcp",

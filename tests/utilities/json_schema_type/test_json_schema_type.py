@@ -183,6 +183,61 @@ class TestBooleanSchemas:
         assert obj.level == "info"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         assert obj.app == "myapp"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
 
+    def test_issue_5737_declared_default_hydrated_with_additional_properties(self):
+        """Defaults of declared fields hydrate like explicit values (#5737)."""
+        from datetime import date
+
+        schema = {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "day": {"type": "string", "format": "date", "default": "2026-10-13"}
+            },
+        }
+        validator = TypeAdapter(json_schema_to_type(schema))
+        assert validator.validate_python({}).day == date(2026, 10, 13)  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert validator.validate_python({"day": "2026-10-13"}).day == date(  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            2026, 10, 13
+        )
+
+    def test_nested_object_default_with_additional_properties(self):
+        """Nested object defaults are preserved when additionalProperties is True."""
+        schema = {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "default": {"port": 8080, "host": "localhost"},
+                    "properties": {
+                        "port": {"type": "integer"},
+                        "host": {"type": "string"},
+                    },
+                }
+            },
+        }
+        validator = TypeAdapter(json_schema_to_type(schema))
+        result = validator.validate_python({})
+        # The default object is hydrated into the proper type
+        assert result.config.port == 8080  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert result.config.host == "localhost"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+
+    def test_null_default_on_non_nullable_type(self):
+        """Null default on non-nullable type is preserved as-is (not validated)."""
+        schema = {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "name": {"type": "string", "default": None},
+                "count": {"type": "integer", "minimum": 1, "default": 0},
+            },
+        }
+        validator = TypeAdapter(json_schema_to_type(schema))
+        # These invalid defaults should be preserved without validation errors
+        result = validator.validate_python({})
+        assert result.name is None  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert result.count == 0  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+
 
 class TestConstrainedTypes:
     def test_constant(self):

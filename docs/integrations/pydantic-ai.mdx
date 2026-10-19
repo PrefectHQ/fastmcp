@@ -1,29 +1,25 @@
 ---
 title: Pydantic AI 🤝 FastMCP
 sidebarTitle: Pydantic AI
-description: Connect FastMCP servers to Pydantic AI agents using the FastMCPToolset
+description: Connect FastMCP servers to Pydantic AI agents with MCPToolset
 icon: message-code
 ---
 
-[Pydantic AI](https://ai.pydantic.dev/) ships a [`FastMCPToolset`](https://ai.pydantic.dev/mcp/fastmcp-client/) that lets a Pydantic AI agent call tools exposed by any MCP server through the [FastMCP Client](/clients/client). Because the toolset is built on the FastMCP Client, it works with FastMCP servers as well as any other MCP server, and supports the full range of [transports](/clients/transports): in-memory, STDIO, Streamable HTTP, and SSE.
-
-This page shows how to point `FastMCPToolset` at a FastMCP server, with examples for each transport. For the toolset's full API, see the [Pydantic AI documentation](https://ai.pydantic.dev/mcp/fastmcp-client/).
-
-<Tip>
-The `FastMCPToolset` currently exposes **tools** to the agent. Other MCP features such as elicitation and sampling are not yet supported through this toolset; use Pydantic AI's standard [`MCPServer`](https://ai.pydantic.dev/mcp/client/) client if you need them.
-</Tip>
+[Pydantic AI](https://pydantic.dev/docs/ai/)'s [`MCPToolset`](https://pydantic.dev/docs/ai/mcp/client/) is built on the [FastMCP Client](/clients/client), so an agent can use any MCP server over any FastMCP [transport](/clients/transports). It covers tools, resources, prompts, and elicitation. This page shows how to point it at a FastMCP server; for the full API, see the [Pydantic AI docs](https://pydantic.dev/docs/ai/mcp/client/).
 
 ## Install
 
-`FastMCPToolset` lives in `pydantic-ai-slim` behind the `fastmcp` optional group:
-
 ```bash
-pip install "pydantic-ai-slim[fastmcp]"
+pip install "pydantic-ai-slim[mcp]>=2.45"
 ```
 
-## Create a Server
+The `mcp` extra installs the client-only `fastmcp-slim[client]`. Add `fastmcp` if the same environment also runs a FastMCP server.
 
-Create a FastMCP server with the tools you want to expose. We'll use a single dice-rolling tool throughout this guide.
+<Note>
+With FastMCP 4, use `pydantic-ai-slim` 2.45 or newer. Releases 2.32 through 2.44 import `httpx` without depending on it, and FastMCP 4 no longer installs `httpx`, so `import pydantic_ai.mcp` fails.
+</Note>
+
+## Create a Server
 
 ```python server.py
 import random
@@ -40,99 +36,69 @@ if __name__ == "__main__":
     mcp.run(transport="http", port=8000)
 ```
 
-## In-Memory
+## Connect an Agent
 
-If your FastMCP server lives in the same process as your agent, pass the `FastMCP` instance directly. The toolset reuses an [in-memory transport](/clients/transports#in-memory-transport), which avoids a network round trip and is the fastest option for tests and embedded use.
-
-```python
-import asyncio
-import random
-from fastmcp import FastMCP
-from pydantic_ai import Agent
-from pydantic_ai.toolsets.fastmcp import FastMCPToolset
-
-mcp = FastMCP(name="Dice Roller")
-
-@mcp.tool
-def roll_dice(n_dice: int) -> list[int]:
-    return [random.randint(1, 6) for _ in range(n_dice)]
-
-toolset = FastMCPToolset(mcp)
-agent = Agent("openai:gpt-4.1", toolsets=[toolset])
-
-async def main():
-    result = await agent.run("Roll 3 dice!")
-    print(result.output)
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-## Streamable HTTP
-
-For a remote FastMCP server reachable over HTTP, pass the URL as a string. The toolset infers the [Streamable HTTP transport](/clients/transports#http-transport) from the URL.
-
-```python
-from pydantic_ai import Agent
-from pydantic_ai.toolsets.fastmcp import FastMCPToolset
-
-toolset = FastMCPToolset("https://your-server-url.com/mcp")
-agent = Agent("openai:gpt-4.1", toolsets=[toolset])
-```
-
-For [SSE](/clients/transports#sse-transport), use a `/sse` URL instead.
-
-## STDIO
-
-To launch a FastMCP server as a subprocess, pass a script path and the toolset will use the [STDIO transport](/clients/transports#stdio-transport).
+Pass `MCPToolset` anything the FastMCP Client accepts. It infers the transport the same way the client does.
 
 ```python
 from pathlib import Path
 from pydantic_ai import Agent
-from pydantic_ai.toolsets.fastmcp import FastMCPToolset
+from pydantic_ai.mcp import MCPToolset
 
-toolset = FastMCPToolset(Path("server.py"))
-agent = Agent("openai:gpt-4.1", toolsets=[toolset])
+from server import mcp
+
+in_memory = MCPToolset(mcp)  # a FastMCP instance in the same process
+http = MCPToolset("http://localhost:8000/mcp")  # Streamable HTTP; a /sse URL uses SSE
+stdio = MCPToolset(Path("server.py"))  # launches the script over STDIO
+
+agent = Agent("openai:gpt-5", toolsets=[http])
+result = agent.run_sync("Roll 3 dice!")
 ```
 
-You can also pass a [`StdioTransport`](/clients/transports#stdio-transport) directly when you need control over the command, args, or environment.
-
-## MCP Configuration
-
-To wire up multiple servers at once, pass an [MCP configuration](/integrations/mcp-json-configuration) dictionary. The toolset opens one client per server and exposes all of their tools to the agent.
-
-```python
-from pydantic_ai import Agent
-from pydantic_ai.toolsets.fastmcp import FastMCPToolset
-
-mcp_config = {
-    "mcpServers": {
-        "dice": {"command": "python", "args": ["server.py"]},
-        "weather": {"url": "https://weather.example.com/mcp"},
-    }
-}
-
-toolset = FastMCPToolset(mcp_config)
-agent = Agent("openai:gpt-4.1", toolsets=[toolset])
-```
+Pass a FastMCP [transport](/clients/transports) such as `StdioTransport` for control over the command, arguments, or environment, or a configured `fastmcp.Client` for full control.
 
 ## Authentication
 
-Because `FastMCPToolset` wraps a [FastMCP `Client`](/clients/client), it inherits the client's full [authentication](/clients/auth/bearer) story. To pass credentials such as a bearer token to a remote server, build a `Client` (or `StreamableHttpTransport`) yourself and hand it to the toolset.
+For a bearer token, pass `headers`. For [OAuth](/clients/auth/oauth), pass `auth="oauth"` or build the `Client` yourself.
 
 ```python
-from fastmcp import Client
-from fastmcp.client.transports import StreamableHttpTransport
-from pydantic_ai import Agent
-from pydantic_ai.toolsets.fastmcp import FastMCPToolset
-
-transport = StreamableHttpTransport(
-    url="https://your-server-url.com/mcp",
+toolset = MCPToolset(
+    "https://your-server-url.com/mcp",
     headers={"Authorization": "Bearer your-access-token"},
 )
-
-toolset = FastMCPToolset(Client(transport))
-agent = Agent("openai:gpt-4.1", toolsets=[toolset])
 ```
 
-For OAuth flows, use FastMCP's [`OAuth` helper](/clients/auth/oauth) when constructing the `Client`. For server-side token verification, see [Token Verification](/servers/auth/token-verification).
+For server-side token verification, see [Token Verification](/servers/auth/token-verification).
+
+## Multiple Servers
+
+`load_mcp_toolsets` reads an [MCP configuration](/integrations/mcp-json-configuration) file and returns one toolset per server. Tool names are prefixed with the server's key.
+
+```json mcp_config.json
+{
+  "mcpServers": {
+    "dice": {"command": "python", "args": ["server.py"]},
+    "weather": {"url": "https://weather.example.com/mcp"}
+  }
+}
+```
+
+```python
+from pydantic_ai import Agent
+from pydantic_ai.mcp import load_mcp_toolsets
+
+agent = Agent("openai:gpt-5", toolsets=load_mcp_toolsets("mcp_config.json"))
+```
+
+## Elicitation
+
+Pass an `elicitation_handler` to answer a server's [elicitation](/servers/elicitation) requests. It has the same signature as the FastMCP Client's [elicitation handler](/clients/elicitation).
+
+```python
+async def approve(message, response_type, params, context):
+    return {"approved": True}
+
+toolset = MCPToolset("http://localhost:8000/mcp", elicitation_handler=approve)
+```
+
+On 2026-07-28 connections, Pydantic AI may warn that `elicitation_handler` will never be called. The FastMCP Client still calls it for [input-required results](/servers/elicitation#elicitation-on-the-modern-protocol).

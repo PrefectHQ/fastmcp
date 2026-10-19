@@ -44,9 +44,9 @@ To compose with existing `@asynccontextmanager` lifespans, wrap them explicitly:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
@@ -84,7 +84,11 @@ class Lifespan:
         Yields:
             The lifespan context dict.
         """
-        async with asynccontextmanager(self._fn)(server) as result:
+        generator_fn = cast(
+            Callable[["FastMCP[Any]"], AsyncGenerator[dict[str, Any] | None]],
+            self._fn,
+        )
+        async with asynccontextmanager(generator_fn)(server) as result:
             yield result if result is not None else {}
 
     def __or__(self, other: Lifespan) -> ComposedLifespan:

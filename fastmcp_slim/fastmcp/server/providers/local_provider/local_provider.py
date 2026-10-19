@@ -453,7 +453,13 @@ class LocalProvider(
         This includes both FunctionTool/Resource/Prompt instances created via
         decorators and custom Tool/Resource/Prompt subclasses.
         """
-        return [c for c in self._components.values() if c.task_config.supports_tasks()]
+        components = list(self._components.values())
+
+        return [
+            c
+            for c in await self._apply_task_transforms(components)
+            if c.task_config.supports_tasks()
+        ]
 
     # =========================================================================
     # Decorator methods

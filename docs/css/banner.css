@@ -56,3 +56,9 @@
     padding-bottom: 8px !important;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  #banner::before {
+    animation: none;
+  }
+}

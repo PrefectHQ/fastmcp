@@ -777,7 +777,10 @@ async def test_code_mode_monty_execute_chaining() -> None:
     ("failing_call", "expected_message"),
     [
         ("await call_tool('no_such_tool', {})", "Unknown tool: no_such_tool"),
-        ("await call_tool('boom', {})", "deliberate tool failure"),
+        (
+            "await call_tool('boom', {})",
+            "call_tool('boom') failed: deliberate tool failure",
+        ),
     ],
     ids=["unknown-tool", "tool-error"],
 )
@@ -875,19 +878,30 @@ async def test_monty_provider_raises_informative_error_when_missing(
         await provider.run("return 1")
 
 
-async def test_monty_provider_forwards_limits() -> None:
-    provider = MontySandboxProvider(limits={"max_duration_secs": 0.1})
+@pytest.mark.parametrize(
+    "limits",
+    [
+        {"max_feed_duration_secs": 0.1},
+        {"max_turn_duration_secs": 0.1},
+    ],
+)
+async def test_monty_provider_forwards_limits(limits: dict[str, float]) -> None:
+    provider = MontySandboxProvider(limits=cast(Any, limits))
+    original_limits = limits.copy()
 
     with pytest.raises(Exception, match="time limit exceeded"):
         await provider.run("x = 0\nfor _ in range(10**9):\n    x += 1")
 
+    assert limits == original_limits
 
-async def test_monty_provider_rejects_unsupported_limits() -> None:
-    provider = MontySandboxProvider(limits=cast(Any, {"max_allocations": 1}))
+
+@pytest.mark.parametrize("key", ["max_allocations", "max_duration_secs"])
+async def test_monty_provider_rejects_unsupported_limits(key: str) -> None:
+    provider = MontySandboxProvider(limits=cast(Any, {key: 1}))
 
     with pytest.raises(
         ValueError,
-        match=r"Unsupported Monty resource limits: 'max_allocations'.*max_memory",
+        match=rf"Unsupported Monty resource limits: {key!r}.*max_memory",
     ):
         await provider.run("return list(range(10_000))")
 
@@ -916,8 +930,8 @@ async def test_monty_provider_explicit_none_disables_limits() -> None:
 
 
 async def test_monty_provider_explicit_limits_override_defaults() -> None:
-    provider = MontySandboxProvider(limits={"max_duration_secs": 0.1})
-    assert provider.limits == {"max_duration_secs": 0.1}
+    provider = MontySandboxProvider(limits={"max_feed_duration_secs": 0.1})
+    assert provider.limits == {"max_feed_duration_secs": 0.1}
 
 
 async def test_monty_provider_default_limits_are_not_shared_between_instances() -> None:
@@ -934,10 +948,13 @@ async def test_monty_provider_default_limits_are_not_shared_between_instances() 
     assert a.limits is not _DEFAULT_LIMITS
 
     assert a.limits is not None
-    a.limits["max_duration_secs"] = 1
+    a.limits["max_feed_duration_secs"] = 1
 
-    assert b.limits == {"max_duration_secs": 30.0, "max_memory": 100_000_000}
-    assert _DEFAULT_LIMITS == {"max_duration_secs": 30.0, "max_memory": 100_000_000}
+    assert b.limits == {"max_feed_duration_secs": 30.0, "max_memory": 100_000_000}
+    assert _DEFAULT_LIMITS == {
+        "max_feed_duration_secs": 30.0,
+        "max_memory": 100_000_000,
+    }
 
 
 async def test_code_mode_max_tool_calls_default_is_50() -> None:
@@ -1025,3 +1042,234 @@ async def test_monty_provider_cancels_future_when_task_cancelled() -> None:
         await task
 
     assert sandbox_future.cancelled()
+
+
+@requires_monty
+async def test_code_mode_is_error_result_raises_in_sandbox() -> None:
+    """A backend returning an is_error ToolResult interrupts the chain.
+
+    Regression: proxied backend failures arrive as ToolResult(is_error=True)
+    rather than raising, and previously flowed into sandbox code as an
+    ordinary return value.
+    """
+    mcp = FastMCP("CodeMode IsError")
+
+    @mcp.tool
+    def flaky() -> ToolResult:
+        return ToolResult(content="backend exploded", is_error=True)
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    code = (
+        "caught = None\n"
+        "try:\n"
+        "    value = await call_tool('flaky', {})\n"
+        "except Exception as exc:\n"
+        "    caught = str(exc)\n"
+        "return {'caught': caught}"
+    )
+    result = await _run_tool(mcp, "execute", {"code": code})
+    caught = _unwrap_result(result)["caught"]
+    assert caught is not None
+    assert "call_tool('flaky') failed" in caught
+    assert "backend exploded" in caught
+
+
+@requires_monty
+async def test_code_mode_validation_error_names_valid_parameters() -> None:
+    """A bad-argument failure names the caller's tool and its parameters."""
+    mcp = FastMCP("CodeMode BadArgs")
+
+    @mcp.tool
+    def greet(name: str, punctuation: str = "!") -> str:
+        return f"hi {name}{punctuation}"
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    code = (
+        "caught = None\n"
+        "try:\n"
+        "    await call_tool('greet', {'nom': 'x'})\n"
+        "except Exception as exc:\n"
+        "    caught = str(exc)\n"
+        "return {'caught': caught}"
+    )
+    result = await _run_tool(mcp, "execute", {"code": code})
+    caught = _unwrap_result(result)["caught"]
+    assert caught is not None
+    assert "call_tool('greet') failed" in caught
+    assert "Valid parameters for greet" in caught
+    assert "name*" in caught  # required marker
+    assert "punctuation" in caught
+
+
+async def test_code_mode_get_schema_renders_enums_and_defaults() -> None:
+    """Detailed schemas surface enum values and defaults, not just types."""
+    from typing import Literal
+
+    mcp = FastMCP("CodeMode RichSchema")
+
+    @mcp.tool
+    def rank(
+        sort: Literal["trending", "top"] = "trending",
+        limit: int = 10,
+    ) -> str:
+        """Rank things."""
+        return sort
+
+    mcp.add_transform(CodeMode())
+
+    result = await _run_tool(mcp, "get_schema", {"tools": ["rank"]})
+    unwrapped = _unwrap_result(result)
+    text = unwrapped["result"] if isinstance(unwrapped, dict) else unwrapped
+    assert 'one of "trending"/"top"' in text
+    assert 'default "trending"' in text
+    assert "default 10" in text
+    # Per-parameter descriptions stay out of this level: on real catalogs they
+    # cost ~300% more than bare types where enums and defaults cost ~40%, and
+    # the `full` level already emits the raw schema that carries them.
+    assert "Rank things" in text  # the tool's own description still renders
+    assert "\u2014" not in text  # but no per-parameter description dashes
+
+
+async def test_code_mode_get_schema_names_return_fields_one_level_down() -> None:
+    """A typed return no longer renders as an opaque object[]."""
+    from pydantic import BaseModel
+
+    class Note(BaseModel):
+        text: str
+
+    class Card(BaseModel):
+        id: str
+        url: str
+        note: Note | None = None
+
+    class Page(BaseModel):
+        items: list[Card]
+        has_more: bool
+
+    mcp = FastMCP("CodeMode NestedReturns")
+
+    @mcp.tool
+    def list_cards() -> Page:
+        """List cards."""
+        return Page(items=[], has_more=False)
+
+    mcp.add_transform(CodeMode())
+
+    result = await _run_tool(mcp, "get_schema", {"tools": ["list_cards"]})
+    unwrapped = _unwrap_result(result)
+    text = unwrapped["result"] if isinstance(unwrapped, dict) else unwrapped
+    assert "- `items` (object[], required): `id`, `url`, `note`" in text
+    assert "- `has_more` (boolean, required)" in text
+    # One level only: Note's fields are not expanded under Card.
+    assert "`text`" not in text
+
+
+@pytest.mark.parametrize("content", [[], ["image"]])
+async def test_error_result_without_text_uses_generic_message(
+    content: list[str],
+) -> None:
+    mcp = FastMCP("Non-text errors")
+    blocks = [
+        ImageContent(type="image", data="A" * 4096, mime_type="image/png")
+        for _ in content
+    ]
+
+    @mcp.tool
+    def fail() -> ToolResult:
+        return ToolResult(content=blocks, is_error=True)
+
+    mcp.add_transform(CodeMode())
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {
+            "code": 'try:\n    await call_tool("fail", {})\nexcept Exception as exc:\n    return str(exc)'
+        },
+    )
+    message = str(_unwrap_result(result))
+    assert message == "call_tool('fail') failed: tool returned an error"
+
+
+@pytest.mark.parametrize("text", ["backend exploded", ""])
+async def test_error_result_preserves_text_with_structured_content(text: str) -> None:
+    mcp = FastMCP("Structured errors")
+
+    @mcp.tool
+    def fail() -> ToolResult:
+        return ToolResult(content=text, structured_content={"code": 42}, is_error=True)
+
+    mcp.add_transform(CodeMode())
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {
+            "code": 'try:\n    await call_tool("fail", {})\nexcept Exception as exc:\n    return str(exc)'
+        },
+    )
+    message = str(_unwrap_result(result))
+    assert (text or "42") in message
+    assert "call_tool('fail') failed" in message
+
+
+async def test_mounted_validation_error_uses_public_identity() -> None:
+    child = FastMCP("Orders")
+
+    @child.tool
+    def search(query: str) -> str:
+        return query
+
+    mcp = FastMCP("Mounted")
+    mcp.mount(child, namespace="orders")
+    mcp.add_transform(CodeMode())
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {
+            "code": 'try:\n    await call_tool("orders_search", {"wrong": "value"})\nexcept Exception as exc:\n    return str(exc)'
+        },
+    )
+    message = str(_unwrap_result(result))
+    assert "call_tool('orders_search') failed" in message
+    assert "query: Missing required argument" in message
+    assert "wrong: Unexpected keyword argument" in message
+    assert "Valid parameters for orders_search" in message
+    assert "call[search]" not in message
+    assert "https://" not in message
+
+
+async def test_detailed_schema_enum_union_rules() -> None:
+    from typing import Literal
+
+    mcp = FastMCP("Unions")
+
+    @mcp.tool
+    def send(
+        mixed: Literal["a"] | int = 3,
+        merged: Literal["x"] | Literal["y", "z"] | None = None,
+    ) -> str:
+        return str(mixed)
+
+    mcp.add_transform(CodeMode())
+    result = await _run_tool(mcp, "get_schema", {"tools": ["send"]})
+    text = str(_unwrap_result(result))
+    assert 'one of "a"' not in text
+    assert "default 3" in text
+    assert 'one of "x"/"y"/"z"' in text
+
+
+async def test_detailed_schema_includes_single_value_literals() -> None:
+    from typing import Literal
+
+    mcp = FastMCP("Literals")
+
+    @mcp.tool
+    def send(kind: Literal["email"], optional: Literal["sms"] | None = None) -> str:
+        return kind
+
+    mcp.add_transform(CodeMode())
+    result = await _run_tool(mcp, "get_schema", {"tools": ["send"]})
+    text = str(_unwrap_result(result))
+    assert 'one of "email"' in text
+    assert 'one of "sms"' in text

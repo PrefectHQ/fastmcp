@@ -1,8 +1,10 @@
+import json
 from pathlib import Path
 
 import pytest
 
 from fastmcp.cli.install import install_app
+from fastmcp.cli.install.mcp_json import install_mcp_json
 from fastmcp.cli.install.shared import validate_server_name
 from fastmcp.cli.install.stdio import install_stdio
 
@@ -160,6 +162,69 @@ class TestClaudeDesktopInstall:
         assert bound.arguments.get("config_path") is None
 
 
+class TestInstallConfigEncoding:
+    """MCP config files are UTF-8 (RFC 8259), so installers must not decode them via the locale."""
+
+    def test_claude_desktop_preserves_non_ascii_values_from_existing_config(
+        self, tmp_path: Path
+    ):
+        """Re-installing a server must not rewrite its env values through the locale codec."""
+        import json
+
+        from fastmcp.cli.install.claude_desktop import install_claude_desktop
+
+        server_file = tmp_path / "server.py"
+        server_file.write_text(
+            "from fastmcp import FastMCP\n\nmcp = FastMCP('demo')\n", encoding="utf-8"
+        )
+        config_dir = tmp_path / "claude"
+        config_dir.mkdir()
+        config = config_dir / "claude_desktop_config.json"
+        api_key = "Привет-ключ"
+        config.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "demo": {
+                            "command": "uvx",
+                            "args": ["some-package"],
+                            "env": {"API_KEY": api_key},
+                        }
+                    }
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        assert install_claude_desktop(
+            server_file, "mcp", "demo", config_path=config_dir
+        )
+
+        saved = json.loads(config.read_text(encoding="utf-8"))
+        assert saved["mcpServers"]["demo"]["env"]["API_KEY"] == api_key
+
+    async def test_process_common_args_reads_json_spec_as_utf8(self, tmp_path: Path):
+        """A fastmcp.json spec with a non-ASCII path must survive the read."""
+        import json
+
+        from fastmcp.cli.install.shared import process_common_args
+
+        server_file = tmp_path / "服务器.py"
+        server_file.write_text(
+            "from fastmcp import FastMCP\n\nmcp = FastMCP('demo')\n", encoding="utf-8"
+        )
+        spec = tmp_path / "fastmcp.json"
+        spec.write_text(
+            json.dumps({"source": {"path": server_file.name}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        file, _, _, _, _ = await process_common_args(str(spec), None, [], [], None)
+        assert file.name == "服务器.py"
+
+
 class TestCursorInstall:
     """Test cursor install command."""
 
@@ -250,6 +315,28 @@ class TestMcpJsonInstall:
         )
 
         assert bound.arguments["copy"] is True
+
+    def test_install_mcp_json_stdout_is_valid_json(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        """Long paths and bracketed values must reach stdout unchanged."""
+        server_dir = tmp_path / "a-long-directory-name" / "another-long-directory-name"
+        server_dir.mkdir(parents=True)
+        server_file = server_dir / "server.py"
+        server_file.write_text("# placeholder")
+
+        result = install_mcp_json(
+            file=server_file,
+            server_object=None,
+            name="test-server",
+            env_vars={"PATTERN": "[red]value[/red]"},
+        )
+
+        assert result is True
+        config = json.loads(capsys.readouterr().out)
+        server_config = config["test-server"]
+        assert server_config["args"][-1] == str(server_file.resolve())
+        assert server_config["env"] == {"PATTERN": "[red]value[/red]"}
 
 
 class TestStdioInstall:
@@ -487,6 +574,8 @@ class TestServerNameValidation:
             'test"quoted',
             "test>file",
             "test<file",
+            "test\n",
+            "test\r\n",
         ],
     )
     def test_rejects_shell_metacharacters(self, name: str):

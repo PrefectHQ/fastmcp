@@ -1,81 +1,52 @@
 ---
 title: "Releases"
-description: "FastMCP versioning and release process"
-icon: "truck-fast"
+description: "Compatibility decisions, release branches, and documentation publishing"
+icon: truck-fast
 ---
 
-FastMCP releases frequently to deliver features quickly in the rapidly evolving MCP ecosystem. We use semantic versioning pragmatically - the Model Context Protocol is young, patterns are still emerging, and waiting for perfect stability would mean missing opportunities to empower developers with better tools.
+FastMCP releases when changes are ready. Release notes describe the user-visible changes and any migration required. Maintainers choose the release scope and version; passing tests alone does not settle a compatibility decision.
 
 ## Versioning Policy
 
-### Semantic Versioning
+Patch releases contain fixes and refinements without breaking supported public behavior. Minor releases add capabilities and may include deliberate breaking changes when their benefit justifies the disruption. Major releases cover larger changes to the framework and its APIs.
 
-**Major (x.0.0)**: Complete API redesigns
+### Breaking changes
 
-Major versions represent fundamental shifts. FastMCP 2.x is entirely different from 1.x in both implementation and design philosophy.
+Evaluate the intended behavior and the users affected before deciding how to ship a change. Compare the cost of migration with the complexity or incorrect behavior that retaining the old contract would preserve. A change described as a bug fix still needs this assessment; a breaking change does not automatically require waiting for the next major version.
 
-**Minor (2.x.0)**: New features and evolution
+Breaking changes in a minor release require a maintainer decision, clear release notes, and migration guidance. Provide deprecation warnings at least one minor release ahead when possible. Do not put a breaking change into a patch release merely because a regression test passes.
 
-<Warning>
-Unlike traditional semantic versioning, minor versions **may** include [breaking changes](#breaking-changes) when necessary for the ecosystem's evolution. This flexibility is essential in a young ecosystem where perfect backwards compatibility would prevent important improvements.
-</Warning>
+The public compatibility contract covers `FastMCP`, `Client`, `Context`, core MCP components and transports, and their public methods and documented behavior. Private implementation details do not have the same guarantee. Experimental APIs may change or disappear; pin versions when relying on them and read the release notes before upgrading.
 
-FastMCP tracks the current MCP Protocol version while serving earlier handshake versions alongside it. Building on MCP SDK v2, a FastMCP server negotiates the protocol era each client speaks — the sessionless `2026-07-28` era and earlier session-based eras are both handled by the same server. New features and conventions from the spec flow through to FastMCP as they land; for the details of which capabilities are available on each era, see [Upgrading from FastMCP 3](/getting-started/upgrading/from-fastmcp-3#protocol-version-support).
+FastMCP also supports multiple MCP protocol eras. Negotiating an older protocol does not select an older FastMCP implementation; see [protocol version support](/getting-started/upgrading/from-fastmcp-3#protocol-version-support).
 
-**Patch (2.0.x)**: Bug fixes and refinements
+### Production upgrades
 
-Patch versions contain only bug fixes without breaking changes. These are safe updates you can apply with confidence.
+Use a lockfile or an exact version pin for reproducible deployments. Review the changelog, test your supported workflows, and update the pin deliberately. For example, an exact dependency constraint has this form:
 
-### Breaking Changes
-
-We permit breaking changes in minor versions because the MCP ecosystem is rapidly evolving. Refusing to break problematic APIs would accumulate design debt that eventually makes the framework unusable. Each breaking change represents a deliberate decision to keep FastMCP aligned with the ecosystem's evolution.
-
-When breaking changes occur:
-- They only happen in minor versions (e.g., 2.3.x to 2.4.0)
-- Release notes explain what changed and how to migrate
-- We provide deprecation warnings at least 1 minor version in advance when possible
-- Changes must substantially benefit users to justify disruption
-
-The public API is what's covered by our compatibility guarantees - these are the parts of FastMCP you can rely on to remain stable within a minor version. The public API consists of:
-- `FastMCP` server class, `Client` class, and FastMCP `Context`
-- Core MCP components: `Tool`, `Prompt`, `Resource`, `ResourceTemplate`, and transports
-- Their public methods and documented behaviors
-
-Everything else (utilities, private methods, internal modules) may change without notice. This boundary lets us refactor internals and improve implementation details without breaking your code. For production stability, pin to specific versions.
-
-<Warning>
-The `fastmcp.server.auth` module was introduced in 2.12.0 and is exempted from this policy temporarily, meaning it is *expected* to have breaking changes even on patch versions. This is because auth is a rapidly evolving part of the MCP spec and it would be dangerous to be beholden to old decisions. Please pin your FastMCP version if using authentication in production.
-
-We expect this exemption to last through at least the 2.12.x and 2.13.x release series. 
-</Warning>
-
-### Production Use
-
-Pin to exact versions:
+```text
+fastmcp==4.0.10
 ```
-fastmcp==4.0.0  # Good
-fastmcp>=4.0.0  # Bad - will install breaking changes
-```
+
+This illustrates a pin, not a recommendation to remain on that release. Check the [release history](https://github.com/PrefectHQ/fastmcp/releases) for available updates and [SECURITY.md](https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md) for security support and private reporting.
 
 ## Creating Releases
 
-Our release process is intentionally simple:
+Only maintainers cut releases. Use the repository's [release skill](https://github.com/PrefectHQ/fastmcp/blob/main/.agents/skills/release/SKILL.md) for the commands and verification steps. It is the maintained procedure; the sequence below explains how the pieces fit together.
 
-1. Create GitHub release with tag `vMAJOR.MINOR.PATCH` (e.g., `v2.11.0`)
-2. Generate release notes automatically, and curate or add additional editorial information as needed
-3. GitHub releases automatically trigger PyPI deployments
+1. Review changes since the last stable release on the target line and agree on the version, title, and handwritten notes.
+2. Merge the changelog documentation PR on the release branch before tagging, so the entry is included in the release commit.
+3. Create the GitHub release from that branch. Generate notes starting at the last stable tag, so intervening prereleases do not truncate the changelog.
+4. Verify package publication and, for a current-major stable release, complete documentation publication.
 
-Current-major releases target `main`. Maintenance releases target their release branch, such as `release/3.x` for 3.x patches and `release/2.x` for 2.x patches. Stable releases from `main` open a PR that syncs the release commit to `published-docs` after PyPI publishing succeeds; merging that PR publishes the live docs. Prereleases skip the automatic PR and use the same PR-based sync when their docs are ready to publish. Maintenance releases publish packages and GitHub release notes without repointing the live docs branch.
+Current-major releases come from `main`. Maintenance releases come from the branch that owns their line, such as `release/3.x` or `release/2.x`. A branch's existence does not by itself promise ongoing security support; consult the security policy.
 
-This automation lets maintainers focus on code quality rather than release mechanics.
+Publishing a release triggers the package workflows. On the current line, `fastmcp-slim` publishes first, followed by the dependent `fastmcp-tasks`, `fastmcp-remote`, and `fastmcp` distributions. Verify the relevant workflows and package versions on PyPI rather than treating the GitHub release alone as completion. Published versions are immutable; a correction needs a new release.
 
-### Release Cadence
+## Publishing documentation
 
-We follow a feature-driven release cadence rather than a fixed schedule. Minor versions ship approximately every 3-4 weeks when significant functionality is ready.
+The live site serves the `published-docs` branch, not `main`. A stable release from `main` opens a PR that copies the release tree to `published-docs` after package publishing succeeds. A maintainer merges that PR, then verifies the `Deploy docs` workflow completed successfully.
 
-Patch releases ship promptly for:
-- Critical bug fixes
-- Security updates (immediate release)
-- Regression fixes
+Prereleases do not open that publication PR automatically. Docs-only changes between releases can be published through a PR that synchronizes `main` to `published-docs`; follow the release skill's manual publication procedure. Do not push directly to the publication branch.
 
-This approach means you get improvements as soon as they're ready rather than waiting for arbitrary release dates.
+Maintenance releases update their own changelog and packages without repointing the current documentation site. The `docs/v2/` and `docs/v3/` trees preserve historical documentation; outside their release changelogs, they are frozen snapshots.

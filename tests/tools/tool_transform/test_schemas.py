@@ -108,6 +108,91 @@ class TestTransformToolOutputSchema:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "Result: 10"
 
+    async def test_transform_non_object_schema_preserves_error_result(
+        self, base_string_tool
+    ):
+        """The non-object rebuild keeps is_error and meta from the
+        transform_fn's ToolResult."""
+
+        async def custom_fn(x: int) -> ToolResult:
+            return ToolResult(
+                content=[TextContent(type="text", text=f"failed: {x}")],
+                is_error=True,
+                meta={"reason": "boom"},
+            )
+
+        new_tool = Tool.from_tool(
+            base_string_tool, transform_fn=custom_fn, output_schema={"type": "string"}
+        )
+
+        result = await new_tool.run({"x": 1})
+
+        assert result.structured_content is None
+        assert result.is_error is True
+        assert result.meta == {"reason": "boom"}
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "failed: 1"
+
+    async def test_transform_fn_result_kept_for_properties_only_schema(
+        self, base_string_tool
+    ):
+        """A transform_fn's ToolResult is returned unchanged when the explicit
+        output schema is an object without a top-level "type": "object" key
+        (properties-only), matching _is_object_schema classification."""
+
+        async def custom_fn(x: int) -> ToolResult:
+            return ToolResult(
+                content=[TextContent(type="text", text=f"Result: {x}")],
+                structured_content={"value": x},
+                is_error=True,
+                meta={"reason": "boom"},
+            )
+
+        new_tool = Tool.from_tool(
+            base_string_tool,
+            transform_fn=custom_fn,
+            output_schema={"properties": {"value": {"type": "integer"}}},
+        )
+
+        result = await new_tool.run({"x": 5})
+
+        assert result.structured_content == {"value": 5}
+        assert result.is_error is True
+        assert result.meta == {"reason": "boom"}
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Result: 5"
+
+    async def test_transform_fn_result_kept_for_root_ref_schema(self, base_string_tool):
+        """A transform_fn's ToolResult is returned unchanged when the explicit
+        output schema is an object via a root-level $ref, matching
+        _is_object_schema classification."""
+
+        async def custom_fn(x: int) -> ToolResult:
+            return ToolResult(
+                content=[TextContent(type="text", text=f"Result: {x}")],
+                structured_content={"value": x},
+            )
+
+        new_tool = Tool.from_tool(
+            base_string_tool,
+            transform_fn=custom_fn,
+            output_schema={
+                "$defs": {
+                    "Output": {
+                        "type": "object",
+                        "properties": {"value": {"type": "integer"}},
+                    }
+                },
+                "$ref": "#/$defs/Output",
+            },
+        )
+
+        result = await new_tool.run({"x": 5})
+
+        assert result.structured_content == {"value": 5}
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Result: 5"
+
     def test_transform_with_custom_function_inferred_schema(self, base_dict_tool):
         """Test that custom function's output schema is inferred."""
 

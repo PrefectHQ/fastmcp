@@ -47,6 +47,7 @@ from mcp.client.caching import CacheEntry, CacheKey
 from mcp_types import CacheableResult
 from mcp_types.methods import MONOLITH_RESULTS
 
+from fastmcp.skills.models import GetSkillResult, ListSkillsResult
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import FastMCPBaseModel
 
@@ -57,12 +58,13 @@ DEFAULT_CACHE_COLLECTION = "fastmcp_response_cache"
 
 
 def _cacheable_result_models() -> dict[str, type[CacheableResult]]:
-    """Allowlist of `{class name: model}` for every cacheable result type.
+    """Allowlist of `{class name: model}` for cacheable result types.
 
     Derived from `MONOLITH_RESULTS` (the SDK's per-method result registry) so it
-    tracks the CACHEABLE_METHODS surface automatically. The class name is the
-    type tag written into the envelope; reconstruction looks the model up here
-    rather than importing an arbitrary name from store contents.
+    tracks the core surface automatically, then extended with FastMCP's built-in
+    extension results. The class name is the type tag written into the envelope;
+    reconstruction looks the model up here rather than importing an arbitrary name
+    from store contents.
     """
     models: dict[str, type[CacheableResult]] = {}
     for row in MONOLITH_RESULTS.values():
@@ -70,6 +72,8 @@ def _cacheable_result_models() -> dict[str, type[CacheableResult]]:
         for arm in arms:
             if isinstance(arm, type) and issubclass(arm, CacheableResult):
                 models[arm.__name__] = arm
+    for model in (ListSkillsResult, GetSkillResult):
+        models[model.__name__] = model
     return models
 
 

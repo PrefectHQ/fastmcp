@@ -7,11 +7,13 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 if TYPE_CHECKING:
     from pydantic_monty import ResourceLimits
 
+
 import anyio
 from mcp_types import TextContent
 from pydantic import Field
+from pydantic import ValidationError as PydanticValidationError
 
-from fastmcp.exceptions import NotFoundError, ToolError
+from fastmcp.exceptions import NotFoundError, ToolError, ValidationError
 from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.catalog import CatalogTransform
@@ -50,6 +52,64 @@ def _ensure_async(fn: Callable[..., Any]) -> Callable[..., Any]:
         return fn(*args, **kwargs)
 
     return wrapper
+
+
+_VALIDATION_ERROR_MARKERS = (
+    "validation error for",
+    "unexpected keyword argument",
+    "missing required argument",
+)
+
+
+def _legible_call_error(
+    tool_name: str, tool: Tool, error: dict[str, Any] | str | Exception
+) -> str:
+    """Rewrite a failed call's error for the model that wrote the code.
+
+    A failed `call_tool` raises so the failure interrupts the chain instead of
+    flowing onward as a return value. Validation failures get the tool's
+    parameter list appended — the error names what was wrong, the schema names
+    what would be right — and always speak in the name the caller used, not
+    the backend's internal identity.
+    """
+    validation = isinstance(error, ValidationError)
+    if validation and isinstance(error.__cause__, PydanticValidationError):
+        text = "; ".join(
+            f"{'.'.join(str(part) for part in item['loc']) or 'arguments'}: {item['msg']}"
+            for item in error.__cause__.errors(include_url=False)
+        )
+    else:
+        text = json.dumps(error) if isinstance(error, dict) else str(error)
+    message = f"call_tool({tool_name!r}) failed: {text}"
+    if validation or any(
+        marker in text.lower() for marker in _VALIDATION_ERROR_MARKERS
+    ):
+        properties = (tool.parameters or {}).get("properties")
+        if isinstance(properties, dict) and properties:
+            required = set((tool.parameters or {}).get("required") or [])
+            params = ", ".join(
+                name + ("*" if name in required else "") for name in properties
+            )
+            message += f"\nValid parameters for {tool_name} (* = required): {params}"
+    return message
+
+
+def _error_detail(result: ToolResult) -> dict[str, Any] | str:
+    """What an `is_error` result tells the model: text, else structured, else generic.
+
+    Non-text blocks are never stringified; an image's base64 payload would
+    swamp the model's context without explaining the failure.
+    """
+    text = "\n".join(
+        item.text
+        for item in result.content
+        if isinstance(item, TextContent) and item.text
+    )
+    if text:
+        return text
+    if result.structured_content is not None:
+        return result.structured_content
+    return "tool returned an error"
 
 
 def _unwrap_tool_result(result: ToolResult) -> dict[str, Any] | str:
@@ -104,7 +164,7 @@ _UNSET = _UnsetType()
 
 
 _DEFAULT_LIMITS: "ResourceLimits" = {
-    "max_duration_secs": 30.0,
+    "max_feed_duration_secs": 30.0,
     "max_memory": 100_000_000,  # 100 MB
 }
 """Baseline limits applied when ``MontySandboxProvider`` is constructed
@@ -117,15 +177,19 @@ class MontySandboxProvider:
 
     Args:
         limits: Resource limits for sandbox execution. Supported keys:
-            `max_duration_secs` (float), `max_memory` (int),
+            `max_feed_duration_secs` (float), `max_turn_duration_secs` (float),
+            `max_memory` (int),
             `max_recursion_depth` (int), and `gc_interval` (int).
             Time, memory, and GC limits are optional; omit a key to disable
             it. Recursion depth defaults to Monty's standard maximum of 1,000.
+            Duration limits measure sandbox execution time, excluding time
+            waiting on host callbacks. The feed limit covers the whole execution;
+            the turn limit resets after each host round trip.
             Unsupported keys raise `ValueError` rather than being silently
             ignored.
 
             When the argument is omitted entirely, a conservative baseline
-            is applied (``max_duration_secs=30``, ``max_memory=100 MB``) so
+            is applied (``max_feed_duration_secs=30``, ``max_memory=100 MB``) so
             the out-of-box configuration is not unbounded. Pass
             ``limits=None`` to disable configurable time, memory, and GC
             limits, or a dict to set your own. Monty's standard recursion
@@ -257,7 +321,7 @@ ToolDetailLevel = Literal["brief", "detailed", "full"]
 """Detail level for discovery tool output.
 
 - ``"brief"``: tool names and one-line descriptions
-- ``"detailed"``: compact markdown with parameter names, types, and required markers
+- ``"detailed"``: compact markdown with parameter names, types, literal values, defaults, and required markers
 - ``"full"``: complete JSON schema
 """
 
@@ -670,7 +734,14 @@ class CodeMode(CatalogTransform):
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {tool_name}")
 
-                result = await ctx.fastmcp.call_tool(tool.name, params)
+                try:
+                    result = await ctx.fastmcp.call_tool(tool.name, params)
+                except (ToolError, ValidationError) as exc:
+                    raise ToolError(_legible_call_error(tool_name, tool, exc)) from exc
+                if result.is_error:
+                    raise ToolError(
+                        _legible_call_error(tool_name, tool, _error_detail(result))
+                    )
                 return _unwrap_tool_result(result)
 
             return await transform.sandbox_provider.run(

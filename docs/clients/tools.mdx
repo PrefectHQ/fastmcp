@@ -32,7 +32,7 @@ For page-by-page control over large catalogs, `list_tools_mcp()` returns one raw
 ```python
 async with client:
     page = await client.list_tools_mcp()
-    while page.next_cursor:
+    while page.next_cursor is not None:
         page = await client.list_tools_mcp(cursor=page.next_cursor)
 ```
 
@@ -118,7 +118,7 @@ async with client:
 </ResponseField>
 </Card>
 
-For tools without output schemas or when deserialization fails, `.data` will be `None`. Fall back to content blocks in that case:
+Structured content without an output schema is returned as a dictionary in `.data`, including an empty object (`{}`). When structured content is absent or deserialization fails, `.data` is `None`. Fall back to content blocks in that case:
 
 ```python
 async with client:

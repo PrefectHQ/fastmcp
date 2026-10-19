@@ -1,11 +1,15 @@
+import json
 from typing import Any
 from unittest.mock import MagicMock
 
+import httpx
+import httpx2
 import pytest
-from anthropic import AsyncAnthropic
+from anthropic import AsyncAnthropic, DefaultAsyncHttpxClient
 from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
 from mcp_types import (
     AudioContent,
+    CreateMessageRequestParams,
     CreateMessageResult,
     CreateMessageResultWithTools,
     EmbeddedResource,
@@ -263,6 +267,34 @@ def test_message_to_result_with_tools():
     )
 
 
+@pytest.mark.parametrize(
+    ("anthropic_stop_reason", "expected"),
+    [
+        ("end_turn", "endTurn"),
+        ("stop_sequence", "stopSequence"),
+        ("max_tokens", "maxTokens"),
+        ("tool_use", "toolUse"),
+    ],
+)
+def test_message_to_result_with_tools_maps_stop_reason(
+    anthropic_stop_reason: Any, expected: str
+):
+    message = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        content=[TextBlock(type="text", text="done")],
+        model="claude-3-5-sonnet-20241022",
+        stop_reason=anthropic_stop_reason,
+        stop_sequence="END" if anthropic_stop_reason == "stop_sequence" else None,
+        usage=Usage(input_tokens=10, output_tokens=20),
+    )
+
+    result = AnthropicSamplingHandler._message_to_result_with_tools(message)
+
+    assert result.stop_reason == expected
+
+
 def test_convert_tool_choice_auto():
     result = AnthropicSamplingHandler._convert_tool_choice_to_anthropic(
         MagicMock(mode="auto")
@@ -399,3 +431,59 @@ def test_convert_messages_raises_on_unsupported_content_type():
 
     with pytest.raises(ValueError, match="Unsupported content type for Anthropic"):
         AnthropicSamplingHandler._convert_to_anthropic_messages([msg])
+
+
+@pytest.mark.parametrize("temperature", [None, 0.0, 0.5])
+async def test_handler_preserves_temperature_on_the_wire(temperature: float | None):
+    requests: list[dict[str, Any]] = []
+    # Anthropic 0.x uses httpx; 1.x uses httpx2. Exercise the installed SDK.
+    http: Any = (
+        httpx if issubclass(DefaultAsyncHttpxClient, httpx.AsyncClient) else httpx2
+    )
+
+    def capture(request):
+        requests.append(json.loads(request.content))
+        return http.Response(
+            200,
+            json={
+                "id": "msg_123",
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "hi"}],
+                "model": "claude-sonnet-4-5",
+                "stop_reason": "end_turn",
+                "stop_sequence": None,
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )
+
+    async with AsyncAnthropic(
+        api_key="test-key",
+        http_client=DefaultAsyncHttpxClient(transport=http.MockTransport(capture)),
+    ) as sdk:
+        handler = AnthropicSamplingHandler(
+            default_model="claude-sonnet-4-5", client=sdk
+        )
+        messages = [
+            SamplingMessage(role="user", content=TextContent(type="text", text="hello"))
+        ]
+        params = CreateMessageRequestParams(
+            messages=messages,
+            max_tokens=100,
+            temperature=temperature,
+            system_prompt="Be concise",
+            stop_sequences=["STOP"],
+        )
+        result = await handler(messages, params, context=None)
+
+    expected = {
+        "model": "claude-sonnet-4-5",
+        "messages": [{"role": "user", "content": "hello"}],
+        "max_tokens": 100,
+        "system": "Be concise",
+        "stop_sequences": ["STOP"],
+    }
+    if temperature is not None:
+        expected["temperature"] = temperature
+    assert requests == [expected]
+    assert result.content == TextContent(type="text", text="hi")

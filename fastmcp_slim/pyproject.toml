@@ -34,6 +34,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Typing :: Typed",
 ]
 
@@ -65,16 +67,18 @@ bump = true
 fallback-version = "0.0.0"
 
 [tool.hatch.metadata.hooks.uv-dynamic-versioning.optional-dependencies]
-anthropic = ["anthropic>=0.48.0,<1"]
+anthropic = ["anthropic>=0.48.0,<2"]
 apps = ["prefab-ui>=0.18.0"]
 # PyJWT floor: transitive via msal; CVE-2026-32597 affects <= 2.11.0
 azure = ["azure-identity>=1.16.0", "PyJWT>=2.12.0"]
 client = [
     "fastmcp-slim[mcp]=={{ version }}",
     "authlib>=1.6.11",
+    "beartype>=0.23.0rc2; python_version >= '3.15'",
     "py-key-value-aio[filetree,keyring,memory]>=0.4.4,<0.5.0",
 ]
-code-mode = ["pydantic-monty==0.0.21"]
+code-mode = ["pydantic-monty>=1.1,<2"]
+jev = ["typesafe-sdk>=0.5.7"]
 gemini = ["google-genai>=1.18.0", "jsonref>=1.1.0"]
 mcp = [
     "exceptiongroup>=1.2.2",
@@ -92,12 +96,13 @@ openai = ["openai>=1.102.0"]
 server = [
     "fastmcp-slim[mcp]=={{ version }}",
     "authlib>=1.6.11",
+    "beartype>=0.23.0rc2; python_version >= '3.15'",
     "cyclopts>=4.0.0",
     "griffelib>=2.0.0",
     "jsonref>=1.1.0",
     "jsonschema-path>=0.3.4",
     "joserfc>=1.5.0",
-    "openapi-pydantic>=0.5.1",
+    "openapi-pydantic>=0.6.0",
     "packaging>=24.0",
     "py-key-value-aio[filetree,keyring,memory]>=0.4.4,<0.5.0",
     "pyperclip>=1.9.0",

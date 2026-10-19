@@ -16,7 +16,9 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.prompts.base import Prompt
+from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.providers.local_provider import LocalProvider
+from fastmcp.server.transforms import Namespace
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.tasks import TaskConfig
 
@@ -590,6 +592,114 @@ class TestLocalProviderDecorators:
             assert "Hello, World!" in str(result)
 
 
+class TestLocalProviderOnDuplicate:
+    """Tests for what add_* returns and does when a component already exists."""
+
+    @staticmethod
+    def _tool(description: str) -> Tool:
+        return Tool(
+            name="dup",
+            description=description,
+            parameters={"type": "object", "properties": {}},
+        )
+
+    @pytest.mark.parametrize("on_duplicate", ["warn", "replace"])
+    def test_replacing_duplicate_returns_the_new_component(self, on_duplicate):
+        provider = LocalProvider(on_duplicate=on_duplicate)
+        provider.add_tool(self._tool("first"))
+        second = self._tool("second")
+
+        assert provider.add_tool(second) is second
+        assert provider._components["tool:dup@"] is second
+
+    def test_ignored_duplicate_tool_returns_the_existing_tool(self):
+        provider = LocalProvider(on_duplicate="ignore")
+        first = provider.add_tool(self._tool("first"))
+
+        assert provider.add_tool(self._tool("second")) is first
+        assert provider._components["tool:dup@"] is first
+
+    def test_ignored_duplicate_resource_returns_the_existing_resource(self):
+        provider = LocalProvider(on_duplicate="ignore")
+        first = provider.add_resource(Resource.from_function(lambda: "1", uri="r://x"))
+
+        second = provider.add_resource(Resource.from_function(lambda: "2", uri="r://x"))
+
+        assert second is first
+        assert provider._components["resource:r://x@"] is first
+
+    def test_ignored_duplicate_prompt_returns_the_existing_prompt(self):
+        provider = LocalProvider(on_duplicate="ignore")
+        first = provider.add_prompt(Prompt(name="dup", description="first"))
+
+        assert provider.add_prompt(Prompt(name="dup", description="second")) is first
+        assert provider._components["prompt:dup@"] is first
+
+    def test_ignored_duplicate_template_returns_the_existing_template(self):
+        provider = LocalProvider(on_duplicate="ignore")
+        first = provider.add_template(
+            ResourceTemplate.from_function(
+                lambda a: "1", uri_template="t://{a}", name="dup"
+            )
+        )
+
+        second = provider.add_template(
+            ResourceTemplate.from_function(
+                lambda a: "2", uri_template="t://{a}", name="dup"
+            )
+        )
+
+        assert second is first
+
+    def test_server_add_tool_returns_the_existing_tool_when_ignoring(self):
+        mcp = FastMCP("Test", on_duplicate="ignore")
+        first = mcp.add_tool(self._tool("first"))
+
+        assert mcp.add_tool(self._tool("second")) is first
+
+    async def test_ignored_duplicate_tool_does_not_disable_the_existing_tool(self):
+        provider = LocalProvider(on_duplicate="ignore")
+
+        @provider.tool(name="dup")
+        def first() -> str:
+            return "first"
+
+        @provider.tool(name="dup", enabled=False)
+        def second() -> str:
+            return "second"
+
+        tools = await FastMCP("Test", providers=[provider]).list_tools()
+        assert [t.name for t in tools] == ["dup"]
+
+    async def test_ignored_duplicate_resource_does_not_disable_the_existing_one(self):
+        provider = LocalProvider(on_duplicate="ignore")
+
+        @provider.resource("r://x")
+        def first() -> str:
+            return "first"
+
+        @provider.resource("r://x", enabled=False)
+        def second() -> str:
+            return "second"
+
+        resources = await FastMCP("Test", providers=[provider]).list_resources()
+        assert [str(r.uri) for r in resources] == ["r://x"]
+
+    async def test_ignored_duplicate_prompt_does_not_disable_the_existing_one(self):
+        provider = LocalProvider(on_duplicate="ignore")
+
+        @provider.prompt(name="dup")
+        def first() -> str:
+            return "first"
+
+        @provider.prompt(name="dup", enabled=False)
+        def second() -> str:
+            return "second"
+
+        prompts = await FastMCP("Test", providers=[provider]).list_prompts()
+        assert [p.name for p in prompts] == ["dup"]
+
+
 class TestProviderToolTransformations:
     """Tests for tool transformations via add_transform()."""
 
@@ -742,6 +852,21 @@ class TestLocalProviderTaskRegistration:
         tasks = await provider.get_tasks()
         assert len(tasks) == 1
         assert tasks[0].name == "custom"
+
+    async def test_get_tasks_applies_transforms(self):
+        """Test that get_tasks applies provider transforms to registration keys."""
+        provider = LocalProvider()
+
+        @provider.tool(task=True)
+        async def square(x: int) -> int:
+            return x * x
+
+        provider.add_transform(Namespace("api"))
+
+        tasks = await provider.get_tasks()
+        assert len(tasks) == 1
+        assert tasks[0].name == "api_square"
+        assert tasks[0].key == "tool:api_square@"
 
 
 class TestLocalProviderStandaloneUsage:

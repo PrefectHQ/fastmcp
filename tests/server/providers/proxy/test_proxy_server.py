@@ -10,7 +10,7 @@ import pytest
 from anyio import create_task_group
 from dirty_equals import Contains
 from mcp import MCPError
-from mcp_types import Icon, TextContent, TextResourceContents
+from mcp_types import Annotations, Icon, TextContent, TextResourceContents
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic import AnyUrl
 
@@ -80,6 +80,7 @@ def fastmcp_server():
         tags={"wave"},
         title="Wave",
         icons=[Icon(src="https://example.com/wave-icon.png")],
+        annotations=Annotations(audience=["user"], priority=0.5),
     )
     def wave() -> str:
         return "👋"
@@ -95,6 +96,7 @@ def fastmcp_server():
         tags={"users"},
         title="User Template",
         icons=[Icon(src="https://example.com/user-icon.png")],
+        annotations=Annotations(audience=["assistant"], priority=0.8),
     )
     async def get_user(user_id: str) -> str:
         import json
@@ -532,6 +534,7 @@ class TestResources:
         assert wave_resource.title == "Wave"
         assert wave_resource.meta == {"fastmcp": {"tags": ["wave"]}}
         assert wave_resource.icons == [Icon(src="https://example.com/wave-icon.png")]
+        assert wave_resource.annotations == Annotations(audience=["user"], priority=0.5)
 
     async def test_list_resources_same_as_original(self, fastmcp_server, proxy_server):
         async with Client(fastmcp_server) as original_client:
@@ -596,6 +599,16 @@ class TestResources:
         assert original_result[2].text == "# Markdown\nContent"
         assert original_result[2].mime_type == "text/markdown"
 
+    @pytest.mark.parametrize("mode", ["legacy", "auto"])
+    async def test_proxy_forwards_read_result_meta(self, fastmcp_server, mode):
+        """The `_meta` of the resources/read result, not just of each content item."""
+        proxy = create_proxy(fastmcp_server)
+        async with Client(proxy, mode=mode) as client:
+            result = await client.read_resource_mcp("data://multi")
+
+        assert result.meta is not None
+        assert result.meta["count"] == 3
+
     async def test_read_resource_returns_none_if_not_found(self, proxy_server):
         with pytest.raises(
             MCPError, match="Resource not found: 'resource://nonexistent'"
@@ -649,6 +662,9 @@ class TestResourceTemplates:
         assert get_user_template.icons == [
             Icon(src="https://example.com/user-icon.png")
         ]
+        assert get_user_template.annotations == Annotations(
+            audience=["assistant"], priority=0.8
+        )
 
     async def test_list_resource_templates_same_as_original(
         self, fastmcp_server, proxy_server
@@ -705,6 +721,16 @@ class TestResourceTemplates:
         assert original_result[0].mime_type == "text/plain"
         assert original_result[1].text == '{"id": "test123", "status": "active"}'
         assert original_result[1].mime_type == "application/json"
+
+    @pytest.mark.parametrize("mode", ["legacy", "auto"])
+    async def test_proxy_template_forwards_read_result_meta(self, fastmcp_server, mode):
+        """The `_meta` of the resources/read result, not just of each content item."""
+        proxy = create_proxy(fastmcp_server)
+        async with Client(proxy, mode=mode) as client:
+            result = await client.read_resource_mcp("data://multi/test123")
+
+        assert result.meta is not None
+        assert result.meta["id"] == "test123"
 
     async def test_proxy_can_overwrite_proxied_resource_template(self, proxy_server):
         """

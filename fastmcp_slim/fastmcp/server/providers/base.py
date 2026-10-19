@@ -28,13 +28,19 @@ Example:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator, Sequence
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from functools import partial
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 from typing_extensions import Self
 
+from fastmcp.server.providers.addressing import (
+    is_app_tool_with_identity,
+    tool_identity,
+)
 from fastmcp.server.transforms.visibility import Visibility
 from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.components import FastMCPComponent
@@ -44,6 +50,8 @@ if TYPE_CHECKING:
     from fastmcp.prompts.base import Prompt
     from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
+    from fastmcp.server.extensions import ServerExtension
+    from fastmcp.server.server import FastMCP
     from fastmcp.server.transforms import (
         GetPromptNext,
         GetResourceNext,
@@ -52,6 +60,18 @@ if TYPE_CHECKING:
         Transform,
     )
     from fastmcp.tools.base import Tool
+
+
+_C = TypeVar("_C", bound=FastMCPComponent)
+
+
+def _listed(before: Sequence[_C], after: Sequence[_C]) -> Sequence[_C]:
+    return after
+
+
+def _keep_hidden(before: Sequence[_C], after: Sequence[_C]) -> Sequence[_C]:
+    listed = {c.key for c in after}
+    return [*after, *(c for c in before if c.key not in listed)]
 
 
 class Provider:
@@ -74,6 +94,28 @@ class Provider:
 
     def __init__(self) -> None:
         self._transforms: list[Transform] = []
+
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        """Extensions bundled with this provider.
+
+        FastMCP automatically registers a separate instance of each extension
+        on the receiving server. Bundled extensions must opt in with
+        `auto_register = True`. An explicitly registered extension with the
+        same identifier takes precedence, regardless of registration order.
+        Composite providers should include their children's extensions.
+        """
+        return ()
+
+    @contextmanager
+    def _extension_runtime(
+        self, available: frozenset[str], *, root: FastMCP | None
+    ) -> Iterator[None]:
+        """Track a serving root independently of resource lifespan ownership.
+
+        Composite providers forward this scope to their children so live
+        composition can validate every runtime that will expose new components.
+        """
+        yield
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}()"
@@ -173,7 +215,15 @@ class Provider:
         """
 
         async def base(n: str, *, version: VersionSpec | None = None) -> Tool | None:
-            return await self._get_tool(n, version)
+            found = hashed_lookup_target(self)
+            if found is None or n != found.name:
+                return await self._get_tool(n, version)
+            if version is None or version.matches(found.version):
+                return await self._check_hashed_target(found)
+            other = await self._get_tool(n, version)
+            if other is not None and tool_identity(other) == tool_identity(found):
+                return other
+            return None
 
         chain: GetToolNext = cast("GetToolNext", base)
         for transform in self.transforms:
@@ -211,28 +261,78 @@ class Provider:
         return None
 
     async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
-        """Look up an app-visible tool by its deterministic hash.
+        """Get an app-visible tool by its identity hash, through `get_tool()`.
 
-        Same recursive-walk semantics as ``get_app_tool`` but matches on
-        ``meta["fastmcp"]["tool_hash"]`` instead of the app name tag.
-        Used by the dispatcher when receiving hashed backend-tool calls.
+        The identity hash survives renaming, so `_get_tool_by_hash()` finds
+        the tool beneath this provider's transforms. Its name above the
+        transforms comes from their listing, and the tool is then looked up
+        under that name with `get_tool()`, the same public lookup a name call
+        uses. While that lookup runs, the bottom of the chain answers the
+        found tool for its own name and looks up every other name as usual,
+        so transforms and `get_tool()` overrides decide exactly as they would
+        for a name call, while a different tool sharing the name cannot take
+        the found tool's place. A version constraint the found tool does not
+        meet is looked up as usual and accepted only for the same identity.
+        A nested lookup of that same name on this provider while the hashed
+        lookup runs resolves to the found tool; tasks started during the
+        lookup resolve names as usual once it finishes.
+
+        Note: Like `get_tool()`, this does NOT filter disabled components. The
+        Server (FastMCP) performs enabled filtering after all transforms.
+
+        Args:
+            tool_hash: The identity hash from a `<hash>_<local_name>` name.
+            tool_name: The local tool name from the same name.
+
+        Returns:
+            The tool if found and not hidden (may be marked disabled), else None.
         """
-        from fastmcp.server.providers.addressing import TOOL_HASH_META_KEY
+        found = await self._get_tool_by_hash(tool_hash, tool_name)
+        if found is None:
+            return None
+        name = (
+            await _listed_name(self.transforms, found, await self._list_tools())
+            if self.transforms
+            else found.name
+        )
+        if name is None:
+            return None
 
+        state = _HashedLookup(provider=self, tool=found)
+        token = _hashed_lookup.set(state)
+        try:
+            tool = await self.get_tool(name)
+        finally:
+            state.active = False
+            _hashed_lookup.reset(token)
+
+        if tool is None or tool_identity(tool) != tool_hash:
+            return None
+        return tool
+
+    async def _check_hashed_target(self, tool: Tool) -> Tool | None:
+        """Apply this provider's own checks to the tool a hashed lookup found.
+
+        During `get_tool_by_hash()` the bottom of the `get_tool()` chain
+        answers the found tool in place of `_get_tool()`. A provider whose
+        `_get_tool()` checks the tool it returns, as the server does for auth,
+        overrides this to make the same check, so the found tool is checked
+        before any transform runs, as a name lookup checks it. The default
+        accepts the tool.
+        """
+        return tool
+
+    async def _get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+        """Look up an app-visible tool by its identity hash, before transforms.
+
+        Matches on ``meta["fastmcp"]["tool_hash"]`` and requires ``"app"`` in
+        the tool's visibility. The default looks the tool up by its local name
+        via `_get_tool()`. Providers whose tools can be renamed beneath them
+        override this to search by identity instead.
+        """
         tool = await self._get_tool(tool_name)
-        if tool is not None:
-            meta = tool.meta or {}
-            fastmcp_meta = meta.get("fastmcp")
-            ui_meta = meta.get("ui")
-            visibility = (
-                ui_meta.get("visibility", []) if isinstance(ui_meta, dict) else []
-            )
-            if (
-                isinstance(fastmcp_meta, dict)
-                and fastmcp_meta.get(TOOL_HASH_META_KEY) == tool_hash
-                and "app" in visibility
-            ):
-                return tool
+        if tool is not None and is_app_tool_with_identity(tool, tool_hash):
+            return tool
         return None
 
     async def list_resources(self) -> Sequence[Resource]:
@@ -512,29 +612,48 @@ class Provider:
                 self._list_prompts,
             )
         )
-        tools = cast("Sequence[Tool]", results[0])
-        resources = cast("Sequence[Resource]", results[1])
-        templates = cast("Sequence[ResourceTemplate]", results[2])
-        prompts = cast("Sequence[Prompt]", results[3])
-
-        # Apply provider's own transforms sequentially
-        # For tasks, we need the fully-transformed names
-        for transform in self.transforms:
-            tools = await transform.list_tools(tools)
-            resources = await transform.list_resources(resources)
-            templates = await transform.list_resource_templates(templates)
-            prompts = await transform.list_prompts(prompts)
-
+        components = [component for result in results for component in result]
         return [
             c
-            for c in [
-                *tools,
-                *resources,
-                *templates,
-                *prompts,
-            ]
+            for c in await self._apply_task_transforms(components)
             if c.task_config.supports_tasks()
         ]
+
+    async def _apply_task_transforms(
+        self, components: Sequence[FastMCPComponent]
+    ) -> list[FastMCPComponent]:
+        """Apply this provider's transforms to components bound for Docket.
+
+        Registration needs the names components are called by, so renaming
+        transforms apply. Catalog transforms (search, CodeMode) only replace
+        what is *listed*: the components they hide stay callable, so they are
+        kept alongside whatever the catalog transform returns.
+        """
+        from fastmcp.prompts.base import Prompt
+        from fastmcp.resources.base import Resource
+        from fastmcp.resources.template import ResourceTemplate
+        from fastmcp.server.transforms.catalog import CatalogTransform
+        from fastmcp.tools.base import Tool
+
+        tools: Sequence[Tool] = [c for c in components if isinstance(c, Tool)]
+        resources: Sequence[Resource] = [
+            c for c in components if isinstance(c, Resource)
+        ]
+        templates: Sequence[ResourceTemplate] = [
+            c for c in components if isinstance(c, ResourceTemplate)
+        ]
+        prompts: Sequence[Prompt] = [c for c in components if isinstance(c, Prompt)]
+
+        for transform in self.transforms:
+            keep = _keep_hidden if isinstance(transform, CatalogTransform) else _listed
+            tools = keep(tools, await transform.list_tools(tools))
+            resources = keep(resources, await transform.list_resources(resources))
+            templates = keep(
+                templates, await transform.list_resource_templates(templates)
+            )
+            prompts = keep(prompts, await transform.list_prompts(prompts))
+
+        return [*tools, *resources, *templates, *prompts]
 
     # -------------------------------------------------------------------------
     # Lifecycle methods
@@ -657,3 +776,63 @@ class Provider:
             )
         )
         return self
+
+
+@dataclass
+class _HashedLookup:
+    """A running `get_tool_by_hash()` on one provider.
+
+    Tasks started during the lookup copy the context that holds this object,
+    so `active` is cleared when the lookup ends rather than relying on the
+    context variable being reset in every copy.
+    """
+
+    provider: Provider
+    tool: Tool
+    active: bool = True
+
+
+_hashed_lookup: ContextVar[_HashedLookup | None] = ContextVar(
+    "_hashed_lookup", default=None
+)
+
+
+def hashed_lookup_target(provider: Provider) -> Tool | None:
+    """The tool a running `get_tool_by_hash()` on `provider` found, if any."""
+    current = _hashed_lookup.get()
+    if current is None or not current.active or current.provider is not provider:
+        return None
+    return current.tool
+
+
+async def _listed_name(
+    transforms: Sequence[Transform], tool: Tool, catalog: Sequence[Tool]
+) -> str | None:
+    """The name `tool` is listed under after passing through `transforms`.
+
+    Each transform's listing gives the tool's name above it. A transform that
+    does not list the tool, such as a catalog transform that replaces the
+    listing, leaves the name unchanged, which is the name a lookup through it
+    would use. Returns None if a transform lists the identity under more
+    than one name.
+    """
+    identity = tool_identity(tool)
+    current = tool
+    for transform in transforms:
+        catalog = await transform.list_tools(catalog)
+        listed = [
+            t
+            for t in catalog
+            if tool_identity(t) == identity and t.version == tool.version
+        ]
+        if not listed:
+            listed = [
+                t
+                for t in await transform.list_tools([current])
+                if tool_identity(t) == identity and t.version == tool.version
+            ]
+        if len({t.name for t in listed}) > 1:
+            return None
+        if listed:
+            current = listed[0]
+    return current.name

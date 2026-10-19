@@ -5,6 +5,108 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 4.1.1" description="October 17, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.1.1: Regex Marks the Spot"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.1"
+cta="Read the release notes"
+>
+Regex tool search now rejects patterns over 1,000 characters and stops after about a second, and `SkillsDirectoryProvider` discovers skill folders that are links again, including links to folders outside the skills root; a skill's own files must still resolve inside the folder it links to. All 4.x users are encouraged to upgrade. Thanks to our 4 contributors, including 1 first-time contributor.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.1.0" description="October 8, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.1.0: Fourth and One"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.0"
+cta="Read the release notes"
+>
+FastMCP 4.1.0 is a maintenance release at heart: a broad sweep of fixes across OpenAPI, proxies, auth, tasks, and the CLI, plus full Python 3.15 support. It doesn't change how most servers behave. A few security fixes do tighten inputs that FastMCP previously accepted, though, and our versioning policy keeps breaking changes out of patch releases, so this ships as a point-one release.
+
+Thanks to our 48 contributors, including 21 first-time contributors!
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.11" description="October 4, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.11: Fort Knocks"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.11"
+cta="Read the release notes"
+>
+This release contains important security and bug fixes. All users are encouraged to upgrade. Thanks to our 10 contributors, including 6 first-time contributors.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.10" description="September 25, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.10: Inside Job"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.10"
+cta="Read the release notes"
+>
+Task-enabled tools now work behind search transforms and CodeMode: they're registered with the task backend even when hidden, and a tool, resource, or prompt that calls one through `ctx.fastmcp.call_tool()` (including the search `call_tool` proxy and CodeMode's `execute`) now gets its result instead of an empty task receipt.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.9" description="September 24, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.9: Cache and Release"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.9"
+cta="Read the release notes"
+>
+`ResourceTemplate` now keeps its compiled URI pattern for its own lifetime while the shared cache is bounded again, preventing dynamic proxies from growing process memory without restoring the 4,096-template performance cliff.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.8" description="September 23, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.8: Take Three"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.8"
+cta="Read the release notes"
+>
+Completion goes back to its 4.0.5 behavior. The visibility check added in 4.0.6 and reworked in 4.0.7 simulated list requests through middleware, and in 4.0.7 that could let a response cache serve hidden prompts to other clients. New tests pin both problems, and withholding suggestions for hidden references will return with a proper design. Resource template patterns are now cached without a size limit, so servers with thousands of templates read fast again, and OAuthProxy revokes the upstream refresh token instead of sending its own token upstream.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.7" description="September 23, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.7: Double Take"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.7"
+cta="Read the release notes"
+>
+Fixes two regressions from 4.0.6. The completion visibility check runs only the list-specific middleware hooks, so rate limits, logging, and metrics see a single request per completion again. Resource template patterns are cached, which makes template reads faster than in 4.0.5.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.6" description="September 23, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.6: Comma Chameleon"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.6"
+cta="Read the release notes"
+>
+Resource templates now match what clients actually send: literals raw or percent-encoded, and list query parameters exploded or comma-joined. A `Client` whose exit is cancelled releases its session instead of leaking it, completion no longer answers for prompts and templates the caller can't see, and JSON schemas with float or oversized length limits load instead of failing. The auth fixes cache OIDC discovery and keep Google tokens out of request URLs.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.5" description="September 17, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.5: No Country for Loose Ints"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.5"
+cta="Read the release notes"
+>
+Tool parameters declared strict with `Field(strict=True)`, `StrictInt`, or a strict model config are honored again, on both direct calls and task submission. Since the SDK v2 migration the server's lax default overrode them and silently coerced values.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.4" description="September 15, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.4: Here Be No Dragons"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.4"
+cta="Read the release notes"
+>
+OpenAPI request bodies get most of the attention in this patch: multipart string arrays are sent as repeated fields, whole-body arguments no longer clobber same-named HTTP parameters, dictionary bodies and raw content types survive intact, and JSON scalar bodies are encoded. On the auth side, OAuthProxy rejects ID-JAG tokens unless identity assertion is configured and refuses non-positive upstream token expiries. Clients now follow empty pagination cursors and servers reject malformed ones.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.0.3" description="September 4, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.0.3: Once Is Enough"

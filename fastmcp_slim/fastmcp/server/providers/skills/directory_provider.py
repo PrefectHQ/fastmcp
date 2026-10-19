@@ -6,6 +6,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
+from mcp.shared.path_security import PathEscapeError
+
 from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.aggregate import AggregateProvider
@@ -86,6 +88,16 @@ class SkillsDirectoryProvider(AggregateProvider):
                 continue
 
             for skill_dir in root.iterdir():
+                # Skill folders may be links to directories elsewhere; the skill's
+                # own files must still resolve within the folder it links to.
+                try:
+                    skill_dir = skill_dir.resolve(strict=True)
+                except (OSError, RuntimeError):
+                    logger.warning(
+                        f"Skipping skill directory that cannot be used: {skill_dir.name}"
+                    )
+                    continue
+
                 if not skill_dir.is_dir():
                     continue
 
@@ -110,7 +122,13 @@ class SkillsDirectoryProvider(AggregateProvider):
                     )
                     self.providers.append(provider)
                     seen_skill_names.add(skill_name)
-                except (FileNotFoundError, PermissionError, OSError):
+                except (
+                    FileNotFoundError,
+                    PermissionError,
+                    OSError,
+                    PathEscapeError,
+                    UnicodeDecodeError,
+                ):
                     logger.exception(f"Failed to load skill: {skill_dir.name}")
 
         self._discovered = True

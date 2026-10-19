@@ -16,7 +16,16 @@ from contextlib import (
 )
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Literal,
+    TypeVar,
+    cast,
+    get_args,
+    overload,
+)
 
 import httpx2
 import mcp_types
@@ -31,6 +40,7 @@ from mcp_types import (
 from mcp_types.jsonrpc import MISSING_REQUIRED_CLIENT_CAPABILITY
 from pydantic import AnyUrl
 from pydantic import ValidationError as PydanticValidationError
+from pydantic_core import ErrorType
 from starlette.routing import BaseRoute
 from typing_extensions import Self
 
@@ -66,6 +76,8 @@ from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
 from fastmcp.server.caching import build_cache_hints
 from fastmcp.server.completions import CompletionHandler
+from fastmcp.server.dependencies import _dispatching_tool_call
+from fastmcp.server.extensions import _extension_tool_call_scope
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -74,9 +86,16 @@ from fastmcp.server.middleware.middleware import (
     _dispatch_phase,
     mark_interior_dispatched,
 )
+from fastmcp.server.middleware.tool_injection import ToolInjectionMiddleware
 from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMixin
+from fastmcp.server.mixins.extensions import ExtensionsMixin
 from fastmcp.server.providers import LocalProvider, Provider
+from fastmcp.server.providers.addressing import (
+    parse_hashed_backend_name,
+    tool_identity,
+)
 from fastmcp.server.providers.aggregate import AggregateProvider
+from fastmcp.server.providers.base import hashed_lookup_target
 from fastmcp.server.telemetry import server_span
 from fastmcp.server.transforms import (
     ToolTransform,
@@ -111,6 +130,21 @@ if TYPE_CHECKING:
     from fastmcp.server.providers.proxy import FastMCPProxy
 
 logger = get_logger(__name__)
+
+_BUILTIN_VALIDATION_ERROR_TYPES = frozenset(get_args(ErrorType))
+
+
+def _validation_error_summary(error: PydanticValidationError) -> dict[str, Any]:
+    """Keep counts and built-in codes, never input-derived validation details."""
+    error_types = {
+        detail["type"]
+        if detail["type"] in _BUILTIN_VALIDATION_ERROR_TYPES
+        else "custom_error"
+        for detail in error.errors(
+            include_url=False, include_context=False, include_input=False
+        )
+    }
+    return {"error_count": error.error_count(), "error_types": sorted(error_types)}
 
 
 def _version_request_meta(
@@ -200,6 +234,18 @@ LifespanCallable = Callable[
 ]
 
 
+async def _tool_auth_allows(tool: Tool) -> bool:
+    """Whether the tool's own `auth` check admits the current request."""
+    skip_auth, token = _get_auth_context()
+    if skip_auth or tool.auth is None:
+        return True
+    ctx = AuthContext(token=token, component=tool)
+    try:
+        return await run_auth_checks(tool.auth, ctx)
+    except AuthorizationError:
+        return False
+
+
 def _get_auth_context() -> tuple[bool, Any]:
     """Get auth context for the current request.
 
@@ -213,24 +259,12 @@ def _get_auth_context() -> tuple[bool, Any]:
 
     is_stdio = _current_transport.get() == "stdio"
     if is_stdio:
+        # STDIO trusts the local execution environment; component authorization
+        # provides no access restriction on this transport.
         return (True, None)
     from fastmcp.server.dependencies import get_access_token
 
     return (False, get_access_token())
-
-
-def _tool_identity(tool: Tool) -> str | None:
-    """Read a tool's stable identity hash, if it carries one."""
-    from fastmcp.server.providers.addressing import TOOL_HASH_META_KEY
-
-    meta = tool.meta
-    if not meta:
-        return None
-    fastmcp_meta = meta.get("fastmcp")
-    if not isinstance(fastmcp_meta, dict):
-        return None
-    identity = fastmcp_meta.get(TOOL_HASH_META_KEY)
-    return identity if isinstance(identity, str) else None
 
 
 @asynccontextmanager
@@ -277,6 +311,7 @@ class StateValue(FastMCPBaseModel):
 
 class FastMCP(
     AggregateProvider,
+    ExtensionsMixin,
     LifespanMixin,
     MCPOperationsMixin,
     TransportMixin,
@@ -335,12 +370,6 @@ class FastMCP(
         self._local_provider: LocalProvider = LocalProvider(
             on_duplicate=self._on_duplicate
         )
-
-        # Add providers using AggregateProvider's add_provider
-        # LocalProvider is always first (no namespace)
-        self.add_provider(self._local_provider)
-        for p in providers or []:
-            self.add_provider(p)
 
         for t in transforms or []:
             self.add_transform(t)
@@ -473,6 +502,16 @@ class FastMCP(
         # server (capability advertisement), the tool-call path (interception),
         # and the lifespan manager (extension lifespans).
         self._extensions: dict[str, ServerExtension] = {}
+        self._auto_extensions: set[str] = set()
+        self._extension_methods: dict[str, tuple[str, ...]] = {}
+        self._extension_conflicts: set[str] = set()
+        self._extensions_started = False
+
+        # Add providers using AggregateProvider's add_provider
+        # LocalProvider is always first (no namespace)
+        self.add_provider(self._local_provider)
+        for p in providers or []:
+            self.add_provider(p)
 
         if dereference_schemas:
             from fastmcp.server.middleware.dereference import (
@@ -598,77 +637,31 @@ class FastMCP(
     def add_middleware(self, middleware: Middleware) -> None:
         self.middleware.append(middleware)
 
-    def add_extension(self, extension: ServerExtension) -> None:
-        """Register a server extension (SEP-2133).
+    def _injected_tools(self) -> list[Tool]:
+        """Tools added by `ToolInjectionMiddleware`, one per name.
 
-        An extension contributes a negotiated capability, additive request
-        methods, a `tools/call` interceptor, and an optional lifespan — each
-        with access to FastMCP-level constructs (the component registry,
-        `Context`, auth scope). Its capability is advertised only while it is
-        registered.
-
-        The extension is bound to this server (so its handlers and interceptor
-        can reach it), its method bindings are wired onto the low-level server,
-        and it is recorded for capability advertisement, interception, and
-        lifespan entry. Registering two extensions with the same identifier is
-        an error, as is registering after the server's lifespan has started —
-        the extension's lifespan could no longer run, leaving it silently
-        half-active.
-
-        Extensions are served by the server they are registered on. A mounted
-        child's extensions do not propagate to the root: the root serves the
-        wire, so only root-registered extensions advertise capabilities and
-        answer methods (matching the lifespan, which also defers to the root).
-        Register extensions on the server you run.
+        Each name maps to the tool `_get_injected_tool()` resolves for it: the
+        one from the outermost middleware that injects that name.
         """
-        from fastmcp.server.extensions import (
-            build_method_handler,
-            validate_extension_identifier,
-        )
+        by_name: dict[str, Tool] = {}
+        for middleware in self.middleware:
+            if isinstance(middleware, ToolInjectionMiddleware):
+                for tool in middleware.injected_tools:
+                    by_name.setdefault(tool.name, tool)
+        return list(by_name.values())
 
-        validate_extension_identifier(
-            extension.identifier, owner=type(extension).__name__
-        )
-        if extension.identifier in self._extensions:
-            raise ValueError(
-                f"An extension with identifier {extension.identifier!r} is "
-                "already registered."
-            )
-        if self._lifespan_result_set:
-            raise RuntimeError(
-                f"Cannot register extension {extension.identifier!r}: the "
-                "server's lifespan has already started, so the extension's "
-                "lifespan would never run. Register extensions before serving."
-            )
+    def _get_injected_tool(self, name: str) -> Tool | None:
+        """The injected tool with this name from the outermost middleware that has one."""
+        for middleware in self.middleware:
+            if isinstance(middleware, ToolInjectionMiddleware):
+                tool = middleware.get_injected_tool(name)
+                if tool is not None:
+                    return tool
+        return None
 
-        extension._bind(self)
-        for binding in extension.methods():
-            self._mcp_server.add_request_handler(
-                binding.method,
-                binding.params_type,
-                build_method_handler(binding),
-            )
-        self._extensions[extension.identifier] = extension
-
-    def _compose_tool_call_interceptors(
-        self, call_next: CallNext[Any, Any]
-    ) -> CallNext[Any, Any]:
-        """Nest every extension's `tools/call` interceptor around ``call_next``.
-
-        Composes at the innermost point of the tool-call dispatch — after the
-        FastMCP middleware chain, before the tool body — so each interceptor is
-        the last gate before execution. First-registered extension is outermost.
-        A server with no extensions returns ``call_next`` unchanged, so there is
-        zero behaviour change.
-        """
-        from fastmcp.server.extensions import wrap_tool_call_interceptor
-
-        chain = call_next
-        for extension in reversed(list(self._extensions.values())):
-            chain = cast(
-                "CallNext[Any, Any]", wrap_tool_call_interceptor(extension, chain)
-            )
-        return chain
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        """Bundled extensions and auto-registerable registrations for composition."""
+        return self._required_extensions()
 
     def add_provider(self, provider: Provider, *, namespace: str = "") -> None:
         """Add a provider for dynamic tools, resources, and prompts.
@@ -684,6 +677,8 @@ class FastMCP(
                 - Resources become "protocol://namespace/path"
                 - Prompts become "namespace_promptname"
         """
+        self._validate_provider_extensions(provider)
+        self._register_provider_extensions(provider)
         super().add_provider(provider, namespace=namespace)
 
     def _rewrite_prefab_uris(self, tools: list[Tool]) -> list[Tool]:
@@ -746,7 +741,7 @@ class FastMCP(
         claimed_by: dict[str, list[Tool]] = {}
         owners_of: dict[str, set[str | None]] = {}
         for tool in await self.list_tools():
-            identity = _tool_identity(tool)
+            identity = tool_identity(tool)
             owners_of.setdefault(tool.name, set()).add(identity)
             if identity is not None:
                 claimed_by.setdefault(identity, []).append(tool)
@@ -783,7 +778,7 @@ class FastMCP(
     # are inherited from AggregateProvider which handles aggregation and namespacing
 
     async def get_tasks(self) -> Sequence[FastMCPComponent]:
-        """Get task-eligible components with all transforms applied.
+        """Get task-eligible components with server-level transforms applied.
 
         Overrides AggregateProvider.get_tasks() to apply server-level transforms
         after aggregation. AggregateProvider handles provider-level namespacing.
@@ -791,24 +786,20 @@ class FastMCP(
         # Get tasks from AggregateProvider (handles aggregation and namespacing)
         components = list(await super().get_tasks())
 
-        # Separate by component type for server-level transform application
-        tools = [c for c in components if isinstance(c, Tool)]
-        resources = [c for c in components if isinstance(c, Resource)]
-        templates = [c for c in components if isinstance(c, ResourceTemplate)]
-        prompts = [c for c in components if isinstance(c, Prompt)]
-
-        # Apply server-level transforms sequentially
-        for transform in self.transforms:
-            tools = await transform.list_tools(tools)
-            resources = await transform.list_resources(resources)
-            templates = await transform.list_resource_templates(templates)
-            prompts = await transform.list_prompts(prompts)
+        # An injected tool owns its name, as in `list_tools()` and
+        # `get_tool()`: tools with that name are not registered, so the
+        # injected tool is the only one that runs as a background task.
+        injected = self._injected_tools()
+        claimed = {tool.name for tool in injected}
 
         return [
-            *tools,
-            *resources,
-            *templates,
-            *prompts,
+            *[t for t in injected if t.task_config.supports_tasks()],
+            *[
+                c
+                for c in await self._apply_task_transforms(components)
+                if c.task_config.supports_tasks()
+                and not (isinstance(c, Tool) and c.name in claimed)
+            ],
         ]
 
     def add_transform(self, transform: Transform) -> None:
@@ -870,18 +861,15 @@ class FastMCP(
                 # Tool objects are not mutated.
                 tools = self._rewrite_prefab_uris(tools)
 
-                skip_auth, token = _get_auth_context()
-                authorized: list[Tool] = []
-                for tool in tools:
-                    if not skip_auth and tool.auth is not None:
-                        ctx = AuthContext(token=token, component=tool)
-                        try:
-                            if not await run_auth_checks(tool.auth, ctx):
-                                continue
-                        except AuthorizationError:
-                            continue
-                    authorized.append(tool)
-                return authorized
+                # Tools from ToolInjectionMiddleware are listed ahead of the
+                # providers' tools and authorized the same way. An injected
+                # tool owns its name, so provider tools with that name are not
+                # listed, matching what `get_tool()` resolves.
+                injected = self._injected_tools()
+                claimed = {tool.name for tool in injected}
+                tools = [*injected, *(t for t in tools if t.name not in claimed)]
+
+                return [tool for tool in tools if await _tool_auth_allows(tool)]
 
     async def _get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -903,16 +891,11 @@ class FastMCP(
             return None
 
         # Component auth - return None if unauthorized (consistent with list filtering)
-        skip_auth, token = _get_auth_context()
-        if not skip_auth and tool.auth is not None:
-            ctx = AuthContext(token=token, component=tool)
-            try:
-                if not await run_auth_checks(tool.auth, ctx):
-                    return None
-            except AuthorizationError:
-                return None
+        return tool if await _tool_auth_allows(tool) else None
 
-        return tool
+    async def _check_hashed_target(self, tool: Tool) -> Tool | None:
+        """Check auth on the found tool, as `_get_tool()` does for a name."""
+        return tool if await _tool_auth_allows(tool) else None
 
     async def get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -926,13 +909,27 @@ class FastMCP(
         When the highest version is disabled and no explicit version was
         requested, falls back to the next-highest enabled version.
 
+        A tool from `ToolInjectionMiddleware` takes precedence over a provider
+        tool with the same name. It is matched by name alone, so a requested
+        version is ignored, and it is subject to its own `auth` check but not
+        to transforms or visibility.
+
         Args:
             name: The tool name.
             version: Version filter (None returns highest version).
 
         Returns:
-            The tool if found and enabled, None otherwise.
+            The tool if found, enabled, and authorized, None otherwise.
         """
+        # A hashed lookup resolves one identity; injected tools have none.
+        injected = (
+            self._get_injected_tool(name)
+            if hashed_lookup_target(self) is None
+            else None
+        )
+        if injected is not None:
+            return injected if await _tool_auth_allows(injected) else None
+
         tool = await super().get_tool(name, version)
         if tool is None:
             return None
@@ -949,20 +946,16 @@ class FastMCP(
             return None
 
         all_tools = [t for t in await super().list_tools() if t.name == name]
+        # During a hashed lookup, only versions of the identity being looked
+        # up qualify; another tool listed under the same name does not.
+        found = hashed_lookup_target(self)
+        if found is not None:
+            identity = tool_identity(found)
+            all_tools = [t for t in all_tools if tool_identity(t) == identity]
         all_tools = list(await apply_session_transforms(all_tools))
         enabled = [t for t in all_tools if is_enabled(t)]
 
-        skip_auth, token = _get_auth_context()
-        authorized: list[Tool] = []
-        for t in enabled:
-            if not skip_auth and t.auth is not None:
-                ctx = AuthContext(token=token, component=t)
-                try:
-                    if not await run_auth_checks(t.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(t)
+        authorized = [t for t in enabled if await _tool_auth_allows(t)]
 
         if not authorized:
             return None
@@ -1397,18 +1390,13 @@ class FastMCP(
         # For mounted servers, the parent's provider sets fn_key to the
         # namespaced key before delegating, ensuring correct Docket routing.
 
-        from fastmcp.server.providers.addressing import (
-            parse_hashed_backend_name,
-        )
-
         # Two routing paths:
-        #   1. Hashed-name path — backend tools that opted into
-        #      app-callable visibility. Recognized by their
-        #      `<hash>_<local_name>` format and resolved via the
-        #      reverse-hash map. Address is known eagerly.
-        #   2. Display-name path — everything else. Goes through normal
-        #      `get_tool` aggregation/transforms. Address is determined
-        #      after resolution by walking the registry.
+        #   1. Display-name path — the name this server lists the tool
+        #      under, resolved through `get_tool`.
+        #   2. Hashed-name path — backend tools that opted into
+        #      app-callable visibility, addressed as `<hash>_<local_name>`
+        #      and resolved through `get_tool_by_hash`. It applies the same
+        #      transforms, visibility, and auth as the display-name path.
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext[CallToolRequestParams](
@@ -1435,17 +1423,18 @@ class FastMCP(
                 # the whole thing (so it observes every call), and the
                 # interceptors sit between it and the tool body (so each is the
                 # last gate before execution).
-                dispatched = await self._dispatch_component_middleware(
-                    context=mw_context,
-                    call_next=self._compose_tool_call_interceptors(
-                        lambda context: self.call_tool(
-                            context.message.name,
-                            context.message.arguments or {},
-                            version=version,
-                            run_middleware=False,
-                        )
-                    ),
-                )
+                with _dispatching_tool_call(), _extension_tool_call_scope(self):
+                    dispatched = await self._dispatch_component_middleware(
+                        context=mw_context,
+                        call_next=self._compose_tool_call_interceptors(
+                            lambda context: self.call_tool(
+                                context.message.name,
+                                context.message.arguments or {},
+                                version=version,
+                                run_middleware=False,
+                            )
+                        ),
+                    )
                 # Above the chain, so a Prefab payload is re-addressed however
                 # it was produced — middleware can answer a call itself, and
                 # such a result never reaches the core path below.
@@ -1463,27 +1452,13 @@ class FastMCP(
                 # Try normal display-name resolution first.
                 tool: Tool | None = await self.get_tool(name, version=version)
 
-                # If that fails, try hashed-name dispatch. This walks
-                # the provider tree recursively (same pattern as the old
-                # get_app_tool) looking for a tool whose stored hash
-                # matches the parsed prefix.
+                # If that fails, try hashed-name dispatch, which finds the
+                # tool whose stored hash matches the parsed prefix.
                 if tool is None:
                     hashed = parse_hashed_backend_name(name)
                     if hashed is not None:
                         digest, local_name = hashed
                         tool = await self.get_tool_by_hash(digest, local_name)
-                        if tool is not None:
-                            # Auth still applies on the bypass path.
-                            skip_auth, token = _get_auth_context()
-                            if not skip_auth and tool.auth is not None:
-                                try:
-                                    auth_ctx = AuthContext(token=token, component=tool)
-                                    if not await run_auth_checks(tool.auth, auth_ctx):
-                                        raise NotFoundError(f"Unknown tool: {name!r}")
-                                except AuthorizationError:
-                                    raise NotFoundError(
-                                        f"Unknown tool: {name!r}"
-                                    ) from None
 
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {name!r}")
@@ -1491,18 +1466,15 @@ class FastMCP(
                 try:
                     return await tool._run(arguments or {})
                 except ValidationError as e:
-                    # Argument-validation failure (a bad call). FunctionTool
-                    # converts pydantic's call-validation error into fastmcp's
-                    # ValidationError (see #4128) so it can be filtered as a
-                    # client error. Log the underlying detail without a URL or
-                    # traceback, matching the previous pydantic-error logging.
                     cause = e.__cause__
-                    detail = (
-                        cause.errors(include_url=False)
-                        if isinstance(cause, PydanticValidationError)
-                        else str(e)
-                    )
-                    logger.warning("Invalid arguments for tool %r: %s", name, detail)
+                    if isinstance(cause, PydanticValidationError):
+                        logger.warning(
+                            "Invalid arguments for tool %r: %s",
+                            name,
+                            _validation_error_summary(cause),
+                        )
+                    else:
+                        logger.warning("Invalid arguments for tool %r", name)
                     raise
                 except FastMCPError as e:
                     logger.log(
@@ -1516,7 +1488,7 @@ class FastMCP(
                     logger.warning(
                         "Invalid arguments for tool %r: %s",
                         name,
-                        e.errors(include_url=False),
+                        _validation_error_summary(e),
                     )
                     raise
                 except Exception as e:
@@ -1538,10 +1510,15 @@ class FastMCP(
                             name,
                         )
                         raise
-                    logger.exception(f"Error calling tool {name!r}")
+                    # An upstream HTTP error response is an answer from the
+                    # upstream API, not a crash in the tool: skip the traceback.
+                    status_code = get_http_status_code(e)
+                    logger.error(
+                        f"Error calling tool {name!r}", exc_info=status_code is None
+                    )
                     # Handle actionable errors that should reach the LLM
                     # even when masking is enabled
-                    if get_http_status_code(e) == 429:
+                    if status_code == 429:
                         raise ToolError(
                             "Rate limited by upstream API, please retry later"
                         ) from e

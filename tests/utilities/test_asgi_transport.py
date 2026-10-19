@@ -230,6 +230,24 @@ class TestRunServerInMemory:
 
         assert response.status_code in {400, 405}
 
+    @pytest.mark.parametrize("transport", ["http", "sse"])
+    async def test_http_client_resolves_relative_urls_against_origin(
+        self, transport: Literal["http", "sse"]
+    ):
+        server = build_server()
+
+        @server.custom_route("/health", methods=["GET"])
+        async def health(request: Request) -> Response:
+            return Response("OK")
+
+        async with asgi_server(server, transport=transport) as running_server:
+            async with running_server.http_client() as http:
+                response = await http.get("/health")
+
+        assert str(response.request.url) == "http://127.0.0.1/health"
+        assert response.status_code == 200
+        assert response.text == "OK"
+
     async def test_auth_middleware_runs(self):
         """A migrated test must not pass by bypassing the real middleware stack."""
         key_pair = RSAKeyPair.generate()

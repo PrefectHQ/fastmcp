@@ -1,16 +1,30 @@
 from collections.abc import MutableMapping
 from typing import Any, Literal
 
+import httpx2
 import pytest
 from mcp.server.auth.middleware.bearer_auth import RequireAuthMiddleware
+from pydantic import AnyHttpUrl
 from starlette.responses import Response
 from starlette.routing import Route
 from starlette.testclient import TestClient
 from starlette.types import Receive, Scope, Send
 
 from fastmcp.server import FastMCP
+from fastmcp.server.auth import (
+    AuthProvider,
+    MultiAuth,
+    RemoteAuthProvider,
+    TokenVerifier,
+)
+from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.server.http import HostOriginGuardMiddleware, create_streamable_http_app
+from fastmcp.server.http import (
+    HostOriginGuardMiddleware,
+    StarletteWithLifespan,
+    create_sse_app,
+    create_streamable_http_app,
+)
 
 INITIALIZE_REQUEST = {
     "jsonrpc": "2.0",
@@ -156,6 +170,101 @@ class TestStreamableHTTPAppResourceMetadataURL:
             response = client.post("/mcp")
             assert response.status_code == 401
             assert "www-authenticate" in response.headers
+
+
+class _VerifierOnly(TokenVerifier):
+    """A token verifier that serves no routes and accepts no token."""
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        return None
+
+
+_PROTECTED_PATH = {"http": "/mcp", "sse": "/sse"}
+
+
+def _auth_app(
+    transport: Literal["http", "sse"], auth: AuthProvider
+) -> StarletteWithLifespan:
+    server = FastMCP(name="TestServer")
+    if transport == "sse":
+        return create_sse_app(
+            server=server, message_path="/messages/", sse_path="/sse", auth=auth
+        )
+    return create_streamable_http_app(
+        server=server, streamable_http_path="/mcp", auth=auth
+    )
+
+
+class TestAuthChallengeResourceMetadata:
+    """The 401 challenge names protected resource metadata only when it is served."""
+
+    @pytest.mark.parametrize("transport", ["http", "sse"])
+    @pytest.mark.parametrize("url_parameter", ["base_url", "resource_base_url"])
+    @pytest.mark.parametrize("shape", ["verifier", "multi_auth"])
+    async def test_verifier_only_challenge_omits_unserved_resource_metadata(
+        self,
+        transport: Literal["http", "sse"],
+        url_parameter: str,
+        shape: str,
+    ):
+        url = "https://resource.example.com"
+        base_url = url if url_parameter == "base_url" else None
+        resource_base_url = url if url_parameter == "resource_base_url" else None
+        auth: AuthProvider
+        if shape == "verifier":
+            auth = _VerifierOnly(base_url=base_url, resource_base_url=resource_base_url)
+        else:
+            auth = MultiAuth(
+                verifiers=[_VerifierOnly()],
+                base_url=base_url,
+                resource_base_url=resource_base_url,
+            )
+        app = _auth_app(transport, auth)
+        path = _PROTECTED_PATH[transport]
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
+            base_url="https://resource.example.com",
+        ) as client:
+            missing = await client.get(path)
+            invalid = await client.get(path, headers={"Authorization": "Bearer x"})
+            metadata = await client.get(f"/.well-known/oauth-protected-resource{path}")
+
+        assert missing.status_code == 401
+        assert missing.headers["www-authenticate"] == "Bearer"
+        assert invalid.status_code == 401
+        assert "resource_metadata=" not in invalid.headers["www-authenticate"]
+        assert metadata.status_code == 404
+
+    @pytest.mark.parametrize("transport", ["http", "sse"])
+    async def test_challenge_names_resource_metadata_the_provider_serves(
+        self, transport: Literal["http", "sse"]
+    ):
+        auth = RemoteAuthProvider(
+            token_verifier=_VerifierOnly(),
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://resource.example.com",
+        )
+        app = _auth_app(transport, auth)
+        path = _PROTECTED_PATH[transport]
+        metadata_url = (
+            f"https://resource.example.com/.well-known/oauth-protected-resource{path}"
+        )
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
+            base_url="https://resource.example.com",
+        ) as client:
+            missing = await client.get(path)
+            metadata = await client.get(metadata_url)
+
+        assert missing.status_code == 401
+        assert (
+            missing.headers["www-authenticate"]
+            == f'Bearer resource_metadata="{metadata_url}"'
+        )
+        assert metadata.status_code == 200
+        assert metadata.json()["resource"] == f"https://resource.example.com{path}"
 
 
 class TestStreamableHTTPHostOriginProtection:

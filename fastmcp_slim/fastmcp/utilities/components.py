@@ -36,6 +36,35 @@ def get_fastmcp_metadata(meta: dict[str, Any] | None) -> FastMCPMeta:
     return {}
 
 
+def public_result_meta(meta: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Strip FastMCP's internal bookkeeping out of component meta.
+
+    Component `meta` carries private entries under the `fastmcp` namespace
+    (e.g. `_internal.visibility`) that must never reach the wire. Listings
+    already filter these via `FastMCPComponent.get_meta()`; results that
+    carry component meta (resource contents, prompt results) need the same
+    treatment.
+
+    Returns None when nothing public remains, so components without user
+    metadata keep an absent `_meta` rather than an empty object.
+    """
+    if not meta:
+        return None
+
+    public = dict(meta)
+    fastmcp_meta = public.get("fastmcp")
+    if isinstance(fastmcp_meta, dict):
+        public_fastmcp = {
+            key: value for key, value in fastmcp_meta.items() if not key.startswith("_")
+        }
+        if public_fastmcp:
+            public["fastmcp"] = public_fastmcp
+        else:
+            public.pop("fastmcp")
+
+    return public or None
+
+
 def _convert_set_default_none(maybe_set: set[T] | Sequence[T] | None) -> set[T]:
     """Convert a sequence to a set, defaulting to an empty set if None."""
     if maybe_set is None:

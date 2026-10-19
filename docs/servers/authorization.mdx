@@ -14,7 +14,7 @@ Authorization controls what authenticated users can do with your FastMCP server.
 The authorization model centers on a simple concept: callable functions that receive context about the current request and return `True` to allow access or `False` to deny it. Multiple checks combine with AND logic, meaning all checks must pass for access to be granted.
 
 <Note>
-Authorization relies on OAuth tokens which are only available with HTTP transports (SSE, Streamable HTTP). In STDIO mode, there's no OAuth mechanism, so `get_access_token()` returns `None` and all auth checks are skipped.
+Authorization relies on OAuth tokens which are only available with HTTP transports (SSE, Streamable HTTP). In STDIO mode, there's no OAuth mechanism, so `get_access_token()` returns `None` and all auth checks are skipped. STDIO access is controlled by the local execution environment; component auth checks do not restrict the process connected over STDIO.
 </Note>
 
 <Note>
@@ -34,7 +34,7 @@ def my_custom_check(ctx: AuthContext) -> bool:
     return ctx.token is not None and "special" in ctx.token.scopes
 ```
 
-FastMCP provides two built-in auth checks that cover common authorization patterns.
+FastMCP provides three built-in auth checks that cover common authorization patterns: `require_scopes`, `require_roles`, and `restrict_tag`.
 
 ### require_scopes
 
@@ -452,9 +452,9 @@ The `AccessToken` object contains information extracted from the OAuth token.
 | Property | Type | Description |
 |----------|------|-------------|
 | `token` | `str` | The raw token string |
-| `client_id` | `str \| None` | OAuth client identifier |
+| `client_id` | `str` | OAuth client identifier |
 | `scopes` | `list[str]` | Granted OAuth scopes |
-| `expires_at` | `datetime \| None` | Token expiration time |
+| `expires_at` | `int \| None` | Token expiration as a Unix timestamp in seconds |
 | `claims` | `dict[str, Any]` | All JWT claims or custom token data |
 
 ### AuthContext

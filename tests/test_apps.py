@@ -7,13 +7,14 @@ extension negotiation, and the ``Context.client_supports_extension`` method.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from mcp.server.connection import Connection
+from mcp.server.session import ServerSession
 from mcp_types import (
     ClientCapabilities,
     Implementation,
-    InitializeRequestParams,
 )
 
 from fastmcp import Client, FastMCP
@@ -447,21 +448,28 @@ class TestClientSupportsExtension:
     SDK v2 declares ``extensions`` as a real field on ``ClientCapabilities``, so
     a client sending ``ClientCapabilities(extensions={...})`` populates the field
     directly (``model_extra`` stays ``None``). The helper must read the real
-    field, not only ``model_extra``.
+    field, not only ``model_extra``. It also covers the 2026-07-28 envelope,
+    where a client declares capabilities without ``clientInfo`` and the session
+    therefore has no ``client_params``.
     """
+
+    CLIENT_INFO = Implementation(name="test-client", version="1.0")
 
     @staticmethod
     def _session_with_capabilities(
         capabilities: ClientCapabilities | None,
-    ) -> Any:
-        params: InitializeRequestParams | None = None
+        *,
+        client_info: Implementation | None,
+    ) -> ServerSession:
+        """Build a session over a 2026-07-28 request envelope."""
+        info = None
+        if client_info is not None:
+            info = client_info.model_dump(by_alias=True, mode="json")
+        caps = None
         if capabilities is not None:
-            params = InitializeRequestParams(
-                protocol_version="2026-07-28",
-                capabilities=capabilities,
-                client_info=Implementation(name="test-client", version="1.0"),
-            )
-        return SimpleNamespace(client_params=params)
+            caps = capabilities.model_dump(by_alias=True, mode="json")
+        connection = Connection.from_envelope("2026-07-28", info, caps)
+        return ServerSession(cast(Any, object()), connection)
 
     def test_real_extensions_field(self):
         """A client that sets the real `extensions` field is detected."""
@@ -469,13 +477,22 @@ class TestClientSupportsExtension:
         # Guard: the regression this covers is the field being populated while
         # model_extra stays empty.
         assert caps.model_extra in (None, {})
-        session = self._session_with_capabilities(caps)
+        session = self._session_with_capabilities(caps, client_info=self.CLIENT_INFO)
         assert client_supports_extension(session, UI_EXTENSION_ID) is True
 
     def test_real_extensions_field_without_target_extension(self):
         caps = ClientCapabilities(extensions={"other/extension": {}})
-        session = self._session_with_capabilities(caps)
+        session = self._session_with_capabilities(caps, client_info=self.CLIENT_INFO)
         assert client_supports_extension(session, UI_EXTENSION_ID) is False
+
+    def test_extensions_without_client_info(self):
+        """clientInfo is optional on 2026-07-28 while clientCapabilities is not,
+        so a client can declare the extension with no client params on the
+        session to read it from."""
+        caps = ClientCapabilities(extensions={UI_EXTENSION_ID: {}})
+        session = self._session_with_capabilities(caps, client_info=None)
+        assert session.client_params is None
+        assert client_supports_extension(session, UI_EXTENSION_ID) is True
 
     def test_legacy_model_extra_fallback(self):
         """Defensive fallback: capabilities whose real `extensions` field is None
@@ -489,18 +506,16 @@ class TestClientSupportsExtension:
             extensions=None,
             model_extra={"extensions": {UI_EXTENSION_ID: {}}},
         )
-        session: Any = SimpleNamespace(
-            client_params=SimpleNamespace(capabilities=fake_caps)
-        )
+        session: Any = SimpleNamespace(client_capabilities=fake_caps)
         assert client_supports_extension(session, UI_EXTENSION_ID) is True
 
     def test_no_extensions(self):
         caps = ClientCapabilities()
-        session = self._session_with_capabilities(caps)
+        session = self._session_with_capabilities(caps, client_info=self.CLIENT_INFO)
         assert client_supports_extension(session, UI_EXTENSION_ID) is False
 
     def test_no_capabilities(self):
-        session = self._session_with_capabilities(None)
+        session = self._session_with_capabilities(None, client_info=self.CLIENT_INFO)
         assert client_supports_extension(session, UI_EXTENSION_ID) is False
 
 

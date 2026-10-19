@@ -66,6 +66,7 @@ from fastmcp.client.messages import MessageHandler, MessageHandlerT
 from fastmcp.client.mixins import (
     ClientPromptsMixin,
     ClientResourcesMixin,
+    ClientSkillsMixin,
     ClientToolsMixin,
 )
 from fastmcp.client.progress import ProgressHandler, default_progress_handler
@@ -261,6 +262,7 @@ class CallToolResult:
 
 class Client(
     Generic[ClientTransportT],
+    ClientSkillsMixin,
     ClientResourcesMixin,
     ClientPromptsMixin,
     ClientToolsMixin,
@@ -580,6 +582,8 @@ class Client(
         # Normally disconnects complete in <100ms; this is a safety net for
         # unresponsive servers.
         self._disconnect_timeout: float = fastmcp.settings.client_disconnect_timeout
+        # Session stops handed off by exiting contexts; referenced until done.
+        self._stoppers: set[asyncio.Task[None]] = set()
 
         # Session context management - see class docstring for detailed explanation
         self._session_state = ClientSessionState()
@@ -1063,39 +1067,67 @@ class Client(
         that was resetting events outside the lock, causing race conditions.
         Event recreation now happens only in _connect() when actually needed.
         """
+        if force:
+            # An explicit close stops the session it finds, in order with the
+            # contexts around it, so it runs here under the lock as before.
+            await self._stop_session(None, force=True)
+            return
+
+        # Release this context's hold before any await. A context that exits
+        # because it was cancelled can be interrupted at every await below, by
+        # an enclosing anyio scope or by a native cancellation that repeats
+        # while it unwinds (as when a caller runs each tool call in its own
+        # task). A hold that is never released keeps the client connected for
+        # good, so a nested exit finishes here without awaiting at all.
+        self._session_state.nesting_counter = max(
+            0, self._session_state.nesting_counter - 1
+        )
+        if self._session_state.nesting_counter > 0:
+            return
+
+        held = self._session_state.session_task
+        if held is None:
+            return
+        # Stop the session in its own task. The exiting context never waits on
+        # the session lock itself, since another task can hold it through a
+        # reconnect that is slow or never finishes: a cancelled exit returns at
+        # once through the shield, and the stop still runs to completion.
+        stopper = asyncio.create_task(self._stop_session(held, force=False))
+        self._stoppers.add(stopper)
+        stopper.add_done_callback(self._stoppers.discard)
+        await asyncio.shield(stopper)
+
+    async def _stop_session(
+        self, held: asyncio.Task[Any] | None, *, force: bool
+    ) -> None:
+        """Stop the session. A last exit passes the session it held, and the stop is
+        skipped if another context now uses it; a forced stop takes whatever is current."""
         # ensure only one session is running at a time to avoid race conditions
         async with self._session_state.lock:
-            # if we are forcing a disconnect, reset the nesting counter
             if force:
                 self._session_state.nesting_counter = 0
-
-            # otherwise decrement to check if we are done nesting
+                session_task = self._session_state.session_task
+            elif (
+                self._session_state.session_task is not held
+                or self._session_state.nesting_counter > 0
+            ):
+                # Stopped already, or another context connected while we waited.
+                return
             else:
-                self._session_state.nesting_counter = max(
-                    0, self._session_state.nesting_counter - 1
-                )
-
-            # if we are still nested, return
-            if self._session_state.nesting_counter > 0:
+                session_task = held
+            if session_task is None:
                 return
-
-            # stop the active session
-            if self._session_state.session_task is None:
-                return
-            session_task = self._session_state.session_task
             self._session_state.stop_event.set()
             # Wait (bounded) for the runner to unwind gracefully. If it
             # overruns — e.g. the transport's termination POST is blocked on
             # a stale HTTP keep-alive connection — cancel the background
             # task so transport resources (httpx connections, subprocess
             # pipes) are actually released instead of leaking into the
-            # event loop. Force paths additionally shield the wait so an
-            # outer cancellation can't abandon cleanup half-done.
+            # event loop.
             try:
-                with anyio.CancelScope(shield=force):
-                    with anyio.move_on_after(self._disconnect_timeout):
-                        with suppress(asyncio.CancelledError):
-                            await session_task
+                with anyio.move_on_after(self._disconnect_timeout):
+                    with suppress(asyncio.CancelledError):
+                        await session_task
             finally:
                 if not session_task.done():
                     session_task.cancel()
@@ -1200,17 +1232,18 @@ class Client(
         method: str,
         *,
         cursor: str | None,
+        params_key: str = "",
         cache_mode: CacheMode,
         send: Callable[[], Coroutine[Any, Any, CacheableT]],
         absorb: Callable[[CacheableT], CacheableT] | None = None,
     ) -> CacheableT:
-        """Serve one of the cacheable list verbs through the response cache.
+        """Serve a cacheable request through the response cache.
 
-        Mirrors the SDK Client's `_cached_fetch`: cursorless `use` calls are served
-        from (and stored to) the cache; a cursor page skips the cache (and evicts on
-        an expired-cursor `INVALID_PARAMS`, which signals the listing changed). The
-        cache is inert on legacy connections because the SDK cache reads no TTL/scope
-        hints below the modern era, so nothing is ever stored to serve.
+        Mirrors the SDK Client's list caching while also supporting cacheable
+        extension methods whose request parameters form part of the cache key.
+        Cursor pages skip the cache and evict a listing on an expired-cursor
+        `INVALID_PARAMS`. The cache is inert on legacy connections because the SDK
+        cache reads no TTL/scope hints below the modern era.
 
         `absorb` (tools/list only) re-applies the session's derived per-tool state to a
         served cache hit, since a hit skips `session.list_tools`.
@@ -1229,12 +1262,15 @@ class Client(
                 if e.code == mcp_types.INVALID_PARAMS:
                     await cache.evict_method(method)
                 raise
-        if cache_mode == "use" and (hit := await cache.read(method, "")) is not None:
+        if (
+            cache_mode == "use"
+            and (hit := await cache.read(method, params_key)) is not None
+        ):
             served = cast(CacheableT, hit)
             return served if absorb is None else absorb(served)
-        gen = cache.capture(method, "")
+        gen = cache.capture(method, params_key)
         result = await send()
-        await cache.write(method, "", result, gen, cache_mode)
+        await cache.write(method, params_key, result, gen, cache_mode)
         return result
 
     async def _drive_input_required(

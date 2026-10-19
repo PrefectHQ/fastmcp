@@ -113,8 +113,11 @@ class ErrorHandlingMiddleware(Middleware):
         except Exception as error:
             self._log_error(error, context)
 
-            # Transform and re-raise
+            # Transform and re-raise. An untransformed error is re-raised as-is;
+            # chaining it from itself would overwrite its original cause.
             transformed_error = self._transform_error(error, context)
+            if transformed_error is error:
+                raise
             raise transformed_error from error
 
     def get_error_stats(self) -> dict[str, int]:

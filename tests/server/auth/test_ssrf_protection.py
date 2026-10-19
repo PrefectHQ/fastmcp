@@ -14,6 +14,7 @@ from fastmcp.server.auth.ssrf import (
     SSRFError,
     SSRFFetchError,
     is_ip_allowed,
+    resolve_hostname,
     ssrf_safe_fetch,
     validate_url,
 )
@@ -138,6 +139,26 @@ class TestValidateURL:
         """HTTP URLs should be rejected (HTTPS required)."""
         with pytest.raises(SSRFError, match="must use HTTPS"):
             await validate_url("http://example.com/path")
+
+    async def test_resolve_hostname_preserves_resolver_order(self):
+        """Resolved addresses should keep getaddrinfo order after deduplication."""
+        infos = [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+            (
+                socket.AF_INET6,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                ("2001:4860:4860::8888", 443, 0, 0),
+            ),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+        ]
+
+        with patch("socket.getaddrinfo", return_value=infos):
+            assert await resolve_hostname("example.com") == [
+                "93.184.216.34",
+                "2001:4860:4860::8888",
+            ]
 
     async def test_missing_host_rejected(self):
         """URLs without host should be rejected."""

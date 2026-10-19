@@ -1,6 +1,7 @@
 """Tests for tool timeout functionality."""
 
 import time
+from contextlib import asynccontextmanager
 
 import anyio
 import pytest
@@ -8,7 +9,9 @@ from mcp.shared.exceptions import MCPError
 from mcp_types import TextContent
 
 from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
+from fastmcp.tools import Tool
 
 
 class TestToolTimeout:
@@ -83,13 +86,44 @@ class TestToolTimeout:
         assert exc_info.value is not None
 
     async def test_sync_timeout_exceeded(self):
-        """Sync tool timeout works with CPU-bound operations."""
-        pytest.skip(
-            "Sync timeouts require thread pool execution (coming in future commit)"
-        )
-        # Note: time.sleep() blocks the event loop and cannot be interrupted
-        # by anyio.fail_after(). This will work once sync functions run in
-        # thread pools (commit 8c471a49).
+        """A sync result returned after the deadline is a timeout error."""
+
+        def slow_sync_tool() -> str:
+            time.sleep(0.1)
+            return "late result"
+
+        tool = Tool.from_function(slow_sync_tool, timeout=0.01)
+
+        with pytest.raises(MCPError) as exc_info:
+            await tool.run({})
+
+        assert exc_info.value.code == -32000
+        assert "slow_sync_tool" in exc_info.value.message
+
+    async def test_sync_timeout_preserves_dependency_lifetime(self):
+        """Dependencies remain available until a timed-out worker finishes."""
+        mcp = FastMCP()
+        events: list[str] = []
+
+        @asynccontextmanager
+        async def resource():
+            events.append("opened")
+            try:
+                yield events
+            finally:
+                events.append("closed")
+
+        @mcp.tool(timeout=0.01)
+        def slow_sync_tool(state: list[str] = Depends(resource)) -> str:
+            state.append("started")
+            time.sleep(0.1)
+            state.append("finished")
+            return "late result"
+
+        with pytest.raises(ToolError, match="timed out"):
+            await mcp.call_tool("slow_sync_tool")
+
+        assert events == ["opened", "started", "finished", "closed"]
 
     async def test_timeout_error_raises_tool_error(self):
         """Timeout error is converted to ToolError and logs warning."""

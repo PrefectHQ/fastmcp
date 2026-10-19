@@ -94,7 +94,10 @@ class ResourceDecoratorMixin:
                     f"Expected Resource, ResourceTemplate, or @resource-decorated function, got {type(resource).__name__}. "
                     "Use @resource('uri') decorator or pass a Resource/ResourceTemplate instance."
                 )
-        self._add_component(resource)
+        added = self._add_component(resource)
+        if added is not resource:
+            # on_duplicate="ignore" kept the existing resource.
+            return added
         if not enabled:
             self.disable(keys={resource.key})
         return resource

@@ -46,7 +46,11 @@ from fastmcp.utilities.async_utils import (
     is_coroutine_function,
 )
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import find_kwarg_by_type, is_class_member_of_type
+from fastmcp.utilities.types import (
+    find_kwarg_by_type,
+    get_function_type_hints,
+    is_class_member_of_type,
+)
 
 if TYPE_CHECKING:
     from fastmcp.server.context import Context
@@ -236,6 +240,61 @@ _background_task_headers: ContextVar[dict[str, str] | None] = ContextVar(
 _background_task_session_id: ContextVar[str | None] = ContextVar(
     "fastmcp_background_task_session_id", default=None
 )
+
+
+class _ClientToolCall:
+    """One ``tools/call`` a client sent, until its first dispatch claims it."""
+
+    claimed: bool = False
+
+
+#: The wire ``tools/call`` being served. Per-request client settings, such as
+#: the tasks opt-in, describe the tool the client named; the first dispatch of
+#: that request claims them. Calls a tool body makes in turn, and reads of
+#: resources or prompts, find nothing to claim.
+_client_tool_call: ContextVar[_ClientToolCall | None] = ContextVar(
+    "fastmcp_client_tool_call", default=None
+)
+
+
+@contextmanager
+def _serving_client_tool_call() -> Generator[None, None, None]:
+    token = _client_tool_call.set(_ClientToolCall())
+    try:
+        yield
+    finally:
+        _client_tool_call.reset(token)
+
+
+def _claim_client_tool_call() -> bool:
+    """True once per client ``tools/call``: for the dispatch the client addressed."""
+    call = _client_tool_call.get()
+    if call is None or call.claimed:
+        return False
+    call.claimed = True
+    return True
+
+
+#: Whether the ``call_tool`` dispatch in progress is the client's own call. Each
+#: dispatch sets it on entry, before middleware runs, so a tool that middleware
+#: or a tool body calls sets its own (False) value without disturbing this one.
+_client_dispatch: ContextVar[bool] = ContextVar(
+    "fastmcp_client_dispatch", default=False
+)
+
+
+@contextmanager
+def _dispatching_tool_call() -> Generator[None, None, None]:
+    token = _client_dispatch.set(_claim_client_tool_call())
+    try:
+        yield
+    finally:
+        _client_dispatch.reset(token)
+
+
+def _is_client_tool_call() -> bool:
+    """Whether the tool being dispatched is the one the client's ``tools/call`` named."""
+    return _client_dispatch.get()
 
 
 # --- Docket availability check ---
@@ -714,27 +773,32 @@ def without_injected_parameters(
     async def wrapper(**user_kwargs: Any) -> Any:
         async with resolve_dependencies(fn, user_kwargs) as resolved_kwargs:
             if fn_is_async:
-                return await fn(**resolved_kwargs)
+                result = await fn(**resolved_kwargs)
             elif run_in_thread:
                 # Run sync functions in threadpool to avoid blocking the event loop
                 result = await call_sync_fn_in_threadpool(fn, **resolved_kwargs)
                 # Handle sync wrappers that return awaitables (e.g., partial(async_fn))
                 if inspect.isawaitable(result):
                     result = await result
-                return result
             else:
                 # Call inline on the event loop thread (thread affinity opt-in).
                 result = fn(**resolved_kwargs)
                 if inspect.isawaitable(result):
                     result = await result
-                return result
+            # Consume generators before dependencies are torn down so
+            # generator bodies still see open context-manager dependencies.
+            if inspect.isasyncgen(result):
+                return [item async for item in result]
+            if inspect.isgenerator(result):
+                return list(result)
+            return result
 
     # Resolve string annotations (from `from __future__ import annotations`) using
     # the original function's module context. The wrapper's __globals__ points to
     # this module (dependencies.py) and is read-only, so some Pydantic versions
     # can't resolve names like Annotated or Literal from string annotations.
     try:
-        resolved_hints = get_type_hints(fn, include_extras=True)
+        resolved_hints = get_function_type_hints(fn)
     except Exception:
         resolved_hints = getattr(fn, "__annotations__", {})
 
