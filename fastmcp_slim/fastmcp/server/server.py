@@ -194,14 +194,16 @@ LifespanCallable = Callable[
 ]
 
 
-async def _tool_auth_allows(tool: Tool) -> bool:
-    """Whether the tool's own `auth` check admits the current request."""
+async def _component_auth_allows(
+    component: Tool | Resource | ResourceTemplate | Prompt,
+) -> bool:
+    """Whether the component's own `auth` check admits the current request."""
     skip_auth, token = _get_auth_context()
-    if skip_auth or tool.auth is None:
+    if skip_auth or component.auth is None:
         return True
-    ctx = AuthContext(token=token, component=tool)
+    ctx = AuthContext(token=token, component=component)
     try:
-        return await run_auth_checks(tool.auth, ctx)
+        return await run_auth_checks(component.auth, ctx)
     except AuthorizationError:
         return False
 
@@ -744,7 +746,7 @@ class FastMCP(
                 claimed = {tool.name for tool in injected}
                 tools = [*injected, *(t for t in tools if t.name not in claimed)]
 
-                return [tool for tool in tools if await _tool_auth_allows(tool)]
+                return [tool for tool in tools if await _component_auth_allows(tool)]
 
     async def _get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -766,11 +768,11 @@ class FastMCP(
             return None
 
         # Component auth - return None if unauthorized (consistent with list filtering)
-        return tool if await _tool_auth_allows(tool) else None
+        return tool if await _component_auth_allows(tool) else None
 
     async def _check_hashed_target(self, tool: Tool) -> Tool | None:
         """Check auth on the found tool, as `_get_tool()` does for a name."""
-        return tool if await _tool_auth_allows(tool) else None
+        return tool if await _component_auth_allows(tool) else None
 
     async def get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -803,7 +805,7 @@ class FastMCP(
             else None
         )
         if injected is not None:
-            return injected if await _tool_auth_allows(injected) else None
+            return injected if await _component_auth_allows(injected) else None
 
         tool = await super().get_tool(name, version)
         if tool is None:
@@ -815,10 +817,13 @@ class FastMCP(
         hashed = hashed_lookup_target(self) is not None
 
         tools = await apply_session_transforms([tool])
+        # Transforms can change what `auth` sees (a tag, for one), so the check made
+        # on the pre-transform component is not enough.
         if (
             tools
             and is_enabled(tools[0])
             and (hashed or not _is_backend_tool(tools[0]))
+            and await _component_auth_allows(tools[0])
         ):
             return tools[0]
 
@@ -842,7 +847,7 @@ class FastMCP(
             if is_enabled(t) and (hashed or not _is_backend_tool(t))
         ]
 
-        authorized = [t for t in enabled if await _tool_auth_allows(t)]
+        authorized = [t for t in enabled if await _component_auth_allows(t)]
 
         if not authorized:
             return None
@@ -957,7 +962,13 @@ class FastMCP(
 
         # Apply session transforms to single item
         resources = await apply_session_transforms([resource])
-        if resources and is_enabled(resources[0]):
+        # Transforms can change what `auth` sees (a tag, for one), so the check made
+        # on the pre-transform component is not enough.
+        if (
+            resources
+            and is_enabled(resources[0])
+            and await _component_auth_allows(resources[0])
+        ):
             return resources[0]
 
         if version is not None:
@@ -1089,7 +1100,13 @@ class FastMCP(
 
         # Apply session transforms to single item
         templates = await apply_session_transforms([template])
-        if templates and is_enabled(templates[0]):
+        # Transforms can change what `auth` sees (a tag, for one), so the check made
+        # on the pre-transform component is not enough.
+        if (
+            templates
+            and is_enabled(templates[0])
+            and await _component_auth_allows(templates[0])
+        ):
             return templates[0]
 
         if version is not None:
@@ -1215,7 +1232,13 @@ class FastMCP(
 
         # Apply session transforms to single item
         prompts = await apply_session_transforms([prompt])
-        if prompts and is_enabled(prompts[0]):
+        # Transforms can change what `auth` sees (a tag, for one), so the check made
+        # on the pre-transform component is not enough.
+        if (
+            prompts
+            and is_enabled(prompts[0])
+            and await _component_auth_allows(prompts[0])
+        ):
             return prompts[0]
 
         if version is not None:
