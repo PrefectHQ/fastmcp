@@ -8,16 +8,28 @@ registration seeds it, and every `tools/list` response refreshes it (which also
 covers proxied and mounted tools).
 """
 
+import json
 from importlib.metadata import version
+from typing import Annotated
 
 import pytest
 from packaging.version import Version
+from pydantic import Field
 from starlette.testclient import TestClient
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.middleware import Middleware
+from fastmcp.server.transforms.tool_transform import ToolTransform
 from fastmcp.tools import Tool
-from fastmcp.tools.tool_transform import ArgTransform
+from fastmcp.tools.tool_transform import (
+    ArgTransform,
+    ArgTransformConfig,
+    ToolTransformConfig,
+)
+
+# A parameter carrying an Mcp-Param header annotation, as the SDK's
+# validate_mcp_param_headers reads it out of the wire input schema.
+HDR = Annotated[str, Field(json_schema_extra={"x-mcp-header": "Region"})]
 
 # Version-parse through packaging so pre-release mcp builds (e.g. "2.3rc1")
 # do not blow up int().
@@ -229,3 +241,94 @@ async def test_version_scoped_removal_keeps_surviving_version():
     # Removing the last version evicts the entry entirely.
     server._local_provider.remove_tool("dup", version="1.0")
     assert _hook(server)("dup") is None
+
+
+async def test_seed_serves_highest_version_not_last_registered():
+    """Regression (#5666 review repro 1): registering an older version after
+    a newer one must not seed the older version's schema. Dispatch serves the
+    highest version, so the cache must hold that version's schema — a cached
+    `x-mcp-header` annotation from the wrong version fails closed (HTTP 400)
+    on calls main accepts."""
+
+    def v2(region: str) -> str:
+        return f"v2:{region}"
+
+    def v1(region: HDR) -> str:
+        return f"v1:{region}"
+
+    server = FastMCP("t")
+    server.add_tool(Tool.from_function(v2, name="t", version="2.0"))
+    server.add_tool(Tool.from_function(v1, name="t", version="1.0"))
+
+    schema = _hook(server)("t")
+
+    # v2 (the highest version, and the one dispatch runs) has no header
+    # annotation; seeding v1's schema would demand Mcp-Param-Region.
+    assert schema is not None
+    assert "x-mcp-header" not in json.dumps(schema)
+
+
+async def test_reseed_after_removal_sorts_versions_semantically():
+    """Regression (#5666 review repro 2): re-seeding after a version-scoped
+    removal must pick the surviving version the way dispatch does (PEP 440),
+    not lexicographic string order where "9" > "10"."""
+
+    def v9(region: HDR) -> str:
+        return f"v9:{region}"
+
+    def v10(region: str) -> str:
+        return f"v10:{region}"
+
+    def v11(region: str) -> str:
+        return f"v11:{region}"
+
+    server = FastMCP("t")
+    server.add_tool(Tool.from_function(v9, name="t", version="9"))
+    server.add_tool(Tool.from_function(v10, name="t", version="10"))
+    server.add_tool(Tool.from_function(v11, name="t", version="11"))
+
+    # Removing the highest version re-seeds from v10 (plain), not v9 (which
+    # carries the header annotation and would fail closed).
+    server._local_provider.remove_tool("t", version="11")
+
+    schema = _hook(server)("t")
+
+    assert schema is not None
+    assert "x-mcp-header" not in json.dumps(schema)
+
+
+async def test_seed_skipped_when_server_transform_rewrites_schema():
+    """Regression (#5666 review repro 3): with a server-level ToolTransform
+    renaming arguments, the pre-transform schema must not be seeded. The
+    cache entry is dropped instead; the next tools/list (which applies the
+    transform) is the only writer, and until then a miss fails open."""
+
+    def f(region: HDR) -> str:
+        return f"region:{region}"
+
+    server = FastMCP(
+        "t",
+        transforms=[
+            ToolTransform(
+                {
+                    "t": ToolTransformConfig(
+                        arguments={"region": ArgTransformConfig(name="area")}
+                    )
+                }
+            )
+        ],
+    )
+    server.add_tool(Tool.from_function(f, name="t"))
+
+    # No seeded entry: the transform-aware wire schema is only known after a
+    # listing. A stale pre-transform entry would reject calls carrying
+    # Mcp-Param-Region even though the wire argument is now "area".
+    assert _hook(server)("t") is None
+
+    async with Client(server) as client:
+        tools = await client.list_tools()
+
+    assert [tool.name for tool in tools] == ["t"]
+    schema = _hook(server)("t")
+    assert schema is not None
+    assert set(schema["properties"]) == {"area"}

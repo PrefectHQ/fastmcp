@@ -101,7 +101,11 @@ from fastmcp.server.transforms import (
     ToolTransform,
     Transform,
 )
-from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
+from fastmcp.server.transforms.visibility import (
+    Visibility,
+    apply_session_transforms,
+    is_enabled,
+)
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.function_tool import FunctionTool
@@ -314,21 +318,54 @@ class _SchemaCacheLocalProvider(LocalProvider):
     def __init__(
         self,
         schema_cache: dict[str, dict[str, Any]],
+        server_transforms: list[Transform] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self._schema_cache = schema_cache
+        # The owning FastMCP's server-level transform list, shared by
+        # reference so transforms added after construction are visible.
+        self._server_transforms = (
+            server_transforms if server_transforms is not None else []
+        )
 
-    def add_tool(self, tool: Tool | Callable[..., Any]) -> Tool:
-        added = super().add_tool(tool)
+    def _seed_schema(self, name: str, candidates: list[Tool]) -> None:
+        """Seed the wire-schema cache for `name` from the tool dispatch and
+        `tools/list` would actually serve: the highest version by the same
+        PEP 440-aware `version_sort_key` used by `_get_tool` and
+        `dedupe_with_versions`. When a transform is installed, the wire schema
+        is only computed on the listing path, so seeding is skipped entirely
+        (and any entry dropped): a miss fails open, a wrong entry (e.g. a
+        pre-transform schema) fails closed (#5666 review)."""
+        transforms = [
+            t
+            for t in (*self._server_transforms, *self._transforms)
+            if not isinstance(t, Visibility)
+        ]
+        if transforms:
+            self._schema_cache.pop(name, None)
+            return
+        latest = max(candidates, key=version_sort_key)
         try:
-            schema = added.to_mcp_tool(name=added.name).input_schema
+            schema = latest.to_mcp_tool(name=latest.name).input_schema
         except Exception:
             # Seeding must never break registration; a missing entry only
             # means the tool is not header-validated until the next listing.
-            schema = None
+            return
         if isinstance(schema, dict):
-            self._schema_cache[added.name] = schema
+            self._schema_cache[name] = schema
+
+    def add_tool(self, tool: Tool | Callable[..., Any]) -> Tool:
+        added = super().add_tool(tool)
+        # Seed from the version dispatch serves, not necessarily the one just
+        # added: registering an older version after a newer one must not
+        # replace the newer version's schema in the cache.
+        same_name = [
+            component
+            for component in self._components.values()
+            if isinstance(component, Tool) and component.name == added.name
+        ]
+        self._seed_schema(added.name, same_name or [added])
         return added
 
     def remove_tool(self, name: str, version: str | None = None) -> None:
@@ -348,13 +385,7 @@ class _SchemaCacheLocalProvider(LocalProvider):
         if not surviving:
             self._schema_cache.pop(name, None)
             return
-        latest = max(surviving, key=lambda t: t.version or "")
-        try:
-            schema = latest.to_mcp_tool(name=latest.name).input_schema
-        except Exception:
-            return
-        if isinstance(schema, dict):
-            self._schema_cache[name] = schema
+        self._seed_schema(name, surviving)
 
 
 class StateValue(FastMCPBaseModel):
@@ -431,6 +462,7 @@ class FastMCP(
         # Create LocalProvider for local components
         self._local_provider: LocalProvider = _SchemaCacheLocalProvider(
             schema_cache=self._wire_input_schemas,
+            server_transforms=self._transforms,
             on_duplicate=self._on_duplicate,
         )
 
