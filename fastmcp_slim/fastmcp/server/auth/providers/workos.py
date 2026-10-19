@@ -249,15 +249,20 @@ class WorkOSProvider(OAuthProxy):
         authkit_domain_final = authkit_domain_str.rstrip("/")
         scopes_final = (
             parse_scopes(required_scopes) if required_scopes is not None else []
-        )
+        ) or []
         valid_scopes_final = (
             parse_scopes(valid_scopes) if valid_scopes is not None else None
         )
 
-        # Create WorkOS token verifier
+        # Do not pass provider-level required_scopes into the verifier here.
+        # WorkOS's userinfo endpoint validates opaque access tokens and
+        # returns identity claims, but granted scopes are carried reliably in
+        # the upstream token response. OAuthProxy stores those scopes, enforces
+        # provider.required_scopes against FastMCP-issued tokens, and
+        # _uses_alternate_verification() patches the stored upstream scopes
+        # onto the returned AccessToken.
         token_verifier = WorkOSTokenVerifier(
             authkit_domain=authkit_domain_final,
-            required_scopes=scopes_final,
             timeout_seconds=timeout_seconds,
             http_client=http_client,
         )
@@ -292,6 +297,18 @@ class WorkOSProvider(OAuthProxy):
             client_id,
             authkit_domain_final,
         )
+
+        self.required_scopes = scopes_final
+        self.update_default_scopes(valid_scopes_final or scopes_final)
+
+    def _uses_alternate_verification(self) -> bool:
+        """Patch returned token scopes from the upstream token response.
+
+        WorkOS access tokens are opaque. The userinfo endpoint validates the
+        token and returns identity claims, but scope information is carried by
+        the token response stored in OAuthProxy's upstream token set.
+        """
+        return True
 
 
 class AuthKitProvider(RemoteAuthProvider):
