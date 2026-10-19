@@ -17,7 +17,7 @@ gh pr list --repo PrefectHQ/fastmcp --state all --search "<issue-number> in:body
   --json number,title,state,author
 ```
 
-Where `search`, GraphQL or `--paginate` are blocked (cloud sessions), page repo-scoped REST by hand (`gh api "repos/PrefectHQ/fastmcp/pulls?state=open&per_page=100&page=N"`), dump it once, and join locally.
+Where `search`, GraphQL or `--paginate` are blocked (cloud sessions), page repo-scoped REST by hand (`gh api "repos/PrefectHQ/fastmcp/pulls?state=all&per_page=100&page=N"`), dump it once, and join locally.
 
 Pick work with concrete user impact, a supported contract being violated, a tractable causal fix, and a change FastMCP wants to carry. Apply [triage and merge decisions](../../../docs/development/contributing.mdx#triage-and-merge-decisions) before ranking anything: labels and confident diagnoses are claims, and the behavior may already be fixed or decided. Mark each pick want / marginal / don't want. Do not rank solely by recency, comment count, or how small a proposed patch looks. Automated dashboard churn is not itself useful work.
 
