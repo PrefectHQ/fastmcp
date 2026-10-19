@@ -702,6 +702,8 @@ To use `private_key_jwt`, the CIMD document must include either a `jwks_uri` (UR
 
 The OAuth proxy validates JWT assertions according to RFC 7523, checking the signature, issuer, audience, subject claims, and preventing replay attacks via JTI tracking.
 
+Assertions may be signed with an RSA or EC key using `RS256`, `RS384`, `RS512`, `PS256`, `PS384`, `PS512`, `ES256`, `ES384`, or `ES512`. Other algorithms, including symmetric ones such as `HS256`, are rejected.
+
 ### Security Considerations
 
 CIMD provides several security advantages over DCR:
