@@ -710,6 +710,22 @@ class AuthMiddleware(Middleware):
 
 Do not return error values or skip `call_next()` to indicate errors—raise exceptions for proper error propagation.
 
+### Authorizing Resource Access
+
+To restrict which resources a caller can read, implement `check_resource_access` rather than `on_read_resource`. The default `on_read_resource` calls it before every read, and features that describe resources without reading them, such as [Skills discovery](/servers/providers/experimental-skills), call it too, so a resource the caller cannot read is not advertised either. Raise `AuthorizationError` to deny access.
+
+```python
+from fastmcp.exceptions import AuthorizationError
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+
+class InternalResourceGuard(Middleware):
+    async def check_resource_access(self, context: MiddlewareContext):
+        if str(context.message.uri).startswith("internal://"):
+            raise AuthorizationError("Access denied")
+```
+
+If you also override `on_read_resource`, call `super().on_read_resource(context, call_next)` so the check still runs. `AuthMiddleware` implements this hook for its resource checks.
+
 ### Modifying Requests
 
 Change the message before passing it down the chain.

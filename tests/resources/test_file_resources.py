@@ -151,6 +151,36 @@ class TestFileResource:
         result = await resource.read()
         assert result.contents[0].content == content
 
+    async def test_binary_inferred_from_non_text_mime_type(self, tmp_path: Path):
+        """A non-text MIME type reads as binary when is_binary is not set."""
+        file = tmp_path / "config.json"
+        file.write_text('{"a": 1}', encoding="utf-8")
+
+        resource = FileResource(
+            uri=FileUrl("file:///test/config"),
+            path=file,
+            mime_type="application/json",
+        )
+        assert resource.is_binary is True
+        result = await resource.read()
+        assert result.contents[0].content == b'{"a": 1}'
+
+    async def test_explicit_is_binary_false_overrides_mime_type(self, tmp_path: Path):
+        """An explicit is_binary=False is kept for a non-text MIME type."""
+        file = tmp_path / "config.json"
+        file.write_text('{"a": 1}', encoding="utf-8")
+
+        resource = FileResource(
+            uri=FileUrl("file:///test/config"),
+            path=file,
+            mime_type="application/json",
+            is_binary=False,
+        )
+        assert resource.is_binary is False
+        result = await resource.read()
+        assert result.contents[0].content == '{"a": 1}'
+        assert result.contents[0].mime_type == "application/json"
+
     async def test_encoding_ignored_for_binary(self, tmp_path: Path):
         """Encoding field should be ignored when is_binary=True."""
         data = b"\x00\x01\x02\xff"

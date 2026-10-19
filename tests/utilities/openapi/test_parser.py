@@ -52,6 +52,30 @@ class TestOpenAPIParser:
         assert param.name == "id"
         assert param.location == "path"
 
+    @pytest.mark.parametrize("openapi_version", ["3.1.0", "3.1.1", "3.1.2"])
+    def test_parse_every_openapi31_patch_version(self, openapi_version):
+        """Parse a minimal spec under every OpenAPI 3.1 patch version"""
+        spec = {
+            "openapi": openapi_version,
+            "info": {"title": "Example", "version": "1.0.0"},
+            "paths": {
+                "/ping": {
+                    "get": {
+                        "operationId": "ping",
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+
+        routes = parse_openapi_to_http_routes(spec)
+
+        assert len(routes) == 1
+        assert routes[0].path == "/ping"
+        assert routes[0].method == "GET"
+        assert routes[0].operation_id == "ping"
+        assert routes[0].openapi_version == openapi_version
+
     def test_parse_collision_spec(self, collision_spec):
         """Test parsing spec with parameter collisions."""
         routes = parse_openapi_to_http_routes(collision_spec)
