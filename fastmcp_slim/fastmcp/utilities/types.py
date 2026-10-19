@@ -372,15 +372,25 @@ class Audio:
             "ogg": "audio/ogg",
             "m4a": "audio/mp4",
             "flac": "audio/flac",
+            "opus": "audio/opus",
+            "aac": "audio/aac",
+            "webm": "audio/webm",
+            "aiff": "audio/aiff",
+            "aif": "audio/aiff",
         }
 
         if self._format:
-            return mapping.get(self._format.lower(), f"audio/{self._format.lower()}")
+            token = self._format.lower()
+            return mapping.get(token, f"audio/{token}")
 
         if self.path:
-            return mapping.get(
-                self.path.suffix.lower().lstrip("."), "application/octet-stream"
-            )
+            # A declared format falls back to audio/<token>. A path only maps
+            # extensions in the table above; anything else, including a path
+            # with no suffix, stays octet-stream. `.unknown` relies on that.
+            suffix = self.path.suffix.lower().lstrip(".")
+            if suffix:
+                return mapping.get(suffix, "application/octet-stream")
+            return "application/octet-stream"
         return "audio/wav"  # default for raw binary data
 
     def to_audio_content(

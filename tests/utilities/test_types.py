@@ -348,6 +348,30 @@ class TestAudio:
             audio = Audio(path=path)
             assert audio._mime_type == mime
 
+    @pytest.mark.parametrize(
+        "extension,mime_type",
+        [
+            ("opus", "audio/opus"),
+            ("aac", "audio/aac"),
+            ("webm", "audio/webm"),
+            ("aiff", "audio/aiff"),
+            ("aif", "audio/aiff"),
+        ],
+    )
+    def test_path_and_format_agree_on_mime_type(
+        self, tmp_path, extension, mime_type
+    ):
+        """A file extension maps to the same MIME type as the matching format."""
+        path = tmp_path / f"test.{extension}"
+        path.write_bytes(b"fake audio data")
+
+        from_path = Audio(path=path)
+        from_format = Audio(data=b"test", format=extension)
+
+        assert from_path._mime_type == mime_type
+        assert from_format._mime_type == mime_type
+        assert from_path.to_audio_content().mime_type == mime_type
+
     def test_to_audio_content(self, tmp_path, monkeypatch):
         """Test conversion to AudioContent."""
         # Test with path
