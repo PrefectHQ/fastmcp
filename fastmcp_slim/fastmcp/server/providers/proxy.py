@@ -460,7 +460,7 @@ class ProxyTool(Tool):
             return ToolResult(
                 content=tool_result.content,
                 structured_content=tool_result.structured_content,
-                meta=tool_result.meta,
+                meta=_forwardable_server_meta(tool_result.meta) or None,
                 is_error=tool_result.is_error,
             )
 
@@ -815,7 +815,7 @@ class ProxyPrompt(Prompt):
             return PromptResult(
                 messages=messages,
                 description=result.description,
-                meta=result.meta,
+                meta=_forwardable_server_meta(result.meta) or None,
             )
 
     def get_span_attributes(self) -> dict[str, Any]:
