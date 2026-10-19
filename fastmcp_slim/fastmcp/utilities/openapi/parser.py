@@ -37,6 +37,7 @@ from .models import (
 from .schemas import (
     _combine_schemas_and_map_params,
     _discriminator_target_name,
+    _ref_component_name,
     _replace_ref_with_defs,
 )
 
@@ -500,7 +501,9 @@ class OpenAPIParser(
                                 if isinstance(ref_str, str) and ref_str.startswith(
                                     "#/components/schemas/"
                                 ):
-                                    top_level_schema_name = ref_str.split("/")[-1]
+                                    top_level_schema_name = ref_str.removeprefix(
+                                        "#/components/schemas/"
+                                    )
 
                             schema_dict = self._extract_schema_as_dict(media_schema)
                             # Add marker for top-level schema if it was a ref
@@ -587,9 +590,8 @@ class OpenAPIParser(
                 if "$ref" in obj and isinstance(obj["$ref"], str):
                     ref = obj["$ref"]
                     # Handle both converted and unconverted refs
-                    if ref.startswith(("#/$defs/", "#/components/schemas/")):
-                        schema_name = ref.split("/")[-1]
-                    else:
+                    schema_name = _ref_component_name(ref)
+                    if schema_name is None:
                         return
 
                     # Add this schema and recursively find its dependencies
