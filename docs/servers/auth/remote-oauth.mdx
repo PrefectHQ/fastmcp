@@ -146,8 +146,13 @@ You can extend `RemoteAuthProvider` to add additional endpoints beyond the stand
 
 ```python
 import httpx2
+from pydantic import AnyHttpUrl
 from starlette.responses import JSONResponse
 from starlette.routing import Route
+
+from fastmcp import FastMCP
+from fastmcp.server.auth import RemoteAuthProvider
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 class CompanyAuthProvider(RemoteAuthProvider):
     def __init__(self):
@@ -165,7 +170,7 @@ class CompanyAuthProvider(RemoteAuthProvider):
     
     def get_routes(self, mcp_path: str | None = None) -> list[Route]:
         """Add custom endpoints to the standard protected resource routes."""
-
+        
         # Get the standard OAuth protected resource routes
         routes = super().get_routes(mcp_path)
         
