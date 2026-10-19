@@ -21,7 +21,11 @@ from key_value.aio.stores.filetree import (
 
 from fastmcp import Client
 from fastmcp.client.auth import OAuth
-from fastmcp.client.transports import SSETransport, StreamableHttpTransport
+from fastmcp.client.transports import (
+    ClientTransport,
+    SSETransport,
+    StreamableHttpTransport,
+)
 from fastmcp.server import create_proxy
 from fastmcp.server.providers.proxy import FastMCPProxy
 from fastmcp.server.transforms import GetToolNext, Transform
@@ -260,9 +264,11 @@ def build_transport(config: RemoteConfig) -> SSETransport | StreamableHttpTransp
     )
 
 
-def build_proxy(client: Client, ignore_tools: Sequence[str]) -> FastMCPProxy:
+def build_proxy(
+    target: ClientTransport | Client, ignore_tools: Sequence[str]
+) -> FastMCPProxy:
     server = create_proxy(
-        client,
+        target,
         name="fastmcp-remote",
         provider_error_strategy="raise",
     )
@@ -272,7 +278,12 @@ def build_proxy(client: Client, ignore_tools: Sequence[str]) -> FastMCPProxy:
 
 
 async def run(config: RemoteConfig) -> None:
-    server = build_proxy(Client(build_transport(config)), config.ignore_tools)
+    # Pass the transport, not a pre-built `Client`: a Client target is treated as
+    # caller-configured, so the proxy would reuse that plain client's own `"auto"`
+    # (modern) era and none of the forwarding handlers a `ProxyClient` installs.
+    # A transport lets the proxy mirror the stdio host's handshake era and relay
+    # the upstream's elicitation, logging and progress to it.
+    server = build_proxy(build_transport(config), config.ignore_tools)
     await server.run_async(
         transport="stdio",
         show_banner=config.show_banner,
