@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import math
 from collections.abc import Callable
 from typing import (
     TYPE_CHECKING,
@@ -73,8 +74,44 @@ def default_serializer(data: Any) -> str:
     return _JSONABLE_ADAPTER.dump_json(data, fallback=str).decode()
 
 
+def _find_nonfinite_float(data: Any) -> float | None:
+    """Return the first non-finite float reachable in ``data``, if any.
+
+    Pydantic's per-model default ``ser_json_inf_nan="null"`` rewrites NaN and
+    Infinity to valid-JSON ``null`` before the boundary can see them, so a
+    plain ``BaseModel`` result silently corrupts non-finite floats. Walking the
+    raw Python value lets us reject those inputs regardless of which config
+    wins during serialization.
+    """
+    if isinstance(data, float):
+        return data if not math.isfinite(data) else None
+    if isinstance(data, BaseModel):
+        return _find_nonfinite_float(data.__dict__)
+    if isinstance(data, dict):
+        for key, value in data.items():
+            found = _find_nonfinite_float(key) or _find_nonfinite_float(value)
+            if found is not None:
+                return found
+        return None
+    if isinstance(data, list | tuple | set | frozenset):
+        for item in data:
+            found = _find_nonfinite_float(item)
+            if found is not None:
+                return found
+        return None
+    return None
+
+
 def _serialize_to_jsonable(data: Any, annotation: Any = Any) -> Any:
     """Serialize through Pydantic, falling back for unsupported annotations."""
+    nonfinite = _find_nonfinite_float(data)
+    if nonfinite is not None:
+        raise ValueError(
+            "Tool result contains a non-finite float "
+            f"({nonfinite!r}), which cannot be represented in JSON. "
+            "Return a finite value or omit the field."
+        )
+
     if (
         annotation is inspect.Signature.empty
         or annotation is None
