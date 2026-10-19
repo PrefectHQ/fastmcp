@@ -9,13 +9,18 @@ from typing import Annotated, Any
 from urllib.parse import urlparse
 
 import cyclopts
+import httpx2
 import mcp_types
 import pydantic_core
 from mcp import MCPError
 from rich.console import Console
 
 from fastmcp.cli.client import _build_client, resolve_server_spec
+from fastmcp.client.auth.bearer import BearerAuth
+from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.transports.base import ClientTransport
+from fastmcp.client.transports.http import StreamableHttpTransport
+from fastmcp.client.transports.sse import SSETransport
 from fastmcp.client.transports.stdio import StdioTransport
 from fastmcp.utilities.logging import get_logger
 
@@ -119,13 +124,31 @@ def _format_schema_for_help(schema: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _serialize_auth(auth: httpx2.Auth) -> str:
+    """Serialize a remote transport's auth to an ``auth=`` argument.
+
+    Covers what a server config can express: a bearer token, or the ``"oauth"``
+    flag (which stands for a default OAuth flow). Anything else, such as a custom
+    ``httpx2.Auth``, raises ``ValueError`` instead of being dropped silently.
+    """
+    if type(auth) is OAuth:
+        return repr("oauth")
+    if isinstance(auth, BearerAuth):
+        return repr(auth.token.get_secret_value())
+    raise ValueError(
+        f"Cannot generate a CLI for a server using {type(auth).__name__} "
+        "authentication: it cannot be written as a Python expression."
+    )
+
+
 def serialize_transport(
     resolved: str | dict[str, Any] | ClientTransport,
 ) -> tuple[str, set[str]]:
     """Serialize a resolved transport to a Python expression string.
 
     Returns ``(expression, extra_imports)`` where *extra_imports* is a set of
-    import lines needed by the expression.
+    import lines needed by the expression. Raises ``ValueError`` for a transport
+    that cannot be written as a Python expression.
     """
     if isinstance(resolved, str):
         return repr(resolved), set()
@@ -140,11 +163,32 @@ def serialize_transport(
         imports = {"from fastmcp.client.transports import StdioTransport"}
         return expr, imports
 
+    if isinstance(resolved, (StreamableHttpTransport, SSETransport)):
+        cls_name = (
+            "SSETransport"
+            if isinstance(resolved, SSETransport)
+            else "StreamableHttpTransport"
+        )
+        parts = [f"url={resolved.url!r}"]
+        if resolved.headers:
+            parts.append(f"headers={resolved.headers!r}")
+        if resolved.auth is not None:
+            parts.append(f"auth={_serialize_auth(resolved.auth)}")
+        if isinstance(resolved, SSETransport) and resolved.sse_read_timeout is not None:
+            parts.append(
+                f"sse_read_timeout={resolved.sse_read_timeout.total_seconds()!r}"
+            )
+        expr = f"{cls_name}({', '.join(parts)})"
+        imports = {f"from fastmcp.client.transports import {cls_name}"}
+        return expr, imports
+
     if isinstance(resolved, dict):
         return repr(resolved), set()
 
-    # Fallback: try repr
-    return repr(resolved), set()
+    raise ValueError(
+        f"Cannot generate a CLI for a {type(resolved).__name__}: "
+        "it cannot be written as a Python expression."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -744,7 +788,12 @@ async def generate_cli_command(
 
     # Resolve the server spec to a transport
     resolved = resolve_server_spec(server_spec)
-    transport_code, extra_imports = serialize_transport(resolved)
+    # Serialize before _build_client, which may replace the transport's auth.
+    try:
+        transport_code, extra_imports = serialize_transport(resolved)
+    except ValueError as exc:
+        console.print(f"[bold red]Error:[/bold red] {exc}")
+        sys.exit(1)
 
     # Derive a human-friendly server name from the spec
     server_name = _derive_server_name(server_spec)
