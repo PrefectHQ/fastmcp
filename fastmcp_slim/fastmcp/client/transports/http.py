@@ -181,6 +181,7 @@ class StreamableHttpTransport(ClientTransport):
         read_timeout_seconds = session_kwargs.get("read_timeout_seconds")
         if read_timeout_seconds is not None:
             timeout = httpx2.Timeout(30.0, read=read_timeout_seconds)
+
         # A custom factory does not apply MCP's defaults the way
         # create_mcp_http_client does. Pass them when the client set no timeout,
         # so the factory does not fall through to httpx's 5s default.
