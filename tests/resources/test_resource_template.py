@@ -1,4 +1,6 @@
+import asyncio
 import functools
+import threading
 from typing import Annotated
 from urllib.parse import quote
 
@@ -7,7 +9,7 @@ from mcp.types import TextResourceContents
 from pydantic import BaseModel, Field
 
 from fastmcp import Client, Context, FastMCP
-from fastmcp.resources import ResourceTemplate
+from fastmcp.resources import ResourceContent, ResourceTemplate
 from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.resources.template import (
     build_regex,
@@ -242,6 +244,25 @@ class TestResourceTemplate:
         # read() returns raw bytes
         result = await resource.read()
         assert result == b"test"
+
+    async def test_sync_template_runs_concurrently(self):
+        """Sync template functions run in the threadpool and don't block each other."""
+        num_calls = 3
+        barrier = threading.Barrier(num_calls, timeout=0.5)
+
+        def concurrent_template(id: str) -> str:
+            barrier.wait()
+            return id
+
+        template = ResourceTemplate.from_function(
+            fn=concurrent_template, uri_template="data://{id}"
+        )
+
+        # Raises BrokenBarrierError if the reads run one at a time on the loop
+        results = await asyncio.gather(
+            *(template.read(arguments={"id": str(i)}) for i in range(num_calls))
+        )
+        assert results == [str(i) for i in range(num_calls)]
 
     async def test_basemodel_conversion(self):
         """Test handling of BaseModel types."""
@@ -1819,3 +1840,23 @@ class TestLiteralQueryInTemplate:
             [contents] = await client.read_resource(uri)
             assert isinstance(contents, TextResourceContents)
             assert contents.text == "q=abc"
+
+
+class TestTemplateComponentMetaPropagation:
+    """A template's component meta must reach list[ResourceContent] reads."""
+
+    async def test_list_resource_content_return_preserves_template_meta(self):
+        mcp = FastMCP()
+        component_meta = {"ui": {"csp": "default-src none"}, "team": "infra"}
+
+        @mcp.resource("data://multi/{id}", meta=component_meta)
+        def multi(id: str) -> list[ResourceContent]:
+            return [ResourceContent("a"), ResourceContent("b", meta={"own": 1})]
+
+        async with Client(mcp) as client:
+            result = await client.read_resource_mcp("data://multi/1")
+
+        assert [content.meta for content in result.contents] == [
+            component_meta,
+            {**component_meta, "own": 1},
+        ]

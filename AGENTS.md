@@ -43,7 +43,7 @@ The gitleaks hook needs the `gitleaks` binary on `PATH` (`brew install gitleaks`
 
 ## Skills
 
-Repository skills live in `.agents/skills/`, with symlinks in `.claude/skills/` for Claude Code. [The development guide](docs/development/contributing.mdx#maintenance-and-automation) says which work is automated and which needs a person. Load the skill that matches the job:
+Repository skills live in `.agents/skills/`. [The development guide](docs/development/contributing.mdx#maintenance-and-automation) says which work is automated and which needs a person. Load the skill that matches the job:
 
 | Job | Skill |
 | --- | --- |

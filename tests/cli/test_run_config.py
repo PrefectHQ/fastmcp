@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from fastmcp.cli.run import load_mcp_server_config
+from fastmcp.utilities.cli import load_and_merge_config
 from fastmcp.utilities.mcp_server_config import (
     Deployment,
     MCPServerConfig,
@@ -310,3 +311,39 @@ def test_environment_config_path_resolution(tmp_path):
     # Path should be resolved relative to config file
     req_idx = uv_cmd.index("--with-requirements") + 1
     assert Path(uv_cmd[req_idx]).is_absolute() or uv_cmd[req_idx] == "requirements.txt"
+
+
+def test_relative_config_path_survives_deployment_cwd(tmp_path, monkeypatch):
+    """A relative config path must still resolve after deployment.cwd changes the cwd."""
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    (work_dir / "server.py").write_text("# Server")
+    (tmp_path / "fastmcp.json").write_text(
+        json.dumps({"source": {"path": "server.py"}, "deployment": {"cwd": "work"}})
+    )
+    monkeypatch.chdir(tmp_path)
+
+    _, server_spec = load_and_merge_config("fastmcp.json")
+
+    assert Path.cwd() == work_dir.resolve()
+    # run_command re-opens the spec after the working directory changed
+    config = load_mcp_server_config(Path(server_spec))
+    assert config.deployment.cwd == "work"
+    assert Path.cwd() == work_dir.resolve()
+
+
+def test_config_symlink_keeps_its_own_name(tmp_path, monkeypatch):
+    """A symlinked config keeps the link's name, so the spec is still read as JSON."""
+    target = tmp_path / "config.txt"
+    target.write_text(json.dumps({"source": {"path": "server.py"}}))
+    (tmp_path / "server.py").write_text("# Server")
+    link = tmp_path / "fastmcp.json"
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available")
+    monkeypatch.chdir(tmp_path)
+
+    _, server_spec = load_and_merge_config("fastmcp.json")
+
+    assert Path(server_spec) == link

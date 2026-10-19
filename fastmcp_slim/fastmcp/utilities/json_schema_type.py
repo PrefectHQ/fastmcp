@@ -992,7 +992,22 @@ def _build_pydantic_model(
         # Handle defaults
         default_value = prop_schema.get("default", MISSING)
         if default_value is not MISSING:
-            field_definitions[prop_name] = (field_type, default_value)
+            # Check if the default value is valid against the field type.
+            # Only set validate_default=True when it passes, so that:
+            # 1. Valid defaults get hydrated (e.g., date strings → date objects)
+            # 2. Invalid defaults are preserved as-is rather than causing
+            #    validation errors that would be caught and logged during parsing
+            validate_default = False
+            try:
+                TypeAdapter(field_type).validate_python(default_value)
+                validate_default = True
+            except Exception:  # noqa: S110
+                # Default doesn't satisfy its own type; keep it as-is
+                pass
+            field_definitions[prop_name] = (
+                field_type,
+                Field(default=default_value, validate_default=validate_default),
+            )
         elif prop_name in required:
             field_definitions[prop_name] = (field_type, ...)
         else:
