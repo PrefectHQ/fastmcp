@@ -5,7 +5,7 @@ import pytest
 
 from fastmcp.cli.install import install_app
 from fastmcp.cli.install.mcp_json import install_mcp_json
-from fastmcp.cli.install.shared import validate_server_name
+from fastmcp.cli.install.shared import process_common_args, validate_server_name
 from fastmcp.cli.install.stdio import install_stdio
 
 
@@ -223,6 +223,56 @@ class TestInstallConfigEncoding:
 
         file, _, _, _, _ = await process_common_args(str(spec), None, [], [], None)
         assert file.name == "服务器.py"
+
+
+class TestProcessCommonArgsNameDetection:
+    """The server name is only a default: failing to import the server must not abort an install."""
+
+    async def test_uses_server_name_when_import_succeeds(self, tmp_path: Path):
+        server_file = tmp_path / "weather.py"
+        server_file.write_text(
+            "from fastmcp import FastMCP\n\nmcp = FastMCP('demo')\n", encoding="utf-8"
+        )
+
+        _, _, name, _, _ = await process_common_args(
+            str(server_file), None, [], [], None
+        )
+
+        assert name == "demo"
+
+    @pytest.mark.parametrize(
+        "failing_import",
+        [
+            'import os\n\nAPI_KEY = os.environ["FASTMCP_TEST_MISSING_KEY"]\n',
+            'raise RuntimeError("could not connect")\n',
+            "raise SystemExit(1)\n",
+        ],
+        ids=["missing-env-var", "runtime-error", "system-exit"],
+    )
+    async def test_falls_back_to_file_stem_when_import_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing_import: str
+    ):
+        """Servers that read config at import time still install without `--name`."""
+        monkeypatch.delenv("FASTMCP_TEST_MISSING_KEY", raising=False)
+        server_file = tmp_path / "weather.py"
+        server_file.write_text(
+            failing_import + "from fastmcp import FastMCP\n\nmcp = FastMCP('demo')\n",
+            encoding="utf-8",
+        )
+
+        file, _, name, _, _ = await process_common_args(
+            str(server_file), None, [], ["API_KEY=secret"], None
+        )
+
+        assert file == server_file
+        assert name == "weather"
+
+    async def test_keyboard_interrupt_during_import_propagates(self, tmp_path: Path):
+        server_file = tmp_path / "weather.py"
+        server_file.write_text("raise KeyboardInterrupt\n", encoding="utf-8")
+
+        with pytest.raises(KeyboardInterrupt):
+            await process_common_args(str(server_file), None, [], [], None)
 
 
 class TestCursorInstall:
