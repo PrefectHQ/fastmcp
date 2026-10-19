@@ -138,6 +138,7 @@
                       "servers/providers/filesystem",
                       "servers/providers/proxy",
                       "servers/providers/skills",
+                      "servers/providers/experimental-skills",
                       "servers/composition",
                       "servers/providers/custom"
                     ]

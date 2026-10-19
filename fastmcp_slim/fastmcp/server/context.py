@@ -174,7 +174,7 @@ class Context:
         request_id = ctx.request_id
         client_id = ctx.client_id
 
-        # Manage state across the session (persists across requests)
+        # Manage state (persists across requests on handshake-era sessions)
         await ctx.set_state("key", "value")
         value = await ctx.get_state("key")
 
@@ -185,14 +185,12 @@ class Context:
     ```
 
     State Management:
-    Context provides session-scoped state that persists across requests within
-    the same MCP session. State is automatically keyed by session, ensuring
-    isolation between different clients.
-
-    State set during `on_initialize` middleware will persist to subsequent tool
-    calls when using the same session object (STDIO, SSE, single-server HTTP).
-    For distributed/serverless HTTP deployments where different machines handle
-    the init and tool calls, state is isolated by the mcp-session-id header.
+    Context state is keyed by `session_id`. On handshake-era (legacy)
+    connections that identifier lasts for the MCP session, so state persists
+    across requests and is isolated between clients. On 2026-07-28 connections,
+    which `Client` negotiates by default, every request is a fresh connection,
+    so state does not carry over to the next request. Use
+    [Session State](/servers/sessions) for data that must outlive a request.
 
     The context parameter name can be anything as long as it's annotated with Context.
     The context is optional - tools that don't need it can omit the parameter.
@@ -286,13 +284,15 @@ class Context:
         self._tokens.append(token)
 
         # Set current server for dependency injection (use weakref to avoid reference cycles)
-        from fastmcp.server.dependencies import _current_server, is_docket_available
+        from fastmcp.server.dependencies import _current_server
 
         self._server_token = _current_server.set(weakref.ref(self.fastmcp))
 
-        if not is_docket_available():
-            # Without docket, the lifespan won't provide a SharedContext,
-            # so create one scoped to this Context for Shared() dependencies.
+        try:
+            SharedContext.resolved.get()
+        except LookupError:
+            # Direct calls outside the server lifespan need a temporary scope;
+            # otherwise preserve the app's existing Shared() dependencies.
             self._shared_context = SharedContext()
             await self._shared_context.__aenter__()
 
@@ -712,27 +712,22 @@ class Context:
 
     @property
     def session_id(self) -> str:
-        """Get the MCP session ID for ALL transports.
+        """Get the identifier of the current MCP connection.
 
-        Returns the session ID that can be used as a key for session-based
-        data storage (e.g., Redis) to share data between tool calls within
-        the same client session.
+        On handshake-era (legacy) connections this is stable for the whole MCP
+        session: the negotiated session ID over streamable HTTP, or an ID
+        generated once per session on other transports. On 2026-07-28
+        connections, which `Client` negotiates by default, every request is its
+        own connection and gets a new identifier, so it can't be used to share
+        data between tool calls. Use [Session State](/servers/sessions) for
+        that.
 
         Returns:
-            The session ID for StreamableHTTP transports, or a generated ID
-            for other transports.
+            The negotiated session ID when there is one, otherwise a generated
+            ID for the current connection.
 
         Raises:
             RuntimeError if no session is available.
-
-        Example:
-            ```python
-            @server.tool
-            def store_data(data: dict, ctx: Context) -> str:
-                session_id = ctx.session_id
-                redis_client.set(f"session:{session_id}:data", json.dumps(data))
-                return f"Data stored for session {session_id}"
-            ```
         """
         from uuid import uuid4
 
@@ -757,14 +752,14 @@ class Context:
                 "This typically means you're outside a request context."
             )
 
-        # In SDK v2 the ServerSession is constructed fresh per request, so the
-        # stable per-client identity lives on the underlying Connection, which
-        # persists for the whole client session. Cache the state prefix on the
-        # connection (its `session_id` for HTTP, its `state` dict otherwise) so
-        # session-scoped state survives across tool calls.
+        # In SDK v2 the ServerSession is constructed fresh per request, so cache
+        # the state prefix on the underlying Connection. On handshake-era
+        # connections it spans the whole client session; on 2026-07-28
+        # connections the SDK builds one per request, so the prefix is
+        # per-request there too.
         connection = getattr(session, "_connection", None)
 
-        # Check for a cached prefix on the stable connection (or the session, as
+        # Check for a cached prefix on the connection (or the session, as
         # a fallback for on_initialize where only a raw session is available).
         if connection is not None:
             cached = connection.state.get("_fastmcp_state_prefix")
@@ -788,12 +783,37 @@ class Context:
         if session_id is None:
             session_id = str(uuid4())
 
-        # Cache on the stable connection (falling back to the session).
+        # Cache on the connection (falling back to the session).
         if connection is not None:
             connection.state["_fastmcp_state_prefix"] = session_id
         else:
             session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         return session_id
+
+    def _session_scope_key(self) -> str | None:
+        """Key for data that follows one client across requests.
+
+        On a handshake-era connection this is `session_id`. A 2026-07-28
+        connection has no session, so the scope is the authenticated user (the
+        identity `UserSession` keys on) or, on stdio and in-memory transports,
+        the server process, which serves a single client. Returns None for an
+        unauthenticated 2026-07-28 HTTP request, where nothing identifies the
+        client from one request to the next.
+
+        Raises:
+            RuntimeError if no session is available.
+        """
+        if not self._is_modern_protocol():
+            return self.session_id
+
+        from fastmcp.server.sessions import _principal_segment, current_principal
+
+        principal = current_principal()
+        if principal is not None:
+            return f"user:{_principal_segment(principal)}"
+        if self.transport in ("sse", "streamable-http"):
+            return None
+        return "process"
 
     @property
     def session(self) -> ServerSession:
@@ -1117,8 +1137,10 @@ class Context:
     ) -> None:
         """Set a value in the state store.
 
-        By default, values are stored in the session-scoped state store and
-        persist across requests within the same MCP session. Values must be
+        By default, values are stored in the state store under `session_id`.
+        They persist across requests on handshake-era (legacy) connections, but
+        not on 2026-07-28 connections, where `session_id` is per-request; use
+        [Session State](/servers/sessions) for those. Values must be
         JSON-serializable (dicts, lists, strings, numbers, etc.).
 
         For non-serializable values (e.g., HTTP clients, database connections),

@@ -11,6 +11,7 @@ from mcp.shared.exceptions import MCPError
 from mcp_types import INVALID_PARAMS
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
+from fastmcp.server.context import Context
 from fastmcp.server.extensions import MethodBinding, ServerExtension
 from fastmcp.server.mixins.mcp_operations import _apply_pagination
 from fastmcp.server.providers.base import Provider
@@ -70,9 +71,15 @@ class SkillsExtension(ServerExtension):
                     f"{type(provider).__name__} is not a SkillsExtension source"
                 )
 
+            provider._validate_skill_source()
+
     @property
     def _sources(self) -> tuple[_SkillSource, ...]:
         return cast("tuple[_SkillSource, ...]", self._providers)
+
+    def _requires_live_resource(self, uri: str) -> bool:
+        """Keep manifest-backed resources coherent with current file bytes."""
+        return any(source._owns_skill_resource(uri) for source in self._sources)
 
     def methods(self) -> Sequence[MethodBinding]:
         return (
@@ -100,11 +107,13 @@ class SkillsExtension(ServerExtension):
     ) -> ListSkillsResult:
         self._validate_live_configuration()
 
-        source_entries = await gather(
-            source._list_skill_entries(context) for source in self._sources
-        )
+        async with Context(fastmcp=self.server):
+            source_entries = await gather(
+                source._list_skill_entries(context) for source in self._sources
+            )
+            identities = await gather(source._skill_uris() for source in self._sources)
         entries = [entry for group in source_entries for entry in group]
-        counts = Counter(entry.uri for entry in entries)
+        counts = Counter(uri for group in identities for uri in group)
         collisions = sorted(uri for uri, count in counts.items() if count > 1)
         if collisions:
             logger.warning(
@@ -127,9 +136,17 @@ class SkillsExtension(ServerExtension):
     ) -> GetSkillResult:
         self._validate_live_configuration()
 
-        results = await gather(
-            source._get_skill_entry(params.uri, context) for source in self._sources
-        )
+        async with Context(fastmcp=self.server):
+            identities = await gather(
+                source._skill_uris(params.uri) for source in self._sources
+            )
+            if sum(group.count(params.uri) for group in identities) != 1:
+                raise MCPError(
+                    code=INVALID_PARAMS, message=f"Unknown skill URI: {params.uri}"
+                )
+            results = await gather(
+                source._get_skill_entry(params.uri, context) for source in self._sources
+            )
         matches = [entry for entry in results if entry is not None]
         if len(matches) != 1 or matches[0].uri != params.uri:
             raise MCPError(

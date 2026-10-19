@@ -243,11 +243,21 @@ class Middleware:
     ) -> ToolResult:
         return await call_next(context)
 
+    async def check_resource_access(
+        self, context: MiddlewareContext[mt.ReadResourceRequestParams]
+    ) -> None:
+        """Authorize resource access without reading content.
+
+        Raise AuthorizationError to deny access. Resource authorization policies
+        should live here so reads and extension metadata use the same checks.
+        """
+
     async def on_read_resource(
         self,
         context: MiddlewareContext[mt.ReadResourceRequestParams],
         call_next: CallNext[mt.ReadResourceRequestParams, ResourceResult],
     ) -> ResourceResult:
+        await self.check_resource_access(context)
         return await call_next(context)
 
     async def on_get_prompt(
