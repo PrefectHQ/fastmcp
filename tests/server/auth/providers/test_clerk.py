@@ -14,6 +14,16 @@ CLERK_DOMAIN = "test-instance.clerk.accounts.dev"
 _USERINFO_RE = re.compile(rf"https://{re.escape(CLERK_DOMAIN)}/oauth/userinfo")
 _INTROSPECTION_RE = re.compile(rf"https://{re.escape(CLERK_DOMAIN)}/oauth/token_info")
 
+# Forms of the same instance domain a user may copy from the Clerk dashboard,
+# which shows the Frontend API URL with its scheme.
+DOMAIN_FORMS = [
+    CLERK_DOMAIN,
+    f"{CLERK_DOMAIN}/",
+    f"https://{CLERK_DOMAIN}",
+    f"https://{CLERK_DOMAIN}/",
+    f"http://{CLERK_DOMAIN}",
+]
+
 
 @pytest.fixture
 def memory_storage() -> MemoryStore:
@@ -76,10 +86,13 @@ class TestClerkProvider:
         )
         assert provider._upstream_revocation_endpoint is None
 
-    def test_domain_trailing_slash_stripped(self, memory_storage: MemoryStore):
-        """Test that trailing slashes are stripped from the domain."""
+    @pytest.mark.parametrize("domain", DOMAIN_FORMS)
+    def test_domain_scheme_and_trailing_slash_stripped(
+        self, domain: str, memory_storage: MemoryStore
+    ):
+        """Test that a scheme and trailing slashes on the domain are ignored."""
         provider = ClerkProvider(
-            domain=f"{CLERK_DOMAIN}/",
+            domain=domain,
             client_id="clerk-client-id",
             client_secret="clerk-client-secret",
             base_url="https://myserver.com",
@@ -91,6 +104,12 @@ class TestClerkProvider:
             provider._upstream_authorization_endpoint
             == f"https://{CLERK_DOMAIN}/oauth/authorize"
         )
+        assert (
+            provider._upstream_token_endpoint == f"https://{CLERK_DOMAIN}/oauth/token"
+        )
+        verifier = provider._token_validator
+        assert isinstance(verifier, ClerkTokenVerifier)
+        assert verifier.domain == CLERK_DOMAIN
 
     def test_default_scopes(self, memory_storage: MemoryStore):
         """Test that default required scopes are openid, email, profile."""
@@ -245,6 +264,27 @@ class TestClerkTokenVerifier:
         assert result.claims["family_name"] == "User"
         assert result.claims["preferred_username"] == "testuser"
         assert result.claims["aud"] == "clerk-client-id"
+
+    @pytest.mark.parametrize("domain", DOMAIN_FORMS)
+    async def test_domain_scheme_and_trailing_slash_stripped(
+        self, domain: str, httpx_mock: HTTPXMock
+    ):
+        """A scheme and trailing slashes on the domain do not change request URLs."""
+        httpx_mock.add_response(
+            url=_INTROSPECTION_RE,
+            json={"active": True, "scope": "openid", "sub": "user_abc123"},
+        )
+        httpx_mock.add_response(url=_USERINFO_RE, json={"sub": "user_abc123"})
+
+        verifier = ClerkTokenVerifier(domain=domain)
+        result = await verifier.verify_token("valid-token")
+
+        assert [str(request.url) for request in httpx_mock.get_requests()] == [
+            f"https://{CLERK_DOMAIN}/oauth/token_info",
+            f"https://{CLERK_DOMAIN}/oauth/userinfo",
+        ]
+        assert result is not None
+        assert verifier.domain == CLERK_DOMAIN
 
     async def test_invalid_token_returns_none(self, httpx_mock: HTTPXMock):
         """Token marked inactive by introspection is rejected."""

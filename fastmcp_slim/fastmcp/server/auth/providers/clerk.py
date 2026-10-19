@@ -44,6 +44,15 @@ from fastmcp.utilities.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _normalize_domain(domain: str) -> str:
+    """Strip any URL scheme and trailing slashes from a Clerk instance domain.
+
+    The Clerk dashboard shows the Frontend API URL with its scheme, so users
+    often pass it in that form.
+    """
+    return domain.removeprefix("https://").removeprefix("http://").rstrip("/")
+
+
 class ClerkTokenVerifier(TokenVerifier):
     """Token verifier for Clerk OAuth tokens.
 
@@ -82,7 +91,7 @@ class ClerkTokenVerifier(TokenVerifier):
                 lifecycle. When None (default), a fresh client is created per call.
         """
         super().__init__(required_scopes=required_scopes)
-        self.domain = domain.rstrip("/")
+        self.domain = _normalize_domain(domain)
         self._client_id = client_id
         self._client_secret = client_secret
         self.timeout_seconds = timeout_seconds
@@ -351,7 +360,7 @@ class ClerkProvider(OAuthProxy):
             token_expiry_threshold_seconds: Number of seconds before actual expiry to
                 treat a token as expired, refreshing early to avoid races. Defaults to 0.
         """
-        domain = domain.rstrip("/")
+        domain = _normalize_domain(domain)
 
         required_scopes_final = (
             parse_scopes(required_scopes)
