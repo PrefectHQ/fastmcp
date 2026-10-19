@@ -10,7 +10,12 @@ from typing import Any, Literal, cast
 import httpx2
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from mcp.shared._httpx_utils import McpHttpClientFactory, create_mcp_http_client
+from mcp.shared._httpx_utils import (
+    MCP_DEFAULT_SSE_READ_TIMEOUT,
+    MCP_DEFAULT_TIMEOUT,
+    McpHttpClientFactory,
+    create_mcp_http_client,
+)
 from pydantic import AnyUrl
 from typing_extensions import Unpack
 
@@ -176,6 +181,12 @@ class StreamableHttpTransport(ClientTransport):
         read_timeout_seconds = session_kwargs.get("read_timeout_seconds")
         if read_timeout_seconds is not None:
             timeout = httpx2.Timeout(30.0, read=read_timeout_seconds)
+        # A custom factory does not apply MCP's defaults the way
+        # create_mcp_http_client does. Pass them when the client set no timeout,
+        # so the factory does not fall through to httpx's 5s default.
+        factory_timeout = timeout or httpx2.Timeout(
+            MCP_DEFAULT_TIMEOUT, read=MCP_DEFAULT_SSE_READ_TIMEOUT
+        )
 
         # Create httpx client from factory or use default with MCP-appropriate
         # timeouts. Note: create_mcp_http_client enables follow_redirects, but
@@ -187,7 +198,7 @@ class StreamableHttpTransport(ClientTransport):
                 headers=headers,
                 auth=self.auth,
                 follow_redirects=True,  # type: ignore[call-arg]  # ty:ignore[unknown-argument]
-                **({"timeout": timeout} if timeout else {}),
+                timeout=factory_timeout,
             )
         elif verify_factory is not None:
             http_client = verify_factory(

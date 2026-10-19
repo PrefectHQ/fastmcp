@@ -2,10 +2,13 @@ import asyncio
 import json
 import sys
 from contextlib import suppress
+from typing import Any, cast
 from unittest.mock import AsyncMock, call
 
+import httpx2
 import pytest
 from mcp import MCPError
+from mcp.shared._httpx_utils import McpHttpClientFactory
 from mcp_types import TextResourceContents
 
 from fastmcp import Context
@@ -276,3 +279,37 @@ class TestTimeout:
         async with streamable_http_server.client(timeout=2) as client:
             with pytest.raises(MCPError):
                 await client.call_tool("sleep", {"seconds": 0.2}, timeout=0.1)
+
+
+class TestHttpClientFactoryTimeout:
+    @pytest.mark.parametrize(
+        ("client_timeout", "expected"),
+        [
+            (None, httpx2.Timeout(30.0, read=300.0)),
+            (600, httpx2.Timeout(30.0, read=600.0)),
+        ],
+    )
+    async def test_custom_factory_client_timeout(
+        self,
+        streamable_http_server: ASGIServer,
+        client_timeout: float | None,
+        expected: httpx2.Timeout,
+    ):
+        created: list[httpx2.AsyncClient] = []
+
+        def factory(**kwargs: Any) -> httpx2.AsyncClient:
+            http_client = streamable_http_server.http_client(**kwargs)
+            created.append(http_client)
+            return http_client
+
+        transport = StreamableHttpTransport(
+            streamable_http_server.url,
+            httpx_client_factory=cast(McpHttpClientFactory, factory),
+        )
+        async with Client(transport, timeout=client_timeout):
+            pass
+
+        assert created
+        assert [http_client.timeout for http_client in created] == [expected] * len(
+            created
+        )
