@@ -947,6 +947,16 @@ async def call_command(
         ```
     """
 
+    if command is not None and server_spec is not None:
+        # With --command there is no server spec, so the positionals bind one
+        # slot early: the target lands in `server_spec` and the first key=value
+        # argument in `target`. A `target` that is not key=value (or a JSON
+        # object) means a server spec was passed as well; leave that to
+        # resolve_server_spec to reject.
+        if not target or "=" in target or target.startswith("{"):
+            arguments = (target, *arguments) if target else arguments
+            server_spec, target = None, server_spec
+
     if not target:
         console.print(
             "[bold red]Error:[/bold red] Missing target.\n\n"
