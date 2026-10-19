@@ -1,14 +1,19 @@
 """Tests for authorization checks and AuthMiddleware."""
 
+from collections.abc import Sequence
 from unittest.mock import Mock
 
 import pytest
+from mcp import MCPError
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.exceptions import AuthorizationError, InsufficientScopeError
+from fastmcp.exceptions import AuthorizationError, InsufficientScopeError, ToolError
+from fastmcp.prompts import Prompt
+from fastmcp.resources.base import Resource
+from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import (
     AccessToken,
     AuthContext,
@@ -18,7 +23,13 @@ from fastmcp.server.auth import (
     run_auth_checks,
 )
 from fastmcp.server.middleware import AuthMiddleware
-from fastmcp.server.transforms import ToolTransform
+from fastmcp.server.transforms import (
+    GetPromptNext,
+    GetResourceNext,
+    GetResourceTemplateNext,
+    ToolTransform,
+    Transform,
+)
 from fastmcp.tools.tool_transform import ToolTransformConfig, TransformedTool
 from fastmcp.utilities.authorization import scope_requirements
 from fastmcp.utilities.versions import VersionSpec
@@ -1483,3 +1494,150 @@ class TestInsufficientScopeSignal:
             auth_context_var.reset(tok)
 
         assert exc_info.value.required_scopes == ["admin"]
+
+
+# =============================================================================
+# Tests that component auth sees the transformed component on direct lookups
+# =============================================================================
+
+
+class TagAdmin(Transform):
+    """Tag every resource, template, and prompt `admin`, on list and get alike."""
+
+    async def list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]:
+        return [r.model_copy(update={"tags": {"admin"}}) for r in resources]
+
+    async def get_resource(
+        self,
+        uri: str,
+        call_next: GetResourceNext,
+        *,
+        version: VersionSpec | None = None,
+    ) -> Resource | None:
+        resource = await call_next(uri, version=version)
+        return resource and resource.model_copy(update={"tags": {"admin"}})
+
+    async def list_resource_templates(
+        self, templates: Sequence[ResourceTemplate]
+    ) -> Sequence[ResourceTemplate]:
+        return [t.model_copy(update={"tags": {"admin"}}) for t in templates]
+
+    async def get_resource_template(
+        self,
+        uri: str,
+        call_next: GetResourceTemplateNext,
+        *,
+        version: VersionSpec | None = None,
+    ) -> ResourceTemplate | None:
+        template = await call_next(uri, version=version)
+        return template and template.model_copy(update={"tags": {"admin"}})
+
+    async def list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]:
+        return [p.model_copy(update={"tags": {"admin"}}) for p in prompts]
+
+    async def get_prompt(
+        self, name: str, call_next: GetPromptNext, *, version: VersionSpec | None = None
+    ) -> Prompt | None:
+        prompt = await call_next(name, version=version)
+        return prompt and prompt.model_copy(update={"tags": {"admin"}})
+
+
+class TestAuthSeesTransformedComponent:
+    """A transform that tags a component `admin` must gate direct access, not just listing."""
+
+    def make_tool_server(self) -> FastMCP:
+        mcp = FastMCP()
+
+        @mcp.tool(tags={"public"}, auth=restrict_tag("admin", scopes=["admin"]))
+        def secret() -> str:
+            return "secret"
+
+        mcp.add_transform(
+            ToolTransform({"secret": ToolTransformConfig(tags={"admin"})})
+        )
+        return mcp
+
+    async def test_tool_tagged_by_transform_is_denied_without_scope(self):
+        mcp = self.make_tool_server()
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert await mcp.list_tools() == []
+            assert await mcp.get_tool("secret") is None
+            async with Client(mcp) as client:
+                with pytest.raises(ToolError):
+                    await client.call_tool("secret")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_tool_tagged_by_transform_is_allowed_with_scope(self):
+        mcp = self.make_tool_server()
+        tok = set_token(make_token(scopes=["admin"]))
+        try:
+            assert [t.name for t in await mcp.list_tools()] == ["secret"]
+            async with Client(mcp) as client:
+                result = await client.call_tool("secret")
+            assert result.data == "secret"
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_resource_tagged_by_transform_is_denied_without_scope(self):
+        mcp = FastMCP()
+
+        @mcp.resource(
+            "secret://data",
+            tags={"public"},
+            auth=restrict_tag("admin", scopes=["admin"]),
+        )
+        def secret() -> str:
+            return "secret"
+
+        mcp.add_transform(TagAdmin())
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert await mcp.list_resources() == []
+            assert await mcp.get_resource("secret://data") is None
+            async with Client(mcp) as client:
+                with pytest.raises(MCPError):
+                    await client.read_resource("secret://data")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_template_tagged_by_transform_is_denied_without_scope(self):
+        mcp = FastMCP()
+
+        @mcp.resource(
+            "secret://{name}",
+            tags={"public"},
+            auth=restrict_tag("admin", scopes=["admin"]),
+        )
+        def secret(name: str) -> str:
+            return f"secret {name}"
+
+        mcp.add_transform(TagAdmin())
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert await mcp.list_resource_templates() == []
+            assert await mcp.get_resource_template("secret://{name}") is None
+            async with Client(mcp) as client:
+                with pytest.raises(MCPError):
+                    await client.read_resource("secret://x")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_prompt_tagged_by_transform_is_denied_without_scope(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(tags={"public"}, auth=restrict_tag("admin", scopes=["admin"]))
+        def secret() -> str:
+            return "secret"
+
+        mcp.add_transform(TagAdmin())
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert await mcp.list_prompts() == []
+            assert await mcp.get_prompt("secret") is None
+            async with Client(mcp) as client:
+                with pytest.raises(MCPError):
+                    await client.get_prompt("secret")
+        finally:
+            auth_context_var.reset(tok)

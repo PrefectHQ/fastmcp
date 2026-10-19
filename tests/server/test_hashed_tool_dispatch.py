@@ -482,7 +482,7 @@ def scoped_tool_with_auth_removed_in_mounted_server(calls: list[str]) -> FastMCP
     "build, listed_name, allowed",
     [
         (admin_tag_removed_by_server_transform, "save", False),
-        (admin_tag_added_by_server_transform, "save", True),
+        (admin_tag_added_by_server_transform, "save", False),
         (admin_tag_removed_by_provider_transform, "save", True),
         (admin_tag_added_by_provider_transform, "save", False),
         (admin_tag_removed_in_mounted_server, "child_save", False),
