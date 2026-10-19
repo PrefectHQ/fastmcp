@@ -79,6 +79,32 @@ class TestSessionId:
         finally:
             fastmcp_request_ctx.reset(token)
 
+    def test_session_id_raises_when_request_context_has_no_session(self, context):
+        """A request context without a session is not a session: raise RuntimeError."""
+        from fastmcp.server.dependencies import (
+            FastMCPRequestContext,
+            fastmcp_request_ctx,
+        )
+
+        token = fastmcp_request_ctx.set(
+            FastMCPRequestContext(
+                session=None,  # ty: ignore[invalid-argument-type]
+                request_id=None,
+                meta=None,
+                request=None,
+                protocol_version="2025-06-18",
+                close_sse_stream=None,
+                lifespan_context={},
+                _srctx=MagicMock(meta=None),
+            )
+        )
+
+        try:
+            with pytest.raises(RuntimeError, match="no session exists"):
+                context.session_id
+        finally:
+            fastmcp_request_ctx.reset(token)
+
 
 class TestContextState:
     """Test suite for Context state functionality."""
@@ -489,6 +515,47 @@ class TestTransportIntegration:
             result = await client.call_tool("get_transport", {})
             assert observed_transport == "streamable-http"
             assert result.data == "streamable-http"
+
+
+class TestListComponentsOutsideRequest:
+    """`Context.list_resources` and `list_prompts` without a live MCP request."""
+
+    @pytest.fixture
+    def server(self) -> FastMCP:
+        mcp = FastMCP("test")
+
+        @mcp.resource("docs://readme")
+        def readme() -> str:
+            return "readme"
+
+        @mcp.prompt
+        def summarize(text: str) -> str:
+            return f"Summarize: {text}"
+
+        return mcp
+
+    async def test_tool_run_by_call_tool(self, server: FastMCP):
+        @server.tool
+        async def catalog(ctx: Context) -> dict[str, list[str]]:
+            return {
+                "resources": [str(r.uri) for r in await ctx.list_resources()],
+                "prompts": [p.name for p in await ctx.list_prompts()],
+            }
+
+        result = await server.call_tool("catalog", {})
+
+        assert result.structured_content == {
+            "resources": ["docs://readme"],
+            "prompts": ["summarize"],
+        }
+
+    async def test_bare_context(self, server: FastMCP):
+        async with Context(fastmcp=server) as ctx:
+            resources = await ctx.list_resources()
+            prompts = await ctx.list_prompts()
+
+        assert [str(r.uri) for r in resources] == ["docs://readme"]
+        assert [p.name for p in prompts] == ["summarize"]
 
 
 class TestContextLogExtra:
