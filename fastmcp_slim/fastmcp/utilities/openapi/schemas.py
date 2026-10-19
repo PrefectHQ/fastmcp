@@ -794,7 +794,9 @@ def extract_output_schema_from_responses(
 
     This function finds the first successful response (200, 201, 202, 204) with a
     JSON-compatible content type and extracts its schema. If the schema is not an
-    object type, it wraps it to comply with MCP requirements.
+    object type, it wraps it to comply with MCP requirements. When any successful
+    response has no content, there is no output schema, since the operation may
+    answer without a body.
 
     Args:
         responses: Dictionary of ResponseInfo objects keyed by status code
@@ -805,6 +807,14 @@ def extract_output_schema_from_responses(
         dict: MCP-compliant output schema with potential wrapping, or None if no suitable schema found
     """
     if not responses:
+        return None
+
+    # MCP requires structured content from a tool that advertises an output
+    # schema, which a bodiless success response (e.g. 204) cannot provide.
+    if any(
+        status_code.startswith("2") and not resp_info.content_schema
+        for status_code, resp_info in responses.items()
+    ):
         return None
 
     # Priority order for success status codes

@@ -452,10 +452,39 @@ class OpenAPIParser(
         # If no success codes found, return None (tool will have no output schema)
         return None
 
+    def _extract_bodiless_success_responses(
+        self, operation_responses: dict[str, Any], primary_status_code: str
+    ) -> dict[str, ResponseInfo]:
+        """Extract the success responses, besides the primary one, that declare no body.
+
+        Such a response (e.g. a 204 next to a 201) means the operation may answer
+        without a body, so the tool cannot promise structured output.
+        """
+        bodiless_responses: dict[str, ResponseInfo] = {}
+        for status_code, resp_or_ref in operation_responses.items():
+            if status_code == primary_status_code or not str(status_code).startswith(
+                "2"
+            ):
+                continue
+            try:
+                response = self._resolve_ref(resp_or_ref)
+            except ValueError as e:
+                logger.debug(f"Skipping unresolved response {status_code}: {e}")
+                continue
+            if isinstance(response, self.response_cls) and not response.content:
+                bodiless_responses[str(status_code)] = ResponseInfo(
+                    description=response.description
+                )
+        return bodiless_responses
+
     def _extract_responses(
         self, operation_responses: dict[str, Any] | None
     ) -> dict[str, ResponseInfo]:
-        """Extract and resolve response information. Only includes the primary success response for MCP tools."""
+        """Extract and resolve response information.
+
+        Only includes the primary success response for MCP tools, plus any other
+        success response that has no body.
+        """
         extracted_responses: dict[str, ResponseInfo] = {}
 
         if not operation_responses:
@@ -548,6 +577,9 @@ class OpenAPIParser(
                 exc_info=False,
             )
 
+        extracted_responses.update(
+            self._extract_bodiless_success_responses(operation_responses, status_code)
+        )
         return extracted_responses
 
     def _extract_schema_dependencies(
