@@ -379,7 +379,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 Disable only if upstream provider doesn't support PKCE.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
-                Defaults to "client_secret_basic".
+                Defaults to "client_secret_basic" when a client secret is configured
+                and to "none" (public client, no secret sent) otherwise.
             extra_authorize_params: Additional parameters to forward to the upstream authorization endpoint.
                 Useful for provider-specific parameters like Auth0's "audience".
                 Example: {"audience": "https://api.example.com"}

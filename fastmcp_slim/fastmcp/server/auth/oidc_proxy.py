@@ -360,7 +360,8 @@ class OIDCProxy(OAuthProxy):
                 provided, the upstream client secret will be used to derive a 32-byte key using PBKDF2.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
-                Defaults to "client_secret_basic".
+                Defaults to "client_secret_basic" when a client secret is configured
+                and to "none" (public client, no secret sent) otherwise.
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to the upstream IdP.
                 When False, authorization proceeds directly without user confirmation.
