@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 from typing import TYPE_CHECKING, Any
 
 import httpx2
+import mcp_types
 from mcp_types import ToolAnnotations
 from pydantic.networks import AnyUrl
 
@@ -242,9 +244,15 @@ class OpenAPITool(Tool):
             response = await _send_request(self._client, request)
             _raise_for_status(response)
 
-            # Try to parse as JSON first
-            try:
-                result = response.json()
+            content_type = response.headers.get("content-type", "").lower()
+            media_type = content_type.split(";")[0].strip()
+
+            # RFC 6839: application/json or any media type ending with "+json"
+            if media_type == "application/json" or media_type.endswith("+json"):
+                try:
+                    result = response.json()
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    return ToolResult(content=response.text)
 
                 # Handle structured content based on output schema
                 if self.output_schema is not None:
@@ -264,8 +272,20 @@ class OpenAPITool(Tool):
                     structured_output = {"result": structured_output}
 
                 return ToolResult(structured_content=structured_output)
-            except json.JSONDecodeError:
+            elif any(ct in media_type for ct in ["text/", "application/xml"]):
                 return ToolResult(content=response.text)
+            else:
+                data = base64.b64encode(response.content).decode("ascii")
+                resource = mcp_types.BlobResourceContents(
+                    blob=data,
+                    mime_type=media_type or "application/octet-stream",
+                    uri=f"file:///{self.name}",
+                )
+                return ToolResult(
+                    content=[
+                        mcp_types.EmbeddedResource(type="resource", resource=resource)
+                    ]
+                )
 
         except httpx2.TimeoutException as exc:
             raise ValueError(f"HTTP request timed out ({type(exc).__name__})") from exc
