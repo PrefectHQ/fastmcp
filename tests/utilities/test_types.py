@@ -358,9 +358,7 @@ class TestAudio:
             ("aif", "audio/aiff"),
         ],
     )
-    def test_path_and_format_agree_on_mime_type(
-        self, tmp_path, extension, mime_type
-    ):
+    def test_path_and_format_agree_on_mime_type(self, tmp_path, extension, mime_type):
         """A file extension maps to the same MIME type as the matching format."""
         path = tmp_path / f"test.{extension}"
         path.write_bytes(b"fake audio data")

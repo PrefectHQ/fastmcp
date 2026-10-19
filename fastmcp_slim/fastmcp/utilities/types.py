@@ -380,17 +380,12 @@ class Audio:
         }
 
         if self._format:
-            token = self._format.lower()
-            return mapping.get(token, f"audio/{token}")
+            return mapping.get(self._format.lower(), f"audio/{self._format.lower()}")
 
         if self.path:
-            # A declared format falls back to audio/<token>. A path only maps
-            # extensions in the table above; anything else, including a path
-            # with no suffix, stays octet-stream. `.unknown` relies on that.
-            suffix = self.path.suffix.lower().lstrip(".")
-            if suffix:
-                return mapping.get(suffix, "application/octet-stream")
-            return "application/octet-stream"
+            return mapping.get(
+                self.path.suffix.lower().lstrip("."), "application/octet-stream"
+            )
         return "audio/wav"  # default for raw binary data
 
     def to_audio_content(
