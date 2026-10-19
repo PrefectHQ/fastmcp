@@ -16,8 +16,18 @@ from yaml.nodes import MappingNode
 
 from fastmcp.skills.models import Skill, SkillFrontmatter, SkillResource
 
+# SEP-2640 per-skill limits; servers should not serve skills that exceed them.
+MAX_SKILL_RESOURCES = 512
+MAX_SKILL_BYTES = 16 * 1024 * 1024
+
 
 class _FrontmatterLoader(yaml.SafeLoader):
+    def compose_node(self, parent: Any, index: Any) -> Any:
+        # Aliases let a few bytes expand into an arbitrarily large document.
+        if self.check_event(yaml.AliasEvent):
+            raise ValueError("frontmatter must not use YAML aliases")
+        return super().compose_node(parent, index)
+
     def construct_mapping(
         self, node: MappingNode, deep: bool = False
     ) -> dict[str, Any]:
@@ -51,7 +61,7 @@ def _validate_json(value: Any, ancestors: set[int]) -> None:
 
 
 def parse_frontmatter(content: bytes) -> SkillFrontmatter:
-    text = content.decode("utf-8")
+    text = content.decode("utf-8-sig")
     match = re.match(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|\Z)", text, re.DOTALL)
     if match is None:
         raise ValueError("SKILL.md must begin with YAML frontmatter")
@@ -89,6 +99,10 @@ def snapshot(root: Path, skill_path: str) -> Snapshot:
     main = root / "SKILL.md"
     if main not in paths:
         raise ValueError("skill must contain SKILL.md")
+    if len(paths) > MAX_SKILL_RESOURCES:
+        raise ValueError(f"skill has more than {MAX_SKILL_RESOURCES} files")
+    if sum(path.stat().st_size for path in paths) > MAX_SKILL_BYTES:
+        raise ValueError(f"skill is larger than {MAX_SKILL_BYTES} bytes")
     records: list[SkillResource] = []
     files: list[tuple[str, Path]] = []
     frontmatter: SkillFrontmatter | None = None
@@ -108,6 +122,8 @@ def snapshot(root: Path, skill_path: str) -> Snapshot:
             frontmatter = parse_frontmatter(content)
     if scan_files(root) != paths:
         raise ValueError("skill files changed while building the manifest")
+    if sum(record.size for record in records) > MAX_SKILL_BYTES:
+        raise ValueError(f"skill is larger than {MAX_SKILL_BYTES} bytes")
     assert frontmatter is not None
     entry = Skill(
         uri=f"skill://{quote(skill_path, safe='/')}/SKILL.md",

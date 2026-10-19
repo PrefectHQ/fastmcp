@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from fastmcp.skills import _snapshot
 from fastmcp.skills._snapshot import parse_frontmatter, snapshot
 
 
@@ -45,6 +46,7 @@ def test_snapshot_preserves_raw_bytes_and_frontmatter(tmp_path: Path):
         "custom: !!binary SGVsbG8=",
         "custom: !!set {a: null}",
         "custom: &cycle [*cycle]",
+        "custom: {a: &x 1, b: *x}",
         "metadata: {count: 2}",
     ],
 )
@@ -86,4 +88,25 @@ def test_rejects_paths_not_supported_by_resource_reader(tmp_path: Path):
     )
     (tmp_path / "C:notes.md").write_text("unreadable")
     with pytest.raises(ValueError):
+        snapshot(tmp_path, "review")
+
+
+def test_frontmatter_tolerates_utf8_bom():
+    data = "\ufeff---\nname: review\ndescription: Review code\n---\n".encode()
+    assert parse_frontmatter(data).root["name"] == "review"
+
+
+@pytest.mark.parametrize(
+    ("limit", "value"),
+    [("MAX_SKILL_RESOURCES", 1), ("MAX_SKILL_BYTES", 64)],
+)
+def test_snapshot_rejects_skills_over_spec_limits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit: str, value: int
+):
+    (tmp_path / "SKILL.md").write_text(
+        "---\nname: review\ndescription: Review code\n---\n"
+    )
+    (tmp_path / "notes.md").write_bytes(b"x" * 64)
+    monkeypatch.setattr(_snapshot, limit, value)
+    with pytest.raises(ValueError, match="skill"):
         snapshot(tmp_path, "review")

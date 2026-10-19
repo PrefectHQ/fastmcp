@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import sys
 from pathlib import Path
 from typing import Literal
 
 import pytest
 from mcp.shared.exceptions import MCPError
-from mcp_types import BlobResourceContents, TextResourceContents
+from mcp_types import INVALID_PARAMS, BlobResourceContents, TextResourceContents
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import AuthorizationError
@@ -312,3 +313,37 @@ async def test_shared_access_policy_controls_reads_and_skill_metadata(
         assert (
             await client.get_skill("skill://review/SKILL.md")
         ).frontmatter.name == "review"
+
+
+async def test_unserved_supporting_file_is_invalid_params(tmp_path: Path):
+    root = tmp_path / "review"
+    root.mkdir()
+    (root / "SKILL.md").write_text("---\nname: review\ndescription: Review\n---\n")
+    server = FastMCP("Skills")
+    server.add_provider(SkillsDirectoryProvider(tmp_path, experimental_skills=True))
+    async with Client(server) as client:
+        with pytest.raises(MCPError) as error:
+            await client.read_resource("skill://review/missing.txt")
+    assert error.value.error.code == INVALID_PARAMS
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Symlinks need privileges")
+async def test_symlinked_supporting_file_is_not_listed(tmp_path: Path):
+    root = tmp_path / "skills" / "review"
+    root.mkdir(parents=True)
+    (root / "SKILL.md").write_text("---\nname: review\ndescription: Review\n---\n")
+    (root / "notes.txt").write_text("notes")
+    (root / "link.txt").symlink_to(root / "notes.txt")
+    server = FastMCP("Skills")
+    server.add_provider(
+        SkillsDirectoryProvider(
+            tmp_path / "skills", experimental_skills=True, supporting_files="resources"
+        )
+    )
+    async with Client(server) as client:
+        uris = {str(resource.uri) for resource in await client.list_resources()}
+        assert "skill://review/notes.txt" in uris
+        assert "skill://review/link.txt" not in uris
+        with pytest.raises(MCPError) as error:
+            await client.read_resource("skill://review/link.txt")
+    assert error.value.error.code == INVALID_PARAMS

@@ -69,7 +69,7 @@ async def inspect_skills() -> None:
 
 Listing scans the directories and hashes their current bytes. Looking up a skill by URI hashes only that skill; resource reads resolve their path directly without scanning the skill collection. Reads remain live, preserving CRLF newlines and binary content. If a file changes between discovery and reading, the host detects the mismatch and refreshes the entry. This is a point-in-time manifest, not an atomic filesystem snapshot.
 
-Malformed skills are omitted with a warning. Duplicate root-relative skill paths are all omitted. Frontmatter must have unique string keys and JSON-compatible values; timestamps, binary scalars, non-finite numbers, and recursive aliases are rejected. Skill roots and their contents must not be symbolic links.
+Malformed skills are omitted with a warning. Duplicate root-relative skill paths are all omitted. Frontmatter must have unique string keys and JSON-compatible values; timestamps, binary scalars, non-finite numbers, and YAML aliases are rejected. Skill roots and their contents must not be symbolic links. Skills over the extension's limits of 512 files or 16 MiB in total are omitted. Every file in a skill directory is published, including hidden files, so keep version control directories and editor files out of skill roots.
 
 The entire entry is omitted when any supporting resource or template is unavailable to the caller or resolves to a different backing file. Resource reads claimed by the extension bypass `ResponseCachingMiddleware`, so refreshing a manifest cannot leave the host repeatedly receiving old cached bytes.
 

@@ -46,7 +46,7 @@ class ExtensionsMixin:
 
     def _requires_live_resource(self: FastMCP, uri: str) -> bool:
         return any(
-            extension.requires_live_resource(uri)
+            extension._requires_live_resource(uri)
             for extension in self._extensions.values()
         )
 

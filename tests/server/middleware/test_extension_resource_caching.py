@@ -12,7 +12,7 @@ async def test_extension_live_reads_do_not_disable_unrelated_caching(
     class LiveReads(ServerExtension):
         identifier = "example.com/live-reads"
 
-        def requires_live_resource(self, uri: str) -> bool:
+        def _requires_live_resource(self, uri: str) -> bool:
             return uri == "data://live"
 
     calls = {"live": 0, "cached": 0}

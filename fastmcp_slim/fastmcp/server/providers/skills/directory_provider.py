@@ -25,6 +25,7 @@ from fastmcp.server.providers.skills.skill_provider import (
     SkillProvider,
     SkillResource,
 )
+from fastmcp.skills._resources import is_skill_file
 from fastmcp.skills._snapshot import Snapshot, snapshot
 from fastmcp.skills.models import Skill
 from fastmcp.utilities.logging import get_logger
@@ -251,7 +252,11 @@ class SkillsDirectoryProvider(AggregateProvider):
             description=f"Skill: {name}",
             path=root,
             main_file="SKILL.md",
-            files=scan_skill_files(root)
+            files=[
+                file
+                for file in scan_skill_files(root)
+                if is_skill_file(root, file.path)
+            ]
             if relative is None or relative == "_manifest"
             else [],
             preserve_bytes=True,
@@ -328,8 +333,9 @@ class SkillsDirectoryProvider(AggregateProvider):
             and self._supporting_files != "resources"
         ):
             return None
-        path = root / relative
-        if relative != "_manifest" and not path.is_file():
+        if relative != "_manifest" and not await run_sync(
+            is_skill_file, root, relative
+        ):
             return None
         parts = self._uri_parts(uri)
         assert parts is not None
@@ -359,6 +365,8 @@ class SkillsDirectoryProvider(AggregateProvider):
             return None
         root, relative = resolved
         if relative in {"SKILL.md", "_manifest"}:
+            return None
+        if not await run_sync(is_skill_file, root, relative):
             return None
         parts = self._uri_parts(uri)
         assert parts is not None

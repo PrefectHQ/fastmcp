@@ -77,7 +77,7 @@ class SkillsExtension(ServerExtension):
     def _sources(self) -> tuple[_SkillSource, ...]:
         return cast("tuple[_SkillSource, ...]", self._providers)
 
-    def requires_live_resource(self, uri: str) -> bool:
+    def _requires_live_resource(self, uri: str) -> bool:
         """Keep manifest-backed resources coherent with current file bytes."""
         return any(source._owns_skill_resource(uri) for source in self._sources)
 
