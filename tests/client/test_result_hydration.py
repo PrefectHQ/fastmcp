@@ -80,8 +80,8 @@ class TestStructuredResultHydration:
 
 
 class TestWrappedResultKeepsDefs:
-    """A non-object return is wrapped as ``{"result": ...}`` and its ``$defs``
-    stay at the root of the output schema, beside ``properties.result``."""
+    """A non-object return is wrapped as `{"result": ...}` and its `$defs`
+    stay at the root of the output schema, beside `properties.result`."""
 
     @pytest.mark.parametrize("dereference_schemas", [True, False])
     async def test_list_of_models_hydrates(self, dereference_schemas: bool):

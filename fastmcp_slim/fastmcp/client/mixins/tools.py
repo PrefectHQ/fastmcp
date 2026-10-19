@@ -340,11 +340,11 @@ class ClientToolsMixin:
 
 
 def _wrapped_result_schema(output_schema: dict[str, Any]) -> dict[str, Any]:
-    """Narrow a wrapped output schema to ``properties.result`` and keep its defs.
+    """Narrow a wrapped output schema to `properties.result` and keep its defs.
 
-    The server leaves ``$defs`` and draft-07 ``definitions`` on the root schema,
-    beside ``properties.result``. Validating the inner schema without them makes
-    every local ``$ref`` resolve to an empty object.
+    The server leaves `$defs` and draft-07 `definitions` on the root schema,
+    beside `properties.result`. Validating the inner schema without them makes
+    every local `$ref` resolve to an empty object.
     """
     properties = output_schema.get("properties")
     if not isinstance(properties, dict):
