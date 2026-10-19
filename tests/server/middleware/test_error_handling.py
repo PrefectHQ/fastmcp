@@ -1,5 +1,6 @@
 """Tests for error handling middleware."""
 
+import json
 import logging
 from unittest.mock import AsyncMock, MagicMock
 
@@ -195,6 +196,99 @@ class TestErrorHandlingMiddleware:
         assert isinstance(result, MCPError)
         assert result.error.code == -32603
         assert "Internal error: test error" in result.error.message
+
+    @pytest.mark.parametrize(
+        ("exc", "expected_code", "expected_msg_fragment"),
+        [
+            (
+                json.JSONDecodeError("Expecting value", "doc", 0),
+                -32602,
+                "Invalid params:",
+            ),
+            (KeyError("missing_key"), -32001, "Not found:"),
+            (IndexError("out of range"), -32603, "Internal error:"),
+        ],
+    )
+    def test_transform_error_subclasses(
+        self,
+        mock_context,
+        exc: Exception,
+        expected_code: int,
+        expected_msg_fragment: str,
+    ):
+        """Test that built-in subclasses (like JSONDecodeError) are mapped correctly."""
+        middleware = ErrorHandlingMiddleware()
+        result = middleware._transform_error(exc, mock_context)
+        assert isinstance(result, MCPError)
+        assert result.error.code == expected_code
+        assert expected_msg_fragment in result.error.message
+
+    def test_transform_error_custom_subclasses(self, mock_context):
+        """Test that custom subclasses of mapped exception types are recognized."""
+
+        class CustomParamError(ValueError):
+            pass
+
+        class CustomNotFoundError(NotFoundError):
+            pass
+
+        class CustomPermissionError(PermissionError):
+            pass
+
+        class CustomTimeoutError(TimeoutError):
+            pass
+
+        middleware = ErrorHandlingMiddleware()
+
+        r_param = middleware._transform_error(
+            CustomParamError("custom param"), mock_context
+        )
+        assert isinstance(r_param, MCPError)
+        assert r_param.error.code == -32602
+
+        r_not_found = middleware._transform_error(
+            CustomNotFoundError("custom not found"), mock_context
+        )
+        assert isinstance(r_not_found, MCPError)
+        assert r_not_found.error.code == -32001
+
+        r_perm = middleware._transform_error(
+            CustomPermissionError("custom perm"), mock_context
+        )
+        assert isinstance(r_perm, MCPError)
+        assert r_perm.error.code == -32000
+
+        r_timeout = middleware._transform_error(
+            CustomTimeoutError("custom timeout"), mock_context
+        )
+        assert isinstance(r_timeout, MCPError)
+        assert r_timeout.error.code == -32000
+
+    def test_transform_error_preserves_wrapped_mcp_error(self, mock_context):
+        """Test that an MCPError wrapped as a cause is preserved."""
+        middleware = ErrorHandlingMiddleware()
+        inner_mcp_error = MCPError(code=-32000, message="explicit auth failure")
+        wrapped_error = ToolError("tool failed")
+        wrapped_error.__cause__ = inner_mcp_error
+
+        result = middleware._transform_error(wrapped_error, mock_context)
+        assert result is inner_mcp_error
+
+    async def test_on_message_wrapped_mcp_error_does_not_cycle_cause(
+        self, mock_context
+    ):
+        """Test that raising a wrapped MCPError does not create a circular __cause__ cycle."""
+        middleware = ErrorHandlingMiddleware()
+        inner_mcp_error = MCPError(code=-32000, message="explicit error")
+        wrapped_error = ToolError("tool failed")
+        wrapped_error.__cause__ = inner_mcp_error
+        mock_call_next = AsyncMock(side_effect=wrapped_error)
+
+        with pytest.raises(MCPError) as exc_info:
+            await middleware.on_message(mock_context, mock_call_next)
+
+        assert exc_info.value is inner_mcp_error
+        assert exc_info.value.__cause__ is None
 
     async def test_on_message_success(self, mock_context, mock_call_next):
         """Test successful message handling."""

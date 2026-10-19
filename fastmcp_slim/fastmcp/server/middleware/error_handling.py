@@ -87,21 +87,24 @@ class ErrorHandlingMiddleware(Middleware):
         if not self.transform_errors:
             return error
 
-        # Map common exceptions to appropriate MCP error codes
-        error_type = type(error.__cause__) if error.__cause__ else type(error)
+        if isinstance(error.__cause__, MCPError):
+            return error.__cause__
 
-        if error_type in (ValueError, TypeError):
+        # Map common exceptions to appropriate MCP error codes
+        target_error = error.__cause__ if error.__cause__ is not None else error
+
+        if isinstance(target_error, (ValueError, TypeError)):
             return MCPError(code=-32602, message=f"Invalid params: {error!s}")
-        elif error_type in (FileNotFoundError, KeyError, NotFoundError):
+        elif isinstance(target_error, (FileNotFoundError, KeyError, NotFoundError)):
             # MCP spec defines -32002 specifically for resource not found
             method = context.method or ""
             if method.startswith("resources/"):
                 return MCPError(code=-32002, message=f"Resource not found: {error!s}")
             return MCPError(code=-32001, message=f"Not found: {error!s}")
-        elif error_type is PermissionError:
+        elif isinstance(target_error, PermissionError):
             return MCPError(code=-32000, message=f"Permission denied: {error!s}")
         # asyncio.TimeoutError is a subclass of TimeoutError in Python 3.10, alias in 3.11+
-        elif error_type in (TimeoutError, asyncio.TimeoutError):
+        elif isinstance(target_error, (TimeoutError, asyncio.TimeoutError)):
             return MCPError(code=-32000, message=f"Request timeout: {error!s}")
         else:
             return MCPError(code=-32603, message=f"Internal error: {error!s}")
@@ -118,6 +121,8 @@ class ErrorHandlingMiddleware(Middleware):
             transformed_error = self._transform_error(error, context)
             if transformed_error is error:
                 raise
+            if transformed_error is error.__cause__:
+                raise transformed_error from None
             raise transformed_error from error
 
     def get_error_stats(self) -> dict[str, int]:
