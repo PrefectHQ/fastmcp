@@ -1,6 +1,7 @@
 """Tests for the inspect.py module."""
 
 import importlib.metadata
+import json
 
 from mcp.server.mcpserver import MCPServer as SDKServer
 
@@ -9,6 +10,7 @@ from fastmcp import Client, FastMCP
 from fastmcp.utilities.inspect import (
     FastMCPInfo,
     ToolInfo,
+    format_mcp_info,
     inspect_fastmcp,
     inspect_fastmcp_v1,
 )
@@ -602,3 +604,34 @@ class TestFastMCP1xCompatibility:
         # No templates added in these tests
         assert len(info1x.templates) == 0
         assert len(info2x.templates) == 0
+
+
+class TestFormatMcpInfo:
+    """Tests for the MCP protocol format of inspect."""
+
+    async def test_follows_pagination(self):
+        """A server that paginates its lists is not truncated to the first page."""
+        mcp = FastMCP("Paged", list_page_size=2)
+
+        for i in range(3):
+            mcp.tool(lambda: "x", name=f"tool{i}")
+            mcp.prompt(lambda: "x", name=f"prompt{i}")
+            mcp.resource(f"data://resource{i}", name=f"resource{i}")(lambda: "x")
+            mcp.resource(f"data://template{i}/{{x}}", name=f"template{i}")(
+                lambda x: "x"
+            )
+
+        data = json.loads(await format_mcp_info(mcp))
+
+        assert [t["name"] for t in data["tools"]] == ["tool0", "tool1", "tool2"]
+        assert [p["name"] for p in data["prompts"]] == ["prompt0", "prompt1", "prompt2"]
+        assert [r["name"] for r in data["resources"]] == [
+            "resource0",
+            "resource1",
+            "resource2",
+        ]
+        assert [t["name"] for t in data["resourceTemplates"]] == [
+            "template0",
+            "template1",
+            "template2",
+        ]

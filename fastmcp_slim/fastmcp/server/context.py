@@ -118,6 +118,13 @@ class LogData:
     extra: Mapping[str, Any] | None = None
 
 
+def _log_record_reserved_keys() -> set[str]:
+    """Names a `LogRecord` already uses; `Logger.log(extra=...)` raises KeyError
+    when `extra` contains one of them. Read from the active record factory, since
+    applications can install one that adds attributes."""
+    return {*logging.makeLogRecord({}).__dict__, "message", "asctime"}
+
+
 _mcp_level_to_python_level = {
     "debug": logging.DEBUG,
     "info": logging.INFO,
@@ -279,13 +286,15 @@ class Context:
         self._tokens.append(token)
 
         # Set current server for dependency injection (use weakref to avoid reference cycles)
-        from fastmcp.server.dependencies import _current_server, is_docket_available
+        from fastmcp.server.dependencies import _current_server
 
         self._server_token = _current_server.set(weakref.ref(self.fastmcp))
 
-        if not is_docket_available():
-            # Without docket, the lifespan won't provide a SharedContext,
-            # so create one scoped to this Context for Shared() dependencies.
+        try:
+            SharedContext.resolved.get()
+        except LookupError:
+            # Direct calls outside the server lifespan need a temporary scope;
+            # otherwise preserve the app's existing Shared() dependencies.
             self._shared_context = SharedContext()
             await self._shared_context.__aenter__()
 
@@ -787,6 +796,31 @@ class Context:
         else:
             session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         return session_id
+
+    def _session_scope_key(self) -> str | None:
+        """Key for data that follows one client across requests.
+
+        On a handshake-era connection this is `session_id`. A 2026-07-28
+        connection has no session, so the scope is the authenticated user (the
+        identity `UserSession` keys on) or, on stdio and in-memory transports,
+        the server process, which serves a single client. Returns None for an
+        unauthenticated 2026-07-28 HTTP request, where nothing identifies the
+        client from one request to the next.
+
+        Raises:
+            RuntimeError if no session is available.
+        """
+        if not self._is_modern_protocol():
+            return self.session_id
+
+        from fastmcp.server.sessions import _principal_segment, current_principal
+
+        principal = current_principal()
+        if principal is not None:
+            return f"user:{_principal_segment(principal)}"
+        if self.transport in ("sse", "streamable-http"):
+            return None
+        return "process"
 
     @property
     def session(self) -> ServerSession:
@@ -1344,10 +1378,13 @@ async def _log_to_server_and_client(
     if logger_name:
         msg_prefix += f" ({logger_name})"
 
+    # The client receives `data.extra` in full; only the server-side log record
+    # can't carry keys that collide with its own attributes.
+    reserved = _log_record_reserved_keys() if data.extra else set()
     to_client_logger.log(
         level=_mcp_level_to_python_level[level],
         msg=f"{msg_prefix}: {data.msg}",
-        extra=data.extra,
+        extra={k: v for k, v in (data.extra or {}).items() if k not in reserved},
     )
 
     # Deprecated upstream in SDK v2 but deliberately kept per compat directive;
