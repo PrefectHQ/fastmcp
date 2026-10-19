@@ -56,9 +56,7 @@ def respond(request: httpx2.Request) -> httpx2.Response:
     return httpx2.Response(201, json=INVITATION)
 
 
-def server_for(
-    responses: dict[str, Any], *, validate_output: bool = True
-) -> FastMCP:
+def server_for(responses: dict[str, Any], *, validate_output: bool = True) -> FastMCP:
     upstream = httpx2.AsyncClient(
         base_url="https://api.example.test",
         transport=httpx2.MockTransport(respond),
