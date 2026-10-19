@@ -286,13 +286,15 @@ class Context:
         self._tokens.append(token)
 
         # Set current server for dependency injection (use weakref to avoid reference cycles)
-        from fastmcp.server.dependencies import _current_server, is_docket_available
+        from fastmcp.server.dependencies import _current_server
 
         self._server_token = _current_server.set(weakref.ref(self.fastmcp))
 
-        if not is_docket_available():
-            # Without docket, the lifespan won't provide a SharedContext,
-            # so create one scoped to this Context for Shared() dependencies.
+        try:
+            SharedContext.resolved.get()
+        except LookupError:
+            # Direct calls outside the server lifespan need a temporary scope;
+            # otherwise preserve the app's existing Shared() dependencies.
             self._shared_context = SharedContext()
             await self._shared_context.__aenter__()
 

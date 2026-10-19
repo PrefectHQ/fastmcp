@@ -517,6 +517,96 @@ This is my skill content.
         }
 
 
+class TestNonStringDescription:
+    """Non-string frontmatter descriptions must not break resource listing.
+
+    ``parse_frontmatter`` returns YAML sequences/mappings as ``list``/``dict``.
+    Storing those verbatim in ``SkillInfo.description`` made ``SkillResource``
+    construction fail pydantic validation, so the skill's main file and
+    manifest disappeared from ``list_resources()``.
+    """
+
+    @staticmethod
+    def _write_skill(tmp_path: Path, frontmatter: str) -> Path:
+        skill_dir = tmp_path / "typed-description-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            f"---\n{frontmatter}\n---\n\n# Fallback Title\n\nBody.\n",
+            encoding="utf-8",
+        )
+        return skill_dir
+
+    @pytest.mark.parametrize(
+        "frontmatter",
+        ["description: [a, b]", "description: {short: x}"],
+        ids=["sequence", "mapping"],
+    )
+    async def test_yaml_collection_description_falls_back_to_body(
+        self, tmp_path: Path, frontmatter: str
+    ):
+        skill_dir = self._write_skill(tmp_path, frontmatter)
+        provider = SkillProvider(skill_path=skill_dir)
+
+        assert provider.skill_info.description == "Fallback Title"
+
+        resources = await provider.list_resources()
+        assert {r.name for r in resources} == {
+            "typed-description-skill/SKILL.md",
+            "typed-description-skill/_manifest",
+        }
+        assert all(isinstance(r.description, str) for r in resources)
+
+        main = await provider.get_resource("skill://typed-description-skill/SKILL.md")
+        assert main is not None
+        assert main.description == "Fallback Title"
+
+        manifest = await provider.get_resource(
+            "skill://typed-description-skill/_manifest"
+        )
+        assert manifest is not None
+
+    async def test_server_lists_skill_with_sequence_description(self, tmp_path: Path):
+        """User-visible symptom: a directly registered provider returned []."""
+        skill_dir = self._write_skill(tmp_path, "description: [a, b]")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(SkillProvider(skill_path=skill_dir))
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+
+        assert {r.name for r in resources} == {
+            "typed-description-skill/SKILL.md",
+            "typed-description-skill/_manifest",
+        }
+
+    @pytest.mark.parametrize(
+        ("frontmatter", "expected_description"),
+        [
+            ('description: [a, b]\nmalformed: "unclosed', "Fallback Title"),
+            # The line-based fallback leaves a mapping-looking scalar as text,
+            # so it is already a valid string description.
+            ('description: {short: x}\nmalformed: "unclosed', "{short: x}"),
+        ],
+        ids=["sequence", "mapping"],
+    )
+    async def test_malformed_yaml_line_fallback_keeps_resources_listable(
+        self, tmp_path: Path, frontmatter: str, expected_description: str
+    ):
+        skill_dir = self._write_skill(tmp_path, frontmatter)
+        provider = SkillProvider(skill_path=skill_dir)
+
+        assert isinstance(provider.skill_info.description, str)
+        assert provider.skill_info.description == expected_description
+
+        resources = await provider.list_resources()
+        assert {r.name for r in resources} == {
+            "typed-description-skill/SKILL.md",
+            "typed-description-skill/_manifest",
+        }
+        assert all(isinstance(r.description, str) for r in resources)
+
+
 class TestSkillsDirectoryProvider:
     """Tests for SkillsDirectoryProvider - scans directory for skill folders."""
 
