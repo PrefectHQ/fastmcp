@@ -381,8 +381,12 @@ def update_config_file(
     """Update an MCP configuration file from a server object, preserving existing fields.
 
     This is used for updating the mcpServer configurations of third-party tools so we do not
-    worry about transforming server objects here."""
-    config = MCPConfig.from_file(file_path)
+    worry about transforming server objects here. A missing or empty file is treated as a
+    config with no servers, so it is created on write."""
+    if file_path.exists() and file_path.read_text(encoding="utf-8").strip():
+        config = MCPConfig.from_file(file_path)
+    else:
+        config = MCPConfig()
 
     # If updating an existing server, merge with existing configuration
     # to preserve any unknown fields
