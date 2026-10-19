@@ -725,6 +725,31 @@ class TestCacheableToolResult:
         assert cached_tool_result.is_error is True
 
 
+class TestCachedPromptResult:
+    async def test_resource_link_survives_cache(self):
+        link = mcp_types.ResourceLink(
+            type="resource_link", uri="docs://guide", name="guide"
+        )
+        mcp = FastMCP("PromptCachingTestServer")
+        mcp.add_middleware(ResponseCachingMiddleware(cache_storage=MemoryStore()))
+
+        call_count = 0
+
+        @mcp.prompt
+        def review_guide() -> list[Message]:
+            nonlocal call_count
+            call_count += 1
+            return [Message(link)]
+
+        async with Client(mcp) as client:
+            first = await client.get_prompt("review_guide")
+            second = await client.get_prompt("review_guide")
+
+        assert call_count == 1
+        assert first.messages[0].content == link
+        assert second.messages[0].content == link
+
+
 class TestErrorResultsAreNotCached:
     """Regression tests for issue #4395: an error result was cached for the full
     TTL, so a transient failure permanently shadowed the tool until it expired."""

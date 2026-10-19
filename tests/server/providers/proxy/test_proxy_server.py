@@ -20,6 +20,7 @@ from fastmcp.client.transports import FastMCPTransport, StreamableHttpTransport
 from fastmcp.client.transports.base import TransportOptions
 from fastmcp.exceptions import ToolError
 from fastmcp.mcp_config import MCPConfig
+from fastmcp.prompts import Message
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server import create_proxy
 from fastmcp.server.middleware import Middleware
@@ -958,6 +959,25 @@ class TestPrompts:
         assert isinstance(proxy_result.messages[1].content, mcp_types.ImageContent)
         assert proxy_result.messages[1].content.data == "iVBORw0KGgoAAAANSUhEUg=="
         assert proxy_result.messages[1].content.mime_type == "image/png"
+
+    async def test_proxy_prompt_preserves_resource_link(self):
+        """A resource_link block from the backend is relayed, not flattened to text."""
+        link = mcp_types.ResourceLink(
+            type="resource_link",
+            uri="docs://guide",
+            name="guide",
+            mime_type="text/markdown",
+        )
+        backend = FastMCP("Backend")
+
+        @backend.prompt
+        def review_guide() -> list[Message]:
+            return [Message("Please review this document:"), Message(link)]
+
+        async with Client(create_proxy(backend)) as client:
+            result = await client.get_prompt("review_guide")
+
+        assert result.messages[1].content == link
 
 
 async def test_proxy_handles_multiple_concurrent_tasks_correctly(
