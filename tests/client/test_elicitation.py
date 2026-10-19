@@ -4,7 +4,7 @@ from typing import Any, Literal, cast
 
 import mcp_types
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from fastmcp import Context, FastMCP
@@ -15,6 +15,7 @@ from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,
     DeclinedElicitation,
+    get_elicitation_schema,
     validate_elicitation_json_schema,
 )
 from fastmcp.utilities.types import TypeAdapter
@@ -661,6 +662,112 @@ async def test_all_primitive_field_types():
             "union": "x",
             "choice": "x",
         }
+
+
+class Shade(Enum):
+    LIGHT = "light"
+    DARK = "dark"
+
+
+class Contact(BaseModel):
+    name: str
+    phone: str | None = None
+    age: int | None = Field(default=None, description="Optional age")
+    score: float | None = None
+    subscribed: bool | None = None
+    shade: Shade | None = None
+    size: Literal["s", "m"] | None = None
+    country: str | None = "US"
+
+
+class TestOptionalFields:
+    """An `X | None = None` field is offered as a plain property that is not required."""
+
+    def test_optional_fields_are_plain_properties_outside_required(self):
+        assert get_elicitation_schema(Contact) == {
+            "type": "object",
+            "title": "Contact",
+            "properties": {
+                "name": {"title": "Name", "type": "string"},
+                "phone": {"title": "Phone", "type": "string"},
+                "age": {
+                    "description": "Optional age",
+                    "title": "Age",
+                    "type": "integer",
+                },
+                "score": {"title": "Score", "type": "number"},
+                "subscribed": {"title": "Subscribed", "type": "boolean"},
+                "shade": {
+                    "enum": ["light", "dark"],
+                    "title": "Shade",
+                    "type": "string",
+                },
+                "size": {"enum": ["s", "m"], "title": "Size", "type": "string"},
+                "country": {"default": "US", "title": "Country", "type": "string"},
+            },
+            "required": ["name"],
+        }
+
+    @pytest.mark.parametrize(
+        ("content", "expected"),
+        [
+            (
+                {"name": "Ada"},
+                {
+                    "name": "Ada",
+                    "phone": None,
+                    "age": None,
+                    "score": None,
+                    "subscribed": None,
+                    "shade": None,
+                    "size": None,
+                    "country": "US",
+                },
+            ),
+            (
+                {
+                    "name": "Ada",
+                    "phone": "555-0100",
+                    "age": 36,
+                    "score": 0.5,
+                    "subscribed": False,
+                    "shade": "dark",
+                    "size": "m",
+                    "country": "UK",
+                },
+                {
+                    "name": "Ada",
+                    "phone": "555-0100",
+                    "age": 36,
+                    "score": 0.5,
+                    "subscribed": False,
+                    "shade": "dark",
+                    "size": "m",
+                    "country": "UK",
+                },
+            ),
+        ],
+    )
+    async def test_accepted_response_is_validated_into_the_model(
+        self, content: dict[str, Any], expected: dict[str, Any]
+    ):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        async def add_contact(context: Context) -> dict[str, Any]:
+            result = await context.elicit("Enter the contact", response_type=Contact)
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, Contact)
+            return result.data.model_dump(mode="json")
+
+        async def elicitation_handler(message, response_type, params, ctx):
+            return ElicitResult(action="accept", content=content)
+
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
+            result = await client.call_tool("add_contact", {})
+            assert result.data == expected
 
 
 class TestResponseTypeRequired:
