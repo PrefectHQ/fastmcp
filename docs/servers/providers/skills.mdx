@@ -111,7 +111,7 @@ skill://pdf-processing/examples/sample.pdf
 ```
 
 <Note>
-Skill files, including the main file, must resolve within the skill directory. Links to files within that directory are supported. Directory providers discover skill folders that resolve within each configured root; select a folder directly with `SkillProvider` to use a skill stored elsewhere.
+Skill files, including the main file, must resolve within the skill directory. Links to files within that directory are supported. A skill folder can itself be a link, such as an entry in `~/.claude/skills` that points to a checkout elsewhere; the skill's files must then resolve within the folder it links to.
 </Note>
 
 ## Provider Architecture

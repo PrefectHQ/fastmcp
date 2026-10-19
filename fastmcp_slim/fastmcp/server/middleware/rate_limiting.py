@@ -35,7 +35,7 @@ class TokenBucketRateLimiter:
         self.capacity = capacity
         self.refill_rate = refill_rate
         self.tokens = capacity
-        self.last_refill = time.time()
+        self.last_refill = time.monotonic()
         self._lock = anyio.Lock()
 
     async def consume(self, tokens: int = 1) -> bool:
@@ -48,7 +48,7 @@ class TokenBucketRateLimiter:
             True if tokens were available and consumed, False otherwise
         """
         async with self._lock:
-            now = time.time()
+            now = time.monotonic()
             elapsed = now - self.last_refill
 
             # Add tokens based on elapsed time
@@ -79,7 +79,7 @@ class SlidingWindowRateLimiter:
     async def is_allowed(self) -> bool:
         """Check if a request is allowed."""
         async with self._lock:
-            now = time.time()
+            now = time.monotonic()
             cutoff = now - self.window_seconds
 
             # Remove old requests outside the window
