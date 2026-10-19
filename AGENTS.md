@@ -27,7 +27,7 @@ The gitleaks hook needs the `gitleaks` binary on `PATH` (`brew install gitleaks`
 
 | Path              | Purpose                                |
 | ----------------- | -------------------------------------- |
-| `packages/fastmcp_slim/fastmcp/` | Library source code                    |
+| `fastmcp_slim/fastmcp/` | Library source code                    |
 | `├─server/`       | Server implementation                  |
 | `│ ├─auth/`       | Authentication providers               |
 | `│ └─middleware/` | Error handling, logging, rate limiting |
@@ -60,12 +60,12 @@ Repository skills live in `.agents/skills/`. [The development guide](docs/develo
 
 When modifying MCP functionality, changes typically need to be applied across all object types:
 
-- **Tools** (`packages/fastmcp_slim/fastmcp/tools/`)
-- **Resources** (`packages/fastmcp_slim/fastmcp/resources/`)
-- **Resource Templates** (`packages/fastmcp_slim/fastmcp/resources/`)
-- **Prompts** (`packages/fastmcp_slim/fastmcp/prompts/`)
+- **Tools** (`fastmcp_slim/fastmcp/tools/`)
+- **Resources** (`fastmcp_slim/fastmcp/resources/`)
+- **Resource Templates** (`fastmcp_slim/fastmcp/resources/`)
+- **Prompts** (`fastmcp_slim/fastmcp/prompts/`)
 
-**Before writing cross-component logic (dedupe, grouping, lookups, identity checks), read `FastMCPComponent` in `packages/fastmcp_slim/fastmcp/utilities/components.py`.** The base class defines the shared surface — `name`, `version`, `tags`, `meta`, and critically the `key` property which is the canonical MCP identity (encodes type, identifier, and version). Prefer `item.key` over ad-hoc `name or uri or uri_template` fallbacks; overrides in `Resource` and `ResourceTemplate` already handle URI-based identity, and `.key` includes the version suffix so variants of the same component don't falsely collide.
+**Before writing cross-component logic (dedupe, grouping, lookups, identity checks), read `FastMCPComponent` in `fastmcp_slim/fastmcp/utilities/components.py`.** The base class defines the shared surface — `name`, `version`, `tags`, `meta`, and critically the `key` property which is the canonical MCP identity (encodes type, identifier, and version). Prefer `item.key` over ad-hoc `name or uri or uri_template` fallbacks; overrides in `Resource` and `ResourceTemplate` already handle URI-based identity, and `.key` includes the version suffix so variants of the same component don't falsely collide.
 
 ## Development Rules
 
@@ -162,9 +162,9 @@ Load the `release` skill to cut one; it holds the procedure. The policy it imple
 - Uses Mintlify framework
 - Files must be in docs.json to be included
 - Do not manually modify `docs/python-sdk/**` — these files are auto-generated from source code by a bot and maintained via a long-lived PR. Do not include changes to these files in contributor PRs.
-- Do not manually modify `docs/public/schemas/**` or `packages/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/schema.json` — these are auto-generated and maintained via a long-lived PR.
+- Do not manually modify `docs/public/schemas/**` or `fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/schema.json` — these are auto-generated and maintained via a long-lived PR.
 - **Core Principle:** A feature doesn't exist unless it is documented!
-- When adding or modifying settings in `packages/fastmcp_slim/fastmcp/settings.py`, update `docs/more/settings.mdx` to match.
+- When adding or modifying settings in `fastmcp_slim/fastmcp/settings.py`, update `docs/more/settings.mdx` to match.
 
 ### Documentation Guidelines
 

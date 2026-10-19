@@ -8,7 +8,6 @@ client opts the tasks extension in for the request.
 """
 
 import pytest
-from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.models import CreateTaskResult
 
 from fastmcp import FastMCP
@@ -16,6 +15,7 @@ from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.server import create_proxy
 from fastmcp.tools.base import ToolResult
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     _opted_in_request,
     auth_scope,

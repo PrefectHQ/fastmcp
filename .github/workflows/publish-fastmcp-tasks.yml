@@ -30,7 +30,7 @@ jobs:
       - name: Check whether this ref builds fastmcp-tasks
         id: package_present
         run: |
-          if [ -d packages/fastmcp_tasks ] || [ -d fastmcp_tasks ]; then
+          if [ -d fastmcp_tasks ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"

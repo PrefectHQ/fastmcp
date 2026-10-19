@@ -13,7 +13,6 @@ from typing import Annotated
 
 import mcp_types
 import uvicorn
-from fastmcp_tasks import TasksExtension
 from mcp.shared.exceptions import MCPError
 from mcp_types import (
     ClientCapabilities,
@@ -36,6 +35,7 @@ from fastmcp.server.event_store import EventStore
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.utilities.tasks import TaskConfig
 from fastmcp.utilities.types import Audio, Image
+from fastmcp_tasks import TasksExtension
 
 # Minimal 1x1 red PNG for image tests (89 bytes)
 _1X1_PNG = base64.b64decode(

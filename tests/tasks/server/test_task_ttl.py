@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import asyncio
 
-from fastmcp_tasks import TasksExtension
-
 from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     get_task,
     running_task_server,

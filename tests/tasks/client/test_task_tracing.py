@@ -8,10 +8,10 @@ client spans rather than starting fresh trace roots.
 
 from __future__ import annotations
 
-from fastmcp_tasks import TasksExtension
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fastmcp import Client, FastMCP
+from fastmcp_tasks import TasksExtension
 
 
 async def test_tasked_call_creates_client_spans(trace_exporter: InMemorySpanExporter):

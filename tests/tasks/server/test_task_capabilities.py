@@ -7,11 +7,10 @@ it does not.
 
 from __future__ import annotations
 
-from fastmcp_tasks import TasksExtension
-
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.utilities.tasks import TASKS_EXTENSION_ID
+from fastmcp_tasks import TasksExtension
 
 
 async def test_extension_capability_advertised():

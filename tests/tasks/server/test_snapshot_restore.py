@@ -14,7 +14,6 @@ import contextvars
 from unittest.mock import patch
 
 import pytest
-from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.context import (
     TaskContextSnapshot,
     _apply_snapshot_to_context,
@@ -28,6 +27,7 @@ from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from fastmcp import FastMCP
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.dependencies import get_access_token, get_http_headers
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     running_task_server,
     submit_task,

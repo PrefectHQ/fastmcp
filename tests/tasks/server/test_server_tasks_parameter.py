@@ -7,10 +7,10 @@ inheritance is not covered. Tasking is driven in-process through the interceptor
 
 from __future__ import annotations
 
-from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.models import CreateTaskResult
 
 from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     _opted_in_request,
     auth_scope,

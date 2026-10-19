@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from fastmcp_tasks import TasksExtension, ToolTask, call_tool_task
 from fastmcp_tasks.models import MISSING_REQUIRED_CLIENT_CAPABILITY
 from mcp.shared.exceptions import MCPError
 
@@ -20,6 +19,7 @@ from fastmcp import Context, FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.utilities.tasks import TaskConfig
+from fastmcp_tasks import TasksExtension, ToolTask, call_tool_task
 
 
 @pytest.fixture

@@ -14,7 +14,6 @@ from contextlib import asynccontextmanager
 from typing import Any, cast
 
 import pytest
-from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.dependencies import CurrentDocket
 from uncalled_for import Depends
 
@@ -23,6 +22,7 @@ from fastmcp.dependencies import CallArgument
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.dependencies import CurrentFastMCP
 from fastmcp.server.sessions import UserSession
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     call_tool_without_optin,
     run_task,

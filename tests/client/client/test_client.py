@@ -278,7 +278,7 @@ async def test_client_serialization_error():
 async def test_server_deserialization_error():
     """Test server error when JSON string cannot be converted to expected type.
 
-    `_on_get_prompt` in packages/fastmcp_slim/fastmcp/server/mixins/mcp_operations.py
+    `_on_get_prompt` in fastmcp_slim/fastmcp/server/mixins/mcp_operations.py
     catches `FastMCPError` broadly and translates it into an `MCPError` via
     `to_mcp_error`, the same way `_on_call_tool` surfaces tool errors. The
     `PromptError` raised during argument conversion reaches the client with

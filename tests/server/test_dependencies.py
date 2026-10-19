@@ -3,13 +3,13 @@
 from contextlib import asynccontextmanager, contextmanager
 
 import pytest
-from fastmcp_tasks import TasksExtension
 from mcp_types import TextContent, TextResourceContents
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.dependencies import CurrentContext, Depends, Shared
 from fastmcp.server.context import Context
+from fastmcp_tasks import TasksExtension
 from tests.conftest import make_server_request_context
 
 HUZZAH = "huzzah!"

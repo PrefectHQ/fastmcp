@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import mcp_types.methods as methods
 import pytest
+
 from fastmcp_tasks import wire_production
 
 _MODERN = "2026-07-28"

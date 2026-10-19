@@ -1,7 +1,6 @@
 """Tests for the fastmcp tasks CLI."""
 
 import pytest
-from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.settings import DocketSettings
 from fastmcp_tasks.worker_cli import (
     check_distributed_backend,
@@ -10,6 +9,7 @@ from fastmcp_tasks.worker_cli import (
 )
 
 from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
 
 
 class TestResolveDocketSettings:

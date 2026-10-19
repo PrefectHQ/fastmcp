@@ -22,7 +22,6 @@ from typing import Annotated
 
 import mcp_types
 import pytest
-from fastmcp_tasks import TasksExtension
 from mcp.client._input_required import InputRequiredRoundsExceededError
 from mcp.server.request_state import RequestStateSecurity
 from mcp.shared.exceptions import MCPError
@@ -38,6 +37,7 @@ from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
 from fastmcp.server.middleware.middleware import Middleware
 from fastmcp.tools.base import InputRequiredToolResult, ToolResult
 from fastmcp.utilities.tests import run_server_async
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import running_task_server, submit_task, wait_for_task
 
 

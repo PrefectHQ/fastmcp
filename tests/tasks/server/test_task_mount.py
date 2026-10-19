@@ -25,7 +25,6 @@ from typing import cast
 import mcp_types as mt
 import pytest
 from docket import Docket
-from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.dependencies import CurrentDocket
 from mcp_types import Tool as MCPTool
 from mcp_types import ToolExecution
@@ -36,6 +35,7 @@ from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.providers.proxy import ClientFactoryT, ProxyTool
 from fastmcp.tools.base import ToolResult
 from fastmcp.utilities.tasks import TaskConfig
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     call_tool_without_optin,
     running_task_server,

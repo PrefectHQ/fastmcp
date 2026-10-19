@@ -15,13 +15,13 @@ import asyncio
 from typing import Any
 
 import mcp_types
-from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.context import get_task_scope
 from fastmcp_tasks.input_store import acquire_update_lock, release_update_lock
 from mcp.shared.exceptions import MCPError
 from mcp_types import INTERNAL_ERROR
 
 from fastmcp import Context, FastMCP
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     cancel_task,
     get_task,

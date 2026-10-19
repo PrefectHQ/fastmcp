@@ -11,10 +11,10 @@ access token per caller through the shared helper.
 from __future__ import annotations
 
 import pytest
-from fastmcp_tasks import TasksExtension
 from mcp.shared.exceptions import MCPError
 
 from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     get_task,
     make_access_token,

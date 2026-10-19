@@ -14,10 +14,6 @@ its ``resultType: "task"`` claim. These tests assert that composition explicitly
 
 from typing import Any, Literal
 
-# Importing the package registers the internal tasks client extension factory, so
-# every Client below folds the tasks extension in. Kept as an explicit import so
-# the composition assertions are deterministic regardless of test import order.
-import fastmcp_tasks  # noqa: F401
 import pytest
 from fastmcp_tasks.client_models import ClientCreateTaskResult
 from mcp.client.extension import (
@@ -34,6 +30,10 @@ from mcp_types import CallToolRequestParams, CallToolResult, Result, TextContent
 from mcp_types.version import LATEST_MODERN_VERSION
 from pydantic import BaseModel
 
+# Importing the package registers the internal tasks client extension factory, so
+# every Client below folds the tasks extension in. Kept as an explicit import so
+# the composition assertions are deterministic regardless of test import order.
+import fastmcp_tasks  # noqa: F401
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.utilities.tasks import TASKS_EXTENSION_ID

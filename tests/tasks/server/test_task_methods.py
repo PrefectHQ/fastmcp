@@ -11,12 +11,12 @@ import asyncio
 
 import pytest
 from docket.execution import Execution
-from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.models import UpdateTaskResult
 from mcp.shared.exceptions import MCPError
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     cancel_task,
     get_task,

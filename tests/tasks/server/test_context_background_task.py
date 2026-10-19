@@ -18,7 +18,6 @@ from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
-from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.context import (
     _task_sessions,
     get_task_session,
@@ -39,6 +38,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_access_token
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     running_task_server,
     submit_task,

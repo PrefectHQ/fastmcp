@@ -7,10 +7,10 @@ Client(server) with an in-process FastMCP server.
 import time
 
 import pytest
-from fastmcp_tasks import TasksExtension
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import FastMCPTransport
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import submit_task, wait_for_task
 
 

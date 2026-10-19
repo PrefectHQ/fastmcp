@@ -16,7 +16,6 @@ from collections.abc import Iterator
 from unittest.mock import patch
 
 import pytest
-from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.context import TaskContextSnapshot
 from fastmcp_tasks.encryption import (
     EncryptedCodec,
@@ -31,6 +30,7 @@ from pydantic import SecretStr
 
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_access_token
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     get_task,
     make_access_token,

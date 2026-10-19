@@ -8,7 +8,6 @@ acknowledgement through untouched rather than crash after the task is enqueued.
 
 from __future__ import annotations
 
-from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.models import CreateTaskResult
 
 from fastmcp import FastMCP
@@ -16,6 +15,7 @@ from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
 from fastmcp.server.middleware.tool_injection import ToolInjectionMiddleware
 from fastmcp.tools.base import Tool
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import running_task_server, submit_task, wait_for_task
 
 

@@ -10,7 +10,6 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.components import (
     add_component_to_docket,
     register_component_with_docket,
@@ -22,6 +21,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.tasks import TaskConfig
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     _opted_in_request,
     auth_scope,

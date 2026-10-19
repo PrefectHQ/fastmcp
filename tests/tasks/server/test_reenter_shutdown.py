@@ -13,9 +13,9 @@ from __future__ import annotations
 import asyncio
 
 import mcp_types
-from fastmcp_tasks import TasksExtension
 
 from fastmcp import Context, FastMCP
+from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import running_task_server, submit_task, wait_for_task
 
 
