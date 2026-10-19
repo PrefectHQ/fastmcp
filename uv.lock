@@ -951,15 +951,15 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastmcp-slim", extras = ["anthropic"], marker = "extra == 'anthropic'", editable = "fastmcp_slim" },
-    { name = "fastmcp-slim", extras = ["apps"], marker = "extra == 'apps'", editable = "fastmcp_slim" },
-    { name = "fastmcp-slim", extras = ["azure"], marker = "extra == 'azure'", editable = "fastmcp_slim" },
-    { name = "fastmcp-slim", extras = ["client", "server"], editable = "fastmcp_slim" },
-    { name = "fastmcp-slim", extras = ["code-mode"], marker = "extra == 'code-mode'", editable = "fastmcp_slim" },
-    { name = "fastmcp-slim", extras = ["gemini"], marker = "extra == 'gemini'", editable = "fastmcp_slim" },
-    { name = "fastmcp-slim", extras = ["jev"], marker = "extra == 'jev'", editable = "fastmcp_slim" },
-    { name = "fastmcp-slim", extras = ["openai"], marker = "extra == 'openai'", editable = "fastmcp_slim" },
-    { name = "fastmcp-tasks", marker = "extra == 'tasks'", editable = "fastmcp_tasks" },
+    { name = "fastmcp-slim", extras = ["anthropic"], marker = "extra == 'anthropic'", editable = "packages/fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["apps"], marker = "extra == 'apps'", editable = "packages/fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["azure"], marker = "extra == 'azure'", editable = "packages/fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["client", "server"], editable = "packages/fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["code-mode"], marker = "extra == 'code-mode'", editable = "packages/fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["gemini"], marker = "extra == 'gemini'", editable = "packages/fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["jev"], marker = "extra == 'jev'", editable = "packages/fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["openai"], marker = "extra == 'openai'", editable = "packages/fastmcp_slim" },
+    { name = "fastmcp-tasks", marker = "extra == 'tasks'", editable = "packages/fastmcp_tasks" },
 ]
 provides-extras = ["anthropic", "apps", "azure", "code-mode", "gemini", "jev", "openai", "tasks"]
 
@@ -968,7 +968,7 @@ dev = [
     { name = "dirty-equals", specifier = ">=0.9.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
     { name = "fastmcp", extras = ["anthropic", "apps", "azure", "code-mode", "gemini", "jev", "openai", "tasks"], editable = "." },
-    { name = "fastmcp-remote", editable = "fastmcp_remote" },
+    { name = "fastmcp-remote", editable = "packages/fastmcp_remote" },
     { name = "inline-snapshot", extras = ["dirty-equals"], specifier = ">=0.27.2" },
     { name = "ipython", specifier = ">=8.12.3" },
     { name = "loq", specifier = ">=0.1.0a3" },
@@ -995,17 +995,17 @@ dev = [
 
 [[package]]
 name = "fastmcp-remote"
-source = { editable = "fastmcp_remote" }
+source = { editable = "packages/fastmcp_remote" }
 dependencies = [
     { name = "fastmcp-slim", extra = ["client", "server"] },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "fastmcp-slim", extras = ["client", "server"], editable = "fastmcp_slim" }]
+requires-dist = [{ name = "fastmcp-slim", extras = ["client", "server"], editable = "packages/fastmcp_slim" }]
 
 [[package]]
 name = "fastmcp-slim"
-source = { editable = "fastmcp_slim" }
+source = { editable = "packages/fastmcp_slim" }
 dependencies = [
     { name = "mcp-types" },
     { name = "platformdirs" },
@@ -1140,7 +1140,7 @@ provides-extras = ["anthropic", "apps", "azure", "client", "code-mode", "gemini"
 
 [[package]]
 name = "fastmcp-tasks"
-source = { editable = "fastmcp_tasks" }
+source = { editable = "packages/fastmcp_tasks" }
 dependencies = [
     { name = "cryptography" },
     { name = "fastmcp-slim", extra = ["server"] },
@@ -1150,7 +1150,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=43.0.0" },
-    { name = "fastmcp-slim", extras = ["server"], editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["server"], editable = "packages/fastmcp_slim" },
     { name = "pydocket", specifier = ">=0.26.0" },
 ]
 

@@ -1,4 +1,4 @@
-api_ref_package := "fastmcp-slim[anthropic,apps,azure,client,code-mode,gemini,openai,server] @ file://" + justfile_directory() + "/fastmcp_slim"
+api_ref_package := "fastmcp-slim[anthropic,apps,azure,client,code-mode,gemini,openai,server] @ file://" + justfile_directory() + "/packages/fastmcp_slim"
 
 # Build the project
 build:
@@ -32,7 +32,7 @@ api-ref-clean:
     rm -rf docs/python-sdk
 
 copy-context:
-    uvx --with-editable fastmcp_slim --refresh-package copychat copychat@latest fastmcp_slim/fastmcp docs/ -x changelog.mdx -x python-sdk/ -v
+    uvx --with-editable packages/fastmcp_slim --refresh-package copychat copychat@latest packages/fastmcp_slim/fastmcp docs/ -x changelog.mdx -x python-sdk/ -v
 
 # Browse ranked maintainer attention in Textual
 issues *ARGS:

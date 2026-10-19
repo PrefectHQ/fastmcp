@@ -94,9 +94,9 @@ for (const filename of [
   });
 }
 for (const filename of [
-  "fastmcp_slim/fastmcp/server.py",
-  "fastmcp_remote/cli.py",
-  "fastmcp_tasks/extension.py",
+  "packages/fastmcp_slim/fastmcp/server.py",
+  "packages/fastmcp_remote/cli.py",
+  "packages/fastmcp_tasks/extension.py",
   "tests/test_client.py",
   "examples/demo.py",
   ".github/actions/setup-uv/action.yml",
@@ -121,7 +121,7 @@ test("renaming code to documentation still runs tests", async () => {
   assert.equal(
     (
       await classify([
-        { filename: "docs/old.md", previous_filename: "fastmcp_slim/old.py" },
+        { filename: "docs/old.md", previous_filename: "packages/fastmcp_slim/old.py" },
       ])
     ).result,
     true,

@@ -2,7 +2,7 @@
 
 Resource, resource-template, and prompt error *detail* surfacing is
 era-neutral. `_on_read_resource` / `_on_get_prompt` in
-`fastmcp_slim/fastmcp/server/mixins/mcp_operations.py` catch `FastMCPError`
+`packages/fastmcp_slim/fastmcp/server/mixins/mcp_operations.py` catch `FastMCPError`
 broadly and translate it into an `MCPError` via `to_mcp_error`, mirroring how
 `_on_call_tool` returns tool errors as an `isError` `CallToolResult`. The
 detailed message (a `ResourceError`/`PromptError`, or the `ResourceError`/

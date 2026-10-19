@@ -20,11 +20,11 @@ Every shim in the migration is temporary and carries a documented removal trigge
 
 | Shim | Location | Removal trigger |
 | --- | --- | --- |
-| `_compat.py` — camelCase field bridge | `fastmcp_slim/fastmcp/_compat.py` | User-migration aid; removed in a future release after users migrate reads to snake_case. Users can preview removal with `mcp_camelcase_compat = False`. |
-| `FastMCPRequestContext` ContextVar | `fastmcp_slim/fastmcp/server/dependencies.py` | The SDK deliberately passes context as an argument with no ContextVar; FastMCP's public `get_context()` needs ambient access, and the shim also lifts `_meta`, which the SDK's `TypedDict` drops. No planned removal — this is a permanent boundary, not a beta gap. |
-| `FastMCPServerMiddleware` | `fastmcp_slim/fastmcp/server/low_level.py` | Already the native SDK `ServerMiddleware` path; no cleaner hook exists. Permanent. |
-| Client `get_session_id` header sniff | `fastmcp_slim/fastmcp/client/transports/http.py` | SDK exposes session id (or an `on_session_created` callback) from `streamable_http_client`, at parity with `sse_client` (sdk-feedback #5). |
-| `_sdk_context_shim.py` — generic handler aliases | `fastmcp_slim/fastmcp/client/_sdk_context_shim.py` | The SDK's `ClientRequestContext` is not subscriptable, so FastMCP keeps the public generic `SamplingHandler`/`RootsHandler`/`ElicitationHandler` aliases. Permanent unless the SDK makes the context subscriptable (sdk-feedback #7). |
+| `_compat.py` — camelCase field bridge | `packages/fastmcp_slim/fastmcp/_compat.py` | User-migration aid; removed in a future release after users migrate reads to snake_case. Users can preview removal with `mcp_camelcase_compat = False`. |
+| `FastMCPRequestContext` ContextVar | `packages/fastmcp_slim/fastmcp/server/dependencies.py` | The SDK deliberately passes context as an argument with no ContextVar; FastMCP's public `get_context()` needs ambient access, and the shim also lifts `_meta`, which the SDK's `TypedDict` drops. No planned removal — this is a permanent boundary, not a beta gap. |
+| `FastMCPServerMiddleware` | `packages/fastmcp_slim/fastmcp/server/low_level.py` | Already the native SDK `ServerMiddleware` path; no cleaner hook exists. Permanent. |
+| Client `get_session_id` header sniff | `packages/fastmcp_slim/fastmcp/client/transports/http.py` | SDK exposes session id (or an `on_session_created` callback) from `streamable_http_client`, at parity with `sse_client` (sdk-feedback #5). |
+| `_sdk_context_shim.py` — generic handler aliases | `packages/fastmcp_slim/fastmcp/client/_sdk_context_shim.py` | The SDK's `ClientRequestContext` is not subscriptable, so FastMCP keeps the public generic `SamplingHandler`/`RootsHandler`/`ElicitationHandler` aliases. Permanent unless the SDK makes the context subscriptable (sdk-feedback #7). |
 
 ## Statelessness on 2026-07-28
 

@@ -18,8 +18,8 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "fastmcp_slim/**"
-      - "fastmcp_tasks/**"
+      - "packages/fastmcp_slim/**"
+      - "packages/fastmcp_tasks/**"
       - "tests/downstream/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -27,8 +27,8 @@ on:
 
   pull_request:
     paths:
-      - "fastmcp_slim/**"
-      - "fastmcp_tasks/**"
+      - "packages/fastmcp_slim/**"
+      - "packages/fastmcp_tasks/**"
       - "tests/downstream/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -72,7 +72,7 @@ jobs:
       - name: Build wheels
         id: build
         run: |
-          for package in . fastmcp_slim fastmcp_tasks; do
+          for package in . packages/fastmcp_slim packages/fastmcp_tasks; do
             uv build --quiet --wheel --out-dir dist "$package"
           done
           version=$(basename dist/fastmcp_slim-*.whl | cut -d- -f2)

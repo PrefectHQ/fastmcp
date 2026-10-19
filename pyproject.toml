@@ -70,7 +70,7 @@ bump = true
 fallback-version = "0.0.0"
 
 [tool.uv.workspace]
-members = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks"]
+members = ["packages/fastmcp_slim", "packages/fastmcp_remote", "packages/fastmcp_tasks"]
 
 [tool.uv]
 default-groups = ["dev"]
@@ -138,7 +138,7 @@ markers = [
     "subprocess_heavy: marks tests that spawn a fresh Python interpreter which imports FastMCP. Each one costs a full interpreter's memory and startup, so they run serially alongside client_process tests rather than competing with parallel xdist workers.",
     "conformance: marks MCP conformance tests (require Node.js/npx)",
 ]
-pythonpath = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks"]
+pythonpath = ["packages/fastmcp_slim", "packages/fastmcp_remote", "packages/fastmcp_tasks"]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
@@ -146,7 +146,7 @@ python_functions = ["test_*"]
 addopts = ["--inline-snapshot=disable"]
 
 [tool.ty.src]
-include = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks", "tests", "examples"]
+include = ["packages/fastmcp_slim", "packages/fastmcp_remote", "packages/fastmcp_tasks", "tests", "examples"]
 exclude = [
     "**/node_modules",
     "**/__pycache__",
@@ -242,11 +242,11 @@ known-first-party = ["fastmcp", "fastmcp_remote"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "I001", "RUF013"]
-"fastmcp_slim/fastmcp/__init__.py" = ["E402"]
-"fastmcp_slim/fastmcp/cli/**.py" = ["T20"]
-"fastmcp_slim/fastmcp/client/oauth_callback.py" = ["T20"]
-"fastmcp_slim/fastmcp/contrib/**/example.py" = ["T20"]
-"!fastmcp_slim/fastmcp/**.py" = [
+"packages/fastmcp_slim/fastmcp/__init__.py" = ["E402"]
+"packages/fastmcp_slim/fastmcp/cli/**.py" = ["T20"]
+"packages/fastmcp_slim/fastmcp/client/oauth_callback.py" = ["T20"]
+"packages/fastmcp_slim/fastmcp/contrib/**/example.py" = ["T20"]
+"!packages/fastmcp_slim/fastmcp/**.py" = [
     "B",
     "C4",
     "DTZ",
