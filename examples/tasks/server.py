@@ -19,10 +19,11 @@ import logging
 from datetime import timedelta
 from typing import Annotated
 
+from fastmcp_tasks import TasksExtension
+
 from fastmcp import FastMCP
 from fastmcp.dependencies import Progress
 from fastmcp.utilities.tasks import TaskConfig
-from fastmcp_tasks import TasksExtension
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s")
 logger = logging.getLogger("tasks-example")

@@ -11,6 +11,7 @@ Tests for TaskConfig:
 from datetime import timedelta
 
 import pytest
+from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.models import (
     MISSING_REQUIRED_CLIENT_CAPABILITY,
     CreateTaskResult,
@@ -22,7 +23,6 @@ from fastmcp import FastMCP
 from fastmcp.tools.base import Tool
 from fastmcp.utilities.tasks import TaskConfig
 from fastmcp.utilities.versions import VersionSpec
-from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     _opted_in_request,
     auth_scope,

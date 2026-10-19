@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 import mcp_types
 import pytest
+from fastmcp_tasks import TasksExtension
 from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
 from mcp_types import METHOD_NOT_FOUND, RequestParams
@@ -27,7 +28,6 @@ from fastmcp.server.providers import LocalProvider, Provider
 from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
 from fastmcp.server.transforms import Namespace
-from fastmcp_tasks import TasksExtension
 
 EXT_ID = "com.example/bundled"
 

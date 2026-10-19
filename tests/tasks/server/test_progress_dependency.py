@@ -3,11 +3,11 @@
 import asyncio
 import json
 
+from fastmcp_tasks import TasksExtension
 from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import Progress
-from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     call_tool_without_optin,
     running_task_server,

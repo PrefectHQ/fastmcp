@@ -1,11 +1,11 @@
 from typing import Any
 
+from fastmcp_tasks import TasksExtension
 from mcp_types import Tool as MCPTool
 from mcp_types import ToolAnnotations, ToolExecution
 
 from fastmcp import Client, FastMCP
 from fastmcp.tools.base import Tool
-from fastmcp_tasks import TasksExtension
 from tests.conftest import make_server_request_context
 
 

@@ -5,12 +5,12 @@ from contextlib import asynccontextmanager
 
 from docket import Docket
 from docket.worker import Worker
+from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.dependencies import CurrentDocket, CurrentWorker
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.dependencies import get_context
-from fastmcp_tasks import TasksExtension
 
 HUZZAH = "huzzah!"
 

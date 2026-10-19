@@ -22,11 +22,11 @@ import time
 from typing import Annotated
 
 import cyclopts
+from fastmcp_tasks import call_tool_task  # importing enables client task support
 from mcp_types import TextContent
 from rich.console import Console
 
 from fastmcp.client import Client
-from fastmcp_tasks import call_tool_task  # importing enables client task support
 
 SERVER_URL = "http://127.0.0.1:8000/mcp"
 

@@ -31,11 +31,11 @@ import asyncio
 from dataclasses import dataclass
 
 import mcp_types
+from fastmcp_tasks import TasksExtension
 from mcp_types import TextContent
 
 from fastmcp import Context, FastMCP
 from fastmcp.client import Client
-from fastmcp_tasks import TasksExtension
 
 mcp = FastMCP("Task Elicitation Demo")
 mcp.add_extension(TasksExtension())

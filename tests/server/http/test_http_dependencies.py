@@ -1,6 +1,7 @@
 import json
 
 import pytest
+from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.context import _recall_snapshot, get_task_context
 from mcp_types import TextContent, TextResourceContents
 from starlette.requests import Request
@@ -9,7 +10,6 @@ from fastmcp.server.dependencies import get_http_request
 from fastmcp.server.http import _current_http_request
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.tests import ASGIServer, asgi_server
-from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import running_task_server, submit_task, wait_for_task
 
 

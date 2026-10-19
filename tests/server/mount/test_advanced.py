@@ -1,6 +1,7 @@
 """Advanced mounting scenarios."""
 
 import pytest
+from fastmcp_tasks import TasksExtension
 from mcp_types import TextContent
 from starlette.routing import Route
 
@@ -8,7 +9,6 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.providers import FastMCPProvider
 from fastmcp.server.providers.wrapped_provider import _WrappedProvider
-from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import running_task_server
 
 

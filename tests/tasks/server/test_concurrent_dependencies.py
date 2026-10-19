@@ -8,6 +8,8 @@ Regression tests for:
 
 import asyncio
 
+from fastmcp_tasks import TasksExtension
+
 from fastmcp import FastMCP
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import (
@@ -15,7 +17,6 @@ from fastmcp.server.dependencies import (
     get_access_token,
     get_http_headers,
 )
-from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     call_tool_without_optin,
     running_task_server,

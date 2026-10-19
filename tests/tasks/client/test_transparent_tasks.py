@@ -14,12 +14,12 @@ from dataclasses import dataclass
 
 import mcp_types
 import pytest
+from fastmcp_tasks import TasksExtension, call_tool_task
 from mcp.shared.exceptions import MCPError
 
 from fastmcp import Context, FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from fastmcp_tasks import TasksExtension, call_tool_task
 
 
 @pytest.fixture

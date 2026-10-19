@@ -16,13 +16,13 @@ from uuid import UUID
 
 import mcp_types
 import pytest
+from fastmcp_tasks import TasksExtension
 from pydantic import BaseModel
 from typing_extensions import TypedDict
 
 from fastmcp import FastMCP
 from fastmcp.tools.base import ToolResult
 from fastmcp.utilities.types import Audio, File, Image
-from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     call_tool_without_optin,
     run_task,

@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import pytest
+from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.client import call_tool_task
 
 from fastmcp import Client, Context, FastMCP
@@ -21,7 +22,6 @@ from fastmcp.server.transforms.catalog import CatalogTransform
 from fastmcp.server.transforms.search import BM25SearchTransform, RegexSearchTransform
 from fastmcp.tools.base import Tool
 from fastmcp.utilities.tasks import TaskConfig
-from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import run_task, running_task_server
 
 

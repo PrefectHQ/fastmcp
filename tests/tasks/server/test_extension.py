@@ -16,6 +16,7 @@ from typing import cast
 
 import mcp_types
 import pytest
+from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.models import (
     MISSING_REQUIRED_CLIENT_CAPABILITY,
     CreateTaskResult,
@@ -31,7 +32,6 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import _serving_client_tool_call, bind_request_context
 from fastmcp.tools.base import ToolResult
 from fastmcp.utilities.tasks import TASKS_EXTENSION_ID, TaskConfig
-from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     _opted_in_request,
     auth_scope,

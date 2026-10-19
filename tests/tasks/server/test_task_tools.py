@@ -17,6 +17,7 @@ import functools
 from typing import Annotated, Any
 
 import pytest
+from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.models import CreateTaskResult
 from pydantic import BaseModel, Field
 
@@ -24,7 +25,6 @@ import fastmcp.tools.function_tool as function_tool
 from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ValidationError
 from fastmcp.tools.function_tool import _resolve_param_hints
-from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
     _opted_in_request,
     auth_scope,
