@@ -17,6 +17,10 @@ gh pr list --repo PrefectHQ/fastmcp --state all --search "<issue-number> in:body
   --json number,title,state,author
 ```
 
+Where `search`, GraphQL or `--paginate` are blocked (cloud sessions), page repo-scoped REST by hand (`gh api "repos/PrefectHQ/fastmcp/pulls?state=open&per_page=100&page=N"`), dump it once, and join locally.
+
+Labels like `high-priority` and confident bot or commenter diagnoses are claims, not evidence. Before ranking a candidate, confirm its live state, since it may already be merged, closed or reverted. Then check whether the behavior is a decision someone already made: maintainer comments, closed PRs, upgrade guides and docs. A settled decision gets closed with that history linked, not fixed. A deferred design ("needs X first") stays open as the tracker.
+
 Pick work with concrete user impact, a supported contract being violated, a tractable causal fix, and a change FastMCP wants to carry. Apply [review-pr](../review-pr/SKILL.md)'s want check to every pick, and mark each one want / marginal / don't want. Do not rank solely by recency, comment count, or how small a proposed patch looks. Automated dashboard churn is not itself useful work.
 
 For promising candidates:
@@ -25,6 +29,9 @@ For promising candidates:
 - Search related issues and PRs in all states, including gate-closed contributions. Closure alone says nothing about a fix's merit.
 - Trace the relevant code and git history. Distinguish fixed on main, released on the affected line, and merely proposed.
 - Verify the claimed contract and enough evidence to explain the cause. A proposed solution is a lead, not a diagnosis. Consider compatibility before calling a fix straightforward.
+- When behavior is surprising but intended, prefer fixing the docs or the behavior over adding a warning.
+
+For a cleanup pass, the mechanical wins are open PRs whose linked issue is already closed, issues still open after a merged "fixes #N" (check for a revert first), and competing PRs for one issue (prefer the reporter's, then the right layer with a real test, then the smaller one).
 
 Lead with the strongest pick as soon as evidence supports it: link, what breaks, why it matters, where the cause is, and the next action. Include a few alternatives when useful. Do not turn selection into an exhaustive audit or a full review of every linked PR. Save continuation notes only when needed.
 

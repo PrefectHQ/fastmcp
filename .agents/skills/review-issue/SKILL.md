@@ -52,7 +52,7 @@ Assignment commits us to reviewing the PR, not to merging it. A gate closure is 
      --json repository,title,state,createdAt,url
    ```
 
-   Merged fixes elsewhere and substantive replies to reviewers show follow-through. Decline obvious spam or unattended automation: mass unrelated boilerplate, repeated nonresponsive replies. A new account, a sparse profile, or disclosed AI assistance is not a reason to decline. When evidence is thin, lean toward goodwill for a sound, scoped contribution and mention the uncertainty.
+   Where `users/` and search are blocked (cloud sessions), fall back to the account's history in this repo; merged history here outweighs account age. Merged fixes elsewhere and substantive replies to reviewers show follow-through. When a third party's PR competes with the reporter's own, prefer the reporter's. Decline obvious spam or unattended automation: mass unrelated boilerplate, repeated nonresponsive replies. A new account, a sparse profile, or disclosed AI assistance is not a reason to decline. When evidence is thin, lean toward goodwill for a sound, scoped contribution and mention the uncertainty.
 
 7. **Recommend.** Give the maintainer the verdict, one or two sentences of reasoning, and the exact command. Act within existing authorization and bring borderline calls back.
 
