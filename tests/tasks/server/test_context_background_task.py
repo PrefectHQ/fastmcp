@@ -354,6 +354,35 @@ class TestBackgroundTaskIntegration:
         assert final.result is not None
         assert final.result["structuredContent"] == {"result": "done"}
 
+    @pytest.mark.parametrize(
+        "items", [[], ["a", "b"]], ids=["empty-batch", "two-items"]
+    )
+    async def test_report_progress_with_item_count_total_in_background_task(
+        self, items: list[str]
+    ):
+        """The documented `total=len(items)` pattern completes in a background
+        task even when the batch is empty and the total is 0."""
+        mcp = FastMCP("progress-zero-total")
+        mcp.add_extension(TasksExtension())
+
+        @mcp.tool(task=True)
+        async def process(items: list[str], ctx: Context) -> str:
+            total = len(items)
+            for i, item in enumerate(items):
+                await ctx.report_progress(progress=i, total=total, message=item)
+            await ctx.report_progress(progress=total, total=total)
+            return f"processed {total}"
+
+        async with running_task_server(mcp):
+            created = await submit_task(mcp, "process", {"items": items})
+            final = await wait_for_task(mcp, created.task_id)
+
+        assert final.status == "completed"
+        assert final.result is not None
+        assert final.result["structuredContent"] == {
+            "result": f"processed {len(items)}"
+        }
+
     async def test_context_wiring_in_background_task(self):
         """A worker Context is wired as a background task with no live session."""
         mcp = FastMCP("wiring-test")
