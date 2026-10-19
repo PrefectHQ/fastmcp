@@ -242,8 +242,13 @@ class SkillProvider(Provider):
         content = main_file.read_text(encoding="utf-8")
         frontmatter, body = parse_frontmatter(content)
 
-        # Get description from frontmatter or first non-empty line
+        # Get description from frontmatter or first non-empty line. YAML
+        # sequences/mappings (and the line parser's list fallback) are not
+        # valid descriptions; treat any non-string like an absent one so the
+        # skill's resources can still be constructed.
         description = frontmatter.get("description", "")
+        if not isinstance(description, str):
+            description = ""
         if not description:
             for line in body.strip().split("\n"):
                 line = line.strip()
