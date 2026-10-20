@@ -72,7 +72,7 @@ These control how the server listens when running with an HTTP transport.
 
 ## Tasks (Docket)
 
-These configure the [Docket](https://github.com/prefecthq/docket) task queue used by [server tasks](/servers/tasks). All use the `FASTMCP_DOCKET_` prefix.
+These configure the [Docket](https://github.com/chrisguidry/docket) task queue used by [server tasks](/servers/tasks). All use the `FASTMCP_DOCKET_` prefix.
 
 <Warning>
 When setting Docket values in a `.env` file, use a **double** underscore: `FASTMCP_DOCKET__URL` (not `FASTMCP_DOCKET_URL`). This is because `.env` values are resolved through the parent `Settings` class, which uses `__` as its nested delimiter. As regular environment variables (e.g., `export`), the single-underscore form `FASTMCP_DOCKET_URL` works fine.
