@@ -11,6 +11,8 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 Agent skills are directories containing instructions and supporting files that teach an AI assistant how to perform specific tasks. Tools like Claude Code, Cursor, and VS Code Copilot each have their own skills directories where users can add custom capabilities. The Skills Provider exposes these skill directories as MCP resources, making skills discoverable and shareable across different AI tools and clients.
 
+To opt into standard MCP `skills/list` and `skills/get` discovery, see [Experimental Skills Extension](/servers/providers/experimental-skills). The experimental option is disabled by default.
+
 ## Why Skills as Resources
 
 Skills live in platform-specific directories (`~/.claude/skills/`, `~/.cursor/skills/`, etc.) and typically contain a main instruction file plus supporting reference materials. When you want to share skills between tools or access them from a custom client, you need a way to discover and retrieve these files programmatically.
