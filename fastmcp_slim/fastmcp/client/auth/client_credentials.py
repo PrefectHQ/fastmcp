@@ -111,7 +111,10 @@ async def _restore_token_expiry(context: OAuthContext) -> None:
     The inherited initializer reloads the stored token but not its expiry, so a
     provider recreated with persistent storage would treat an already-expired
     token as still valid. Reading the absolute expiry back keeps `is_token_valid`
-    honest, prompting a fresh token request when the stored one has expired.
+    honest. Cached refresh tokens are discarded so M2M authorization rediscovers
+    the issuer when the access token expires, even if it was valid when loaded.
+    Authorization server metadata is not persisted, so the inherited refresh
+    fallback would otherwise send credentials to the MCP server itself.
 
     The restore is skipped unless the reloaded token itself declares an
     `expires_in`. A token whose response omitted `expires_in` (``None``) is
@@ -122,6 +125,8 @@ async def _restore_token_expiry(context: OAuthContext) -> None:
     """
     storage = context.storage
     tokens = context.current_tokens
+    if tokens is not None and tokens.refresh_token is not None:
+        context.current_tokens = tokens.model_copy(update={"refresh_token": None})
     if tokens is None or tokens.expires_in is None:
         return
     if not isinstance(storage, TokenStorageAdapter):
@@ -179,6 +184,7 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
             client_id="my-client-id",
             client_secret="my-client-secret",
             scopes=["read", "write"],
+            issuer="https://auth.example.com",
         )
 
         async with Client("https://example.com/mcp", auth=auth) as client:
@@ -198,6 +204,7 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
         token_endpoint_auth_method: Literal[
             "client_secret_basic", "client_secret_post"
         ] = "client_secret_basic",
+        issuer: str | None = None,
         token_storage: AsyncKeyValue | None = None,
     ) -> None:
         """Initialize a client_credentials OAuth provider.
@@ -214,6 +221,11 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
                 token endpoint. "client_secret_basic" (default) sends them in an
                 HTTP Basic ``Authorization`` header; "client_secret_post" sends them
                 in the request body.
+            issuer: The issuer identifier of the authorization server that issued
+                these credentials. Token requests are only built from discovered
+                authorization server metadata whose issuer matches; otherwise the flow
+                stops with `OAuthFlowError`. Without it, the MCP server decides which
+                authorization server receives the credentials, so always pass it.
             token_storage: An AsyncKeyValue-compatible token store. Tokens are kept
                 in memory if not provided.
         """
@@ -221,6 +233,7 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
         self._client_secret = client_secret
         self._scopes = _normalize_scopes(scopes)
         self._token_endpoint_auth_method = token_endpoint_auth_method
+        self._issuer = issuer
         self._token_storage = token_storage
         self._bound = False
 
@@ -246,6 +259,7 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
             client_secret=self._client_secret,
             token_endpoint_auth_method=self._token_endpoint_auth_method,
             scope=self._scopes,
+            issuer=self._issuer,
         )
         self._bound = True
 
@@ -309,6 +323,7 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
         auth = PrivateKeyJWTOAuthProvider(
             client_id="my-client-id",
             assertion_provider=jwt_params.create_assertion_provider(),
+            issuer="https://auth.example.com",
         )
 
         async with Client("https://example.com/mcp", auth=auth) as client:
@@ -325,6 +340,7 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
         client_id: str,
         assertion_provider: Callable[[str], Awaitable[str]],
         scopes: str | list[str] | None = None,
+        issuer: str | None = None,
         token_storage: AsyncKeyValue | None = None,
     ) -> None:
         """Initialize a private_key_jwt OAuth provider.
@@ -342,12 +358,18 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
                 federation.
             scopes: OAuth scopes to request, as a space-separated string or a list
                 of strings.
+            issuer: The issuer identifier of the authorization server that issued
+                these credentials. Token requests are only built from discovered
+                authorization server metadata whose issuer matches; otherwise the flow
+                stops with `OAuthFlowError`. Without it, the MCP server decides which
+                authorization server receives the credentials, so always pass it.
             token_storage: An AsyncKeyValue-compatible token store. Tokens are kept
                 in memory if not provided.
         """
         self._client_id = client_id
         self._assertion_provider = assertion_provider
         self._scopes = _normalize_scopes(scopes)
+        self._issuer = issuer
         self._token_storage = token_storage
         self._bound = False
 
@@ -372,6 +394,7 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
             client_id=self._client_id,
             assertion_provider=self._assertion_provider,
             scope=self._scopes,
+            issuer=self._issuer,
         )
         self._bound = True
 
