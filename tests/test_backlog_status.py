@@ -90,3 +90,20 @@ def test_reconstructed_counts_do_not_invent_historical_drafts(backlog):
     )
     assert sample["issues"] == {"open": 0}
     assert sample["prs"] == {"open": 1}
+
+
+def test_explicit_missing_history_fails_without_reset(backlog, tmp_path, monkeypatch):
+    output = tmp_path / "backlog.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "backlog_status.py",
+            "--previous",
+            str(tmp_path / "missing.json"),
+            "--output",
+            str(output),
+        ],
+    )
+    with pytest.raises(FileNotFoundError):
+        backlog.main()
+    assert not output.exists()

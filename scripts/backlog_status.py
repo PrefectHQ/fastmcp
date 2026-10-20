@@ -136,12 +136,8 @@ def main() -> None:
     parser.add_argument("--import-history", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    previous = (
-        json.loads(args.previous.read_text())
-        if args.previous and args.previous.exists()
-        else {}
-    )
-    if previous and previous.get("schema") != SCHEMA:
+    previous = json.loads(args.previous.read_text()) if args.previous else {}
+    if args.previous and previous.get("schema") != SCHEMA:
         raise ValueError("Unexpected backlog history schema")
     if args.import_history:
         imported = [
