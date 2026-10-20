@@ -919,22 +919,18 @@ class FastMCP(
             version: Version filter (None returns highest version).
 
         Returns:
-            The resource if found and authorized, None if not found or unauthorized.
+            The resource if found and authorized, None if not found.
+
+        Raises:
+            AuthorizationError: The resource exists but access is denied.
         """
         # Get resource from AggregateProvider (handles aggregation and namespacing)
         resource = await super()._get_resource(uri, version)
         if resource is None:
             return None
 
-        # Component auth - return None if unauthorized (consistent with list filtering)
-        skip_auth, token = _get_auth_context()
-        if not skip_auth and resource.auth is not None:
-            ctx = AuthContext(token=token, component=resource)
-            try:
-                if not await run_auth_checks(resource.auth, ctx):
-                    return None
-            except AuthorizationError:
-                return None
+        if not await _component_auth_allows(resource):
+            raise AuthorizationError(f"Access denied to resource: {uri!r}")
 
         return resource
 
@@ -956,23 +952,35 @@ class FastMCP(
         Returns:
             The resource if found and enabled, None otherwise.
         """
-        resource = await super().get_resource(uri, version)
+        resource, _ = await self._lookup_resource(uri, version)
+        return resource
+
+    async def _lookup_resource(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> tuple[Resource | None, bool]:
+        """Resolve a resource as `get_resource` does.
+
+        Also reports whether a concrete resource exists at `uri` at all, so
+        reads can tell a hidden resource apart from a missing one.
+        """
+        try:
+            resource = await super().get_resource(uri, version)
+        except AuthorizationError:
+            return None, True
         if resource is None:
-            return None
+            return None, False
 
         # Apply session transforms to single item
         resources = await apply_session_transforms([resource])
-        # Transforms can change what `auth` sees (a tag, for one), so the check made
-        # on the pre-transform component is not enough.
         if (
             resources
             and is_enabled(resources[0])
             and await _component_auth_allows(resources[0])
         ):
-            return resources[0]
+            return resources[0], True
 
         if version is not None:
-            return None
+            return None, True
 
         all_resources = [r for r in await super().list_resources() if str(r.uri) == uri]
         all_resources = list(await apply_session_transforms(all_resources))
@@ -991,8 +999,8 @@ class FastMCP(
             authorized.append(r)
 
         if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+            return None, True
+        return max(authorized, key=version_sort_key), True
 
     async def list_resource_templates(
         self, *, run_middleware: bool = True
@@ -1529,7 +1537,7 @@ class FastMCP(
                     return await synthesized._read(task_meta=task_meta)
 
                 # Try concrete resources first (transforms + auth via _get_resource)
-                resource = await self.get_resource(uri, version=version)
+                resource, exists = await self._lookup_resource(uri, version=version)
                 if resource is not None:
                     span.set_attributes(resource.get_span_attributes())
                     if task_meta is not None and task_meta.fn_key is None:
@@ -1566,6 +1574,9 @@ class FastMCP(
                         raise ResourceError(
                             f"Error reading resource {uri!r}: {e}"
                         ) from e
+
+                if exists:
+                    raise NotFoundError(f"Unknown resource: {uri!r}")
 
                 # Try templates (transforms + auth via get_resource_template)
                 template = await self.get_resource_template(uri, version=version)
