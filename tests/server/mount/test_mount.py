@@ -1,8 +1,8 @@
 """Basic mounting functionality tests."""
 
 import logging
-import sys
 
+import httpx2
 import pytest
 from mcp_types import TextContent
 
@@ -12,6 +12,7 @@ from fastmcp.client.transports import SSETransport
 from fastmcp.server import create_proxy
 from fastmcp.tools.base import Tool
 from fastmcp.tools.tool_transform import TransformedTool
+from tests.utilities.httpx2_mock import HTTPXMock
 
 
 class TestBasicMount:
@@ -241,10 +242,9 @@ class TestMultipleServerMount:
         assert any(t.name == "api_first_tool" for t in tools)
         assert any(t.name == "api_second_tool" for t in tools)
 
-    @pytest.mark.skipif(
-        sys.platform == "win32", reason="Windows asyncio networking timeouts."
-    )
-    async def test_mount_with_unreachable_proxy_servers(self, caplog):
+    async def test_mount_with_unreachable_proxy_servers(
+        self, caplog, httpx_mock: HTTPXMock
+    ):
         """Test graceful handling when multiple mounted servers fail to connect."""
         caplog.set_level(logging.DEBUG, logger="fastmcp")
 
@@ -266,9 +266,12 @@ class TestMultipleServerMount:
         # Mount the working server
         main_app.mount(working_app, "working")
 
-        # Use an unreachable port
+        unreachable_url = "http://unreachable.test/sse/"
+        httpx_mock.add_exception(
+            httpx2.ConnectError("Connection refused"), url=unreachable_url
+        )
         unreachable_client = Client(
-            transport=SSETransport("http://127.0.0.1:9999/sse/"),
+            transport=SSETransport(unreachable_url),
             name="unreachable_client",
         )
 
@@ -313,6 +316,7 @@ class TestMultipleServerMount:
         assert any(
             "Error during list_prompts from provider" in msg for msg in warning_messages
         )
+        assert httpx_mock.get_requests(url=unreachable_url)
 
 
 class TestPrefixConflictResolution:
