@@ -137,8 +137,11 @@ client = Client(
 
 ### SSL Verification
 
-By default, HTTPS connections verify the server's SSL certificate. You can customize this behavior with the `verify` parameter, which accepts the same values as httpx2 (documented in [httpx's SSL guide](https://www.python-httpx.org/advanced/ssl/), which httpx2 follows):
+By default, HTTPS connections verify the server's SSL certificate using the operating system's trust store through HTTPX2. You can customize this behavior with the `verify` parameter; see [HTTPX2's SSL guide](https://pydantic.dev/docs/httpx2/advanced/ssl/).
 
+Keep the trust store used by your deployment current. Updating certifi does not update the operating system's CA store or a custom bundle selected by `SSL_CERT_FILE`, `SSL_CERT_DIR`, or `verify`. Custom client factories configure their own TLS verification. Rebuild containers and restart processes after updating trust stores. This also matters for servers making outbound HTTPS requests to OAuth providers, JWKS endpoints, and upstream APIs.
+
+For the October 2026 eMudhra CA incident, follow the [FastMCP security notice](https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026). A FastMCP package upgrade alone does not remediate every trust store.
 ```python
 from fastmcp import Client
 
