@@ -224,3 +224,18 @@ class TestToolTimeout:
         # TimeoutError should be caught and converted to ToolError
         with pytest.raises((ToolError, MCPError)):
             await mcp.call_tool("times_out")
+
+    async def test_body_raised_timeout_error_is_not_reported_as_deadline(self):
+        """A TimeoutError raised by the tool body itself (e.g. socket.timeout)
+        must surface as the tool's own error, not as the deadline firing."""
+        mcp = FastMCP()
+
+        @mcp.tool(timeout=30.0)
+        async def upstream_timeout() -> str:
+            raise TimeoutError("upstream socket timed out")
+
+        with pytest.raises(ToolError) as exc_info:
+            await mcp.call_tool("upstream_timeout")
+
+        assert "timed out after" not in str(exc_info.value)
+        assert "upstream socket timed out" in str(exc_info.value)
