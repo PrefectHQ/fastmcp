@@ -5,6 +5,36 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.1.3" description="2026-10-20">
+
+**[v4.1.3: Root Awakening](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.3)**
+
+This release updates certifi-backed dependencies following the eMudhra CA compromise and fixes public-client OAuth authentication, empty visibility selections, generator transforms, and per-server timeouts for ordinary requests. FastMCP 4 uses system trust by default: follow the [security notice](https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026) to update operating-system, container, custom, and installer trust stores; upgrading FastMCP alone is insufficient. Thanks to our 11 contributors, including 6 first-time contributors.
+
+### Security 🔒
+* Require certifi 2026.10.19 or later for certifi-backed server dependencies and optional SDK integrations, and document system, custom, and installer trust-store updates by [@zzstoatzz](https://github.com/zzstoatzz) in [#5945](https://github.com/PrefectHQ/fastmcp/pull/5945).
+### Enhancements ✨
+* Chart public backlog counts and closure outcomes by [@zzstoatzz](https://github.com/zzstoatzz) in [#5942](https://github.com/PrefectHQ/fastmcp/pull/5942)
+### Fixes 🐞
+* Default the upstream token auth method to none without a client secret by [@asasemahmed](https://github.com/asasemahmed) in [#5879](https://github.com/PrefectHQ/fastmcp/pull/5879)
+* fix: preserve empty session visibility selections by [@himanshuchawla0807-gif](https://github.com/himanshuchawla0807-gif) in [#5944](https://github.com/PrefectHQ/fastmcp/pull/5944)
+* test(mount): make unreachable proxy failures deterministic by [@CharlesYXW](https://github.com/CharlesYXW) and [@ch-z-hc](https://github.com/ch-z-hc) in [#5584](https://github.com/PrefectHQ/fastmcp/pull/5584)
+* fix(tools): materialize generator transform_fn results in TransformedTool.run by [@BlueX888](https://github.com/BlueX888) and [@nandanadileep](https://github.com/nandanadileep) in [#5672](https://github.com/PrefectHQ/fastmcp/pull/5672)
+* Honor per-server MCP config timeouts by [@atty57](https://github.com/atty57), [@phnmn](https://github.com/phnmn), and [@CRYPTONIKAV](https://github.com/CRYPTONIKAV) in [#5758](https://github.com/PrefectHQ/fastmcp/pull/5758)
+* fix: don't classify a tool body's own TimeoutError as the tool timeout by [@Wilson0511](https://github.com/Wilson0511) in [#5940](https://github.com/PrefectHQ/fastmcp/pull/5940)
+
+## New Contributors
+* @phnmn made their first contribution in [#5758](https://github.com/PrefectHQ/fastmcp/pull/5758)
+* @CRYPTONIKAV made their first contribution in [#5758](https://github.com/PrefectHQ/fastmcp/pull/5758)
+* @himanshuchawla0807-gif made their first contribution in [#5944](https://github.com/PrefectHQ/fastmcp/pull/5944)
+* @CharlesYXW made their first contribution in [#5584](https://github.com/PrefectHQ/fastmcp/pull/5584)
+* @atty57 made their first contribution in [#5758](https://github.com/PrefectHQ/fastmcp/pull/5758)
+* @Wilson0511 made their first contribution in [#5940](https://github.com/PrefectHQ/fastmcp/pull/5940)
+
+**Full Changelog**: [v4.1.2...v4.1.3](https://github.com/PrefectHQ/fastmcp/compare/v4.1.2...v4.1.3)
+
+</Update>
+
 <Update label="v4.1.2" description="2026-10-20">
 
 **[v4.1.2: License to Deny](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.2)**
