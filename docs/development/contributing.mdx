@@ -104,7 +104,7 @@ Read review-bot comments and maintainer replies, evaluate concrete findings, and
 
 ## Maintenance and automation
 
-The [maintenance status page](https://github.com/PrefectHQ/fastmcp/blob/status/STATUS.md) reports automation health and the contributor queue twice a day. Check its timestamp before treating a status as current. The accompanying `status.json` uses the `fastmcp-maintenance/1` schema; `idle` means there was nothing to do, while `degraded` means a run failed.
+The [public backlog dashboard](https://prefecthq.github.io/fastmcp/) charts open issues and PRs, incoming work, and closure outcomes. Backlog snapshots update every 30 minutes; older reconstructed counts and the limits of closure history are identified on the page. The [maintenance status page](https://prefecthq.github.io/fastmcp/operations.html) reports automation health and the contributor queue twice a day. Check its timestamp before treating a status as current. The accompanying `status.json` uses the `fastmcp-maintenance/1` schema; `idle` means there was nothing to do, while `degraded` means a run failed.
 
 Automation labels and deduplicates issues, enforces the contribution gate, explains CI failures, and checks new dependency releases nightly. Duplicate issues and reports still missing a reproduction after seven days without an author reply close automatically. Maintainers can request work with `/marvin`. A separate triage agent may open draft fixes for unclaimed issues; it does not assign contributors, comment, mark drafts ready, or merge.
 

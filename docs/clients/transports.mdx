@@ -237,6 +237,33 @@ async with client:
     answer = await client.call_tool("assistant_ask", {"question": "What?"})
 ```
 
+### Per-server Timeouts
+
+Set `timeout` on a server entry to limit how long its requests can wait. Entry timeouts use **milliseconds**, apply to HTTP, SSE, and STDIO servers, and take precedence over the timeout passed to `Client`. An omitted or `null` entry timeout uses the client timeout; `0` disables the timeout for that backend session.
+
+For example, give the weather server 5 seconds and use a 30-second client timeout for entries without their own limit:
+
+```python
+from fastmcp import Client
+
+config = {
+    "mcpServers": {
+        "weather": {
+            "url": "https://weather.example.com/mcp",
+            "timeout": 5000,
+        },
+        "assistant": {
+            "command": "python",
+            "args": ["./assistant.py"],
+        },
+    }
+}
+
+client = Client(config, timeout=30)
+```
+
+With multiple servers, the client timeout also limits the entire routed request, so a backend timeout cannot extend that outer limit. Composite clients and configurations with tool transformations or tag filters use backend proxy sessions: a per-call `timeout` cannot extend those sessions' configured limits. `sse_read_timeout` remains a separate setting for the SSE connection.
+
 ### Tool Transformations
 
 FastMCP supports tool transformations within the configuration. You can change names, descriptions, tags, and arguments for tools from a server.
