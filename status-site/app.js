@@ -399,7 +399,7 @@ function activity() {
     show,
     (index) => detail(rows[index].day, true),
   );
-  if (selectedDay) detail(selectedDay, false);
+  detail(selectedDay || rows.at(-1).day, false);
 }
 function detail(day, open) {
   selectedDay = day;
