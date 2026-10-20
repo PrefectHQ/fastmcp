@@ -61,17 +61,13 @@ def _normalize_scopes(scopes: str | list[str] | None) -> str | None:
     return scopes
 
 
-def _cache_namespace(client_id: str, scopes: str | None) -> str:
-    """Namespace cached tokens by both client identity and requested scopes.
-
-    Two providers that differ in either their ``client_id`` or their requested
-    scopes must not share cached tokens: a token issued for one client or one
-    scope set is not interchangeable with another. Hashing a canonical
-    ``(client_id, scopes)`` pair keeps the namespace unambiguous regardless of the
-    characters either value contains.
-    """
-    identity = json.dumps([client_id, scopes], separators=(",", ":"))
-    return hashlib.sha256(identity.encode()).hexdigest()
+def _cache_namespace(client_id: str, scopes: str | None, issuer: str | None) -> str:
+    """Isolate tokens by client, requested scopes, and configured issuer."""
+    identity = [client_id, scopes]
+    if issuer is not None:
+        identity.append(issuer)
+    encoded = json.dumps(identity, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode()).hexdigest()
 
 
 def _resolve_token_storage(
@@ -79,6 +75,7 @@ def _resolve_token_storage(
     mcp_url: str,
     client_id: str,
     scopes: str | None,
+    issuer: str | None,
 ) -> TokenStorageAdapter:
     """Wrap a token store in the FastMCP adapter, defaulting to in-memory.
 
@@ -86,15 +83,15 @@ def _resolve_token_storage(
     in-memory storage: re-acquiring a token is a single non-interactive request,
     so losing the cache on restart is cheap rather than disruptive.
 
-    The cache is namespaced by client identity and requested scopes so that
-    providers with different credentials or scope sets can share one store against
+    The cache is namespaced by client identity, requested scopes, and issuer so
+    providers with different identities can share one store against
     the same MCP endpoint without overwriting each other's tokens.
     """
     store = token_storage or MemoryStore()
     return TokenStorageAdapter(
         async_key_value=store,
         server_url=mcp_url,
-        cache_namespace=_cache_namespace(client_id, scopes),
+        cache_namespace=_cache_namespace(client_id, scopes, issuer),
     )
 
 
@@ -253,7 +250,11 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
         super().__init__(
             server_url=mcp_url,
             storage=_resolve_token_storage(
-                self._token_storage, mcp_url, self._client_id, self._scopes
+                self._token_storage,
+                mcp_url,
+                self._client_id,
+                self._scopes,
+                self._issuer,
             ),
             client_id=self._client_id,
             client_secret=self._client_secret,
@@ -389,7 +390,11 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
         super().__init__(
             server_url=mcp_url,
             storage=_resolve_token_storage(
-                self._token_storage, mcp_url, self._client_id, self._scopes
+                self._token_storage,
+                mcp_url,
+                self._client_id,
+                self._scopes,
+                self._issuer,
             ),
             client_id=self._client_id,
             assertion_provider=self._assertion_provider,

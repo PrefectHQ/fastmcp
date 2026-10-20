@@ -302,6 +302,48 @@ class TestClientCredentialsFlow:
 class TestTokenCacheIsolation:
     """Cached tokens are namespaced by client identity, not just server URL."""
 
+    @pytest.mark.parametrize("provider_type", ["secret", "jwt"])
+    @pytest.mark.parametrize("previous_issuer", [None, "https://previous.example.com"])
+    async def test_changed_issuer_does_not_reuse_cached_token(
+        self, provider_type, previous_issuer
+    ):
+        store = MemoryStore()
+
+        def make_provider(issuer):
+            if provider_type == "jwt":
+                return PrivateKeyJWTOAuthProvider(
+                    SERVER_URL,
+                    client_id="cid",
+                    assertion_provider=static_assertion_provider("assertion"),
+                    issuer=issuer,
+                    token_storage=store,
+                )
+            return ClientCredentialsOAuthProvider(
+                SERVER_URL,
+                client_id="cid",
+                client_secret="secret",
+                issuer=issuer,
+                token_storage=store,
+            )
+
+        previous = make_provider(previous_issuer)
+        await previous.context.storage.set_tokens(
+            OAuthToken(access_token="previous", token_type="Bearer", expires_in=3600)
+        )
+        responder, captured = make_m2m_responder(
+            token_response={"access_token": "current", "token_type": "Bearer"}
+        )
+        async with httpx2.AsyncClient(
+            auth=make_provider(AUTH_SERVER_URL),
+            transport=httpx2.MockTransport(responder),
+        ) as client:
+            assert (await client.post(SERVER_URL)).status_code == 200
+
+        assert captured["final_request"].headers["Authorization"] == "Bearer current"
+        assert str(captured["token_request"].url) == f"{AUTH_SERVER_URL}/token"
+        previous_token = await previous.context.storage.get_tokens()
+        assert previous_token is not None and previous_token.access_token == "previous"
+
     async def test_distinct_client_ids_do_not_share_cached_tokens(self):
         """Two providers with different client_ids sharing one store against the
         same endpoint each retain their own token instead of clobbering one
