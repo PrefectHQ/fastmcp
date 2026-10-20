@@ -18,6 +18,7 @@ production use with enterprise identity providers.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import secrets
 import time
@@ -185,6 +186,12 @@ def _assertion_granted_scopes(claims: dict[str, Any]) -> list[str]:
     if isinstance(scp, str):
         return scp.split()
     return []
+
+
+def _log_startup_cull_failure(task: asyncio.Task[None]) -> None:
+    """Log an exception from the scheduled startup cull, if any."""
+    if not task.cancelled() and (exc := task.exception()) is not None:
+        logger.warning("Failed to cull expired OAuth proxy state at startup: %s", exc)
 
 
 class OAuthProxy(OAuthProvider, ConsentMixin):
@@ -593,6 +600,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # keys get isolated directories (e.g. two servers on the same machine with
         # different keys won't collide). Decryption errors are treated as cache misses
         # rather than hard failures, so key rotation just causes re-registration.
+        default_file_store: FileTreeStore | None = None
         if client_storage is None:
             storage_encryption_key = derive_jwt_key(
                 high_entropy_material=jwt_signing_key.decode(),
@@ -603,7 +611,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             storage_dir = settings.home / "oauth-proxy" / key_fingerprint
             storage_dir.mkdir(parents=True, exist_ok=True)
 
-            file_store = FileTreeStore(
+            default_file_store = FileTreeStore(
                 data_directory=storage_dir,
                 key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(
                     storage_dir
@@ -614,11 +622,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             )
 
             client_storage = FernetEncryptionWrapper(
-                key_value=file_store,
+                key_value=default_file_store,
                 fernet=Fernet(key=storage_encryption_key),
                 raise_on_decryption_error=False,
             )
 
+        # The store FastMCP created itself, if any. Expired entries are only ever
+        # reaped from this store: a user-provided client_storage is never culled.
+        self._default_file_store: FileTreeStore | None = default_file_store
         self._client_storage: AsyncKeyValue = client_storage
 
         # Cache HTTPS check to avoid repeated logging
@@ -739,6 +750,52 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             "Initialized OAuth proxy provider with upstream server %s",
             self._upstream_authorization_endpoint,
         )
+
+        if self._default_file_store is not None:
+            self._cull_expired_state_at_startup()
+
+    def _cull_expired_state_at_startup(self) -> None:
+        """Reap expired OAuth state files left behind by previous runs, once.
+
+        The proxy is constructed synchronously while ``FileTreeStore.cull()``
+        is async. When no event loop is running (the usual case: the proxy is
+        built during sync server setup) the cull is driven to completion
+        inline; otherwise it is scheduled on the running loop so construction
+        never blocks the caller. Failures are logged, never raised: a missed
+        cull only means stale files linger until the next restart.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is None:
+            try:
+                asyncio.run(self.cull_expired_oauth_state())
+            except Exception:
+                logger.warning(
+                    "Failed to cull expired OAuth proxy state at startup",
+                    exc_info=True,
+                )
+        else:
+            task = loop.create_task(
+                self.cull_expired_oauth_state(),
+                name="fastmcp-oauth-proxy-startup-cull",
+            )
+            task.add_done_callback(_log_startup_cull_failure)
+
+    async def cull_expired_oauth_state(self) -> None:
+        """Delete expired entries from the default on-disk OAuth state store.
+
+        This is a no-op when a custom ``client_storage`` was provided: FastMCP
+        only reaps the store it created itself. ``cull()`` only removes entries
+        whose TTL has passed; entries without a TTL (e.g. DCR client
+        registrations) are left untouched.
+
+        See https://github.com/PrefectHQ/fastmcp/issues/5718.
+        """
+        if self._default_file_store is not None:
+            await self._default_file_store.cull()
 
     # -------------------------------------------------------------------------
     # Scope Management

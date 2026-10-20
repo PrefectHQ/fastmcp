@@ -1,5 +1,6 @@
 """Tests for OAuth proxy with persistent storage."""
 
+import asyncio
 import tempfile
 import warnings
 from collections.abc import AsyncGenerator
@@ -14,6 +15,7 @@ from key_value.aio.stores.memory import MemoryStore
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
+from fastmcp import settings
 from fastmcp.server.auth.auth import TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 
@@ -212,3 +214,121 @@ class TestOAuthProxyStorage:
                 "cimd_fetched_at": None,
             }
         )
+
+
+def _entry_files(directory: Path) -> list[Path]:
+    """On-disk entry files, excluding per-collection index files."""
+    return [p for p in directory.rglob("*.json") if not p.name.endswith("-info.json")]
+
+
+class TestOAuthProxyDefaultStoreCull:
+    """Expired entries in the proxy-created default file store must be reaped.
+
+    Regression tests for https://github.com/PrefectHQ/fastmcp/issues/5718:
+    the default FileTreeStore was never culled, so expired OAuth state files
+    accumulated until the volume ran out of inodes.
+    """
+
+    @pytest.fixture
+    def jwt_verifier(self):
+        verifier = Mock()
+        verifier.required_scopes = ["read", "write"]
+        verifier.verify_token = AsyncMock(return_value=None)
+        return verifier
+
+    @pytest.fixture
+    def isolated_home(self, tmp_path, monkeypatch):
+        """Point the default storage root at a temp dir for this test."""
+        monkeypatch.setattr(settings, "home", tmp_path)
+        return tmp_path
+
+    def create_proxy(self, jwt_verifier, storage=None) -> OAuthProxy:
+        return OAuthProxy(
+            upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+            upstream_token_endpoint="https://github.com/login/oauth/access_token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://myserver.com",
+            redirect_path="/auth/callback",
+            client_storage=storage,
+            jwt_signing_key="test-secret",
+        )
+
+    async def test_cull_reaps_expired_entries_only(self, jwt_verifier, isolated_home):
+        proxy = self.create_proxy(jwt_verifier)
+        store = proxy._default_file_store
+        assert store is not None
+
+        await store.put("expired", {"v": 1}, collection="c", ttl=0.05)
+        await store.put("live", {"v": 2}, collection="c", ttl=3600)
+        await store.put("no-ttl", {"v": 3}, collection="c")
+        await asyncio.sleep(0.2)
+        assert len(_entry_files(isolated_home)) == 3
+
+        await proxy.cull_expired_oauth_state()
+
+        assert len(_entry_files(isolated_home)) == 2
+        assert await store.get("expired", collection="c") is None
+        assert await store.get("live", collection="c") == {"v": 2}
+        assert await store.get("no-ttl", collection="c") == {"v": 3}
+
+    async def test_cull_is_noop_with_custom_storage(self, jwt_verifier, isolated_home):
+        proxy = self.create_proxy(jwt_verifier, storage=MemoryStore())
+        assert proxy._default_file_store is None
+        # Must not raise: FastMCP never culls stores it did not create.
+        await proxy.cull_expired_oauth_state()
+
+    async def test_startup_cull_reaps_previous_run_entries(
+        self, jwt_verifier, isolated_home
+    ):
+        # Simulate a previous run: entries written, then expired.
+        first = self.create_proxy(jwt_verifier)
+        store = first._default_file_store
+        assert store is not None
+        await store.put("stale", {"v": 1}, collection="c", ttl=0.05)
+        await asyncio.sleep(0.2)
+        assert len(_entry_files(isolated_home)) == 1
+
+        # A fresh proxy (same key -> same directory) culls at startup.
+        self.create_proxy(jwt_verifier)
+        pending = [
+            t
+            for t in asyncio.all_tasks()
+            if t.get_name() == "fastmcp-oauth-proxy-startup-cull"
+        ]
+        if pending:
+            await asyncio.gather(*pending)
+
+        assert _entry_files(isolated_home) == []
+
+    def test_startup_cull_without_running_loop(self, jwt_verifier, isolated_home):
+        """The sync-construction path drives the cull inline via asyncio.run."""
+        import threading
+
+        created: list[OAuthProxy] = []
+
+        def build() -> None:
+            created.append(self.create_proxy(jwt_verifier))
+
+        thread = threading.Thread(target=build)
+        thread.start()
+        thread.join()
+        store = created[0]._default_file_store
+        assert store is not None
+
+        async def seed() -> None:
+            await store.put("stale", {"v": 1}, collection="c", ttl=0.05)
+
+        asyncio.run(seed())
+        # Let the entry expire, then construct a second proxy with no event
+        # loop running: the startup cull runs inline in the constructor.
+        import time
+
+        time.sleep(0.2)
+        assert len(_entry_files(isolated_home)) == 1
+        thread = threading.Thread(target=build)
+        thread.start()
+        thread.join()
+
+        assert _entry_files(isolated_home) == []
