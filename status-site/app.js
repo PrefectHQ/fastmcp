@@ -105,14 +105,18 @@ function dateTicks(graph, entries, x, bottom, width, label) {
 }
 function interactions(graph, entries, nearest, show, choose) {
   let index = entries.length - 1;
-  graph.addEventListener("pointermove", (event) => {
+  const pointAt = (event) => {
     const rect = graph.getBoundingClientRect();
-    index = nearest(
+    return nearest(
       ((event.clientX - rect.left) * graph.viewBox.baseVal.width) / rect.width,
     );
+  };
+  graph.addEventListener("pointermove", (event) => {
+    index = pointAt(event);
     show(index);
   });
-  graph.addEventListener("click", () => {
+  graph.addEventListener("click", (event) => {
+    if (event.detail !== 0) index = pointAt(event);
     show(index);
     if (choose) choose(index);
   });
