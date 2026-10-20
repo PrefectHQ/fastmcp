@@ -5,6 +5,19 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v3.4.11" description="2026-10-20">
+
+**[v3.4.11: Trust Issues](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.11)**
+
+This release requires certifi 2026.10.19 or later for FastMCP's HTTP stack and certifi-backed integrations following the eMudhra CA compromise. Follow the [security notice](https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026) to update custom, system, and installer trust stores too; upgrading FastMCP alone is insufficient. Thanks to our 1 contributor, with no first-time contributors in this release.
+
+### Security 🔒
+* Require certifi 2026.10.19 or later and document deployment and installer trust-store updates by [@zzstoatzz](https://github.com/zzstoatzz) in [#5946](https://github.com/PrefectHQ/fastmcp/pull/5946).
+
+**Full Changelog**: [v3.4.10...v3.4.11](https://github.com/PrefectHQ/fastmcp/compare/v3.4.10...v3.4.11)
+
+</Update>
+
 <Update label="v3.4.10" description="2026-10-20">
 
 **[v3.4.10: Back in Check](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.10)**
