@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from mcp.shared.path_security import PathEscapeError, safe_join
+from mcp.shared.path_security import PathEscapeError
 from mcp_types import TextResourceContents
 
 from fastmcp import Client, FastMCP
@@ -41,20 +41,16 @@ async def test_main_file_is_checked_again_when_read(tmp_path: Path) -> None:
         await resource.read()
 
 
-@pytest.mark.parametrize("entry_link", [False, True])
-async def test_directory_keeps_other_skills_when_an_entry_is_outside(
-    tmp_path: Path, entry_link: bool
+async def test_directory_keeps_other_skills_when_a_main_file_is_outside(
+    tmp_path: Path,
 ) -> None:
     root = tmp_path / "skills"
     root.mkdir()
     make_skill(root / "ordinary")
     outside = make_skill(tmp_path / "other")
-    if entry_link:
-        (root / "linked").symlink_to(outside, target_is_directory=True)
-    else:
-        linked = make_skill(root / "linked")
-        (linked / "SKILL.md").unlink()
-        (linked / "SKILL.md").symlink_to(outside / "SKILL.md")
+    linked = make_skill(root / "linked")
+    (linked / "SKILL.md").unlink()
+    (linked / "SKILL.md").symlink_to(outside / "SKILL.md")
 
     provider = SkillsDirectoryProvider(root)
     resources = await provider.list_resources()
@@ -112,30 +108,17 @@ async def test_directory_links_within_root_remain_discoverable(tmp_path: Path) -
     }
 
 
-async def test_directory_keeps_the_selected_target_when_a_link_changes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+async def test_directory_discovers_skill_folders_linked_from_elsewhere(
+    tmp_path: Path,
 ) -> None:
     root = tmp_path / "skills"
     root.mkdir()
-    selected = make_skill(root / "selected", "# Selected instructions")
-    other = make_skill(tmp_path / "other", "# Other instructions")
-    link = root / "linked"
-    link.symlink_to(selected, target_is_directory=True)
-
-    def select_path(base: Path, name: str) -> Path:
-        resolved = safe_join(base, name)
-        if name == "linked":
-            link.unlink()
-            link.symlink_to(other, target_is_directory=True)
-        return resolved
-
-    monkeypatch.setattr(
-        "fastmcp.server.providers.skills.directory_provider.safe_join", select_path
-    )
+    make_skill(tmp_path / "checkout")
+    (root / "checkout").symlink_to(tmp_path / "checkout", target_is_directory=True)
     resources = await SkillsDirectoryProvider(root).list_resources()
     assert {resource.name for resource in resources} == {
-        "selected/SKILL.md",
-        "selected/_manifest",
+        "checkout/SKILL.md",
+        "checkout/_manifest",
     }
 
 
@@ -152,3 +135,42 @@ async def test_directory_keeps_valid_skills_when_a_link_cannot_resolve(
         "ordinary/SKILL.md",
         "ordinary/_manifest",
     }
+
+
+async def test_main_file_stays_in_the_loaded_directory_after_a_link_swap(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "skills"
+    root.mkdir()
+    skill = make_skill(root / "skill")
+    outside = make_skill(tmp_path / "other", "# Other instructions")
+    provider = SkillsDirectoryProvider(root)
+    resource = await provider.get_resource("skill://skill/SKILL.md")
+    assert resource is not None
+    (skill / "SKILL.md").unlink()
+    skill.rmdir()
+    skill.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(PathEscapeError):
+        await resource.read()
+
+
+async def test_supporting_files_stay_in_the_loaded_directory_after_a_link_swap(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "skills"
+    root.mkdir()
+    skill = make_skill(root / "skill")
+    (skill / "notes.md").write_text("# Notes", encoding="utf-8")
+    outside = make_skill(tmp_path / "other")
+    (outside / "notes.md").write_text("# Other notes", encoding="utf-8")
+    server = FastMCP()
+    server.add_provider(SkillsDirectoryProvider(root))
+    for path in (skill / "notes.md", skill / "SKILL.md"):
+        path.unlink()
+    skill.rmdir()
+    skill.symlink_to(outside, target_is_directory=True)
+
+    async with Client(server) as client:
+        with pytest.raises(Exception, match="escapes"):
+            await client.read_resource("skill://skill/notes.md")

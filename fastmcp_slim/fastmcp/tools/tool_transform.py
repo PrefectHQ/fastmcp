@@ -617,6 +617,7 @@ class TransformedTool(Tool):
             version=final_version,
             title=final_title,
             description=final_description,
+            icons=tool.icons,
             parameters=final_schema,
             output_schema=final_output_schema,
             tags=tags or tool.tags,

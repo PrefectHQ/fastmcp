@@ -5,6 +5,26 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 4.1.2" description="October 20, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.1.2: License to Deny"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.2"
+cta="Read the release notes"
+>
+Component authorization now applies after transforms, denied resources cannot fall through matching templates, and OAuth client credentials providers support issuer binding across fresh and cached-token flows. Existing configurations remain compatible, but users of `ClientCredentialsOAuthProvider` or `PrivateKeyJWTOAuthProvider` must set `issuer` to enable this protection; upgrading alone is insufficient. Thanks to our 18 contributors, including 9 first-time contributors.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.1.1" description="October 17, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.1.1: Regex Marks the Spot"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.1"
+cta="Read the release notes"
+>
+Regex tool search now rejects patterns over 1,000 characters and stops after about a second, and `SkillsDirectoryProvider` discovers skill folders that are links again, including links to folders outside the skills root; a skill's own files must still resolve inside the folder it links to. All 4.x users are encouraged to upgrade. Thanks to our 4 contributors, including 1 first-time contributor.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.1.0" description="October 8, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.1.0: Fourth and One"

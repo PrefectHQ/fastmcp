@@ -53,6 +53,8 @@ uv run pytest -m integration --timeout=30 -n 0
 
 First establish the promised behavior from the public API, docs, protocol, and relevant maintainer decisions. A reproducible result is not automatically a bug. Once the contract is clear, run the regression on the unchanged base and confirm that it fails for the intended reason, then run it with the fix. An import error or broken fixture is not evidence of the reported defect.
 
+To run a PR's test against unchanged code, copy the test file into a checkout of the base and run pytest there: the `pythonpath` setting in `pyproject.toml` takes precedence over `PYTHONPATH`, so pointing one checkout's tests at another checkout's source silently tests the wrong code. When a bug may depend on dependency versions, also reproduce after `uv sync --upgrade`, since the lockfile can trail what a fresh install resolves.
+
 Assert values and types that distinguish the correct result from the bug. For example, Python equality treats `True` and `1` as equal, so a JSON type-preservation test needs a type assertion too. Avoid assertions that only check whether some result exists when the result's contents are the contract.
 
 Keep each test focused on one behavior, with as many assertions as that behavior needs. Parameterize variations of the same contract; separate unrelated cases. Include omitted defaults and explicit overrides when both enter the changed branch.
@@ -215,7 +217,7 @@ async def test_two_clients_share_the_application() -> None:
             assert response.status_code == 404
 ```
 
-A test specifically about legacy MCP sessions or `ping` should pass `mode="legacy"` to the client. The modern protocol era is sessionless; see [protocol negotiation](/clients/client#protocol-negotiation). For custom client transports, `running.transport()` returns a transport wired to the same application.
+Test the client's default protocol mode. A test specifically about legacy MCP sessions or `ping` should pass `mode="legacy"` to the client; pinning it elsewhere hides behavior that differs between eras. The modern protocol era is sessionless; see [protocol negotiation](/clients/client#protocol-negotiation). For custom client transports, `running.transport()` returns a transport wired to the same application.
 
 ## Test external and process boundaries
 

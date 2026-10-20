@@ -37,6 +37,59 @@ class TestClientAuthMethods:
         assert request.headers["Authorization"] == f"Basic {expected}"
         assert "client_secret" not in _form(request)
 
+    @pytest.mark.parametrize(
+        ("client_secret", "method", "expected"),
+        [
+            ("sec", None, "client_secret_basic"),
+            (None, None, "none"),
+            ("", None, "none"),
+            ("sec", "client_secret_post", "client_secret_post"),
+            ("sec", "none", "none"),
+            (None, "client_secret_post", "client_secret_post"),
+        ],
+    )
+    async def test_default_method_follows_client_secret(
+        self, client_secret: str | None, method: str | None, expected: str
+    ):
+        client = AsyncOAuth2Client(
+            client_id="cid",
+            client_secret=client_secret,
+            token_endpoint_auth_method=method,
+        )
+        await client.aclose()
+
+        assert client.token_endpoint_auth_method == expected
+
+    async def test_public_client_fetch_token_sends_client_id_in_body(
+        self, httpx_mock: HTTPXMock
+    ):
+        httpx_mock.add_response(url=TOKEN_URL, json={"access_token": "tok"})
+        client = AsyncOAuth2Client(client_id="cid")
+        await client.fetch_token(TOKEN_URL, code="abc", code_verifier="ver")
+        await client.aclose()
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert "Authorization" not in request.headers
+        form = _form(request)
+        assert form["client_id"] == ["cid"]
+        assert "client_secret" not in form
+
+    async def test_public_client_refresh_token_sends_client_id_in_body(
+        self, httpx_mock: HTTPXMock
+    ):
+        httpx_mock.add_response(url=TOKEN_URL, json={"access_token": "tok"})
+        client = AsyncOAuth2Client(client_id="cid")
+        await client.refresh_token(TOKEN_URL, refresh_token="old")
+        await client.aclose()
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert "Authorization" not in request.headers
+        form = _form(request)
+        assert form["client_id"] == ["cid"]
+        assert "client_secret" not in form
+
     async def test_client_secret_post(self, httpx_mock: HTTPXMock):
         httpx_mock.add_response(url=TOKEN_URL, json={"access_token": "tok"})
         client = AsyncOAuth2Client(
