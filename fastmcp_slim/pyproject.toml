@@ -64,18 +64,19 @@ bump = true
 fallback-version = "0.0.0"
 
 [tool.hatch.metadata.hooks.uv-dynamic-versioning.optional-dependencies]
-anthropic = ["anthropic>=0.48.0"]
+anthropic = ["certifi>=2026.10.19", "anthropic>=0.48.0"]
 apps = ["prefab-ui>=0.18.0"]
 # PyJWT floor: transitive via msal; CVE-2026-32597 affects <= 2.11.0
-azure = ["azure-identity>=1.16.0", "PyJWT>=2.12.0"]
+azure = ["certifi>=2026.10.19", "azure-identity>=1.16.0", "PyJWT>=2.12.0"]
 client = [
     "fastmcp-slim[mcp]=={{ version }}",
     "authlib>=1.6.11",
     "py-key-value-aio[filetree,keyring,memory]>=0.4.4,<0.5.0",
 ]
 code-mode = ["pydantic-monty==0.0.17"]
-gemini = ["google-genai>=1.18.0", "jsonref>=1.1.0"]
+gemini = ["certifi>=2026.10.19", "google-genai>=1.18.0", "jsonref>=1.1.0"]
 mcp = [
+    "certifi>=2026.10.19",
     "exceptiongroup>=1.2.2",
     "httpx>=0.28.1,<1.0",
     "mcp>=1.24.0,<2.0",
@@ -84,7 +85,7 @@ mcp = [
     # Pin past CVE-2026-48710, which was patched in 1.0.1.
     "starlette>=1.0.1",
 ]
-openai = ["openai>=1.102.0"]
+openai = ["certifi>=2026.10.19", "openai>=1.102.0"]
 server = [
     "fastmcp-slim[mcp]=={{ version }}",
     "authlib>=1.6.11",
