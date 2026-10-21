@@ -372,6 +372,11 @@ class Audio:
             "ogg": "audio/ogg",
             "m4a": "audio/mp4",
             "flac": "audio/flac",
+            "opus": "audio/ogg",
+            "aac": "audio/aac",
+            "webm": "audio/webm",
+            "aiff": "audio/aiff",
+            "aif": "audio/aiff",
         }
 
         if self._format:
