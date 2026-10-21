@@ -279,8 +279,8 @@ class TestToolFunctionSource:
         )
         source = _tool_function_source(tool)
         # Should use list[str] type with help metadata
-        assert "tags: Annotated[list[str]" in source
-        assert "= []" in source
+        assert "tags: Annotated[list[str] | None" in source
+        assert "= None" in source
         # Should not have JSON parsing for simple arrays
         assert "json.loads" not in source
         compile(source, "<test>", "exec")

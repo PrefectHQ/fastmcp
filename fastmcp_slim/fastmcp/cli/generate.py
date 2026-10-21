@@ -220,13 +220,8 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
                     annotation = f'Annotated[{py_type}, cyclopts.Parameter(help="{help_escaped}")]'
                     param_lines.append(f"    {safe_name}: {annotation} = {default!r},")
             else:
-                # For list types, default to empty list; others default to None
-                if py_type.startswith("list["):
-                    annotation = f'Annotated[{py_type}, cyclopts.Parameter(help="{help_escaped}")]'
-                    param_lines.append(f"    {safe_name}: {annotation} = [],")
-                else:
-                    annotation = f'Annotated[{py_type} | None, cyclopts.Parameter(help="{help_escaped}")]'
-                    param_lines.append(f"    {safe_name}: {annotation} = None,")
+                annotation = f'Annotated[{py_type} | None, cyclopts.Parameter(help="{help_escaped}")]'
+                param_lines.append(f"    {safe_name}: {annotation} = None,")
 
         call_args.append(f"{prop_name!r}: {safe_name}")
 
@@ -373,12 +368,8 @@ def generate_cli_script(
 
 
         async def _call_tool(tool_name: str, arguments: dict) -> None:
-            # Filter out None values and empty lists (defaults for optional array params)
-            filtered = {
-                k: v
-                for k, v in arguments.items()
-                if v is not None and (not isinstance(v, list) or len(v) > 0)
-            }
+            # None represents an omitted optional argument; empty arrays are values.
+            filtered = {k: v for k, v in arguments.items() if v is not None}
             async with Client(CLIENT_SPEC) as client:
                 result = await client.call_tool(tool_name, filtered, raise_on_error=False)
                 _print_tool_result(result)
