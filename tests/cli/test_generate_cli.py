@@ -311,11 +311,11 @@ class TestToolFunctionSource:
         assert '\\"type\\": \\"object\\"' in source
         # Should have JSON parsing with isinstance check
         assert (
-            "metadata_parsed = json.loads(metadata) if isinstance(metadata, str) else metadata"
+            "metadata = json.loads(metadata) if isinstance(metadata, str) else metadata"
             in source
         )
-        # Should use parsed version in call
-        assert "'metadata': metadata_parsed" in source
+        # Should use the decoded value in the call
+        assert "'metadata': metadata" in source
         compile(source, "<test>", "exec")
 
     def test_nested_array_parameter(self):
@@ -340,7 +340,7 @@ class TestToolFunctionSource:
         assert "batches: Annotated[str" in source
         assert "JSON Schema:" in source
         assert (
-            "batches_parsed = json.loads(batches) if isinstance(batches, str) else batches"
+            "batches = json.loads(batches) if isinstance(batches, str) else batches"
             in source
         )
         compile(source, "<test>", "exec")

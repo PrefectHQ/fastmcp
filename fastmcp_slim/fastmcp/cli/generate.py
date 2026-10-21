@@ -255,20 +255,11 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
         lines.append("    # Parse JSON parameters")
         for _prop_name, safe_name in json_params:
             lines.append(
-                f"    {safe_name}_parsed = json.loads({safe_name}) if isinstance({safe_name}, str) else {safe_name}"
+                f"    {safe_name} = json.loads({safe_name}) if isinstance({safe_name}, str) else {safe_name}"
             )
         lines.append("")
 
-    # Build call arguments, using parsed versions for JSON params
-    call_arg_parts = []
-    for prop_name in properties:
-        safe_name = _to_python_identifier(prop_name)
-        if any(pn == prop_name for pn, _ in json_params):
-            call_arg_parts.append(f"{prop_name!r}: {safe_name}_parsed")
-        else:
-            call_arg_parts.append(f"{prop_name!r}: {safe_name}")
-
-    dict_items = ", ".join(call_arg_parts)
+    dict_items = ", ".join(call_args)
     lines.append(f"    await _call_tool({tool.name!r}, {{{dict_items}}})")
     lines.append("")
 
