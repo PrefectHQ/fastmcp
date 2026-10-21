@@ -731,13 +731,15 @@ class Context:
         """
         from uuid import uuid4
 
-        # Get session from request context or _session (for on_initialize)
+        # Get session from request context or _session (for on_initialize).
+        # A bound request context can carry a None session (e.g. the detached
+        # context used for introspection outside a live request); fall through
+        # to _session and the no-session path rather than dereferencing it.
         request_ctx = self.request_context
-        if request_ctx is not None:
-            session = request_ctx.session
-        elif self._session is not None:
+        session = request_ctx.session if request_ctx is not None else None
+        if session is None:
             session = self._session
-        else:
+        if session is None:
             # Background task: no live session, but the submitting request's
             # stable session id was captured in the task snapshot. Use it so
             # session-scoped state (session_id / get_state / set_state) keeps
