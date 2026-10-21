@@ -112,12 +112,12 @@ For full installation instructions, including verification and upgrading, see th
 
 FastMCP's complete documentation is available at **[gofastmcp.com](https://gofastmcp.com)**, including detailed guides, API references, and advanced patterns.
 
-Building with a coding agent? Install the [server authoring skill](https://github.com/PrefectHQ/fastmcp/blob/main/skills/fastmcp-server/SKILL.md) with `npx skills add PrefectHQ/fastmcp --skill fastmcp-server`. See [Coding Agents](https://gofastmcp.com/getting-started/ai-assisted-development) for setup and documentation access.
-
 Documentation is also available in [llms.txt format](https://llmstxt.org/), which is a simple markdown standard that LLMs can consume easily:
 
 - [`llms.txt`](https://gofastmcp.com/llms.txt) is essentially a sitemap, listing all the pages in the documentation.
 - [`llms-full.txt`](https://gofastmcp.com/llms-full.txt) contains the entire documentation. Note this may exceed the context window of your LLM.
+
+Give your coding agent [`llms.txt`](https://gofastmcp.com/llms.txt) as its starting point. See [Coding Agents](https://gofastmcp.com/getting-started/ai-assisted-development) for version-matched documentation and the optional server authoring skill.
 
 **Community:** Join our [Discord server](https://discord.gg/uu8dJCgttd) to connect with other FastMCP developers and share what you're building.
 

@@ -53,6 +53,18 @@ Look up FastMCP's relevant facilities as needed: context and dependencies,
 lifespan, authentication, composition, and transports. Use the project's runtime
 and hosting choices to determine configuration.
 
+When clients need a repeatable workflow across the server's capabilities,
+consider shipping a skill alongside those capabilities. Put task selection,
+operation sequencing, and recovery guidance in the skill; keep tool descriptions
+focused on their individual contracts. Read the version-matched Skills Provider
+and Experimental Skills Extension docs from the index before implementing it.
+`SkillsDirectoryProvider` exposes skill files as resources; the experimental
+extension adds `skills/list` and `skills/get` discovery. Check the installed
+release and target host's support before selecting either interface. Discovery
+does not activate a skill: verify that the host reads and uses it in the intended
+workflow. The experimental extension currently requires directly registered
+providers and does not support mounted or transformed skill sources.
+
 Verify the server through FastMCP's `Client`, which can connect directly to a
 server instance for in-process testing. Check a representative operation, its
 client-visible schema and result, and a meaningful failure. For composed or
@@ -67,7 +79,8 @@ of the change.
 ## Evaluate agent workflows
 
 When the task includes evaluating how agents use the server, test a representative
-workflow. Protocol tests show that a tool works; an agent task shows whether the
+workflow using the project's existing evaluation harness when available.
+Protocol tests show that a tool works; an agent task shows whether the
 interface is usable. Start from a known condition, give an agent a user-level request,
 and check the outcome against independent API or database evidence. For writes,
 check both the intended change and what should remain unchanged. A normal agent
@@ -75,7 +88,8 @@ exit or a plausible final answer is not proof of success.
 
 Use the target client's actual capabilities; exposing resources, sampling, or
 elicitation does not mean that client uses them. To measure the server alone,
-give the agent only its tools. To measure the user's workflow, include the other
+give the agent only that server's capabilities supported by the client. To measure
+the user's workflow, include the other
 capabilities the client really has. Inspect traces for discovery misses, invalid
 arguments, partial-data assumptions, and repeated recovery attempts before
 changing tool descriptions or structure. Compare task success alongside calls,
