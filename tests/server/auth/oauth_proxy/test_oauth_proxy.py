@@ -1,6 +1,9 @@
 """Tests for OAuth proxy initialization and configuration."""
 
+import hashlib
+import re
 import time
+from base64 import urlsafe_b64encode
 from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
@@ -19,6 +22,23 @@ from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
 
 class TestOAuthProxyInitialization:
     """Tests for OAuth proxy initialization and configuration."""
+
+    def test_pkce_pair(self, jwt_verifier):
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            token_verifier=jwt_verifier,
+            base_url="https://api.example.com",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+        verifier, challenge = proxy._generate_pkce_pair()
+        assert len(verifier) == 48
+        assert re.fullmatch(r"[A-Za-z0-9._~-]+", verifier)
+        expected = urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest())
+        assert challenge == expected.decode("ascii").rstrip("=")
+        assert proxy._generate_pkce_pair()[0] != verifier
 
     def test_basic_initialization(self, jwt_verifier):
         """Test basic proxy initialization with required parameters."""
