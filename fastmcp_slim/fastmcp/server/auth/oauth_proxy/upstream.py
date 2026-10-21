@@ -16,7 +16,7 @@ authlib's wire behavior exactly:
 - `expires_at` computed onto the returned token dict
 - the previous refresh token injected into the response when the server does
   not rotate it
-- `OAuthError` (authlib's httpx-free core error class) raised for RFC 6749
+- `OAuthError` raised for RFC 6749
   error responses, and 5xx responses raised as HTTP status errors
 """
 
@@ -27,7 +27,6 @@ import time
 from typing import Any
 
 import httpx2
-from authlib.integrations.base_client import OAuthError
 
 __all__ = ["AsyncOAuth2Client", "OAuthError"]
 
@@ -35,6 +34,24 @@ _DEFAULT_TOKEN_HEADERS = {
     "Accept": "application/json",
     "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
 }
+
+
+class OAuthError(Exception):
+    """An upstream OAuth error response (RFC 6749 §5.2)."""
+
+    def __init__(
+        self,
+        error: str | None = None,
+        description: str | None = None,
+        uri: str | None = None,
+    ) -> None:
+        self.error = error if error is not None else "oauth_error"
+        self.description = description if description is not None else ""
+        self.uri = uri
+        super().__init__(f"{self.error}: {self.description}")
+
+    def __repr__(self) -> str:
+        return f'<{self.__class__.__name__} "{self.error}">'
 
 
 class AsyncOAuth2Client:
