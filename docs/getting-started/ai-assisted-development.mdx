@@ -1,0 +1,48 @@
+---
+title: AI-assisted Development
+sidebarTitle: Coding Agents
+description: Give your coding agent FastMCP authoring guidance and documentation matched to your project.
+icon: robot
+---
+
+Give your coding agent [llms.txt](https://gofastmcp.com/llms.txt) as its starting point for FastMCP. This index links to the documentation as Markdown. Ask the agent to check your project's installed version and read the relevant pages before writing code.
+
+## Read version-matched documentation
+
+For FastMCP 3, use the index entries under `/v3/`; unversioned pages describe FastMCP 4. Every page is available as Markdown by appending `.md` to its URL, such as [the tools guide](https://gofastmcp.com/servers/tools.md). Read the pages relevant to the task; [llms-full.txt](https://gofastmcp.com/llms-full.txt) contains the entire documentation and may exceed your agent's context window.
+
+Agents with MCP support can also search the documentation at `https://gofastmcp.com/mcp`. See [LLM-friendly docs](/getting-started/welcome#llm-friendly-docs) for a client example.
+
+## Add authoring guidance
+
+The optional `fastmcp-server` skill adds a workflow for building, extending, and reviewing servers: choose suitable MCP interfaces, preserve useful schemas and errors, consult version-matched documentation, and verify behavior through a real client. The documentation index helps the agent find API information; installing the skill makes this authoring guidance available for the agent to select across tasks.
+
+Install it with the [Skills CLI](https://github.com/vercel-labs/skills), which lets you choose your coding agent:
+
+```bash
+npx skills add https://gofastmcp.com --skill fastmcp-server
+```
+
+The site's [skill discovery index](https://gofastmcp.com/.well-known/skills/index.json) lists the available skills. The [skill source](https://github.com/PrefectHQ/fastmcp/tree/main/skills/fastmcp-server) lives alongside FastMCP's client CLI skill; the site publishes those same files. You can also install from the repository with `npx skills add PrefectHQ/fastmcp --skill fastmcp-server`. The skill uses the agent's documentation access and code execution tools.
+
+Start a new agent session after installing. Ask it to use the `fastmcp-server` skill when working on your server. For example:
+
+```text
+Use the fastmcp-server skill to build an MCP server for this issue tracker.
+Expose paginated search and issue details, preserve upstream failures as errors,
+and test the interface through a FastMCP client. Keep the project's FastMCP version.
+```
+
+The skill is maintained in the FastMCP repository and evolves separately from package releases. Update your installed copy to pick up changes, or install from a Git revision when you need reproducible instructions. Your project's dependency constraints still determine which FastMCP APIs the agent should use.
+
+<Tip>
+  For an agent that needs to discover and call an existing server, use the [client CLI skill](https://github.com/PrefectHQ/fastmcp/tree/main/skills/fastmcp-client-cli). The server authoring skill is for writing server code.
+</Tip>
+
+## Verify the generated server
+
+Run the server's tests and inspect the schemas and results that clients receive. A successful import or the agent's final message does not establish that the server works. The [testing guide](/development/tests#test-through-an-in-memory-client) shows how to connect `fastmcp.Client` directly to your server without starting a network listener.
+
+For deployment work, also test the intended transport and authentication. Use local fixtures or a test account for operations that change data.
+
+If your server's users need guidance for workflows spanning several operations, consider supplying skills with the server. The [Skills Provider](/servers/providers/skills) serves skill files as resources; the [Experimental Skills Extension](/servers/providers/experimental-skills) adds standard skills discovery. Check the installed FastMCP version and target host's support, and verify that the host actually reads and uses the skill. Discovery alone does not activate it.

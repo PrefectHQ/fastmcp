@@ -31,6 +31,14 @@ class SkillInfo:
     main_file: str  # Name of main file (e.g., "SKILL.md")
     files: list[SkillFileInfo] = field(default_factory=list)
     frontmatter: dict[str, Any] = field(default_factory=dict)
+    preserve_bytes: bool = False
+
+    @property
+    def uri_prefix(self) -> str:
+        from urllib.parse import quote
+
+        name = quote(self.name, safe="/") if self.preserve_bytes else self.name
+        return f"skill://{name}/"
 
 
 def _parse_frontmatter_line_based(frontmatter_text: str) -> dict[str, Any]:
