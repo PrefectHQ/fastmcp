@@ -372,7 +372,7 @@ class Audio:
             "ogg": "audio/ogg",
             "m4a": "audio/mp4",
             "flac": "audio/flac",
-            "opus": "audio/opus",
+            "opus": "audio/ogg",
             "aac": "audio/aac",
             "webm": "audio/webm",
             "aiff": "audio/aiff",
