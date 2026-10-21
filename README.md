@@ -112,6 +112,8 @@ For full installation instructions, including verification and upgrading, see th
 
 FastMCP's complete documentation is available at **[gofastmcp.com](https://gofastmcp.com)**, including detailed guides, API references, and advanced patterns.
 
+Building with a coding agent? Install the [server authoring skill](skills/fastmcp-server/SKILL.md) with `npx skills add PrefectHQ/fastmcp --skill fastmcp-server`. See [Coding Agents](https://gofastmcp.com/getting-started/ai-assisted-development) for setup and documentation access.
+
 Documentation is also available in [llms.txt format](https://llmstxt.org/), which is a simple markdown standard that LLMs can consume easily:
 
 - [`llms.txt`](https://gofastmcp.com/llms.txt) is essentially a sitemap, listing all the pages in the documentation.

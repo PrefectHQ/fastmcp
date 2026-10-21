@@ -344,7 +344,7 @@ async def request_info(ctx: Context) -> dict:
 
 - **`ctx.request_id -> str`**: Get the unique ID for the current MCP request
 - **`ctx.client_id -> str | None`**: Get the ID of the client making the request, if provided during initialization
-- **`ctx.session_id -> str`**: Get the MCP session ID for session-based data sharing. Raises `RuntimeError` if the MCP session is not yet established.
+- **`ctx.session_id -> str`**: Get the identifier of the current MCP connection. It's stable for the session on handshake-era connections but new on every request on 2026-07-28 connections, so don't use it to share data between calls; use [Session State](/servers/sessions) instead. Raises `RuntimeError` if the MCP session is not yet established.
 
 #### Request Context Availability
 

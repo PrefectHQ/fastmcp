@@ -94,6 +94,7 @@
                   "getting-started/welcome",
                   "getting-started/installation",
                   "getting-started/quickstart",
+                  "getting-started/ai-assisted-development",
                   "getting-started/whats-new"
                 ]
               },
@@ -138,6 +139,7 @@
                       "servers/providers/filesystem",
                       "servers/providers/proxy",
                       "servers/providers/skills",
+                      "servers/providers/experimental-skills",
                       "servers/composition",
                       "servers/providers/custom"
                     ]

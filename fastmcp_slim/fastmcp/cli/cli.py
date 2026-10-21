@@ -15,6 +15,7 @@ import cyclopts
 import pyperclip
 from cyclopts import Parameter
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 import fastmcp
@@ -962,16 +963,16 @@ async def inspect(
 
             # Server section
             console.print("[bold]Server[/bold]")
-            console.print(f"  Name:         {info.name}")
+            console.print(f"  Name:         {escape(info.name)}")
             if info.version:
-                console.print(f"  Version:      {info.version}")
+                console.print(f"  Version:      {escape(info.version)}")
             if info.website_url:
-                console.print(f"  Website:      {info.website_url}")
+                console.print(f"  Website:      {escape(str(info.website_url))}")
             if info.icons:
                 console.print(f"  Icons:        {len(info.icons)}")
             console.print(f"  Generation:   {info.server_generation}")
             if info.instructions:
-                console.print(f"  Instructions: {info.instructions}")
+                console.print(f"  Instructions: {escape(info.instructions)}")
             console.print()
 
             # Components section
@@ -1009,9 +1010,9 @@ async def inspect(
 
             # Print confirmation to console
             console.print(
-                f"[bold green]✓[/bold green] Server inspection saved to: [cyan]{output}[/cyan]"
+                f"[bold green]✓[/bold green] Server inspection saved to: [cyan]{escape(str(output))}[/cyan]"
             )
-            console.print(f"  Server: [bold]{info.name}[/bold]")
+            console.print(f"  Server: [bold]{escape(info.name)}[/bold]")
             console.print(f"  Format: {format.value}")
         else:
             # Output JSON to stdout. The console would wrap long lines and
@@ -1026,7 +1027,9 @@ async def inspect(
                 "error": str(e),
             },
         )
-        console.print(f"[bold red]✗[/bold red] Failed to inspect server: {e}")
+        console.print(
+            f"[bold red]✗[/bold red] Failed to inspect server: {escape(str(e))}"
+        )
         sys.exit(1)
 
 

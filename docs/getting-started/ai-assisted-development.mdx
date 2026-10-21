@@ -1,0 +1,46 @@
+---
+title: AI-assisted Development
+sidebarTitle: Coding Agents
+description: Give your coding agent FastMCP authoring guidance and documentation matched to your project.
+icon: robot
+---
+
+The `fastmcp-server` skill helps coding agents build, extend, and review MCP servers with FastMCP. It directs the agent to documentation for your installed version, guides interface design, and asks it to verify the server through a real FastMCP client.
+
+## Install the skill
+
+Install the [server authoring skill](https://github.com/PrefectHQ/fastmcp/tree/main/skills/fastmcp-server) into your project with the [Skills CLI](https://github.com/vercel-labs/skills). The installer lets you choose your coding agent:
+
+```bash
+npx skills add PrefectHQ/fastmcp --skill fastmcp-server
+```
+
+Alternatively, download [SKILL.md](https://raw.githubusercontent.com/PrefectHQ/fastmcp/main/skills/fastmcp-server/SKILL.md) into a `fastmcp-server` directory in your agent's skills location. The skill is a single Markdown file and requires no MCP server connection. It uses your agent's ability to read documentation and run code.
+
+Start a new agent session after installing. Ask it to use the `fastmcp-server` skill when working on your server. For example:
+
+```text
+Use the fastmcp-server skill to build an MCP server for this issue tracker.
+Expose paginated search and issue details, preserve upstream failures as errors,
+and test the interface through a FastMCP client. Keep the project's FastMCP version.
+```
+
+The skill is maintained in the FastMCP repository and evolves separately from package releases. Update your installed copy to pick up changes, or install from a Git revision when you need reproducible instructions. Your project's dependency constraints still determine which FastMCP APIs the agent should use.
+
+<Tip>
+  For an agent that needs to discover and call an existing server, use the [client CLI skill](https://github.com/PrefectHQ/fastmcp/tree/main/skills/fastmcp-client-cli). The server authoring skill is for writing server code.
+</Tip>
+
+## Give your agent the right documentation
+
+FastMCP publishes [llms.txt](https://gofastmcp.com/llms.txt), an index of documentation pages with Markdown URLs. An agent can fetch this index, select the pages relevant to the task and installed major version, and read those pages individually. For FastMCP 3, use the entries under `/v3/`; unversioned pages describe FastMCP 4.
+
+Every page is available as Markdown by appending `.md` to its URL, such as [the tools guide](https://gofastmcp.com/servers/tools.md). [llms-full.txt](https://gofastmcp.com/llms-full.txt) contains the complete documentation, but may exceed your agent's context window. The index and selected pages are usually sufficient.
+
+Agents with MCP support can also search the documentation by connecting to `https://gofastmcp.com/mcp`. See [LLM-friendly docs](/getting-started/welcome#llm-friendly-docs) for a client example. This connection is optional; the skill also works with ordinary HTTP access to the Markdown pages.
+
+## Verify the generated server
+
+Run the server's tests and inspect the schemas and results that clients receive. A successful import or the agent's final message does not establish that the server works. The [testing guide](/development/tests#test-through-an-in-memory-client) shows how to connect `fastmcp.Client` directly to your server without starting a network listener.
+
+For deployment work, also test the intended transport and authentication. Use local fixtures or a test account for operations that change data.

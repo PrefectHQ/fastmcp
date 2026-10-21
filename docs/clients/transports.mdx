@@ -137,8 +137,11 @@ client = Client(
 
 ### SSL Verification
 
-By default, HTTPS connections verify the server's SSL certificate. You can customize this behavior with the `verify` parameter, which accepts the same values as httpx2 (documented in [httpx's SSL guide](https://www.python-httpx.org/advanced/ssl/), which httpx2 follows):
+By default, HTTPS connections verify the server's SSL certificate using the operating system's trust store through HTTPX2. You can customize this behavior with the `verify` parameter; see [HTTPX2's SSL guide](https://pydantic.dev/docs/httpx2/advanced/ssl/).
 
+Keep the trust store used by your deployment current. Updating certifi does not update the operating system's CA store or a custom bundle selected by `SSL_CERT_FILE`, `SSL_CERT_DIR`, or `verify`. Custom client factories configure their own TLS verification. Rebuild containers and restart processes after updating trust stores. This also matters for servers making outbound HTTPS requests to OAuth providers, JWKS endpoints, and upstream APIs.
+
+For the October 2026 eMudhra CA incident, follow the [FastMCP security notice](https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026). A FastMCP package upgrade alone does not remediate every trust store.
 ```python
 from fastmcp import Client
 
@@ -236,6 +239,33 @@ async with client:
     weather = await client.call_tool("weather_get_forecast", {"city": "NYC"})
     answer = await client.call_tool("assistant_ask", {"question": "What?"})
 ```
+
+### Per-server Timeouts
+
+Set `timeout` on a server entry to limit how long its requests can wait. Entry timeouts use **milliseconds**, apply to HTTP, SSE, and STDIO servers, and take precedence over the timeout passed to `Client`. An omitted or `null` entry timeout uses the client timeout; `0` disables the timeout for that backend session.
+
+For example, give the weather server 5 seconds and use a 30-second client timeout for entries without their own limit:
+
+```python
+from fastmcp import Client
+
+config = {
+    "mcpServers": {
+        "weather": {
+            "url": "https://weather.example.com/mcp",
+            "timeout": 5000,
+        },
+        "assistant": {
+            "command": "python",
+            "args": ["./assistant.py"],
+        },
+    }
+}
+
+client = Client(config, timeout=30)
+```
+
+With multiple servers, the client timeout also limits the entire routed request, so a backend timeout cannot extend that outer limit. Composite clients and configurations with tool transformations or tag filters use backend proxy sessions: a per-call `timeout` cannot extend those sessions' configured limits. `sse_read_timeout` remains a separate setting for the SSE connection.
 
 ### Tool Transformations
 

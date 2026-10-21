@@ -582,8 +582,9 @@ def main() -> None:
     (out / "STATUS.md").write_text(markdown(doc))
     (out / "badge.json").write_text(json.dumps(badge(doc)) + "\n")
     site = Path(__file__).resolve().parent.parent / "status-site"
-    for name in ("index.html", "style.css", "app.js"):
-        shutil.copyfile(site / name, out / name)
+    for path in site.iterdir():
+        if path.suffix in {".html", ".css", ".js"}:
+            shutil.copyfile(path, out / path.name)
     print(markdown(doc))
 
 
