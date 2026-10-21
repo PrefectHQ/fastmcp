@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import weakref
 from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
-from contextvars import ContextVar
+from contextlib import AsyncExitStack, asynccontextmanager, nullcontext, suppress
+from contextvars import ContextVar, copy_context
 from typing import TYPE_CHECKING
 
 import anyio
@@ -179,67 +180,150 @@ class LifespanMixin:
     @asynccontextmanager
     async def _lifespan_manager(self: FastMCP) -> AsyncIterator[None]:
         async with self._lifespan_lock:
-            if self._lifespan_result_set:
-                self._lifespan_ref_count += 1
-                should_enter_lifespan = False
-            else:
-                self._lifespan_ref_count = 1
-                should_enter_lifespan = True
+            # A cancelled final entrant can stop waiting while its owner keeps
+            # cleaning up. Never admit requests into that closing generation.
+            if self._lifespan_stop is not None and self._lifespan_stop.is_set():
+                if self._lifespan_task is not None:
+                    await self._await_lifespan_task(self._lifespan_task)
+            if self._lifespan_task is not None and self._lifespan_task.done():
+                self._lifespan_task.result()
+            if not self._lifespan_result_set:
+                await self._start_lifespan()
+            owner = self._lifespan_task
+            assert owner is not None
+            entrant = asyncio.current_task()
+            assert entrant is not None
+            self._lifespan_entrants[entrant] = (
+                self._lifespan_entrants.get(entrant, 0) + 1
+            )
+            self._lifespan_ref_count += 1
 
-        if not should_enter_lifespan:
-            try:
-                # A server can also start standalone after a mounted entry
-                # owns its resource lifespan. Track that independent runtime
-                # even though its setup is reused.
-                runtime = (
-                    nullcontext()
-                    if _lifespan_root_active.get()
-                    else self._extension_runtime(frozenset(self._extensions), root=self)
-                )
-                with runtime:
-                    yield
-            finally:
+        # Lifespan setup runs in its owner task. Re-establish its ContextVars
+        # for each entrant without transferring any context-manager ownership.
+        tokens = [
+            (var, var.set(value))
+            for var, value in (self._lifespan_context_snapshot or {}).items()
+        ]
+        try:
+            runtime = (
+                nullcontext()
+                if _lifespan_root_active.get()
+                else self._extension_runtime(frozenset(self._extensions), root=self)
+            )
+            with runtime:
+                yield
+        finally:
+            for var, token in reversed(tokens):
+                var.reset(token)
+            with anyio.CancelScope(shield=True):
                 async with self._lifespan_lock:
                     self._lifespan_ref_count -= 1
+                    self._lifespan_entrants[entrant] -= 1
+                    if self._lifespan_entrants[entrant] == 0:
+                        del self._lifespan_entrants[entrant]
                     if self._lifespan_ref_count == 0:
-                        self._lifespan_result_set = False
-                        self._lifespan_result = None
-            return
+                        if self._lifespan_stop is not None:
+                            self._lifespan_stop.set()
+                        try:
+                            await self._await_lifespan_task(owner)
+                        finally:
+                            if owner.done():
+                                self._clear_lifespan_generation()
+                    elif owner.done():
+                        owner.result()
 
-        # Use an explicit AsyncExitStack so we can shield teardown from
-        # cancellation. Without this, Ctrl-C causes CancelledError to
-        # propagate into lifespan finally blocks, preventing any async
-        # cleanup (e.g. closing DB connections, flushing buffers).
-        stack = AsyncExitStack()
+    def _clear_lifespan_generation(self: FastMCP) -> None:
+        self._lifespan_task = None
+        self._lifespan_stop = None
+        self._lifespan_result = None
+        self._lifespan_result_set = False
+
+    async def _start_lifespan(self: FastMCP) -> None:
+        """Start a generation whose setup and teardown share one owner task."""
+        ready: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        stop = asyncio.Event()
+        task = asyncio.create_task(self._run_lifespan(ready, stop))
+        task.add_done_callback(self._lifespan_task_done)
+        self._lifespan_task = task
+        self._lifespan_stop = stop
         try:
-            user_lifespan_result = await stack.enter_async_context(self._lifespan(self))
-            await stack.enter_async_context(self._shared_context_lifespan())
-            await stack.enter_async_context(self._extensions_lifespan())
+            await asyncio.shield(ready)
+            if stop.is_set() or task.done():
+                await self._await_lifespan_task(task)
+        except BaseException as exc:
+            stop.set()
+            if not ready.done():
+                ready.cancel()
+                task.cancel()
+            # Native cancellation must retain the caller's deadline. The owner
+            # still performs cleanup, and a subsequent entrant waits for it.
+            if not isinstance(exc, asyncio.CancelledError):
+                with anyio.CancelScope(shield=True):
+                    with suppress(BaseException):
+                        await self._await_lifespan_task(task)
+            raise
 
-            self._lifespan_result = user_lifespan_result
-            self._lifespan_result_set = True
+    def _lifespan_task_done(self: FastMCP, task: asyncio.Task[None]) -> None:
+        """Observe failures even when a cancelled entrant no longer awaits us."""
+        if task.cancelled():
+            # A task cancelled before its first step never executes its finally.
+            if self._lifespan_task is task and self._lifespan_ref_count == 0:
+                self._clear_lifespan_generation()
+            return
+        if (error := task.exception()) is not None:
+            logger.error(
+                "Server lifespan failed",
+                exc_info=(type(error), error, error.__traceback__),
+            )
 
-            # Start lifespans for all providers. An earlier provider's lifespan
-            # can add bundled providers to a later one, so reconcile against
-            # each provider immediately before it starts.
-            for provider in self.providers:
-                self._register_provider_extensions(provider)
-                await stack.enter_async_context(provider.lifespan())
+    async def _await_lifespan_task(self: FastMCP, task: asyncio.Task[None]) -> None:
+        """Allow native caller cancellation without cancelling its owner."""
+        await asyncio.shield(task)
 
-            await self._validate_task_extension_registered()
-
-            self._started.set()
+    async def _run_lifespan(
+        self: FastMCP, ready: asyncio.Future[None], stop: asyncio.Event
+    ) -> None:
+        """Own every task-bound lifespan context until the final entrant exits."""
+        initial_context = copy_context()
+        with anyio.CancelScope(shield=True):
+            stack = AsyncExitStack()
             try:
-                yield
+                user_lifespan_result = await stack.enter_async_context(
+                    self._lifespan(self)
+                )
+                await stack.enter_async_context(self._shared_context_lifespan())
+                await stack.enter_async_context(self._extensions_lifespan())
+                for provider in self.providers:
+                    self._register_provider_extensions(provider)
+                    await stack.enter_async_context(provider.lifespan())
+                await self._validate_task_extension_registered()
+
+                self._lifespan_context_snapshot = {
+                    var: value
+                    for var, value in copy_context().items()
+                    if var not in initial_context or initial_context[var] is not value
+                }
+                self._lifespan_result = user_lifespan_result
+                self._lifespan_result_set = True
+                self._started.set()
+                ready.set_result(None)
+                await stop.wait()
+            except BaseException as exc:
+                if not ready.done():
+                    ready.set_exception(exc)
+                elif not stop.is_set():
+                    stop.set()
+                    # An owned background task failed. Interrupt resource users
+                    # instead of allowing them to continue after teardown.
+                    for entrant in self._lifespan_entrants:
+                        entrant.cancel()
+                raise
             finally:
                 self._started.clear()
-        finally:
-            try:
-                with anyio.CancelScope(shield=True):
+                try:
                     await stack.aclose()
-            finally:
-                async with self._lifespan_lock:
-                    self._lifespan_ref_count -= 1
+                finally:
+                    self._shared_context_snapshot = None
+                    self._lifespan_context_snapshot = None
                     if self._lifespan_ref_count == 0:
-                        self._lifespan_result_set = False
-                        self._lifespan_result = None
+                        self._clear_lifespan_generation()
