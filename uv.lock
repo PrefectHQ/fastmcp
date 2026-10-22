@@ -1156,6 +1156,7 @@ dependencies = [
     { name = "cryptography" },
     { name = "fastmcp-slim", extra = ["server"] },
     { name = "pydocket" },
+    { name = "redis" },
 ]
 
 [package.metadata]
@@ -1163,6 +1164,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=43.0.0" },
     { name = "fastmcp-slim", extras = ["server"], editable = "fastmcp_slim" },
     { name = "pydocket", specifier = ">=0.26.1" },
+    { name = "redis", specifier = "!=8.1.0" },
 ]
 
 [[package]]
