@@ -9,11 +9,13 @@ from fastmcp.utilities.openapi.models import (
     HTTPRoute,
     ParameterInfo,
     RequestBodyInfo,
+    ResponseInfo,
 )
 from fastmcp.utilities.openapi.schemas import (
     _combine_schemas,
     _combine_schemas_and_map_params,
     _replace_ref_with_defs,
+    extract_output_schema_from_responses,
 )
 
 
@@ -710,3 +712,53 @@ class TestEdgeCases:
 
         # $ref should be preserved in allOf
         assert result["properties"]["data"]["allOf"] == [{"$ref": "#/$defs/TestSchema"}]
+
+
+class TestExtractOutputSchema:
+    """Test output schema extraction from a route's success responses."""
+
+    invitation_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {"id": {"type": "integer"}},
+    }
+
+    @pytest.fixture
+    def invitation(self) -> ResponseInfo:
+        return ResponseInfo(
+            description="Invitation created",
+            content_schema={"application/json": self.invitation_schema},
+        )
+
+    @pytest.mark.parametrize(
+        "bodiless_code", ["200", "202", "204", "2XX"], ids=lambda code: f"with-{code}"
+    )
+    def test_bodiless_success_response_next_to_json_success(
+        self, invitation: ResponseInfo, bodiless_code: str
+    ):
+        responses = {
+            "201": invitation,
+            bodiless_code: ResponseInfo(description="No content"),
+        }
+
+        assert extract_output_schema_from_responses(responses) is None
+
+    def test_only_bodiless_success_response(self):
+        responses = {"204": ResponseInfo(description="No content")}
+
+        assert extract_output_schema_from_responses(responses) is None
+
+    @pytest.mark.parametrize("bodiless_code", ["302", "404", "default"])
+    def test_bodiless_non_success_response_is_ignored(
+        self, invitation: ResponseInfo, bodiless_code: str
+    ):
+        responses = {
+            "200": invitation,
+            bodiless_code: ResponseInfo(description="Not a success"),
+        }
+
+        assert extract_output_schema_from_responses(responses) == self.invitation_schema
+
+    def test_json_success_responses(self, invitation: ResponseInfo):
+        responses = {"200": invitation, "201": invitation}
+
+        assert extract_output_schema_from_responses(responses) == self.invitation_schema

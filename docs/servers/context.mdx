@@ -217,7 +217,7 @@ mcp = FastMCP("app")
 
 class Enrich(Middleware):
     async def on_call_tool(self, context: MiddlewareContext, call_next):
-        await context.fastmcp_context.set_state("caller", "alice")
+        await context.fastmcp_context.set_state("caller", "alice", serializable=False)
         return await call_next(context)
 
 
@@ -229,7 +229,9 @@ async def whoami(ctx: Context) -> str:
     return await ctx.get_state("caller") or "unknown"
 ```
 
-The state is scoped to the one request and discarded when it returns. State is also inherited by mounted children, so a value a parent middleware sets is visible to a mounted server's tools within the same request.
+The `serializable=False` value in this example is scoped to one request and discarded when it returns. It is inherited by mounted children, so the value the parent middleware sets is visible to a mounted server's tools within the same request.
+
+With the default `serializable=True`, values live in the current server's state store. Each mounted server has its own store, so those values do not cross mount boundaries by default. To share serializable state, pass the same `session_state_store` to both servers, as shown in the [upgrade guide](/getting-started/upgrading/from-fastmcp-2).
 
 **Method signatures:**
 
