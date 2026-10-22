@@ -107,3 +107,32 @@ def test_explicit_missing_history_fails_without_reset(backlog, tmp_path, monkeyp
     with pytest.raises(FileNotFoundError):
         backlog.main()
     assert not output.exists()
+
+
+def test_truncated_collection_fails_without_publishing(backlog, tmp_path, monkeypatch):
+    previous = tmp_path / "previous.json"
+    previous.write_text('{"schema": "fastmcp-backlog/1", "samples": []}')
+    output = tmp_path / "backlog.json"
+    monkeypatch.setattr(backlog, "newest_number", lambda: 3)
+    monkeypatch.setattr(
+        backlog,
+        "fetch_items",
+        lambda: [item(1, closed="2026-10-19T16:00:00Z", reason="completed"), item(2)],
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "backlog_status.py",
+            "--previous",
+            str(previous),
+            "--output",
+            str(output),
+        ],
+    )
+    with pytest.raises(RuntimeError, match="#3"):
+        backlog.main()
+    assert not output.exists()
+
+
+def test_items_created_during_collection_are_accepted(backlog):
+    backlog.require_complete([item(1), item(2), item(3)], 2)
