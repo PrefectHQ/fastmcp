@@ -25,6 +25,7 @@ Docket backend/worker and installs the worker-side `Context` hooks core exposes.
 
 from __future__ import annotations
 
+import copy
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -122,6 +123,17 @@ class TasksExtension(ServerExtension):
     def docket_settings(self) -> DocketSettings:
         """The resolved Docket settings (backend URL, worker options)."""
         return self._settings
+
+    def clone(self) -> TasksExtension:
+        """Return an unbound copy sharing the configured credential provider.
+
+        Providers may own locks or token-refresh clients that cannot be copied.
+        All other extension state, including resolved settings, is deep-copied.
+        """
+        provider = self._credential_provider
+        extension = copy.deepcopy(self, {id(provider): provider})
+        extension._server_ref = None
+        return extension
 
     def settings(self) -> dict[str, Any]:
         """The tasks extension advertises no per-extension settings."""
