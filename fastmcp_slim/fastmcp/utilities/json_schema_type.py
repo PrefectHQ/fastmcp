@@ -518,15 +518,35 @@ def _exclusive_bound(schema: Mapping[str, Any], modifier: str, bound: str) -> An
     return value
 
 
-def _inclusive_bound(schema: Mapping[str, Any], modifier: str, bound: str) -> Any:
+def _inclusive_bound(
+    schema: Mapping[str, Any], modifier: str, bound: str, *, lower: bool
+) -> Any:
     """Value for a non-strict bound, or None when a strict bound replaces the sibling.
 
-    A numeric ``exclusiveMinimum``/``exclusiveMaximum`` (draft-06+) makes the sibling
-    ``minimum``/``maximum`` redundant, so no inclusive bound is emitted for it.
+    A boolean ``true`` (draft-04) always replaces the sibling: ``{"minimum": 1,
+    "exclusiveMinimum": true}`` means exactly ``minimum > 1``.
+
+    A numeric ``exclusiveMinimum``/``exclusiveMaximum`` (draft-06+) is instead a
+    separate keyword, and an instance must satisfy both. The sibling is redundant —
+    and can be dropped — only when the exclusive bound is at least as strict, which
+    compares ``exclusive >= minimum`` for a lower bound and ``exclusive <= maximum``
+    for an upper one. A *looser* numeric exclusive must keep the sibling, otherwise
+    the generated ``lt``/``gt`` widens the accepted range: ``{"maximum": 10,
+    "exclusiveMaximum": 15}`` would accept 12.
     """
-    if schema.get(modifier) is True:
+    value = schema.get(bound)
+    exclusive = schema.get(modifier)
+    if exclusive is True:
         return None
-    return schema.get(bound)
+    if (
+        isinstance(exclusive, (int, float))
+        and not isinstance(exclusive, bool)
+        and isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and (exclusive >= value if lower else exclusive <= value)
+    ):
+        return None
+    return value
 
 
 def _create_numeric_type(
@@ -540,9 +560,9 @@ def _create_numeric_type(
         k: v
         for k, v in {
             "gt": _exclusive_bound(schema, "exclusiveMinimum", "minimum"),
-            "ge": _inclusive_bound(schema, "exclusiveMinimum", "minimum"),
+            "ge": _inclusive_bound(schema, "exclusiveMinimum", "minimum", lower=True),
             "lt": _exclusive_bound(schema, "exclusiveMaximum", "maximum"),
-            "le": _inclusive_bound(schema, "exclusiveMaximum", "maximum"),
+            "le": _inclusive_bound(schema, "exclusiveMaximum", "maximum", lower=False),
             "multiple_of": schema.get("multipleOf"),
         }.items()
         if v is not None
