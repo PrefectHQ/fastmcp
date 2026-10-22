@@ -7,6 +7,7 @@ import logging
 import secrets
 from collections.abc import (
     AsyncIterator,
+    Awaitable,
     Callable,
     Sequence,
 )
@@ -267,6 +268,59 @@ def _get_auth_context() -> tuple[bool, Any]:
     from fastmcp.server.dependencies import get_access_token
 
     return (False, get_access_token())
+
+
+C = TypeVar("C", Tool, Resource, ResourceTemplate, Prompt)
+
+
+async def _resolve_listed_candidates(
+    candidates: Sequence[C],
+    lookup: Callable[[VersionSpec | None], Awaitable[C | None]],
+    matches: Callable[[C], bool],
+) -> C | None:
+    """Resolve the highest listed candidate through the normal lookup path.
+
+    Listing is not authoritative for resolution: a lookup-only refusal
+    transform or a lookup-time auth check can decline a component that is
+    still listed. Re-resolve each candidate version, highest first, through
+    the same ``get_*`` path a caller would use, so those refusals are honored.
+
+    Args:
+        candidates: Listed components to consider.
+        lookup: Performs a get for one version spec.
+        matches: Confirms the resolved component has the candidate's identity.
+
+    Returns:
+        The highest enabled and authorized resolved component, or None.
+    """
+    seen: set[str | None] = set()
+    for candidate in sorted(candidates, key=version_sort_key, reverse=True):
+        if candidate.version in seen:
+            continue
+        seen.add(candidate.version)
+        spec = (
+            VersionSpec(eq=candidate.version) if candidate.version is not None else None
+        )
+        try:
+            resolved = await lookup(spec)
+        except AuthorizationError:
+            # A lookup-time auth refusal declines this version; a lower
+            # version within the range may still be authorized.
+            continue
+        if resolved is None or resolved.version != candidate.version:
+            continue
+        if not matches(resolved):
+            continue
+        resolved_items = await apply_session_transforms([resolved])
+        # Transforms can change what `auth` sees (a tag, for one), so the
+        # check made on the pre-transform component is not enough.
+        if (
+            resolved_items
+            and is_enabled(resolved_items[0])
+            and await _component_auth_allows(resolved_items[0])
+        ):
+            return resolved_items[0]
+    return None
 
 
 @asynccontextmanager
@@ -908,8 +962,9 @@ class FastMCP(
         transforms (including session-level) have been applied. This ensures
         session transforms can override provider-level disables.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled and no exact version was
+        requested, falls back to the next-highest enabled version (a version
+        range is a constraint, so it falls back within the range).
 
         A tool from `ToolInjectionMiddleware` takes precedence over a provider
         tool with the same name. It is matched by name alone, so a requested
@@ -933,37 +988,56 @@ class FastMCP(
             return injected if await _component_auth_allows(injected) else None
 
         tool = await super().get_tool(name, version)
-        if tool is None:
+
+        if tool is not None:
+            # Apply session transforms to single item
+            tools = await apply_session_transforms([tool])
+            # Transforms can change what `auth` sees (a tag, for one), so the
+            # check made on the pre-transform component is not enough.
+            if (
+                tools
+                and is_enabled(tools[0])
+                and await _component_auth_allows(tools[0])
+            ):
+                return tools[0]
+
+            # The highest version is disabled. If an exact version was
+            # requested, respect that.
+            if version is not None and version.eq is not None:
+                return None
+        elif version is None or version.eq is not None:
+            # The lookup missed. Without a version constraint, or with an
+            # exact-version request, that answer is final: a miss can encode
+            # a lookup-time refusal (auth or a transform) that listing must
+            # not second-guess. A range may still fall back to the
+            # next-highest version within the range that the lookup path
+            # resolves and the session allows.
             return None
 
-        # Apply session transforms to single item
-        tools = await apply_session_transforms([tool])
-        # Transforms can change what `auth` sees (a tag, for one), so the check made
-        # on the pre-transform component is not enough.
-        if tools and is_enabled(tools[0]) and await _component_auth_allows(tools[0]):
-            return tools[0]
-
-        # The highest version is disabled. If an explicit version was
-        # requested, respect that. Otherwise fall back to the next-highest
-        # enabled version.
-        if version is not None:
-            return None
-
-        all_tools = [t for t in await super().list_tools() if t.name == name]
+        all_tools = [
+            t
+            for t in await super().list_tools()
+            if t.name == name and (version is None or version.matches(t.version))
+        ]
         # During a hashed lookup, only versions of the identity being looked
         # up qualify; another tool listed under the same name does not.
         found = hashed_lookup_target(self)
         if found is not None:
             identity = tool_identity(found)
             all_tools = [t for t in all_tools if tool_identity(t) == identity]
-        all_tools = list(await apply_session_transforms(all_tools))
-        enabled = [t for t in all_tools if is_enabled(t)]
 
-        authorized = [t for t in enabled if await _component_auth_allows(t)]
+        # The lookup missed or resolved a component that was then rejected.
+        # Listing is not authoritative for resolution: a lookup-only refusal
+        # or a lookup-time auth check can decline a component that is still
+        # listed. Re-resolve each candidate version through the same lookup
+        # path before accepting it.
 
-        if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+        async def lookup(spec: VersionSpec | None) -> Tool | None:
+            return await super(FastMCP, self).get_tool(name, spec)
+
+        return await _resolve_listed_candidates(
+            all_tools, lookup, lambda t: t.name == name
+        )
 
     async def list_resources(
         self, *, run_middleware: bool = True
@@ -1054,8 +1128,9 @@ class FastMCP(
         Overrides Provider.get_resource() to add visibility filtering after all
         transforms (including session-level) have been applied.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled and no exact version was
+        requested, falls back to the next-highest enabled version (a version
+        range is a constraint, so it falls back within the range).
 
         Args:
             uri: The resource URI.
@@ -1075,44 +1150,65 @@ class FastMCP(
         Also reports whether a concrete resource exists at `uri` at all, so
         reads can tell a hidden resource apart from a missing one.
         """
+        denied = False
         try:
             resource = await super().get_resource(uri, version)
         except AuthorizationError:
-            return None, True
-        if resource is None:
+            denied = True
+            # Without a version constraint, or with an exact-version request,
+            # a denial is final: listing must not second-guess a lookup-time
+            # refusal. A range may still fall back to the next-highest version
+            # within the range that the lookup path resolves and the session
+            # allows.
+            if version is None or version.eq is not None:
+                return None, True
+            resource = None
+
+        if resource is not None:
+            # Apply session transforms to single item
+            resources = await apply_session_transforms([resource])
+            if (
+                resources
+                and is_enabled(resources[0])
+                and await _component_auth_allows(resources[0])
+            ):
+                return resources[0], True
+
+            # The highest version is disabled. If an exact version was
+            # requested, respect that.
+            if version is not None and version.eq is not None:
+                return None, True
+        elif version is None or version.eq is not None:
+            # The lookup missed. Without a version constraint, or with an
+            # exact-version request, that answer is final: a miss can encode
+            # a lookup-time refusal (auth or a transform) that listing must
+            # not second-guess. A range may still fall back to the
+            # next-highest version within the range that the lookup path
+            # resolves and the session allows.
             return None, False
 
-        # Apply session transforms to single item
-        resources = await apply_session_transforms([resource])
-        if (
-            resources
-            and is_enabled(resources[0])
-            and await _component_auth_allows(resources[0])
-        ):
-            return resources[0], True
+        all_resources = [
+            r
+            for r in await super().list_resources()
+            if str(r.uri) == uri and (version is None or version.matches(r.version))
+        ]
 
-        if version is not None:
-            return None, True
+        # The lookup missed or resolved a component that was then rejected.
+        # Listing is not authoritative for resolution: a lookup-only refusal
+        # or a lookup-time auth check can decline a component that is still
+        # listed. Re-resolve each candidate version through the same lookup
+        # path before accepting it.
 
-        all_resources = [r for r in await super().list_resources() if str(r.uri) == uri]
-        all_resources = list(await apply_session_transforms(all_resources))
-        enabled = [r for r in all_resources if is_enabled(r)]
+        async def lookup(spec: VersionSpec | None) -> Resource | None:
+            return await super(FastMCP, self).get_resource(uri, spec)
 
-        skip_auth, token = _get_auth_context()
-        authorized: list[Resource] = []
-        for r in enabled:
-            if not skip_auth and r.auth is not None:
-                ctx = AuthContext(token=token, component=r)
-                try:
-                    if not await run_auth_checks(r.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(r)
-
-        if not authorized:
-            return None, True
-        return max(authorized, key=version_sort_key), True
+        resolved = await _resolve_listed_candidates(
+            all_resources, lookup, lambda r: str(r.uri) == uri
+        )
+        # A concrete resource that exists but cannot be served (disabled or
+        # refused) must still shadow matching templates, exactly as when the
+        # first lookup resolved it.
+        return resolved, resource is not None or denied or bool(all_resources)
 
     async def list_resource_templates(
         self, *, run_middleware: bool = True
@@ -1204,8 +1300,9 @@ class FastMCP(
         Overrides Provider.get_resource_template() to add visibility filtering after
         all transforms (including session-level) have been applied.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled and no exact version was
+        requested, falls back to the next-highest enabled version (a version
+        range is a constraint, so it falls back within the range).
 
         Args:
             uri: The template URI.
@@ -1215,46 +1312,53 @@ class FastMCP(
             The template if found and enabled, None otherwise.
         """
         template = await super().get_resource_template(uri, version)
-        if template is None:
-            return None
 
-        # Apply session transforms to single item
-        templates = await apply_session_transforms([template])
-        # Transforms can change what `auth` sees (a tag, for one), so the check made
-        # on the pre-transform component is not enough.
-        if (
-            templates
-            and is_enabled(templates[0])
-            and await _component_auth_allows(templates[0])
-        ):
-            return templates[0]
+        if template is not None:
+            # Apply session transforms to single item
+            templates = await apply_session_transforms([template])
+            # Transforms can change what `auth` sees (a tag, for one), so the
+            # check made on the pre-transform component is not enough.
+            if (
+                templates
+                and is_enabled(templates[0])
+                and await _component_auth_allows(templates[0])
+            ):
+                return templates[0]
 
-        if version is not None:
+            # The highest version is disabled. If an exact version was
+            # requested, respect that.
+            if version is not None and version.eq is not None:
+                return None
+        elif version is None or version.eq is not None:
+            # The lookup missed. Without a version constraint, or with an
+            # exact-version request, that answer is final: a miss can encode
+            # a lookup-time refusal (auth or a transform) that listing must
+            # not second-guess. A range may still fall back to the
+            # next-highest version within the range that the lookup path
+            # resolves and the session allows.
             return None
 
         all_templates = [
             t
             for t in await super().list_resource_templates()
             if t.matches(uri) is not None
+            and (version is None or version.matches(t.version))
         ]
-        all_templates = list(await apply_session_transforms(all_templates))
-        enabled = [t for t in all_templates if is_enabled(t)]
 
-        skip_auth, token = _get_auth_context()
-        authorized: list[ResourceTemplate] = []
-        for t in enabled:
-            if not skip_auth and t.auth is not None:
-                ctx = AuthContext(token=token, component=t)
-                try:
-                    if not await run_auth_checks(t.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(t)
+        # The lookup missed or resolved a component that was then rejected.
+        # Listing is not authoritative for resolution: a lookup-only refusal
+        # or a lookup-time auth check can decline a component that is still
+        # listed. Re-resolve each candidate version through the same lookup
+        # path before accepting it.
 
-        if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+        async def lookup(spec: VersionSpec | None) -> ResourceTemplate | None:
+            return await super(FastMCP, self).get_resource_template(uri, spec)
+
+        return await _resolve_listed_candidates(
+            all_templates,
+            lookup,
+            lambda t: t.matches(uri) is not None,
+        )
 
     async def list_prompts(self, *, run_middleware: bool = True) -> Sequence[Prompt]:
         """List all enabled prompts from providers.
@@ -1336,8 +1440,9 @@ class FastMCP(
         Overrides Provider.get_prompt() to add visibility filtering after all
         transforms (including session-level) have been applied.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled and no exact version was
+        requested, falls back to the next-highest enabled version (a version
+        range is a constraint, so it falls back within the range).
 
         Args:
             name: The prompt name.
@@ -1347,42 +1452,50 @@ class FastMCP(
             The prompt if found and enabled, None otherwise.
         """
         prompt = await super().get_prompt(name, version)
-        if prompt is None:
+
+        if prompt is not None:
+            # Apply session transforms to single item
+            prompts = await apply_session_transforms([prompt])
+            # Transforms can change what `auth` sees (a tag, for one), so the
+            # check made on the pre-transform component is not enough.
+            if (
+                prompts
+                and is_enabled(prompts[0])
+                and await _component_auth_allows(prompts[0])
+            ):
+                return prompts[0]
+
+            # The highest version is disabled. If an exact version was
+            # requested, respect that.
+            if version is not None and version.eq is not None:
+                return None
+        elif version is None or version.eq is not None:
+            # The lookup missed. Without a version constraint, or with an
+            # exact-version request, that answer is final: a miss can encode
+            # a lookup-time refusal (auth or a transform) that listing must
+            # not second-guess. A range may still fall back to the
+            # next-highest version within the range that the lookup path
+            # resolves and the session allows.
             return None
 
-        # Apply session transforms to single item
-        prompts = await apply_session_transforms([prompt])
-        # Transforms can change what `auth` sees (a tag, for one), so the check made
-        # on the pre-transform component is not enough.
-        if (
-            prompts
-            and is_enabled(prompts[0])
-            and await _component_auth_allows(prompts[0])
-        ):
-            return prompts[0]
+        all_prompts = [
+            p
+            for p in await super().list_prompts()
+            if p.name == name and (version is None or version.matches(p.version))
+        ]
 
-        if version is not None:
-            return None
+        # The lookup missed or resolved a component that was then rejected.
+        # Listing is not authoritative for resolution: a lookup-only refusal
+        # or a lookup-time auth check can decline a component that is still
+        # listed. Re-resolve each candidate version through the same lookup
+        # path before accepting it.
 
-        all_prompts = [p for p in await super().list_prompts() if p.name == name]
-        all_prompts = list(await apply_session_transforms(all_prompts))
-        enabled = [p for p in all_prompts if is_enabled(p)]
+        async def lookup(spec: VersionSpec | None) -> Prompt | None:
+            return await super(FastMCP, self).get_prompt(name, spec)
 
-        skip_auth, token = _get_auth_context()
-        authorized: list[Prompt] = []
-        for p in enabled:
-            if not skip_auth and p.auth is not None:
-                ctx = AuthContext(token=token, component=p)
-                try:
-                    if not await run_auth_checks(p.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(p)
-
-        if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+        return await _resolve_listed_candidates(
+            all_prompts, lookup, lambda p: p.name == name
+        )
 
     async def call_tool(
         self,
