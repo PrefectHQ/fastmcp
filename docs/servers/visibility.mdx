@@ -339,6 +339,8 @@ mcp.disable(tags={"premium"})
 
 All sessions start with `premium_analysis` hidden. When a session calls `unlock_premium`, that session gains access to premium tools while other sessions remain unaffected. Calling `reset_features` returns the session to the global defaults.
 
+For a mounted server, these rules use that server's session state store and its local component names. Components it enables can be listed and called through the parent, including through a namespace. The parent's visibility rules still apply to the components exposed by the mount.
+
 ### How Session Rules Work
 
 Session rules override global transforms. When listing components, FastMCP first applies global enable/disable rules, then applies session-specific rules on top. Rules within a session accumulate, and later rules override earlier ones for the same component.
@@ -385,6 +387,12 @@ async def enable_recent_tools(ctx: Context) -> str:
     )
     return "Recent tools enabled"
 ```
+
+An explicit empty `names` or `keys` set matches no components, even when combined with other filters, unless `match_all=True`. Omit the parameter or pass `None` to leave that criterion unrestricted.
+
+### Sessions on MCP 2026-07-28
+
+MCP 2026-07-28 connections, which FastMCP clients negotiate by default, have no session. On those connections, session rules are scoped to the authenticated user, the same identity [`UserSession`](/servers/sessions) uses, so they apply to every connection that user makes. Without authentication, stdio servers keep one set of rules for the process, because a stdio server serves a single client. An unauthenticated HTTP request carries nothing that identifies its client between requests, so `enable_components()`, `disable_components()`, and `reset_visibility()` raise an error rather than changing what every client sees.
 
 ### Automatic Notifications
 

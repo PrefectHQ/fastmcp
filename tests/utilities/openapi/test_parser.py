@@ -52,6 +52,30 @@ class TestOpenAPIParser:
         assert param.name == "id"
         assert param.location == "path"
 
+    @pytest.mark.parametrize("openapi_version", ["3.1.0", "3.1.1", "3.1.2"])
+    def test_parse_every_openapi31_patch_version(self, openapi_version):
+        """Parse a minimal spec under every OpenAPI 3.1 patch version"""
+        spec = {
+            "openapi": openapi_version,
+            "info": {"title": "Example", "version": "1.0.0"},
+            "paths": {
+                "/ping": {
+                    "get": {
+                        "operationId": "ping",
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+
+        routes = parse_openapi_to_http_routes(spec)
+
+        assert len(routes) == 1
+        assert routes[0].path == "/ping"
+        assert routes[0].method == "GET"
+        assert routes[0].operation_id == "ping"
+        assert routes[0].openapi_version == openapi_version
+
     def test_parse_collision_spec(self, collision_spec):
         """Test parsing spec with parameter collisions."""
         routes = parse_openapi_to_http_routes(collision_spec)
@@ -524,3 +548,40 @@ class TestParameterExamples:
         # 3. Parameter-level example overrides schema-level example and examples
         assert props["overrideSchemaExamples"]["example"] == "PARAM_EXAMPLE"
         assert "examples" not in props["overrideSchemaExamples"]
+
+
+class TestBodilessSuccessResponses:
+    """Test which success responses the parser keeps for an operation."""
+
+    def test_only_primary_and_bodiless_success_responses_are_extracted(self):
+        json_content = {"application/json": {"schema": {"type": "object"}}}
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Responses", "version": "1.0.0"},
+            "paths": {
+                "/collaborators": {
+                    "put": {
+                        "operationId": "add_collaborator",
+                        "responses": {
+                            "201": {"description": "Created", "content": json_content},
+                            "202": {"description": "Accepted"},
+                            "204": {"$ref": "#/components/responses/NoContent"},
+                            "206": {"description": "Partial", "content": json_content},
+                            "404": {"description": "Not found"},
+                            "default": {"description": "Error"},
+                        },
+                    }
+                }
+            },
+            "components": {"responses": {"NoContent": {"description": "No content"}}},
+        }
+
+        (route,) = parse_openapi_to_http_routes(spec)
+
+        assert list(route.responses) == ["201", "202", "204"]
+        assert route.responses["201"].content_schema == {
+            "application/json": {"type": "object"}
+        }
+        assert route.responses["202"].content_schema == {}
+        assert route.responses["204"].description == "No content"
+        assert route.responses["204"].content_schema == {}

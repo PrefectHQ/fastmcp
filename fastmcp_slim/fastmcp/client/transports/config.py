@@ -135,6 +135,9 @@ class MCPConfigTransport(ClientTransport):
     ) -> AsyncIterator[ClientSession]:
         # Single server - delegate directly to pre-created transport
         if len(self.config.mcpServers) == 1:
+            config = next(iter(self.config.mcpServers.values()))
+            if config.timeout is not None:
+                session_kwargs["read_timeout_seconds"] = config.timeout / 1000 or None
             async with self.transport.connect_session(
                 transport_options=transport_options, **session_kwargs
             ) as session:
@@ -358,6 +361,8 @@ class MCPConfigTransport(ClientTransport):
             client_kwargs["forward_incoming_headers"] = (
                 transport_options.forward_incoming_headers
             )
+        if config.timeout is not None:
+            timeout = config.timeout / 1000
         client = StatefulProxyClient(
             transport=transport, timeout=timeout, **client_kwargs
         )
