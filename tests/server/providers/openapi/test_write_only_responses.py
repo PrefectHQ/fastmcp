@@ -329,6 +329,26 @@ def test_cyclic_references_do_not_hang_projection():
     assert result["required"] == ["a", "b"]
 
 
+async def test_shared_all_of_references_do_not_hang_projection():
+    # Each level references the one below three times, so a walk that follows
+    # every path to the leaf visits it 3**18 times.
+    schemas: dict[str, Any] = {
+        "L0": {
+            "type": "object",
+            "required": ["id", "password"],
+            "properties": {"id": ID, "password": PASSWORD},
+        }
+    }
+    for level in range(1, 19):
+        schemas[f"L{level}"] = {
+            "allOf": [{"$ref": f"#/components/schemas/L{level - 1}"} for _ in range(3)]
+        }
+    schemas["Thing"] = {"$ref": "#/components/schemas/L18"}
+    _, output = await Harness(schemas, {"id": 1}).schemas()
+    assert "password" not in json.dumps(output)
+    assert output["$defs"]["L0"]["required"] == ["id"]
+
+
 async def test_nested_object_and_array_item_scopes_stay_separate():
     token = {"type": "string"}
     private = {

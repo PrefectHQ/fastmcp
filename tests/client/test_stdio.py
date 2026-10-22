@@ -12,7 +12,11 @@ import pytest
 from mcp.shared.exceptions import MCPError
 
 from fastmcp import Client
-from fastmcp.client.transports import PythonStdioTransport, StdioTransport
+from fastmcp.client.transports import (
+    FastMCPStdioTransport,
+    PythonStdioTransport,
+    StdioTransport,
+)
 from fastmcp.exceptions import FastMCPError
 
 # A pure-stdlib MCP server used by the process-lifecycle tests below. It starts
@@ -47,7 +51,9 @@ async def wait_for_log_content(
 
     async def _poll() -> str:
         while True:
-            content = log_file_path.read_text()
+            # The transports keep captured logs valid UTF-8 (GH-5641);
+            # decode explicitly rather than trusting the locale default.
+            content = log_file_path.read_text(encoding="utf-8")
             if expected in content:
                 return content
             await asyncio.sleep(0.01)
@@ -836,3 +842,55 @@ class TestLogFile:
                 "write_error", {"message": "Default stderr"}
             )
             assert result.data == "Default stderr"
+
+    async def test_log_file_from_a_python_server_is_valid_utf8(self, tmp_path):
+        """Regression test for GH-5641: the captured stderr log decodes as
+        UTF-8 even where the platform code page is not UTF-8."""
+        script = tmp_path / "utf8_script.py"
+        script.write_text(
+            inspect.cleandoc("""
+                import sys
+                from fastmcp import FastMCP
+
+                mcp = FastMCP()
+
+                @mcp.tool
+                def write_encoding() -> str:
+                    print(f"utf8_mode={sys.flags.utf8_mode}", file=sys.stderr, flush=True)
+                    return "ok"
+
+                if __name__ == "__main__":
+                    mcp.run()
+            """),
+            encoding="utf-8",
+        )
+        log_file_path = tmp_path / "errors.log"
+
+        transport = PythonStdioTransport(script_path=script, log_file=log_file_path)
+        client = Client(transport=transport)
+
+        async with client:
+            await client.call_tool("write_encoding", {})
+
+        await wait_for_log_content(log_file_path, "utf8_mode=")
+        content = log_file_path.read_text(encoding="utf-8")
+        assert "utf8_mode=1" in content
+
+
+class TestPythonTransportEnvironment:
+    """The Python transports default the child to UTF-8 mode (GH-5641)."""
+
+    def test_python_transports_default_the_child_to_utf8(self, tmp_path):
+        script = tmp_path / "server.py"
+        script.write_text("", encoding="utf-8")
+
+        for transport in (
+            PythonStdioTransport(script_path=script),
+            FastMCPStdioTransport(script_path=script),
+        ):
+            assert transport.env == {"PYTHONUTF8": "1"}
+
+        custom = PythonStdioTransport(
+            script_path=script, env={"PYTHONUTF8": "0", "EXTRA": "kept"}
+        )
+        assert custom.env == {"PYTHONUTF8": "0", "EXTRA": "kept"}

@@ -247,6 +247,7 @@ class OpenAPITool(Tool):
                 result = response.json()
 
                 # Handle structured content based on output schema
+                wrap_result = False
                 if self.output_schema is not None:
                     if self.output_schema.get("x-fastmcp-wrap-result"):
                         structured_output = {"result": result}
@@ -254,6 +255,7 @@ class OpenAPITool(Tool):
                         structured_output = result
                 elif not isinstance(result, dict):
                     structured_output = {"result": result}
+                    wrap_result = True
                 else:
                     structured_output = result
 
@@ -263,7 +265,10 @@ class OpenAPITool(Tool):
                 if not isinstance(structured_output, dict):
                     structured_output = {"result": structured_output}
 
-                return ToolResult(structured_content=structured_output)
+                return ToolResult(
+                    structured_content=structured_output,
+                    meta={"fastmcp": {"wrap_result": True}} if wrap_result else None,
+                )
             except json.JSONDecodeError:
                 return ToolResult(content=response.text)
 

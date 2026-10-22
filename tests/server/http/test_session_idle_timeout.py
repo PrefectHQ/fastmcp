@@ -204,3 +204,42 @@ def test_idle_session_is_terminated_after_timeout(use_http_app: bool):
             json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         )
         assert response.status_code == 404
+
+
+def test_idle_session_cleanup_removes_legacy_log_level():
+    """A legacy session's logging preference is released when it expires."""
+    server = FastMCP(name="IdleLogLevelServer")
+    with temporary_settings(http_session_idle_timeout=1.0):
+        app = server.http_app(path="/mcp")
+
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        response = client.post("/mcp", headers=MCP_HEADERS, json=INITIALIZE_REQUEST)
+        assert response.status_code == 200
+        session_id = response.headers["mcp-session-id"]
+
+        session_headers = {
+            **MCP_HEADERS,
+            "mcp-session-id": session_id,
+            "mcp-protocol-version": "2024-11-05",
+        }
+        response = client.post(
+            "/mcp",
+            headers=session_headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "logging/setLevel",
+                "params": {"level": "warning"},
+            },
+        )
+        assert response.status_code == 200
+        assert server._client_log_levels[session_id] == "warning"
+
+        sm = _find_session_manager(app)
+        assert sm is not None
+        deadline = time.monotonic() + 4.0
+        while session_id in sm._server_instances and time.monotonic() < deadline:
+            time.sleep(0.02)
+
+        assert session_id not in sm._server_instances
+        assert session_id not in server._client_log_levels

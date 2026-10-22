@@ -68,6 +68,18 @@ class _ToolBodyError(Exception):
     """
 
 
+def _materialize_sync_generator(result: Any) -> Any:
+    """Consume a sync generator into a list, passing any other value through.
+
+    A generator body runs during iteration, not creation, so this must be
+    called inside the same invocation the generator was created in — ideally
+    on a worker thread, so a blocking body cannot stall the event loop.
+    """
+    if inspect.isgenerator(result):
+        return list(result)
+    return result
+
+
 @lru_cache(maxsize=5000)
 def _wrap_body_errors(
     fn: Callable[..., Any], *, materialize_generators: bool = False
@@ -94,8 +106,8 @@ def _wrap_body_errors(
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 result = fn(*args, **kwargs)
-                if materialize_generators and inspect.isgenerator(result):
-                    return list(result)
+                if materialize_generators:
+                    return _materialize_sync_generator(result)
                 return result
             except PydanticValidationError as e:
                 raise _ToolBodyError(str(e)) from e
@@ -458,6 +470,7 @@ class FunctionTool(Tool):
         """Validate arguments and execute the body, applying any timeout."""
         try:
             if self.timeout is not None:
+                scope = None
                 try:
                     with anyio.fail_after(self.timeout) as scope:
                         result = await self._execute(
@@ -468,6 +481,11 @@ class FunctionTool(Tool):
                         if anyio.current_time() >= scope.deadline:
                             raise TimeoutError
                 except TimeoutError:
+                    if scope is None or (
+                        not scope.cancelled_caught
+                        and anyio.current_time() < scope.deadline
+                    ):
+                        raise
                     logger.warning(
                         f"Tool '{self.name}' timed out after {self.timeout}s. "
                         f"Consider using task=True for long-running operations. "
@@ -545,9 +563,7 @@ class FunctionTool(Tool):
         """
         if inspect.isasyncgen(result):
             return [item async for item in result]
-        if inspect.isgenerator(result):
-            return list(result)
-        return result
+        return _materialize_sync_generator(result)
 
 
 @overload
