@@ -11,8 +11,6 @@ import httpx2
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import (
-    MCP_DEFAULT_SSE_READ_TIMEOUT,
-    MCP_DEFAULT_TIMEOUT,
     McpHttpClientFactory,
     create_mcp_http_client,
 )
@@ -54,7 +52,14 @@ class StreamableHttpTransport(ClientTransport):
             httpx_client_factory: Optional factory for creating httpx2.AsyncClient.
                 If provided, must accept keyword arguments: headers, auth,
                 follow_redirects, and optionally timeout. Using **kwargs is
-                recommended to ensure forward compatibility.
+                recommended to ensure forward compatibility. The timeout keyword
+                is passed only when the client has one configured
+                (e.g. Client(transport, timeout=30)); otherwise the factory
+                owns the timeout and should apply its own default — an
+                httpx2.AsyncClient built with no timeout uses httpx's 5 second
+                default, which is too short for MCP tool calls. A factory can
+                adopt MCP's defaults with
+                kwargs.setdefault("timeout", httpx2.Timeout(30.0, read=300.0)).
             verify: SSL certificate verification. Accepts False to disable
                 verification, a path to a CA bundle, or an ssl.SSLContext
                 for full control. None (default) uses httpx defaults (verification
@@ -182,13 +187,6 @@ class StreamableHttpTransport(ClientTransport):
         if read_timeout_seconds is not None:
             timeout = httpx2.Timeout(30.0, read=read_timeout_seconds)
 
-        # A custom factory does not apply MCP's defaults the way
-        # create_mcp_http_client does. Pass them when the client set no timeout,
-        # so the factory does not fall through to httpx's 5s default.
-        factory_timeout = timeout or httpx2.Timeout(
-            MCP_DEFAULT_TIMEOUT, read=MCP_DEFAULT_SSE_READ_TIMEOUT
-        )
-
         # Create httpx client from factory or use default with MCP-appropriate
         # timeouts. Note: create_mcp_http_client enables follow_redirects, but
         # httpx automatically strips Authorization headers on cross-origin
@@ -199,7 +197,7 @@ class StreamableHttpTransport(ClientTransport):
                 headers=headers,
                 auth=self.auth,
                 follow_redirects=True,  # type: ignore[call-arg]  # ty:ignore[unknown-argument]
-                timeout=factory_timeout,
+                **({"timeout": timeout} if timeout else {}),
             )
         elif verify_factory is not None:
             http_client = verify_factory(

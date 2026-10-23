@@ -281,35 +281,32 @@ class TestTimeout:
                 await client.call_tool("sleep", {"seconds": 0.2}, timeout=0.1)
 
 
-class TestHttpClientFactoryTimeout:
-    @pytest.mark.parametrize(
-        ("client_timeout", "expected"),
-        [
-            (None, httpx2.Timeout(30.0, read=300.0)),
-            (600, httpx2.Timeout(30.0, read=600.0)),
-        ],
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("client_timeout", [None, 0.25])
+async def test_factory_owned_timeout_is_preserved(
+    streamable_http_server: ASGIServer, mode: str, client_timeout: float | None
+):
+    """A factory's own timeout stands when the client sets none, and an
+    explicit client timeout is still forwarded to the factory."""
+    created: list[httpx2.AsyncClient] = []
+
+    def factory(**kwargs: Any) -> httpx2.AsyncClient:
+        kwargs.setdefault("timeout", httpx2.Timeout(0.15))
+        http_client = streamable_http_server.http_client(**kwargs)
+        created.append(http_client)
+        return http_client
+
+    transport = StreamableHttpTransport(
+        streamable_http_server.url,
+        httpx_client_factory=cast(McpHttpClientFactory, factory),
     )
-    async def test_custom_factory_client_timeout(
-        self,
-        streamable_http_server: ASGIServer,
-        client_timeout: float | None,
-        expected: httpx2.Timeout,
-    ):
-        created: list[httpx2.AsyncClient] = []
+    async with Client(transport, timeout=client_timeout, mode=mode):
+        pass
 
-        def factory(**kwargs: Any) -> httpx2.AsyncClient:
-            http_client = streamable_http_server.http_client(**kwargs)
-            created.append(http_client)
-            return http_client
-
-        transport = StreamableHttpTransport(
-            streamable_http_server.url,
-            httpx_client_factory=cast(McpHttpClientFactory, factory),
-        )
-        async with Client(transport, timeout=client_timeout):
-            pass
-
-        assert created
-        assert [http_client.timeout for http_client in created] == [expected] * len(
-            created
-        )
+    expected = (
+        httpx2.Timeout(0.15)
+        if client_timeout is None
+        else httpx2.Timeout(30.0, read=client_timeout)
+    )
+    assert created
+    assert all(client.timeout == expected for client in created)
