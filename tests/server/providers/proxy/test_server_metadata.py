@@ -153,7 +153,9 @@ def make_gateway(
     instructions: str | None = None,
     frontend_metadata: bool = False,
 ) -> FastMCP:
-    provider = ProxyProvider(lambda: ProxyClient(upstream, mode=backend_mode))
+    provider = ProxyProvider(
+        lambda: ProxyClient(upstream, mode=backend_mode), identity=identity
+    )
     metadata = ProxyMetadataMiddleware(provider, identity=identity)
     middleware: list[Middleware] = [metadata]
     if frontend_metadata:
@@ -682,3 +684,53 @@ async def test_results_carry_the_gateway_server_info_stamp(
     else:
         assert stamp is not None
         assert stamp["name"] == "gateway"
+
+
+@pytest.mark.parametrize("frontend_mode", ["legacy", "auto"])
+@pytest.mark.parametrize("operation", ["tools/call", "resources/read", "prompts/get"])
+async def test_results_keep_the_backend_stamp_under_upstream_identity(
+    operation: str, frontend_mode: str
+):
+    """With identity="upstream", terminal results advertise the backend,
+    matching what discovery advertised, instead of being restamped with the
+    gateway's identity."""
+    backend = FastMCP("backend-server")
+
+    @backend.tool
+    def echo() -> ToolResult:
+        return ToolResult("ok", meta={"com.example/origin": "tools/call"})
+
+    @backend.resource("data://hello")
+    def hello() -> ResourceResult:
+        return ResourceResult("hi", meta={"com.example/origin": "resources/read"})
+
+    @backend.prompt
+    def greet() -> PromptResult:
+        return PromptResult("hello", meta={"com.example/origin": "prompts/get"})
+
+    gateway = create_proxy(
+        ProxyClient(backend, mode="auto"), name="gateway", identity="upstream"
+    )
+
+    result: (
+        mcp_types.CallToolResult
+        | mcp_types.ReadResourceResult
+        | mcp_types.GetPromptResult
+    )
+    async with Client(gateway, mode=frontend_mode) as client:
+        if operation == "tools/call":
+            result = await client.call_tool_mcp("echo", {})
+        elif operation == "resources/read":
+            result = await client.read_resource_mcp("data://hello")
+        else:
+            result = await client.get_prompt_mcp("greet", {})
+
+    assert result.meta is not None
+    assert result.meta["com.example/origin"] == operation
+    stamp = result.meta.get(mcp_types.SERVER_INFO_META_KEY)
+    # The backend client is pinned to the modern era, so it stamps every
+    # result; upstream identity preserves that stamp on the way through, for
+    # either frontend era — the same cross-era posture the middleware applies
+    # to initialize's serverInfo under upstream identity.
+    assert stamp is not None
+    assert stamp["name"] == "backend-server"
