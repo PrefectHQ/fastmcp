@@ -1,4 +1,5 @@
 import contextlib
+import copy
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
@@ -84,9 +85,35 @@ class MCPConfigTransport(ClientTransport):
             config = MCPConfig.from_dict(config)
         self.config = config
         self.name_as_prefix = name_as_prefix
+        # Backend transports for the most recent connection opened by *this*
+        # transport instance. They are connection-scoped, so a `Client.new()`
+        # clone gets its own `_transports` list (see `copy_for_new_client`):
+        # `close()` on one client must not tear down another's backends.
         self._transports: list[ClientTransport] = []
+        # Backends this instance has successfully connected through. `close()`
+        # only releases one of these; a never-connected or failed-connect
+        # client has nothing to tear down. Participation is sticky so a client
+        # can still release a keep-alive backend after its context exits.
+        self._participated_backends: list[ClientTransport] = []
+        # Live connection counts per backend transport, keyed by `id()` because
+        # transports need not be hashable. `_backend_users` is shared by
+        # shallow copies: single-server clones share the eagerly-built backend
+        # (to preserve OAuth state), so close must see another clone's live
+        # connection and leave that backend alone. `_backend_local_users`
+        # counts only this instance's own connections, so teardown can still
+        # release a backend when this instance is the sole user (e.g. a
+        # cancelled connect calling close directly).
+        self._backend_users: dict[int, int] = {}
+        self._backend_local_users: dict[int, int] = {}
         self._request_state_security: RequestStateSecurity | None = None
         self._resolved_legacy_only = False
+        # The transport a clone copied from, if any. Era resolution is
+        # connection-scoped, but callers historically observed it through the
+        # transport they held even when `Client.new()` did the connecting
+        # (both shared one object before clones got per-instance state).
+        # Mirroring keeps that observable behavior without sharing teardown
+        # state. Chains of clones resolve to the most recent connection.
+        self._era_source: MCPConfigTransport | None = None
 
         if not self.config.mcpServers:
             raise ValueError("No MCP servers defined in the config")
@@ -111,6 +138,71 @@ class MCPConfigTransport(ClientTransport):
             )
 
             self._request_state_security = _RequestStateSecurity.ephemeral()
+
+    def copy_for_new_client(self) -> "MCPConfigTransport":
+        """Return a transport for a `Client.new()` clone.
+
+        The clone shares configuration and the eagerly-built backend transport
+        of a single-server config (notably an OAuth provider and its token
+        store) but starts with no connection of its own. Connection-scoped
+        state — `_transports`, `_participated_backends`, and
+        `_resolved_legacy_only` — is per-instance; `_backend_users` stays
+        shared so `close()` can see that another clone is still using the
+        shared backend. A shallow copy preserves the concrete class, so a
+        public `MCPConfigTransport` subclass keeps its behavior and any extra
+        attributes.
+
+        A consequence of sharing the single-server backend is that clients
+        cloned from the same config may share its keep-alive session or
+        subprocess. Client session state (handlers, caches, negotiation) is
+        still independent; multi-server configs build separate backends per
+        client.
+        """
+        clone = copy.copy(self)
+        backend = getattr(self, "transport", None)
+        clone._transports = [backend] if backend is not None else []
+        clone._participated_backends = []
+        clone._backend_local_users = {}
+        clone._resolved_legacy_only = False
+        # Keep the source's observable era in sync with the clone's
+        # connections without sharing connection/ownership state.
+        clone._era_source = self
+        return clone
+
+    def _set_resolved_legacy_only(self, value: bool) -> None:
+        """Record an era resolution and mirror it onto the clone's source.
+
+        `legacy_only` is read after connecting by callers that may hold the
+        source transport while a `Client.new()` clone performs the connection
+        (e.g. adapters that clone per operation). Publish the latest resolution
+        up the copy chain, as the pre-clone shared-object behavior did.
+        """
+        transport: MCPConfigTransport | None = self
+        while transport is not None:
+            transport._resolved_legacy_only = value
+            transport = transport._era_source
+
+    def _start_using(self, transport: ClientTransport) -> None:
+        """Record a successful connection through `transport`."""
+        if not any(existing is transport for existing in self._participated_backends):
+            self._participated_backends.append(transport)
+        key = id(transport)
+        self._backend_users[key] = self._backend_users.get(key, 0) + 1
+        self._backend_local_users[key] = self._backend_local_users.get(key, 0) + 1
+
+    def _stop_using(self, transport: ClientTransport) -> None:
+        """Release this instance's connection hold on `transport`."""
+        key = id(transport)
+        remaining = self._backend_users.get(key, 0) - 1
+        if remaining > 0:
+            self._backend_users[key] = remaining
+        else:
+            self._backend_users.pop(key, None)
+        local = self._backend_local_users.get(key, 0) - 1
+        if local > 0:
+            self._backend_local_users[key] = local
+        else:
+            self._backend_local_users.pop(key, None)
 
     @property
     def legacy_only(self) -> bool:
@@ -141,7 +233,15 @@ class MCPConfigTransport(ClientTransport):
             async with self.transport.connect_session(
                 transport_options=transport_options, **session_kwargs
             ) as session:
-                yield session
+                # Mark participation only once the connection actually
+                # succeeds. A failed or cancelled connect must leave `close()`
+                # with nothing to release (the same transport may be shared
+                # with a clone whose connection is still live).
+                self._start_using(self.transport)
+                try:
+                    yield session
+                finally:
+                    self._stop_using(self.transport)
             return
 
         # Multiple servers - create composite with mounted proxies, connecting
@@ -199,19 +299,26 @@ class MCPConfigTransport(ClientTransport):
                     "legacy",
                     transport_options=transport_options,
                 )
-                self._resolved_legacy_only = True
+                self._set_resolved_legacy_only(True)
             else:
-                self._resolved_legacy_only = requested_mode == "legacy" or all(
-                    legacy_backends
+                self._set_resolved_legacy_only(
+                    requested_mode == "legacy" or all(legacy_backends)
                 )
 
             async with FastMCPTransport(mcp=composite).connect_session(
                 transport_options=transport_options, **session_kwargs
             ) as session:
-                yield session
+                opened_backends = list(self._transports)
+                for backend in opened_backends:
+                    self._start_using(backend)
+                try:
+                    yield session
+                finally:
+                    for backend in opened_backends:
+                        self._stop_using(backend)
         finally:
             await stack.aclose()
-            self._resolved_legacy_only = False
+            self._set_resolved_legacy_only(False)
 
     async def _build_composite(
         self,
@@ -226,7 +333,10 @@ class MCPConfigTransport(ClientTransport):
         composite = fastmcp_type(
             name="MCPRouter", request_state_security=self._request_state_security
         )
+        # Backends from a previous connection were released by its exit stack;
+        # start this connection with a clean ownership set.
         self._transports = []
+        self._participated_backends = []
         backend_versions: list[str] = []
         proxies: dict[str, FastMCP[Any]] = {}
 
@@ -402,7 +512,20 @@ class MCPConfigTransport(ClientTransport):
         return transport, client, proxy
 
     async def close(self):
+        # Release only backends this instance successfully connected through,
+        # and only while no other client's live connection is using them.
+        # Single-server configs share their eagerly-built backend across
+        # `Client.new()` clones, so an unconditional close would tear down a
+        # clone's live session; a clone that never connected (or whose connect
+        # failed or was cancelled) has no participation and releases nothing.
+        # Subtracting this instance's own holds keeps direct teardown (e.g.
+        # from a cancelled connect) able to release its own backend.
         for transport in self._transports:
+            if not any(owned is transport for owned in self._participated_backends):
+                continue
+            key = id(transport)
+            if self._backend_users.get(key, 0) > self._backend_local_users.get(key, 0):
+                continue
             await transport.close()
 
     def __repr__(self) -> str:
