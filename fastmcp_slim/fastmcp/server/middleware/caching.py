@@ -532,6 +532,14 @@ class ResponseCachingMiddleware(Middleware):
         if _is_continuation_leg(context):
             return await call_next(context)
 
+        if (
+            context.fastmcp_context is not None
+            and context.fastmcp_context.fastmcp._requires_live_resource(
+                str(context.message.uri)
+            )
+        ):
+            return await call_next(context)
+
         cache_key: str = _make_read_resource_cache_key(
             msg=context.message, auth_key=_get_auth_partition_key()
         )
