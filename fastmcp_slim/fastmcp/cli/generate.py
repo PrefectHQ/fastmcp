@@ -9,13 +9,18 @@ from typing import Annotated, Any
 from urllib.parse import urlparse
 
 import cyclopts
+import httpx2
 import mcp_types
 import pydantic_core
 from mcp import MCPError
 from rich.console import Console
 
 from fastmcp.cli.client import _build_client, resolve_server_spec
+from fastmcp.client.auth.bearer import BearerAuth
+from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.transports.base import ClientTransport
+from fastmcp.client.transports.http import StreamableHttpTransport
+from fastmcp.client.transports.sse import SSETransport
 from fastmcp.client.transports.stdio import StdioTransport
 from fastmcp.utilities.logging import get_logger
 
@@ -119,13 +124,31 @@ def _format_schema_for_help(schema: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _serialize_auth(auth: httpx2.Auth) -> str:
+    """Serialize a remote transport's auth to an ``auth=`` argument.
+
+    Covers what a server config can express: a bearer token, or the ``"oauth"``
+    flag (which stands for a default OAuth flow). Anything else, such as a custom
+    ``httpx2.Auth``, raises ``ValueError`` instead of being dropped silently.
+    """
+    if type(auth) is OAuth:
+        return repr("oauth")
+    if isinstance(auth, BearerAuth):
+        return repr(auth.token.get_secret_value())
+    raise ValueError(
+        f"Cannot generate a CLI for a server using {type(auth).__name__} "
+        "authentication: it cannot be written as a Python expression."
+    )
+
+
 def serialize_transport(
     resolved: str | dict[str, Any] | ClientTransport,
 ) -> tuple[str, set[str]]:
     """Serialize a resolved transport to a Python expression string.
 
     Returns ``(expression, extra_imports)`` where *extra_imports* is a set of
-    import lines needed by the expression.
+    import lines needed by the expression. Raises ``ValueError`` for a transport
+    that cannot be written as a Python expression.
     """
     if isinstance(resolved, str):
         return repr(resolved), set()
@@ -140,11 +163,32 @@ def serialize_transport(
         imports = {"from fastmcp.client.transports import StdioTransport"}
         return expr, imports
 
+    if isinstance(resolved, (StreamableHttpTransport, SSETransport)):
+        cls_name = (
+            "SSETransport"
+            if isinstance(resolved, SSETransport)
+            else "StreamableHttpTransport"
+        )
+        parts = [f"url={resolved.url!r}"]
+        if resolved.headers:
+            parts.append(f"headers={resolved.headers!r}")
+        if resolved.auth is not None:
+            parts.append(f"auth={_serialize_auth(resolved.auth)}")
+        if isinstance(resolved, SSETransport) and resolved.sse_read_timeout is not None:
+            parts.append(
+                f"sse_read_timeout={resolved.sse_read_timeout.total_seconds()!r}"
+            )
+        expr = f"{cls_name}({', '.join(parts)})"
+        imports = {f"from fastmcp.client.transports import {cls_name}"}
+        return expr, imports
+
     if isinstance(resolved, dict):
         return repr(resolved), set()
 
-    # Fallback: try repr
-    return repr(resolved), set()
+    raise ValueError(
+        f"Cannot generate a CLI for a {type(resolved).__name__}: "
+        "it cannot be written as a Python expression."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -220,13 +264,8 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
                     annotation = f'Annotated[{py_type}, cyclopts.Parameter(help="{help_escaped}")]'
                     param_lines.append(f"    {safe_name}: {annotation} = {default!r},")
             else:
-                # For list types, default to empty list; others default to None
-                if py_type.startswith("list["):
-                    annotation = f'Annotated[{py_type}, cyclopts.Parameter(help="{help_escaped}")]'
-                    param_lines.append(f"    {safe_name}: {annotation} = [],")
-                else:
-                    annotation = f'Annotated[{py_type} | None, cyclopts.Parameter(help="{help_escaped}")]'
-                    param_lines.append(f"    {safe_name}: {annotation} = None,")
+                annotation = f'Annotated[{py_type} | None, cyclopts.Parameter(help="{help_escaped}")]'
+                param_lines.append(f"    {safe_name}: {annotation} = None,")
 
         call_args.append(f"{prop_name!r}: {safe_name}")
 
@@ -255,20 +294,11 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
         lines.append("    # Parse JSON parameters")
         for _prop_name, safe_name in json_params:
             lines.append(
-                f"    {safe_name}_parsed = json.loads({safe_name}) if isinstance({safe_name}, str) else {safe_name}"
+                f"    {safe_name} = json.loads({safe_name}) if isinstance({safe_name}, str) else {safe_name}"
             )
         lines.append("")
 
-    # Build call arguments, using parsed versions for JSON params
-    call_arg_parts = []
-    for prop_name in properties:
-        safe_name = _to_python_identifier(prop_name)
-        if any(pn == prop_name for pn, _ in json_params):
-            call_arg_parts.append(f"{prop_name!r}: {safe_name}_parsed")
-        else:
-            call_arg_parts.append(f"{prop_name!r}: {safe_name}")
-
-    dict_items = ", ".join(call_arg_parts)
+    dict_items = ", ".join(call_args)
     lines.append(f"    await _call_tool({tool.name!r}, {{{dict_items}}})")
     lines.append("")
 
@@ -373,12 +403,8 @@ def generate_cli_script(
 
 
         async def _call_tool(tool_name: str, arguments: dict) -> None:
-            # Filter out None values and empty lists (defaults for optional array params)
-            filtered = {
-                k: v
-                for k, v in arguments.items()
-                if v is not None and (not isinstance(v, list) or len(v) > 0)
-            }
+            # None represents an omitted optional argument; empty arrays are values.
+            filtered = {k: v for k, v in arguments.items() if v is not None}
             async with Client(CLIENT_SPEC) as client:
                 result = await client.call_tool(tool_name, filtered, raise_on_error=False)
                 _print_tool_result(result)
@@ -744,7 +770,12 @@ async def generate_cli_command(
 
     # Resolve the server spec to a transport
     resolved = resolve_server_spec(server_spec)
-    transport_code, extra_imports = serialize_transport(resolved)
+    # Serialize before _build_client, which may replace the transport's auth.
+    try:
+        transport_code, extra_imports = serialize_transport(resolved)
+    except ValueError as exc:
+        console.print(f"[bold red]Error:[/bold red] {exc}")
+        sys.exit(1)
 
     # Derive a human-friendly server name from the spec
     server_name = _derive_server_name(server_spec)

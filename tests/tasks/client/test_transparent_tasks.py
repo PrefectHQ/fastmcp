@@ -56,6 +56,20 @@ async def test_call_tool_timeout_bounds_total_task_drive(task_server: FastMCP):
             await client.call_tool("slow", {}, timeout=0.3)
 
 
+async def test_client_timeout_bounds_total_task_drive(task_server: FastMCP):
+    """Without a per-call timeout, the client timeout bounds the tasked drive."""
+    async with Client(task_server, mode="auto", timeout=0.3) as client:
+        with pytest.raises((TimeoutError, MCPError)):
+            await client.call_tool("slow", {})
+
+
+async def test_per_call_timeout_overrides_client_timeout(task_server: FastMCP):
+    async with Client(task_server, mode="auto", timeout=0.1) as client:
+        result = await client.call_tool("multiply", {"a": 6, "b": 7}, timeout=5)
+
+    assert result.data == 42
+
+
 async def test_call_tool_transparently_completes_a_task(task_server: FastMCP):
     """call_tool returns the tool's real result; the caller never sees a task."""
     async with Client(task_server, mode="auto") as client:
