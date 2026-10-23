@@ -486,8 +486,7 @@ class ProxyTool(Tool):
             return ToolResult(
                 content=tool_result.content,
                 structured_content=tool_result.structured_content,
-                meta=_forwardable_server_meta(tool_result.meta, self._identity)
-                or None,
+                meta=_forwardable_server_meta(tool_result.meta, self._identity) or None,
                 is_error=tool_result.is_error,
             )
 
@@ -995,7 +994,10 @@ class ProxyProvider(Provider):
             async with client:
                 mcp_tools = await client.list_tools()
                 tools = [
-                    ProxyTool.from_mcp_tool(self.client_factory, t, identity=self.identity) for t in mcp_tools
+                    ProxyTool.from_mcp_tool(
+                        self.client_factory, t, identity=self.identity
+                    )
+                    for t in mcp_tools
                 ]
         except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
