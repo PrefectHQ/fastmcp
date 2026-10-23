@@ -143,7 +143,7 @@ class SSETransport(ClientTransport):
         # This is off by default so a plain Client used inside a server tool
         # handler cannot leak caller headers to an unrelated remote server.
         if options.forward_incoming_headers:
-            client_kwargs["headers"] = _get_forwardable_http_headers() | self.headers
+            client_kwargs["headers"] = {k.lower(): v for k, v in _get_forwardable_http_headers().items()} | {k.lower(): v for k, v in self.headers.items()}
         else:
             client_kwargs["headers"] = dict(self.headers)
 
