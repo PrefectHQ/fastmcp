@@ -128,6 +128,7 @@ if TYPE_CHECKING:
     from fastmcp.server.providers.openapi import RouteMap
     from fastmcp.server.providers.openapi import RouteMapFn as OpenAPIRouteMapFn
     from fastmcp.server.providers.proxy import FastMCPProxy
+    from fastmcp.skills._source import _SkillSource
 
 logger = get_logger(__name__)
 
@@ -534,6 +535,15 @@ class FastMCP(
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.name!r})"
+
+    def _own_skill_sources(self) -> Sequence[_SkillSource]:
+        """Sources registered with this server's `SkillsExtension`, if any."""
+        from fastmcp.skills.extension import SkillsExtension
+
+        extension = self._extensions.get(SkillsExtension.identifier)
+        if isinstance(extension, SkillsExtension):
+            return extension._registered_sources()
+        return ()
 
     @property
     def _state_store(self) -> PydanticAdapter[StateValue]:

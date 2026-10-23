@@ -17,6 +17,9 @@ from fastmcp.skills.models import (
     ListSkillsParams,
     ListSkillsRequest,
     ListSkillsResult,
+    ReadResourceDirectoryParams,
+    ReadResourceDirectoryRequest,
+    ReadResourceDirectoryResult,
     Skill,
 )
 from fastmcp.telemetry import inject_trace_context
@@ -212,3 +215,88 @@ class ClientSkillsMixin:
         """
         result = await self.get_skill_mcp(uri, cache_mode=cache_mode)
         return result.skill
+
+    async def read_resource_directory_mcp(
+        self: Client,
+        uri: str,
+        *,
+        cursor: str | None = None,
+    ) -> ReadResourceDirectoryResult:
+        """Send one `resources/directory/read` request and return its protocol result.
+
+        Args:
+            uri: URI of the directory, without a trailing slash.
+            cursor: Optional pagination cursor from a previous result.
+
+        Returns:
+            The complete protocol result, including pagination fields.
+
+        Raises:
+            RuntimeError: If Skills was not negotiated or the server does not
+                advertise `directoryRead`.
+            MCPError: If the server rejects the request.
+        """
+        self._require_skills_extension()
+        capabilities = self.server_capabilities
+        extensions = capabilities.extensions if capabilities else None
+        settings = (extensions or {}).get(SKILLS_EXTENSION_ID) or {}
+        if settings.get("directoryRead") is not True:
+            raise RuntimeError("The server does not advertise Skills directoryRead")
+        with client_span(
+            "resources/directory/read",
+            "resources/directory/read",
+            uri,
+            session_id=self.transport.get_session_id(),
+            resource_uri=uri,
+        ):
+            request = ReadResourceDirectoryRequest(
+                params=ReadResourceDirectoryParams(
+                    uri=uri, cursor=cursor, meta=_trace_meta()
+                )
+            )
+            return await self._await_with_session_monitoring(
+                self.session.send_request(request, ReadResourceDirectoryResult)
+            )
+
+    async def read_resource_directory(
+        self: Client,
+        uri: str,
+        max_pages: int = AUTO_PAGINATION_MAX_PAGES,
+    ) -> list[mcp_types.Resource]:
+        """List every direct child of a directory resource.
+
+        Directory reads are live observations of the server. They never extend a
+        held skill entry's manifest; refresh the entry with `get_skill()` before
+        reading a file it does not list.
+
+        Args:
+            uri: URI of the directory, without a trailing slash.
+            max_pages: Maximum number of pages to fetch before raising.
+
+        Returns:
+            Files and subdirectories (`mimeType` `inode/directory`) in the directory.
+
+        Raises:
+            RuntimeError: If directory reads were not negotiated or the page
+                limit is reached.
+            MCPError: If the server rejects a request.
+        """
+        resources: list[mcp_types.Resource] = []
+        cursor: str | None = None
+        seen_cursors: set[str] = set()
+
+        for _ in range(max_pages):
+            result = await self.read_resource_directory_mcp(uri, cursor=cursor)
+            resources.extend(result.resources)
+            if not result.next_cursor or result.next_cursor in seen_cursors:
+                break
+            seen_cursors.add(result.next_cursor)
+            cursor = result.next_cursor
+        else:
+            raise RuntimeError(
+                f"[{self.name}] Reached auto-pagination limit ({max_pages} pages) "
+                "for read_resource_directory. Use read_resource_directory_mcp() "
+                "for manual pagination, or increase max_pages."
+            )
+
+        return resources

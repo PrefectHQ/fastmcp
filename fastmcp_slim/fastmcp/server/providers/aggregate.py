@@ -99,13 +99,20 @@ class AggregateProvider(Provider):
         self.providers: list[Provider] = list(providers or [])
         self._extension_scopes: list[_ExtensionScope] = []
 
+    def _own_skill_sources(self) -> Sequence[_SkillSource]:
+        """Skill sources this aggregate publishes itself, ahead of its children."""
+        return ()
+
     def _get_skills_source(self) -> _SkillSource | None:
         from fastmcp.skills._composition import _AggregateSkills, _transformed
 
         sources = [
-            source
-            for provider in self.providers
-            if (source := provider._get_skills_source()) is not None
+            *self._own_skill_sources(),
+            *(
+                source
+                for provider in self.providers
+                if (source := provider._get_skills_source()) is not None
+            ),
         ]
         if not sources:
             return None

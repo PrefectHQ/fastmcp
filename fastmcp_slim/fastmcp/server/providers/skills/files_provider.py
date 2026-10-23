@@ -96,9 +96,12 @@ class SkillFilesProvider(Provider, _SkillSource):
         except (ValueError, yaml.YAMLError, RecursionError) as exc:
             logger.warning("Omitting invalid skill %s: %s", skill_path, exc)
             return None
+        from fastmcp.skills._composition import _served_uri
+
         server = get_context().fastmcp
         for relative_path, content in files.items():
-            served = await server.get_resource(file_uri(skill_path, relative_path))
+            uri = _served_uri(file_uri(skill_path, relative_path), self, server)
+            served = await server.get_resource(uri)
             if not isinstance(served, _LoadedSkillFile) or served.data != content:
                 return None
         return entry

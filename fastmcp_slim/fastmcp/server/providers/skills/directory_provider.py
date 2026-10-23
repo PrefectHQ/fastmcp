@@ -375,8 +375,11 @@ class SkillsDirectoryProvider(AggregateProvider, _SkillSource):
         return await provider.get_resource_template(uri, version)
 
     async def _visible_entry(self, snap: Snapshot) -> Skill | None:
+        from fastmcp.skills._composition import _served_uri
+
         server = get_context().fastmcp
-        for uri, path in snap.files:
+        for own_uri, path in snap.files:
+            uri = _served_uri(own_uri, self, server)
             component: Resource | ResourceTemplate | None = await server.get_resource(
                 uri
             )

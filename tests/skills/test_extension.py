@@ -19,7 +19,7 @@ from fastmcp import Client, FastMCP
 from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.server.providers import Provider
-from fastmcp.server.transforms import Namespace
+from fastmcp.server.transforms import Transform
 from fastmcp.skills import Skill, SkillsClientExtension
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
 from fastmcp.skills._source import _Catalog, _Lookup, _SkillSource
@@ -356,27 +356,34 @@ def test_extension_rejects_provider_without_source_contract() -> None:
         server.add_extension(SkillsExtension(providers=[provider]))
 
 
-def test_extension_rejects_transformed_provider() -> None:
+class RewriteResources(Transform):
+    """A transform that changes resources in a way Skills cannot follow."""
+
+    async def list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]:
+        return resources
+
+
+def test_extension_rejects_unsupported_provider_transform() -> None:
     provider = MemorySkillProvider(listed=[])
-    provider.add_transform(Namespace("docs"))
+    provider.add_transform(RewriteResources())
     server = FastMCP("skills", providers=[provider])
 
-    with pytest.raises(ValueError, match="transformed providers"):
+    with pytest.raises(ValueError, match="providers with RewriteResources"):
         server.add_extension(SkillsExtension(providers=[provider]))
 
 
-def test_extension_rejects_server_level_transform() -> None:
+def test_extension_rejects_unsupported_server_level_transform() -> None:
     provider = MemorySkillProvider(listed=[])
-    server = FastMCP("skills", providers=[provider], transforms=[Namespace("docs")])
+    server = FastMCP("skills", providers=[provider], transforms=[RewriteResources()])
 
-    with pytest.raises(ValueError, match="server-level transforms"):
+    with pytest.raises(ValueError, match="server-level RewriteResources"):
         server.add_extension(SkillsExtension(providers=[provider]))
 
 
 async def test_extension_rejects_transform_added_after_registration() -> None:
     provider = MemorySkillProvider(listed=[])
     server = make_server(provider)
-    provider.add_transform(Namespace("docs"))
+    provider.add_transform(RewriteResources())
 
     async with skills_client(server) as client:
         with pytest.raises(MCPError) as exc_info:

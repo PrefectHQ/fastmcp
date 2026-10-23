@@ -4,12 +4,11 @@ This experiment targets the stable Skills extension at
 `modelcontextprotocol/ext-skills@e083f6d` and builds on FastMCP PR #5057.
 It opts the existing `SkillsDirectoryProvider` into filesystem publication and
 standard discovery through `experimental_skills=True` and the single
-`SkillsExtension`. It does not implement
-host activation or the optional directory-read method.
+`SkillsExtension`, which can also serve the optional directory-read method. It does
+not implement host activation.
 
 The October 16 review includes the upstream schema correction adding optional
-`_meta` to skill entries. The additional directory-read cache requirements do not
-apply because this implementation does not advertise directory reads.
+`_meta` to skill entries. Directory-read results carry the required cache fields.
 
 The upstream conformance runner at
 `modelcontextprotocol/conformance@c37eec888e1c6ff140af79987a40008548b7cc5f`
@@ -28,8 +27,9 @@ Enumeration passed 32 checks. Manifest validation passed four checks with two
 SHOULD-level warnings: resources retain their existing names (such as
 `review/SKILL.md`) and FastMCP's standard `_meta.fastmcp` metadata instead of
 switching to frontmatter names and the Skills-specific metadata prefix. The directory
-scenario passed wire validation and skipped optional directory checks because
-`directoryRead` is not advertised.
+scenario was re-run on October 23 against a server registered with
+`directory_read=True` and passed all seven checks, including the subdirectory MIME
+type, `-32602` for a file URI, and pagination.
 
 Local protocol tests cover both supporting-file publication modes, nested
 skills, binary data, component and global middleware authorization, shared access

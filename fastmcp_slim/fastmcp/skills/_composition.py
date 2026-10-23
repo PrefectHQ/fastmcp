@@ -15,7 +15,8 @@ from fastmcp.exceptions import AuthorizationError
 from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.context import Context
-from fastmcp.server.transforms import Namespace, Visibility
+from fastmcp.server.transforms import Namespace, Transform, Visibility
+from fastmcp.server.transforms.version_filter import VersionFilter
 from fastmcp.skills._source import _Catalog, _Lookup, _manifest_uris, _SkillSource
 from fastmcp.skills.models import Skill
 from fastmcp.utilities.async_utils import gather
@@ -31,12 +32,47 @@ logger = get_logger(__name__)
 _T = TypeVar("_T")
 
 
+_RESOURCE_HOOKS = (
+    "list_resources",
+    "get_resource",
+    "list_resource_templates",
+    "get_resource_template",
+)
+
+
+def _hides_resources(transform: Transform) -> bool:
+    return isinstance(transform, Visibility | VersionFilter)
+
+
+def _supports_skills(transform: Transform) -> bool:
+    """Namespaces rename, filters hide, and other transforms leave resources alone."""
+    if isinstance(transform, Namespace) or _hides_resources(transform):
+        return True
+    return all(
+        getattr(type(transform), hook) is getattr(Transform, hook)
+        for hook in _RESOURCE_HOOKS
+    )
+
+
+def _unsupported_transforms(provider: Provider) -> list[Transform]:
+    return [t for t in provider.transforms if not _supports_skills(t)]
+
+
 def _transformed(source: _SkillSource, provider: Provider) -> _SkillSource | None:
     if not provider.transforms:
         return source
-    if any(not isinstance(t, Namespace | Visibility) for t in provider.transforms):
+    if _unsupported_transforms(provider):
         return None
     return _TransformedSkills(source, provider)
+
+
+def _served_uri(uri: str, provider: Provider, server: FastMCP) -> str:
+    """Map a provider's own URI to the URI its server serves it under."""
+    for owner in (provider, server):
+        for transform in owner.transforms:
+            if isinstance(transform, Namespace):
+                uri = transform._transform_uri(uri)
+    return uri
 
 
 class _AggregateSkills(_SkillSource):
@@ -167,7 +203,7 @@ class _TransformedSkills(_SkillSource):
         )
 
     async def _visible(self, skill: Skill) -> bool:
-        if not any(isinstance(t, Visibility) for t in self.provider.transforms):
+        if not any(_hides_resources(t) for t in self.provider.transforms):
             return True
         for uri in _manifest_uris(skill):
             resource = await self.provider.get_resource(uri)

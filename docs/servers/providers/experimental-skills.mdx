@@ -8,7 +8,7 @@ icon: flask
 The existing `SkillsDirectoryProvider` can opt into experimental Skills discovery, letting clients discover filesystem skills through `skills/list` and `skills/get`, with frontmatter and a complete file manifest. Files remain ordinary MCP resources, readable through `resources/read`.
 
 <Warning>
-This API is experimental and may change without a deprecation period. It builds on the [MCP Skills extension](https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx). Directory reads, host-side activation, approval, installation, and execution are not implemented.
+This API is experimental and may change without a deprecation period. It builds on the [MCP Skills extension](https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx). Host-side activation, approval, installation, and execution are not implemented.
 </Warning>
 
 ## Publish skills
@@ -98,6 +98,25 @@ async def inspect_skills() -> None:
 
 `client.get_skill(uri)` refreshes one entry. Each static manifest includes the URI, byte size, and SHA-256 digest of every file. A host must verify resource contents against those records before using them, preserve the originating server's identity, and apply the extension's approval rules. The typed client methods transport entries; they do not activate or approve skills.
 
+## Directory reads
+
+Skill instructions often point at a directory rather than a file, such as "pick a template from `templates/`". Pass `directory_read=True` to advertise the extension's optional `directoryRead` setting and serve `resources/directory/read`, which lists a directory's direct children: files with their resource metadata and subdirectories with the `inode/directory` MIME type.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.skills.extension import SkillsExtension
+from fastmcp.server.providers.skills import SkillsDirectoryProvider
+
+mcp = FastMCP("Skills")
+skills = SkillsDirectoryProvider("./skills", experimental_skills=True)
+mcp.add_provider(skills)
+mcp.add_extension(SkillsExtension(providers=[skills], directory_read=True))
+```
+
+Clients that opted into the extension call `client.read_resource_directory("skill://acme/refunds/templates")`, or `read_resource_directory_mcp()` for one page at a time. Listings are answered from the same caller-scoped manifests that `skills/list` returns, so a skill hidden from the caller contributes no directories and a listed file always matches a manifest record. Directories above a skill root, such as `skill://acme`, list the next path segment toward each skill. A URI that is not such a directory, including a file URI, returns `-32602`.
+
+A directory listing is a live observation, not part of a held entry. A file it lists that the entry does not is a changed skill; refresh the entry with `get_skill()` before reading it. Skills whose entries use `"dynamic"` resources have no manifest to list from, so only the directories above their roots are listed.
+
 ## Validation and updates
 
 Listing scans the directories and hashes their current bytes. Looking up a skill by URI hashes only that skill; resource reads resolve their path directly without scanning the skill collection. Reads remain live, preserving CRLF newlines and binary content. If a file changes between discovery and reading, the host detects the mismatch and refreshes the entry. This is a point-in-time manifest, not an atomic filesystem snapshot.
@@ -108,11 +127,13 @@ The entire entry is omitted when any supporting resource or template is unavaila
 
 ## Supported composition
 
-`SkillsExtension` sources must be registered directly on the server, without transforms, and filesystem sources also need `experimental_skills=True`. Transformed or mounted local skill sources remain unsupported.
+`SkillsExtension` sources must be registered directly on the server, and filesystem sources also need `experimental_skills=True`. `Namespace` transforms on the provider or the server rewrite the skill URI and every manifest URI together. `Visibility` and `VersionFilter` hide a whole skill when any of its files is hidden. Transforms that leave resources alone, such as `ToolTransform` or `ResourcesAsTools`, have no effect on discovery. Any other resource transform, such as a search transform, is rejected when the extension is registered.
 
-[Proxies](/servers/providers/proxy#skills) automatically forward Skills discovery when the backend advertises the extension on a modern MCP connection. Namespaces apply to the skill URI and every manifest resource URI while preserving frontmatter, file sizes, and digests. Multiple backends use the existing namespace and pagination behavior; duplicate skill URIs are omitted rather than choosing a backend arbitrarily. Directory reads remain unsupported.
+A [mounted server](/servers/composition) that registers `SkillsExtension` is forwarded the same way as a proxy: the parent advertises the extension automatically, applies the mount namespace, and combines the child's skills with its own. Mounting a server that did not register the extension does not publish its skill files through discovery.
 
-Proxy discovery forwards metadata without reading skill files. Files are fetched when requested, and read failures surface then. Resource visibility and permissions hide a whole skill when any of its files is unavailable. A local resource shadowing a proxied file also hides the skill. `Namespace` and `Visibility` transforms are supported for proxy sources; other transforms suppress automatic Skills advertisement.
+[Proxies](/servers/providers/proxy#skills) automatically forward Skills discovery when the backend advertises the extension on a modern MCP connection. Namespaces apply to the skill URI and every manifest resource URI while preserving frontmatter, file sizes, and digests. Multiple backends use the existing namespace and pagination behavior; duplicate skill URIs are omitted rather than choosing a backend arbitrarily. Automatic forwarding does not advertise `directoryRead`.
+
+Proxy discovery forwards metadata without reading skill files. Files are fetched when requested, and read failures surface then. Resource visibility and permissions hide a whole skill when any of its files is unavailable. A local resource shadowing a proxied file also hides the skill. The same transform rules apply to proxy sources, except that an unsupported transform suppresses automatic Skills advertisement instead of raising.
 
 Resource authorization uses `Middleware.check_resource_access`, the policy hook also called by the default `on_read_resource`. `AuthMiddleware` implements this hook, including transport handling and scope checks. Custom resource authorization should implement this hook; custom `on_read_resource` overrides must call `super()` to apply it. Arbitrary restrictions or content changes in other middleware hooks cannot be inferred by discovery and are unsupported unless the middleware keeps the skill metadata consistent.
 

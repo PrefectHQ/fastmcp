@@ -221,3 +221,25 @@ class GetSkillRequest(mcp_types.Request[GetSkillParams, Literal["skills/get"]]):
 
     method: Literal["skills/get"] = "skills/get"
     params: GetSkillParams
+
+
+class ReadResourceDirectoryParams(mcp_types.PaginatedRequestParams):
+    """Parameters for `resources/directory/read`."""
+
+    uri: str
+
+
+class ReadResourceDirectoryResult(mcp_types.PaginatedResult, mcp_types.CacheableResult):
+    """Result from `resources/directory/read`: the directory's direct children."""
+
+    resources: list[mcp_types.Resource]
+    result_type: Literal["complete"] = "complete"
+
+
+class ReadResourceDirectoryRequest(
+    mcp_types.Request[ReadResourceDirectoryParams, Literal["resources/directory/read"]]
+):
+    """Client request envelope for `resources/directory/read`."""
+
+    method: Literal["resources/directory/read"] = "resources/directory/read"
+    params: ReadResourceDirectoryParams
