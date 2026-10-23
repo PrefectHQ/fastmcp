@@ -89,15 +89,16 @@ async def rotate(admin: Redis, path: Path, password: str) -> None:
     await admin.execute_command("CLIENT", "KILL", "USER", "tasks")
 
 
-def task_server(url: str, provider: CredentialProvider | None) -> FastMCP:
+def task_server(
+    url: str, provider: CredentialProvider | None, *, clone_extension: bool = False
+) -> FastMCP:
     server = FastMCP("rotating-credentials")
-    server.add_extension(
-        TasksExtension(
-            url=url,
-            credential_provider=provider,
-            reconnection_delay=timedelta(milliseconds=10),
-        )
+    extension = TasksExtension(
+        url=url,
+        credential_provider=provider,
+        reconnection_delay=timedelta(milliseconds=10),
     )
+    server.add_extension(extension.clone() if clone_extension else extension)
 
     @server.tool(task=True)
     async def double(value: int) -> int:
@@ -107,16 +108,18 @@ def task_server(url: str, provider: CredentialProvider | None) -> FastMCP:
 
 
 @pytest.mark.parametrize("provider_type", [FileCredentials, AsyncFileCredentials])
+@pytest.mark.parametrize("clone_extension", [False, True])
 async def test_tasks_reconnect_with_rotated_credentials(
     redis_backend: Redis,
     free_port: int,
     tmp_path: Path,
     provider_type: type[FileCredentials],
+    clone_extension: bool,
 ) -> None:
     password = tmp_path / "password"
     await rotate(redis_backend, password, "first")
     url = f"redis://127.0.0.1:{free_port}/0"
-    server = task_server(url, provider_type(password))
+    server = task_server(url, provider_type(password), clone_extension=clone_extension)
     async with Client(server) as client:
         result = await client.call_tool("double", {"value": 21})
         assert result.data == 42

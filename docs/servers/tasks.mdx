@@ -235,6 +235,8 @@ You can also supply a provider that implements `get_credentials_async()`, or a p
 
 Configure the provider in your server module. [Additional workers](#workers) load that same module and use its registered extension, so no separate worker flag is needed. Provider objects are runtime configuration, not `FASTMCP_DOCKET_*` environment settings. The default `memory://` backend ignores them.
 
+`TasksExtension.clone()` copies the resolved settings and shares the credential provider with the original extension. To give servers independent authentication state, construct each extension with its own provider instead.
+
 ### Credentials at Rest
 
 A background task runs long after the request that submitted it has ended, but it still needs to know who asked for the work. FastMCP captures that identity at submission time in a **task context snapshot**: the caller's access token and every inbound HTTP header, including `Authorization`. The worker restores the snapshot before the tool body runs, so `get_access_token()` and `get_http_headers()` return the submitting caller.

@@ -34,6 +34,29 @@ def fetch_items() -> list[dict]:
     return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
 
 
+def newest_number() -> int:
+    result = subprocess.run(
+        [
+            "gh",
+            "api",
+            f"repos/{REPO}/issues?state=all&per_page=1&sort=created&direction=desc",
+            "--jq",
+            ".[0].number",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return int(result.stdout)
+
+
+def require_complete(items: list[dict], newest: int) -> None:
+    if newest not in {item["number"] for item in items}:
+        raise RuntimeError(
+            f"Collected {len(items)} items without #{newest}; pagination ended early"
+        )
+
+
 def parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
@@ -153,7 +176,12 @@ def main() -> None:
     # Timestamp the beginning of collection so updates during pagination are
     # not represented as a snapshot from after an item was read.
     now = datetime.now(timezone.utc).replace(microsecond=0)
-    doc = build(fetch_items(), previous, now)
+    # Pages are oldest-first, so a listing that stops early silently drops the
+    # newest items. Anything created before collection began must be present.
+    newest = newest_number()
+    items = fetch_items()
+    require_complete(items, newest)
+    doc = build(items, previous, now)
     args.output.write_text(json.dumps(doc, separators=(",", ":")) + "\n")
 
 
