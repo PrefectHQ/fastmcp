@@ -402,3 +402,14 @@ class TestShowServerBannerSetting:
                 await mcp.run_async(transport="stdio", show_banner=False)
                 mock_run.assert_called_once()
                 assert mock_run.call_args.kwargs["show_banner"] is False
+
+
+async def test_render_prompt_serializes_non_string_arguments_for_middleware():
+    mcp = FastMCP()
+
+    @mcp.prompt
+    def greet(name: str, times: int) -> str:
+        return f"hi {name} " * times
+
+    result = await mcp.render_prompt("greet", {"name": "bob", "times": 3})
+    assert result.messages[0].content.text == "hi bob hi bob hi bob "
