@@ -92,6 +92,44 @@ class TestClerkProvider:
             == f"https://{CLERK_DOMAIN}/oauth/authorize"
         )
 
+    def test_domain_with_https_scheme_not_doubled(self, memory_storage: MemoryStore):
+        """Test that a domain already containing https:// does not produce https://https://."""
+        provider = ClerkProvider(
+            domain=f"https://{CLERK_DOMAIN}",
+            client_id="clerk-client-id",
+            client_secret="clerk-client-secret",
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert (
+            provider._upstream_authorization_endpoint
+            == f"https://{CLERK_DOMAIN}/oauth/authorize"
+        )
+        assert (
+            provider._upstream_token_endpoint
+            == f"https://{CLERK_DOMAIN}/oauth/token"
+        )
+
+    def test_domain_with_https_scheme_and_trailing_slash(
+        self, memory_storage: MemoryStore
+    ):
+        """Test that https://domain/ (with trailing slash) is normalized correctly."""
+        provider = ClerkProvider(
+            domain=f"https://{CLERK_DOMAIN}/",
+            client_id="clerk-client-id",
+            client_secret="clerk-client-secret",
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert (
+            provider._upstream_authorization_endpoint
+            == f"https://{CLERK_DOMAIN}/oauth/authorize"
+        )
+
     def test_default_scopes(self, memory_storage: MemoryStore):
         """Test that default required scopes are openid, email, profile."""
         provider = ClerkProvider(
@@ -199,6 +237,46 @@ class TestClerkProvider:
 
 class TestClerkTokenVerifier:
     """Test ClerkTokenVerifier.verify_token() using introspection + userinfo."""
+
+    def test_domain_with_scheme_stored_correctly(self):
+        """ClerkTokenVerifier strips https:// from domain; self.domain stays a bare host."""
+        verifier = ClerkTokenVerifier(
+            domain=f"https://{CLERK_DOMAIN}",
+            client_id="clerk-client-id",
+        )
+        # Public attribute remains a bare host (no scheme change for callers)
+        assert verifier.domain == CLERK_DOMAIN
+        assert verifier._userinfo_url == f"https://{CLERK_DOMAIN}/oauth/userinfo"
+        assert verifier._introspection_url == f"https://{CLERK_DOMAIN}/oauth/token_info"
+        assert not verifier._userinfo_url.startswith("https://https://")
+
+    def test_domain_without_scheme_stored_correctly(self):
+        """ClerkTokenVerifier stores a bare host unchanged."""
+        verifier = ClerkTokenVerifier(
+            domain=CLERK_DOMAIN,
+            client_id="clerk-client-id",
+        )
+        assert verifier.domain == CLERK_DOMAIN
+        assert verifier._userinfo_url == f"https://{CLERK_DOMAIN}/oauth/userinfo"
+        assert verifier._introspection_url == f"https://{CLERK_DOMAIN}/oauth/token_info"
+
+    def test_domain_https_uppercase_scheme_stripped(self):
+        """ClerkTokenVerifier handles HTTPS:// (uppercase) without doubling the scheme."""
+        verifier = ClerkTokenVerifier(
+            domain=f"HTTPS://{CLERK_DOMAIN}",
+            client_id="clerk-client-id",
+        )
+        assert verifier.domain == CLERK_DOMAIN
+        assert not verifier._userinfo_url.startswith("https://HTTPS://")
+
+    def test_domain_http_scheme_rejected(self):
+        """ClerkTokenVerifier raises ValueError for http:// domains."""
+        import pytest
+        with pytest.raises(ValueError, match="http://"):
+            ClerkTokenVerifier(
+                domain=f"http://{CLERK_DOMAIN}",
+                client_id="clerk-client-id",
+            )
 
     async def test_valid_token_basic(self, httpx_mock: HTTPXMock):
         """A valid token returns an AccessToken with user claims from userinfo."""

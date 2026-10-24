@@ -82,7 +82,19 @@ class ClerkTokenVerifier(TokenVerifier):
                 lifecycle. When None (default), a fresh client is created per call.
         """
         super().__init__(required_scopes=required_scopes)
-        self.domain = domain.rstrip("/")
+        domain = domain.rstrip("/")
+        # Strip a leading https:// (case-insensitive) so self.domain is always
+        # a bare host, preserving the existing public-attribute contract.
+        # http:// is rejected: sending credentials over plaintext is not safe.
+        lower = domain.lower()
+        if lower.startswith("https://"):
+            domain = domain[len("https://"):]
+        elif lower.startswith("http://"):
+            raise ValueError(
+                "ClerkTokenVerifier: 'http://' domains are not allowed; "
+                "pass a bare host or an 'https://' URL."
+            )
+        self.domain = domain
         self._client_id = client_id
         self._client_secret = client_secret
         self.timeout_seconds = timeout_seconds
@@ -352,6 +364,16 @@ class ClerkProvider(OAuthProxy):
                 treat a token as expired, refreshing early to avoid races. Defaults to 0.
         """
         domain = domain.rstrip("/")
+        # Strip a leading https:// (case-insensitive) so domain is a bare host;
+        # reject http:// to keep credentials off plaintext transports.
+        lower = domain.lower()
+        if lower.startswith("https://"):
+            domain = domain[len("https://"):]
+        elif lower.startswith("http://"):
+            raise ValueError(
+                "ClerkProvider: 'http://' domains are not allowed; "
+                "pass a bare host or an 'https://' URL."
+            )
 
         required_scopes_final = (
             parse_scopes(required_scopes)
