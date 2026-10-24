@@ -2,6 +2,7 @@
 
 import asyncio
 import socket
+from contextlib import nullcontext
 from unittest.mock import AsyncMock, patch
 
 from fastmcp import FastMCP
@@ -41,15 +42,19 @@ class TestLogLevelParameter:
             "fastmcp.server.mixins.transport.uvicorn.Server"
         ) as mock_server_class:
             mock_instance = mock_server_class.return_value
-            mock_instance.serve = AsyncMock()
+            mock_instance._serve = AsyncMock()
+            mock_instance.capture_signals.return_value = nullcontext()
 
             # This should accept the log_level parameter without error
             await server.run_http_async(
-                log_level="INFO", show_banner=False, host="127.0.0.1", port=8000
+                log_level="INFO",
+                show_banner=False,
+                host="127.0.0.1",
+                port=8000,
             )
 
-            # Verify serve was called
-            mock_instance.serve.assert_called_once()
+            # Verify the server loop was called
+            mock_instance._serve.assert_awaited_once_with(sockets=None)
 
     async def test_run_http_passes_sockets_to_uvicorn(self):
         """Test that run_http_async forwards pre-bound sockets to Uvicorn."""
@@ -60,7 +65,8 @@ class TestLogLevelParameter:
                 "fastmcp.server.mixins.transport.uvicorn.Server"
             ) as mock_server_class:
                 mock_instance = mock_server_class.return_value
-                mock_instance.serve = AsyncMock()
+                mock_instance._serve = AsyncMock()
+                mock_instance.capture_signals.return_value = nullcontext()
 
                 await server.run_http_async(
                     show_banner=False,
@@ -69,7 +75,7 @@ class TestLogLevelParameter:
                     sockets=[sock],
                 )
 
-                mock_instance.serve.assert_called_once_with(sockets=[sock])
+                mock_instance._serve.assert_awaited_once_with(sockets=[sock])
 
     async def test_run_async_passes_log_level(self):
         """Test that run_async passes log_level to transport methods."""
