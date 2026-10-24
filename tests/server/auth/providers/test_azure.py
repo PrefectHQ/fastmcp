@@ -311,6 +311,69 @@ class TestAzureProvider:
         result = await verifier.load_access_token(token)
         assert result is None
 
+    @pytest.mark.parametrize("tenant_id", ["organizations", "consumers", "common"])
+    async def test_multi_tenant_authority_accepts_tenant_guid_issuer(
+        self,
+        memory_storage: MemoryStore,
+        rsa_key_pair: RSAKeyPair,
+        tenant_id: str,
+    ):
+        """Multi-tenant authorities issue tokens whose iss is the user's tenant GUID."""
+        key_pair = rsa_key_pair
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id=tenant_id,
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert isinstance(provider._token_validator, JWTVerifier)
+        verifier = provider._token_validator
+        verifier.public_key = key_pair.public_key
+        verifier.jwks_uri = None
+
+        token = key_pair.create_token(
+            subject="test-user",
+            issuer="https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0",
+            audience="test_client",
+            additional_claims={"scp": "read"},
+        )
+        result = await verifier.load_access_token(token)
+        assert result is not None
+
+    async def test_multi_tenant_authority_honors_explicit_token_issuer(
+        self, memory_storage: MemoryStore, rsa_key_pair: RSAKeyPair
+    ):
+        """An explicit token_issuer is still enforced for multi-tenant authorities."""
+        key_pair = rsa_key_pair
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="organizations",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            token_issuer="https://login.microsoftonline.com/my-tenant/v2.0",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert isinstance(provider._token_validator, JWTVerifier)
+        verifier = provider._token_validator
+        verifier.public_key = key_pair.public_key
+        verifier.jwks_uri = None
+
+        token = key_pair.create_token(
+            subject="test-user",
+            issuer="https://login.microsoftonline.com/other-tenant/v2.0",
+            audience="test_client",
+            additional_claims={"scp": "read"},
+        )
+        result = await verifier.load_access_token(token)
+        assert result is None
+
     async def test_authorize_filters_resource_and_stores_unprefixed_scopes(
         self, memory_storage: MemoryStore
     ):

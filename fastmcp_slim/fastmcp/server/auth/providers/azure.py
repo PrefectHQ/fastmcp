@@ -35,6 +35,11 @@ logger = get_logger(__name__)
 # "OIDC scopes are requested as simple string identifiers without resource prefixes"
 OIDC_SCOPES = frozenset({"openid", "profile", "email", "offline_access"})
 
+# Multi-tenant authorities. Tokens issued through them carry the signing-in
+# user's actual tenant GUID in `iss`, never the literal authority name, so the
+# issuer cannot be pinned to a single value.
+MULTI_TENANT_IDS = frozenset({"organizations", "consumers", "common"})
+
 
 class AzureProvider(OAuthProxy):
     """Azure (Microsoft Entra) OAuth provider for FastMCP.
@@ -148,6 +153,9 @@ class AzureProvider(OAuthProxy):
             token_issuer: Override the expected `iss` claim value for JWT validation.
                 Defaults to the standard Entra ID issuer derived from `base_authority`
                 and `tenant_id`. Pass an explicit string to enforce a specific issuer.
+                For multi-tenant `tenant_id` values ("organizations", "consumers",
+                "common") the issuer carries the user's tenant GUID, so issuer
+                validation is skipped unless this is set.
             required_scopes: Custom API scope names WITHOUT prefix (e.g., ["read", "write"]).
                 - Automatically prefixed with identifier_uri during initialization
                 - Validated on all tokens
@@ -227,8 +235,14 @@ class AzureProvider(OAuthProxy):
         self.identifier_uri = identifier_uri or f"api://{client_id}"
         self.additional_authorize_scopes: list[str] = parsed_additional_scopes
 
-        # Always validate tokens against the app's API client ID using JWT
-        issuer = token_issuer or f"https://{base_authority}/{tenant_id}/v2.0"
+        # Always validate tokens against the app's API client ID using JWT.
+        # For multi-tenant authorities the issuer is the user's tenant GUID, so
+        # issuer validation is skipped unless `token_issuer` is given.
+        issuer = token_issuer or (
+            None
+            if tenant_id in MULTI_TENANT_IDS
+            else f"https://{base_authority}/{tenant_id}/v2.0"
+        )
         jwks_uri = f"https://{base_authority}/{tenant_id}/discovery/v2.0/keys"
 
         # Azure access tokens only include custom API scopes in the `scp` claim,
@@ -780,10 +794,9 @@ class AzureJWTVerifier(JWTVerifier):
         # For multi-tenant apps, Azure tokens carry the actual tenant GUID as
         # issuer, not the literal "organizations" or "consumers" string. Skip
         # issuer validation for these — audience still protects against wrong-app tokens.
-        multi_tenant_values = {"organizations", "consumers", "common"}
         issuer: str | None = (
             None
-            if tenant_id in multi_tenant_values
+            if tenant_id in MULTI_TENANT_IDS
             else f"https://{base_authority}/{tenant_id}/v2.0"
         )
 
