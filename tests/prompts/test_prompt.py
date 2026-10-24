@@ -393,6 +393,130 @@ class TestPromptTypeConversion:
         assert result.messages == [Message(f"{type(expected).__name__}:{expected!r}")]
 
 
+class TestPromptArgumentAliases:
+    """Pydantic aliases on prompt parameters must work like tool aliases."""
+
+    async def test_alias_is_advertised_and_renderable(self):
+        def greet(name: Annotated[int, Field(alias="Name")]) -> str:
+            return f"Hello, {name}!"
+
+        prompt = Prompt.from_function(greet)
+
+        assert prompt.arguments is not None
+        assert [arg.name for arg in prompt.arguments] == ["Name"]
+        assert prompt.arguments[0].required is True
+
+        result = await prompt.render({"Name": "5"})
+        assert result.messages == [Message("Hello, 5!")]
+
+    async def test_validation_alias_is_advertised_and_renderable(self):
+        def greet(name: Annotated[int, Field(validation_alias="Name")]) -> str:
+            return f"Hello, {name}!"
+
+        prompt = Prompt.from_function(greet)
+
+        assert prompt.arguments is not None
+        assert [arg.name for arg in prompt.arguments] == ["Name"]
+
+        result = await prompt.render({"Name": "5"})
+        assert result.messages == [Message("Hello, 5!")]
+
+    async def test_alias_on_field_default_is_advertised_and_renderable(self):
+        def greet(name: str = Field(alias="Name")) -> str:
+            return f"Hello, {name}!"
+
+        prompt = Prompt.from_function(greet)
+
+        assert prompt.arguments is not None
+        assert [arg.name for arg in prompt.arguments] == ["Name"]
+        assert prompt.arguments[0].required is True
+
+        result = await prompt.render({"Name": "Ada"})
+        assert result.messages == [Message("Hello, Ada!")]
+
+    async def test_alias_on_field_default_with_default_value(self):
+        def greet(name: int = Field(default=7, alias="Name")) -> str:
+            return f"Hello, {name}!"
+
+        prompt = Prompt.from_function(greet)
+
+        assert prompt.arguments is not None
+        assert [arg.name for arg in prompt.arguments] == ["Name"]
+        assert prompt.arguments[0].required is False
+
+        result = await prompt.render({"Name": "9"})
+        assert result.messages == [Message("Hello, 9!")]
+
+        default_result = await prompt.render({})
+        assert default_result.messages == [Message("Hello, 7!")]
+
+    async def test_validation_alias_on_field_default_is_advertised_and_renderable(self):
+        def greet(name: int = Field(default=7, validation_alias="Name")) -> str:
+            return f"Hello, {name}!"
+
+        prompt = Prompt.from_function(greet)
+
+        assert prompt.arguments is not None
+        assert [arg.name for arg in prompt.arguments] == ["Name"]
+
+        result = await prompt.render({"Name": "9"})
+        assert result.messages == [Message("Hello, 9!")]
+
+    async def test_aliased_non_string_argument_accepts_json_string(self):
+        def total(numbers: Annotated[list[int], Field(alias="Numbers")]) -> str:
+            return f"sum={sum(numbers)}"
+
+        prompt = Prompt.from_function(total)
+
+        result = await prompt.render({"Numbers": "[1, 2, 3]"})
+        assert result.messages == [Message("sum=6")]
+
+    async def test_alias_through_in_memory_client(self):
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def greet(name: Annotated[int, Field(alias="Name")]) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+            assert [arg.name for arg in prompts[0].arguments or []] == ["Name"]
+
+            result = await client.get_prompt("greet", {"Name": "5"})
+
+        assert result.messages[0].content.text == "Hello, 5!"
+
+    async def test_alias_with_injected_parameter(self):
+        from fastmcp.dependencies import Depends
+
+        def greet(
+            name: Annotated[int, Field(alias="Name")],
+            dependency: str = Depends(lambda: "injected"),
+        ) -> str:
+            return f"Hello, {name}! {dependency}"
+
+        prompt = Prompt.from_function(greet)
+
+        assert prompt.arguments is not None
+        assert [arg.name for arg in prompt.arguments] == ["Name"]
+
+        # Injected parameters remain unaddressable from the outside.
+        result = await prompt.render({"Name": "5", "dependency": "override"})
+        assert result.messages == [Message("Hello, 5! injected")]
+
+    async def test_ordinary_argument_names_unchanged(self):
+        def greet(name: int, greeting: str = "Hello") -> str:
+            return f"{greeting}, {name}!"
+
+        prompt = Prompt.from_function(greet)
+
+        assert prompt.arguments is not None
+        assert [arg.name for arg in prompt.arguments] == ["name", "greeting"]
+
+        result = await prompt.render({"name": "5"})
+        assert result.messages == [Message("Hello, 5!")]
+
+
 class TestPromptArgumentDescriptions:
     def test_string_compatible_annotation_guidance_preserves_raw_strings(self):
         def documented_prompt(
