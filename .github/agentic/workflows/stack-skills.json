@@ -1,0 +1,10 @@
+{
+  "common": ["AGENTS.md", "CONTRIBUTING.md", "docs/development/contributing.mdx", "docs/development/releases.mdx"],
+  "roles": {
+    "assess": [".agents/skills/triage/SKILL.md"],
+    "existing": [".agents/skills/review-issue/SKILL.md", ".agents/skills/review-pr/SKILL.md"],
+    "reproduce": [".agents/skills/python-tests/SKILL.md", "docs/development/tests.mdx"],
+    "prepare": [".agents/skills/fix-issue/SKILL.md", ".agents/skills/python-tests/SKILL.md", ".agents/skills/docs/SKILL.md", "docs/development/tests.mdx"],
+    "review": [".agents/skills/review-pr/SKILL.md", ".agents/skills/python-tests/SKILL.md", ".agents/skills/docs/SKILL.md", "docs/development/tests.mdx"]
+  }
+}

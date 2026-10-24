@@ -1,0 +1,35 @@
+name: Check agentic maintenance
+
+on:
+  pull_request:
+    paths:
+      - ".github/agentic/**"
+      - ".github/workflows/agentic-checks.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/agentic/**"
+      - ".github/workflows/agentic-checks.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: .github/agentic
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: ".github/agentic/uv.lock"
+      - run: uv sync --locked
+      - run: uv run ruff check . && uv run ruff format --check .
+      - run: uv run ty check
+      - run: uv run pytest -q

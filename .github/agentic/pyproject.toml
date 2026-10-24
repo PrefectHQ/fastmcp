@@ -1,0 +1,30 @@
+[project]
+name = "fastmcp-agentic-maintenance"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["prefect==3.8.2", "httpx>=0.28,<0.29"]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "ruff==0.14.10", "ty>=0.0.1"]
+
+[tool.uv]
+package = false
+constraint-dependencies = ["fastapi==0.141.1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.src]
+include = ["flows"]
