@@ -171,22 +171,38 @@ _CONNECTION_META_KEYS = frozenset(
 )
 
 
-def _forwardable_request_meta(ctx: Context | None) -> dict[str, Any] | None:
+def _forwardable_request_meta(
+    ctx: Context | None, *, version: str | None = None
+) -> dict[str, Any] | None:
     """Frontend request metadata that may cross onto the backend connection.
 
     This is the proxy's one sanctioned read of the inbound request's `_meta`:
     progress tokens, tracing, task, and application metadata pass through,
     while connection-owned keys (`_CONNECTION_META_KEYS`) are dropped because
     they describe the frontend connection, not the backend one.
+
+    ``version`` pins the request to the component version the proxy resolved.
+    An in-process call (``server.call_tool(..., version=VersionSpec(...))``)
+    selects the local proxy component but carries no request `_meta`, so
+    without this the backend would fall back to its own highest version. An
+    explicit caller version always wins: resolution used that same value, and
+    range forms must keep their wire semantics.
     """
     request_context = ctx.request_context if ctx is not None else None
-    if request_context is None or not request_context.meta:
-        return None
-    forwarded = {
-        key: value
-        for key, value in request_context.meta.items()
-        if key not in _CONNECTION_META_KEYS
-    }
+    forwarded: dict[str, Any] = {}
+    if request_context is not None and request_context.meta:
+        forwarded = {
+            key: value
+            for key, value in request_context.meta.items()
+            if key not in _CONNECTION_META_KEYS
+        }
+    if version is not None:
+        fastmcp_meta = forwarded.get("fastmcp")
+        if not isinstance(fastmcp_meta, dict) or "version" not in fastmcp_meta:
+            forwarded["fastmcp"] = {
+                **(fastmcp_meta if isinstance(fastmcp_meta, dict) else {}),
+                "version": version,
+            }
     return forwarded or None
 
 
@@ -213,7 +229,11 @@ def _session_request_meta(
 
 
 async def _relay_read_resource(
-    client: Client, uri: str, ctx: Context | None
+    client: Client,
+    uri: str,
+    ctx: Context | None,
+    *,
+    version: str | None = None,
 ) -> mcp_types.ReadResourceResult | mcp_types.InputRequiredResult:
     """Read a backend resource, surfacing a guard ask rather than driving it.
 
@@ -223,8 +243,11 @@ async def _relay_read_resource(
     proxy has no back-channel to the real user, so driving it fails outright.
     The inbound request's continuation state travels down so the backend guard
     sees the client's answers on its own `ctx.input_responses`.
+
+    ``version`` pins the read to the version the caller resolved locally; see
+    `_forwardable_request_meta`.
     """
-    meta = _forwardable_request_meta(ctx)
+    meta = _forwardable_request_meta(ctx, version=version)
     if client.protocol_version not in MODERN_PROTOCOL_VERSIONS:
         return await client.read_resource_mcp(uri, meta=meta)
     return await client._await_with_session_monitoring(
@@ -364,6 +387,7 @@ class ProxyTool(Tool):
         cls, client_factory: ClientFactoryT, mcp_tool: mcp_types.Tool
     ) -> ProxyTool:
         """Factory method to create a ProxyTool from a raw MCP tool schema."""
+        fastmcp_meta = get_fastmcp_metadata(mcp_tool.meta)
         return cls(
             client_factory=client_factory,
             name=mcp_tool.name,
@@ -374,7 +398,8 @@ class ProxyTool(Tool):
             output_schema=mcp_tool.output_schema,
             icons=mcp_tool.icons,
             meta=mcp_tool.meta,
-            tags=get_fastmcp_metadata(mcp_tool.meta).get("tags", []),
+            version=fastmcp_meta.get("version"),
+            tags=fastmcp_meta.get("tags", []),
             execution=mcp_tool.execution,
         )
 
@@ -400,7 +425,9 @@ class ProxyTool(Tool):
                 # context, progress token, etc.) to the backend. Task
                 # submission is a first-class params field rather than context
                 # state, so there is no separate task-metadata injection here.
-                meta = _forwardable_request_meta(ctx)
+                # The resolved version is pinned so an in-process versioned
+                # lookup executes the same version locally and upstream.
+                meta = _forwardable_request_meta(ctx, version=self.version)
 
                 if client.protocol_version in MODERN_PROTOCOL_VERSIONS:
                     # Modern backend: call the session directly (not
@@ -513,6 +540,7 @@ class ProxyResource(Resource):
     ) -> ProxyResource:
         """Factory method to create a ProxyResource from a raw MCP resource schema."""
 
+        fastmcp_meta = get_fastmcp_metadata(mcp_resource.meta)
         return cls(
             client_factory=client_factory,
             uri=mcp_resource.uri,
@@ -523,7 +551,8 @@ class ProxyResource(Resource):
             icons=mcp_resource.icons,
             annotations=mcp_resource.annotations,
             meta=mcp_resource.meta,
-            tags=get_fastmcp_metadata(mcp_resource.meta).get("tags", []),
+            version=fastmcp_meta.get("version"),
+            tags=fastmcp_meta.get("tags", []),
             task_config=TaskConfig(mode="forbidden"),
         )
 
@@ -544,7 +573,9 @@ class ProxyResource(Resource):
             ctx = get_context()
             async with client:
                 _stash_proxy_request_context(client, ctx)
-                result = await _relay_read_resource(client, backend_uri, ctx)
+                result = await _relay_read_resource(
+                    client, backend_uri, ctx, version=self.version
+                )
             if isinstance(result, mcp_types.InputRequiredResult):
                 return InputRequiredResourceResult(result)
             if not result.contents:
@@ -617,6 +648,7 @@ class ProxyTemplate(ResourceTemplate):
     ) -> ProxyTemplate:  # ty:ignore[invalid-method-override]
         """Factory method to create a ProxyTemplate from a raw MCP template schema."""
 
+        fastmcp_meta = get_fastmcp_metadata(mcp_template.meta)
         return cls(
             client_factory=client_factory,
             uri_template=mcp_template.uri_template,
@@ -628,7 +660,8 @@ class ProxyTemplate(ResourceTemplate):
             annotations=mcp_template.annotations,
             parameters={},  # Remote templates don't have local parameters
             meta=mcp_template.meta,
-            tags=get_fastmcp_metadata(mcp_template.meta).get("tags", []),
+            version=fastmcp_meta.get("version"),
+            tags=fastmcp_meta.get("tags", []),
             task_config=TaskConfig(mode="forbidden"),
         )
 
@@ -647,7 +680,9 @@ class ProxyTemplate(ResourceTemplate):
         ctx = context or get_context()
         async with client:
             _stash_proxy_request_context(client, ctx)
-            result = await _relay_read_resource(client, parameterized_uri, ctx)
+            result = await _relay_read_resource(
+                client, parameterized_uri, ctx, version=self.version
+            )
 
         if isinstance(result, mcp_types.InputRequiredResult):
             # The backend template asked for input. `InputRequiredResourceResult`
@@ -663,6 +698,7 @@ class ProxyTemplate(ResourceTemplate):
                 mime_type=self.mime_type or "text/plain",
                 icons=self.icons,
                 meta=self.meta,
+                version=self.version,
                 tags=get_fastmcp_metadata(self.meta).get("tags", []),
                 _cached_content=InputRequiredResourceResult(result),
             )
@@ -709,6 +745,7 @@ class ProxyTemplate(ResourceTemplate):
             ].mime_type,  # Use first item's mimeType for backward compatibility
             icons=self.icons,
             meta=self.meta,
+            version=self.version,
             tags=get_fastmcp_metadata(self.meta).get("tags", []),
             _cached_content=cached_content,
         )
@@ -753,6 +790,7 @@ class ProxyPrompt(Prompt):
         cls, client_factory: ClientFactoryT, mcp_prompt: mcp_types.Prompt
     ) -> ProxyPrompt:
         """Factory method to create a ProxyPrompt from a raw MCP prompt schema."""
+        fastmcp_meta = get_fastmcp_metadata(mcp_prompt.meta)
         arguments = [
             PromptArgument(
                 name=arg.name,
@@ -769,7 +807,8 @@ class ProxyPrompt(Prompt):
             arguments=arguments,
             icons=mcp_prompt.icons,
             meta=mcp_prompt.meta,
-            tags=get_fastmcp_metadata(mcp_prompt.meta).get("tags", []),
+            version=fastmcp_meta.get("version"),
+            tags=fastmcp_meta.get("tags", []),
             task_config=TaskConfig(mode="forbidden"),
         )
 
@@ -787,7 +826,7 @@ class ProxyPrompt(Prompt):
             ctx = get_context()
             async with client:
                 _stash_proxy_request_context(client, ctx)
-                meta = _forwardable_request_meta(ctx)
+                meta = _forwardable_request_meta(ctx, version=self.version)
                 if client.protocol_version in MODERN_PROTOCOL_VERSIONS:
                     # See `_relay_read_resource`: surface a backend guard's ask
                     # instead of trying to answer it inside the proxy.
@@ -847,6 +886,55 @@ class _CacheEntry(Generic[_ComponentT]):
 
 
 _DEFAULT_CACHE_TTL: float = 300.0
+
+_ProxyComponentT = TypeVar("_ProxyComponentT", bound=FastMCPComponent)
+
+
+def _advertised_versions(component: FastMCPComponent) -> list[str]:
+    """Versions the backend advertised for one deduplicated component.
+
+    A backend list endpoint collapses same-key components into the highest one
+    and records every version under ``fastmcp.versions``. Fall back to the
+    component's own version for servers that only send ``fastmcp.version``.
+    """
+    raw_versions = get_fastmcp_metadata(component.meta).get("versions")
+    versions: list[str] = []
+    if isinstance(raw_versions, list):
+        versions = list(dict.fromkeys(v for v in raw_versions if isinstance(v, str)))
+    if component.version is not None and component.version not in versions:
+        versions.append(component.version)
+    return versions
+
+
+def _expand_advertised_versions(
+    component: _ProxyComponentT,
+) -> list[_ProxyComponentT]:
+    """Create one local component per version the backend advertised.
+
+    The remote list endpoint returns one component per key, so keeping only its
+    highest version on a single local object would make version-scoped lookups
+    (``VersionSpec(eq="v1")``) miss every other advertised version, and would
+    make this proxy's own listing dedupe overwrite ``versions`` with just that
+    one entry, hiding the rest from chained proxies. One local component per
+    advertised version keeps version-scoped resolution working and lets
+    ``dedupe_with_versions`` reconstruct the full list at every hop.
+    """
+    versions = _advertised_versions(component)
+    if not versions:
+        return [component]
+    if len(versions) == 1 and component.version == versions[0]:
+        return [component]
+
+    expanded: list[_ProxyComponentT] = []
+    for version in versions:
+        meta = component.meta
+        if meta is not None:
+            fastmcp_meta = meta.get("fastmcp")
+            meta = dict(meta)
+            if isinstance(fastmcp_meta, dict):
+                meta["fastmcp"] = {**fastmcp_meta, "version": version}
+        expanded.append(component.model_copy(update={"version": version, "meta": meta}))
+    return expanded
 
 
 class ProxyProvider(Provider):
@@ -925,7 +1013,11 @@ class ProxyProvider(Provider):
             async with client:
                 mcp_tools = await client.list_tools()
                 tools = [
-                    ProxyTool.from_mcp_tool(self.client_factory, t) for t in mcp_tools
+                    tool
+                    for mcp_tool in mcp_tools
+                    for tool in _expand_advertised_versions(
+                        ProxyTool.from_mcp_tool(self.client_factory, mcp_tool)
+                    )
                 ]
         except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
@@ -998,8 +1090,13 @@ class ProxyProvider(Provider):
             async with client:
                 mcp_resources = await client.list_resources()
                 resources = [
-                    ProxyResource.from_mcp_resource(self.client_factory, r)
-                    for r in mcp_resources
+                    resource
+                    for mcp_resource in mcp_resources
+                    for resource in _expand_advertised_versions(
+                        ProxyResource.from_mcp_resource(
+                            self.client_factory, mcp_resource
+                        )
+                    )
                 ]
         except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
@@ -1037,8 +1134,13 @@ class ProxyProvider(Provider):
             async with client:
                 mcp_templates = await client.list_resource_templates()
                 templates = [
-                    ProxyTemplate.from_mcp_template(self.client_factory, t)
-                    for t in mcp_templates
+                    template
+                    for mcp_template in mcp_templates
+                    for template in _expand_advertised_versions(
+                        ProxyTemplate.from_mcp_template(
+                            self.client_factory, mcp_template
+                        )
+                    )
                 ]
         except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
@@ -1076,8 +1178,11 @@ class ProxyProvider(Provider):
             async with client:
                 mcp_prompts = await client.list_prompts()
                 prompts = [
-                    ProxyPrompt.from_mcp_prompt(self.client_factory, p)
-                    for p in mcp_prompts
+                    prompt
+                    for mcp_prompt in mcp_prompts
+                    for prompt in _expand_advertised_versions(
+                        ProxyPrompt.from_mcp_prompt(self.client_factory, mcp_prompt)
+                    )
                 ]
         except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
