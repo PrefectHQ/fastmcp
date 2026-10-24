@@ -3,7 +3,7 @@
 import asyncio
 import contextlib
 import datetime
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Any, cast
 
 import anyio
@@ -441,7 +441,7 @@ class _DelayedConnectTransport(ClientTransport):
     @contextlib.asynccontextmanager
     async def connect_session(
         self, **session_kwargs: Any
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         self._connect_started.set()
         await self._allow_connect.wait()
         async with self._inner.connect_session(**session_kwargs) as session:
@@ -465,7 +465,7 @@ class _DelayedDisconnectTransport(ClientTransport):
     @contextlib.asynccontextmanager
     async def connect_session(
         self, **session_kwargs: Any
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         async with self._inner.connect_session(**session_kwargs) as session:
             try:
                 yield session
@@ -1020,7 +1020,7 @@ class _ReconnectGateTransport(ClientTransport):
     @contextlib.asynccontextmanager
     async def connect_session(
         self, **session_kwargs: Any
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         self.connects += 1
         if self.connects > 1:
             self.reconnect_started.set()

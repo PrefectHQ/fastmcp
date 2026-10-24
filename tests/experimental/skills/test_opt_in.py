@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -15,7 +16,7 @@ async def test_default_provider_keeps_legacy_publication(
     root = tmp_path / "review"
     root.mkdir()
     (root / "SKILL.md").write_bytes(b"# No frontmatter\r\nLoose instructions\r\n")
-    kwargs = {"experimental_skills": False} if explicit_default else {}
+    kwargs: dict[str, Any] = {"experimental_skills": False} if explicit_default else {}
     provider = SkillsDirectoryProvider(tmp_path, **kwargs)
     server = FastMCP("Legacy skills", providers=[provider])
     async with Client(server) as client:

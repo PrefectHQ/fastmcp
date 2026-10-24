@@ -6,7 +6,7 @@ import asyncio
 import logging
 import secrets
 from collections.abc import (
-    AsyncIterator,
+    AsyncGenerator,
     Callable,
     Sequence,
 )
@@ -170,7 +170,7 @@ def _version_request_meta(
         return None
 
     # RequestParamsMeta does not declare application-specific extension keys.
-    return cast(mcp_types.RequestParamsMeta, {"fastmcp": {"version": version_value}})
+    return {"fastmcp": {"version": version_value}}
 
 
 # The MCP SDK warns "Tool X not listed, no validation will be performed"
@@ -270,7 +270,9 @@ def _get_auth_context() -> tuple[bool, Any]:
 
 
 @asynccontextmanager
-async def default_lifespan(server: FastMCP[LifespanResultT]) -> AsyncIterator[Any]:
+async def default_lifespan(
+    server: FastMCP[LifespanResultT],
+) -> AsyncGenerator[Any, None]:
     """Default lifespan context manager that does nothing.
 
     Args:
@@ -290,7 +292,7 @@ def _lifespan_proxy(
     @asynccontextmanager
     async def wrap(
         low_level_server: LowLevelServer[LifespanResultT],
-    ) -> AsyncIterator[LifespanResultT]:
+    ) -> AsyncGenerator[LifespanResultT, None]:
         # Drive the FastMCP lifespan rather than merely reading it back. The
         # SDK enters this proxy exactly once per manager/server run (via
         # ``StreamableHTTPSessionManager.run`` → ``app.lifespan(app)`` or

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import ssl
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Any, Literal, cast
 
 import httpx2
@@ -158,7 +158,7 @@ class StreamableHttpTransport(ClientTransport):
         *,
         transport_options: TransportOptions | None = None,
         **session_kwargs: Unpack[SessionKwargs],
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         options = transport_options or TransportOptions()
 
         # Proxies preserve eligible inbound headers while starting a distinct

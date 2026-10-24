@@ -999,7 +999,7 @@ def _build_pydantic_model(
             #    validation errors that would be caught and logged during parsing
             validate_default = False
             try:
-                TypeAdapter(field_type).validate_python(default_value)
+                TypeAdapter(field_type).validate_python(default_value)  # ty:ignore[invalid-argument-type]
                 validate_default = True
             except Exception:  # noqa: S110
                 # Default doesn't satisfy its own type; keep it as-is

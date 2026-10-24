@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 import ssl
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Any, Literal, cast
 
 import httpx2
@@ -134,7 +134,7 @@ class SSETransport(ClientTransport):
         *,
         transport_options: TransportOptions | None = None,
         **session_kwargs: Unpack[SessionKwargs],
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         options = transport_options or TransportOptions()
         client_kwargs: dict[str, Any] = {}
 

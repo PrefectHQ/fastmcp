@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import weakref
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
@@ -275,7 +275,7 @@ class FastMCPServerMiddleware:
     @contextmanager
     def _seam_span(
         self, fastmcp: FastMCP | None, ctx: ServerRequestContext
-    ) -> Iterator[None]:
+    ) -> Generator[None, None, None]:
         """Open the per-request SERVER span at the middleware seam.
 
         The removed SDK ``OpenTelemetryMiddleware`` produced one SERVER span per
@@ -300,7 +300,9 @@ class FastMCPServerMiddleware:
             yield
 
     @contextmanager
-    def _apply_shared_context(self, fastmcp: FastMCP | None) -> Iterator[None]:
+    def _apply_shared_context(
+        self, fastmcp: FastMCP | None
+    ) -> Generator[None, None, None]:
         """Re-establish app-scoped SharedContext ContextVars for this request.
 
         The SDK v2 dispatcher runs handlers in the message sender's context, so
