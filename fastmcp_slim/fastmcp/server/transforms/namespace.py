@@ -72,22 +72,55 @@ class Namespace(Transform):
     # -------------------------------------------------------------------------
 
     def _transform_uri(self, uri: str) -> str:
-        """Apply namespace to a URI: protocol://path → protocol://namespace/path."""
-        match = _URI_PATTERN.match(uri)
-        if match:
-            protocol, path = match.groups()
-            return f"{protocol}{self._prefix}/{path}"
-        return uri
+        """Apply namespace to a URI.
+
+        Handles hierarchical (``scheme://path``, ``scheme:/path``) and
+        non-hierarchical (``scheme:path``, e.g. ``urn:example:config``) URIs:
+
+        - ``scheme://path`` → ``scheme://namespace/path``
+        - ``scheme:/path`` → ``scheme:/namespace/path``
+        - ``scheme:path`` → ``scheme:namespace/path``
+        """
+        idx = uri.find(":")
+        if idx == -1:
+            return f"{self._prefix}/{uri}"
+        scheme = uri[:idx]
+        remainder = uri[idx + 1 :]
+        if remainder.startswith("//"):
+            return f"{scheme}://{self._prefix}/{remainder[2:]}"
+        if remainder.startswith("/"):
+            return f"{scheme}:/{self._prefix}/{remainder[1:]}"
+        return f"{scheme}:{self._prefix}/{remainder}"
 
     def _reverse_uri(self, uri: str) -> str | None:
         """Remove namespace from a URI, or None if no match."""
-        match = _URI_PATTERN.match(uri)
-        if match:
-            protocol, path = match.groups()
+        idx = uri.find(":")
+        if idx == -1:
+            prefix = f"{self._prefix}/"
+            if uri.startswith(prefix):
+                return uri[len(prefix) :]
+            return None
+        scheme = uri[:idx]
+        remainder = uri[idx + 1 :]
+        if remainder.startswith("//"):
+            path = remainder[2:]
+            if path == self._prefix:
+                return f"{scheme}://"
             prefix = f"{self._prefix}/"
             if path.startswith(prefix):
-                return f"{protocol}{path[len(prefix) :]}"
+                return f"{scheme}://{path[len(prefix) :]}"
             return None
+        if remainder.startswith("/"):
+            path = remainder[1:]
+            if path == self._prefix:
+                return f"{scheme}:/"
+            prefix = f"{self._prefix}/"
+            if path.startswith(prefix):
+                return f"{scheme}:/{path[len(prefix) :]}"
+            return None
+        prefix = f"{self._prefix}/"
+        if remainder.startswith(prefix):
+            return f"{scheme}:{remainder[len(prefix) :]}"
         return None
 
     # -------------------------------------------------------------------------
