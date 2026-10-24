@@ -90,7 +90,10 @@ class StdioTransport(ClientTransport):
                 self._active_sessions -= 1
         finally:
             if not self.keep_alive:
-                await self.disconnect()
+                if not self._active_sessions:
+                    # disconnect() signals stop before its first await. Do not
+                    # acquire a lock while unwinding a cancelled/collected context.
+                    await self.disconnect()
             else:
                 logger.debug("Stdio transport has keep_alive=True, not disconnecting")
 
@@ -122,7 +125,9 @@ class StdioTransport(ClientTransport):
             # If the connect task completed or the session's streams are dead,
             # the subprocess has exited. Tear down so we can start fresh.
             if self._connect_task is not None and (
-                self._connect_task.done() or self._is_session_dead()
+                self._stop_event.is_set()
+                or self._connect_task.done()
+                or self._is_session_dead()
             ):
                 await self.disconnect()
 
@@ -187,6 +192,11 @@ class StdioTransport(ClientTransport):
                 "Suppressed exception from stdio connection task during disconnect",
                 exc_info=True,
             )
+
+        # A concurrent connect() may already have finished this stop and started
+        # a replacement. Only reset the connection that this caller waited for.
+        if self._connect_task is not connect_task:
+            return
 
         # reset variables and events for potential future reconnects
         self._connect_task = None

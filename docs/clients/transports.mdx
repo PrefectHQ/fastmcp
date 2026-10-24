@@ -97,11 +97,16 @@ async def efficient_multiple_operations():
         await client.call_tool("process_data", {"file": "data.csv"})
 ```
 
-For complete isolation between connections, disable session persistence:
+To stop the subprocess when the last connected client exits, disable session persistence:
 
 ```python
 transport = StdioTransport(command="python", args=["server.py"], keep_alive=False)
 ```
+
+Clients that share this transport and use compatible connection options share the
+subprocess while their sessions overlap. Exiting one client leaves the others usable;
+after the last session exits, a subsequent connection starts a new subprocess. Use a
+separate transport for each client when you need isolated subprocesses.
 
 ## HTTP Transport
 
