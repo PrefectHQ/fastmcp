@@ -133,7 +133,7 @@ CodeMode ships with four built-in discovery tools: `Search`, `GetSchemas`, `GetT
 
 Search results include an annotation like `"2 of 10 tools:"` when the result set is smaller than the full catalog, so the LLM knows there are more tools to discover with different queries.
 
-You can cap result count with `default_limit`. The LLM can also override the limit per call. This is useful for large catalogs where you want to keep search results focused:
+By default, `Search` returns all matching tools (`default_limit=None`). You can cap the result count with `default_limit` to keep large catalogs focused. The LLM can override this limit per call, including requesting more results or passing `limit=None` to return all matches:
 
 ```python
 Search(default_limit=5)  # return at most 5 results per search
