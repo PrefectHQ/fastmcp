@@ -14,6 +14,7 @@ from typing import (
     Protocol,
     TypeVar,
     cast,
+    get_type_hints,
     overload,
     runtime_checkable,
 )
@@ -158,6 +159,14 @@ class FunctionPrompt(Prompt):
         if isinstance(fn, staticmethod):
             fn = fn.__func__
 
+        # Resolve annotations on the normalized callable. A partial keeps its
+        # exposed signature above, but its annotations live on the wrapped fn.
+        hint_source = fn.func if isinstance(fn, functools.partial) else fn
+        try:
+            param_hints = get_type_hints(hint_source, include_extras=True)
+        except Exception:
+            param_hints = {}
+
         # For callable classes, argument descriptions must come from
         # __call__'s docstring — where the exposed parameters are actually
         # declared. The class docstring's Args section, if any, typically
@@ -212,13 +221,11 @@ class FunctionPrompt(Prompt):
                 # understand the expected format when passing as strings (MCP requirement)
                 if param_name in sig.parameters:
                     sig_param = sig.parameters[param_name]
-                    if (
-                        sig_param.annotation != inspect.Parameter.empty
-                        and sig_param.annotation is not str
-                    ):
+                    annotation = param_hints.get(param_name, sig_param.annotation)
+                    if annotation != inspect.Parameter.empty and annotation is not str:
                         # Get the JSON schema for this specific parameter type
                         try:
-                            param_adapter = get_cached_typeadapter(sig_param.annotation)
+                            param_adapter = get_cached_typeadapter(annotation)
                             param_schema = param_adapter.json_schema()
 
                             # Create compact schema representation
