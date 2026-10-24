@@ -289,6 +289,74 @@ class TestMatchesAllowedPattern:
         )
 
 
+class TestQueryMatching:
+    """The query component is part of the registered redirect URI.
+
+    RFC 6749 §3.1.2 requires the redirect URI to match the registered one
+    by simple string comparison, so for non-loopback patterns a URI that
+    adds, drops, or changes query parameters does not match. Loopback
+    patterns keep the flexibility RFC 8252 §7.3 already gives them for
+    ports, so their query is not compared.
+    """
+
+    def test_pattern_without_query_rejects_added_query(self):
+        """The report from #5999: a query-less pattern accepted any query."""
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb?code_to=attacker",
+            "https://app.example.com/cb",
+        )
+
+    def test_pattern_with_query_requires_exact_query(self):
+        pattern = "https://app.example.com/cb?tenant=acme"
+        assert matches_allowed_pattern(
+            "https://app.example.com/cb?tenant=acme", pattern
+        )
+        assert not matches_allowed_pattern("https://app.example.com/cb", pattern)
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb?tenant=other", pattern
+        )
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb?tenant=acme&extra=1", pattern
+        )
+
+    def test_query_comparison_is_exact_not_semantic(self):
+        """Parameter order is significant: matching is a string comparison."""
+        pattern = "https://app.example.com/cb?a=1&b=2"
+        assert matches_allowed_pattern("https://app.example.com/cb?a=1&b=2", pattern)
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb?b=2&a=1", pattern
+        )
+
+    def test_wildcard_host_pattern_still_compares_query(self):
+        assert not matches_allowed_pattern(
+            "https://app.example.com/callback?tenant=acme",
+            "https://*.example.com/callback",
+        )
+        assert matches_allowed_pattern(
+            "https://app.example.com/callback?tenant=acme",
+            "https://*.example.com/callback?tenant=acme",
+        )
+
+    def test_loopback_pattern_does_not_compare_query(self):
+        """Loopback patterns retain their RFC 8252 flexibility."""
+        assert matches_allowed_pattern(
+            "http://localhost:3000/callback?code_challenge=abc",
+            "http://localhost:*",
+        )
+        assert matches_allowed_pattern(
+            "http://localhost:3000/callback?x=2",
+            "http://localhost/callback?x=1",
+        )
+
+    def test_validate_redirect_uri_with_query_patterns(self):
+        patterns = ["https://app.example.com/cb?tenant=acme"]
+        assert validate_redirect_uri("https://app.example.com/cb?tenant=acme", patterns)
+        assert not validate_redirect_uri(
+            "https://app.example.com/cb?tenant=other", patterns
+        )
+        assert not validate_redirect_uri("https://app.example.com/cb", patterns)
+
+
 class TestValidateRedirectUri:
     """Test redirect URI validation with pattern lists."""
 

@@ -311,6 +311,10 @@ def matches_allowed_pattern(uri: str, pattern: str) -> bool:
     - https://*.example.com/* matches any subdomain of example.com
     - https://app.example.com/auth/* matches any path under /auth/
 
+    For non-loopback patterns the query component must also match the
+    pattern's query exactly (RFC 6749 §3.1.2); loopback patterns do not
+    compare queries, keeping their RFC 8252 §7.3 flexibility.
+
     Security: Rejects URIs with userinfo (user:pass@host) which could bypass
     naive string matching (e.g., http://localhost@evil.com).
 
@@ -360,6 +364,16 @@ def matches_allowed_pattern(uri: str, pattern: str) -> bool:
     # RFC 8252 §7.3: loopback patterns without an explicit port match any port
     if not (is_loopback_host(pattern_host) and pattern_port is None):
         if not _match_port(uri_port, pattern_port, uri_parsed.scheme.lower()):
+            return False
+
+    # RFC 6749 §3.1.2: the query component is part of the registered
+    # redirect URI, so a non-loopback pattern only matches a URI whose
+    # query is byte-for-byte the pattern's — a pattern with no query must
+    # not accept a URI that adds one. Loopback patterns keep the
+    # flexibility RFC 8252 §7.3 already gives them for ports, so their
+    # query is not compared.
+    if not is_loopback_host(pattern_host):
+        if uri_parsed.query != pattern_parsed.query:
             return False
 
     # Path must match (with fnmatch wildcards)
