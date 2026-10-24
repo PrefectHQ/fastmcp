@@ -13,7 +13,7 @@ from mcp_types import INTERNAL_ERROR, TextContent
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import ClientTransport, PythonStdioTransport
-from fastmcp.client.transports.base import TransportOptions
+from fastmcp.client.transports.base import TransportOptions, VersionAwareClientSession
 
 
 class _FailingTransport(ClientTransport):
@@ -218,7 +218,7 @@ class TestCustomSessionClass:
 
         assert built == ["yes"]
 
-    async def test_default_session_class_is_client_session(self):
+    async def test_default_session_class_is_version_aware(self):
         server = FastMCP("Server")
 
         @server.tool
@@ -226,7 +226,7 @@ class TestCustomSessionClass:
             return "pong"
 
         client = Client(server)
-        assert TransportOptions().session_class is ClientSession
+        assert TransportOptions().session_class is VersionAwareClientSession
         async with client:
             result = await client.call_tool("ping")
 
