@@ -15,13 +15,19 @@ TOKEN = "test-process-session-token"
 COOKIE = "fastmcp_dev_session_8080"
 
 
-def build_client(*, host: str = "127.0.0.1", session: bool = False) -> TestClient:
+def build_client(
+    *,
+    host: str = "127.0.0.1",
+    session: bool = False,
+    log_panel: bool = False,
+    message_log: apps_dev._MessageLog | None = None,
+) -> TestClient:
     app = apps_dev._make_dev_app(
         "http://127.0.0.1:1/mcp",
         "",
         "",
-        apps_dev._MessageLog(),
-        False,
+        message_log if message_log is not None else apps_dev._MessageLog(),
+        log_panel,
         host=host,
         port=8080,
         session_token=TOKEN,
@@ -30,6 +36,60 @@ def build_client(*, host: str = "127.0.0.1", session: bool = False) -> TestClien
     if session:
         client.get("/", params={"token": TOKEN})
     return client
+
+
+class TestMessageLog:
+    def test_entry_count_eviction_keeps_ids_monotonic(self):
+        log = apps_dev._MessageLog(max_entries=2)
+
+        for name in ("one", "two", "three"):
+            log.log_bridge({"method": name})
+
+        assert [entry["id"] for entry in log.get_since()] == [2, 3]
+        assert [entry["id"] for entry in log.get_since(1)] == [2, 3]
+        assert [entry["id"] for entry in log.get_since(2)] == [3]
+
+        log.clear()
+        log.log_bridge({"method": "four"})
+
+        assert [entry["id"] for entry in log.get_since()] == [4]
+
+    def test_byte_and_entry_limits_truncate_large_bodies(self):
+        log = apps_dev._MessageLog(max_entries=10, max_bytes=450, max_entry_bytes=1024)
+
+        log.log_bridge({"method": "large", "payload": "x" * 2048})
+        first_entry = log.get_since()[0]
+        assert first_entry["body"]["_fastmcp_log_truncated"] is True
+        assert first_entry["body"]["original_size_bytes"] > 2048
+
+        for index in range(8):
+            log.log_bridge({"method": f"event-{index}"})
+
+        assert len(log.get_since()) <= 10
+        assert log._retained_bytes <= 450
+        assert sum(log._entry_sizes) == log._retained_bytes
+        assert all(size <= 1024 for size in log._entry_sizes)
+
+    def test_request_and_response_entries_keep_correlation(self):
+        log = apps_dev._MessageLog()
+
+        log.log_request({"id": "call-1", "method": "tools/call"})
+        log.log_response({"id": "call-1", "result": {"content": []}})
+
+        entries = log.get_since()
+        assert [entry["direction"] for entry in entries] == ["request", "response"]
+        assert entries[1]["method"] == "tools/call"
+        assert entries[1]["duration_ms"] is not None
+
+    def test_unanswered_request_correlation_is_bounded(self):
+        log = apps_dev._MessageLog(max_tracked_requests=2)
+
+        for request_id in range(5):
+            log.log_request({"id": request_id, "method": "tools/call"})
+
+        assert len(log._request_methods) == 2
+        assert len(log._request_times) == 2
+        assert set(log._request_times) == {3, 4}
 
 
 def create_launch(client: TestClient, tool: str = "ping") -> str:
@@ -464,7 +524,7 @@ class TestOrigin:
         assert response.json().startswith("/launch?id=")
 
     def test_log_endpoints_work_for_the_session(self):
-        client = build_client(session=True)
+        client = build_client(session=True, log_panel=True)
 
         client.post("/api/logs/bridge", json={"body": {"method": "legitimate"}})
         logged = client.get("/api/logs").text
@@ -559,6 +619,7 @@ class TestPages:
     ):
         captured: list[httpx2.Request] = []
         original_client = httpx2.AsyncClient
+        message_log = apps_dev._MessageLog()
 
         def backend(request: httpx2.Request) -> httpx2.Response:
             captured.append(request)
@@ -576,7 +637,9 @@ class TestPages:
 
         monkeypatch.setattr(apps_dev.httpx2, "AsyncClient", client_factory)
 
-        response = build_client(session=True).post(
+        client = build_client(session=True, message_log=message_log)
+        client.post("/api/logs/bridge", json={"body": {"method": "bridge"}})
+        response = client.post(
             "/mcp",
             json={"jsonrpc": "2.0", "id": 1, "method": "ping"},
             headers={
@@ -587,6 +650,8 @@ class TestPages:
         )
 
         assert response.status_code == 200
+        assert response.json() == {"jsonrpc": "2.0", "id": 1, "result": {}}
+        assert message_log.get_since() == []
         forwarded = {key.lower() for key in captured[0].headers}
         assert forwarded.isdisjoint({"cookie", "origin", "referer", "sec-fetch-site"})
         assert "set-cookie" not in response.headers
