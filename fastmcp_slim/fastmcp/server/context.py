@@ -1129,8 +1129,17 @@ class Context:
             raise ValueError(f"Unexpected elicitation action: {result.action}")
 
     def _make_state_key(self, key: str) -> str:
-        """Create session-prefixed key for state storage."""
-        return f"{self.session_id}:{key}"
+        """Create a scope-prefixed key for state storage.
+
+        Uses the same scope as `FileUpload` and session visibility, so state
+        survives between requests on 2026-07-28 connections. An unauthenticated
+        2026-07-28 HTTP request has no such scope and falls back to the
+        per-request `session_id`.
+        """
+        scope = self._session_scope_key()
+        if scope is None:
+            scope = self.session_id
+        return f"{scope}:{key}"
 
     async def set_state(
         self, key: str, value: Any, *, serializable: bool = True
