@@ -269,13 +269,17 @@ class OpenAPIProvider(Provider):
 
         if not self._validate_output and output_schema is not None:
             # Use a permissive schema that accepts any object, preserving
-            # the wrap-result flag so non-object responses still get wrapped
+            # the wrap-result flag so non-object responses still get wrapped.
+            # For wrapped results the permissive schema must keep the wrapper
+            # shape: the client unwraps `result` and validates it against
+            # properties.result, so a missing entry breaks result.data.
             permissive: dict[str, Any] = {
                 "type": "object",
                 "additionalProperties": True,
             }
             if output_schema.get("x-fastmcp-wrap-result"):
                 permissive["x-fastmcp-wrap-result"] = True
+                permissive["properties"] = {"result": {}}
             output_schema = permissive
 
         tool_name = self._get_unique_name(name, "tool")
