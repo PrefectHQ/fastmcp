@@ -37,7 +37,7 @@ class SkillInfo:
     def uri_prefix(self) -> str:
         from urllib.parse import quote
 
-        name = quote(self.name, safe="/") if self.preserve_bytes else self.name
+        name = quote(self.name, safe="/" if self.preserve_bytes else "")
         return f"skill://{name}/"
 
 

@@ -51,7 +51,7 @@ async with Client(mcp) as client:
 
 ## Skill Structure
 
-A skill is a directory containing a main instruction file (default: `SKILL.md`) and optionally supporting files. The directory name becomes the skill's identifier.
+A skill is a directory containing a main instruction file (default: `SKILL.md`) and optionally supporting files. The directory name becomes the skill's identifier. Resource URIs percent-encode spaces, non-ASCII characters, and other reserved characters in the directory name; resource names and manifest contents retain the original name.
 
 ```
 ~/.claude/skills/
