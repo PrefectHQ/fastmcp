@@ -5,6 +5,7 @@ from typing import Annotated
 
 from pydantic import Field
 
+from fastmcp import Client, FastMCP
 from fastmcp.tools.function_parsing import ParsedFunction
 from fastmcp.utilities.docstring_parsing import parse_docstring
 
@@ -352,6 +353,43 @@ class TestEdgeCases:
         parsed = parse_docstring(fn)
         assert parsed.description == inspect.getdoc(fn)
 
+    def test_pseudocode_heading_is_not_a_docstring_section(self):
+        def fn() -> str:
+            """Choose an execution mode.
+
+            if bSudoMode:
+                Elevated privileges
+            else:
+                Normal privileges
+            """
+            return "ok"
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == inspect.getdoc(fn)
+        assert parsed.parameters == {}
+
+    def test_pseudocode_before_args_is_preserved(self):
+        def fn(mode: str) -> str:
+            """Choose an execution mode.
+
+            if bSudoMode:
+                Elevated privileges
+            else:
+                Normal privileges
+
+            Args:
+                mode: Requested mode.
+            """
+            return mode
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == (
+            "Choose an execution mode.\n\n"
+            "if bSudoMode:\n    Elevated privileges\n"
+            "else:\n    Normal privileges"
+        )
+        assert parsed.parameters == {"mode": "Requested mode."}
+
     def test_async_function(self):
         async def fn(a: float) -> float:
             """Async summary.
@@ -368,6 +406,39 @@ class TestEdgeCases:
 
 class TestParsedFunctionIntegration:
     """Tests for docstring flowing through ParsedFunction.from_function."""
+
+    async def test_pseudocode_description_reaches_tool_listing(self):
+        server = FastMCP("docstring-probe")
+
+        @server.tool
+        def choose_mode() -> str:
+            """Choose an execution mode.
+
+            if bSudoMode:
+                Elevated privileges
+            else:
+                Normal privileges
+            """
+            return "ok"
+
+        @server.tool
+        async def choose_mode_async() -> str:
+            """Choose an execution mode asynchronously.
+
+            if bSudoMode:
+                Elevated privileges
+            else:
+                Normal privileges
+            """
+            return "ok"
+
+        async with Client(server) as client:
+            tools = {tool.name: tool for tool in await client.list_tools()}
+
+        assert tools["choose_mode"].description == inspect.getdoc(choose_mode)
+        assert tools["choose_mode_async"].description == inspect.getdoc(
+            choose_mode_async
+        )
 
     def test_description_is_summary_only(self):
         def fn(a: float) -> float:
