@@ -116,3 +116,72 @@ def test_fastmcp_server_import_does_not_load_context() -> None:
     )
 
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.subprocess_heavy
+def test_http_app_does_not_require_uvicorn() -> None:
+    """Only run_http_async needs uvicorn; http_app() can be served by any ASGI server."""
+    script = textwrap.dedent(
+        """
+        import sys
+
+        class _UvicornBlocker:
+            def find_spec(self, fullname, path=None, target=None):
+                if fullname == "uvicorn" or fullname.startswith("uvicorn."):
+                    raise ImportError("uvicorn is blocked for this test")
+                return None
+
+        sys.meta_path.insert(0, _UvicornBlocker())
+
+        from fastmcp import FastMCP
+
+        server = FastMCP("uvicorn import guard")
+
+        @server.tool
+        def echo(value: str) -> str:
+            return value
+
+        app = server.http_app(transport="http", stateless_http=True)
+        assert app is not None
+        assert "uvicorn" not in sys.modules
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.subprocess_heavy
+def test_client_import_does_not_require_uvicorn() -> None:
+    """Only the browser OAuth callback flow runs uvicorn; importing Client must not."""
+    script = textwrap.dedent(
+        """
+        import sys
+
+        class _UvicornBlocker:
+            def find_spec(self, fullname, path=None, target=None):
+                if fullname == "uvicorn" or fullname.startswith("uvicorn."):
+                    raise ImportError("uvicorn is blocked for this test")
+                return None
+
+        sys.meta_path.insert(0, _UvicornBlocker())
+
+        from fastmcp import Client
+
+        assert Client is not None
+        assert "uvicorn" not in sys.modules
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
