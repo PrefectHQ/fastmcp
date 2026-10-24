@@ -172,10 +172,13 @@ class StreamableHttpTransport(ClientTransport):
 
         # Configure timeout if provided, preserving MCP's 30s connect default.
         # SDK v2 session read timeouts are float seconds (see SessionKwargs).
+        # The session enforces request timeouts itself, and a call may carry its
+        # own, longer timeout, so the HTTP read timeout may only extend MCP's
+        # 300s default; a shorter client timeout must not cut such a call short.
         timeout: httpx2.Timeout | None = None
         read_timeout_seconds = session_kwargs.get("read_timeout_seconds")
         if read_timeout_seconds is not None:
-            timeout = httpx2.Timeout(30.0, read=read_timeout_seconds)
+            timeout = httpx2.Timeout(30.0, read=max(300.0, read_timeout_seconds))
 
         # Create httpx client from factory or use default with MCP-appropriate
         # timeouts. Note: create_mcp_http_client enables follow_redirects, but
