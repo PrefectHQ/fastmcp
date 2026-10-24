@@ -945,7 +945,7 @@ location /api/ {
 }
 ```
 
-Note the trailing `/` on both `location /api/` and `proxy_pass http://127.0.0.1:8000/` — this ensures nginx strips the `/api` prefix before forwarding to your server. If you're using OAuth authentication with a mount prefix, see [Mounting Authenticated Servers](#mounting-authenticated-servers) for additional configuration.
+Note the trailing `/` on both `location /api/` and `proxy_pass http://127.0.0.1:8000/` — this ensures nginx strips the `/api` prefix before forwarding to your server. Set Uvicorn's `root_path` to `/api` when using this kind of prefix-stripping proxy so SSE can advertise its message endpoint under the public prefix. For example, add `--root-path /api` to the Uvicorn command above. The proxy must strip `/api` from both the initial SSE request and the advertised message request. `root_path` is ASGI deployment metadata; it does not make Uvicorn serve a new `/api` route. If clients connect directly to Uvicorn, omit `root_path`. In [#603](https://github.com/PrefectHQ/fastmcp/issues/603), direct access with `root_path` made SSE advertise a prefixed message URL that returned 404; the prefix-stripping proxy setup described here succeeds. If you're using OAuth authentication with a mount prefix, see [Mounting Authenticated Servers](#mounting-authenticated-servers) for additional configuration.
 
 ## Testing Your Deployment
 
