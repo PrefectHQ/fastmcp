@@ -339,3 +339,67 @@ class TestToolDecorator:
         tool = next(t for t in tools if t.name == "multiply")
 
         assert tool.meta == meta_data
+
+
+class TestDecoratorMetadataNotLeftBehind:
+    """A rejected registration must not stamp the caller's function.
+
+    ``decorate_and_register`` writes ``__fastmcp__`` metadata onto the function
+    before ``add_tool`` validates it. Validation is where a sync body on a
+    task-enabled server is rejected, so without a rollback the rejected call
+    leaves ``task=True`` behind and the same function can no longer be
+    registered anywhere — including on a server that has no tasks at all.
+    """
+
+    async def test_rejected_registration_removes_the_stamp(self):
+        mcp = FastMCP("tasks_on", tasks=True)
+
+        def sync_tool(x: int = 1) -> str:
+            return f"ok{x}"
+
+        with pytest.raises(ValueError, match="Background tasks require async"):
+            mcp.tool(sync_tool)
+
+        assert not hasattr(sync_tool, "__fastmcp__")
+
+    async def test_function_is_registerable_on_another_server_after_rejection(self):
+        mcp = FastMCP("tasks_on", tasks=True)
+
+        def sync_tool(x: int = 1) -> str:
+            return f"ok{x}"
+
+        with pytest.raises(ValueError, match="Background tasks require async"):
+            mcp.tool(sync_tool)
+
+        other = FastMCP("no_tasks")
+        added = other.add_tool(sync_tool)
+
+        assert added.task_config.mode == "forbidden"
+
+    async def test_successful_registration_keeps_the_stamp(self):
+        mcp = FastMCP("tasks_on", tasks=True)
+
+        async def async_tool(x: int = 1) -> str:
+            return f"ok{x}"
+
+        mcp.tool(async_tool)
+
+        assert hasattr(async_tool, "__fastmcp__")
+        tool = await mcp.get_tool("async_tool")
+        assert tool.task_config.mode == "optional"
+
+    async def test_pre_existing_stamp_survives_a_rejection(self):
+        from fastmcp.tools.function_tool import ToolMeta
+
+        mcp = FastMCP("tasks_on", tasks=True)
+
+        def sync_tool(x: int = 1) -> str:
+            return f"ok{x}"
+
+        sentinel = ToolMeta(task=True, name="pre-existing")
+        sync_tool.__fastmcp__ = sentinel  # type: ignore[attr-defined]
+
+        with pytest.raises(ValueError, match="Background tasks require async"):
+            mcp.tool(sync_tool)
+
+        assert sync_tool.__fastmcp__ is sentinel  # type: ignore[attr-defined]
