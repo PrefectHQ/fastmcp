@@ -135,6 +135,26 @@ def client_supports_extension(session: ServerSession, extension_id: str) -> bool
     return extension_id in extensions
 
 
+async def _without_unsupported_extensions(
+    fastmcp: FastMCP, ctx: ServerRequestContext, result: mcp_types.DiscoverResult
+) -> mcp_types.DiscoverResult:
+    """Omit registered extensions that cannot serve this request from discovery."""
+    unsupported = {
+        extension.identifier
+        for extension in fastmcp._extensions.values()
+        if not await extension._is_supported(ctx)
+    }
+    if not unsupported:
+        return result
+    extensions = {
+        identifier: settings
+        for identifier, settings in (result.capabilities.extensions or {}).items()
+        if identifier not in unsupported
+    }
+    capabilities = result.capabilities.model_copy(update={"extensions": extensions})
+    return result.model_copy(update={"capabilities": capabilities})
+
+
 class FastMCPServerMiddleware:
     """Root dispatch for the FastMCP middleware chain, in the SDK's middleware layer.
 
@@ -347,7 +367,7 @@ class FastMCPServerMiddleware:
             )
             raw = await call_next(replace(ctx, params=params))
             if isinstance(raw, mcp_types.DiscoverResult):
-                return raw
+                return await _without_unsupported_extensions(fastmcp, ctx, raw)
             if isinstance(raw, Mapping):
                 result = dict(raw)
                 result_type = result.get("resultType")
@@ -356,7 +376,9 @@ class FastMCPServerMiddleware:
                     and result_type not in mcp_types.CORE_RESULT_TYPES
                 ):
                     return result
-                return mcp_types.DiscoverResult.model_validate(result)
+                return await _without_unsupported_extensions(
+                    fastmcp, ctx, mcp_types.DiscoverResult.model_validate(result)
+                )
             raise TypeError(
                 "server/discover handler returned "
                 f"{type(raw).__name__}; expected DiscoverResult or mapping"
