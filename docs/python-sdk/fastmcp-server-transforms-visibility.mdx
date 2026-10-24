@@ -37,7 +37,7 @@ Returns False if visibility mark is False.
 - True if component should be enabled/visible to clients.
 
 
-### `get_visibility_rules` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L314" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_visibility_rules` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L327" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_visibility_rules(context: Context) -> list[dict[str, Any]]
@@ -46,8 +46,11 @@ get_visibility_rules(context: Context) -> list[dict[str, Any]]
 
 Load visibility rule dicts from session state.
 
+Returns no rules when there is no session or no client identity to scope
+them to.
 
-### `save_visibility_rules` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L319" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+### `save_visibility_rules` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L343" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 save_visibility_rules(context: Context, rules: list[dict[str, Any]]) -> None
@@ -64,7 +67,7 @@ If None, sends notifications for all types (safe default).
 If provided, only sends notifications for specified types.
 
 
-### `create_visibility_transforms` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L346" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_visibility_transforms` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L384" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_visibility_transforms(rules: list[dict[str, Any]]) -> list[Visibility]
@@ -74,7 +77,7 @@ create_visibility_transforms(rules: list[dict[str, Any]]) -> list[Visibility]
 Convert rule dicts to Visibility transforms.
 
 
-### `get_session_transforms` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L374" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_session_transforms` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L414" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_session_transforms(context: Context) -> list[Visibility]
@@ -84,7 +87,7 @@ get_session_transforms(context: Context) -> list[Visibility]
 Get session-specific Visibility transforms from state store.
 
 
-### `enable_components` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L386" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `enable_components` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L420" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 enable_components(context: Context) -> None
@@ -110,7 +113,7 @@ ResourceListChangedNotification, and PromptListChangedNotification.
 - `match_all`: If True, matches all components regardless of other criteria.
 
 
-### `disable_components` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L440" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `disable_components` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L474" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 disable_components(context: Context) -> None
@@ -136,7 +139,7 @@ ResourceListChangedNotification, and PromptListChangedNotification.
 - `match_all`: If True, matches all components regardless of other criteria.
 
 
-### `reset_visibility` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L494" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `reset_visibility` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L528" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 reset_visibility(context: Context) -> None
@@ -154,7 +157,7 @@ ResourceListChangedNotification, and PromptListChangedNotification.
 - `context`: The context for this session.
 
 
-### `apply_session_transforms` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L511" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `apply_session_transforms` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/transforms/visibility.py#L545" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 apply_session_transforms(components: Sequence[ComponentT]) -> Sequence[ComponentT]

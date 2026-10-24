@@ -21,5 +21,5 @@ Transport implementation that connects to an MCP server via Server-Sent Events.
 #### `connect_session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/sse.py#L132" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-connect_session(self, **session_kwargs: Unpack[SessionKwargs]) -> AsyncIterator[ClientSession]
+connect_session(self, **session_kwargs: Unpack[SessionKwargs]) -> AsyncGenerator[ClientSession, None]
 ```

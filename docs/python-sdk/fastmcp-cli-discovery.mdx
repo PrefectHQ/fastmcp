@@ -17,7 +17,7 @@ or file path.
 
 ## Functions
 
-### `discover_servers` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/discovery.py#L323" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `discover_servers` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/discovery.py#L330" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 discover_servers(start_dir: Path | None = None) -> list[DiscoveredServer]
@@ -30,7 +30,7 @@ Duplicate names across sources are preserved — callers can
 use :pyattr:`DiscoveredServer.qualified_name` to disambiguate.
 
 
-### `resolve_name` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/discovery.py#L340" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `resolve_name` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/discovery.py#L347" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resolve_name(name: str, start_dir: Path | None = None) -> ClientTransport
