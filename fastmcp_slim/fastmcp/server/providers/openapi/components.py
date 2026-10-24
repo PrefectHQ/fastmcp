@@ -46,6 +46,11 @@ def _redact_headers(headers: httpx2.Headers) -> dict[str, str]:
     return {k: v if k.lower() in _SAFE_HEADERS else "***" for k, v in headers.items()}
 
 
+def _declared_header_names(route: HTTPRoute) -> frozenset[str]:
+    """Lowercased names of header parameters the OpenAPI route declares."""
+    return frozenset(p.name.lower() for p in route.parameters if p.location == "header")
+
+
 __all__ = [
     "OpenAPIResource",
     "OpenAPIResourceTemplate",
@@ -222,10 +227,11 @@ class OpenAPITool(Tool):
                 content=directed_request.read(),
             )
 
+            declared_headers = _declared_header_names(self._route)
             mcp_headers = get_http_headers()
             if mcp_headers:
                 for key, value in mcp_headers.items():
-                    if key not in request.headers:
+                    if key in declared_headers and key not in request.headers:
                         request.headers[key] = value
         except Exception as e:
             raise ValueError(
@@ -329,10 +335,11 @@ class OpenAPIResource(Resource):
                 # for plain byte bodies.
                 content=directed_request.read(),
             )
+            declared_headers = _declared_header_names(self._route)
             mcp_headers = get_http_headers()
             if mcp_headers:
                 for key, value in mcp_headers.items():
-                    if key not in request.headers:
+                    if key in declared_headers and key not in request.headers:
                         request.headers[key] = value
 
             response = await _send_request(self._client, request)
