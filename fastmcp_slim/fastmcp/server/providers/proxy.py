@@ -1552,6 +1552,8 @@ async def default_proxy_sampling_handler(
         max_tokens=params.max_tokens,
         stop_sequences=params.stop_sequences,
         model_preferences=params.model_preferences,
+        tools=params.tools,
+        tool_choice=params.tool_choice,
         related_request_id=ctx.origin_request_id,
     )
     text = (

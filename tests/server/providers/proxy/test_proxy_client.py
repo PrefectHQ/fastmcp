@@ -9,7 +9,11 @@ from mcp_types import (
     ModelHint,
     ModelPreferences,
     Root,
+    SamplingCapability,
+    SamplingToolsCapability,
     TextContent,
+    Tool,
+    ToolChoice,
 )
 from pydantic import BaseModel, Field
 
@@ -88,6 +92,25 @@ async def _backend_sample(context: Context) -> str:
     return result.content.text if isinstance(result.content, TextContent) else ""
 
 
+SAMPLING_WITH_TOOLS = SamplingCapability(tools=SamplingToolsCapability())
+
+
+async def _backend_sample_with_tools(context: Context) -> str:
+    """Issue a handshake-era `sampling/createMessage` that offers the model a tool."""
+    await context.session.create_message(  # ty: ignore[deprecated]
+        messages=[
+            SamplingMessage(
+                role="user", content=TextContent(type="text", text="Weather in Boston?")
+            )
+        ],
+        max_tokens=100,
+        tools=[Tool(name="get_weather", input_schema={"type": "object"})],
+        tool_choice=ToolChoice(mode="required"),
+        related_request_id=context.origin_request_id,
+    )
+    return "sampled"
+
+
 @pytest.fixture
 def fastmcp_server():
     mcp = FastMCP("TestServer")
@@ -105,6 +128,10 @@ def fastmcp_server():
         context: Context,
     ) -> str:
         return await _backend_sample(context)
+
+    @mcp.tool
+    async def sampling_with_tools(context: Context) -> str:
+        return await _backend_sample_with_tools(context)
 
     @dataclass
     class Person:
@@ -259,6 +286,52 @@ class TestProxyClient:
         ) as client:
             result = await client.call_tool("sampling", {})
             assert result.data == "I love FastMCP"
+
+    async def test_forward_sampling_request_with_tools(self, fastmcp_server: FastMCP):
+        """
+        Test that a proxy opted into sampling tools forwards the backend's tools.
+        """
+        received: list[SamplingParams] = []
+
+        def sampling_handler(
+            messages: list[SamplingMessage],
+            params: SamplingParams,
+            ctx: RequestContext,
+        ) -> str:
+            received.append(params)
+            return ""
+
+        proxy = create_proxy(
+            ProxyClient(fastmcp_server, sampling_capabilities=SAMPLING_WITH_TOOLS)
+        )
+        async with Client(
+            proxy,
+            mode="legacy",
+            sampling_handler=sampling_handler,
+            sampling_capabilities=SAMPLING_WITH_TOOLS,
+        ) as client:
+            result = await client.call_tool("sampling_with_tools", {})
+            assert result.data == "sampled"
+
+        assert len(received) == 1
+        assert [tool.name for tool in received[0].tools or []] == ["get_weather"]
+        assert received[0].tool_choice == ToolChoice(mode="required")
+
+    async def test_forward_sampling_tools_to_client_without_support(
+        self, fastmcp_server: FastMCP
+    ):
+        """
+        Test that forwarded sampling tools fail as they would directly when the
+        client does not support them.
+        """
+        proxy = create_proxy(
+            ProxyClient(fastmcp_server, sampling_capabilities=SAMPLING_WITH_TOOLS)
+        )
+        async with Client(
+            proxy, mode="legacy", sampling_handler=lambda *args: ""
+        ) as client:
+            with pytest.raises(ToolError, match="sampling tools capability"):
+                await client.call_tool("sampling_with_tools", {})
 
     async def test_elicit_request(self, proxy_server: FastMCP):
         """
