@@ -3,6 +3,7 @@ import ssl
 from collections.abc import AsyncGenerator
 from ssl import VerifyMode
 from typing import Any, cast
+from unittest.mock import Mock
 
 import httpx2
 import pytest
@@ -273,6 +274,120 @@ class TestSSLVerify:
         )
         assert isinstance(transport.auth, OAuth)
         assert transport.auth.httpx_client_factory is custom_factory
+
+    @pytest.mark.parametrize(
+        ("transport_cls", "url"),
+        [
+            (StreamableHttpTransport, "https://example.com/mcp"),
+            (SSETransport, "https://example.com/sse"),
+        ],
+    )
+    async def test_client_verify_preserves_custom_oauth_factory(
+        self,
+        transport_cls: type[StreamableHttpTransport] | type[SSETransport],
+        url: str,
+    ):
+        custom_factory = cast(
+            McpHttpClientFactory,
+            lambda **kwargs: httpx2.AsyncClient(verify=False, **kwargs),
+        )
+        transport = transport_cls(url, auth=OAuth(httpx_client_factory=custom_factory))
+        assert isinstance(transport.auth, OAuth)
+        assert transport.auth.httpx_client_factory is custom_factory
+
+        # Wrapping the transport must not replace the caller's factory with a
+        # verify-only one; the custom factory (proxy/mTLS/headers) still wins.
+        client = Client(transport, verify=True)
+        assert isinstance(client.transport, StreamableHttpTransport | SSETransport)
+        assert isinstance(client.transport.auth, OAuth)
+        assert client.transport.auth.httpx_client_factory is custom_factory
+        async with client.transport.auth.httpx_client_factory() as httpx_client:
+            assert (
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                == VerifyMode.CERT_NONE
+            )
+
+    @pytest.mark.parametrize(
+        ("transport_cls", "url"),
+        [
+            (StreamableHttpTransport, "https://example.com/mcp"),
+            (SSETransport, "https://example.com/sse"),
+        ],
+    )
+    def test_client_verify_preserves_factory_with_dynamic_attributes(
+        self,
+        transport_cls: type[StreamableHttpTransport] | type[SSETransport],
+        url: str,
+    ):
+        # Mock-style callables fabricate every attribute lookup, including the
+        # private marker. Those dynamic values must not be mistaken for the
+        # exact marker set on transport-generated factories.
+        mock_factory = Mock(
+            side_effect=lambda **kwargs: httpx2.AsyncClient(verify=False, **kwargs)
+        )
+        assert mock_factory._fastmcp_verify_factory
+
+        transport = transport_cls(
+            url,
+            auth=OAuth(httpx_client_factory=cast(McpHttpClientFactory, mock_factory)),
+        )
+        assert isinstance(transport.auth, OAuth)
+        assert transport.auth.httpx_client_factory is mock_factory
+
+        client = Client(transport, verify=True)
+        assert isinstance(client.transport, StreamableHttpTransport | SSETransport)
+        assert isinstance(client.transport.auth, OAuth)
+        assert client.transport.auth.httpx_client_factory is mock_factory
+
+    @pytest.mark.parametrize(
+        ("transport_cls", "url"),
+        [
+            (StreamableHttpTransport, "https://example.com/mcp"),
+            (SSETransport, "https://example.com/sse"),
+        ],
+    )
+    async def test_client_verify_resyncs_default_oauth_factory(
+        self,
+        transport_cls: type[StreamableHttpTransport] | type[SSETransport],
+        url: str,
+    ):
+        transport = transport_cls(url, auth="oauth")
+        assert isinstance(transport.auth, OAuth)
+        assert transport.auth.httpx_client_factory is httpx2.AsyncClient
+
+        client = Client(transport, verify=False)
+        assert isinstance(client.transport, StreamableHttpTransport | SSETransport)
+        assert isinstance(client.transport.auth, OAuth)
+        assert client.transport.auth.httpx_client_factory is not httpx2.AsyncClient
+        async with client.transport.auth.httpx_client_factory() as httpx_client:
+            assert (
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                == VerifyMode.CERT_NONE
+            )
+
+    @pytest.mark.parametrize(
+        ("transport_cls", "url"),
+        [
+            (StreamableHttpTransport, "https://example.com/mcp"),
+            (SSETransport, "https://example.com/sse"),
+        ],
+    )
+    def test_client_verify_leaves_no_auth_transport_unchanged(
+        self,
+        transport_cls: type[StreamableHttpTransport] | type[SSETransport],
+        url: str,
+    ):
+        custom_factory = cast(
+            McpHttpClientFactory,
+            lambda **kwargs: httpx2.AsyncClient(verify=False, **kwargs),
+        )
+        transport = transport_cls(url, httpx_client_factory=custom_factory)
+
+        client = Client(transport, verify=True)
+        assert isinstance(client.transport, StreamableHttpTransport | SSETransport)
+        assert client.transport.verify is True
+        assert client.transport.httpx_client_factory is custom_factory
+        assert client.transport.auth is None
 
     def test_warns_when_both_factory_and_verify_provided_streamable(self):
         factory = cast(McpHttpClientFactory, httpx2.AsyncClient)
