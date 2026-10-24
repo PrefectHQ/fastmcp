@@ -99,7 +99,16 @@ def _fetch_latest_version(include_prereleases: bool = False) -> str | None:
 
         return str(max(versions))
 
-    except (httpx2.HTTPError, httpx2.InvalidURL, json.JSONDecodeError, KeyError):
+    except (
+        httpx2.HTTPError,
+        httpx2.InvalidURL,
+        json.JSONDecodeError,
+        KeyError,
+        # Raised while building the client from an unsupported proxy setting,
+        # such as an ftp:// scheme or socks5:// without socksio installed.
+        ValueError,
+        ImportError,
+    ):
         return None
 
 
