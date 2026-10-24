@@ -96,7 +96,7 @@ Get all task-eligible components from all providers.
 #### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/aggregate.py#L414" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-lifespan(self) -> AsyncIterator[None]
+lifespan(self) -> AsyncGenerator[None, None]
 ```
 
 Combine lifespans of all providers.

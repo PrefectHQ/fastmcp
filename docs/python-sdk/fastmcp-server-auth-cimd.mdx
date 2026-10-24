@@ -24,7 +24,7 @@ This module provides:
 
 ## Classes
 
-### `CIMDDocument` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CIMDDocument` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L64" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 CIMD document per draft-parecki-oauth-client-id-metadata-document.
@@ -41,7 +41,7 @@ redirect_uris is required and must contain at least one entry.
 
 **Methods:**
 
-#### `validate_auth_method` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L137" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `validate_auth_method` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L144" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_auth_method(cls, v: str) -> str
@@ -50,7 +50,7 @@ validate_auth_method(cls, v: str) -> str
 Ensure no shared-secret auth methods are used.
 
 
-#### `validate_redirect_uris` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L149" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `validate_redirect_uris` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L156" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_redirect_uris(cls, v: list[str]) -> list[str]
@@ -59,19 +59,19 @@ validate_redirect_uris(cls, v: list[str]) -> list[str]
 Ensure redirect_uris is non-empty and each entry is a valid URI.
 
 
-### `CIMDValidationError` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L166" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CIMDValidationError` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L173" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Raised when CIMD document validation fails.
 
 
-### `CIMDFetchError` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L170" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CIMDFetchError` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L177" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Raised when CIMD document fetching fails.
 
 
-### `CIMDFetcher` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L198" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CIMDFetcher` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L205" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Fetch and validate CIMD documents with SSRF protection.
@@ -84,7 +84,7 @@ a TTL fallback when response headers do not define caching behavior.
 
 **Methods:**
 
-#### `is_cimd_client_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L298" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `is_cimd_client_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L305" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_cimd_client_id(self, client_id: str) -> bool
@@ -95,7 +95,7 @@ Check if a client_id looks like a CIMD URL.
 CIMD URLs must be HTTPS with a host and non-root path.
 
 
-#### `fetch` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L315" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `fetch` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L322" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 fetch(self, client_id_url: str) -> CIMDDocument
@@ -121,7 +121,7 @@ Uses ssrf_safe_fetch_response for the HTTP layer, which provides:
 - `CIMDFetchError`: If document cannot be fetched
 
 
-#### `validate_redirect_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L456" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `validate_redirect_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L463" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_redirect_uri(self, doc: CIMDDocument, redirect_uri: str) -> bool
@@ -140,7 +140,7 @@ handles RFC 8252 §7.3 loopback port flexibility and wildcard patterns.
 - True if valid, False otherwise
 
 
-### `CIMDAssertionValidator` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L484" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CIMDAssertionValidator` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L491" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Validates JWT assertions for private_key_jwt CIMD clients.
@@ -156,7 +156,7 @@ JTI replay protection uses TTL-based caching to ensure proper security:
 
 **Methods:**
 
-#### `validate_assertion` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L527" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `validate_assertion` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L534" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_assertion(self, assertion: str, client_id: str, token_endpoint: str, cimd_doc: CIMDDocument) -> bool
@@ -177,7 +177,7 @@ Validate JWT assertion from client.
 - `ValueError`: If validation fails
 
 
-### `CIMDClientManager` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L703" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CIMDClientManager` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L722" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Manages all CIMD client operations for OAuth proxy.
@@ -194,7 +194,7 @@ single, focused manager class.
 
 **Methods:**
 
-#### `is_cimd_client_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L737" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `is_cimd_client_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L756" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_cimd_client_id(self, client_id: str) -> bool
@@ -209,7 +209,7 @@ Check if client_id is a CIMD URL.
 - True if client_id is an HTTPS URL (CIMD format)
 
 
-#### `get_client` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L748" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_client` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L767" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_client(self, client_id_url: str)
@@ -224,7 +224,7 @@ Fetch CIMD document and create synthetic OAuth client.
 - OAuthProxyClient with CIMD document attached, or None if fetch fails
 
 
-#### `validate_private_key_jwt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L797" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `validate_private_key_jwt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/cimd.py#L816" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_private_key_jwt(self, assertion: str, client, token_endpoint: str) -> bool
