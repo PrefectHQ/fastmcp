@@ -1535,7 +1535,7 @@ async def default_proxy_sampling_handler(
     messages: list[mcp_types.SamplingMessage],
     params: mcp_types.CreateMessageRequestParams,
     context: ServerRequestContext[Any, Any],
-) -> mcp_types.CreateMessageResult:
+) -> mcp_types.CreateMessageResult | mcp_types.CreateMessageResultWithTools:
     """Forward sampling request from remote server to proxy's connected clients.
 
     Relays through the SDK session for the same reason as
@@ -1545,24 +1545,18 @@ async def default_proxy_sampling_handler(
     """
     ctx = get_context()
     # Deprecated upstream in SDK v2; the handshake-era relay is the one caller.
-    result = await ctx.session.create_message(  # ty: ignore[deprecated]
+    # Relay the request and the client's answer unchanged, so the backend sees
+    # the same model, stop reason and content as with a direct connection.
+    return await ctx.session.create_message(  # ty: ignore[deprecated]
         messages=list(messages),
         system_prompt=params.system_prompt,
+        include_context=params.include_context,
         temperature=params.temperature,
         max_tokens=params.max_tokens,
         stop_sequences=params.stop_sequences,
+        metadata=params.metadata,
         model_preferences=params.model_preferences,
         related_request_id=ctx.origin_request_id,
-    )
-    text = (
-        result.content.text if isinstance(result.content, mcp_types.TextContent) else ""
-    )
-    content = mcp_types.TextContent(type="text", text=text)
-    return mcp_types.CreateMessageResult(
-        role="assistant",
-        model="fastmcp-client",
-        # TODO(ty): remove when ty supports isinstance exclusion narrowing
-        content=content,
     )
 
 
