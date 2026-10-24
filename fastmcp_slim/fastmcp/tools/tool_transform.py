@@ -632,6 +632,8 @@ class TransformedTool(Tool):
             meta=final_meta,
             transform_args=transform_args,
             auth=tool.auth,
+            task_config=tool.task_config,
+            execution=tool.execution,
         )
 
         return transformed_tool
