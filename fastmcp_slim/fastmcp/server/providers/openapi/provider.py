@@ -224,6 +224,9 @@ class OpenAPIProvider(Provider):
             name = route.summary or f"{route.method}_{route.path}"
 
         name = _slugify(name)
+        if not name:
+            # Nothing usable survived slugging, e.g. a summary with no ASCII letters
+            name = _slugify(f"{route.method}_{route.path}")
 
         if len(name) > 56:
             name = name[:56]
