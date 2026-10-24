@@ -427,12 +427,45 @@ async def ssrf_safe_fetch_response(
     """Fetch URL with SSRF protection and return response metadata.
 
     This is equivalent to :func:`ssrf_safe_fetch` but returns response headers
-    and status code, and supports conditional request headers.
+    and status code, and supports conditional request headers. The overall
+    deadline includes DNS resolution. Cancelling the resolver await cannot stop
+    an operating-system ``getaddrinfo`` call already running in an executor
+    thread, but this coroutine stops waiting for it at the deadline.
     """
+    try:
+        return await asyncio.wait_for(
+            _ssrf_safe_fetch_response(
+                url,
+                require_path=require_path,
+                max_size=max_size,
+                timeout=timeout,
+                overall_timeout=overall_timeout,
+                request_headers=request_headers,
+                allowed_status_codes=allowed_status_codes,
+            ),
+            timeout=overall_timeout,
+        )
+    except asyncio.TimeoutError as exc:
+        raise SSRFFetchError(f"Overall timeout exceeded: {url}") from exc
+
+
+async def _ssrf_safe_fetch_response(
+    url: str,
+    *,
+    require_path: bool = False,
+    max_size: int = 5120,
+    timeout: float = 10.0,
+    overall_timeout: float = 30.0,
+    request_headers: Mapping[str, str] | None = None,
+    allowed_status_codes: set[int] | None = None,
+) -> SSRFFetchResponse:
+    """Run one fetch; the public wrapper bounds this whole coroutine."""
     start_time = time.monotonic()
 
     # Validate URL and resolve DNS
     validated = await validate_url(url, require_path=require_path)
+    if time.monotonic() - start_time >= overall_timeout:
+        raise SSRFFetchError(f"Overall timeout exceeded: {url}")
 
     last_error: Exception | None = None
     expected_statuses = allowed_status_codes or {200}
@@ -442,9 +475,9 @@ async def ssrf_safe_fetch_response(
 
     for target in targets:
         elapsed = time.monotonic() - start_time
-        if elapsed > overall_timeout:
+        if elapsed >= overall_timeout:
             raise SSRFFetchError(f"Overall timeout exceeded: {url}")
-        remaining = max(1.0, overall_timeout - elapsed)
+        remaining = overall_timeout - elapsed
 
         logger.debug("SSRF-safe fetch: %s -> %s", url, target.url)
 
