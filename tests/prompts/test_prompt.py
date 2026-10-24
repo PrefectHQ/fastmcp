@@ -14,6 +14,23 @@ from fastmcp.prompts.base import (
 
 
 class TestRenderPrompt:
+    async def test_fn_with_postponed_annotations(self):
+        namespace = {}
+        exec(
+            "from __future__ import annotations\n"
+            "from pydantic import BaseModel\n"
+            "class Config(BaseModel):\n"
+            "    key: str\n"
+            "def show_config(cfg: Config) -> str:\n"
+            "    return f'config={cfg.key}'\n",
+            namespace,
+        )
+
+        prompt = Prompt.from_function(namespace["show_config"])
+        result = await prompt.render({"cfg": '{"key": "v"}'})
+
+        assert result.messages == [Message("config=v")]
+
     async def test_basic_fn(self):
         def fn() -> str:
             return "Hello, world!"

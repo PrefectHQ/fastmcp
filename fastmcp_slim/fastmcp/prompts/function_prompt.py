@@ -32,7 +32,7 @@ from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.docstring_parsing import ParsedDocstring, parse_docstring
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import get_cached_typeadapter
+from fastmcp.utilities.types import get_cached_typeadapter, get_function_type_hints
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -268,20 +268,26 @@ class FunctionPrompt(Prompt):
 
         wrapper_fn = without_injected_parameters(self.fn)
         sig = inspect.signature(wrapper_fn)
+        try:
+            type_hints = get_function_type_hints(wrapper_fn)
+        except Exception:
+            # Preserve the existing fallback for unresolved forward references.
+            type_hints = getattr(wrapper_fn, "__annotations__", {})
         converted_kwargs = {}
 
         for param_name, param_value in kwargs.items():
             if param_name in sig.parameters:
                 param = sig.parameters[param_name]
+                annotation = type_hints.get(param_name, param.annotation)
 
-                if param.annotation == inspect.Parameter.empty or not isinstance(
+                if annotation == inspect.Parameter.empty or not isinstance(
                     param_value, str
                 ):
                     converted_kwargs[param_name] = param_value
                 else:
                     # Try to convert string argument using type adapter
                     try:
-                        adapter = get_cached_typeadapter(param.annotation)
+                        adapter = get_cached_typeadapter(annotation)
                         # Preserve the MCP wire string when validation keeps it
                         # as a string. Non-string results still prefer JSON
                         # decoding so coercible types such as bytes and Path do
@@ -310,7 +316,7 @@ class FunctionPrompt(Prompt):
                         # If conversion fails, provide informative error
                         raise PromptError(
                             f"Could not convert argument '{param_name}' with value '{param_value}' "
-                            f"to expected type {param.annotation}. Error: {e}"
+                            f"to expected type {annotation}. Error: {e}"
                         ) from e
             else:
                 # Parameter not in function signature, pass as-is
