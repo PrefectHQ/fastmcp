@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+import anyio
 import psutil
 import pytest
 from mcp_types import TextContent
@@ -41,6 +42,7 @@ from fastmcp.mcp_config import (
     TransformingStdioMCPServer,
 )
 from fastmcp.server.elicitation import AcceptedElicitation
+from fastmcp.server.middleware import Middleware
 from fastmcp.server.providers.proxy import ProxyClient
 from fastmcp.tools.base import Tool as FastMCPTool
 
@@ -1257,6 +1259,37 @@ async def test_multi_server_timeout_propagation():
         assert call_timeout == timeout, (
             f"Expected timeout {timeout}, got {call_timeout}"
         )
+
+
+class HangingHandshakeMiddleware(Middleware):
+    """Never answers, so a client connecting to this server never finishes negotiating."""
+
+    async def on_message(self, context, call_next):
+        await anyio.sleep_forever()
+
+
+async def test_multi_server_init_timeout_bounds_backend_connect():
+    """`init_timeout` also bounds each backend's connect in a multi-server config.
+
+    Backends connect before the outer client's own init timeout starts, so a
+    backend that never completes the handshake would otherwise block the whole
+    connect instead of being skipped.
+    """
+    stuck_server = FastMCP()
+    stuck_server.add_middleware(HangingHandshakeMiddleware())
+    config = MCPConfig(
+        mcpServers={
+            "stuck": InMemoryStdioMCPServer(mcp=stuck_server),
+            "good": InMemoryStdioMCPServer(mcp=_make_greet_server()),
+        }
+    )
+
+    # The outer deadline only turns an unbounded wait into a fast failure.
+    with anyio.fail_after(10):
+        async with Client(config, init_timeout=0.5) as client:
+            tools = await client.list_tools()
+
+    assert [tool.name for tool in tools] == ["good_greet"]
 
 
 def _make_session_server() -> FastMCP:

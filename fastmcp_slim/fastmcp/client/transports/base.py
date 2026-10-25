@@ -65,11 +65,19 @@ class TransportOptions:
             one shared era for the aggregate; ignored by transports that connect
             to a single backend directly, since those carry the connecting
             client's own session and era.
+        backend_init_timeout: The `init_timeout` (seconds) to give backend
+            clients that a wrapping transport builds on this client's behalf,
+            so a backend that never completes its handshake is bounded the same
+            way this client's own handshake is. `None` leaves each backend
+            client at its own default. Honored by `MCPConfigTransport`'s
+            multi-server form; ignored by transports that connect to a single
+            backend directly.
     """
 
     session_class: type[ClientSession] = ClientSession
     forward_incoming_headers: bool = False
     backend_mode: str | None = None
+    backend_init_timeout: float | None = None
 
 
 # SessionKwargs stays exactly the ClientSession constructor's parameters, so a
