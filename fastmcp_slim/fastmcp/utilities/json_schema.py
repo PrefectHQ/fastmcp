@@ -80,7 +80,7 @@ def _resolve_local_ref(
     """
     hops = _hops if _hops is not None else [0]
     fragment = ref[1:]
-    parts = unquote(fragment.lstrip("/")).split("/") if fragment else []
+    parts = fragment.lstrip("/").split("/") if fragment else []
     node: Any = schema
     for part in parts:
         while node is not schema and isinstance(node, dict) and "$ref" in node:
@@ -91,8 +91,7 @@ def _resolve_local_ref(
             if hops[0] > _MAX_ROOT_REF_HOPS:
                 raise _CannotInline(f"Too many references in pointer: {ref}")
             node = _resolve_local_ref(schema, inner, hops)
-        key: str | int = part.replace("~1", "/").replace("~0", "~")
-        if isinstance(node, Sequence):
+        key: str | int = unquote(part).replace("~1", "/").replace("~0", "~")
             with suppress(ValueError):
                 key = int(key)
         try:
@@ -719,7 +718,10 @@ def _single_pass_optimize(
             if prune_defs:
                 ref = node.get("$ref")
                 if isinstance(ref, str) and ref.startswith("#/$defs/"):
-                    referenced_def = ref.split("/")[-1]
+                    raw_def = ref[len("#/$defs/") :].split("/", 1)[0]
+                    referenced_def = (
+                        unquote(raw_def).replace("~1", "/").replace("~0", "~")
+                    )
                     if current_def_name:
                         # We're inside a $def, so this is a def->def reference
                         def_dependencies[referenced_def].append(current_def_name)
