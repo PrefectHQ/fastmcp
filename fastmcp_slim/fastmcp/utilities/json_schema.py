@@ -92,6 +92,7 @@ def _resolve_local_ref(
                 raise _CannotInline(f"Too many references in pointer: {ref}")
             node = _resolve_local_ref(schema, inner, hops)
         key: str | int = unquote(part).replace("~1", "/").replace("~0", "~")
+        if isinstance(node, Sequence):
             with suppress(ValueError):
                 key = int(key)
         try:
