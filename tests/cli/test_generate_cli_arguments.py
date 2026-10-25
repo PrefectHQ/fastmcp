@@ -48,7 +48,7 @@ async def test_complex_parameter_preserves_parsed_suffix_parameter(
     arguments = {"metadata_parsed": parsed_value}
     if not use_default:
         arguments["metadata"] = '{"role": "admin"}'
-    await namespace["create_user"](**arguments)
+    await namespace["tool_create_user"](**arguments)
 
     call_tool.assert_awaited_once_with(
         "create_user",

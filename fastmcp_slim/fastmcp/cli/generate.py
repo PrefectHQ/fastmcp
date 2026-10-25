@@ -273,8 +273,10 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
 
         call_args.append(f"{prop_name!r}: {safe_name}")
 
-    # Function name: sanitize to valid Python identifier
-    fn_name = _to_python_identifier(tool.name)
+    # Function name: prefixed so that no tool name can replace one of the
+    # script's own globals or builtins (a tool named "app" would replace the
+    # cyclopts app). The command name comes from name= below, not from this.
+    fn_name = _to_python_identifier(f"tool_{tool.name}")
 
     # Docstring - use single-quoted docstrings to avoid triple-quote escaping issues
     description = (tool.description or "").replace("\\", "\\\\").replace("'", "\\'")
