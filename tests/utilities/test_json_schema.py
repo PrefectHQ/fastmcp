@@ -523,7 +523,7 @@ class TestCompressSchema:
 
         assert "Unused" not in result["$defs"]
         assert set(result["$defs"].keys()) == {"Alias One", "a/b", "c~d", "Container"}
-        
+
     def test_preserves_refs_by_default(self):
         """Test that compress_schema preserves $refs by default."""
         schema = {
