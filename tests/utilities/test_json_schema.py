@@ -495,7 +495,7 @@ class TestCompressSchema:
         while isinstance(node.get("items"), dict):
             node = node["items"]
         assert node == {"$ref": "#/$defs/Leaf"}
-        
+
     def test_keeps_defs_with_escaped_or_subpath_refs(self):
         """compress_schema must not prune $defs referenced via JSON Pointer
         escapes (~0, ~1), percent-encoding, or sub-path pointers."""
