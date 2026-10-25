@@ -23,7 +23,7 @@ Works with both [Interactive Tools](/apps/prefab) and [custom HTML apps](/apps/l
 fastmcp dev apps server.py
 ```
 
-The dev UI opens at `http://localhost:8080`. Your MCP server runs on port 8000 with auto-reload enabled by default — save a file and the server restarts automatically.
+The dev UI opens in your browser on port 8080 through a startup URL that the terminal prints. Each run prints a new URL; open it to use the dev UI in another browser or after closing the tab. Your MCP server runs on port 8000 with auto-reload enabled by default — save a file and the server restarts automatically.
 
 ## How it works
 
@@ -31,7 +31,7 @@ The dev server does three things:
 
 The **picker page** connects to your MCP server, finds all tools with UI metadata, and renders a form for each one. The forms are auto-generated from the tool's input schema — text fields, dropdowns, checkboxes, all wired up.
 
-When you submit a form, the dev server **calls your tool** via the MCP protocol and opens the result in a new tab. The result page loads the tool's UI resource (the Prefab renderer or your custom HTML) inside an AppBridge — the same protocol that real MCP hosts use.
+When you submit a form, the dev server **calls your tool** via the MCP protocol and opens the result in a new tab. Each result page comes from a picker launch and stays available, including on reload, until the dev server stops. The result page loads the tool's UI resource (the Prefab renderer or your custom HTML) inside an AppBridge — the same protocol that real MCP hosts use. The resource runs in a sandboxed iframe, so it can't use `localStorage`, open popups, or show `alert` and `confirm` dialogs.
 
 A **reverse proxy** on `/mcp` forwards requests from the browser to your MCP server, avoiding CORS issues that would otherwise block the iframe-based renderer from talking to a different port.
 
@@ -56,6 +56,8 @@ fastmcp dev apps server.py:mcp --mcp-port 9000 --dev-port 9090 --no-reload
 | Auto-Reload | `--reload` / `--no-reload` | On | Watch files and restart the server on changes |
 | Host | `--host` | `127.0.0.1` | Interface for both local servers to bind |
 | Log Panel | `--log-panel` / `--no-log-panel` | On | Show or hide the log panel in the dev UI |
+
+With `--host 0.0.0.0`, open the dev UI through `localhost` or an IP address. To reach it by hostname, pass that hostname to `--host`.
 
 ## Multiple tools
 

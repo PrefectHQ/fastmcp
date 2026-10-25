@@ -137,6 +137,8 @@ fastmcp call server.py summarize --prompt --input-json '{"topic": "weather"}'
 - **Goose** — `~/.config/goose/config.yaml`
 - **Project** — `./mcp.json` in the current directory
 
+Goose discovery includes enabled `stdio` and `streamable_http` extensions, as well as legacy `sse` entries. Streamable HTTP extensions retain their configured `headers` when resolved by name.
+
 ```bash
 fastmcp discover
 ```

@@ -78,7 +78,7 @@ def notes_app() -> PrefabApp:
 mcp = FastMCP("Notes Server", providers=[app])
 ```
 
-The model sees one tool: `notes_app`. Calling it opens the UI. When the user submits the form, `CallTool("add_note")` fires, the server saves the note, returns the updated list, and `SetState("notes", RESULT)` writes that list back into state. `ForEach("notes")` re-renders. The model never sees `add_note` — it's UI-only.
+With a host that honors app visibility, the model sees one tool: `notes_app`. Calling it opens the UI. When the user submits the form, `CallTool("add_note")` fires, the server saves the note, returns the updated list, and `SetState("notes", RESULT)` writes that list back into state. `ForEach("notes")` re-renders. `add_note` is omitted from the model's tool list.
 
 ## Why not just `@mcp.tool(app=True)`?
 
@@ -90,6 +90,8 @@ A fair question. Any [Interactive Tool](/apps/prefab) can call a server tool —
 
 `FastMCPApp` owns these concerns. Entry points register as model-visible, backend tools register as UI-only, and hosts act on those declarations to decide what the model sees.
 
+App tool visibility is not a security boundary. Backend tools remain callable through direct MCP requests by clients that know their names, subject to the server's authentication and authorization checks. Use [authorization](/servers/authorization) and server-side validation to enforce access and approval requirements; [visibility metadata](/apps/low-level#tool-visibility) only declares the intended audience.
+
 Composition is handled by never writing the name down. `CallTool` takes a function reference, and FastMCP resolves it when the UI is serialized — to whatever that tool is actually called by then. Mount the server under a namespace and the button calls `notes_add_note`; put a gateway in front and it calls whatever the gateway lists. Since you never wrote a name, renaming cannot break it. [The architecture page](/apps/architecture) covers how that resolution works.
 
 The one rule that comes with this: **an app name must be unique within a server.** Composing the same app twice breaks its UI — two copies of `FastMCPApp("notes")` are indistinguishable no matter what namespaces you mount them under, so FastMCP declines to bind rather than picking one. Name apps for what they serve: `FastMCPApp("notes-acme")` and `FastMCPApp("notes-globex")`. [The architecture page](/apps/architecture) explains why identity works this way.
@@ -98,7 +100,7 @@ The rest of this page covers each piece in turn.
 
 ## `@app.ui()` — entry points
 
-Entry points are what the model sees. They return a `PrefabApp` and default to `visibility=["model"]`, showing up in the LLM tool list but not callable from within the UI.
+Entry points are what the model sees. They return a `PrefabApp` and default to `visibility=["model"]`, asking hosts to include them in the LLM tool list and reject calls to them from the UI.
 
 ```python
 @app.ui()
@@ -114,7 +116,7 @@ def dashboard() -> PrefabApp:
 
 ## `@app.tool()` — backend tools
 
-Backend tools do the work. By default they're visible only to the UI (`visibility=["app"]`), not the model.
+Backend tools do the work. By default they declare `visibility=["app"]`, asking hosts to expose them to the UI and omit them from the model's tool list.
 
 ```python
 @app.tool()

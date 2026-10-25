@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="FastMCP's public backlog: open issues and pull requests over time, incoming reports, closures and merged work."
+    />
+    <title>FastMCP / backlog</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>
+            <a href="https://github.com/PrefectHQ/fastmcp">fastmcp</a>
+            <span>/ backlog</span>
+          </h1>
+          <p>What’s arriving, what’s getting done, and what’s left.</p>
+        </div>
+        <nav aria-label="Page controls">
+          <button id="refresh">Refresh</button
+          ><button id="theme" aria-label="Switch color theme">◐</button>
+        </nav>
+      </header>
+      <p id="freshness" class="caption" role="status">
+        Reading public history…
+      </p>
+      <p id="notice" class="notice" hidden></p>
+      <section aria-labelledby="backlog-heading">
+        <div class="section-heading">
+          <h2 id="backlog-heading">Open issues &amp; pull requests</h2>
+          <div class="ranges" role="group" aria-label="Time range">
+            <button data-days="7">7d</button
+            ><button data-days="30" aria-pressed="true">30d</button
+            ><button data-days="90">90d</button
+            ><button data-days="365">1y</button
+            ><button data-days="all">All</button>
+          </div>
+        </div>
+        <div id="totals" class="totals"></div>
+        <div id="backlog-chart" class="chart-container"></div>
+        <div id="backlog-readout" class="readout" aria-live="polite">
+          Hover, tap, or use arrow keys to inspect a date.
+        </div>
+        <p class="caption">
+          Solid lines are recorded snapshots; dashed lines are reconstructed
+          history. Counts include draft PRs.
+          <a href="#method">About the data</a>
+        </p>
+      </section>
+      <section aria-labelledby="recent-heading">
+        <div class="section-heading">
+          <h2 id="recent-heading">Yesterday and today</h2>
+          <span class="caption">America/Chicago · today is partial</span>
+        </div>
+        <div id="recent" class="recent"></div>
+      </section>
+      <section aria-labelledby="activity-heading">
+        <div class="section-heading">
+          <h2 id="activity-heading">Incoming &amp; closed</h2>
+          <div class="ranges" role="group" aria-label="Activity type">
+            <button data-kind="issues" aria-pressed="true">Issues</button
+            ><button data-kind="prs">Pull requests</button>
+          </div>
+        </div>
+        <div id="activity-legend" class="legend"></div>
+        <div id="activity-chart" class="chart-container"></div>
+        <div id="activity-readout" class="readout" aria-live="polite">
+          Select a day to see the work behind the numbers.
+        </div>
+        <p class="caption">
+          New items above the baseline; closures below it. Closure dates reflect
+          the latest closed state, so previous close/reopen cycles are not
+          counted. Days use America/Chicago.
+        </p>
+        <details id="activity-detail">
+          <summary id="detail-title">Browse recent work</summary>
+          <div id="detail-items"></div>
+        </details>
+      </section>
+      <section id="method" class="method" aria-labelledby="method-heading">
+        <h2 id="method-heading">About the data</h2>
+        <p>
+          Recorded counts began October 16, 2026, from the existing half-hourly
+          backlog collector. Earlier counts are reconstructed from creation and
+          latest closure dates; they cannot recover periods when an item was
+          closed and later reopened.
+        </p>
+        <p>
+          Activity comes from GitHub’s public issue and PR records, not changes
+          in the total. Issue outcomes use the reason attached to the latest
+          closure: completed, not planned, or unspecified. “Completed” is
+          GitHub’s closure category, not a claim that a fix shipped. PRs
+          distinguish merged from closed without merging. Historical draft state
+          is not reconstructed.
+        </p>
+        <p>
+          Snapshots are scheduled every 30 minutes and may be delayed by GitHub
+          Actions. The page checks for fresh data every five minutes. Recent
+          work details cover the last 30 days.
+        </p>
+      </section>
+      <footer>
+        <a id="data-link" href="backlog.json">Download data</a
+        ><button id="export">Export counts CSV</button
+        ><a href="operations.html">Automation health</a
+        ><a href="https://github.com/PrefectHQ/fastmcp/tree/main/status-site"
+          >Source</a
+        >
+      </footer>
+    </main>
+  </body>
+</html>

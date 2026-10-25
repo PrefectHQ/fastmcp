@@ -3,5 +3,7 @@
   "extends": [
     "github>PrefectHQ/renovate-config",
     "github>PrefectHQ/renovate-config:python"
-  ]
+  ],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 5
 }

@@ -67,6 +67,29 @@ mcp = FastMCP.from_openapi(
 )
 ```
 
+### Timeouts
+
+Requests from generated tools, resources, and resource templates use the timeout configured on the HTTP client you pass to `FastMCP.from_openapi()`. An `httpx2.AsyncClient` uses a five-second timeout for network inactivity by default. If your API takes longer to respond, configure the client before creating the MCP server:
+
+```python
+import httpx2
+from fastmcp import FastMCP
+
+api_client = httpx2.AsyncClient(
+    base_url="https://api.example.com",
+    timeout=30.0,
+)
+
+mcp = FastMCP.from_openapi(
+    openapi_spec=spec,
+    client=api_client,
+)
+```
+
+Use `timeout=None` on the HTTP client to disable timeouts, or an `httpx2.Timeout` instance to configure connect, read, write, and pool timeouts separately. See the [HTTPX2 timeout guide](https://pydantic.dev/docs/httpx2/advanced/timeouts/) for details.
+
+If you omit the `client` argument, FastMCP creates an HTTP client with a 30-second timeout using the first server URL in your OpenAPI specification.
+
 ## Route Mapping
 
 By default, FastMCP converts **every endpoint** in your OpenAPI specification into an MCP **Tool**. This provides a simple, predictable starting point that ensures all your API's functionality is immediately available to the vast majority of LLM clients which only support MCP tools.
@@ -399,6 +422,10 @@ mcp = FastMCP.from_openapi(
 
 ## Request Parameter Handling
 
+Tool arguments map to the parameters and request body that the operation declares. FastMCP ignores any other arguments.
+
+A header parameter that the operation declares takes the value the tool call supplies. Otherwise, headers you configure on the HTTP client are sent with each request, except `Host`, which FastMCP takes from the request URL. When the MCP server runs over HTTP, FastMCP also forwards headers from the incoming MCP request, except credential and connection headers such as `Authorization`, `Cookie`, and `Host`. Forwarded headers only fill in headers that the outgoing request does not already set. This applies to tools, resources, and resource templates.
+
 FastMCP intelligently handles different types of parameters in OpenAPI requests:
 
 ### Query Parameters
@@ -424,6 +451,8 @@ Path parameters are typically required by REST APIs. FastMCP:
 - Validates that all required path parameters are provided
 - Raises clear errors for missing required parameters
 
+Path values must not contain `.` or `..` segments, including percent-encoded forms. Ordinary dotted names such as `report.json` are accepted.
+
 ```python
 # ✅ This works
 await client.call_tool("get_user", {"user_id": 123})
@@ -436,14 +465,14 @@ await client.call_tool("get_user", {"user_id": None})
 
 FastMCP handles array parameters according to OpenAPI specifications:
 
-- **Query arrays**: Serialized based on the `explode` parameter (default: `True`)
+- **Query arrays**: Serialized based on `style` and `explode`. When omitted, `explode` defaults to `True` for `form` (the default query style) and `False` for other styles. With `explode=False`, `form` uses commas, `pipeDelimited` uses pipes, and `spaceDelimited` uses spaces.
 - **Path arrays**: Serialized as comma-separated values (OpenAPI 'simple' style)
 
 ```python
-# Query array with explode=true (default)
+# Query array with style=form, explode=true (defaults)
 # ?tags=red&tags=blue&tags=green
 
-# Query array with explode=false  
+# Query array with style=form, explode=false
 # ?tags=red,blue,green
 
 # Path array (always comma-separated)
@@ -453,6 +482,24 @@ FastMCP handles array parameters according to OpenAPI specifications:
 ### Headers
 
 Header parameters are automatically converted to strings and included in the HTTP request.
+
+### Multipart Request Bodies
+
+For `multipart/form-data`, non-empty string arrays use one form field per element. Calling a tool with `{"tags": ["a", "b"]}` sends two `tags` fields, so a backend reading repeated fields receives `["a", "b"]`.
+
+This applies when the property's `encoding` is omitted or explicitly uses the defaults: `style: form`, `explode: true`, `contentType: text/plain`, `allowReserved: false`, and no custom headers. Existing scalar fields and binary file parts keep their serialization.
+
+Empty arrays still send one field containing `[]`, and non-string arrays still use their Python string representation. Custom encodings, including `explode: false`, JSON parts, and charset overrides, are not implemented by this fix and retain their existing serialization. If a backend depended on Python list strings for non-empty string arrays, adapt it to read repeated fields.
+
+### JSON Request Bodies
+
+Dictionary bodies without named properties use one tool argument containing the entire dictionary. For a dictionary schema titled `Labels`, calling the tool with `{"labels": {"team": "infra"}}` sends `{"team": "infra"}` to the API. Schemas without a title use the argument name `body`.
+
+If a whole-body argument shares a name with a path, query, header, or cookie parameter, the HTTP parameter receives a location suffix. For example, an array body titled `Values` and a query parameter named `values` become `values` and `values__query`; calling with `{"values": [1, 2], "values__query": "active"}` sends `[1, 2]` as the body and `?values=active` in the URL.
+
+For request bodies declared as `application/json` or a `+json` media type, pass strings, numbers, and booleans as their actual values. FastMCP JSON-encodes them and preserves the declared Content-Type, including media-type parameters. Do not JSON-encode a string yourself: passing `"true"` sends the JSON string `"true"`, while passing `True` sends the JSON boolean `true`.
+
+Earlier versions sent string bodies as raw text even when the schema declared JSON. If you worked around that behavior by pre-encoding a string, remove the extra encoding. Bodies declared as `text/plain` continue to be sent as raw text.
 
 ### Composed Request Bodies
 

@@ -25,7 +25,8 @@ Docket backend/worker and installs the worker-side `Context` hooks core exposes.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
+import copy
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
@@ -36,8 +37,12 @@ from mcp.shared.inbound import MCP_NAME_HEADER, decode_header_value
 from mcp_types.jsonrpc import HEADER_MISMATCH
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
-from fastmcp.exceptions import NotFoundError
-from fastmcp.server.dependencies import extract_version_spec, get_http_request
+from fastmcp.exceptions import NotFoundError, ToolError
+from fastmcp.server.dependencies import (
+    _is_client_tool_call,
+    extract_version_spec,
+    get_http_request,
+)
 from fastmcp.server.extensions import (
     MethodBinding,
     ServerExtension,
@@ -62,6 +67,7 @@ from fastmcp_tasks.settings import DocketSettings
 
 if TYPE_CHECKING:
     import mcp_types
+    from redis.credentials import CredentialProvider
 
     from fastmcp.server.context import Context
     from fastmcp.server.extensions import ToolCallContinuation, ToolCallOutcome
@@ -79,6 +85,10 @@ class TasksExtension(ServerExtension):
     Construct with backend/worker configuration; anything omitted falls back to
     the ``FASTMCP_DOCKET_*`` environment defaults (unchanged from FastMCP 3), so
     ``TasksExtension()`` works out of the box on an env-configured deployment.
+
+    Pass a redis-py `credential_provider` for rotating backend credentials,
+    with no credentials in the URL. The provider is runtime configuration,
+    not an environment setting; Docket manages its connections and refreshes.
     """
 
     identifier = TASKS_EXTENSION_ID
@@ -86,6 +96,7 @@ class TasksExtension(ServerExtension):
     def __init__(
         self,
         *,
+        credential_provider: CredentialProvider | None = None,
         url: str | None = None,
         name: str | None = None,
         worker_name: str | None = None,
@@ -94,6 +105,7 @@ class TasksExtension(ServerExtension):
         reconnection_delay: timedelta | None = None,
         minimum_check_interval: timedelta | None = None,
     ) -> None:
+        self._credential_provider = credential_provider
         overrides: dict[str, Any] = {
             "url": url,
             "name": name,
@@ -111,6 +123,17 @@ class TasksExtension(ServerExtension):
     def docket_settings(self) -> DocketSettings:
         """The resolved Docket settings (backend URL, worker options)."""
         return self._settings
+
+    def clone(self) -> TasksExtension:
+        """Return an unbound copy sharing the configured credential provider.
+
+        Providers may own locks or token-refresh clients that cannot be copied.
+        All other extension state, including resolved settings, is deep-copied.
+        """
+        provider = self._credential_provider
+        extension = copy.deepcopy(self, {id(provider): provider})
+        extension._server_ref = None
+        return extension
 
     def settings(self) -> dict[str, Any]:
         """The tasks extension advertises no per-extension settings."""
@@ -223,6 +246,11 @@ class TasksExtension(ServerExtension):
         opt in), ``optional`` tasks only when the client opted in, ``forbidden``
         never tasks. A non-task call passes straight through to the tool body.
         """
+        # The client's opt-in covers the tool it named. A tool that middleware,
+        # a tool body (a search proxy, CodeMode's execute), a resource, or a
+        # prompt calls in turn runs in the foreground and returns inline.
+        from_client = _is_client_tool_call()
+
         # Resolve the same version core would dispatch: a versioned tools/call
         # carries its VersionSpec in the request _meta, so omitting it here would
         # task the highest version even when the client targeted an older one
@@ -252,6 +280,14 @@ class TasksExtension(ServerExtension):
         )
         mode = tool.task_config.mode
 
+        if not from_client:
+            if mode == "required":
+                raise ToolError(
+                    f"Tool {tool.name!r} only runs as a background task, which "
+                    "the client has to request by calling it directly."
+                )
+            return await call_next()
+
         if mode == "required":
             if not opted_in:
                 raise MCPError(
@@ -271,7 +307,7 @@ class TasksExtension(ServerExtension):
         return await call_next()
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         """Start the Docket backend/worker and install the worker-side hooks.
 
         Installs core's background-context factory and worker-server resolver for
@@ -286,7 +322,11 @@ class TasksExtension(ServerExtension):
 
         _install_worker_hooks()
         try:
-            async with docket_lifespan(self.server, self._settings):
+            async with docket_lifespan(
+                self.server,
+                self._settings,
+                credential_provider=self._credential_provider,
+            ):
                 yield
         finally:
             _release_worker_hooks()

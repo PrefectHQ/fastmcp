@@ -96,7 +96,7 @@ class ClientPromptsMixin:
         for _ in range(max_pages):
             result = await self.list_prompts_mcp(cursor=cursor)
             all_prompts.extend(result.prompts)
-            if not result.next_cursor:
+            if result.next_cursor is None:
                 break
             if result.next_cursor in seen_cursors:
                 logger.warning(

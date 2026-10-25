@@ -33,7 +33,7 @@ a default, so a subclass overrides only what it needs.
 
 ## Functions
 
-### `read_client_extension_settings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L235" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `read_client_extension_settings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L302" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_client_extension_settings(ctx: ServerRequestContext[Any, Any], identifier: str) -> dict[str, Any] | None
@@ -49,7 +49,7 @@ Returns the declared settings dict (possibly empty) when the extension was
 opted in for this request, or `None` when it was not.
 
 
-### `build_method_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L249" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `build_method_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L316" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 build_method_handler(binding: MethodBinding) -> ExtensionRequestHandler
@@ -64,7 +64,7 @@ and binds the FastMCP request context so the handler can use `get_context()`,
 auth, and other request-scoped dependencies.
 
 
-### `wrap_tool_call_interceptor` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L278" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `wrap_tool_call_interceptor` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L345" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 wrap_tool_call_interceptor(extension: ServerExtension, call_next: Callable[[Any], Awaitable[Any]]) -> Callable[[Any], Awaitable[Any]]
@@ -80,7 +80,7 @@ continuation that runs the rest of the chain and, finally, the tool body.
 
 ## Classes
 
-### `MethodBinding` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `MethodBinding` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L126" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A new request method an extension serves, e.g. `tasks/get`.
@@ -97,7 +97,7 @@ silently shadow the server's own handler. Both constraints are enforced at
 construction.
 
 
-### `ServerExtension` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ServerExtension` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L160" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Base class for an opt-in FastMCP server extension (SEP-2133).
@@ -115,7 +115,22 @@ handlers can reach FastMCP-level constructs.
 
 **Methods:**
 
-#### `server` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L149" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `clone` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L184" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+clone(self) -> ServerExtension
+```
+
+Return an unbound instance with the same configuration.
+
+Automatic registration clones bundled extensions so each server owns
+its instance. The default deep-copies instance attributes and clears
+the server binding. Override to reconstruct configuration when the
+extension owns objects that cannot be deep-copied or runtime state
+that should be reset.
+
+
+#### `server` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L216" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 server(self) -> FastMCP
@@ -128,7 +143,7 @@ Handlers, interceptors, and lifespan code reach the component registry,
 been registered with `FastMCP.add_extension()`.
 
 
-#### `settings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L165" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `settings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L232" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 settings(self) -> dict[str, Any]
@@ -139,7 +154,7 @@ Per-extension settings advertised at `capabilities.extensions[identifier]`.
 An empty dict (the default) advertises the extension with no settings.
 
 
-#### `methods` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L172" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `methods` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L239" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 methods(self) -> Sequence[MethodBinding]
@@ -148,7 +163,7 @@ methods(self) -> Sequence[MethodBinding]
 New request methods this extension serves (additive).
 
 
-#### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L243" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 lifespan(self) -> AbstractAsyncContextManager[None]
@@ -161,7 +176,7 @@ Default: a no-op. Override to start and stop resources an extension owns
 the root — a mounted child defers to the root, as the shared Docket does.
 
 
-#### `intercept_tool_call` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L185" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `intercept_tool_call` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L252" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 intercept_tool_call(self, params: CallToolRequestParams, context: Context, call_next: ToolCallContinuation) -> ToolCallOutcome
@@ -179,7 +194,7 @@ and the server are reachable. Multiple extensions nest with the
 first-registered outermost.
 
 
-#### `client_settings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L204" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `client_settings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/extensions.py#L271" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 client_settings(self, ctx: ServerRequestContext[Any, Any]) -> dict[str, Any] | None

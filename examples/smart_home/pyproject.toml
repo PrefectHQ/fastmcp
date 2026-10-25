@@ -1,11 +1,12 @@
 [project]
 name = "smart-home"
 version = "0.1.0"
-description = "Observable Philips Hue control for MCP agents"
+description = "Observable Philips Hue and Fire TV control for MCP agents"
 readme = "README.md"
 authors = [{ name = "zzstoatzz", email = "thrast36@gmail.com" }]
 requires-python = ">=3.12"
 dependencies = [
+    "androidtv[async]==0.0.75",
     "fastmcp>=4.0.3,<5",
     "phue2==1.0.0a1",
     "pydantic-settings",

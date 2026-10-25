@@ -40,6 +40,21 @@ repos:
         pass_filenames: false
         verbose: true
 
+      - id: gitleaks
+        name: gitleaks (secret scanning)
+        # Full working-tree scan rather than the official `gitleaks git --staged`
+        # hook: that mode fingerprints findings by commit SHA, which would
+        # churn a fingerprint-based ignore list on every unrelated commit to
+        # an ignored file. .gitleaks.toml's allowlist is matched against the
+        # detected secret text instead, so it's stable regardless of commit
+        # or line number. Its path allowlist also excludes local build
+        # artifacts (e.g. __pycache__), which `--no-git` doesn't consult
+        # .gitignore for. Requires gitleaks on PATH (e.g. `brew install
+        # gitleaks`).
+        entry: gitleaks detect --source . --no-git --config .gitleaks.toml --redact -v
+        language: system
+        pass_filenames: false
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:

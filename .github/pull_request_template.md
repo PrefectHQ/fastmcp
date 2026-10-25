@@ -4,6 +4,10 @@
 
 Closes #
 
+<!-- Maintainer implementations of community issues: include the issue author's
+verified Co-authored-by trailer here and in the implementation commit. Preserve
+it in the final merged commit. See the contributor-credit policy in the guide. -->
+
 ## Contribution type
 
 <!-- Check the one that applies. If you're unsure whether your change is welcome, please open an issue first — see CONTRIBUTING.md. -->

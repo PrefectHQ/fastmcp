@@ -115,7 +115,7 @@ def install_claude_desktop(
         if config_file.exists():
             import json
 
-            content = config_file.read_text().strip()
+            content = config_file.read_text(encoding="utf-8").strip()
             if content:
                 config = json.loads(content)
                 if "mcpServers" in config and name in config["mcpServers"]:

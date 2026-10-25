@@ -1,11 +1,15 @@
 """Tests for container types in JSON schema conversion."""
 
+from collections import UserDict
 from dataclasses import Field, dataclass
+from datetime import date
+from decimal import Decimal
 from typing import Any
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
+from fastmcp.utilities import json_schema_type as schema_types
 from fastmcp.utilities.json_schema_type import (
     json_schema_to_type,
 )
@@ -69,12 +73,166 @@ class TestArrayTypes:
 
     def test_unique_items_accepts_unique(self, unique_items_array):
         validator = TypeAdapter(unique_items_array)
-        assert isinstance(validator.validate_python(["a", "b"]), set)
+        assert validator.validate_python(["a", "b"]) == ["a", "b"]
 
-    def test_unique_items_converts_duplicates(self, unique_items_array):
+    def test_unique_items_rejects_duplicates(self, unique_items_array):
         validator = TypeAdapter(unique_items_array)
-        result = validator.validate_python(["a", "a", "b"])
-        assert result == {"a", "b"}
+        with pytest.raises(ValidationError, match="Array items must be unique"):
+            validator.validate_python(["a", "a", "b"])
+
+    def test_unique_items_accepts_unique_objects(self):
+        unique_objects = json_schema_to_type(
+            {"type": "array", "items": {"type": "object"}, "uniqueItems": True}
+        )
+        validator = TypeAdapter(unique_objects)
+
+        users = [{"id": 1, "admin": True}, {"id": 2, "admin": False}]
+
+        assert validator.validate_python(users) == users
+
+    def test_unique_items_rejects_duplicate_objects(self):
+        unique_objects = json_schema_to_type(
+            {"type": "array", "items": {"type": "object"}, "uniqueItems": True}
+        )
+        validator = TypeAdapter(unique_objects)
+
+        with pytest.raises(ValidationError, match="Array items must be unique"):
+            validator.validate_python(
+                [{"id": 1, "admin": True}, {"admin": True, "id": 1}]
+            )
+
+    def test_unique_items_keeps_boolean_and_number_distinct(self):
+        unique_items = json_schema_to_type(
+            {"type": "array", "items": {}, "uniqueItems": True}
+        )
+        validator = TypeAdapter(unique_items)
+
+        assert validator.validate_python([True, 1]) == [True, 1]
+
+    def test_unique_items_is_preserved_in_generated_schema(self, unique_items_array):
+        assert TypeAdapter(unique_items_array).json_schema()["uniqueItems"] is True
+
+    @pytest.mark.parametrize(
+        "values, duplicate",
+        [
+            ([None, None], True),
+            ([True, True], True),
+            (["value", "value"], True),
+            ([1, 1.0], True),
+            ([0, -0.0], True),
+            ([True, 1], False),
+            ([False, 0], False),
+            ([2**53 + 1, float(2**53)], False),
+            ([None, False, 0, "0", [], {}], False),
+            ([[1, 2], [2, 1]], False),
+            ([[True], [1]], False),
+            ([{"a": 1, "b": 2}, {"b": 2, "a": 1.0}], True),
+            ([{"a": [1, 2]}, {"a": [1, 2]}], True),
+            ([{"a": True}, {"a": 1}], False),
+            ([{"a": {"b": [None, 1]}}, {"a": {"b": [None, 1.0]}}], True),
+        ],
+    )
+    def test_unique_items_json_equality(self, values: list[Any], duplicate: bool):
+        validator = TypeAdapter(
+            json_schema_to_type({"type": "array", "items": {}, "uniqueItems": True})
+        )
+        if duplicate:
+            with pytest.raises(ValidationError, match="Array items must be unique"):
+                validator.validate_python(values)
+        else:
+            assert validator.validate_python(values) == values
+
+    @pytest.mark.parametrize("objects", [False, True])
+    def test_unique_items_avoids_all_pairs_comparison(
+        self, monkeypatch: pytest.MonkeyPatch, objects: bool
+    ):
+        comparisons = 0
+        original = schema_types._json_values_equal
+
+        def counted(left: Any, right: Any) -> bool:
+            nonlocal comparisons
+            comparisons += 1
+            return original(left, right)
+
+        monkeypatch.setattr(schema_types, "_json_values_equal", counted)
+        values = [{"id": i} for i in range(200)] if objects else list(range(200))
+        validator = TypeAdapter(
+            json_schema_to_type({"type": "array", "items": {}, "uniqueItems": True})
+        )
+        assert validator.validate_python(values) == values
+        # Guard against quadratic comparisons without machine-dependent timings.
+        assert comparisons <= len(values)
+
+    @pytest.mark.parametrize("objects", [False, True])
+    def test_unique_items_large_array(self, objects: bool):
+        values = (
+            [{"id": i, "tags": ["value", False]} for i in range(4000)]
+            if objects
+            else list(range(4000))
+        )
+        validator = TypeAdapter(
+            json_schema_to_type({"type": "array", "items": {}, "uniqueItems": True})
+        )
+        assert validator.validate_python(values) == values
+        with pytest.raises(ValidationError, match="Array items must be unique"):
+            validator.validate_python([*values, values[-1]])
+
+    @pytest.mark.parametrize(
+        "values, duplicate",
+        [
+            ([Decimal("1"), 1], True),
+            ([1, Decimal("1")], True),
+            ([Decimal("1"), 2], False),
+            ([[1, 2], (1, 2)], True),
+            ([UserDict({"a": [1]}), {"a": [1]}], True),
+            ([UserDict({"a": [1]}), {"a": [2]}], False),
+            ([{1: "a"}, {True: "a"}], True),
+        ],
+    )
+    def test_unique_items_preserves_python_fallback(
+        self, values: list[Any], duplicate: bool
+    ):
+        validator = TypeAdapter(
+            json_schema_to_type({"type": "array", "items": {}, "uniqueItems": True})
+        )
+        if duplicate:
+            with pytest.raises(ValidationError, match="Array items must be unique"):
+                validator.validate_python(values)
+        else:
+            assert validator.validate_python(values) == values
+
+    def test_unique_items_non_finite_numbers_preserve_python_equality(self):
+        validator: TypeAdapter[Any] = TypeAdapter(
+            json_schema_to_type({"type": "array", "items": {}, "uniqueItems": True})
+        )
+        nan = float("nan")
+        assert len(validator.validate_python([nan, nan])) == 2
+        with pytest.raises(ValidationError, match="Array items must be unique"):
+            validator.validate_python([float("inf"), float("inf")])
+
+    def test_unique_items_cyclic_python_value_preserves_fallback(self):
+        cyclic: list[Any] = []
+        cyclic.append(cyclic)
+        validator: TypeAdapter[Any] = TypeAdapter(
+            json_schema_to_type({"type": "array", "items": {}, "uniqueItems": True})
+        )
+        assert validator.validate_python([cyclic])[0] is cyclic
+
+    @pytest.mark.parametrize("unique", [None, False])
+    def test_non_unique_schema_does_not_validate_uniqueness(
+        self, monkeypatch: pytest.MonkeyPatch, unique: bool | None
+    ):
+        def unexpected(value: Any) -> Any:
+            pytest.fail("Non-unique arrays must not run uniqueness validation")
+
+        monkeypatch.setattr(schema_types, "_validate_unique_items", unexpected)
+        schema: dict[str, Any] = {"type": "array", "items": {}}
+        if unique is not None:
+            schema["uniqueItems"] = unique
+        values = [{"id": 1}, {"id": 1}]
+        assert (
+            TypeAdapter(json_schema_to_type(schema)).validate_python(values) == values
+        )
 
 
 class TestObjectTypes:
@@ -228,3 +386,80 @@ class TestObjectTypes:
         object = json_schema_to_type(schema)
         object_schema = TypeAdapter(object).json_schema()
         assert object_schema == schema
+
+
+class TestPositionalArrayTypes:
+    """Positional (``prefixItems``) arrays hydrate per position when pinned."""
+
+    @pytest.fixture
+    def fixed_length_positional_array(self):
+        return json_schema_to_type(
+            {
+                "type": "array",
+                "prefixItems": [
+                    {"type": "string", "format": "date"},
+                    {"type": "integer"},
+                ],
+                "minItems": 2,
+                "maxItems": 2,
+            }
+        )
+
+    @pytest.fixture
+    def unpinned_positional_array(self):
+        return json_schema_to_type(
+            {
+                "type": "array",
+                "prefixItems": [
+                    {"type": "string", "format": "date"},
+                    {"type": "integer"},
+                ],
+            }
+        )
+
+    def test_fixed_length_positional_array_hydrates_each_position(
+        self, fixed_length_positional_array
+    ):
+        validator = TypeAdapter(fixed_length_positional_array)
+        result = validator.validate_python(["2024-01-01", 3])
+        assert result == (date(2024, 1, 1), 3)
+        assert isinstance(result[0], date)
+
+    def test_fixed_length_positional_array_rejects_wrong_length(
+        self, fixed_length_positional_array
+    ):
+        validator = TypeAdapter(fixed_length_positional_array)
+        with pytest.raises(ValidationError):
+            validator.validate_python(["2024-01-01"])
+
+    def test_fixed_length_positional_array_rejects_wrong_position_type(
+        self, fixed_length_positional_array
+    ):
+        validator = TypeAdapter(fixed_length_positional_array)
+        with pytest.raises(ValidationError):
+            validator.validate_python(["2024-01-01", "not-an-integer"])
+
+    def test_unpinned_positional_array_keeps_list_semantics(
+        self, unpinned_positional_array
+    ):
+        validator = TypeAdapter(unpinned_positional_array)
+        result = validator.validate_python(["2024-01-01", 3, "extra"])
+        assert isinstance(result, list)
+        assert result == ["2024-01-01", 3, "extra"]
+
+    def test_fixed_length_positional_array_preserves_uniqueness(self):
+        validator = TypeAdapter(
+            json_schema_to_type(
+                {
+                    "type": "array",
+                    "prefixItems": [{"type": "integer"}, {"type": "integer"}],
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "uniqueItems": True,
+                }
+            )
+        )
+        assert validator.validate_python([1, 2]) == (1, 2)
+        assert validator.json_schema()["uniqueItems"] is True
+        with pytest.raises(ValidationError, match="Array items must be unique"):
+            validator.validate_python([1, 1])

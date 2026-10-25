@@ -15,6 +15,8 @@ Authentication in MCP presents unique challenges that differ from traditional we
 Authentication applies only to FastMCP's HTTP-based transports (`http` and `sse`). The STDIO transport inherits security from its local execution environment.
 </Tip>
 
+FastMCP servers default to `auth=None`. For HTTP transports, this means the MCP endpoint accepts requests without bearer-token authentication, and components without authorization checks are accessible to anyone who can reach it. Configure an `AuthProvider` for a protected endpoint. If you enforce authentication in a gateway instead, you are responsible for that protection and for preventing direct access to the server; FastMCP does not verify the gateway's enforcement.
+
 <Warning>
 **Authentication is rapidly evolving in MCP.** The specification and best practices are changing quickly. FastMCP aims to provide stable, secure patterns that adapt to these changes while keeping your code simple and maintainable.
 </Warning>

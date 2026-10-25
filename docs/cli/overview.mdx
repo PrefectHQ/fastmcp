@@ -118,6 +118,14 @@ JSON mode does not open a browser or ask a question.
 
 When targeting an HTTP URL, the CLI enables OAuth authentication by default. If the server requires it, you'll be guided through the flow (typically opening a browser). If it doesn't, the setup is a silent no-op.
 
+OAuth tokens are kept in memory by default and discarded when the command exits. To reuse authentication across `fastmcp list` and `fastmcp call`, generate a Fernet key once and save it as `FASTMCP_OAUTH_ENCRYPTION_KEY` in your environment or `.env` file:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+With that setting, the CLI encrypts tokens and client registration details on disk under `FASTMCP_HOME`. Keep the key secret and reuse the same value across invocations. Changing it starts a separate cache and requires signing in again. This applies to HTTP and SSE URLs and discovered servers that connect directly over HTTP or SSE; MCPConfig files retain their per-server authentication configuration. The Python SDK's storage defaults are unchanged.
+
 To skip authentication entirely — useful for local development servers — pass `--auth none`:
 
 ```bash

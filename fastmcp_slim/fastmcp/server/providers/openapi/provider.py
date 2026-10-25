@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections import Counter
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Literal, cast
 
@@ -201,7 +201,7 @@ class OpenAPIProvider(Provider):
         return httpx2.AsyncClient(base_url=base_url, timeout=DEFAULT_TIMEOUT)
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         """Manage the lifecycle of the auto-created httpx client."""
         if self._owns_client:
             async with self._client:
@@ -236,11 +236,18 @@ class OpenAPIProvider(Provider):
         component_type: Literal["tool", "resource", "resource_template", "prompt"],
     ) -> str:
         """Ensure the name is unique by appending numbers if needed."""
-        self._used_names[component_type][name] += 1
-        if self._used_names[component_type][name] == 1:
+        used_names = self._used_names[component_type]
+        used_names[name] += 1
+        if used_names[name] == 1:
             return name
 
-        new_name = f"{name}_{self._used_names[component_type][name]}"
+        # Skip suffixed names that are already taken, such as an operation
+        # whose own name is `name_2`, and reserve the one we hand out.
+        new_name = f"{name}_{used_names[name]}"
+        while new_name in used_names:
+            used_names[name] += 1
+            new_name = f"{name}_{used_names[name]}"
+        used_names[new_name] += 1
         logger.debug(
             f"Name collision: '{name}' exists as {component_type}. Using '{new_name}'."
         )

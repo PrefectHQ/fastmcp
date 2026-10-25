@@ -1,5 +1,6 @@
 """A middleware for response caching."""
 
+import base64
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
@@ -89,6 +90,7 @@ class CacheableResourceContent(FastMCPBaseModel):
     content: str | bytes
     mime_type: str | None = None
     meta: dict[str, Any] | None = None
+    is_binary: bool = False
 
 
 class CacheableResourceResult(FastMCPBaseModel):
@@ -105,7 +107,14 @@ class CacheableResourceResult(FastMCPBaseModel):
         return cls(
             contents=[
                 CacheableResourceContent(
-                    content=item.content, mime_type=item.mime_type, meta=item.meta
+                    # JSON cannot distinguish bytes from text. Encode binary
+                    # content and retain its type independently of the MIME type.
+                    content=base64.b64encode(item.content).decode("ascii")
+                    if isinstance(item.content, bytes)
+                    else item.content,
+                    mime_type=item.mime_type,
+                    meta=item.meta,
+                    is_binary=isinstance(item.content, bytes),
                 )
                 for item in value.contents
             ],
@@ -116,7 +125,11 @@ class CacheableResourceResult(FastMCPBaseModel):
         return ResourceResult(
             contents=[
                 ResourceContent(
-                    content=item.content, mime_type=item.mime_type, meta=item.meta
+                    content=base64.b64decode(item.content)
+                    if item.is_binary
+                    else item.content,
+                    mime_type=item.mime_type,
+                    meta=item.meta,
                 )
                 for item in self.contents
             ],
@@ -517,6 +530,14 @@ class ResponseCachingMiddleware(Middleware):
             return await call_next(context)
 
         if _is_continuation_leg(context):
+            return await call_next(context)
+
+        if (
+            context.fastmcp_context is not None
+            and context.fastmcp_context.fastmcp._requires_live_resource(
+                str(context.message.uri)
+            )
+        ):
             return await call_next(context)
 
         cache_key: str = _make_read_resource_cache_key(

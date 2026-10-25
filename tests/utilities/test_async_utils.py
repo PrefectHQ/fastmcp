@@ -1,5 +1,6 @@
 """Tests for fastmcp.utilities.async_utils."""
 
+import asyncio
 import functools
 import inspect
 from collections.abc import Awaitable, Iterator
@@ -56,11 +57,62 @@ class TestIsCoroutineFunction:
 
 
 class TestGather:
+    @pytest.mark.parametrize("return_exceptions", [False, True])
+    async def test_child_cancellation(self, return_exceptions: bool) -> None:
+        async def cancel() -> int:
+            raise asyncio.CancelledError("child cancelled")
+
+        if return_exceptions:
+            results = await gather([cancel(), _async_fn(1)], return_exceptions=True)
+            assert isinstance(results[0], asyncio.CancelledError)
+            assert results[1] == 1
+        else:
+            with pytest.raises(asyncio.CancelledError, match="child cancelled"):
+                await gather([cancel(), _async_fn(1)])
+
+    async def test_child_cancellation_cleans_up_siblings(self) -> None:
+        started = anyio.Event()
+        finished = anyio.Event()
+
+        async def sibling() -> None:
+            try:
+                started.set()
+                await anyio.sleep_forever()
+            finally:
+                finished.set()
+
+        async def cancel() -> None:
+            await started.wait()
+            raise asyncio.CancelledError
+
+        with pytest.raises(asyncio.CancelledError):
+            await gather([sibling(), cancel()])
+        assert finished.is_set()
+
     async def test_returns_results_in_input_order(self) -> None:
         async def value(result: int) -> int:
             return result
 
         assert await gather([value(1), value(2), value(3)]) == [1, 2, 3]
+
+    async def test_successful_none_result(self) -> None:
+        async def value() -> None:
+            return None
+
+        assert await gather([value()]) == [None]
+
+    async def test_parent_cancellation(self) -> None:
+        started = anyio.Event()
+
+        async def child() -> None:
+            started.set()
+            await anyio.sleep_forever()
+
+        task = asyncio.create_task(gather([child()]))
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
     async def test_accepts_a_generator(self) -> None:
         async def value(result: int) -> int:

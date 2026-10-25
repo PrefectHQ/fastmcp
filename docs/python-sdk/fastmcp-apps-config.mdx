@@ -15,7 +15,7 @@ UI metadata for clients that support interactive app rendering.
 
 ## Functions
 
-### `app_config_to_meta_dict` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/config.py#L181" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `app_config_to_meta_dict` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/config.py#L190" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 app_config_to_meta_dict(app: AppConfig | dict[str, Any]) -> dict[str, Any]
@@ -25,14 +25,17 @@ app_config_to_meta_dict(app: AppConfig | dict[str, Any]) -> dict[str, Any]
 Convert an AppConfig or dict to the wire-format dict for ``meta["ui"]``.
 
 
-### `is_model_visible` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/config.py#L188" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `is_model_visible` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/config.py#L197" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_model_visible(component: FastMCPComponent) -> bool
 ```
 
 
-Whether a component may be shown to, or invoked by, the model.
+Whether a component belongs on model-facing discovery and proxy surfaces.
+
+This is audience filtering, not authorization. Direct MCP calls do not
+use this predicate and cannot identify model versus app callers.
 
 Visibility is a declaration, and the MCP Apps spec puts the filtering on
 the host — so ``tools/list`` carries app-only tools and the host keeps
@@ -81,12 +84,17 @@ On tools, ``resource_uri`` and ``visibility`` specify which UI resource
 to render and where the tool appears.  On resources, those fields must
 be left unset (the resource itself is the UI).
 
+`visibility` declares the intended audience; it is not a security boundary.
+Direct MCP calls remain subject to authentication and authorization,
+regardless of visibility. The server cannot distinguish model and app
+callers on the same connection.
+
 All fields use ``exclude_none`` serialization so only explicitly-set
 values appear on the wire.  Aliases match the MCP Apps wire format
 (camelCase).
 
 
-### `PrefabAppConfig` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/config.py#L125" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `PrefabAppConfig` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/config.py#L134" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 App configuration for Prefab tools with sensible defaults.
@@ -106,7 +114,7 @@ Example::
 
 **Methods:**
 
-#### `model_post_init` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/config.py#L141" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `model_post_init` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/config.py#L150" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 model_post_init(self, __context: Any) -> None

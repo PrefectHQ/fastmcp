@@ -1,5 +1,5 @@
 import contextlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
 from mcp import ClientSession
@@ -113,7 +113,7 @@ class MCPConfigTransport(ClientTransport):
             self._request_state_security = _RequestStateSecurity.ephemeral()
 
     @property
-    def legacy_only(self) -> bool:
+    def legacy_only(self) -> bool:  # ty:ignore[invalid-property-type-override]
         """Whether the connected composite resolved to the legacy protocol era.
 
         A single-server config delegates directly to the underlying transport
@@ -132,9 +132,12 @@ class MCPConfigTransport(ClientTransport):
         *,
         transport_options: TransportOptions | None = None,
         **session_kwargs: Unpack[SessionKwargs],
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         # Single server - delegate directly to pre-created transport
         if len(self.config.mcpServers) == 1:
+            config = next(iter(self.config.mcpServers.values()))
+            if config.timeout is not None:
+                session_kwargs["read_timeout_seconds"] = config.timeout / 1000 or None
             async with self.transport.connect_session(
                 transport_options=transport_options, **session_kwargs
             ) as session:
@@ -160,12 +163,6 @@ class MCPConfigTransport(ClientTransport):
             else "legacy"
         )
 
-        # Close transports retained from a previous connection before replacing
-        # them. The active connection's exit stack owns their normal cleanup.
-        for transport in self._transports:
-            await transport.close()
-        self._transports = []
-
         stack = contextlib.AsyncExitStack()
         await stack.__aenter__()
         try:
@@ -176,6 +173,7 @@ class MCPConfigTransport(ClientTransport):
                 stack,
                 requested_mode,
                 prepared_transports=prepared_transports,
+                transport_options=transport_options,
             )
 
             # `auto` is an aggregate negotiation: the composite can only expose
@@ -195,7 +193,11 @@ class MCPConfigTransport(ClientTransport):
                 stack = contextlib.AsyncExitStack()
                 await stack.__aenter__()
                 composite, _ = await self._build_composite(
-                    FastMCP, timeout, stack, "legacy"
+                    FastMCP,
+                    timeout,
+                    stack,
+                    "legacy",
+                    transport_options=transport_options,
                 )
                 self._resolved_legacy_only = True
             else:
@@ -218,6 +220,7 @@ class MCPConfigTransport(ClientTransport):
         stack: contextlib.AsyncExitStack,
         backend_mode: str,
         prepared_transports: dict[str, ClientTransport] | None = None,
+        transport_options: TransportOptions | None = None,
     ) -> tuple["FastMCP[Any]", list[str]]:
         """Connect configured backends and mount their proxies on one router."""
         composite = fastmcp_type(
@@ -256,6 +259,7 @@ class MCPConfigTransport(ClientTransport):
                     stack,
                     current_mode,
                     transport=transport,
+                    transport_options=transport_options,
                 )
             except Exception:  # Broad catch is intentional: failure modes
                 # are diverse (OSError, TimeoutError, RuntimeError, etc.) and
@@ -318,6 +322,7 @@ class MCPConfigTransport(ClientTransport):
         stack: contextlib.AsyncExitStack,
         backend_mode: str | None = None,
         transport: ClientTransport | None = None,
+        transport_options: TransportOptions | None = None,
     ) -> tuple[ClientTransport, Any, "FastMCP[Any]"]:
         """Create underlying transport, proxy client, and proxy server for a single backend.
 
@@ -352,6 +357,12 @@ class MCPConfigTransport(ClientTransport):
         client_kwargs: dict[str, Any] = {}
         if backend_mode is not None:
             client_kwargs["mode"] = backend_mode
+        if transport_options is not None:
+            client_kwargs["forward_incoming_headers"] = (
+                transport_options.forward_incoming_headers
+            )
+        if config.timeout is not None:
+            timeout = config.timeout / 1000
         client = StatefulProxyClient(
             transport=transport, timeout=timeout, **client_kwargs
         )

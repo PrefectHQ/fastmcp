@@ -346,16 +346,17 @@ class LocalProvider(
 
     @property
     def may_serve_apps(self) -> bool:
-        """Whether any registered component carries MCP App UI.
+        """Whether transforms or registered components may serve MCP App UI.
 
-        Local registrations are the one part of the provider graph the server
-        can enumerate without I/O, so this is the surface that answers the
-        question precisely and lets a plain server stop advertising the MCP Apps
-        extension (see ``Provider.may_serve_apps`` for the fail-open default).
+        Without transforms, the local registry can be inspected synchronously.
+        Transforms may introduce apps, so retain the conservative declaration
+        without running their asynchronous methods.
         """
         from fastmcp.apps.config import component_serves_app
 
-        return any(component_serves_app(c) for c in self._components.values())
+        return bool(self._transforms) or any(
+            component_serves_app(c) for c in self._components.values()
+        )
 
     # =========================================================================
     # Provider interface implementation
@@ -470,7 +471,13 @@ class LocalProvider(
         This includes both FunctionTool/Resource/Prompt instances created via
         decorators and custom Tool/Resource/Prompt subclasses.
         """
-        return [c for c in self._components.values() if c.task_config.supports_tasks()]
+        components = list(self._components.values())
+
+        return [
+            c
+            for c in await self._apply_task_transforms(components)
+            if c.task_config.supports_tasks()
+        ]
 
     # =========================================================================
     # Decorator methods

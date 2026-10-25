@@ -6,14 +6,16 @@ extension negotiation, and the ``Context.client_supports_extension`` method.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from mcp.server.connection import Connection
+from mcp.server.session import ServerSession
 from mcp_types import (
     ClientCapabilities,
     Implementation,
-    InitializeRequestParams,
 )
 
 from fastmcp import Client, FastMCP
@@ -25,10 +27,15 @@ from fastmcp.apps import (
     ResourcePermissions,
     app_config_to_meta_dict,
 )
+from fastmcp.prompts.base import Prompt
+from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.context import Context
 from fastmcp.server.extensions import ServerExtension
 from fastmcp.server.low_level import client_supports_extension
-from fastmcp.server.providers import Provider
+from fastmcp.server.providers import AggregateProvider, FastMCPProvider, Provider
+from fastmcp.server.providers.local_provider import LocalProvider
+from fastmcp.server.transforms import ToolTransform, Transform
+from fastmcp.tools.tool_transform import ToolTransformConfig
 
 # ---------------------------------------------------------------------------
 # Model serialization
@@ -571,6 +578,93 @@ class TestAppCapabilityGating:
             extensions = client.server_capabilities.extensions or {}
             assert UI_EXTENSION_ID not in extensions
 
+    @pytest.mark.parametrize(
+        "scope", ["server", "local", "wrapped", "aggregate", "fastmcp"]
+    )
+    async def test_tool_transform_apps_advertised(self, scope: str):
+        server = FastMCP("test")
+        local = LocalProvider()
+
+        @local.tool
+        def plain() -> str:
+            return "hello"
+
+        transform = ToolTransform(
+            {"plain": ToolTransformConfig(meta={"ui": {"resourceUri": "ui://app"}})}
+        )
+        if scope == "server":
+            server.add_provider(local)
+            server.add_transform(transform)
+        else:
+            provider: Provider = local
+            if scope == "aggregate":
+                provider = AggregateProvider([local])
+            elif scope == "fastmcp":
+                child = FastMCP("child")
+                child.add_provider(local)
+                provider = FastMCPProvider(child)
+            if scope == "wrapped":
+                provider = provider.wrap_transform(transform)
+            else:
+                provider.add_transform(transform)
+            server.add_provider(provider)
+
+        async with Client(server, mode="auto") as client:
+            tools = await client.list_tools()
+            assert len(tools) == 1
+            assert tools[0].meta is not None
+            assert tools[0].meta["ui"]["resourceUri"] == "ui://app"
+            assert UI_EXTENSION_ID in (client.server_capabilities.extensions or {})
+
+    async def test_custom_transform_non_tool_apps_advertised(self):
+        class AddAppMetadata(Transform):
+            async def list_resources(
+                self, resources: Sequence[Resource]
+            ) -> Sequence[Resource]:
+                return [
+                    r.model_copy(update={"meta": {"ui": {"prefersBorder": True}}})
+                    for r in resources
+                ]
+
+            async def list_resource_templates(
+                self, templates: Sequence[ResourceTemplate]
+            ) -> Sequence[ResourceTemplate]:
+                return [
+                    t.model_copy(update={"meta": {"ui": {"prefersBorder": True}}})
+                    for t in templates
+                ]
+
+            async def list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]:
+                return [
+                    p.model_copy(update={"meta": {"ui": {"resourceUri": "ui://app"}}})
+                    for p in prompts
+                ]
+
+        server = FastMCP("test")
+
+        @server.resource("data://plain")
+        def plain_resource() -> str:
+            return "hello"
+
+        @server.resource("data://plain/{name}")
+        def plain_template(name: str) -> str:
+            return name
+
+        @server.prompt
+        def plain_prompt() -> str:
+            return "hello"
+
+        server.add_transform(AddAppMetadata())
+        async with Client(server, mode="auto") as client:
+            resources = await client.list_resources()
+            templates = await client.list_resource_templates()
+            prompts = await client.list_prompts()
+            for components in (resources, templates, prompts):
+                assert len(components) == 1
+                assert components[0].meta is not None
+                assert "ui" in components[0].meta
+            assert UI_EXTENSION_ID in (client.server_capabilities.extensions or {})
+
 
 class TestContextClientSupportsExtension:
     async def test_returns_false_when_no_session(self):
@@ -585,21 +679,28 @@ class TestClientSupportsExtension:
     SDK v2 declares ``extensions`` as a real field on ``ClientCapabilities``, so
     a client sending ``ClientCapabilities(extensions={...})`` populates the field
     directly (``model_extra`` stays ``None``). The helper must read the real
-    field, not only ``model_extra``.
+    field, not only ``model_extra``. It also covers the 2026-07-28 envelope,
+    where a client declares capabilities without ``clientInfo`` and the session
+    therefore has no ``client_params``.
     """
+
+    CLIENT_INFO = Implementation(name="test-client", version="1.0")
 
     @staticmethod
     def _session_with_capabilities(
         capabilities: ClientCapabilities | None,
-    ) -> Any:
-        params: InitializeRequestParams | None = None
+        *,
+        client_info: Implementation | None,
+    ) -> ServerSession:
+        """Build a session over a 2026-07-28 request envelope."""
+        info = None
+        if client_info is not None:
+            info = client_info.model_dump(by_alias=True, mode="json")
+        caps = None
         if capabilities is not None:
-            params = InitializeRequestParams(
-                protocol_version="2026-07-28",
-                capabilities=capabilities,
-                client_info=Implementation(name="test-client", version="1.0"),
-            )
-        return SimpleNamespace(client_params=params)
+            caps = capabilities.model_dump(by_alias=True, mode="json")
+        connection = Connection.from_envelope("2026-07-28", info, caps)
+        return ServerSession(cast(Any, object()), connection)
 
     def test_real_extensions_field(self):
         """A client that sets the real `extensions` field is detected."""
@@ -607,13 +708,22 @@ class TestClientSupportsExtension:
         # Guard: the regression this covers is the field being populated while
         # model_extra stays empty.
         assert caps.model_extra in (None, {})
-        session = self._session_with_capabilities(caps)
+        session = self._session_with_capabilities(caps, client_info=self.CLIENT_INFO)
         assert client_supports_extension(session, UI_EXTENSION_ID) is True
 
     def test_real_extensions_field_without_target_extension(self):
         caps = ClientCapabilities(extensions={"other/extension": {}})
-        session = self._session_with_capabilities(caps)
+        session = self._session_with_capabilities(caps, client_info=self.CLIENT_INFO)
         assert client_supports_extension(session, UI_EXTENSION_ID) is False
+
+    def test_extensions_without_client_info(self):
+        """clientInfo is optional on 2026-07-28 while clientCapabilities is not,
+        so a client can declare the extension with no client params on the
+        session to read it from."""
+        caps = ClientCapabilities(extensions={UI_EXTENSION_ID: {}})
+        session = self._session_with_capabilities(caps, client_info=None)
+        assert session.client_params is None
+        assert client_supports_extension(session, UI_EXTENSION_ID) is True
 
     def test_legacy_model_extra_fallback(self):
         """Defensive fallback: capabilities whose real `extensions` field is None
@@ -627,18 +737,16 @@ class TestClientSupportsExtension:
             extensions=None,
             model_extra={"extensions": {UI_EXTENSION_ID: {}}},
         )
-        session: Any = SimpleNamespace(
-            client_params=SimpleNamespace(capabilities=fake_caps)
-        )
+        session: Any = SimpleNamespace(client_capabilities=fake_caps)
         assert client_supports_extension(session, UI_EXTENSION_ID) is True
 
     def test_no_extensions(self):
         caps = ClientCapabilities()
-        session = self._session_with_capabilities(caps)
+        session = self._session_with_capabilities(caps, client_info=self.CLIENT_INFO)
         assert client_supports_extension(session, UI_EXTENSION_ID) is False
 
     def test_no_capabilities(self):
-        session = self._session_with_capabilities(None)
+        session = self._session_with_capabilities(None, client_info=self.CLIENT_INFO)
         assert client_supports_extension(session, UI_EXTENSION_ID) is False
 
 

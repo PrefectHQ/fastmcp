@@ -6,6 +6,10 @@ import base64
 import json
 from typing import Any
 
+from fastmcp.utilities.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 def _decode_jwt_part(token: str, part_index: int) -> dict[str, Any]:
     """Decode a JWT part (header or payload) without signature verification.
@@ -85,7 +89,10 @@ def parse_scopes(value: Any) -> list[str] | None:
                 if isinstance(data, list):
                     return [str(v).strip() for v in data if str(v).strip()]
             except Exception:
-                pass
+                # Don't log `value`: callers pass scopes pulled straight out of
+                # token exchange responses, which CodeQL's taint tracking (and
+                # potentially a real payload) treats as sensitive.
+                logger.debug("Failed to parse scopes value as a JSON array")
         # Fallback to comma/space separated list
         return [s.strip() for s in value.replace(",", " ").split() if s.strip()]
     return value

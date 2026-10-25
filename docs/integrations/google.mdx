@@ -102,6 +102,29 @@ async def get_user_info() -> dict:
     }
 ```
 
+### Token Verification Caching
+
+By default, every token verification queries Google. For servers receiving repeated requests with the same token, enable an in-memory cache to reduce network calls and latency:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.google import GoogleProvider
+
+auth_provider = GoogleProvider(
+    client_id="123456789.apps.googleusercontent.com",
+    client_secret="GOCSPX-abc123...",
+    base_url="http://localhost:8000",
+    cache_ttl_seconds=300,
+    max_cache_size=10_000,
+)
+
+mcp = FastMCP(name="Google Secured App", auth=auth_provider)
+```
+
+`cache_ttl_seconds` defaults to `None`, which disables caching; `0` also disables it. When enabled, successful verification results remain cached for at most this duration or until the token expires, whichever comes first. Failed verifications are not cached. `max_cache_size` defaults to 10,000 entries; setting it to `0` disables caching. Negative values for either parameter raise `ValueError`. The cache belongs to each provider instance and is cleared when the server restarts. The same parameters are available on `GoogleTokenVerifier` when using it directly.
+
+Choose a TTL appropriate for how quickly your server needs to notice token revocation or changes to Google's user profile data: cached results skip Google's endpoints until the entry expires.
+
 ## Testing
 
 ### Running the Server

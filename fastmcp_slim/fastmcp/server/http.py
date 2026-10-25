@@ -17,6 +17,7 @@ from mcp.server.streamable_http import (
 )
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
+from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.datastructures import Headers
 from starlette.middleware import Middleware
@@ -51,9 +52,12 @@ class FastMCPStreamableHTTPSessionManager(StreamableHTTPSessionManager):
         stateless: bool = False,
         security_settings: TransportSecuritySettings | None = None,
         retry_interval: int | None = None,
-        session_idle_timeout: float | None = None,
+        session_idle_timeout: float | Literal["auto"] | None = "auto",
     ) -> None:
         self._shared_event_store: EventStore | None = None
+        session_options: dict[str, Any] = {}
+        if session_idle_timeout != "auto":
+            session_options["session_idle_timeout"] = session_idle_timeout
         super().__init__(
             app=app,
             event_store=event_store,
@@ -61,7 +65,7 @@ class FastMCPStreamableHTTPSessionManager(StreamableHTTPSessionManager):
             stateless=stateless,
             security_settings=security_settings,
             retry_interval=retry_interval,
-            session_idle_timeout=session_idle_timeout,
+            **session_options,
         )
 
     @property
@@ -339,6 +343,33 @@ class HostOriginGuardMiddleware:
         return _normalize_origin(origin) == request_origin
 
 
+def _host_origin_guard_middleware(
+    host_origin_protection: HostOriginProtection,
+    allowed_hosts: Sequence[str] | None,
+    allowed_origins: Sequence[str] | None,
+) -> Middleware | None:
+    """Build the Host/Origin guard for an HTTP transport app.
+
+    Returns None when `host_origin_protection` is False. `True` validates every
+    request; `"auto"` validates localhost-bound servers and requests covered by
+    explicit host/origin allowlists.
+    """
+    if host_origin_protection not in (True, False, "auto"):
+        raise ValueError("host_origin_protection must be True, False, or 'auto'.")
+
+    # False removes FastMCP's Host/Origin guard. The SDK guard is also disabled
+    # on every transport, so DNS-rebinding protection then depends on the deployment.
+    if host_origin_protection is False:
+        return None
+
+    return Middleware(
+        HostOriginGuardMiddleware,
+        allowed_hosts=allowed_hosts,
+        allowed_origins=allowed_origins,
+        mode="strict" if host_origin_protection is True else "auto",
+    )
+
+
 _current_http_request: ContextVar[Request | None] = ContextVar(
     "http_request",
     default=None,
@@ -413,6 +444,28 @@ def create_base_app(
     )
 
 
+def _served_resource_metadata_url(
+    auth: AuthProvider, auth_routes: Sequence[BaseRoute], mcp_path: str
+) -> AnyHttpUrl | None:
+    """Return the RFC 9728 metadata URL that auth challenges may advertise.
+
+    The URL is derived from the provider's resource URL and is advertised only
+    when the provider contributes a route at that URL's path. A provider that
+    verifies tokens without serving protected resource metadata, such as a bare
+    `TokenVerifier` or a `MultiAuth` without a server, yields None so that the
+    challenge does not point clients at a URL that answers 404.
+    """
+    resource_url = auth._get_resource_url(mcp_path)
+    if resource_url is None:
+        return None
+    metadata_url = build_resource_metadata_url(resource_url)
+    metadata_path = urlsplit(str(metadata_url)).path
+    for route in auth_routes:
+        if isinstance(route, Route) and route.path == metadata_path:
+            return metadata_url
+    return None
+
+
 def create_sse_app(
     server: FastMCP[LifespanResultT],
     message_path: str,
@@ -421,6 +474,9 @@ def create_sse_app(
     debug: bool = False,
     routes: list[BaseRoute] | None = None,
     middleware: list[Middleware] | None = None,
+    host_origin_protection: HostOriginProtection = False,
+    allowed_hosts: Sequence[str] | None = None,
+    allowed_origins: Sequence[str] | None = None,
 ) -> StarletteWithLifespan:
     """Return an instance of the SSE server app.
 
@@ -432,6 +488,14 @@ def create_sse_app(
         debug: Whether to enable debug mode
         routes: Optional list of custom routes
         middleware: Optional list of middleware
+        host_origin_protection: Whether to validate Host and Origin headers
+            before requests reach the SSE connection and message endpoints.
+            Defaults to False for compatibility. "auto" protects
+            localhost-bound servers and explicit host/origin allowlists.
+        allowed_hosts: Additional hostnames that may appear in the Host header.
+        allowed_origins: Additional browser origins trusted by the request guard.
+            Configure CORS separately when browser JavaScript must read
+            cross-origin responses.
     Returns:
         A Starlette application with RequestContextMiddleware
     """
@@ -439,8 +503,20 @@ def create_sse_app(
     server_routes: list[BaseRoute] = []
     server_middleware: list[Middleware] = []
 
-    # Set up SSE transport
-    sse = SseServerTransport(message_path)
+    host_origin_guard = _host_origin_guard_middleware(
+        host_origin_protection,
+        allowed_hosts,
+        allowed_origins,
+    )
+
+    # FastMCP owns DNS-rebinding protection via HostOriginGuardMiddleware, as
+    # for streamable HTTP, so the SDK's own check stays disabled.
+    sse = SseServerTransport(
+        message_path,
+        security_settings=TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        ),
+    )
 
     # Create handler for SSE connections
     async def handle_sse(scope: Scope, receive: Receive, send: Send) -> Response:
@@ -462,10 +538,9 @@ def create_sse_app(
         server_routes.extend(auth_routes)
         server_middleware.extend(auth_middleware)
 
-        # Build RFC 9728-compliant metadata URL
-        resource_url = auth._get_resource_url(sse_path)
-        resource_metadata_url = (
-            build_resource_metadata_url(resource_url) if resource_url else None
+        # Advertise the RFC 9728 metadata URL only when the provider serves it
+        resource_metadata_url = _served_resource_metadata_url(
+            auth, auth_routes, sse_path
         )
 
         # Create protected SSE endpoint route
@@ -495,7 +570,8 @@ def create_sse_app(
             )
         )
     else:
-        # No auth required
+        # auth=None removes bearer-token enforcement. A gateway's authentication
+        # is outside FastMCP's guarantees and must prevent direct unauthenticated access.
         async def sse_endpoint(request: Request) -> Response:
             return await handle_sse(request.scope, request.receive, request._send)
 
@@ -519,6 +595,8 @@ def create_sse_app(
     server_routes.extend(server._get_additional_http_routes())
 
     # Add middleware
+    if host_origin_guard is not None:
+        server_middleware.insert(0, host_origin_guard)
     if middleware:
         server_middleware.extend(middleware)
 
@@ -536,6 +614,7 @@ def create_sse_app(
     )
     # Store the FastMCP server instance on the Starlette app state
     app.state.fastmcp_server = server
+    app.state.fastmcp_auth = auth
     app.state.path = sse_path
     app.state.transport_type = "sse"
 
@@ -556,7 +635,7 @@ def create_streamable_http_app(
     host_origin_protection: HostOriginProtection = False,
     allowed_hosts: Sequence[str] | None = None,
     allowed_origins: Sequence[str] | None = None,
-    session_idle_timeout: float | None = None,
+    session_idle_timeout: float | Literal["auto"] | None = "auto",
 ) -> StarletteWithLifespan:
     """Return an instance of the StreamableHTTP server app.
 
@@ -583,8 +662,9 @@ def create_streamable_http_app(
             cross-origin responses.
         session_idle_timeout: Maximum time in seconds a session may remain idle
             before it is terminated. The deadline is pushed forward on every
-            request. When None, sessions never expire from inactivity. Not
-            supported in stateless mode.
+            request. Defaults to "auto", which uses the MCP SDK's default
+            (1800 seconds as of SDK 2.2). When None, sessions never expire
+            from inactivity. Only applies to stateful HTTP sessions.
 
     Returns:
         A Starlette application with StreamableHTTP support
@@ -605,10 +685,9 @@ def create_streamable_http_app(
         server_routes.extend(auth_routes)
         server_middleware.extend(auth_middleware)
 
-        # Build RFC 9728-compliant metadata URL
-        resource_url = auth._get_resource_url(streamable_http_path)
-        resource_metadata_url = (
-            build_resource_metadata_url(resource_url) if resource_url else None
+        # Advertise the RFC 9728 metadata URL only when the provider serves it
+        resource_metadata_url = _served_resource_metadata_url(
+            auth, auth_routes, streamable_http_path
         )
 
         # Create protected HTTP endpoint route
@@ -630,7 +709,8 @@ def create_streamable_http_app(
             )
         )
     else:
-        # No auth required
+        # auth=None removes bearer-token enforcement. A gateway's authentication
+        # is outside FastMCP's guarantees and must prevent direct unauthenticated access.
         http_methods = ["POST", "DELETE"] if stateless_http else None
         server_routes.append(
             Route(
@@ -646,19 +726,13 @@ def create_streamable_http_app(
     server_routes.extend(server._get_additional_http_routes())
 
     # Add middleware
-    if host_origin_protection not in (True, False, "auto"):
-        raise ValueError("host_origin_protection must be True, False, or 'auto'.")
-
-    if host_origin_protection is not False:
-        server_middleware.insert(
-            0,
-            Middleware(
-                HostOriginGuardMiddleware,
-                allowed_hosts=allowed_hosts,
-                allowed_origins=allowed_origins,
-                mode="strict" if host_origin_protection is True else "auto",
-            ),
-        )
+    host_origin_guard = _host_origin_guard_middleware(
+        host_origin_protection,
+        allowed_hosts,
+        allowed_origins,
+    )
+    if host_origin_guard is not None:
+        server_middleware.insert(0, host_origin_guard)
     if middleware:
         server_middleware.extend(middleware)
 
@@ -715,6 +789,7 @@ def create_streamable_http_app(
     )
     # Store the FastMCP server instance on the Starlette app state
     app.state.fastmcp_server = server
+    app.state.fastmcp_auth = auth
     app.state.path = streamable_http_path
     app.state.transport_type = "streamable-http"
 

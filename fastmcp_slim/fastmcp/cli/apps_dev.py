@@ -32,6 +32,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import signal
 import sys
 import tarfile
@@ -46,10 +47,13 @@ import httpcore2
 import httpx2
 import uvicorn
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, Response, StreamingResponse
 from starlette.routing import Route
 
+from fastmcp.cli.apps_dev_security import DevSessionMiddleware
+from fastmcp.utilities.json_schema_type import safe_create_model
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -310,7 +314,7 @@ _HOST_HTML_TEMPLATE = """\
 </head>
 <body>
   <div id="status">Launching {tool_name}…</div>
-  <iframe id="app-frame"></iframe>
+  <iframe id="app-frame" sandbox="allow-scripts allow-forms"></iframe>
   <script type="module">
     import {{ AppBridge, PostMessageTransport, getToolUiResourceUri }}
       from "/js/app-bridge.js";
@@ -343,14 +347,12 @@ _HOST_HTML_TEMPLATE = """\
       // (synchronously, before React mounts) so it sends its ui/initialize
       // request very early — potentially before the iframe's load event fires.
       // Fix: create the AppBridge and call bridge.connect() BEFORE loading the
-      // iframe so our window.addEventListener is registered first.  We pass
-      // null as the PostMessageTransport source so early messages from the
-      // not-yet-known renderer window are not filtered out.  After the iframe
-      // loads we update transport.eventTarget / .eventSource to the real
-      // renderer window; the load-event microtask always runs before the
-      // message macrotask, so the response reaches the correct window.
+      // iframe so our window.addEventListener is registered first.  The
+      // iframe's contentWindow stays the same object when the iframe
+      // navigates, so the transport accepts messages only from the renderer
+      // from the start.
       const serverCaps = client.getServerCapabilities();
-      const transport = new PostMessageTransport(iframe.contentWindow, null);
+      const transport = new PostMessageTransport(iframe.contentWindow, iframe.contentWindow);
       const bridge = new AppBridge(
         client,
         {{ name: "fastmcp-dev", version: "1.0.0" }},
@@ -372,7 +374,16 @@ _HOST_HTML_TEMPLATE = """\
       );
 
       bridge.onopenlink = async ({{ url }}) => {{
-        window.open(url, "_blank", "noopener,noreferrer");
+        // Apps run in an isolated frame; only open external web links on
+        // their behalf, never pages of the dev UI itself.
+        const target = new URL(url, window.location.href);
+        if (
+          (target.protocol !== "https:" && target.protocol !== "http:") ||
+          target.origin === window.location.origin
+        ) {{
+          return {{ isError: true }};
+        }}
+        window.open(target.href, "_blank", "noopener,noreferrer");
         return {{}};
       }};
       bridge.onmessage = async () => ({{}});
@@ -384,8 +395,6 @@ _HOST_HTML_TEMPLATE = """\
         await bridge.sendToolResult(result);
         status.style.display = "none";
         iframe.style.display = "block";
-        // Prevent horizontal scrollbar when vertical scrollbar appears
-        try {{ iframe.contentDocument.documentElement.style.overflowX = "hidden"; }} catch(e) {{}}
       }};
 
       // Start listening before the iframe loads
@@ -396,12 +405,6 @@ _HOST_HTML_TEMPLATE = """\
       const loaded = new Promise(r => {{ iframe.addEventListener("load", r, {{ once: true }}); }});
       iframe.src = frameUrl;
       await loaded;
-
-      // Update transport to the real renderer window.  This microtask runs
-      // before the ui/initialize message macrotask, ensuring the response
-      // is dispatched to the correct window.
-      transport.eventTarget = iframe.contentWindow;
-      transport.eventSource = iframe.contentWindow;
     }}
 
     main().catch(err => {{
@@ -898,6 +901,8 @@ _LOG_PANEL_HTML = """\
   }
 
   window.addEventListener("message", function(event) {
+    var frame = document.getElementById("app-frame");
+    if (!frame || event.source !== frame.contentWindow) return;
     var data = event.data;
     if (typeof data === "string") {
       try { data = JSON.parse(data); } catch(e) { return; }
@@ -1028,7 +1033,7 @@ def _model_from_schema(tool_name: str, input_schema: dict[str, Any]) -> type[Any
             ),
         )
 
-    return pydantic.create_model(f"{tool_name.title()}Form", **field_definitions)
+    return safe_create_model(f"{tool_name.title()}Form", field_definitions)
 
 
 def _build_picker_html(tools: list[dict[str, Any]]) -> str:
@@ -1094,8 +1099,8 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
                 model = _model_from_schema(name, input_schema)
 
                 form_body: dict[str, Any] = {"tool": name}
-                for field_name in model.model_fields:
-                    form_body[field_name] = Rx(field_name)
+                for field_name, field_info in model.model_fields.items():
+                    form_body[field_info.alias or field_name] = Rx(field_name)
 
                 json_body: dict[str, Any] = {
                     "tool": name,
@@ -1382,14 +1387,35 @@ async def _fetch_app_bridge_bundle(
 # ---------------------------------------------------------------------------
 
 
+# The picker is part of the dev UI; it opens the launch pages /api/launch returns.
+_PICKER_OPEN_LINK_JS = """bridge.onopenlink = async ({ url }) => {
+        const target = new URL(url, window.location.href);
+        if (target.protocol !== "https:" && target.protocol !== "http:") {
+          return { isError: true };
+        }
+        window.location.href = target.href;
+        return {};
+      };"""
+
+_UNFORWARDED_PROXY_HEADERS = frozenset(
+    {"host", "content-length", "cookie", "origin", "referer"}
+)
+
+
 def _make_dev_app(
     mcp_url: str,
     app_bridge_js: str,
     import_map_tag: str,
     message_log: _MessageLog,
     log_panel: bool,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8080,
+    session_token: str | None = None,
 ) -> Starlette:
-    """Build the Starlette dev server application."""
+    """Build the authenticated Starlette development host."""
+    token = session_token or secrets.token_urlsafe(32)
+    launches: dict[str, tuple[str, dict[str, Any]]] = {}
 
     async def picker(request: Request) -> HTMLResponse:
         """AppBridge host page — loads the picker app in an iframe and wires the bridge."""
@@ -1401,7 +1427,7 @@ def _make_dev_app(
             frame_display="block",
             mcp_sdk_version=_MCP_SDK_VERSION,
             iframe_src_json=json.dumps("/picker-app"),
-            on_open_link="bridge.onopenlink = async ({ url }) => { window.location.href = url; return {}; };",
+            on_open_link=_PICKER_OPEN_LINK_JS,
             on_initialized="bridge.oninitialized = async () => {};",
         )
         return (
@@ -1415,17 +1441,20 @@ def _make_dev_app(
         try:
             raw_tools = await _list_tools(mcp_url)
             ui_tools = [t for t in raw_tools if _has_ui_resource(t)]
-            html = _build_picker_html(ui_tools)
+            page_html = _build_picker_html(ui_tools)
         except Exception as exc:
             logger.exception("Error building picker UI")
-            html = f"<pre style='padding:2rem;color:red'>Error: {exc}</pre>"
-        return HTMLResponse(html)
+            page_html = f"<pre style='padding:2rem;color:red'>Error: {html.escape(str(exc))}</pre>"
+        return HTMLResponse(page_html)
 
     async def launch(request: Request) -> HTMLResponse:
-        """Host page: GET /launch?tool=name&args={...}"""
-        tool = request.query_params.get("tool", "")
-        args_raw = request.query_params.get("args", "{}")
-        tool_args = json.loads(args_raw)
+        """Host page: GET /launch?id=... for a launch created by /api/launch."""
+        launch = launches.get(request.query_params.get("id", ""))
+        if launch is None:
+            return HTMLResponse(
+                "Unknown launch. Start tools from the dev UI picker.", status_code=404
+            )
+        tool, tool_args = launch
         host_html = _HOST_HTML_TEMPLATE.format(
             tool_name=html.escape(tool, quote=True),
             import_map_tag=import_map_tag,
@@ -1490,7 +1519,11 @@ def _make_dev_app(
                         except (json.JSONDecodeError, TypeError):
                             pass
                 tool_args[k] = v
-        url = "/launch?" + urlencode({"tool": tool, "args": json.dumps(tool_args)})
+        # Launch pages run tools, so their URLs name a stored launch instead
+        # of carrying the tool and arguments.
+        launch_id = secrets.token_urlsafe(16)
+        launches[launch_id] = (tool, tool_args)
+        url = "/launch?" + urlencode({"id": launch_id})
         return Response(
             content=json.dumps(url),
             media_type="application/json",
@@ -1537,10 +1570,14 @@ def _make_dev_app(
             except (json.JSONDecodeError, TypeError):
                 pass
 
+        # The dev server has already checked the browser's session and origin.
+        # Forward the request as its own, without the browser's cookies or
+        # origin headers.
         headers = {
             k: v
             for k, v in request.headers.items()
-            if k.lower() not in ("host", "content-length")
+            if k.lower() not in _UNFORWARDED_PROXY_HEADERS
+            and not k.lower().startswith("sec-fetch-")
         }
 
         # Use a reasonable default timeout to prevent the proxy from hanging
@@ -1661,7 +1698,10 @@ def _make_dev_app(
                 proxy_mcp,
                 methods=["GET", "POST", "DELETE", "PUT", "PATCH", "OPTIONS"],
             ),
-        ]
+        ],
+        middleware=[
+            Middleware(DevSessionMiddleware, host=host, port=port, token=token)
+        ],
     )
 
 
@@ -1697,6 +1737,8 @@ async def _start_user_server(
     else:
         cmd.append("--no-reload")
     env = {**os.environ, "FASTMCP_LOG_LEVEL": "WARNING"}
+    # Validate Host and Origin on the spawned server unless the user chose a mode.
+    env.setdefault("FASTMCP_HTTP_HOST_ORIGIN_PROTECTION", "auto")
     process = await asyncio.create_subprocess_exec(
         *cmd,
         env=env,
@@ -1738,15 +1780,17 @@ async def run_dev_apps(
     on *dev_port* (with an /mcp proxy to the user's server), then opens
     the browser.
     """
+    # Reach servers bound to every interface through loopback.
+    local_host = {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(host, host)  # noqa: S104
     mcp_url = (
-        f"http://{host}:{mcp_port}/mcp"
-        if ":" not in host
-        else f"http://[{host}]:{mcp_port}/mcp"
+        f"http://{local_host}:{mcp_port}/mcp"
+        if ":" not in local_host
+        else f"http://[{local_host}]:{mcp_port}/mcp"
     )
     dev_url = (
-        f"http://{host}:{dev_port}"
-        if ":" not in host
-        else f"http://[{host}]:{dev_port}"
+        f"http://{local_host}:{dev_port}"
+        if ":" not in local_host
+        else f"http://[{local_host}]:{dev_port}"
     )
 
     user_proc: asyncio.subprocess.Process | None = None
@@ -1811,10 +1855,25 @@ async def run_dev_apps(
         if not ready:
             raise RuntimeError(f"User server did not start on port {mcp_port}")
 
-        logger.info(f"FastMCP dev UI at {dev_url}")
+        session_token = secrets.token_urlsafe(32)
+        startup_url = dev_url + "/?" + urlencode({"token": session_token})
+        # Print the URL on its own line so log formatting never wraps it.
+        print(f"\nFastMCP dev UI: {startup_url}\n", file=sys.stderr, flush=True)
+        if host not in {"127.0.0.1", "localhost", "::1"}:
+            logger.warning(
+                "The dev UI is bound to a non-loopback interface. "
+                "Keep its startup URL private; HTTP does not encrypt the session."
+            )
 
         dev_app = _make_dev_app(
-            mcp_url, app_bridge_js, import_map_tag, _MessageLog(), log_panel
+            mcp_url,
+            app_bridge_js,
+            import_map_tag,
+            _MessageLog(),
+            log_panel,
+            host=host,
+            port=dev_port,
+            session_token=session_token,
         )
         config = uvicorn.Config(
             dev_app,
@@ -1830,7 +1889,7 @@ async def run_dev_apps(
 
         async def _open_browser() -> None:
             await asyncio.sleep(0.8)
-            webbrowser.open(dev_url)
+            webbrowser.open(startup_url)
 
         await asyncio.gather(server.serve(), _open_browser())
 

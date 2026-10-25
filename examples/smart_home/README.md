@@ -1,13 +1,21 @@
 # smart home MCP
 
-Control Philips Hue lights through FastMCP and the `phue2` 1.0 alpha's local Hue
-V2 API. An agent can discover real state and capabilities, inspect saved scenes,
-and activate native candle or fire effects. The bridge runs those effects;
-no agent polling loop is needed.
+Control Philips Hue lights and an Amazon Fire TV through one FastMCP server.
+The example demonstrates namespaced device tools, connections owned by each
+server's lifespan, typed receipts, and reading device state after a command. It uses `phue2` for Hue's
+local V2 API and Home Assistant's `androidtv` backend for Fire TV.
 
-## Run
+## run
 
-Create `.env` in this directory with your existing bridge credentials:
+Requires Python 3.12+, `uv`, and credentials for your Hue bridge. From the
+repository root:
+
+```bash
+cd examples/smart_home
+uv sync
+```
+
+Create `.env` in this directory:
 
 ```dotenv
 HUE_BRIDGE_IP=<bridge IP>
@@ -15,83 +23,45 @@ HUE_BRIDGE_USERNAME=<bridge application key>
 HUE_BRIDGE_CERTIFICATE=/absolute/path/to/trusted-bridge.pem
 ```
 
-HTTPS verification is enabled. The optional certificate file is an explicitly
-trusted certificate obtained and verified for your bridge; its identity replaces
-hostname matching when connecting by IP. Without it, normal system trust and
-hostname verification apply. Credentials remain local and are not saved by the SDK.
+For Fire TV, also set `FIRE_TV_HOST` and `FIRE_TV_ADB_SERVER_IP=127.0.0.1`.
+Enable ADB debugging, approve this computer on the TV, and connect the ADB server
+to the device first. The [setup and operation guide](docs/usage.md) covers
+certificate trust, direct ADB authentication, TV-only startup, and troubleshooting.
 
 ```bash
 uv run smart-home
 ```
 
-The server owns one pooled asynchronous bridge connection in its lifespan. Tools
-receive that existing connection through dependency injection. Settings load at
-startup, so importing the example does not require live credentials.
+This is a stdio MCP server. Configure your client to run that command with this
+directory as its working directory. Discover `hue_` and `fire_tv_` tools in the
+client, read the target device, issue a command, and read it again. Write receipts
+confirm command acceptance; they do not prove the resulting device state.
 
-## Agent workflow
+## design
 
-Start with `hue_read_rooms` and `hue_read_lights`. Rooms include member light UUIDs;
-lights include state, device connectivity and supported effects. Names must match
-exactly and be unique. V2 UUIDs replace the old numeric light and group IDs.
+`src/smart_home/hub.py` mounts independent `lights/` and `fire_tv/` servers. Each
+owns its transport and connection lifespan. The hub requires Hue configuration;
+the Fire TV server can also run independently.
 
-To turn on candle flicker, check each room member's `supported_effects` and call
-`hue_set_light` for each supported bulb:
+An agent can find a current daylight wildlife feed and pass its video ID to
+`fire_tv_play_youtube_video` without changing this example. The optional
+[media picker](../apps/media_picker/README.md) shows the links the agent found,
+verified, and plays the user's choice through `fire_tv_play_media`.
 
-```json
-{
-  "target": "<light UUID>",
-  "state": {"on": true, "effect": "candle", "effect_speed": 0.5}
-}
-```
+Schedules, presence rules, and durable desired state belong to the calling
+application or workflow engine. This example provides the device operations that
+those policies compose. It does not require Pi or a particular UI.
 
-This preserves brightness. Read `state.effect` and `state.effect_parameters` afterward to verify the active
-effect; use `effect: "no_effect"` to stop it. Effect names and support come from the
-bulb, not a fixed list. Speed is between zero and one; color or temperature supplied
-with an active effect changes its parameters.
+## develop
 
-For ordinary room-wide lighting, use `hue_set_room` with brightness percent,
-`temperature_kelvin`, and optional `transition_seconds`. Color can instead use CIE
-`xy` coordinates. Native effects target individual bulbs. Brightness, color and
-effects do not implicitly turn lights on; include `on: true` when desired.
-
-Use `hue_read_scenes` to inspect room associations, palettes and per-light actions.
-That distinguishes a scene with warm static colors from one with candle or fire
-effects. `hue_activate_scene` resolves names within the chosen room and recalls the
-saved actions. Its optional `dynamic_palette` action requests palette cycling where
-supported by Hue.
-
-A write acknowledgement does not prove the resulting state. Read lights after a
-transition. Hue may partially apply a command before reporting an error; failures
-are exposed as MCP tool errors. This example does not implement scheduling,
-custom animation loops, or entertainment streaming.
-
-## Test with an agent
+From this directory:
 
 ```bash
 uv run pytest
 uv run scripts/pi_harness.py --json
 ```
 
-The tests exercise actual MCP calls with a simulated bridge. The Pi harness
-requires Pi and `pi-mcp-adapter`, exposes only this MCP, disables built-in tools,
-and defaults to read-only discovery. Pass `--env-file /path/to/existing.env` if
-credentials live elsewhere; `HUE_BRIDGE_CERTIFICATE` can also be exported in the
-launching environment. A quoted prompt may request real changes to lights.
-`--json` records tool calls and results for verification.
-
-## Discovery and result metadata
-
-`hue_read_lights(room="living room")` and `hue_read_scenes(room="living room")`
-limit discovery to a room, using its exact unique name or UUID. Light results put
-observed state, supported effects and capabilities first. `details=true` includes
-the complete Hue light resource when needed. Unknown observations remain null;
-color temperature is reported only when Hue marks it valid.
-
-`hue_set_room` exposes ordinary lighting controls only. Apply native effects with
-`hue_set_light` to each supported bulb. All writes return an accepted receipt with
-`state_verified=false`; read the affected room after a transition to verify state.
-Repeating an effect or scene command may restart its animation or transition, so
-write tools do not promise idempotence. Tools interact with the external bridge.
-
-Clients should rediscover tools after this update: the former group tools are now
-`hue_read_rooms` and `hue_set_room`, and scene activation takes a `room` argument.
+Tests dispatch real MCP calls against simulated devices. The optional Pi harness
+requires Pi and `pi-mcp-adapter` and defaults to read-only Hue inspection. Hardware
+verification is separate; see the [operation guide](docs/usage.md) for workflows
+and the limits of status readback.

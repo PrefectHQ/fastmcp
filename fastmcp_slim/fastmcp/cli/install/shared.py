@@ -1,10 +1,14 @@
 """Shared utilities for install commands."""
 
 import json
+import ntpath
 import os
 import re
+import string
 import subprocess
 import sys
+import unicodedata
+from collections.abc import Sequence
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -30,13 +34,133 @@ def validate_server_name(name: str) -> str:
 
     Raises SystemExit if the name contains shell metacharacters.
     """
-    if not _SAFE_NAME_RE.match(name):
+    if not _SAFE_NAME_RE.fullmatch(name):
         print(
             f"[red]Invalid server name '[bold]{name}[/bold]': "
             "names may only contain letters, numbers, hyphens, underscores, dots, and spaces.[/red]"
         )
         sys.exit(1)
     return name
+
+
+# Characters that cmd.exe passes through unchanged outside double quotes.
+# Arguments containing anything else are quoted.
+_BATCH_UNQUOTED_CHARS = frozenset(
+    string.ascii_letters + string.digits + "#$*+-./:?@\\_"
+)
+
+# `%cd:~,%` is a zero-length substring of the always-defined `cd` variable.
+# Writing each `%` as `%%cd:~,%` makes cmd.exe's percent expansion produce a
+# literal `%` and stops it from pairing that `%` with any other one.
+_BATCH_PERCENT = "%%cd:~,%"
+
+
+def _quote_batch_text(text: str) -> str:
+    """Quote text for cmd.exe and the C runtime argument parser."""
+    quoted: list[str] = ['"']
+    backslashes = 0
+    for char in text:
+        if char == "\\":
+            backslashes += 1
+            quoted.append(char)
+            continue
+        if char == '"':
+            # 2n backslashes before a quote, then `""`, keeps n backslashes and
+            # one literal quote while cmd.exe stays inside a quoted region.
+            quoted.append("\\" * backslashes + '""')
+        elif char == "%":
+            quoted.append(_BATCH_PERCENT)
+        else:
+            quoted.append(char)
+        backslashes = 0
+    quoted.append("\\" * backslashes + '"')
+    return "".join(quoted)
+
+
+def quote_windows_batch_argument(argument: str) -> str:
+    """Quote one argument for a command line that runs a `.cmd` or `.bat` file.
+
+    The result reaches the program that the batch file launches as the
+    original literal string. This follows the batch file argument quoting in
+    Rust's standard library: arguments are wrapped in double quotes so cmd.exe
+    treats `&`, `|`, `<`, `>`, `^`, parentheses and similar characters as
+    text, including when the batch file expands them again through `%*`.
+    Embedded quotes are doubled, which both cmd.exe and the Microsoft C
+    runtime read as a literal quote. Each `%` is rewritten so cmd.exe does not
+    expand environment variables. Delayed `!` expansion is disabled by the
+    command processor options in `windows_batch_command_line`.
+
+    Raises:
+        ValueError: If the argument contains a line break. cmd.exe ends the
+            command at a line break, so it cannot be passed literally.
+    """
+    if "\r" in argument or "\n" in argument:
+        raise ValueError(
+            "Arguments passed to a Windows .cmd or .bat command cannot contain line breaks"
+        )
+    needs_quotes = argument == "" or argument.endswith("\\")
+    for char in argument:
+        if char.isascii():
+            if char not in _BATCH_UNQUOTED_CHARS:
+                needs_quotes = True
+        elif unicodedata.category(char) == "Cc":
+            needs_quotes = True
+    if not needs_quotes:
+        return argument
+    return _quote_batch_text(argument)
+
+
+def windows_batch_command_line(command: Sequence[str]) -> str:
+    """Build a cmd.exe command line that runs a batch file with literal arguments.
+
+    `command[0]` is the batch file path and the remaining items are its
+    arguments. The returned string is passed verbatim to `CreateProcess` with
+    cmd.exe as the executable. Command extensions are enabled for the `%`
+    handling, delayed expansion and AutoRun commands are disabled, and `/s`
+    makes cmd.exe remove exactly the outer pair of quotes.
+
+    Raises:
+        ValueError: If the batch file path or an argument cannot be passed.
+    """
+    script, *arguments = command
+    if '"' in script or script.endswith("\\") or "\r" in script or "\n" in script:
+        raise ValueError(f"Invalid Windows batch file path: {script!r}")
+    parts = [_quote_batch_text(script)]
+    parts.extend(quote_windows_batch_argument(argument) for argument in arguments)
+    return 'cmd.exe /e:on /v:off /d /s /c "' + " ".join(parts) + '"'
+
+
+def _windows_command_processor() -> str:
+    """Return the absolute path of cmd.exe."""
+    comspec = os.environ.get("COMSPEC", "")
+    if ntpath.isabs(comspec):
+        return comspec
+    system_root = os.environ.get("SYSTEMROOT", "C:\\Windows")
+    return ntpath.join(system_root, "System32", "cmd.exe")
+
+
+def run_cli_command(command: list[str]) -> subprocess.CompletedProcess[str]:
+    """Run a client CLI so that it receives each argument literally.
+
+    On Windows, a `.cmd` or `.bat` file always runs through cmd.exe, which
+    would otherwise interpret operators and `%` expansions in the arguments.
+    For those files the command line is built with
+    `windows_batch_command_line`. Other executables, and every executable on
+    other platforms, receive the argument list directly.
+
+    Raises:
+        subprocess.CalledProcessError: If the command exits with an error.
+        ValueError: If an argument cannot be passed to a batch file.
+    """
+    if sys.platform == "win32" and command[0].lower().endswith((".cmd", ".bat")):
+        return subprocess.run(
+            windows_batch_command_line(command),
+            executable=_windows_command_processor(),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    return subprocess.run(command, check=True, capture_output=True, text=True)
 
 
 def parse_env_var(env_var: str) -> tuple[str, str]:
@@ -79,7 +203,7 @@ async def process_common_args(
             sys.exit(1)
 
         try:
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 data = json.load(f)
 
             # Check if it's an MCPConfig (has mcpServers key)

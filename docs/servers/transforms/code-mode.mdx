@@ -122,7 +122,7 @@ CodeMode ships with four built-in discovery tools: `Search`, `GetSchemas`, `GetT
 | Level | Output | Token cost |
 |---|---|---|
 | `"brief"` | Tool names and one-line descriptions | Cheapest — good for scanning |
-| `"detailed"` | Compact markdown with parameter names, types, and required markers | Medium — often enough to write code |
+| `"detailed"` | Compact markdown with parameter names, types, literal values, defaults, required markers, and the field names one level inside any object-valued parameter or return | Medium — often enough to write code |
 | `"full"` | Complete JSON schema | Most expensive — everything |
 
 `Search` defaults to `"brief"` and `GetSchemas` defaults to `"detailed"`.
@@ -143,7 +143,7 @@ If your tools use [tags](/servers/visibility#tags), Search also accepts a `tags`
 
 ### GetSchemas
 
-`GetSchemas` returns parameter details for specific tools by name. At its default `"detailed"` level, it renders compact markdown with parameter names, types, and required markers. At `"full"`, it returns the complete JSON schema — useful when tools have deeply nested parameters that the compact format doesn't capture.
+`GetSchemas` returns parameter details for specific tools by name. At its default `"detailed"` level, it renders compact markdown with parameter names, types, literal values, defaults, and required markers. Object-valued parameters and return values also list their own field names one level down, following `$ref`s into `$defs`, so a tool returning `list[Card]` renders as ``- `items` (object[]): `id`, `url`, `title`, …`` rather than an opaque `object[]`. At `"full"`, it returns the complete JSON schema — useful when tools have deeply nested parameters that the compact format doesn't capture.
 
 ### GetTags
 
@@ -156,6 +156,14 @@ If your tools use [tags](/servers/visibility#tags), Search also accepts a `tags`
 ```
 
 `GetTags` isn't included in the defaults — add it when browsing by category would help the LLM orient itself in a large catalog. The LLM can browse tags first, then pass specific tags into Search to narrow results.
+
+For example, a parameter declared as `sort: Literal["top", "recent"] = "recent"` appears as:
+
+```text
+- `sort` (string, one of "top"/"recent", default "recent")
+```
+
+Single-value literals also show their allowed value. Literal value lists are included up to eight values; parameter descriptions and complete constraints remain available at `"full"` detail.
 
 ### ListTools
 
@@ -282,11 +290,13 @@ mcp = FastMCP("Server", transforms=[code_mode])
 
 ## Sandbox Configuration
 
+The sandbox controls the Python environment used by the code submitted to `execute`. Calls to `call_tool()` dispatch registered tools through FastMCP in the current request context, with the same authorization checks as a normal tool call. Those tool functions run in the server environment and retain their configured access to files, networks, and other resources.
+
 ### Resource Limits
 
 The default `MontySandboxProvider` enforces execution limits — timeouts, memory caps, recursion depth, and more.
 
-Constructed with no arguments, it applies a conservative baseline so the out-of-box configuration is not unbounded: `max_duration_secs=30` and `max_memory=100_000_000` (100 MB). Pass an explicit `limits` dict to override it, or `limits=None` to disable the configurable time, memory, and GC limits. Monty's standard recursion limit still applies:
+Constructed with no arguments, it applies a conservative baseline so the out-of-box configuration is not unbounded: `max_feed_duration_secs=30` and `max_memory=100_000_000` (100 MB). Pass an explicit `limits` dict to override it, or `limits=None` to disable the configurable time, memory, and GC limits. Monty's standard recursion limit still applies:
 
 ```python
 from fastmcp.experimental.transforms.code_mode import MontySandboxProvider
@@ -297,11 +307,12 @@ MontySandboxProvider(limits=None)       # no time, memory, or GC limits
 ```
 
 ```python
+from fastmcp import FastMCP
 from fastmcp.experimental.transforms.code_mode import CodeMode
 from fastmcp.experimental.transforms.code_mode import MontySandboxProvider
 
 sandbox = MontySandboxProvider(
-    limits={"max_duration_secs": 10, "max_memory": 50_000_000},
+    limits={"max_feed_duration_secs": 10, "max_memory": 50_000_000},
 )
 
 mcp = FastMCP("Server", transforms=[CodeMode(sandbox_provider=sandbox)])
@@ -311,12 +322,15 @@ Time, memory, and GC limits are optional; omit a key to disable that limit. Recu
 
 | Key | Type | Description |
 |---|---|---|
-| `max_duration_secs` | `float` | Maximum wall-clock execution time |
+| `max_feed_duration_secs` | `float` | Maximum sandbox execution time for the entire code block |
+| `max_turn_duration_secs` | `float` | Maximum sandbox execution time between host round trips |
 | `max_memory` | `int` | Memory ceiling in bytes |
 | `max_recursion_depth` | `int` | Maximum recursion depth |
 | `gc_interval` | `int` | Garbage collection frequency |
 
-Unsupported keys raise `ValueError` rather than being silently ignored. Monty no longer supports `max_allocations`; use `max_memory` to cap memory usage.
+Duration limits exclude time spent waiting for host tools. The feed limit covers the entire code block; the turn limit resets after each host round trip.
+
+Unsupported keys raise `ValueError` rather than being silently ignored. Replace `max_duration_secs` with `max_feed_duration_secs` in existing configurations. Monty no longer supports `max_allocations`; use `max_memory` to cap memory usage.
 
 ### Tool Call Limits
 

@@ -126,19 +126,31 @@ def _build_resource_for_tool(tool: Tool) -> Resource | None:
 
     resource_csp = ResourceCSP(**merged) if any(merged.values()) else None
 
-    # Carry permissions from the tool's meta to the resource (same
-    # principle as CSP — belongs on the resource, not the tool).
+    # Carry permissions, domain and prefersBorder from the tool's meta to the
+    # resource (same principle as CSP — they belong on the resource, not the
+    # tool).
     user_permissions = None
+    domain = None
+    prefers_border = None
     if tool.meta and isinstance(tool.meta.get("ui"), dict):
-        raw_perms = tool.meta["ui"].get("permissions")
+        tool_ui = tool.meta["ui"]
+        raw_perms = tool_ui.get("permissions")
         if isinstance(raw_perms, dict):
             from fastmcp.apps.config import ResourcePermissions
 
             user_permissions = ResourcePermissions(**raw_perms)
+        raw_domain = tool_ui.get("domain")
+        if isinstance(raw_domain, str):
+            domain = raw_domain
+        raw_border = tool_ui.get("prefersBorder")
+        if isinstance(raw_border, bool):
+            prefers_border = raw_border
 
     resource_app = AppConfig(
         csp=resource_csp,
         permissions=user_permissions,
+        domain=domain,
+        prefers_border=prefers_border,
     )
     uri = f"ui://prefab/tool/{tool_hash}/renderer.html"
 
@@ -227,7 +239,7 @@ async def synthesize_prefab_resource_by_uri(
 
 
 def rewrite_tool_meta_for_wire(tool: Tool) -> Tool:
-    """Return a model_copy with the per-tool URI and CSP stripped.
+    """Return a model_copy with the per-tool URI and resource-only fields stripped.
 
     Reads the hash from the tool's own meta. If no hash is found,
     returns the tool unchanged. Produces a fresh copy — the original
@@ -243,6 +255,8 @@ def rewrite_tool_meta_for_wire(tool: Tool) -> Tool:
     new_ui["resourceUri"] = f"ui://prefab/tool/{tool_hash}/renderer.html"
     new_ui.pop("csp", None)
     new_ui.pop("permissions", None)
+    new_ui.pop("domain", None)
+    new_ui.pop("prefersBorder", None)
     new_meta = dict(tool.meta)
     new_meta["ui"] = new_ui
     return tool.model_copy(update={"meta": new_meta})

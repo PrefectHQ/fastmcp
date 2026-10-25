@@ -111,6 +111,8 @@ The boolean shortcuts map to these modes:
 
 When a `mode="required"` tool is called by a client that didn't opt in, FastMCP returns a "missing required capability" error rather than running it synchronously.
 
+A client's opt-in applies to the tool it called. When a tool, resource, or prompt calls a tool through `ctx.fastmcp.call_tool()`, as a [search transform's](/servers/transforms/tool-search) `call_tool` proxy and [CodeMode's](/servers/transforms/code-mode) `execute` do, the inner call runs in the foreground so the caller gets its result. An `"optional"` tool runs synchronously there, and a `"required"` tool raises a tool error, since only the client can start a task by calling it directly.
+
 ### Poll Interval
 
 When a client polls for task status, the server can suggest how frequently to check back:
@@ -193,6 +195,47 @@ mcp.add_extension(TasksExtension(url="redis://localhost:6379/0"))
 - **Persistent**: Tasks survive server restarts
 - **Fast**: Single-digit millisecond task pickup latency
 - **Scalable**: Add workers to distribute load across processes or machines
+
+### Rotating Redis Credentials
+
+For backends with expiring credentials, pass a redis-py `CredentialProvider` to `TasksExtension`. Use a URL without a username or password. Docket passes the provider to its Redis connections so a reconnect can obtain fresh credentials.
+
+This example reads credentials from a file on each new connection. Your deployment can replace the file when the password or token changes:
+
+```python
+from pathlib import Path
+
+from redis.credentials import CredentialProvider
+
+from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
+
+
+class FileCredentials(CredentialProvider):
+    def get_credentials(self) -> tuple[str, str]:
+        password = Path("/run/secrets/redis-password").read_text().strip()
+        return "tasks-user", password
+
+
+mcp = FastMCP("MyServer")
+mcp.add_extension(
+    TasksExtension(
+        url="rediss://redis.example.com:6379/0",
+        credential_provider=FileCredentials(),
+    )
+)
+
+
+@mcp.tool(task=True)
+async def double(value: int) -> int:
+    return value * 2
+```
+
+You can also supply a provider that implements `get_credentials_async()`, or a provider from your cloud authentication library. FastMCP does not generate or refresh cloud tokens itself. Docket manages connection authentication, including refresh notifications from streaming providers; see [Docket credential providers](https://docket.lol/en/latest/production/#credential-providers) for details about long-lived connections and provider ownership.
+
+Configure the provider in your server module. [Additional workers](#workers) load that same module and use its registered extension, so no separate worker flag is needed. Provider objects are runtime configuration, not `FASTMCP_DOCKET_*` environment settings. The default `memory://` backend ignores them.
+
+`TasksExtension.clone()` copies the resolved settings and shares the credential provider with the original extension. To give servers independent authentication state, construct each extension with its own provider instead.
 
 ### Credentials at Rest
 

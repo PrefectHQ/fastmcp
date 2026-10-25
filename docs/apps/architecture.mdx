@@ -39,6 +39,8 @@ The tool and renderer are linked through a `resourceUri` field in the metadata. 
 
 Second, it sets `meta["ui"]["visibility"]` to control who can see each tool. Entry points default to `["model"]` (LLM-visible). Backend tools default to `["app"]` (UI-only). Hosts use this to filter the tool list.
 
+This metadata is not a security boundary: FastMCP accepts direct MCP calls to app tools regardless of the declared audience, subject to authentication and authorization. The MCP connection does not identify whether a call originated from the model or the UI. See [Tool visibility](/apps/low-level#tool-visibility).
+
 ## Serialization
 
 When a Prefab tool runs, its return value — a `PrefabApp` or a bare `Component` — becomes a JSON blob the renderer can interpret.
@@ -93,15 +95,15 @@ Give each copy its own app name. Two tenants running the same product want `Fast
 
 ### The hashed lookup fallback
 
-The identity-addressed form `<hash>_<local_name>` remains callable. FastMCP first tries normal tool resolution; if no tool matches and the name has that shape, it calls `get_tool_by_hash(hash, local_name)`, which walks the provider tree directly, skipping transforms.
+The identity-addressed form `<hash>_<local_name>` remains callable. FastMCP first tries normal tool resolution; if no tool matches and the name has that shape, it calls `get_tool_by_hash(hash, local_name)`, which resolves the tool through the same lookup as its listed name. Transforms, enabled state, and authorization apply to a hashed name exactly as they do to a name call.
 
 When one identity is claimed by more than one tool — which happens when the same app is composed into two branches — the call is refused rather than resolved, since picking either one would silently route into the wrong branch.
 
-Authorization still applies. The hashed path skips name and visibility transforms, but auth checks still run against the tool's `auth` config before execution.
+Hashed tool names provide stable routing identities, not secrets or access controls. Knowing a hashed name grants no additional authorization, and hiding it from a model's tool list does not restrict access.
 
 ### Provider delegation
 
-`get_tool_by_hash` is defined on the `Provider` base class and overridden by aggregate and wrapped providers. Aggregate providers fan out the lookup across child providers in parallel. Wrapped providers (like `FastMCPProvider`, which wraps a nested `FastMCP` server) delegate to the inner server's hashed lookup. Backend tools are reachable through any depth of composition.
+`get_tool_by_hash` is defined on the `Provider` base class. Providers override `_get_tool_by_hash` to find a tool by its identity, and the base class resolves the result through the provider's public `get_tool`. Aggregate providers fan out the lookup across child providers in parallel. Wrapped providers (like `FastMCPProvider`, which wraps a nested `FastMCP` server) delegate to the inner server's hashed lookup. Backend tools are reachable through any depth of composition.
 
 ## The renderer
 

@@ -73,6 +73,21 @@ class TestReadCache:
         assert version is None
         assert timestamp == 0
 
+    @pytest.mark.parametrize("timestamp", ["invalid", None, [], {}, True])
+    def test_invalid_cache_timestamp_is_ignored(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timestamp: object
+    ):
+        cache_file = tmp_path / "version_cache.json"
+        cache_file.write_text(
+            json.dumps({"latest_version": "4.0.0", "timestamp": timestamp})
+        )
+        monkeypatch.setattr(
+            "fastmcp.utilities.version_check._get_cache_path",
+            lambda include_prereleases=False: cache_file,
+        )
+
+        assert _read_cache() == (None, 0)
+
 
 class TestWriteCache:
     def test_write_cache_creates_file(
@@ -115,6 +130,22 @@ class TestFetchLatestVersion:
         with patch("httpx2.get", side_effect=httpx2.HTTPError("Network error")):
             version = _fetch_latest_version()
             assert version is None
+
+    def test_fetch_invalid_proxy_environment(self, monkeypatch: pytest.MonkeyPatch):
+        """A proxy setting the HTTP client can't parse returns None (#5638)."""
+        for key in (
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+        ):
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv("NO_PROXY", "[::1]")
+        monkeypatch.setenv("no_proxy", "[::1]")
+
+        assert _fetch_latest_version() is None
 
     def test_fetch_invalid_response(self):
         """Invalid response returns None."""

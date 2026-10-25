@@ -1,0 +1,309 @@
+"""Request body schemas that combine a $ref with sibling properties."""
+
+import json
+from typing import Any
+
+import httpx2
+
+from fastmcp import Client, FastMCP
+
+
+def build_spec(
+    body_schema: dict[str, Any], components: dict[str, Any]
+) -> dict[str, Any]:
+    return {
+        "openapi": "3.1.0",
+        "info": {"title": "API", "version": "1"},
+        "paths": {
+            "/things": {
+                "post": {
+                    "operationId": "make_thing",
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {"schema": body_schema}},
+                    },
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+        "components": {"schemas": components},
+    }
+
+
+async def call_make_thing(
+    spec: dict[str, Any], arguments: dict[str, Any]
+) -> tuple[dict[str, Any], Any]:
+    seen: list[Any] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen.append(json.loads(request.content or b"null"))
+        return httpx2.Response(200, json={"ok": True})
+
+    async with httpx2.AsyncClient(
+        base_url="https://api.example.com",
+        transport=httpx2.MockTransport(handler),
+    ) as http:
+        server = FastMCP.from_openapi(openapi_spec=spec, client=http)
+        async with Client(server) as client:
+            tool = (await client.list_tools())[0]
+            await client.call_tool("make_thing", arguments)
+    return tool.input_schema, seen[0]
+
+
+BASE = {
+    "type": "object",
+    "properties": {"name": {"type": "string"}},
+    "required": ["name"],
+}
+
+
+async def test_ref_with_sibling_properties_advertises_both_fields():
+    spec = build_spec(
+        {
+            "$ref": "#/components/schemas/Base",
+            "properties": {"local": {"type": "string"}},
+        },
+        {"Base": BASE},
+    )
+    schema, _ = await call_make_thing(spec, {"name": "n", "local": "l"})
+    assert set(schema["properties"]) == {"name", "local"}
+
+
+async def test_ref_with_sibling_properties_sends_both_fields():
+    spec = build_spec(
+        {
+            "$ref": "#/components/schemas/Base",
+            "properties": {"local": {"type": "string"}},
+        },
+        {"Base": BASE},
+    )
+    _, body = await call_make_thing(spec, {"name": "n", "local": "l"})
+    assert body == {"name": "n", "local": "l"}
+
+
+async def test_ref_with_sibling_properties_merges_required():
+    spec = build_spec(
+        {
+            "$ref": "#/components/schemas/Base",
+            "properties": {"local": {"type": "string"}},
+            "required": ["local"],
+        },
+        {"Base": BASE},
+    )
+    schema, _ = await call_make_thing(spec, {"name": "n", "local": "l"})
+    assert sorted(schema["required"]) == ["local", "name"]
+
+
+async def test_overlapping_property_applies_both_schemas():
+    spec = build_spec(
+        {
+            "$ref": "#/components/schemas/Base",
+            "properties": {"name": {"type": "string", "minLength": 2}},
+        },
+        {"Base": BASE},
+    )
+    schema, body = await call_make_thing(spec, {"name": "nn"})
+    assert schema["properties"]["name"] == {
+        "allOf": [{"type": "string"}, {"type": "string", "minLength": 2}]
+    }
+    assert body == {"name": "nn"}
+
+
+async def test_identical_overlapping_property_stays_flat():
+    spec = build_spec(
+        {
+            "$ref": "#/components/schemas/Base",
+            "properties": {"name": {"type": "string"}},
+        },
+        {"Base": BASE},
+    )
+    schema, _ = await call_make_thing(spec, {"name": "n"})
+    assert schema["properties"]["name"] == {"type": "string"}
+
+
+async def test_reference_inside_sibling_property_is_resolved():
+    spec = build_spec(
+        {
+            "$ref": "#/components/schemas/Base",
+            "properties": {"child": {"$ref": "#/components/schemas/Child"}},
+        },
+        {
+            "Base": BASE,
+            "Child": {"type": "object", "properties": {"id": {"type": "integer"}}},
+        },
+    )
+    schema, body = await call_make_thing(spec, {"name": "n", "child": {"id": 1}})
+    assert schema["properties"]["child"]["properties"] == {"id": {"type": "integer"}}
+    assert body == {"name": "n", "child": {"id": 1}}
+
+
+async def test_ref_chain_with_sibling_properties_sends_all_fields():
+    spec = build_spec(
+        {
+            "$ref": "#/components/schemas/Middle",
+            "properties": {"local": {"type": "string"}},
+        },
+        {
+            "Base": BASE,
+            "Middle": {
+                "$ref": "#/components/schemas/Base",
+                "properties": {"middle": {"type": "string"}},
+            },
+        },
+    )
+    schema, body = await call_make_thing(
+        spec, {"name": "n", "middle": "m", "local": "l"}
+    )
+    assert set(schema["properties"]) == {"name", "middle", "local"}
+    assert body == {"name": "n", "middle": "m", "local": "l"}
+
+
+async def test_nested_reference_in_referenced_property_is_resolved():
+    spec = build_spec(
+        {
+            "$ref": "#/components/schemas/Base",
+            "properties": {"local": {"type": "string"}},
+        },
+        {
+            "Base": {
+                "type": "object",
+                "properties": {"child": {"$ref": "#/components/schemas/Child"}},
+            },
+            "Child": {"type": "object", "properties": {"id": {"type": "integer"}}},
+        },
+    )
+    schema, body = await call_make_thing(spec, {"child": {"id": 1}, "local": "l"})
+    assert schema["properties"]["child"]["properties"] == {"id": {"type": "integer"}}
+    assert body == {"child": {"id": 1}, "local": "l"}
+
+
+async def test_ref_without_siblings_exposes_referenced_fields():
+    spec = build_spec({"$ref": "#/components/schemas/Base"}, {"Base": BASE})
+    schema, body = await call_make_thing(spec, {"name": "n"})
+    assert set(schema["properties"]) == {"name"}
+    assert schema["required"] == ["name"]
+    assert body == {"name": "n"}
+
+
+PET_COMPONENTS = {
+    "Pet": {
+        "type": "object",
+        "required": ["petType"],
+        "properties": {"petType": {"type": "string"}},
+        "oneOf": [
+            {"$ref": "#/components/schemas/Cat"},
+            {"$ref": "#/components/schemas/Dog"},
+        ],
+        "discriminator": {
+            "propertyName": "petType",
+            "mapping": {
+                "cat": "#/components/schemas/Cat",
+                "dog": "#/components/schemas/Dog",
+            },
+        },
+    },
+    "Cat": {
+        "type": "object",
+        "properties": {"meowVolume": {"type": "integer"}},
+    },
+    "Dog": {
+        "type": "object",
+        "properties": {"barkVolume": {"type": "integer"}},
+    },
+}
+
+PET_BODY = {
+    "$ref": "#/components/schemas/Pet",
+    "properties": {"owner": {"type": "string"}},
+}
+
+
+async def test_ref_with_discriminator_advertises_subtype_fields():
+    spec = build_spec(PET_BODY, PET_COMPONENTS)
+    schema, _ = await call_make_thing(spec, {"petType": "cat"})
+    assert set(schema["properties"]) == {
+        "petType",
+        "owner",
+        "meowVolume",
+        "barkVolume",
+    }
+
+
+async def test_ref_with_discriminator_sends_subtype_fields():
+    spec = build_spec(PET_BODY, PET_COMPONENTS)
+    _, body = await call_make_thing(
+        spec, {"petType": "cat", "owner": "sam", "meowVolume": 3}
+    )
+    assert body == {"petType": "cat", "owner": "sam", "meowVolume": 3}
+
+
+STRING_COMPONENTS = {"Code": {"type": "string", "minLength": 3}}
+
+
+async def test_ref_to_string_with_all_of_keeps_referenced_constraints():
+    body = {
+        "$ref": "#/components/schemas/Code",
+        "allOf": [{"description": "A code"}],
+    }
+    spec = build_spec(body, STRING_COMPONENTS)
+    schema, sent = await call_make_thing(spec, {"body": "abc"})
+    assert schema["properties"]["body"]["type"] == "string"
+    assert schema["properties"]["body"]["minLength"] == 3
+    assert sent == "abc"
+
+
+async def test_ref_to_object_with_all_of_still_merges():
+    body = {
+        "$ref": "#/components/schemas/Base",
+        "allOf": [{"properties": {"extra": {"type": "string"}}}],
+    }
+    spec = build_spec(body, {"Base": BASE})
+    schema, _ = await call_make_thing(spec, {"name": "n", "extra": "e"})
+    assert set(schema["properties"]) == {"name", "extra"}
+
+
+SIBLING_BODY = {
+    "$ref": "#/components/schemas/Base",
+    "properties": {"local": {"type": "string"}},
+}
+
+
+async def test_ref_to_one_of_target_keeps_the_ref():
+    base = {
+        **BASE,
+        "oneOf": [
+            {"required": ["a"], "properties": {"a": {"type": "string"}}},
+            {"required": ["b"], "properties": {"b": {"type": "string"}}},
+        ],
+    }
+    spec = build_spec(SIBLING_BODY, {"Base": base})
+    schema, _ = await call_make_thing(
+        spec, {"body": {"name": "n", "local": "l", "a": "x"}}
+    )
+    dumped = json.dumps(schema)
+    assert '"a"' in dumped
+    assert '"name"' in dumped
+
+
+async def test_ref_to_any_of_target_keeps_the_ref():
+    base = {
+        **BASE,
+        "anyOf": [{"required": ["a"]}, {"required": ["b"]}],
+    }
+    spec = build_spec(SIBLING_BODY, {"Base": base})
+    schema, _ = await call_make_thing(spec, {"body": {"name": "n", "local": "l"}})
+    assert "anyOf" in json.dumps(schema)
+
+
+async def test_ref_to_pattern_properties_target_keeps_the_ref():
+    base = {**BASE, "patternProperties": {"^x-": {"type": "string"}}}
+    spec = build_spec(SIBLING_BODY, {"Base": base})
+    schema, _ = await call_make_thing(spec, {"body": {"name": "n", "local": "l"}})
+    assert "patternProperties" in json.dumps(schema)
+
+
+async def test_ref_to_additional_properties_target_keeps_the_ref():
+    base = {**BASE, "additionalProperties": False}
+    spec = build_spec(SIBLING_BODY, {"Base": base})
+    schema, _ = await call_make_thing(spec, {"body": {"name": "n", "local": "l"}})
+    assert "additionalProperties" in json.dumps(schema)

@@ -60,6 +60,150 @@ Content
         assert frontmatter["description"] == "A skill with quotes"
         assert frontmatter["version"] == "2.0.0"
 
+    def test_frontmatter_multiline_literal_block(self):
+        content = """---
+description: |
+  This is a multiline
+  description for the skill
+---
+
+# Skill Content
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == (
+            "This is a multiline\ndescription for the skill"
+        )
+        assert body.strip().startswith("# Skill Content")
+
+    def test_frontmatter_multiline_folded_block(self):
+        content = """---
+description: >
+  This is a folded
+  multiline description
+---
+
+# Skill Content
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == "This is a folded multiline description"
+        assert body.strip().startswith("# Skill Content")
+
+    def test_frontmatter_malformed_falls_back_to_line_parser(self):
+        # Invalid YAML list — safe_load fails; line parser keeps plain keys.
+        content = """---
+description: [unclosed
+name: still-parsed
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["name"] == "still-parsed"
+        assert frontmatter["description"] == "[unclosed"
+        assert body == "Body\n"
+
+    def test_frontmatter_colon_in_value_falls_back_preserves_keys(self):
+        # Real skill files sometimes contain unquoted values with ": " that
+        # PyYAML rejects; must not drop description (FastMCP #4416 review).
+        content = """---
+name: oss-daily
+description: Use when Vishnu wants: daily OSS drafting
+---
+
+# Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["name"] == "oss-daily"
+        assert "daily OSS drafting" in frontmatter["description"]
+        assert body.strip().startswith("# Body")
+
+    def test_frontmatter_non_dict_returns_empty(self):
+        content = """---
+- item1
+- item2
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter == {}
+        assert body == "Body\n"
+
+    def test_frontmatter_scalars_are_preserved_as_strings(self):
+        """`SkillInfo.frontmatter` is public; it must not silently retype values.
+
+        `yaml.BaseLoader` parses block scalars (unlike the old line parser)
+        but applies no implicit scalar resolution, so every value comes back
+        exactly as written instead of being coerced to float/bool/date the
+        way a full loader (e.g. `safe_load`) would.
+
+        The `description: null` case looks surprising but is intentional:
+        under `BaseLoader`, YAML's null token resolves to the *string*
+        `"null"`, not Python `None`. This matches the pre-existing line-based
+        parser (which did `value.strip()` on the raw text and also produced
+        `"null"`), so this restores original behavior rather than inventing
+        a new one. Do not "fix" this back to `None`.
+        """
+        content = """---
+version: 1.10
+enabled: yes
+released: 2024-01-01
+description: null
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["version"] == "1.10"
+        assert frontmatter["enabled"] == "yes"
+        assert frontmatter["released"] == "2024-01-01"
+        assert frontmatter["description"] == "null"
+        for value in frontmatter.values():
+            assert isinstance(value, str)
+
+    def test_frontmatter_description_bool_recovers_original_text(self):
+        content = """---
+description: true
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == "true"
+        assert isinstance(frontmatter["description"], str)
+
+    def test_frontmatter_description_yes_not_coerced_to_true(self):
+        # FastMCP #4416 regression: `yes` bare word previously coerced to True.
+        content = """---
+description: yes
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == "yes"
+
+    def test_frontmatter_description_no_not_coerced_to_false(self):
+        content = """---
+description: no
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == "no"
+
+    def test_frontmatter_description_numeric_scalar_preserves_original_text(self):
+        # YAML resolves `1.10` to float 1.1, dropping the trailing zero the author wrote.
+        content = """---
+description: 1.10
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == "1.10"
+
 
 class TestSkillProvider:
     """Tests for SkillProvider - single skill folder."""
@@ -373,6 +517,96 @@ This is my skill content.
         }
 
 
+class TestNonStringDescription:
+    """Non-string frontmatter descriptions must not break resource listing.
+
+    ``parse_frontmatter`` returns YAML sequences/mappings as ``list``/``dict``.
+    Storing those verbatim in ``SkillInfo.description`` made ``SkillResource``
+    construction fail pydantic validation, so the skill's main file and
+    manifest disappeared from ``list_resources()``.
+    """
+
+    @staticmethod
+    def _write_skill(tmp_path: Path, frontmatter: str) -> Path:
+        skill_dir = tmp_path / "typed-description-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            f"---\n{frontmatter}\n---\n\n# Fallback Title\n\nBody.\n",
+            encoding="utf-8",
+        )
+        return skill_dir
+
+    @pytest.mark.parametrize(
+        "frontmatter",
+        ["description: [a, b]", "description: {short: x}"],
+        ids=["sequence", "mapping"],
+    )
+    async def test_yaml_collection_description_falls_back_to_body(
+        self, tmp_path: Path, frontmatter: str
+    ):
+        skill_dir = self._write_skill(tmp_path, frontmatter)
+        provider = SkillProvider(skill_path=skill_dir)
+
+        assert provider.skill_info.description == "Fallback Title"
+
+        resources = await provider.list_resources()
+        assert {r.name for r in resources} == {
+            "typed-description-skill/SKILL.md",
+            "typed-description-skill/_manifest",
+        }
+        assert all(isinstance(r.description, str) for r in resources)
+
+        main = await provider.get_resource("skill://typed-description-skill/SKILL.md")
+        assert main is not None
+        assert main.description == "Fallback Title"
+
+        manifest = await provider.get_resource(
+            "skill://typed-description-skill/_manifest"
+        )
+        assert manifest is not None
+
+    async def test_server_lists_skill_with_sequence_description(self, tmp_path: Path):
+        """User-visible symptom: a directly registered provider returned []."""
+        skill_dir = self._write_skill(tmp_path, "description: [a, b]")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(SkillProvider(skill_path=skill_dir))
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+
+        assert {r.name for r in resources} == {
+            "typed-description-skill/SKILL.md",
+            "typed-description-skill/_manifest",
+        }
+
+    @pytest.mark.parametrize(
+        ("frontmatter", "expected_description"),
+        [
+            ('description: [a, b]\nmalformed: "unclosed', "Fallback Title"),
+            # The line-based fallback leaves a mapping-looking scalar as text,
+            # so it is already a valid string description.
+            ('description: {short: x}\nmalformed: "unclosed', "{short: x}"),
+        ],
+        ids=["sequence", "mapping"],
+    )
+    async def test_malformed_yaml_line_fallback_keeps_resources_listable(
+        self, tmp_path: Path, frontmatter: str, expected_description: str
+    ):
+        skill_dir = self._write_skill(tmp_path, frontmatter)
+        provider = SkillProvider(skill_path=skill_dir)
+
+        assert isinstance(provider.skill_info.description, str)
+        assert provider.skill_info.description == expected_description
+
+        resources = await provider.list_resources()
+        assert {r.name for r in resources} == {
+            "typed-description-skill/SKILL.md",
+            "typed-description-skill/_manifest",
+        }
+        assert all(isinstance(r.description, str) for r in resources)
+
+
 class TestSkillsDirectoryProvider:
     """Tests for SkillsDirectoryProvider - scans directory for skill folders."""
 
@@ -533,6 +767,24 @@ Additional documentation.
 
         resources = await provider.list_resources()
         assert resources == []
+
+    @pytest.mark.parametrize("reload", [False, True])
+    async def test_undecodable_skill_is_skipped(self, tmp_path: Path, reload: bool):
+        skills_dir = tmp_path / "skills"
+        good = skills_dir / "good"
+        good.mkdir(parents=True)
+        (good / "SKILL.md").write_text(
+            "---\ndescription: Works\n---\n# Good", encoding="utf-8"
+        )
+        # Notepad's "Unicode" encoding writes UTF-16, which is not valid UTF-8
+        bad = skills_dir / "bad"
+        bad.mkdir()
+        (bad / "SKILL.md").write_text("# Bad", encoding="utf-16")
+
+        provider = SkillsDirectoryProvider(roots=skills_dir, reload=reload)
+
+        resources = await provider.list_resources()
+        assert {r.name for r in resources} == {"good/SKILL.md", "good/_manifest"}
 
     async def test_reload_mode(self, skills_dir: Path):
         provider = SkillsDirectoryProvider(roots=skills_dir, reload=True)

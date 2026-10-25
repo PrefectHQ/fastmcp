@@ -7,6 +7,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.providers.openapi import OpenAPIProvider
 from fastmcp.server.providers.openapi.provider import DEFAULT_TIMEOUT
+from fastmcp.server.providers.openapi.routing import MCPType, RouteMap
 
 
 class TestOpenAPIProviderServerVariables:
@@ -361,3 +362,85 @@ class TestOpenAPIProviderBasicFunctionality:
                     "title": "User",
                 }
                 assert tool.output_schema == expected_output_schema
+
+
+def names_spec(*routes: tuple[str, str]) -> dict:
+    return {
+        "openapi": "3.1.0",
+        "info": {"title": "Names", "version": "1.0.0"},
+        "paths": {
+            path: {
+                "get": {
+                    "operationId": operation_id,
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+            for path, operation_id in routes
+        },
+    }
+
+
+class TestOpenAPIProviderComponentNames:
+    """Generated component names stay unique so no route is silently dropped."""
+
+    async def test_duplicate_names_get_numbered_suffixes(self):
+        spec = names_spec(
+            ("/a", "list_items__a"), ("/b", "list_items__b"), ("/c", "list_items__c")
+        )
+        server = FastMCP.from_openapi(
+            spec, client=httpx2.AsyncClient(base_url="http://test")
+        )
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+
+        assert sorted(tool.name for tool in tools) == [
+            "list_items",
+            "list_items_2",
+            "list_items_3",
+        ]
+
+    @pytest.mark.parametrize(
+        "routes",
+        [
+            [("/a", "list_items__a"), ("/b", "list_items__b"), ("/c", "list_items_2")],
+            [("/c", "list_items_2"), ("/a", "list_items__a"), ("/b", "list_items__b")],
+        ],
+    )
+    async def test_suffix_does_not_reuse_an_existing_name(
+        self, routes: list[tuple[str, str]]
+    ):
+        requested_paths: list[str] = []
+
+        def handler(request: httpx2.Request) -> httpx2.Response:
+            requested_paths.append(request.url.path)
+            return httpx2.Response(200, json={})
+
+        api = httpx2.AsyncClient(
+            base_url="http://test", transport=httpx2.MockTransport(handler)
+        )
+        server = FastMCP.from_openapi(names_spec(*routes), client=api)
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            for tool in tools:
+                await client.call_tool(tool.name, {})
+
+        assert len(tools) == 3
+        assert len({tool.name for tool in tools}) == 3
+        assert sorted(requested_paths) == ["/a", "/b", "/c"]
+
+    async def test_resource_suffix_does_not_reuse_an_existing_name(self):
+        spec = names_spec(
+            ("/a", "list_items__a"), ("/b", "list_items__b"), ("/c", "list_items_2")
+        )
+        server = FastMCP.from_openapi(
+            spec,
+            client=httpx2.AsyncClient(base_url="http://test"),
+            route_maps=[RouteMap(mcp_type=MCPType.RESOURCE)],
+        )
+
+        async with Client(server) as client:
+            resources = await client.list_resources()
+
+        assert len({str(resource.uri) for resource in resources}) == 3

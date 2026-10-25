@@ -1,8 +1,8 @@
 /* Version badge -- display a badge with the current version of the documentation */
 .version-badge {
-  --color-text: #ff5400 !important;
+  --color-text: #c2410c !important;
   --color-bg: #fef2f2 !important;
-  color: #ff5400 !important;
+  color: #c2410c !important;
   background: #fef2f2 !important;
   border: 1px solid rgba(220, 38, 38, 0.3) !important;
   transition: box-shadow 0.2s, transform 0.15s;

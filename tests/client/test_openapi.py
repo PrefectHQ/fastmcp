@@ -161,7 +161,7 @@ async def test_client_headers_shttp_tool(shttp_server: str):
         assert headers["x-test"] == "test-123"
 
 
-async def test_client_overrides_server_headers(shttp_server: str):
+async def test_server_headers_take_precedence_over_client_headers(shttp_server: str):
     async with Client(
         transport=StreamableHttpTransport(
             shttp_server, headers={"x-server-header": "test-client"}
@@ -170,7 +170,7 @@ async def test_client_overrides_server_headers(shttp_server: str):
         result = await client.read_resource("resource://get_headers_headers_get")
         assert isinstance(result[0], TextResourceContents)
         headers = json.loads(result[0].text)
-        assert headers["x-server-header"] == "test-client"
+        assert headers["x-server-header"] == "test-abc"
 
 
 async def test_client_with_excluded_header_is_ignored(sse_server: str):

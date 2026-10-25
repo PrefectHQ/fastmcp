@@ -1,5 +1,7 @@
 """Unit tests for schema processing and parameter mapping."""
 
+from typing import Any
+
 import pytest
 
 from fastmcp.utilities.json_schema import compress_schema
@@ -7,12 +9,80 @@ from fastmcp.utilities.openapi.models import (
     HTTPRoute,
     ParameterInfo,
     RequestBodyInfo,
+    ResponseInfo,
 )
 from fastmcp.utilities.openapi.schemas import (
     _combine_schemas,
     _combine_schemas_and_map_params,
     _replace_ref_with_defs,
+    extract_output_schema_from_responses,
 )
+
+
+@pytest.mark.parametrize(
+    "body_schema,param_name,body_name",
+    [
+        pytest.param(None, "body", None, id="no-body"),
+        pytest.param(
+            {"type": "object", "properties": {"body": {"type": "string"}}},
+            "body",
+            "body",
+            id="named-property",
+        ),
+        pytest.param(
+            {"$ref": "#/components/schemas/Values", "title": "Other"},
+            "body",
+            "body",
+            id="whole-body-reference",
+        ),
+        pytest.param(
+            {"type": "string", "title": "Value List"},
+            "value_list",
+            "value_list",
+            id="normalized-title",
+        ),
+        pytest.param(
+            {"type": "string", "title": "123Values"},
+            "body_data",
+            "body_data",
+            id="numeric-title",
+        ),
+        pytest.param(
+            {"type": "string", "title": ""},
+            "body_data",
+            "body_data",
+            id="empty-title",
+        ),
+    ],
+)
+def test_body_names_preserve_required_query_parameters(
+    body_schema: dict[str, Any] | None, param_name: str, body_name: str | None
+) -> None:
+    route = HTTPRoute(
+        path="/values",
+        method="POST",
+        parameters=[
+            ParameterInfo(
+                name=param_name,
+                location="query",
+                required=True,
+                schema={"type": "string"},
+            )
+        ],
+        request_body=RequestBodyInfo(content_schema={"application/json": body_schema})
+        if body_schema is not None
+        else None,
+        request_schemas={"Values": {"type": "array", "items": {"type": "integer"}}},
+    )
+
+    schema, param_map = _combine_schemas_and_map_params(route)
+    query_name = f"{param_name}__query" if body_name else param_name
+    expected_map = {query_name: {"location": "query", "openapi_name": param_name}}
+    if body_name:
+        expected_map[body_name] = {"location": "body", "openapi_name": body_name}
+    assert param_map == expected_map
+    assert set(schema["properties"]) == set(expected_map)
+    assert schema["required"] == [query_name]
 
 
 class TestSchemaProcessing:
@@ -642,3 +712,53 @@ class TestEdgeCases:
 
         # $ref should be preserved in allOf
         assert result["properties"]["data"]["allOf"] == [{"$ref": "#/$defs/TestSchema"}]
+
+
+class TestExtractOutputSchema:
+    """Test output schema extraction from a route's success responses."""
+
+    invitation_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {"id": {"type": "integer"}},
+    }
+
+    @pytest.fixture
+    def invitation(self) -> ResponseInfo:
+        return ResponseInfo(
+            description="Invitation created",
+            content_schema={"application/json": self.invitation_schema},
+        )
+
+    @pytest.mark.parametrize(
+        "bodiless_code", ["200", "202", "204", "2XX"], ids=lambda code: f"with-{code}"
+    )
+    def test_bodiless_success_response_next_to_json_success(
+        self, invitation: ResponseInfo, bodiless_code: str
+    ):
+        responses = {
+            "201": invitation,
+            bodiless_code: ResponseInfo(description="No content"),
+        }
+
+        assert extract_output_schema_from_responses(responses) is None
+
+    def test_only_bodiless_success_response(self):
+        responses = {"204": ResponseInfo(description="No content")}
+
+        assert extract_output_schema_from_responses(responses) is None
+
+    @pytest.mark.parametrize("bodiless_code", ["302", "404", "default"])
+    def test_bodiless_non_success_response_is_ignored(
+        self, invitation: ResponseInfo, bodiless_code: str
+    ):
+        responses = {
+            "200": invitation,
+            bodiless_code: ResponseInfo(description="Not a success"),
+        }
+
+        assert extract_output_schema_from_responses(responses) == self.invitation_schema
+
+    def test_json_success_responses(self, invitation: ResponseInfo):
+        responses = {"200": invitation, "201": invitation}
+
+        assert extract_output_schema_from_responses(responses) == self.invitation_schema

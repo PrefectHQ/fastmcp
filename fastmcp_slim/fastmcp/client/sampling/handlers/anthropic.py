@@ -135,7 +135,7 @@ class AnthropicSamplingHandler:
         if params.system_prompt is not None:
             kwargs["system"] = params.system_prompt
         if params.temperature is not None:
-            kwargs["temperature"] = params.temperature
+            kwargs["extra_body"] = {"temperature": params.temperature}
         if params.stop_sequences is not None:
             kwargs["stop_sequences"] = params.stop_sequences
         if anthropic_tools is not None:
@@ -420,7 +420,7 @@ class AnthropicSamplingHandler:
         elif message.stop_reason == "max_tokens":
             stop_reason = "maxTokens"
         elif message.stop_reason == "stop_sequence":
-            stop_reason = "endTurn"
+            stop_reason = "stopSequence"
         else:
             stop_reason = "endTurn"
 

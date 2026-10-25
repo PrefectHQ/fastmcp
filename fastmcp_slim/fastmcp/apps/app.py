@@ -28,7 +28,7 @@ Usage::
 from __future__ import annotations
 
 import inspect
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 
@@ -95,7 +95,7 @@ def _make_resolver(app_name: str | None = None) -> Any:
 
             fmeta = get_fastmcp_meta(fn)
         except Exception:
-            pass
+            logger.debug("Failed to resolve FastMCP metadata for %r", fn, exc_info=True)
 
         if fmeta is not None:
             name: str | None = getattr(fmeta, "name", None)
@@ -429,7 +429,7 @@ class FastMCPApp(Provider):
         return await self._local._get_prompt(name, version)
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         async with self._local.lifespan():
             yield
 

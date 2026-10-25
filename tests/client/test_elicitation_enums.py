@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from fastmcp import Context, FastMCP
 from fastmcp.client.client import Client
@@ -13,6 +13,8 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
     get_elicitation_schema,
+    handle_elicit_accept,
+    parse_elicit_response_type,
     validate_elicitation_json_schema,
 )
 
@@ -147,6 +149,70 @@ def test_enum_elicitation_schema_inline_untitled():
         "completed",
         "on_hold",
     ]
+
+
+def test_enum_elicitation_schema_inline_when_enum_reused():
+    """An enum shared by several fields is inlined in each of them."""
+
+    class Currency(Enum):
+        USD = "usd"
+        EUR = "eur"
+
+    class Conversion(BaseModel):
+        source: Currency
+        target: Currency = Field(default=Currency.EUR, description="Target")
+        accepted: list[Currency]
+
+    schema = get_elicitation_schema(Conversion)
+
+    assert "$defs" not in schema
+    assert "$ref" not in str(schema)
+    assert schema["properties"] == {
+        "source": {"enum": ["usd", "eur"], "title": "Currency", "type": "string"},
+        "target": {
+            "default": "eur",
+            "description": "Target",
+            "enum": ["usd", "eur"],
+            "title": "Currency",
+            "type": "string",
+        },
+        "accepted": {
+            "items": {"enum": ["usd", "eur"], "title": "Currency", "type": "string"},
+            "title": "Accepted",
+            "type": "array",
+        },
+    }
+
+
+async def test_elicit_model_with_reused_enum():
+    """ctx.elicit() accepts a response type whose fields share an enum."""
+
+    class Currency(Enum):
+        USD = "usd"
+        EUR = "eur"
+
+    @dataclass
+    class Conversion:
+        source: Currency
+        target: Currency
+
+    mcp = FastMCP("TestServer")
+
+    @mcp.tool
+    async def convert(ctx: Context) -> str:
+        result = await ctx.elicit("Pick currencies", response_type=Conversion)
+        assert isinstance(result, AcceptedElicitation)
+        assert result.data == Conversion(source=Currency.USD, target=Currency.EUR)
+        return f"{result.data.source.value} -> {result.data.target.value}"
+
+    async def elicitation_handler(message, response_type, params, ctx):
+        return ElicitResult(action="accept", content={"source": "usd", "target": "eur"})
+
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
+        result = await client.call_tool("convert", {})
+        assert result.data == "usd -> eur"
 
 
 async def test_dict_based_titled_single_select():
@@ -331,6 +397,42 @@ async def test_list_enum_multi_select_direct():
     ) as client:
         result = await client.call_tool("my_tool", {})
         assert result.data == "low,high"
+
+
+CHOICE_SHORTHANDS = [
+    pytest.param(["low", "high"], "high", "urgent", id="single-select"),
+    pytest.param(
+        {"low": {"title": "Low"}, "high": {"title": "High"}},
+        "high",
+        "urgent",
+        id="titled-single-select",
+    ),
+    pytest.param([["bug", "feature"]], ["feature"], ["urgent"], id="multi-select"),
+    pytest.param([["bug", "feature"]], ["feature"], "feature", id="multi-select-str"),
+    pytest.param(
+        [{"bug": {"title": "Bug"}, "feature": {"title": "Feature"}}],
+        ["bug", "feature"],
+        ["bug", "urgent"],
+        id="titled-multi-select",
+    ),
+]
+
+
+@pytest.mark.parametrize("response_type, valid, invalid", CHOICE_SHORTHANDS)
+def test_choice_shorthand_accepts_offered_choices(response_type, valid, invalid):
+    config = parse_elicit_response_type(response_type)
+
+    result = handle_elicit_accept(config, {"value": valid})
+
+    assert result.data == valid
+
+
+@pytest.mark.parametrize("response_type, valid, invalid", CHOICE_SHORTHANDS)
+def test_choice_shorthand_rejects_values_not_offered(response_type, valid, invalid):
+    config = parse_elicit_response_type(response_type)
+
+    with pytest.raises(ValidationError):
+        handle_elicit_accept(config, {"value": invalid})
 
 
 async def test_validation_allows_enum_arrays():

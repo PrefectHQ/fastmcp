@@ -355,6 +355,116 @@ class TestCIMDAssertionValidator:
             )
         assert "Invalid JWT assertion" in str(exc_info.value)
 
+    @staticmethod
+    def _ec_assertion(client_id: str, token_endpoint: str, jti: str):
+        """Sign an ES256 assertion, returning it with the matching public JWK."""
+        from joserfc import jwk, jwt
+
+        key = jwk.ECKey.generate_key(
+            "P-256", {"kid": "ec-key-1", "use": "sig", "alg": "ES256"}
+        )
+        now = int(time.time())
+        assertion = jwt.encode(
+            {"alg": "ES256", "kid": "ec-key-1"},
+            {
+                "iss": client_id,
+                "sub": client_id,
+                "aud": token_endpoint,
+                "iat": now,
+                "exp": now + 60,
+                "jti": jti,
+            },
+            key,
+        )
+        return assertion, key.as_dict(private=False)
+
+    async def test_valid_es256_assertion_with_inline_jwks(self, validator):
+        """An assertion signed with an EC key validates against an EC JWKS."""
+        client_id = "https://example.com/client.json"
+        token_endpoint = "https://oauth.example.com/token"
+        assertion, public_jwk = self._ec_assertion(
+            client_id, token_endpoint, "ec-inline-jti"
+        )
+        doc = CIMDDocument(
+            client_id=AnyHttpUrl(client_id),
+            redirect_uris=["http://localhost:3000/callback"],
+            token_endpoint_auth_method="private_key_jwt",
+            jwks={"keys": [public_jwk]},
+        )
+
+        assert await validator.validate_assertion(
+            assertion, client_id, token_endpoint, doc
+        )
+
+    async def test_valid_es256_assertion_with_jwks_uri(
+        self, validator, cimd_doc_with_jwks_uri, httpx_mock
+    ):
+        """An assertion signed with an EC key validates against a fetched EC JWKS."""
+        client_id = "https://example.com/client.json"
+        token_endpoint = "https://oauth.example.com/token"
+        assertion, public_jwk = self._ec_assertion(
+            client_id, token_endpoint, "ec-uri-jti"
+        )
+
+        with patch(
+            "fastmcp.server.auth.ssrf.resolve_hostname",
+            return_value=[TEST_PUBLIC_IP],
+        ):
+            httpx_mock.add_response(json={"keys": [public_jwk]})
+
+            assert await validator.validate_assertion(
+                assertion, client_id, token_endpoint, cimd_doc_with_jwks_uri
+            )
+
+    async def test_rejects_unsupported_assertion_algorithm(
+        self, validator, cimd_doc_with_inline_jwks
+    ):
+        """Symmetric and unsigned assertion algorithms are rejected up front."""
+        from joserfc import jwk, jwt
+
+        client_id = "https://example.com/client.json"
+        token_endpoint = "https://oauth.example.com/token"
+        now = int(time.time())
+        assertion = jwt.encode(
+            {"alg": "HS256", "kid": "test-key-1"},
+            {
+                "iss": client_id,
+                "sub": client_id,
+                "aud": token_endpoint,
+                "iat": now,
+                "exp": now + 60,
+                "jti": "hs256-jti",
+            },
+            jwk.OctKey.import_key("a-shared-secret-that-is-long-enough-32b"),
+        )
+
+        with pytest.raises(ValueError, match="Unsupported assertion algorithm"):
+            await validator.validate_assertion(
+                assertion, client_id, token_endpoint, cimd_doc_with_inline_jwks
+            )
+
+    @pytest.mark.parametrize("alg", [[], {}, None, 256])
+    async def test_rejects_non_string_assertion_algorithm(
+        self, validator, cimd_doc_with_inline_jwks, alg
+    ):
+        """A header whose alg is not a string is an invalid assertion, not a crash."""
+        import base64
+        import json
+
+        def segment(data: dict) -> str:
+            raw = json.dumps(data).encode()
+            return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+        assertion = f"{segment({'alg': alg, 'typ': 'JWT'})}.{segment({})}.c2ln"
+
+        with pytest.raises(ValueError, match="Unsupported assertion algorithm"):
+            await validator.validate_assertion(
+                assertion,
+                "https://example.com/client.json",
+                "https://oauth.example.com/token",
+                cimd_doc_with_inline_jwks,
+            )
+
 
 class TestCIMDClientManager:
     """Tests for CIMDClientManager."""

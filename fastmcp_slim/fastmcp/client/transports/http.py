@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import ssl
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Any, Literal, cast
 
 import httpx2
@@ -20,7 +20,7 @@ from fastmcp.client.auth.client_credentials import (
     PrivateKeyJWTOAuthProvider,
 )
 from fastmcp.client.auth.oauth import OAuth
-from fastmcp.client.dependencies import _get_forwardable_http_headers
+from fastmcp.client.dependencies import _merge_forwardable_http_headers
 from fastmcp.client.transports.base import (
     ClientTransport,
     SessionKwargs,
@@ -158,7 +158,7 @@ class StreamableHttpTransport(ClientTransport):
         *,
         transport_options: TransportOptions | None = None,
         **session_kwargs: Unpack[SessionKwargs],
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         options = transport_options or TransportOptions()
 
         # Proxies preserve eligible inbound headers while starting a distinct
@@ -166,7 +166,7 @@ class StreamableHttpTransport(ClientTransport):
         # This is off by default so a plain Client used inside a server tool
         # handler cannot leak caller headers to an unrelated remote server.
         if options.forward_incoming_headers:
-            headers = _get_forwardable_http_headers() | self.headers
+            headers = _merge_forwardable_http_headers(self.headers)
         else:
             headers = dict(self.headers)
 

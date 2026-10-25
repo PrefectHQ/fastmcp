@@ -1,9 +1,10 @@
 """Tests for type constraints in JSON schema conversion."""
 
 from dataclasses import Field
+from datetime import datetime, timezone
 
 import pytest
-from pydantic import TypeAdapter, ValidationError
+from pydantic import AnyUrl, TypeAdapter, ValidationError
 
 from fastmcp.utilities.json_schema_type import (
     json_schema_to_type,
@@ -130,3 +131,116 @@ class TestNumberConstraints:
         validator = TypeAdapter(exclusive_max_number)
         with pytest.raises(ValidationError):
             validator.validate_python(100)
+
+
+class TestStringFormatConstraints:
+    """String keywords apply to the raw string whatever its `format` (#4404)."""
+
+    @pytest.mark.parametrize(
+        ("schema", "valid", "invalid"),
+        [
+            ({"format": "phone", "maxLength": 3}, "abc", "abcd"),
+            ({"format": "phone", "minLength": 3}, "abc", "ab"),
+            ({"format": "uri-reference", "maxLength": 5}, "a/b", "too/long/path"),
+            ({"format": "uri-reference", "pattern": "^/"}, "/a", "a"),
+            ({"format": "email", "maxLength": 10}, "a@b.co", "someone@example.com"),
+            (
+                {"format": "uri", "maxLength": 14},
+                "https://a.co",
+                "https://example.com/x",
+            ),
+            (
+                {"format": "date-time", "maxLength": 20},
+                "2026-09-22T00:00:00Z",
+                "2026-09-22T00:00:00.000000+00:00",
+            ),
+            ({"format": "json", "maxLength": 5}, '"ab"', '"abcdef"'),
+        ],
+    )
+    def test_constraints_survive_format(self, schema, valid, invalid):
+        validator = TypeAdapter(json_schema_to_type({"type": "string", **schema}))
+        validator.validate_python(valid)
+        with pytest.raises(ValidationError):
+            validator.validate_python(invalid)
+
+    def test_constrained_format_still_parses(self):
+        schema = {"type": "string", "format": "date-time", "maxLength": 20}
+        parsed = TypeAdapter(json_schema_to_type(schema)).validate_python(
+            "2026-09-22T00:00:00Z"
+        )
+        assert parsed == datetime(2026, 9, 22, tzinfo=timezone.utc)
+
+    def test_format_without_constraints_is_unchanged(self):
+        assert (
+            json_schema_to_type({"type": "string", "format": "date-time"}) is datetime
+        )
+        assert json_schema_to_type({"type": "string", "format": "uri"}) is AnyUrl
+
+    def test_repeat_schema_maps_to_one_type(self):
+        """The client converts a tool's output schema on every call, so repeats must hit its adapter cache."""
+        schema = {"type": "string", "format": "email", "maxLength": 10}
+        assert json_schema_to_type(schema) is json_schema_to_type(dict(schema))
+
+
+class TestIntegralFloatCounts:
+    """JSON allows counts like minLength to be written as 2.0, and they must still apply."""
+
+    @pytest.mark.parametrize(
+        ("schema", "valid", "invalid"),
+        [
+            ({"type": "string", "minLength": 2.0}, "ab", "a"),
+            ({"type": "string", "maxLength": 2.0}, "ab", "abc"),
+            (
+                {"type": "string", "format": "date-time", "maxLength": 20.0},
+                "2026-09-22T00:00:00Z",
+                "2026-09-22T00:00:00.000000+00:00",
+            ),
+            (
+                {"type": "array", "items": {"type": "string"}, "minItems": 1.0},
+                ["a"],
+                [],
+            ),
+        ],
+    )
+    def test_integral_float_counts_apply(self, schema, valid, invalid):
+        validator = TypeAdapter(json_schema_to_type(schema))
+        validator.validate_python(valid)
+        with pytest.raises(ValidationError):
+            validator.validate_python(invalid)
+
+    def test_float_count_does_not_poison_a_later_int_count(self):
+        json_schema_to_type({"type": "string", "format": "email", "maxLength": 30.0})
+        validator = TypeAdapter(
+            json_schema_to_type({"type": "string", "format": "email", "maxLength": 30})
+        )
+        validator.validate_python("a@b.co")
+
+
+class TestHugeCounts:
+    """Counts beyond any real length must not make a valid schema fail to convert."""
+
+    @pytest.mark.parametrize(
+        ("schema", "value"),
+        [
+            ({"type": "string", "maxLength": 10**20}, "abc"),
+            ({"type": "string", "maxLength": 1e20}, "abc"),
+            (
+                {"type": "string", "format": "date-time", "maxLength": 1e20},
+                "2026-09-22T00:00:00Z",
+            ),
+            ({"type": "array", "items": {"type": "integer"}, "maxItems": 10**20}, [1]),
+        ],
+    )
+    def test_huge_maximum_constrains_nothing(self, schema, value):
+        TypeAdapter(json_schema_to_type(schema)).validate_python(value)
+
+    @pytest.mark.parametrize(
+        ("schema", "value"),
+        [
+            ({"type": "string", "minLength": 10**20}, "abc"),
+            ({"type": "array", "items": {"type": "integer"}, "minItems": 1e20}, [1]),
+        ],
+    )
+    def test_huge_minimum_still_rejects(self, schema, value):
+        with pytest.raises(ValidationError):
+            TypeAdapter(json_schema_to_type(schema)).validate_python(value)

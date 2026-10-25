@@ -15,6 +15,7 @@ import cyclopts
 import pyperclip
 from cyclopts import Parameter
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 import fastmcp
@@ -681,6 +682,8 @@ async def run(
                 reload_cmd.extend(["--log-level", final_log_level])
             if final_no_banner:
                 reload_cmd.append("--no-banner")
+            if skip_source:
+                reload_cmd.append("--skip-source")
             reload_cmd.append("--no-reload")  # Prevent infinite spawning
             reload_cmd.append("--stateless")  # Stateless mode for reload compatibility
 
@@ -732,6 +735,8 @@ async def run(
             inner_cmd.append("--no-banner")
         if stateless:
             inner_cmd.append("--stateless")
+        if skip_source:
+            inner_cmd.append("--skip-source")
         # Add skip-env flag to prevent infinite recursion
         inner_cmd.append("--skip-env")
 
@@ -881,7 +886,7 @@ async def inspect(
         if server_spec.endswith(".json") and config is None:
             # This might be an MCPConfig, check the file
             try:
-                with open(Path(server_spec)) as f:
+                with open(Path(server_spec), encoding="utf-8") as f:
                     data = json.load(f)
                 if "mcpServers" in data:
                     logger.error("MCPConfig files are not supported by inspect command")
@@ -958,16 +963,16 @@ async def inspect(
 
             # Server section
             console.print("[bold]Server[/bold]")
-            console.print(f"  Name:         {info.name}")
+            console.print(f"  Name:         {escape(info.name)}")
             if info.version:
-                console.print(f"  Version:      {info.version}")
+                console.print(f"  Version:      {escape(info.version)}")
             if info.website_url:
-                console.print(f"  Website:      {info.website_url}")
+                console.print(f"  Website:      {escape(str(info.website_url))}")
             if info.icons:
                 console.print(f"  Icons:        {len(info.icons)}")
             console.print(f"  Generation:   {info.server_generation}")
             if info.instructions:
-                console.print(f"  Instructions: {info.instructions}")
+                console.print(f"  Instructions: {escape(info.instructions)}")
             console.print()
 
             # Components section
@@ -1005,13 +1010,14 @@ async def inspect(
 
             # Print confirmation to console
             console.print(
-                f"[bold green]✓[/bold green] Server inspection saved to: [cyan]{output}[/cyan]"
+                f"[bold green]✓[/bold green] Server inspection saved to: [cyan]{escape(str(output))}[/cyan]"
             )
-            console.print(f"  Server: [bold]{info.name}[/bold]")
+            console.print(f"  Server: [bold]{escape(info.name)}[/bold]")
             console.print(f"  Format: {format.value}")
         else:
-            # Output JSON to stdout
-            console.print(formatted_json.decode("utf-8"))
+            # Output JSON to stdout. The console would wrap long lines and
+            # interpret [markup], corrupting the JSON.
+            print(formatted_json.decode("utf-8"))
 
     except Exception as e:
         logger.exception(
@@ -1021,7 +1027,9 @@ async def inspect(
                 "error": str(e),
             },
         )
-        console.print(f"[bold red]✗[/bold red] Failed to inspect server: {e}")
+        console.print(
+            f"[bold red]✗[/bold red] Failed to inspect server: {escape(str(e))}"
+        )
         sys.exit(1)
 
 

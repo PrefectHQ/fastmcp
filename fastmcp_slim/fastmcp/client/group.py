@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import datetime
 from collections.abc import Mapping
@@ -53,6 +54,8 @@ class ClientGroup:
         self._tool_routes: dict[str, ToolRoute] = {}
         self._catalog_loaded = False
         self._route_lock = anyio.Lock()
+        # Member closes handed off by exiting contexts; referenced until done.
+        self._closers: set[asyncio.Task[bool | None]] = set()
 
     @property
     def clients(self) -> Mapping[str, Client[Any]]:
@@ -85,7 +88,10 @@ class ClientGroup:
             configured_mode = (server.model_extra or {}).get("mode", default_mode)
             if not isinstance(configured_mode, str):
                 raise TypeError(f"Protocol mode for server {name!r} must be a string")
-            clients[name] = Client(server.to_transport(), mode=configured_mode)
+            timeout = server.timeout / 1000 if server.timeout is not None else None
+            clients[name] = Client(
+                server.to_transport(), mode=configured_mode, timeout=timeout
+            )
 
         return cls(clients)
 
@@ -131,18 +137,37 @@ class ClientGroup:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> bool | None:
-        async with self._lifecycle_lock:
-            self._nesting_counter = max(0, self._nesting_counter - 1)
-            if self._nesting_counter > 0:
-                return None
+        # Release this context's hold before any await, as Client does: a context
+        # exited by cancellation can be interrupted at every await, and a hold
+        # that is never released keeps every member connected for good.
+        self._nesting_counter = max(0, self._nesting_counter - 1)
+        held = self._exit_stack
+        if self._nesting_counter > 0 or held is None:
+            return None
+        # Close the members in their own task, so a cancelled exit returns at
+        # once instead of waiting on the lifecycle lock, and the close still runs.
+        closer = asyncio.create_task(
+            self._close_members(held, exc_type, exc_value, traceback)
+        )
+        self._closers.add(closer)
+        closer.add_done_callback(self._closers.discard)
+        return await asyncio.shield(closer)
 
-            stack = self._exit_stack
+    async def _close_members(
+        self,
+        held: contextlib.AsyncExitStack,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None:
+        async with self._lifecycle_lock:
+            if self._exit_stack is not held or self._nesting_counter > 0:
+                # Closed already, or another context entered while we waited.
+                return None
             self._exit_stack = None
             self._tool_routes.clear()
             self._catalog_loaded = False
-            if stack is not None:
-                return await stack.__aexit__(exc_type, exc_value, traceback)
-            return None
+            return await held.__aexit__(exc_type, exc_value, traceback)
 
     def _require_connected(self) -> None:
         disconnected = [

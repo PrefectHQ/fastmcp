@@ -153,7 +153,11 @@ class ToolDecoratorMixin:
                 )
             else:
                 tool = Tool.from_function(tool)
-        self._add_component(tool)
+        added = self._add_component(tool)
+        if added is not tool:
+            # on_duplicate="ignore" kept the existing tool; the new one was
+            # not registered, so its enabled state and UI marker don't apply.
+            return added
         if not enabled:
             self.disable(keys={tool.key})
         _maybe_apply_prefab_ui(self, tool)

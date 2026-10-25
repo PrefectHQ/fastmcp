@@ -465,19 +465,16 @@ A configuration optimized for local development:
 ```json
 {
   "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
-  // WHERE does the server live?
   "source": {
     "path": "src/server.py",
     "entrypoint": "app"
   },
-  // WHAT dependencies does it need?
   "environment": {
     "type": "uv",
     "python": "3.12",
     "dependencies": ["fastmcp[dev]"],
     "editable": ["."]
   },
-  // HOW should it run?
   "deployment": {
     "transport": "http",
     "host": "127.0.0.1",
@@ -498,18 +495,15 @@ A production-ready configuration with full dependency management:
 ```json
 {
   "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
-  // WHERE does the server live?
   "source": {
     "path": "app/main.py",
     "entrypoint": "mcp_server"
   },
-  // WHAT dependencies does it need?
   "environment": {
     "python": "3.11",
     "requirements": "requirements/production.txt",
     "project": "."
   },
-  // HOW should it run?
   "deployment": {
     "transport": "http",
     "host": "0.0.0.0",

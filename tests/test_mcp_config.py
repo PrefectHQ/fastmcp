@@ -7,7 +7,7 @@ import os
 import sys
 import tempfile
 import time
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -179,7 +179,7 @@ def _make_protocol_era_server(name: str, starts: list[str] | None = None) -> Fas
     else:
 
         @asynccontextmanager
-        async def lifespan(_server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+        async def lifespan(_server: FastMCP) -> AsyncGenerator[dict[str, Any], None]:
             starts.append(name)
             yield {}
 
@@ -288,7 +288,7 @@ async def test_failed_known_legacy_backend_does_not_downgrade_healthy_backends()
     @asynccontextmanager
     async def unavailable_lifespan(
         server: FastMCP,
-    ) -> AsyncIterator[dict[str, Any]]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         if server.name == "unavailable":
             raise RuntimeError("backend unavailable")
         yield {}
@@ -1298,6 +1298,55 @@ async def test_multi_server_session_persistence():
         assert session_id_1 == session_id_2, (
             f"Session ID changed between calls: {session_id_1} != {session_id_2}"
         )
+
+
+class ClosingFastMCPTransport(FastMCPTransport):
+    """In-memory backend that records `close()`, which tears down a subprocess."""
+
+    def __init__(self, mcp: FastMCP, closed: list[FastMCPTransport]):
+        super().__init__(mcp=mcp)
+        self.closed = closed
+
+    async def close(self):
+        self.closed.append(self)
+
+
+class ClosingInMemoryStdioMCPServer(InMemoryStdioMCPServer):
+    closed: Any  # the caller's list; typed Any so pydantic doesn't copy it
+
+    def to_transport(self) -> FastMCPTransport:
+        return ClosingFastMCPTransport(mcp=self.mcp, closed=self.closed)
+
+
+async def test_multi_server_clone_does_not_close_original_backends():
+    """A `new()` clone connects its own backends and leaves the original's alone."""
+    closed: list[FastMCPTransport] = []
+    config = MCPConfig(
+        mcpServers={
+            "server1": ClosingInMemoryStdioMCPServer(
+                mcp=_make_add_server(), closed=closed
+            ),
+            "server2": ClosingInMemoryStdioMCPServer(
+                mcp=_make_add_server(), closed=closed
+            ),
+        }
+    )
+
+    original = Client(config)
+    clone = original.new()
+
+    async with original:
+        async with clone:
+            assert closed == []
+            result = await original.call_tool("server1_add", {"a": 1, "b": 2})
+            assert result.data == 3
+
+        # Leaving the clone releases only the clone's two backends.
+        assert len(closed) == 2
+        result = await original.call_tool("server2_add", {"a": 1, "b": 2})
+        assert result.data == 3
+
+    assert len(closed) == 4
 
 
 async def test_single_server_config_transport():

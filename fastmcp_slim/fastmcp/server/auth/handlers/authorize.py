@@ -274,7 +274,10 @@ class AuthorizationHandler(SDKAuthorizationHandler):
                             )
                 except Exception:
                     # If we can't parse the response, just return the original
-                    pass
+                    logger.debug(
+                        "Failed to parse authorize error response for enhancement",
+                        exc_info=True,
+                    )
 
         return response
 

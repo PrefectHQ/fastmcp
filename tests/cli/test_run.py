@@ -997,6 +997,45 @@ class TestRunWithReloadWithServerArgs:
             "--stateless",
         ]
 
+    @pytest.mark.parametrize("reload", [False, True])
+    async def test_run_with_needs_uv_forwards_skip_source_flag(self, reload):
+        """`--skip-source` should survive the uv-wrapped subprocess path."""
+        mock_config = MagicMock()
+        mock_config.deployment.transport = None
+        mock_config.deployment.host = None
+        mock_config.deployment.port = None
+        mock_config.deployment.path = None
+        mock_config.deployment.log_level = None
+        mock_config.deployment.args = ()
+        mock_config.environment.build_command = lambda cmd: ["uv", "run", *cmd]
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with (
+            patch(
+                "fastmcp.cli.cli.load_and_merge_config",
+                return_value=(mock_config, "server.py"),
+            ),
+            patch(
+                "fastmcp.cli.cli.subprocess.run", return_value=mock_result
+            ) as mock_run,
+            patch(
+                "fastmcp.cli.run.run_with_reload", new_callable=AsyncMock
+            ) as mock_reload,
+        ):
+            if reload:
+                await run("server.py", skip_source=True, reload=True)
+                cmd = mock_reload.call_args.args[0]
+            else:
+                with pytest.raises(SystemExit):
+                    await run("server.py", skip_source=True)
+                cmd = mock_run.call_args.args[0]
+
+        assert cmd[:4] == ["uv", "run", "fastmcp", "run"]
+        assert "--skip-source" in cmd
+        assert cmd.index("--skip-source") < cmd.index("--skip-env")
+
 
 class TestInspectorModuleMode:
     """Test the inspector command's module-mode handling."""
@@ -1043,11 +1082,21 @@ class TestRunDevApps:
             import_map_tag="",
             message_log=_MessageLog(),
             log_panel=False,
+            session_token="test-dev-session",
         )
-        client = TestClient(starlette_app, raise_server_exceptions=False)
+        client = TestClient(
+            starlette_app,
+            base_url="http://127.0.0.1:8080",
+            raise_server_exceptions=False,
+        )
+
+        client.get("/?token=test-dev-session")
 
         payload = "</title><script>alert(1)</script><img src=x onerror=alert(2)>"
-        response = client.get("/launch", params={"tool": payload, "args": "{}"})
+        launch_url = client.post(
+            "/api/launch", json={"tool": payload, "__json_args__": "{}"}
+        ).json()
+        response = client.get(launch_url)
 
         assert response.status_code == 200
         assert payload not in response.text
@@ -1065,14 +1114,22 @@ class TestRunDevApps:
             import_map_tag="",
             message_log=_MessageLog(),
             log_panel=False,
+            session_token="test-dev-session",
         )
-        client = TestClient(starlette_app, raise_server_exceptions=False)
+        client = TestClient(
+            starlette_app,
+            base_url="http://127.0.0.1:8080",
+            raise_server_exceptions=False,
+        )
+
+        client.get("/?token=test-dev-session")
 
         payload = {"name": "</script><script>alert(1)</script>&"}
-        response = client.get(
-            "/launch",
-            params={"tool": "safe_tool", "args": json.dumps(payload)},
-        )
+        launch_url = client.post(
+            "/api/launch",
+            json={"tool": "safe_tool", "__json_args__": json.dumps(payload)},
+        ).json()
+        response = client.get(launch_url)
 
         assert response.status_code == 200
         assert json.dumps(payload) not in response.text
@@ -1081,17 +1138,23 @@ class TestRunDevApps:
             '\\u003c/script\\u003e\\u0026"'
         ) in response.text
 
-    def test_api_launch_encodes_generated_launch_url(self):
-        """Test /api/launch encodes query parameters in the returned URL."""
+    def test_api_launch_stores_launch_behind_generated_url(self):
+        """Test /api/launch returns a launch URL that names a stored launch."""
         starlette_app = _make_dev_app(
             mcp_url="http://127.0.0.1:8000/mcp",
             app_bridge_js="// js",
             import_map_tag="",
             message_log=_MessageLog(),
             log_panel=False,
+            session_token="test-dev-session",
         )
-        client = TestClient(starlette_app, raise_server_exceptions=False)
+        client = TestClient(
+            starlette_app,
+            base_url="http://127.0.0.1:8080",
+            raise_server_exceptions=False,
+        )
 
+        client.get("/?token=test-dev-session")
         response = client.post(
             "/api/launch",
             json={
@@ -1103,14 +1166,17 @@ class TestRunDevApps:
         assert response.status_code == 200
         url = response.json()
         query = parse_qs(urlsplit(url).query)
-        assert query["tool"] == ["tool&name=<script>"]
-        assert json.loads(query["args"][0]) == {"value": "</script>"}
+        assert list(query) == ["id"]
+        page = client.get(url).text
+        assert "tool&amp;name=&lt;script&gt;" in page
+        assert '{"value": "\\u003c/script\\u003e"}' in page
 
     @pytest.mark.parametrize(
         "host, expected_host",
         [
-            ("0.0.0.0", "0.0.0.0"),
+            ("0.0.0.0", "127.0.0.1"),
             ("127.0.0.1", "127.0.0.1"),
+            ("192.0.2.2", "192.0.2.2"),
         ],
     )
     async def test_run_dev_apps_with_host(self, host, expected_host):
@@ -1160,6 +1226,8 @@ class TestRunDevApps:
 
         webbrowser_open_first_arg = mock_webbrowser_open.call_args[0][0]
         assert expected_host in webbrowser_open_first_arg
+
+        assert mock_uvicorn.Config.call_args.kwargs["host"] == host
 
     @pytest.mark.parametrize(
         "log_panel, expected_log_panel",
@@ -1247,9 +1315,14 @@ class TestRunDevApps:
                 import_map_tag="",
                 message_log=mock_message_log,
                 log_panel=log_panel,
+                session_token="test-dev-session",
             )
-            client = TestClient(starlette_app, raise_server_exceptions=False)
-            client.get("/")
+            client = TestClient(
+                starlette_app,
+                base_url="http://127.0.0.1:8080",
+                raise_server_exceptions=False,
+            )
+            client.get("/?token=test-dev-session")
 
         if log_panel:
             mock_inject.assert_called_once()
