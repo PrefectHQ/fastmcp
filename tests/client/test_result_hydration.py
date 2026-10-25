@@ -11,6 +11,7 @@ import pytest
 from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
+from fastmcp.tools import Tool
 
 
 class Reading(BaseModel):
@@ -130,3 +131,26 @@ class TestWrappedResultKeepsDefs:
         assert data[0].value == 1
         assert not isinstance(data[0].children[0], dict)
         assert data[0].children[0].value == 2
+
+    async def test_boolean_result_schema_accepts_any_value(self):
+        mcp = FastMCP()
+
+        def example() -> str:
+            return "example"
+
+        mcp.add_tool(
+            Tool.from_function(
+                example,
+                output_schema={
+                    "type": "object",
+                    "properties": {"result": True},
+                    "required": ["result"],
+                    "x-fastmcp-wrap-result": True,
+                },
+            )
+        )
+
+        async with Client(mcp) as client:
+            data = (await client.call_tool("example")).data
+
+        assert data == "example"

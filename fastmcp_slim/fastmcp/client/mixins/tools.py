@@ -339,7 +339,7 @@ class ClientToolsMixin:
         )
 
 
-def _wrapped_result_schema(output_schema: dict[str, Any]) -> dict[str, Any]:
+def _wrapped_result_schema(output_schema: dict[str, Any]) -> dict[str, Any] | bool:
     """Narrow a wrapped output schema to `properties.result` and keep its defs.
 
     The server leaves `$defs` and draft-07 `definitions` on the root schema,
@@ -350,6 +350,8 @@ def _wrapped_result_schema(output_schema: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(properties, dict):
         return output_schema
     narrowed = properties.get("result")
+    if isinstance(narrowed, bool):
+        return narrowed
     if not isinstance(narrowed, dict):
         return output_schema
     carried = {
