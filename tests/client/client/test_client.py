@@ -229,6 +229,40 @@ async def test_client_serializes_all_non_string_arguments():
         assert 'arg3: {"key":"value"}' in content  # JSON serialized dict
 
 
+async def test_client_omits_none_prompt_arguments():
+    """A None argument is dropped rather than sent as the string "null"."""
+    server = FastMCP("TestServer")
+
+    @server.prompt
+    def echo_optional(topic: str, audience: str | None = None) -> str:
+        return f"topic: {topic}, audience: {audience}"
+
+    client = Client(transport=FastMCPTransport(server))
+
+    async with client:
+        result = await client.get_prompt(
+            "echo_optional", {"topic": "x", "audience": None}
+        )
+
+        assert isinstance(result.messages[0].content, TextContent)
+        assert result.messages[0].content.text == "topic: x, audience: None"
+
+
+async def test_client_none_for_required_prompt_argument_reports_missing():
+    """Omitting a None required argument surfaces the server's missing-argument error."""
+    server = FastMCP("TestServer")
+
+    @server.prompt
+    def echo_required(topic: str) -> str:
+        return f"topic: {topic}"
+
+    client = Client(transport=FastMCPTransport(server))
+
+    async with client:
+        with pytest.raises(MCPError, match="Missing required arguments"):
+            await client.get_prompt("echo_required", {"topic": None})
+
+
 async def test_client_server_type_conversion_integration():
     """Test that client serialization works with server-side type conversion."""
     server = FastMCP("TestServer")
