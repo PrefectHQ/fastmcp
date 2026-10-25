@@ -10,10 +10,7 @@ from typing import Any, Literal, cast
 import httpx2
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from mcp.shared._httpx_utils import (
-    McpHttpClientFactory,
-    create_mcp_http_client,
-)
+from mcp.shared._httpx_utils import McpHttpClientFactory, create_mcp_http_client
 from pydantic import AnyUrl
 from typing_extensions import Unpack
 
@@ -52,14 +49,12 @@ class StreamableHttpTransport(ClientTransport):
             httpx_client_factory: Optional factory for creating httpx2.AsyncClient.
                 If provided, must accept keyword arguments: headers, auth,
                 follow_redirects, and optionally timeout. Using **kwargs is
-                recommended to ensure forward compatibility. The timeout keyword
-                is passed only when the client has one configured
-                (e.g. Client(transport, timeout=30)); otherwise the factory
-                owns the timeout and should apply its own default — an
-                httpx2.AsyncClient built with no timeout uses httpx's 5 second
-                default, which is too short for MCP tool calls. A factory can
-                adopt MCP's defaults with
-                kwargs.setdefault("timeout", httpx2.Timeout(30.0, read=300.0)).
+                recommended to ensure forward compatibility. `timeout` is passed
+                only when the client has one (e.g. `Client(transport, timeout=30)`);
+                otherwise the factory owns the timeout. An `httpx2.AsyncClient`
+                built without one uses httpx's 5 second default, so set a default
+                in the factory, e.g.
+                `kwargs.setdefault("timeout", httpx2.Timeout(30.0, read=300.0))`.
             verify: SSL certificate verification. Accepts False to disable
                 verification, a path to a CA bundle, or an ssl.SSLContext
                 for full control. None (default) uses httpx defaults (verification

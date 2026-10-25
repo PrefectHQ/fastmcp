@@ -169,21 +169,9 @@ client = Client(transport)
 
 ### Custom HTTP Client
 
-For anything beyond SSL settings — proxies, mTLS, event hooks — pass an `httpx_client_factory`. The factory receives `headers`, `auth`, and `follow_redirects`, plus `timeout` when the client has one configured (for example `Client(transport, timeout=60)`). Using `**kwargs` keeps the factory forward-compatible:
+For anything beyond SSL settings — proxies, mTLS, event hooks — pass an `httpx_client_factory`. The factory receives `headers`, `auth`, and `follow_redirects`, plus `timeout` when the client has one configured (for example `Client(transport, timeout=60)`). Accept `**kwargs` so the factory stays forward-compatible.
 
-```python
-import httpx2
-from fastmcp import Client
-from fastmcp.client.transports import StreamableHttpTransport
-
-transport = StreamableHttpTransport(
-    url="https://api.example.com/mcp",
-    httpx_client_factory=lambda **kwargs: httpx2.AsyncClient(verify=False, **kwargs),
-)
-client = Client(transport)
-```
-
-When no client timeout is configured, the factory **owns the timeout**: none is passed, and an `httpx2.AsyncClient` built without one uses httpx's 5 second default — too short for MCP tool calls, which fail with `ReadTimeout` if they run longer. A factory should set its own default with `setdefault`, so an explicit client timeout still wins:
+When no client timeout is configured, the factory **owns the timeout**: none is passed, and an `httpx2.AsyncClient` built without one uses httpx's 5 second default, which is too short for many MCP tool calls. Set a default with `setdefault`, so an explicit client timeout still wins:
 
 ```python
 import httpx2
