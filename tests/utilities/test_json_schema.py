@@ -495,7 +495,34 @@ class TestCompressSchema:
         while isinstance(node.get("items"), dict):
             node = node["items"]
         assert node == {"$ref": "#/$defs/Leaf"}
+    def test_keeps_defs_with_escaped_or_subpath_refs(self):
+        """compress_schema must not prune $defs referenced via JSON Pointer
+        escapes (~0, ~1), percent-encoding, or sub-path pointers."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "spaced": {"$ref": "#/$defs/Alias%20One"},
+                "slashed": {"$ref": "#/$defs/a~1b"},
+                "tilded": {"$ref": "#/$defs/c~0d"},
+                "subpath": {"$ref": "#/$defs/Container/properties/value"},
+            },
+            "$defs": {
+                "Alias One": {"type": "string"},
+                "a/b": {"type": "integer"},
+                "c~d": {"type": "boolean"},
+                "Container": {
+                    "type": "object",
+                    "properties": {"value": {"type": "number"}},
+                },
+                "Unused": {"type": "null"},
+            },
+        }
 
+        result = compress_schema(schema)
+
+        assert "Unused" not in result["$defs"]
+        assert set(result["$defs"].keys()) == {"Alias One", "a/b", "c~d", "Container"}
+        
     def test_preserves_refs_by_default(self):
         """Test that compress_schema preserves $refs by default."""
         schema = {
