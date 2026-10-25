@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Any
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
+    from redis.credentials import CredentialProvider
+
     from fastmcp.server.server import FastMCP
     from fastmcp_tasks.settings import DocketSettings
 
@@ -27,7 +29,10 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def docket_lifespan(
-    server: FastMCP, settings: DocketSettings
+    server: FastMCP,
+    settings: DocketSettings,
+    *,
+    credential_provider: CredentialProvider | None = None,
 ) -> AsyncIterator[None]:
     """Manage the Docket instance and Worker for background task execution.
 
@@ -66,7 +71,9 @@ async def docket_lifespan(
         yield
         return
 
-    async with Docket(name=settings.name, url=settings.url) as docket:
+    async with Docket(
+        name=settings.name, url=settings.url, credential_provider=credential_provider
+    ) as docket:
         server._docket = docket
         for component in task_components:
             register_component_with_docket(component, docket)

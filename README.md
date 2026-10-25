@@ -117,6 +117,8 @@ Documentation is also available in [llms.txt format](https://llmstxt.org/), whic
 - [`llms.txt`](https://gofastmcp.com/llms.txt) is essentially a sitemap, listing all the pages in the documentation.
 - [`llms-full.txt`](https://gofastmcp.com/llms-full.txt) contains the entire documentation. Note this may exceed the context window of your LLM.
 
+Give your coding agent [`llms.txt`](https://gofastmcp.com/llms.txt) as its starting point. See [Coding Agents](https://gofastmcp.com/getting-started/ai-assisted-development) for version-matched documentation and the optional server authoring skill.
+
 **Community:** Join our [Discord server](https://discord.gg/uu8dJCgttd) to connect with other FastMCP developers and share what you're building.
 
 ## Contributing

@@ -88,7 +88,10 @@ class ClientGroup:
             configured_mode = (server.model_extra or {}).get("mode", default_mode)
             if not isinstance(configured_mode, str):
                 raise TypeError(f"Protocol mode for server {name!r} must be a string")
-            clients[name] = Client(server.to_transport(), mode=configured_mode)
+            timeout = server.timeout / 1000 if server.timeout is not None else None
+            clients[name] = Client(
+                server.to_transport(), mode=configured_mode, timeout=timeout
+            )
 
         return cls(clients)
 

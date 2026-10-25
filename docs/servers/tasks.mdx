@@ -196,6 +196,47 @@ mcp.add_extension(TasksExtension(url="redis://localhost:6379/0"))
 - **Fast**: Single-digit millisecond task pickup latency
 - **Scalable**: Add workers to distribute load across processes or machines
 
+### Rotating Redis Credentials
+
+For backends with expiring credentials, pass a redis-py `CredentialProvider` to `TasksExtension`. Use a URL without a username or password. Docket passes the provider to its Redis connections so a reconnect can obtain fresh credentials.
+
+This example reads credentials from a file on each new connection. Your deployment can replace the file when the password or token changes:
+
+```python
+from pathlib import Path
+
+from redis.credentials import CredentialProvider
+
+from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
+
+
+class FileCredentials(CredentialProvider):
+    def get_credentials(self) -> tuple[str, str]:
+        password = Path("/run/secrets/redis-password").read_text().strip()
+        return "tasks-user", password
+
+
+mcp = FastMCP("MyServer")
+mcp.add_extension(
+    TasksExtension(
+        url="rediss://redis.example.com:6379/0",
+        credential_provider=FileCredentials(),
+    )
+)
+
+
+@mcp.tool(task=True)
+async def double(value: int) -> int:
+    return value * 2
+```
+
+You can also supply a provider that implements `get_credentials_async()`, or a provider from your cloud authentication library. FastMCP does not generate or refresh cloud tokens itself. Docket manages connection authentication, including refresh notifications from streaming providers; see [Docket credential providers](https://docket.lol/en/latest/production/#credential-providers) for details about long-lived connections and provider ownership.
+
+Configure the provider in your server module. [Additional workers](#workers) load that same module and use its registered extension, so no separate worker flag is needed. Provider objects are runtime configuration, not `FASTMCP_DOCKET_*` environment settings. The default `memory://` backend ignores them.
+
+`TasksExtension.clone()` copies the resolved settings and shares the credential provider with the original extension. To give servers independent authentication state, construct each extension with its own provider instead.
+
 ### Credentials at Rest
 
 A background task runs long after the request that submitted it has ended, but it still needs to know who asked for the work. FastMCP captures that identity at submission time in a **task context snapshot**: the caller's access token and every inbound HTTP header, including `Authorization`. The worker restores the snapshot before the tool body runs, so `get_access_token()` and `get_http_headers()` return the submitting caller.

@@ -1,7 +1,10 @@
+import logging
+from collections.abc import Iterator
 from unittest.mock import MagicMock
 
 import pytest
 
+from fastmcp import Client
 from fastmcp.server.context import (
     Context,
     reset_transport,
@@ -491,6 +494,127 @@ class TestTransportIntegration:
             assert result.data == "streamable-http"
 
 
+class TestContextLogExtra:
+    async def test_log_extra_with_log_record_attribute_names(self):
+        """`extra` keys that collide with LogRecord attributes must not fail the call."""
+        from fastmcp import Client
+
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        async def emit(ctx: Context) -> str:
+            await ctx.info("hello", extra={"name": "job-1", "module": "billing"})
+            return "ok"
+
+        received = []
+
+        async def log_handler(message):
+            received.append(message.data)
+
+        async with Client(mcp, log_handler=log_handler) as client:
+            result = await client.call_tool("emit", {})
+
+        assert result.data == "ok"
+        assert received == [
+            {"msg": "hello", "extra": {"name": "job-1", "module": "billing"}}
+        ]
+
+    async def test_log_extra_with_attribute_from_custom_record_factory(self):
+        """Attributes added by a record factory installed later are reserved too."""
+        import logging
+
+        from fastmcp import Client
+
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        async def emit(ctx: Context) -> str:
+            await ctx.info("hello", extra={"request_id": "r-1"})
+            return "ok"
+
+        received = []
+
+        async def log_handler(message):
+            received.append(message.data)
+
+        previous = logging.getLogRecordFactory()
+
+        def factory(*args, **kwargs):
+            record = previous(*args, **kwargs)
+            record.request_id = "from-factory"
+            return record
+
+        logging.setLogRecordFactory(factory)
+        try:
+            async with Client(mcp, log_handler=log_handler) as client:
+                result = await client.call_tool("emit", {})
+        finally:
+            logging.setLogRecordFactory(previous)
+
+        assert result.data == "ok"
+        assert received == [{"msg": "hello", "extra": {"request_id": "r-1"}}]
+
+
+class TestContextToClientLogger:
+    @pytest.fixture
+    def to_client_logger(self) -> Iterator[logging.Logger]:
+        logger = logging.getLogger("fastmcp.server.context.to_client")
+        yield logger
+        logger.setLevel(logging.NOTSET)
+
+    @staticmethod
+    async def call_log_tool(method: str) -> list[str]:
+        """Call a tool that logs "hello" with `ctx.<method>`.
+
+        Returns the levels of the log messages the client received.
+        """
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        async def emit(ctx: Context) -> str:
+            await getattr(ctx, method)("hello")
+            return "ok"
+
+        received: list[str] = []
+
+        async def log_handler(message):
+            received.append(message.level)
+
+        async with Client(mcp, log_handler=log_handler) as client:
+            await client.call_tool("emit", {})
+        return received
+
+    @pytest.mark.parametrize("method", ["debug", "info", "warning", "error"])
+    async def test_server_side_copy_is_not_logged_at_info_level(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        to_client_logger: logging.Logger,
+        method: str,
+    ):
+        to_client_logger.setLevel(logging.INFO)
+
+        assert await self.call_log_tool(method) == [method]
+
+        assert [r for r in caplog.records if r.name == to_client_logger.name] == []
+
+    @pytest.mark.parametrize("method", ["debug", "info", "warning", "error"])
+    async def test_server_side_copy_is_logged_at_debug_level_when_enabled(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        to_client_logger: logging.Logger,
+        method: str,
+    ):
+        to_client_logger.setLevel(logging.DEBUG)
+
+        assert await self.call_log_tool(method) == [method]
+
+        assert [
+            (r.levelno, r.levelname, r.getMessage())
+            for r in caplog.records
+            if r.name == to_client_logger.name
+        ] == [(logging.DEBUG, "DEBUG", f"Sending {method.upper()} to client: hello")]
+
+
 async def test_background_context_logging_without_session():
     from fastmcp.server.dependencies import _background_task_session_id
 
@@ -506,7 +630,6 @@ async def test_background_context_logging_without_session():
         _background_task_session_id.reset(token)
 
 
-
 async def test_background_context_logging_honors_no_session_level(monkeypatch):
     from unittest.mock import AsyncMock
 
@@ -520,9 +643,7 @@ async def test_background_context_logging_honors_no_session_level(monkeypatch):
         origin_request_id="request-1",
     )
     sender = AsyncMock()
-    monkeypatch.setattr(
-        "fastmcp.server.context._log_to_server_and_client", sender
-    )
+    monkeypatch.setattr("fastmcp.server.context._log_to_server_and_client", sender)
     token = _background_task_session_id.set("snapshot-session")
     try:
         await context.info("suppressed")
