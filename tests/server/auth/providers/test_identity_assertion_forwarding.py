@@ -43,6 +43,24 @@ def test_identity_assertion_is_public_provider_parameter(provider: type) -> None
     [
         (GoogleProvider, {"client_id": "test", "client_secret": "secret"}),
         (GitHubProvider, {"client_id": "test", "client_secret": "secret"}),
+        (DiscordProvider, {"client_id": "test", "client_secret": "secret"}),
+        (HuggingFaceProvider, {"client_id": "test", "client_secret": "secret"}),
+        (
+            ClerkProvider,
+            {
+                "domain": "clerk.example.test",
+                "client_id": "test",
+                "client_secret": "secret",
+            },
+        ),
+        (
+            WorkOSProvider,
+            {
+                "client_id": "test",
+                "client_secret": "secret",
+                "authkit_domain": "https://authkit.example.test",
+            },
+        ),
         (
             AzureProvider,
             {
