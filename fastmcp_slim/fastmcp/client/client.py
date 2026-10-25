@@ -17,6 +17,7 @@ from collections.abc import (
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
 
 import anyio
@@ -590,6 +591,12 @@ class Client(
         self._disconnect_timeout: float = fastmcp.settings.client_disconnect_timeout
         # Session stops handed off by exiting contexts; referenced until done.
         self._stoppers: set[asyncio.Task[None]] = set()
+        # Context-manager holds belong to the task that entered them. Keeping
+        # the session task lets an exit from an older connection avoid
+        # decrementing the reference count of a connection opened afterward.
+        self._context_session_tasks: dict[
+            asyncio.Task[Any], list[asyncio.Task[Any]]
+        ] = {}
 
         # Session context management - see class docstring for detailed explanation
         self._session_state = ClientSessionState()
@@ -782,6 +789,7 @@ class Client(
         # share lifecycle state with the original instance.
         new_client._session_state = ClientSessionState()
         new_client._transport_options = self._transport_options
+        new_client._context_session_tasks = {}
 
         # Give the clone its own response cache so cached entries are not shared
         # across independent sessions, and rebuild the negotiated_version closure
@@ -955,11 +963,68 @@ class Client(
             )
         return self.initialize_result
 
+    async def _enter_context(self) -> asyncio.Task[Any]:
+        """Connect and return the session held by this context."""
+        await self._connect()
+        session_task = self._session_state.session_task
+        if session_task is None:
+            raise RuntimeError("Client connected without a session task")
+        return session_task
+
     async def __aenter__(self):
-        return await self._connect()
+        session_task = await self._enter_context()
+        task = asyncio.current_task()
+        if task is None:
+            raise RuntimeError("Client context entered outside an asyncio task")
+        self._context_session_tasks.setdefault(task, []).append(session_task)
+        return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self._disconnect()
+        task = asyncio.current_task()
+        session_task = None
+        if task is not None:
+            session_tasks = self._context_session_tasks.get(task)
+            if session_tasks:
+                session_task = session_tasks.pop()
+                if not session_tasks:
+                    del self._context_session_tasks[task]
+        await self._disconnect(held=session_task)
+
+    async def _exit_context(
+        self,
+        held: asyncio.Task[Any] | None,
+        entered_task: asyncio.Task[Any] | None,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> bool | None:
+        """Exit a context entered by another task, preserving its session hold."""
+        if entered_task is not None and held is not None:
+            self._remove_context_session(entered_task, held)
+
+        task = asyncio.current_task()
+        if task is None or held is None:
+            return await self.__aexit__(exc_type, exc_val, exc_tb)
+
+        self._context_session_tasks.setdefault(task, []).append(held)
+        try:
+            return await self.__aexit__(exc_type, exc_val, exc_tb)
+        finally:
+            self._remove_context_session(task, held)
+
+    def _remove_context_session(
+        self, task: asyncio.Task[Any], held: asyncio.Task[Any]
+    ) -> None:
+        """Remove one matching context hold from a task's pending exits."""
+        session_tasks = self._context_session_tasks.get(task)
+        if session_tasks is None:
+            return
+        for index in range(len(session_tasks) - 1, -1, -1):
+            if session_tasks[index] is held:
+                del session_tasks[index]
+                break
+        if not session_tasks:
+            del self._context_session_tasks[task]
 
     async def _connect(self):
         """
@@ -1059,7 +1124,9 @@ class Client(
 
         return self
 
-    async def _disconnect(self, force: bool = False):
+    async def _disconnect(
+        self, force: bool = False, held: asyncio.Task[Any] | None = None
+    ):
         """
         Disconnect from session using reference counting.
 
@@ -1077,6 +1144,13 @@ class Client(
             # An explicit close stops the session it finds, in order with the
             # contexts around it, so it runs here under the lock as before.
             await self._stop_session(None, force=True)
+            return
+
+        # A context entered before an explicit close owns the old session. If
+        # the client has since reconnected, its exit must not release the new
+        # session's hold. There is no await between this check and the counter
+        # update, so another task cannot replace the session in between.
+        if held is not None and self._session_state.session_task is not held:
             return
 
         # Release this context's hold before any await. A context that exits
