@@ -72,7 +72,7 @@ The group aggregates names and detects collisions; it never stands between the a
 
 ## Create a group from configuration
 
-`ClientGroup.from_config` creates one client per server rather than passing the entire configuration through a proxy. A FastMCP-specific `mode` field can select the protocol behavior for each server:
+`ClientGroup.from_config` creates one client per server rather than passing the entire configuration through a proxy. Each entry’s `timeout` applies to that client in milliseconds; `0` disables the request timeout. A FastMCP-specific `mode` field can select the protocol behavior for each server:
 
 ```python
 from fastmcp import ClientGroup

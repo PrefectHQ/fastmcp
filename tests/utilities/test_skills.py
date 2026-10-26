@@ -11,6 +11,7 @@ import pytest
 from mcp_types import BlobResourceContents, TextResourceContents
 
 from fastmcp import Client, FastMCP
+from fastmcp._warnings import FastMCPDeprecationWarning
 from fastmcp.server.providers.skills import SkillsDirectoryProvider
 from fastmcp.utilities.skills import (
     SkillFile,
@@ -18,6 +19,7 @@ from fastmcp.utilities.skills import (
     SkillSummary,
     download_skill,
     get_skill_manifest,
+    list_skill_summaries,
     list_skills,
     sync_skills,
 )
@@ -101,10 +103,18 @@ def skills_server(skills_dir: Path) -> FastMCP:
     return mcp
 
 
-class TestListSkills:
+class TestListSkillSummaries:
+    async def test_list_skills_is_a_deprecated_alias(self, skills_server: FastMCP):
+        async with Client(skills_server) as client:
+            with pytest.warns(FastMCPDeprecationWarning, match="list_skill_summaries"):
+                skills = await list_skills(client)
+            expected = await list_skill_summaries(client)
+
+        assert skills == expected
+
     async def test_lists_available_skills(self, skills_server: FastMCP):
         async with Client(skills_server) as client:
-            skills = await list_skills(client)
+            skills = await list_skill_summaries(client)
 
         assert len(skills) == 3
         names = {s.name for s in skills}
@@ -112,7 +122,7 @@ class TestListSkills:
 
     async def test_returns_skill_summary_objects(self, skills_server: FastMCP):
         async with Client(skills_server) as client:
-            skills = await list_skills(client)
+            skills = await list_skill_summaries(client)
 
         for skill in skills:
             assert isinstance(skill, SkillSummary)
@@ -122,7 +132,7 @@ class TestListSkills:
 
     async def test_includes_descriptions(self, skills_server: FastMCP):
         async with Client(skills_server) as client:
-            skills = await list_skills(client)
+            skills = await list_skill_summaries(client)
 
         by_name = {s.name: s for s in skills}
         assert by_name["pdf-processing"].description == "Process PDF documents"
@@ -131,7 +141,7 @@ class TestListSkills:
     async def test_empty_server_returns_empty_list(self):
         mcp = FastMCP("Empty")
         async with Client(mcp) as client:
-            skills = await list_skills(client)
+            skills = await list_skill_summaries(client)
 
         assert skills == []
 
@@ -155,7 +165,7 @@ class TestListSkills:
             return "# Wrong suffix"
 
         async with Client(mcp) as client:
-            skills = await list_skills(client)
+            skills = await list_skill_summaries(client)
 
         assert skills == [
             SkillSummary(

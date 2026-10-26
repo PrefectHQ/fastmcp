@@ -29,6 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Check published skills match their sources
+        run: diff -ru skills docs/.mintlify/skills
+
       - name: Setup uv
         uses: ./.github/actions/setup-uv
         with:

@@ -29,6 +29,20 @@ class ToolRoute:
     upstream_name: str
 
 
+@dataclass(frozen=True)
+class _EnteredClient:
+    task: asyncio.Task[Any]
+    session_task: asyncio.Task[Any] | None
+
+
+async def _enter_client_context(client: Client[Any]) -> _EnteredClient:
+    await client.__aenter__()
+    task = asyncio.current_task()
+    if task is None:
+        raise RuntimeError("Client group entered outside an asyncio task")
+    return _EnteredClient(task, client._session_state.session_task)
+
+
 class ClientGroup:
     """Coordinate independent clients without introducing a proxy server.
 
@@ -88,7 +102,10 @@ class ClientGroup:
             configured_mode = (server.model_extra or {}).get("mode", default_mode)
             if not isinstance(configured_mode, str):
                 raise TypeError(f"Protocol mode for server {name!r} must be a string")
-            clients[name] = Client(server.to_transport(), mode=configured_mode)
+            timeout = server.timeout / 1000 if server.timeout is not None else None
+            clients[name] = Client(
+                server.to_transport(), mode=configured_mode, timeout=timeout
+            )
 
         return cls(clients)
 
@@ -113,19 +130,44 @@ class ClientGroup:
         # so on partial failure the successes are known and can be unwound.
         clients = list(self._clients.values())
         results = await gather(
-            (client.__aenter__() for client in clients), return_exceptions=True
+            (_enter_client_context(client) for client in clients),
+            return_exceptions=True,
         )
         errors = [result for result in results if isinstance(result, BaseException)]
         if errors:
             for client, result in zip(clients, results, strict=True):
                 if not isinstance(result, BaseException):
                     with contextlib.suppress(Exception):
-                        await client.__aexit__(None, None, None)
+                        await client._exit_context(
+                            result.session_task,
+                            result.task,
+                            None,
+                            None,
+                            None,
+                        )
             await stack.aclose()
             raise errors[0]
 
-        for client in clients:
-            stack.push_async_exit(client)
+        for client, result in zip(clients, results, strict=True):
+            assert not isinstance(result, BaseException)
+
+            async def exit_client(
+                exc_type: type[BaseException] | None,
+                exc_value: BaseException | None,
+                traceback: TracebackType | None,
+                *,
+                client: Client[Any] = client,
+                entered: _EnteredClient = result,
+            ) -> bool | None:
+                return await client._exit_context(
+                    entered.session_task,
+                    entered.task,
+                    exc_type,
+                    exc_value,
+                    traceback,
+                )
+
+            stack.push_async_exit(exit_client)
         return stack
 
     async def __aexit__(

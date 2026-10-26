@@ -12,6 +12,7 @@ against servers started from the checkout.
 | pydantic-ai smoke | `smoke_pydantic_ai.py` | client-only `fastmcp-slim[client]`, as `pydantic-ai-slim[mcp]` installs it |
 | langchain.mcp smoke | `smoke_langchain_mcp.py`, including a `ClientGroup` of a legacy HTTP server and a modern stdio server | `fastmcp`, as `langchain[mcp]` installs it |
 | langchain-mcp-adapters smoke | `smoke_langchain_mcp_adapters.py` | none: the adapters pin `mcp<2`, so they reach FastMCP over the wire |
+| redis credential providers smoke | `smoke_redis_credentials.py`: `TasksExtension` tasks through rotating credentials from AWS's ElastiCache IAM provider (botocore) and redis-entraid's streaming Entra ID provider, against a local `redis-server` | `fastmcp`, `fastmcp-slim`, and `fastmcp-tasks` wheels |
 
 Each smoke runs its checks over stdio, streamable HTTP, SSE, and a FastMCP proxy
 in front of a stdio server, all with bearer auth where the transport allows it.
@@ -33,9 +34,10 @@ manual run with `latest`, tests each consumer's latest release.
 
 ```bash
 uv sync
-uv build --wheel --out-dir dist . fastmcp_slim
+uv build --wheel --out-dir dist . fastmcp_slim fastmcp_tasks
 slim="fastmcp-slim @ file://$PWD/$(ls dist/fastmcp_slim-*.whl)"
 full="fastmcp @ file://$PWD/$(ls dist/fastmcp-4*.whl)"
+tasks="fastmcp-tasks @ file://$PWD/$(ls dist/fastmcp_tasks-*.whl)"
 
 uv run --isolated --no-project --no-config \
     --with 'pydantic-ai-slim[mcp]' --with "${slim/fastmcp-slim/fastmcp-slim[client]}" \
@@ -48,4 +50,10 @@ uv run --isolated --no-project --no-config \
 uv run --isolated --no-project --no-config \
     --with langchain-mcp-adapters --with langchain \
     python tests/downstream/smoke_langchain_mcp_adapters.py
+
+# needs redis-server on PATH
+uv run --isolated --no-project --no-config \
+    --with "$full" --with "$slim" --with "$tasks" \
+    --with botocore --with cachetools --with redis-entraid \
+    python tests/downstream/smoke_redis_credentials.py
 ```

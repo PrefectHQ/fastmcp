@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import base64
 import json
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import mcp_types
+
+from fastmcp._warnings import FastMCPDeprecationWarning
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
@@ -40,11 +43,13 @@ class SkillManifest:
     files: list[SkillFile]
 
 
-async def list_skills(client: Client) -> list[SkillSummary]:
-    """List all available skills from an MCP server.
+async def list_skill_summaries(client: Client) -> list[SkillSummary]:
+    """List the skills a server publishes as resources.
 
     Discovers skills by finding resources with URIs matching the
-    `skill://{name}/SKILL.md` pattern.
+    `skill://{name}/SKILL.md` pattern, so it works with any server that
+    serves skills as resources. For the Skills extension's `skills/list`,
+    use `Client.list_skills()` with `SkillsClientExtension` instead.
 
     Args:
         client: Connected FastMCP client
@@ -55,10 +60,10 @@ async def list_skills(client: Client) -> list[SkillSummary]:
     Example:
         ```python
         from fastmcp import Client
-        from fastmcp.utilities.skills import list_skills
+        from fastmcp.utilities.skills import list_skill_summaries
 
         async with Client("http://skills-server/mcp") as client:
-            skills = await list_skills(client)
+            skills = await list_skill_summaries(client)
             for skill in skills:
                 print(f"{skill.name}: {skill.description}")
         ```
@@ -82,6 +87,22 @@ async def list_skills(client: Client) -> list[SkillSummary]:
             )
 
     return skills
+
+
+async def list_skills(client: Client) -> list[SkillSummary]:
+    """Deprecated alias for `list_skill_summaries`.
+
+    The name collided with `Client.list_skills()`, which sends the Skills
+    extension's `skills/list` request and returns different results.
+    """
+    warnings.warn(
+        "`fastmcp.utilities.skills.list_skills` is deprecated; use "
+        "`list_skill_summaries`. For Skills extension discovery, use "
+        "`Client.list_skills()` with `SkillsClientExtension`.",
+        FastMCPDeprecationWarning,
+        stacklevel=2,
+    )
+    return await list_skill_summaries(client)
 
 
 async def get_skill_manifest(client: Client, skill_name: str) -> SkillManifest:
@@ -241,7 +262,7 @@ async def sync_skills(
             print(f"Downloaded {len(paths)} skills")
         ```
     """
-    skills = await list_skills(client)
+    skills = await list_skill_summaries(client)
     downloaded = []
 
     for skill in skills:

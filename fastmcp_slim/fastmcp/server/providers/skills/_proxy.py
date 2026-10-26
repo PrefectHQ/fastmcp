@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
@@ -46,7 +46,7 @@ class _ProxySkillSource(_SkillSource):
         )
 
     @asynccontextmanager
-    async def _client(self) -> AsyncIterator[Client]:
+    async def _client(self) -> AsyncGenerator[Client]:
         try:
             client = await self.provider._get_client()
             async with client:

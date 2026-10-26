@@ -332,7 +332,7 @@ Proxied components follow standard prefixing rules:
 
 ## Skills
 
-A proxy advertises the experimental [Skills extension](/servers/providers/experimental-skills) on modern MCP connections and forwards `skills/list` and `skills/get` to its backend. The same behavior applies when you add a `ProxyProvider` to an existing server. Like its tools and resources, the proxy's Skills capability is its own rather than a mirror of the backend: a backend without Skills contributes an empty catalog, and connecting to the proxy never waits on the backend.
+A proxy advertises the experimental [Skills extension](/servers/skills#discover-skills-with-the-skills-extension) on modern MCP connections and forwards `skills/list` and `skills/get` to its backend. The same behavior applies when you add a `ProxyProvider` to an existing server. Like its tools and resources, the proxy's Skills capability is its own rather than a mirror of the backend: a backend without Skills contributes an empty catalog, and connecting to the proxy never waits on the backend.
 
 Create the proxy as usual; it needs no additional extension registration.
 

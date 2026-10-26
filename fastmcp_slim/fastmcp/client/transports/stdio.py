@@ -3,7 +3,7 @@ import contextlib
 import os
 import shutil
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import TextIO, cast
 
@@ -80,7 +80,7 @@ class StdioTransport(ClientTransport):
         *,
         transport_options: TransportOptions | None = None,
         **session_kwargs: Unpack[SessionKwargs],
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         try:
             await self.connect(transport_options=transport_options, **session_kwargs)
             self._active_sessions += 1

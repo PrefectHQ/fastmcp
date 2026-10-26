@@ -126,8 +126,8 @@ class TestBooleanSchemas:
         result = json_schema_to_type(schema)
         validator = TypeAdapter(result)
         obj = validator.validate_python({"name": "test", "anything": 42})
-        assert obj.name == "test"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-        assert obj.anything == 42  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert obj.name == "test"  # type: ignore[attr-defined]
+        assert obj.anything == 42  # type: ignore[attr-defined]
 
     def test_false_property_schema_rejects_values(self):
         """A property with schema `false` should reject any provided value."""
@@ -139,7 +139,7 @@ class TestBooleanSchemas:
         result = json_schema_to_type(schema)
         validator = TypeAdapter(result)
         obj = validator.validate_python({"name": "test"})
-        assert obj.name == "test"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert obj.name == "test"  # type: ignore[attr-defined]
 
         with pytest.raises(ValidationError):
             validator.validate_python({"name": "test", "never": "anything"})
@@ -160,8 +160,8 @@ class TestBooleanSchemas:
         obj = validator.validate_python(
             {"known": "hello", "flexible": [1, 2, 3], "extra": "field"}
         )
-        assert obj.known == "hello"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-        assert obj.flexible == [1, 2, 3]  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert obj.known == "hello"  # type: ignore[attr-defined]
+        assert obj.flexible == [1, 2, 3]  # type: ignore[attr-defined]
 
     def test_issue_3783_boolean_property_schemas(self):
         """Regression test for GitHub issue #3783."""
@@ -179,9 +179,9 @@ class TestBooleanSchemas:
         result = json_schema_to_type(schema)
         validator = TypeAdapter(result)
         obj = validator.validate_python({"ts": 123, "level": "info", "app": "myapp"})
-        assert obj.ts == 123  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-        assert obj.level == "info"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-        assert obj.app == "myapp"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert obj.ts == 123  # type: ignore[attr-defined]
+        assert obj.level == "info"  # type: ignore[attr-defined]
+        assert obj.app == "myapp"  # type: ignore[attr-defined]
 
     def test_issue_5737_declared_default_hydrated_with_additional_properties(self):
         """Defaults of declared fields hydrate like explicit values (#5737)."""
@@ -195,8 +195,8 @@ class TestBooleanSchemas:
             },
         }
         validator = TypeAdapter(json_schema_to_type(schema))
-        assert validator.validate_python({}).day == date(2026, 10, 13)  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-        assert validator.validate_python({"day": "2026-10-13"}).day == date(  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert validator.validate_python({}).day == date(2026, 10, 13)  # type: ignore[attr-defined]
+        assert validator.validate_python({"day": "2026-10-13"}).day == date(  # type: ignore[attr-defined]
             2026, 10, 13
         )
 
@@ -219,8 +219,8 @@ class TestBooleanSchemas:
         validator = TypeAdapter(json_schema_to_type(schema))
         result = validator.validate_python({})
         # The default object is hydrated into the proper type
-        assert result.config.port == 8080  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-        assert result.config.host == "localhost"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert result.config.port == 8080  # type: ignore[attr-defined]
+        assert result.config.host == "localhost"  # type: ignore[attr-defined]
 
     def test_null_default_on_non_nullable_type(self):
         """Null default on non-nullable type is preserved as-is (not validated)."""
@@ -235,8 +235,8 @@ class TestBooleanSchemas:
         validator = TypeAdapter(json_schema_to_type(schema))
         # These invalid defaults should be preserved without validation errors
         result = validator.validate_python({})
-        assert result.name is None  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-        assert result.count == 0  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert result.name is None  # type: ignore[attr-defined]
+        assert result.count == 0  # type: ignore[attr-defined]
 
 
 class TestConstrainedTypes:
@@ -325,7 +325,7 @@ class TestCrashPrevention:
         T = json_schema_to_type(schema)
         ta = TypeAdapter(T)
         result = ta.validate_python({"class": "A", "return": 1, "import": True})
-        assert result.class_ == "A"  # ty:ignore[unresolved-attribute]
+        assert result.class_ == "A"
 
     def test_empty_enum(self):
         """Empty enum means no value is valid — should reject like a false schema."""
@@ -439,7 +439,7 @@ class TestUnsupportedPatternFallback:
             T = json_schema_to_type(schema)
         ta = TypeAdapter(T)
         result = ta.validate_python({"tag_key": "Name", "value": "test"})
-        assert result.tag_key == "Name"  # ty:ignore[unresolved-attribute]
+        assert result.tag_key == "Name"
 
     def test_fallback_only_triggers_for_regex_errors(self):
         """Non-regex SchemaErrors must not be swallowed by the fallback path.
