@@ -5,6 +5,64 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.1.4" description="2026-10-26">
+
+**[v4.1.4: Token Gesture](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.4)**
+
+Generated CLIs now preserve remote transports, empty arrays, and parameters whose names collide with their own helpers; mounted servers honor session visibility and `mounted_components_raise_on_load_error`, a stale client context no longer closes a newer session, and OAuth provider wrappers accept identity assertions. Tasks accept a redis-py credential provider that returns current credentials for each new connection (streaming providers such as redis-entraid's are rejected until Docket can refresh them safely), Redis 8.1.0 is excluded, and custom `KeyringStore` users must now install `py-key-value-aio[keyring]` explicitly. Thanks to our 16 contributors, including 9 first-time contributors.
+
+### Enhancements ✨
+* Add server authoring guidance through the docs site by [@zzstoatzz](https://github.com/zzstoatzz) in [#5703](https://github.com/PrefectHQ/fastmcp/pull/5703)
+* Support rotating Redis credentials for tasks by [@zzstoatzz](https://github.com/zzstoatzz) and [@nazarii-plebanskyi-rf](https://github.com/nazarii-plebanskyi-rf) in [#5970](https://github.com/PrefectHQ/fastmcp/pull/5970)
+* fix(client): forward max_sse_event_size through StreamableHttpTransport by [@PrathmeshPawar2110](https://github.com/PrathmeshPawar2110) in [#6016](https://github.com/PrefectHQ/fastmcp/pull/6016)
+* Add a downstream smoke for Redis credential providers by [@zzstoatzz](https://github.com/zzstoatzz) in [#6044](https://github.com/PrefectHQ/fastmcp/pull/6044)
+### Security 🔒
+* Bump certifi to 2026.10.19 by [@jakekaplan](https://github.com/jakekaplan) in [#5989](https://github.com/PrefectHQ/fastmcp/pull/5989)
+* Let configured proxy headers replace forwarded ones regardless of case by [@leopranzl](https://github.com/leopranzl) in [#5972](https://github.com/PrefectHQ/fastmcp/pull/5972)
+### Fixes 🐞
+* Fix maintained skill discovery on the docs site by [@zzstoatzz](https://github.com/zzstoatzz) in [#5954](https://github.com/PrefectHQ/fastmcp/pull/5954)
+* Publish regular skill files for Mintlify discovery by [@zzstoatzz](https://github.com/zzstoatzz) in [#5956](https://github.com/PrefectHQ/fastmcp/pull/5956)
+* Serialize HTTP and SSE transports in generate-cli by [@asasemahmed](https://github.com/asasemahmed) in [#5891](https://github.com/PrefectHQ/fastmcp/pull/5891)
+* fix(cli): preserve empty arrays in generated commands by [@dailyun](https://github.com/dailyun) in [#5961](https://github.com/PrefectHQ/fastmcp/pull/5961)
+* Fix session visibility lookups through mounted servers by [@HootRock](https://github.com/HootRock) and [@leopranzl](https://github.com/leopranzl) in [#5966](https://github.com/PrefectHQ/fastmcp/pull/5966)
+* Fix generated CLI JSON parameter name collisions by [@Vittuu](https://github.com/Vittuu) in [#5959](https://github.com/PrefectHQ/fastmcp/pull/5959)
+* Escape server text in the fastmcp call elicitation prompt by [@asasemahmed](https://github.com/asasemahmed) in [#5909](https://github.com/PrefectHQ/fastmcp/pull/5909)
+* Map common audio extensions when Audio is given a path by [@asasemahmed](https://github.com/asasemahmed) in [#5919](https://github.com/PrefectHQ/fastmcp/pull/5919)
+* Drop clamped log records the logger is not enabled for by [@asasemahmed](https://github.com/asasemahmed) in [#5915](https://github.com/PrefectHQ/fastmcp/pull/5915)
+* Omit the output schema when an OpenAPI success response has no body by [@asasemahmed](https://github.com/asasemahmed) in [#5913](https://github.com/PrefectHQ/fastmcp/pull/5913)
+* Create the MCP config file on install when it is missing or empty by [@asasemahmed](https://github.com/asasemahmed) in [#5887](https://github.com/PrefectHQ/fastmcp/pull/5887)
+* Preserve credential providers when cloning task extensions by [@zzstoatzz](https://github.com/zzstoatzz) and [@nazarii-plebanskyi-rf](https://github.com/nazarii-plebanskyi-rf) in [#5984](https://github.com/PrefectHQ/fastmcp/pull/5984)
+* Exclude Redis 8.1.0 to preserve task reconnection by [@zzstoatzz](https://github.com/zzstoatzz) and [@nazarii-plebanskyi-rf](https://github.com/nazarii-plebanskyi-rf) in [#5985](https://github.com/PrefectHQ/fastmcp/pull/5985)
+* Remove unused keyring dependency by [@zzstoatzz](https://github.com/zzstoatzz) and [@tom42-otera](https://github.com/tom42-otera) in [#5987](https://github.com/PrefectHQ/fastmcp/pull/5987)
+* Fix static checks broken by ty 0.0.89 and pydantic 2.14 by [@zzstoatzz](https://github.com/zzstoatzz) in [#6001](https://github.com/PrefectHQ/fastmcp/pull/6001)
+* Run dev inspector servers over stdio and stop mapping the deployment port to the proxy by [@asasemahmed](https://github.com/asasemahmed) in [#6029](https://github.com/PrefectHQ/fastmcp/pull/6029)
+* fix(json-schema): apply a Draft-4 boolean exclusive bound to its sibling by [@kbkb628](https://github.com/kbkb628) in [#5234](https://github.com/PrefectHQ/fastmcp/pull/5234)
+* Strip a URL scheme from a Clerk domain by [@asasemahmed](https://github.com/asasemahmed) in [#5921](https://github.com/PrefectHQ/fastmcp/pull/5921)
+* Fix generate-cli commands for tools with a json parameter by [@andreivince](https://github.com/andreivince) in [#6032](https://github.com/PrefectHQ/fastmcp/pull/6032)
+* Honor mounted_components_raise_on_load_error in AggregateProvider by [@asasemahmed](https://github.com/asasemahmed) in [#6026](https://github.com/PrefectHQ/fastmcp/pull/6026)
+* Reject streaming credential providers in TasksExtension by [@zzstoatzz](https://github.com/zzstoatzz) in [#6043](https://github.com/PrefectHQ/fastmcp/pull/6043)
+* fix(client): keep stale contexts from closing newer sessions by [@mikamikasuki](https://github.com/mikamikasuki) in [#6018](https://github.com/PrefectHQ/fastmcp/pull/6018)
+* fix(auth): expose identity assertions on OAuth provider wrappers by [@computeaholic](https://github.com/computeaholic) and [@jonaseck2](https://github.com/jonaseck2) in [#6006](https://github.com/PrefectHQ/fastmcp/pull/6006)
+* Measure blocking duration with perf_counter in transform_fn generator test by [@Lokeshrao69](https://github.com/Lokeshrao69) in [#6014](https://github.com/PrefectHQ/fastmcp/pull/6014)
+### Docs 📚
+* Clarify request state across mounted servers by [@HootRock](https://github.com/HootRock) and [@leopranzl](https://github.com/leopranzl) in [#5967](https://github.com/PrefectHQ/fastmcp/pull/5967)
+* Pass mcp_path through the remote OAuth custom routes example by [@asasemahmed](https://github.com/asasemahmed) in [#5925](https://github.com/PrefectHQ/fastmcp/pull/5925)
+
+## New Contributors
+* @dailyun made their first contribution in [#5961](https://github.com/PrefectHQ/fastmcp/pull/5961)
+* @Vittuu made their first contribution in [#5959](https://github.com/PrefectHQ/fastmcp/pull/5959)
+* @leopranzl made their first contribution in [#5966](https://github.com/PrefectHQ/fastmcp/pull/5966)
+* @nazarii-plebanskyi-rf made their first contribution in [#5970](https://github.com/PrefectHQ/fastmcp/pull/5970)
+* @tom42-otera made their first contribution in [#5987](https://github.com/PrefectHQ/fastmcp/pull/5987)
+* @computeaholic made their first contribution in [#6006](https://github.com/PrefectHQ/fastmcp/pull/6006)
+* @jonaseck2 made their first contribution in [#6006](https://github.com/PrefectHQ/fastmcp/pull/6006)
+* @PrathmeshPawar2110 made their first contribution in [#6016](https://github.com/PrefectHQ/fastmcp/pull/6016)
+* @Lokeshrao69 made their first contribution in [#6014](https://github.com/PrefectHQ/fastmcp/pull/6014)
+
+**Full Changelog**: [v4.1.3...v4.1.4](https://github.com/PrefectHQ/fastmcp/compare/v4.1.3...v4.1.4)
+
+</Update>
+
 <Update label="v4.1.3" description="2026-10-20">
 
 **[v4.1.3: Root Awakening](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.3)**
