@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import quote, unquote
 
 import mcp_types
 
@@ -72,7 +73,7 @@ async def list_skills(client: Client) -> list[SkillSummary]:
         if uri.startswith("skill://") and uri.endswith("/SKILL.md"):
             # Extract skill name from URI
             path_part = uri[len("skill://") :]
-            name = path_part.rsplit("/", 1)[0]
+            name = unquote(path_part.rsplit("/", 1)[0])
             skills.append(
                 SkillSummary(
                     name=name,
@@ -97,7 +98,7 @@ async def get_skill_manifest(client: Client, skill_name: str) -> SkillManifest:
     Raises:
         ValueError: If manifest cannot be read or parsed
     """
-    manifest_uri = f"skill://{skill_name}/_manifest"
+    manifest_uri = f"skill://{quote(skill_name, safe='/')}/_manifest"
     result = await client.read_resource(manifest_uri)
 
     if not result:
@@ -192,7 +193,9 @@ async def download_skill(
         if not file_path.is_relative_to(skill_dir):
             continue
 
-        file_uri = f"skill://{skill_name}/{file_info.path}"
+        file_uri = (
+            f"skill://{quote(skill_name, safe='/')}/{quote(file_info.path, safe='/')}"
+        )
         result = await client.read_resource(file_uri)
 
         if not result:

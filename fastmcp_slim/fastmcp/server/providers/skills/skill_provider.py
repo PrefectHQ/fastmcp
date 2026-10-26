@@ -359,10 +359,19 @@ class SkillProvider(Provider):
         """Get a resource by URI."""
         skill = self.skill_info
 
-        if not uri.startswith(skill.uri_prefix):
-            return None
         skill_name = skill.name
-        file_path = unquote(uri[len(skill.uri_prefix) :])
+        if skill.preserve_bytes:
+            if not uri.startswith(skill.uri_prefix):
+                return None
+            file_path = uri[len(skill.uri_prefix) :]
+        else:
+            if not uri.startswith("skill://"):
+                return None
+            parts = uri[len("skill://") :].split("/", 1)
+            if len(parts) != 2 or unquote(parts[0]) != skill.name:
+                return None
+            file_path = parts[1]
+        file_path = unquote(file_path)
 
         if file_path == "_manifest":
             return SkillResource(
@@ -431,16 +440,26 @@ class SkillProvider(Provider):
 
         skill = self.skill_info
 
-        if not uri.startswith(skill.uri_prefix):
-            return None
-        file_path = uri[len(skill.uri_prefix) :]
+        if skill.preserve_bytes:
+            uri_prefix = skill.uri_prefix
+            if not uri.startswith(uri_prefix):
+                return None
+            file_path = uri[len(uri_prefix) :]
+        else:
+            if not uri.startswith("skill://"):
+                return None
+            parts = uri[len("skill://") :].split("/", 1)
+            if len(parts) != 2 or unquote(parts[0]) != skill.name:
+                return None
+            uri_prefix = f"skill://{parts[0]}/"
+            file_path = parts[1]
 
         # Don't match known resources (main file, manifest)
         if file_path == "_manifest" or file_path == self._main_file_name:
             return None
 
         return SkillFileTemplate(
-            uri_template=f"{skill.uri_prefix}{{path*}}",
+            uri_template=f"{uri_prefix}{{path*}}",
             name=f"{skill.name}_files",
             description=f"Access files within {skill.name}",
             mime_type="application/octet-stream",
