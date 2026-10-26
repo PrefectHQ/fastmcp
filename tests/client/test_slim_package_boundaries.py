@@ -94,10 +94,12 @@ def test_bare_slim_import_needs_only_mcp_types() -> None:
         import fastmcp
         import fastmcp.settings
         import fastmcp.types
-        from fastmcp.skills import Skill
-        from fastmcp.skills.models import Skill as DirectSkill
+        from fastmcp.skills import Skill, SkillEntry
+        from fastmcp.skills.models import SkillEntry as DirectSkillEntry
+        from fastmcp.skills.skill import Skill as DirectSkill
 
         assert Skill is DirectSkill
+        assert SkillEntry is DirectSkillEntry
 
         assert "mcp_types" in sys.modules, "mcp_types should load on a bare install"
         assert "mcp" not in sys.modules, "full mcp must not load on a bare install"

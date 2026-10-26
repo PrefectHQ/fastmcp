@@ -6,13 +6,13 @@ import pytest
 from mcp.client.caching import CacheEntry, CacheKey
 
 from fastmcp.client.caching import KeyValueResponseCacheStore
-from fastmcp.skills.models import GetSkillResult, ListSkillsResult, Skill
+from fastmcp.skills.models import GetSkillResult, ListSkillsResult, SkillEntry
 
 DIGEST = f"sha256:{'a' * 64}"
 
 
-def make_skill() -> Skill:
-    return Skill.model_validate(
+def make_skill() -> SkillEntry:
+    return SkillEntry.model_validate(
         {
             "uri": "skill://review/SKILL.md",
             "frontmatter": {
