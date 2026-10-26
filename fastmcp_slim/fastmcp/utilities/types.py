@@ -143,9 +143,9 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
 
                 if inspect.ismethod(cls):
                     new_method = types.MethodType(new_func, cls.__self__)
-                    return TypeAdapter(new_method)
+                    return TypeAdapter(new_method)  # ty:ignore[invalid-type-form]
                 else:
-                    return TypeAdapter(new_func)
+                    return TypeAdapter(new_func)  # ty:ignore[invalid-type-form]
 
     return TypeAdapter(cls)
 

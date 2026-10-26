@@ -10,7 +10,7 @@ executed.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncGenerator, Generator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Any
 
@@ -421,7 +421,7 @@ class FastMCPProvider(Provider):
     @contextmanager
     def _extension_runtime(
         self, available: frozenset[str], *, root: FastMCP | None
-    ) -> Iterator[None]:
+    ) -> Generator[None, None, None]:
         with self.server._extension_runtime(available, root=root):
             yield
 
@@ -611,7 +611,7 @@ class FastMCPProvider(Provider):
     # -------------------------------------------------------------------------
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         """Start the mounted server's lifespan.
 
         Sets ``_lifespan_root_active=True`` to signal to the wrapped server's

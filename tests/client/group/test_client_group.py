@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import patch
@@ -217,7 +217,7 @@ async def test_group_keeps_one_connection_per_server():
     lifecycles = {"entered": 0, "exited": 0}
 
     @asynccontextmanager
-    async def lifespan(_server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+    async def lifespan(_server: FastMCP) -> AsyncGenerator[dict[str, Any], None]:
         lifecycles["entered"] += 1
         try:
             yield {}

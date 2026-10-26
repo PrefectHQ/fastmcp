@@ -9,7 +9,7 @@ from fastmcp.client.transports import (
     StreamableHttpTransport,
 )
 from fastmcp.server import create_proxy
-from fastmcp.server.dependencies import get_http_headers
+from fastmcp.server.dependencies import get_http_headers, get_http_request
 from fastmcp.server.providers.proxy import ProxyClient
 from fastmcp.utilities.tests import run_server_async
 
@@ -95,6 +95,50 @@ async def test_proxy_header_forwarding_can_be_selected(kind: str, forward: bool 
                     else:
                         assert "authorization" not in received
                         assert "x-caller" not in received
+
+
+@pytest.mark.parametrize("kind", ["http", "sse"])
+async def test_configured_headers_replace_forwarded_headers_regardless_of_case(
+    kind: str,
+):
+    backend = FastMCP("Backend")
+
+    @backend.tool
+    def raw_headers() -> dict[str, list[str]]:
+        # Header names are case-insensitive, so every line the backend received
+        # for a name is listed rather than the single value a dict would keep.
+        headers = get_http_request().headers
+        return {
+            name: headers.getlist(name)
+            for name in ("authorization", "x-api-key", "x-caller")
+        }
+
+    backend_transport = "sse" if kind == "sse" else "http"
+    async with run_server_async(backend, transport=backend_transport) as url:
+        configured = {"Authorization": "Bearer backend", "X-API-Key": "backend"}
+        target = (
+            SSETransport(url, headers=configured)
+            if kind == "sse"
+            else StreamableHttpTransport(url, headers=configured)
+        )
+        proxy = create_proxy(ProxyClient[ClientTransport](target))
+        async with run_server_async(proxy) as proxy_url:
+            transport = StreamableHttpTransport(
+                proxy_url,
+                headers={
+                    "Authorization": "Bearer caller",
+                    "X-API-Key": "caller",
+                    "X-Caller": "inbound",
+                },
+            )
+            async with Client(transport, mode="legacy") as client:
+                result = await client.call_tool("raw_headers", {})
+
+    assert result.data == {
+        "authorization": ["Bearer backend"],
+        "x-api-key": ["backend"],
+        "x-caller": ["inbound"],
+    }
 
 
 def test_proxy_copies_keep_independent_forwarding_options():

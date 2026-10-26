@@ -1,5 +1,5 @@
 import contextlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
 from mcp import ClientSession
@@ -113,7 +113,7 @@ class MCPConfigTransport(ClientTransport):
             self._request_state_security = _RequestStateSecurity.ephemeral()
 
     @property
-    def legacy_only(self) -> bool:
+    def legacy_only(self) -> bool:  # ty:ignore[invalid-property-type-override]
         """Whether the connected composite resolved to the legacy protocol era.
 
         A single-server config delegates directly to the underlying transport
@@ -132,7 +132,7 @@ class MCPConfigTransport(ClientTransport):
         *,
         transport_options: TransportOptions | None = None,
         **session_kwargs: Unpack[SessionKwargs],
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         # Single server - delegate directly to pre-created transport
         if len(self.config.mcpServers) == 1:
             config = next(iter(self.config.mcpServers.values()))

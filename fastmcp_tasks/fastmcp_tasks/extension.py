@@ -26,7 +26,7 @@ Docket backend/worker and installs the worker-side `Context` hooks core exposes.
 from __future__ import annotations
 
 import copy
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
@@ -307,7 +307,7 @@ class TasksExtension(ServerExtension):
         return await call_next()
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         """Start the Docket backend/worker and install the worker-side hooks.
 
         Installs core's background-context factory and worker-server resolver for

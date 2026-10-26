@@ -1,7 +1,7 @@
 import asyncio
 import functools
 import threading
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import quote
 
 import pytest
@@ -1455,7 +1455,7 @@ class TestTemplateMimeType:
         """A string return honors the template's declared mime_type."""
         mcp = FastMCP()
 
-        kwargs = {"mime_type": declared} if declared else {}
+        kwargs: dict[str, Any] = {"mime_type": declared} if declared else {}
 
         @mcp.resource("data://report/{name}", **kwargs)
         def report(name: str) -> str:

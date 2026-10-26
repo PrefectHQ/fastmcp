@@ -21,7 +21,7 @@ Example:
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncGenerator, Generator, Sequence
 from contextlib import AsyncExitStack, ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeVar
@@ -109,7 +109,7 @@ class AggregateProvider(Provider):
     @contextmanager
     def _extension_runtime(
         self, available: frozenset[str], *, root: FastMCP | None
-    ) -> Iterator[None]:
+    ) -> Generator[None, None, None]:
         """Carry each root's restrictions through the live provider tree."""
         with ExitStack() as stack:
             scope = _ExtensionScope(available, root, stack)
@@ -411,7 +411,7 @@ class AggregateProvider(Provider):
     # -------------------------------------------------------------------------
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         """Combine lifespans of all providers."""
         from fastmcp.server.dependencies import get_server
 

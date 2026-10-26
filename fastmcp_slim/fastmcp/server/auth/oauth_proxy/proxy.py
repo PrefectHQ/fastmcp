@@ -23,7 +23,7 @@ import secrets
 import time
 from base64 import urlsafe_b64encode
 from collections import OrderedDict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import Any, Literal
@@ -847,7 +847,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         )
 
     @asynccontextmanager
-    async def _upstream_oauth_client(self) -> AsyncIterator[AsyncOAuth2Client]:
+    async def _upstream_oauth_client(self) -> AsyncGenerator[AsyncOAuth2Client, None]:
         oauth_client = self._create_upstream_oauth_client()
         try:
             yield oauth_client

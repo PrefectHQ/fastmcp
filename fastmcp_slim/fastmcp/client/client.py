@@ -7,7 +7,13 @@ import hashlib
 import secrets
 import ssl
 import uuid
-from collections.abc import AsyncIterator, Callable, Coroutine, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    Callable,
+    Coroutine,
+    Mapping,
+    Sequence,
+)
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -140,7 +146,7 @@ The ``str`` arm is only for the version-pin case; ``Client.__init__`` rejects an
 @asynccontextmanager
 async def _conformant_discover_only(
     session: ClientSession,
-) -> AsyncIterator[None]:
+) -> AsyncGenerator[None, None]:
     """Hold ``session.send_discover`` to the same wire schema every later reply must meet.
 
     ``negotiate_auto`` accepts a probe that parses as the version-free
