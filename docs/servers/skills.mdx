@@ -16,7 +16,7 @@ Clients see served skills in two ways:
 - **As resources.** Each skill's files are ordinary MCP resources under `skill://` URIs. Every MCP client can list and read them today.
 - **Through Skills discovery.** Since FastMCP 4.1.2, the [MCP Skills extension](https://modelcontextprotocol.io/seps/2640-skills-extension) adds `skills/list` and `skills/get`, which return each skill's frontmatter and a manifest of its files with sizes and SHA-256 digests. A host that supports the extension can offer your skills to its agent without a separate install step. This support is experimental in FastMCP, and only a handful of hosts read it so far.
 
-The recommended path is to define each skill as a `Skill` object, serve them with `SkillCatalogProvider`, and register `SkillsExtension` so both kinds of client see the same files. The rest of this page follows that path, then covers the folder-based providers and when to pick them.
+The recommended path is to define each skill as a `Skill` object, and serve them with `SkillCatalogProvider`, which publishes them both as resources and through discovery. The rest of this page follows that path, then covers the folder-based providers and when to pick them.
 
 ## Define skills
 
@@ -67,13 +67,12 @@ Run through `references/checklist.md` before deploying.
 
 ## Serve skills
 
-`SkillCatalogProvider` serves a list of `Skill` objects. Registering `SkillsExtension` with the same provider instance turns on Skills discovery.
+`SkillCatalogProvider` serves a list of `Skill` objects. It registers `SkillsExtension` on the server for you, so adding the provider turns on Skills discovery.
 
 ```python
 from fastmcp import FastMCP
 from fastmcp.skills.provider import SkillCatalogProvider
 from fastmcp.skills import Skill
-from fastmcp.skills.extension import SkillsExtension
 
 release_notes = Skill(
     name="release-notes",
@@ -85,13 +84,12 @@ release_notes = Skill(
 mcp = FastMCP("Team Skills")
 skills = SkillCatalogProvider([release_notes, Skill.from_directory("skills/deploy")])
 mcp.add_provider(skills)
-mcp.add_extension(SkillsExtension(providers=[skills]))
 
 if __name__ == "__main__":
     mcp.run(transport="http", port=8000)
 ```
 
-Each skill is served at `skill://{name}/`. Every file is listed as a resource, along with a `_manifest` resource for clients that read skills without discovery. To serve skills as resources only, leave out the `SkillsExtension` line.
+Each skill is served at `skill://{name}/`. Every file is listed as a resource, along with a `_manifest` resource for clients that read skills without discovery.
 
 Pass a mapping to choose a skill's path, such as `{"team/review": review}`. The last segment must match the skill's name, and one skill's path can't sit inside another's.
 
@@ -103,7 +101,6 @@ To serve skills that change while the server runs, such as rows in a database, s
 from fastmcp import FastMCP
 from fastmcp.skills.provider import SkillCatalogProvider
 from fastmcp.skills import Skill
-from fastmcp.skills.extension import SkillsExtension
 
 # Stands in for your storage: one dict of files per skill.
 SKILL_ROWS = [
@@ -119,7 +116,6 @@ class StoredSkills(SkillCatalogProvider):
 mcp = FastMCP("Stored Skills")
 skills = StoredSkills()
 mcp.add_provider(skills)
-mcp.add_extension(SkillsExtension(providers=[skills]))
 ```
 
 ### Choose a provider
@@ -135,14 +131,13 @@ mcp.add_extension(SkillsExtension(providers=[skills]))
 
 ### Serve a skills folder from disk
 
-`SkillsDirectoryProvider` publishes every skill folder under one or more roots. Set `experimental_skills=True` on it, and register `SkillsExtension` with the same instance, to turn on discovery.
+`SkillsDirectoryProvider` publishes every skill folder under one or more roots. Set `experimental_skills=True` on it to turn on discovery; the provider then registers `SkillsExtension` for you.
 
 ```python
 from pathlib import Path
 
 from fastmcp import FastMCP
 from fastmcp.server.providers.skills import SkillsDirectoryProvider
-from fastmcp.skills.extension import SkillsExtension
 
 mcp = FastMCP("Folder Skills")
 skills = SkillsDirectoryProvider(
@@ -150,7 +145,6 @@ skills = SkillsDirectoryProvider(
     experimental_skills=True,
 )
 mcp.add_provider(skills)
-mcp.add_extension(SkillsExtension(providers=[skills]))
 ```
 
 With `experimental_skills=True`, the provider reads files from disk on every request, serves a nested skill such as `skills/team/review/SKILL.md` as its own entry, applies the same validation and limits as `Skill`, and leaves invalid skills out of `skills/list` with a warning while keeping their files readable. Skill roots and their contents must not be symbolic links, and every file in a skill folder is published, including hidden files. When the same skill path appears in more than one root, discovery omits it.
@@ -178,6 +172,14 @@ Vendor providers are `SkillsDirectoryProvider` subclasses with roots fixed to a 
 ## Access control
 
 Skills discovery respects the same rules as resource reads. A skill is omitted from `skills/list` when any of its files is hidden from the caller, denied by `Middleware.check_resource_access`, or shadowed by another resource at the same URI. `check_resource_access` is the hook that [`AuthMiddleware`](/servers/authorization) and the default `on_read_resource` use, so implement custom resource authorization there; restrictions in other middleware hooks are invisible to discovery.
+
+## Mounted servers
+
+Skills follow a [mounted server](/servers/composition) to its parent. The parent's `skills/list` includes the child's skills at the URIs the parent serves them at, so `mount(child, namespace="team")` turns `skill://review/SKILL.md` into `skill://team/review/SKILL.md`, and every file in the manifest moves with it. This works through any depth of mounts.
+
+The parent lists a mounted skill only when it routes every file back to the child and the caller passes the parent's own access checks. A parent resource that shadows one of the files, or a parent middleware rule that denies one, hides the skill. Two mounts that publish the same skill URI hide each other's copy.
+
+To limit discovery to specific providers instead, register the extension yourself with `mcp.add_extension(SkillsExtension(providers=[...]))`. An explicit registration replaces the automatic one and doesn't include mounted servers.
 
 ## Read skills from a client
 
@@ -312,12 +314,11 @@ A mismatch means the file changed between discovery and the read. Refresh the en
 
 ## Current limits
 
-Skills discovery serves skills from `SkillCatalogProvider` and `SkillsDirectoryProvider` instances registered directly on the server you run.
+Skills discovery serves skills from `SkillCatalogProvider` and `SkillsDirectoryProvider` instances registered on the server you run or on servers mounted into it.
 
-- `SkillsExtension` raises when the server or one of its providers has transforms, including namespaces, or when a provider is not registered directly on the same server.
-- Skills in a [mounted server](/servers/composition) are served as resources through the parent, but the parent does not list them in `skills/list`.
+- A skill provider added with a namespace or other transforms is left out of `skills/list`. To namespace skills, mount a server that holds the provider. A server with server-level transforms lists no skills.
 - A proxy in front of the server forwards the skill files as resources, but not `skills/list` or `skills/get`.
 - `SkillCatalogProvider` does not nest skills inside other skills and has no built-in reload; override `load_skills()` for skills that change.
 - The optional `directoryRead` capability is not implemented.
 
-Resource mode has none of these limits. Serve skills as resources everywhere, and add discovery on the server that clients connect to directly.
+Resource mode has none of these limits.

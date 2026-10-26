@@ -7,7 +7,7 @@ import json
 import mimetypes
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import suppress
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote, unquote
 
 import anyio
@@ -22,6 +22,9 @@ from fastmcp.skills.models import MCPSkill
 from fastmcp.skills.skill import Skill, _validate_relative_path
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec
+
+if TYPE_CHECKING:
+    from fastmcp.server.extensions import ServerExtension
 
 logger = get_logger(__name__)
 
@@ -102,6 +105,11 @@ class SkillCatalogProvider(Provider):
     def __init__(self, skills: SkillCatalog | None = None) -> None:
         super().__init__()
         self._static = _normalize(skills or ())
+
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        from fastmcp.skills.extension import SkillsExtension
+
+        return (SkillsExtension(),)
 
     async def load_skills(self) -> SkillCatalog:
         """Return the skills to serve. Override to load them from another source."""

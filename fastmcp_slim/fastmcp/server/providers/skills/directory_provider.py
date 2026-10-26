@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import quote, unquote
 
 import yaml
@@ -30,6 +30,9 @@ from fastmcp.skills._snapshot import Snapshot, snapshot
 from fastmcp.skills.models import MCPSkill
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec
+
+if TYPE_CHECKING:
+    from fastmcp.server.extensions import ServerExtension
 
 logger = get_logger(__name__)
 
@@ -435,6 +438,13 @@ class SkillsDirectoryProvider(AggregateProvider):
             self._directories_for_name("/".join(parts[:length]))
             for length in range(len(parts) - 1, 0, -1)
         )
+
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        if not self._experimental_skills:
+            return ()
+        from fastmcp.skills.extension import SkillsExtension
+
+        return (SkillsExtension(),)
 
     def _validate_skill_source(self) -> None:
         if not self._experimental_skills:
