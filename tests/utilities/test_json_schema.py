@@ -512,6 +512,41 @@ class TestCompressSchema:
         assert result["properties"]["foo"] == {"$ref": "#/$defs/foo_def"}
         assert "$defs" in result
 
+    def test_preserves_escaped_and_subpath_refs(self):
+        """$refs using JSON Pointer escapes, percent-encoding or sub-paths must
+        keep their definitions instead of being pruned as unused."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "spaced": {"$ref": "#/$defs/Alias%20One"},
+                "slashed": {"$ref": "#/$defs/a~1b"},
+                "tilded": {"$ref": "#/$defs/c~0d"},
+                "subpath": {"$ref": "#/$defs/Container/properties/value"},
+            },
+            "$defs": {
+                "Alias One": {"type": "string"},
+                "a/b": {"type": "integer"},
+                "c~d": {"type": "boolean"},
+                "Container": {
+                    "type": "object",
+                    "properties": {"value": {"type": "number"}},
+                },
+                "Unused": {"type": "null"},
+            },
+        }
+
+        result = compress_schema(schema)
+
+        assert result["$defs"] == {
+            "Alias One": {"type": "string"},
+            "a/b": {"type": "integer"},
+            "c~d": {"type": "boolean"},
+            "Container": {
+                "type": "object",
+                "properties": {"value": {"type": "number"}},
+            },
+        }
+
     def test_prune_params(self):
         """Test pruning parameters with compress_schema."""
         schema = {

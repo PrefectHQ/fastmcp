@@ -61,6 +61,23 @@ class _CannotInline(Exception):
     """A schema's local references can't be inlined within the limits."""
 
 
+def _referenced_def_name(ref: str) -> str | None:
+    """Return the `$defs` entry a local JSON Pointer reference targets.
+
+    Handles RFC 6901 escapes (`~0`, `~1`), percent-encoding, and pointers
+    into a definition's sub-path (`#/$defs/Name/properties/x`), all of which
+    refer to the definition named in the first segment after `$defs`.
+    Returns None for references that do not target `$defs`.
+    """
+    if not ref.startswith("#"):
+        return None
+    fragment = ref[1:]
+    parts = unquote(fragment.lstrip("/")).split("/") if fragment else []
+    if len(parts) < 2 or parts[0] != "$defs":
+        return None
+    return parts[1].replace("~1", "/").replace("~0", "~")
+
+
 def _resolve_local_ref(
     schema: dict[str, Any], ref: str, _hops: list[int] | None = None
 ) -> Any:
@@ -718,14 +735,15 @@ def _single_pass_optimize(
             # still pins the referenced $def as "used".
             if prune_defs:
                 ref = node.get("$ref")
-                if isinstance(ref, str) and ref.startswith("#/$defs/"):
-                    referenced_def = ref.split("/")[-1]
-                    if current_def_name:
-                        # We're inside a $def, so this is a def->def reference
-                        def_dependencies[referenced_def].append(current_def_name)
-                    else:
-                        # We're in the main schema, so this is a root reference
-                        root_refs.add(referenced_def)
+                if isinstance(ref, str):
+                    referenced_def = _referenced_def_name(ref)
+                    if referenced_def is not None:
+                        if current_def_name:
+                            # We're inside a $def, so this is a def->def reference
+                            def_dependencies[referenced_def].append(current_def_name)
+                        else:
+                            # We're in the main schema, so this is a root reference
+                            root_refs.add(referenced_def)
 
             # Cleanups only run when we know this node is a schema, never on
             # user extension payloads (`json_schema_extra={"x-ui": {...}}`).
