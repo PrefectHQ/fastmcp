@@ -126,8 +126,11 @@ class _MountedSkills:
 
     async def _routes_to_child(self, uri: str, child_uri: str) -> bool:
         parent = get_context().fastmcp
-        resource = await parent.get_resource(uri)
+        resource, exists = await parent._lookup_resource(uri)
         if resource is None:
+            if exists:
+                # A hidden concrete resource blocks the template, as in reads.
+                return False
             template = await parent.get_resource_template(uri)
             if not isinstance(template, FastMCPProviderResourceTemplate):
                 return False
