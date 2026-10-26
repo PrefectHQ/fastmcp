@@ -8,12 +8,12 @@ and display styled responses to users.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import anyio
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.routing import Route
-from uvicorn import Config, Server
 
 from fastmcp.utilities.http import find_available_port
 from fastmcp.utilities.logging import get_logger
@@ -27,6 +27,9 @@ from fastmcp.utilities.ui import (
     create_secure_html_response,
     create_status_message,
 )
+
+if TYPE_CHECKING:
+    from uvicorn import Server
 
 logger = get_logger(__name__)
 
@@ -227,6 +230,10 @@ def create_oauth_callback_server(
         )
 
     app = Starlette(routes=[Route(callback_path, callback_handler)])
+
+    # Deferred so importing the client does not require uvicorn; only the
+    # OAuth callback flow runs a local uvicorn server.
+    from uvicorn import Config, Server
 
     return Server(
         Config(

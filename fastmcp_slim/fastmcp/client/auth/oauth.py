@@ -4,7 +4,7 @@ import time
 import webbrowser
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import anyio
 import httpx2
@@ -21,7 +21,6 @@ from mcp.shared.auth import (
 )
 from pydantic import AnyHttpUrl
 from typing_extensions import override
-from uvicorn.server import Server
 
 from fastmcp.client.oauth_callback import (
     OAuthCallbackResult,
@@ -29,6 +28,9 @@ from fastmcp.client.oauth_callback import (
 )
 from fastmcp.utilities.http import find_available_port
 from fastmcp.utilities.logging import get_logger
+
+if TYPE_CHECKING:
+    from uvicorn.server import Server
 
 __all__ = ["OAuth"]
 
