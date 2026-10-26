@@ -143,6 +143,5 @@ class _ProxySkillsExtension(SkillsExtension):
     def _validate_configuration(self, server: FastMCP) -> tuple[_SkillSource, ...]:
         return ()
 
-    async def _is_supported(self, context: ServerRequestContext[Any, Any]) -> bool:
-        source = self._source
-        return source is not None and await source._is_supported(context)
+    def _is_advertised(self) -> bool:
+        return self._source is not None

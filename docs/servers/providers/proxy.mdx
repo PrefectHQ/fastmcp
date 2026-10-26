@@ -332,9 +332,9 @@ Proxied components follow standard prefixing rules:
 
 ## Skills
 
-When a backend advertises the experimental [Skills extension](/servers/providers/experimental-skills), its proxy automatically advertises and forwards `skills/list` and `skills/get` on modern MCP connections. The same behavior applies when you add a `ProxyProvider` to an existing server.
+A proxy advertises the experimental [Skills extension](/servers/providers/experimental-skills) on modern MCP connections and forwards `skills/list` and `skills/get` to its backend. The same behavior applies when you add a `ProxyProvider` to an existing server. Like its tools and resources, the proxy's Skills capability is its own rather than a mirror of the backend: a backend without Skills contributes an empty catalog, and connecting to the proxy never waits on the backend.
 
-Create the proxy as usual. FastMCP discovers Skills support through the backend's normal discovery response; the proxy needs no additional extension registration.
+Create the proxy as usual; it needs no additional extension registration.
 
 ```python
 from fastmcp.server import create_proxy
@@ -347,7 +347,7 @@ if __name__ == "__main__":
 
 Mounted namespaces apply consistently to the skill and its manifest's resource URIs. Skill files continue through the existing resource proxy and are read only when requested. Resource visibility and permissions hide a skill if the caller cannot access any of its files. A local resource that shadows a proxied file also hides the skill, so the manifest cannot describe bytes from a different source.
 
-Like other proxied lists, Skills results use the proxy's own private, zero-duration cache policy rather than the backend's, because proxy permissions can depend on the caller. Once a proxy observes Skills support through discovery or a Skills response, resources routed to that backend bypass `ResponseCachingMiddleware`, regardless of URI scheme. This includes ordinary resources from that backend: a proxy cannot identify every skill file without fetching the catalog, and catalogs can depend on the caller. This conservative policy lasts for that proxy provider’s lifetime. Resources from other backends and unrelated local resources retain their configured caching behavior.
+Like other proxied lists, Skills results use the proxy's own private, zero-duration cache policy rather than the backend's, because proxy permissions can depend on the caller. Once a backend answers a Skills request, resources routed to that backend bypass `ResponseCachingMiddleware`, regardless of URI scheme. This includes ordinary resources from that backend: a proxy cannot identify every skill file without fetching the catalog, and catalogs can depend on the caller. This conservative policy lasts for that proxy provider’s lifetime. Resources from other backends and unrelated local resources retain their configured caching behavior.
 
 ## Mirrored Components
 

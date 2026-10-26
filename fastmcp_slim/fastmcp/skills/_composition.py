@@ -7,9 +7,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from mcp import MCPError
 from mcp.server.context import ServerRequestContext
-from mcp_types import METHOD_NOT_FOUND
 
 from fastmcp.exceptions import AuthorizationError
 from fastmcp.resources.base import Resource
@@ -46,16 +44,6 @@ class _AggregateSkills(_SkillSource):
         self.sources = sources
         self.error_strategy = error_strategy
 
-    async def _is_supported(self, context: ServerRequestContext[Any, Any]) -> bool:
-        return any(
-            self._successful(
-                await gather(
-                    (source._is_supported(context) for source in self.sources),
-                    return_exceptions=True,
-                )
-            )
-        )
-
     async def _owns_skill_resource(self, uri: str) -> bool:
         for source in self.sources:
             if await source._owns_skill_resource(uri):
@@ -64,18 +52,13 @@ class _AggregateSkills(_SkillSource):
 
     def _successful(self, results: Sequence[_T | BaseException]) -> list[_T]:
         successful: list[_T] = []
-        unsupported = 0
         for result in results:
-            if isinstance(result, MCPError) and result.error.code == METHOD_NOT_FOUND:
-                unsupported += 1
-            elif isinstance(result, BaseException):
+            if isinstance(result, BaseException):
                 if self.error_strategy == "raise":
                     raise result
                 logger.warning("Error during Skills discovery: %s", result)
             else:
                 successful.append(result)
-        if not successful and unsupported == len(results):
-            raise MCPError(code=METHOD_NOT_FOUND, message="Skills are not supported")
         return successful
 
     async def _list_skill_entries(
@@ -178,9 +161,6 @@ class _TransformedSkills(_SkillSource):
                 return False
         return True
 
-    async def _is_supported(self, context: ServerRequestContext[Any, Any]) -> bool:
-        return await self.source._is_supported(context)
-
     async def _owns_skill_resource(self, uri: str) -> bool:
         original = self._reverse(uri)
         return original is not None and await self.source._owns_skill_resource(original)
@@ -217,10 +197,6 @@ class _ServerSkills(_SkillSource):
     def __init__(self, source: _SkillSource, server: FastMCP) -> None:
         self.source = source
         self.server = server
-
-    async def _is_supported(self, context: ServerRequestContext[Any, Any]) -> bool:
-        async with Context(fastmcp=self.server):
-            return await self.source._is_supported(context)
 
     async def _owns_skill_resource(self, uri: str) -> bool:
         return await self.source._owns_skill_resource(uri)

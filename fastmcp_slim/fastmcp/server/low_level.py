@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import weakref
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
@@ -133,26 +133,6 @@ def client_supports_extension(session: ServerSession, extension_id: str) -> bool
     if not extensions:
         return False
     return extension_id in extensions
-
-
-async def _without_unsupported_extensions(
-    fastmcp: FastMCP, ctx: ServerRequestContext, result: mcp_types.DiscoverResult
-) -> mcp_types.DiscoverResult:
-    """Omit registered extensions that cannot serve this request from discovery."""
-    unsupported = {
-        extension.identifier
-        for extension in fastmcp._extensions.values()
-        if not await extension._is_supported(ctx)
-    }
-    if not unsupported:
-        return result
-    extensions = {
-        identifier: settings
-        for identifier, settings in (result.capabilities.extensions or {}).items()
-        if identifier not in unsupported
-    }
-    capabilities = result.capabilities.model_copy(update={"extensions": extensions})
-    return result.model_copy(update={"capabilities": capabilities})
 
 
 class FastMCPServerMiddleware:
@@ -295,7 +275,7 @@ class FastMCPServerMiddleware:
     @contextmanager
     def _seam_span(
         self, fastmcp: FastMCP | None, ctx: ServerRequestContext
-    ) -> Iterator[None]:
+    ) -> Generator[None, None, None]:
         """Open the per-request SERVER span at the middleware seam.
 
         The removed SDK ``OpenTelemetryMiddleware`` produced one SERVER span per
@@ -320,7 +300,9 @@ class FastMCPServerMiddleware:
             yield
 
     @contextmanager
-    def _apply_shared_context(self, fastmcp: FastMCP | None) -> Iterator[None]:
+    def _apply_shared_context(
+        self, fastmcp: FastMCP | None
+    ) -> Generator[None, None, None]:
         """Re-establish app-scoped SharedContext ContextVars for this request.
 
         The SDK v2 dispatcher runs handlers in the message sender's context, so
@@ -367,7 +349,7 @@ class FastMCPServerMiddleware:
             )
             raw = await call_next(replace(ctx, params=params))
             if isinstance(raw, mcp_types.DiscoverResult):
-                return await _without_unsupported_extensions(fastmcp, ctx, raw)
+                return raw
             if isinstance(raw, Mapping):
                 result = dict(raw)
                 result_type = result.get("resultType")
@@ -376,9 +358,7 @@ class FastMCPServerMiddleware:
                     and result_type not in mcp_types.CORE_RESULT_TYPES
                 ):
                     return result
-                return await _without_unsupported_extensions(
-                    fastmcp, ctx, mcp_types.DiscoverResult.model_validate(result)
-                )
+                return mcp_types.DiscoverResult.model_validate(result)
             raise TypeError(
                 "server/discover handler returned "
                 f"{type(raw).__name__}; expected DiscoverResult or mapping"
@@ -586,6 +566,7 @@ class LowLevelServer(_Server[LifespanResultT]):
         registered_extensions = {
             extension.identifier: extension.settings()
             for extension in self.fastmcp._extensions.values()
+            if extension._is_advertised()
         }
         return capabilities.model_copy(
             update={

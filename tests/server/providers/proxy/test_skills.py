@@ -6,6 +6,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Literal
 
+import anyio
 import pytest
 from mcp import MCPError
 from mcp_types import INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND
@@ -79,25 +80,27 @@ async def test_automatically_advertises_and_forwards_skills(
     assert reads.uris == [expected.uri]
 
 
-async def test_does_not_advertise_skills_for_plain_resources(tmp_path: Path) -> None:
+async def test_backend_without_skills_has_an_empty_catalog() -> None:
     upstream = FastMCP("ordinary-resources")
 
     @upstream.resource("skill://review/SKILL.md")
     def instructions() -> str:
         return "# Not an extension"
 
-    async with skills_client(create_proxy(upstream)) as client:
+    proxy = create_proxy(upstream)
+    proxy.provider_error_strategy = "raise"
+    async with skills_client(proxy) as client:
+        assert await client.list_skills() == []
+        with pytest.raises(MCPError) as error:
+            await client.get_skill("skill://review/SKILL.md")
+        assert error.value.error.code == INVALID_PARAMS
+        assert (await client.read_resource("skill://review/SKILL.md"))[0].text
+
+
+async def test_server_without_proxies_does_not_advertise_skills() -> None:
+    async with skills_client(FastMCP("plain")) as client:
         assert client.server_capabilities is not None
         assert SKILLS_EXTENSION_ID not in (client.server_capabilities.extensions or {})
-        with pytest.raises(RuntimeError, match="does not advertise"):
-            await client.list_skills()
-        with pytest.raises(MCPError) as error:
-            await client.session.send_request(
-                GetSkillRequest(params=GetSkillParams(uri="skill://review/SKILL.md")),
-                GetSkillResult,
-            )
-        assert error.value.error.code == METHOD_NOT_FOUND
-        assert (await client.read_resource("skill://review/SKILL.md"))[0].text
 
 
 async def test_namespaces_identities_and_all_manifest_uris(tmp_path: Path) -> None:
@@ -265,21 +268,18 @@ async def test_permissions_do_not_leak_between_callers(tmp_path: Path) -> None:
     ]
 
 
-async def test_discovery_reuses_backend_metadata_request(tmp_path: Path) -> None:
-    class Discoveries(Middleware):
-        calls = 0
+async def test_unresponsive_backend_does_not_block_connecting() -> None:
+    never = anyio.Event()
 
-        async def on_discover(self, context, call_next):
-            self.calls += 1
-            return await call_next(context)
+    async def unresponsive_backend() -> ProxyClient:
+        await never.wait()
+        raise AssertionError("the backend never responds")
 
-    upstream = backend(tmp_path, "review")
-    discoveries = Discoveries()
-    upstream.add_middleware(discoveries)
-    async with skills_client(create_proxy(upstream)) as client:
-        assert client.server_capabilities is not None
-        assert SKILLS_EXTENSION_ID in (client.server_capabilities.extensions or {})
-        assert discoveries.calls == 1
+    proxy = FastMCP("gateway", providers=[ProxyProvider(unresponsive_backend)])
+    with anyio.fail_after(1):
+        async with skills_client(proxy) as client:
+            assert client.server_capabilities is not None
+            assert SKILLS_EXTENSION_ID in (client.server_capabilities.extensions or {})
 
 
 async def test_bad_resource_fails_only_when_read(tmp_path: Path) -> None:
@@ -383,21 +383,6 @@ async def test_aggregate_uses_existing_provider_error_strategy(
         else:
             with pytest.raises(MCPError, match="backend catalog failed"):
                 await client.list_skills()
-
-
-async def test_failing_backend_does_not_block_skills_discovery(
-    tmp_path: Path,
-) -> None:
-    def broken_factory() -> ProxyClient:
-        raise ValueError("backend client failed")
-
-    good = backend(tmp_path, "good")
-    root = FastMCP("root")
-    root.add_provider(ProxyProvider(lambda: ProxyClient(good, mode="auto")))
-    root.add_provider(ProxyProvider(broken_factory), namespace="broken")
-    async with skills_client(root) as client:
-        assert client.server_capabilities is not None
-        assert SKILLS_EXTENSION_ID in (client.server_capabilities.extensions or {})
 
 
 async def test_legacy_proxy_does_not_serve_skills_methods(tmp_path: Path) -> None:

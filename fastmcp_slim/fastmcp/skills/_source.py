@@ -32,9 +32,6 @@ class _Lookup:
 class _SkillSource(ABC):
     """Keep identity before authorization alongside the visible skills."""
 
-    async def _is_supported(self, context: ServerRequestContext[Any, Any]) -> bool:
-        return True
-
     def _validate_skill_source(self) -> None:
         """Reject source configurations that cannot publish a Skills catalog."""
         return None

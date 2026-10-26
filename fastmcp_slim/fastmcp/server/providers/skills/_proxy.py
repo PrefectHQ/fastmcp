@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from mcp import MCPError
 from mcp.server.context import ServerRequestContext
-from mcp_types import INVALID_PARAMS
+from mcp_types import INVALID_PARAMS, METHOD_NOT_FOUND
 
 from fastmcp.client.client import Client
 from fastmcp.server.dependencies import get_context
@@ -16,10 +16,8 @@ from fastmcp.server.providers.proxy import (
     _PROXY_TRANSPORT_ERRORS,
     _forwardable_request_meta,
     _proxy_upstream_error,
-    _read_upstream_metadata,
     _session_request_meta,
 )
-from fastmcp.skills._constants import SKILLS_EXTENSION_ID
 from fastmcp.skills._source import _Catalog, _Lookup, _SkillSource
 from fastmcp.skills.models import (
     GetSkillParams,
@@ -38,13 +36,6 @@ if TYPE_CHECKING:
 class _ProxySkillSource(_SkillSource):
     def __init__(self, provider: ProxyProvider) -> None:
         self.provider = provider
-
-    async def _is_supported(self, context: ServerRequestContext[Any, Any]) -> bool:
-        client = await self.provider._get_client()
-        metadata = await _read_upstream_metadata(self.provider, client, get_context())
-        return metadata is not None and SKILLS_EXTENSION_ID in (
-            metadata.capabilities.extensions or {}
-        )
 
     async def _owns_skill_resource(self, uri: str) -> bool:
         if not self.provider._skills_resources_live:
@@ -75,9 +66,14 @@ class _ProxySkillSource(_SkillSource):
                 request = ListSkillsRequest(
                     params=ListSkillsParams(cursor=cursor, meta=meta)
                 )
-                page = await client._await_with_session_monitoring(
-                    client.session.send_request(request, ListSkillsResult)
-                )
+                try:
+                    page = await client._await_with_session_monitoring(
+                        client.session.send_request(request, ListSkillsResult)
+                    )
+                except MCPError as error:
+                    if error.error.code != METHOD_NOT_FOUND:
+                        raise
+                    return _Catalog([], ())
                 self.provider._skills_resources_live = True
                 skills.extend(page.skills)
                 if not page.next_cursor or page.next_cursor in seen:
@@ -101,7 +97,7 @@ class _ProxySkillSource(_SkillSource):
                     client.session.send_request(request, GetSkillResult)
                 )
             except MCPError as error:
-                if error.error.code != INVALID_PARAMS:
+                if error.error.code not in (INVALID_PARAMS, METHOD_NOT_FOUND):
                     raise
                 return _Lookup()
         self.provider._skills_resources_live = True
