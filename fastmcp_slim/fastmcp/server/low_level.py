@@ -566,6 +566,7 @@ class LowLevelServer(_Server[LifespanResultT]):
         registered_extensions = {
             extension.identifier: extension.settings()
             for extension in self.fastmcp._extensions.values()
+            if extension._is_advertised()
         }
         return capabilities.model_copy(
             update={

@@ -534,7 +534,7 @@ class ResponseCachingMiddleware(Middleware):
 
         if (
             context.fastmcp_context is not None
-            and context.fastmcp_context.fastmcp._requires_live_resource(
+            and await context.fastmcp_context.fastmcp._requires_live_resource(
                 str(context.message.uri)
             )
         ):

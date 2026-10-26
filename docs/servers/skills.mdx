@@ -349,6 +349,43 @@ mcp = FastMCP("My Claude Skills")
 mcp.add_provider(ClaudeSkillsProvider())
 ```
 
+## Serve skills from other sources
+
+When a database, an object store, or a registry service already stores skills as files, `SkillFilesProvider` saves building `Skill` objects by hand: return each skill's files from `skill_files()` and FastMCP turns each one into a `Skill` with `Skill.from_files()`. It is a `SkillCatalogProvider`, so the files are served and advertised exactly like skills [defined in code](#define-skills-in-code), and the discovery entry's sizes and SHA-256 digests come from the same bytes clients read. A skill that fails validation, or whose path doesn't end with its name, is omitted with a warning.
+
+```python
+from collections.abc import Mapping
+
+from fastmcp import FastMCP
+from fastmcp.server.providers.skills import SkillFilesProvider
+from fastmcp.skills.extension import SkillsExtension
+
+DEPLOY = b"""---
+name: deploy
+description: Deploy the service to production.
+---
+
+Run the release checklist before deploying.
+"""
+
+
+class StoredSkills(SkillFilesProvider):
+    async def skill_files(self) -> Mapping[str, Mapping[str, bytes]]:
+        return {"deploy": {"SKILL.md": DEPLOY}}
+
+
+mcp = FastMCP("Skills")
+stored = StoredSkills()
+mcp.add_provider(stored)
+mcp.add_extension(SkillsExtension(providers=[stored]))
+```
+
+The outer keys are skill paths and the inner keys are paths within the skill, so `{"team/deploy": {"SKILL.md": ...}}` publishes `skill://team/deploy/SKILL.md`. Pass several providers to `SkillsExtension` to combine their skills into one catalog. FastMCP calls `skill_files()` once per MCP request and answers every list, lookup, and read in that request from the same bytes, so a catalog loaded from a database costs one query per request. Use `get_context()` when the skills depend on the caller.
+
+## Discover skills through a proxy
+
+A [proxy](/servers/providers/proxy#skills) forwards `skills/list` and `skills/get` to its backend without any extra registration, including proxies mounted under a namespace. Namespaces apply to each skill URI and every file URI in its manifest, while frontmatter, sizes, and digests pass through unchanged. A backend without Skills contributes an empty catalog. When a server also registers `SkillsExtension`, its own skills and its proxied backends share one catalog.
+
 ## What discovery mode changes
 
 Setting `experimental_skills=True` makes the provider stricter, because a discovery entry promises exact bytes:
@@ -370,11 +407,10 @@ Skills discovery respects the same rules as resource reads. A skill is omitted f
 
 ## Current limits
 
-Skills discovery currently serves skills from `SkillsDirectoryProvider` and `SkillCatalogProvider` instances registered directly on the server you run.
+Skills discovery serves skills from `SkillsDirectoryProvider` and `SkillCatalogProvider` (including `SkillFilesProvider`) instances registered directly on the server you run, and from proxied backends.
 
-- `SkillsExtension` raises when the server or the skills provider has transforms, including namespaces, or when the provider is not registered directly on the same server.
-- Skills in a [mounted server](/servers/composition) are served as resources through the parent, but the parent does not list them in `skills/list`.
-- A proxy in front of the server forwards the skill files as resources, but not `skills/list` or `skills/get`.
+- `SkillsExtension` raises when the server or one of its providers has transforms, including namespaces, or when a provider is not registered directly on the same server. Proxied backends are the exception: their namespaces and visibility rules apply.
+- Skills from a [mounted server](/servers/composition)'s own providers are served as resources through the parent, but the parent does not list them in `skills/list`. Skills a mounted server proxies are listed.
 - The optional `directoryRead` capability is not implemented.
 
-Resource mode has none of these limits. Serve skills as resources everywhere, and add discovery on the server that clients connect to directly.
+Resource mode has none of these limits. Serve skills as resources everywhere, and add discovery on the server that clients connect to directly or on a proxy in front of it.

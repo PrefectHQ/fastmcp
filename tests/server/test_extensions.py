@@ -313,15 +313,15 @@ async def test_interceptors_nest_first_registered_outermost():
     assert order == ["outer-before", "inner-before", "inner-after", "outer-after"]
 
 
-async def test_no_extensions_leaves_tool_call_unchanged():
-    """With no extensions registered, tools/call behaves exactly as before."""
+async def test_no_explicit_extensions_leaves_tool_call_unchanged():
+    """Optional built-in handlers do not change ordinary tools/call."""
     mcp = FastMCP("t")
 
     @mcp.tool
     def greet() -> str:
         return "hello"
 
-    assert mcp._extensions == {}
+    assert set(mcp._extensions) == mcp._auto_extensions
     async with Client(mcp, mode="auto") as client:
         result = await client.call_tool("greet")
         assert _text(result) == "hello"

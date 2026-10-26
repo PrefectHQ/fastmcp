@@ -22,6 +22,7 @@ from fastmcp.server.providers import Provider
 from fastmcp.server.transforms import Namespace
 from fastmcp.skills import SkillEntry, SkillsClientExtension
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
+from fastmcp.skills._source import _Catalog, _Lookup, _SkillSource
 from fastmcp.skills.extension import SkillsExtension
 from fastmcp.skills.models import (
     GetSkillParams,
@@ -49,7 +50,7 @@ def make_skill(name: str) -> SkillEntry:
     )
 
 
-class MemorySkillProvider(Provider):
+class MemorySkillProvider(Provider, _SkillSource):
     def __init__(
         self,
         *,
@@ -64,26 +65,18 @@ class MemorySkillProvider(Provider):
         }
         self.contexts: list[ServerRequestContext[Any, Any]] = []
 
-    def _validate_skill_source(self) -> None:
-        pass
-
-    async def _skill_uris(self, uri: str | None = None) -> Sequence[str]:
-        return [key for key in self.addressable if uri is None or key == uri]
-
-    def _owns_skill_resource(self, uri: str) -> bool:
-        return False
-
     async def _list_skill_entries(
         self, context: ServerRequestContext[Any, Any]
-    ) -> Sequence[SkillEntry]:
+    ) -> _Catalog:
         self.contexts.append(context)
-        return self.listed
+        return _Catalog(self.listed, tuple(self.addressable))
 
     async def _get_skill_entry(
         self, uri: str, context: ServerRequestContext[Any, Any]
-    ) -> SkillEntry | None:
+    ) -> _Lookup:
         self.contexts.append(context)
-        return self.addressable.get(uri)
+        skill = self.addressable.get(uri)
+        return _Lookup(matches=int(skill is not None), skill=skill)
 
     async def _get_resource(
         self, uri: str, version: VersionSpec | None = None

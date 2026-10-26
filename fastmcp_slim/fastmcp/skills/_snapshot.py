@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -94,40 +95,49 @@ class Snapshot:
     files: tuple[tuple[str, Path], ...]
 
 
+def file_uri(skill_path: str, relative_path: str) -> str:
+    return f"skill://{quote(skill_path, safe='/')}/{quote(relative_path, safe='/')}"
+
+
+def build_entry(skill_path: str, files: Mapping[str, bytes]) -> SkillEntry:
+    """Build a Skills entry whose manifest describes exactly these file bytes."""
+    if "SKILL.md" not in files:
+        raise ValueError("skill must contain SKILL.md")
+    if len(files) > MAX_SKILL_RESOURCES:
+        raise ValueError(f"skill has more than {MAX_SKILL_RESOURCES} files")
+    if sum(len(content) for content in files.values()) > MAX_SKILL_BYTES:
+        raise ValueError(f"skill is larger than {MAX_SKILL_BYTES} bytes")
+    return SkillEntry(
+        uri=file_uri(skill_path, "SKILL.md"),
+        frontmatter=parse_frontmatter(files["SKILL.md"]),
+        resources=[
+            SkillResource(
+                uri=file_uri(skill_path, relative_path),
+                digest=f"sha256:{hashlib.sha256(content).hexdigest()}",
+                size=len(content),
+            )
+            for relative_path, content in files.items()
+        ],
+    )
+
+
 def snapshot(root: Path, skill_path: str) -> Snapshot:
     paths = scan_files(root)
-    main = root / "SKILL.md"
-    if main not in paths:
-        raise ValueError("skill must contain SKILL.md")
+    # Reject oversized directories before reading their bytes.
     if len(paths) > MAX_SKILL_RESOURCES:
         raise ValueError(f"skill has more than {MAX_SKILL_RESOURCES} files")
     if sum(path.stat().st_size for path in paths) > MAX_SKILL_BYTES:
         raise ValueError(f"skill is larger than {MAX_SKILL_BYTES} bytes")
-    records: list[SkillResource] = []
-    files: list[tuple[str, Path]] = []
-    frontmatter: SkillFrontmatter | None = None
+    contents: dict[str, bytes] = {}
     for path in paths:
-        safe_join(root, path.relative_to(root).as_posix())
-        content = path.read_bytes()
-        uri = f"skill://{quote(skill_path, safe='/')}/{quote(path.relative_to(root).as_posix(), safe='/')}"
-        records.append(
-            SkillResource(
-                uri=uri,
-                digest=f"sha256:{hashlib.sha256(content).hexdigest()}",
-                size=len(content),
-            )
-        )
-        files.append((uri, path))
-        if path == main:
-            frontmatter = parse_frontmatter(content)
+        relative_path = path.relative_to(root).as_posix()
+        safe_join(root, relative_path)
+        contents[relative_path] = path.read_bytes()
     if scan_files(root) != paths:
         raise ValueError("skill files changed while building the manifest")
-    if sum(record.size for record in records) > MAX_SKILL_BYTES:
-        raise ValueError(f"skill is larger than {MAX_SKILL_BYTES} bytes")
-    assert frontmatter is not None
-    entry = SkillEntry(
-        uri=f"skill://{quote(skill_path, safe='/')}/SKILL.md",
-        frontmatter=frontmatter,
-        resources=records,
+    entry = build_entry(skill_path, contents)
+    files = tuple(
+        (file_uri(skill_path, relative_path), path)
+        for relative_path, path in zip(contents, paths, strict=True)
     )
-    return Snapshot(entry=entry, files=tuple(files))
+    return Snapshot(entry=entry, files=files)

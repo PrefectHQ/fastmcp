@@ -1,35 +1,56 @@
-"""Private source contract consumed by `SkillsExtension`."""
+"""Private, dependency-light source contract for resource-backed Skills."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any, Protocol, runtime_checkable
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 from mcp.server.context import ServerRequestContext
 
 from fastmcp.skills.models import SkillEntry
 
+if TYPE_CHECKING:
+    from fastmcp.server.providers.proxy import ClientFactoryT
+    from fastmcp.server.server import FastMCP
 
-@runtime_checkable
-class _SkillSource(Protocol):
-    """A provider capable of producing caller-scoped Skills entries."""
 
-    async def _list_skill_entries(
-        self, context: ServerRequestContext[Any, Any]
-    ) -> Sequence[SkillEntry]: ...
+@dataclass(frozen=True)
+class _Catalog:
+    skills: list[SkillEntry]
+    identities: tuple[str, ...]
+    owners: dict[str, ClientFactoryT | FastMCP] = field(default_factory=dict)
 
-    async def _get_skill_entry(
-        self, uri: str, context: ServerRequestContext[Any, Any]
-    ) -> SkillEntry | None: ...
+
+@dataclass(frozen=True)
+class _Lookup:
+    matches: int = 0
+    skill: SkillEntry | None = None
+    owner: ClientFactoryT | FastMCP | None = None
+
+
+class _SkillSource(ABC):
+    """Keep identity before authorization alongside the visible skills."""
 
     def _validate_skill_source(self) -> None:
-        """Reject sources that have not opted into protocol publication."""
-        ...
+        """Reject source configurations that cannot publish a Skills catalog."""
+        return None
 
-    async def _skill_uris(self, uri: str | None = None) -> Sequence[str]:
-        """Return identities before authorization/validation, preserving duplicates."""
-        ...
+    async def _owns_skill_resource(self, uri: str) -> bool:
+        return False
 
-    def _owns_skill_resource(self, uri: str) -> bool:
-        """Whether manifest coherence requires this URI to be read live."""
-        ...
+    @abstractmethod
+    async def _list_skill_entries(
+        self, context: ServerRequestContext[Any, Any]
+    ) -> _Catalog: ...
+
+    @abstractmethod
+    async def _get_skill_entry(
+        self, uri: str, context: ServerRequestContext[Any, Any]
+    ) -> _Lookup: ...
+
+
+def _manifest_uris(skill: SkillEntry) -> list[str]:
+    if isinstance(skill.resources, list):
+        return [resource.uri for resource in skill.resources]
+    return [skill.uri]

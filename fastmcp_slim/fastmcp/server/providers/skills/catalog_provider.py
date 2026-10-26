@@ -17,7 +17,7 @@ from fastmcp.exceptions import AuthorizationError
 from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.providers.base import Provider
-from fastmcp.skills.models import SkillEntry
+from fastmcp.skills._source import _Catalog, _Lookup, _SkillSource
 from fastmcp.skills.skill import Skill, _validate_relative_path
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec
@@ -66,7 +66,7 @@ class SkillManifestResource(Resource):
         return json.dumps({"skill": self.skill.name, "files": files}, indent=2)
 
 
-class SkillCatalogProvider(Provider):
+class SkillCatalogProvider(Provider, _SkillSource):
     """Serve `Skill` objects as MCP resources and Skills extension entries.
 
     Each skill's files are served under `skill://{path}/`, where `path` defaults
@@ -101,7 +101,6 @@ class SkillCatalogProvider(Provider):
     def __init__(self, skills: SkillCatalog | None = None) -> None:
         super().__init__()
         self._static = _normalize(skills or ())
-        self._last: dict[str, Skill] = self._static
 
     async def load_skills(self) -> SkillCatalog:
         """Return the skills to serve. Override to load them from another source."""
@@ -115,7 +114,6 @@ class SkillCatalogProvider(Provider):
         if context is not None and key in context._request_state:
             return context._request_state[key]
         catalog = _normalize(await self.load_skills())
-        self._last = catalog
         if context is not None:
             context._request_state[key] = catalog
         return catalog
@@ -148,34 +146,28 @@ class SkillCatalogProvider(Provider):
     # Skills extension source
     # -------------------------------------------------------------------------
 
-    def _validate_skill_source(self) -> None:
-        return None
-
-    def _owns_skill_resource(self, uri: str) -> bool:
-        return _locate(uri, self._last) is not None
-
-    async def _skill_uris(self, uri: str | None = None) -> Sequence[str]:
-        uris = [_skill_md_uri(path) for path in await self._catalog()]
-        if uri is None:
-            return uris
-        return [uri] if uri in uris else []
+    async def _owns_skill_resource(self, uri: str) -> bool:
+        return _locate(uri, await self._catalog()) is not None
 
     async def _list_skill_entries(
         self, context: ServerRequestContext[Any, Any]
-    ) -> Sequence[SkillEntry]:
-        entries = []
-        for path, skill in (await self._catalog()).items():
-            if await self._is_served(path, skill):
-                entries.append(skill.entry(path))
-        return entries
+    ) -> _Catalog:
+        catalog = await self._catalog()
+        entries = [
+            skill.entry(path)
+            for path, skill in catalog.items()
+            if await self._is_served(path, skill)
+        ]
+        return _Catalog(entries, tuple(_skill_md_uri(path) for path in catalog))
 
     async def _get_skill_entry(
         self, uri: str, context: ServerRequestContext[Any, Any]
-    ) -> SkillEntry | None:
+    ) -> _Lookup:
         for path, skill in (await self._catalog()).items():
             if _skill_md_uri(path) == uri:
-                return skill.entry(path) if await self._is_served(path, skill) else None
-        return None
+                served = await self._is_served(path, skill)
+                return _Lookup(matches=1, skill=skill.entry(path) if served else None)
+        return _Lookup()
 
     async def _is_served(self, path: str, skill: Skill) -> bool:
         """Advertise a skill only when this caller can read every file, byte for byte."""
@@ -192,7 +184,7 @@ class SkillCatalogProvider(Provider):
         return True
 
     def __repr__(self) -> str:
-        return f"SkillCatalogProvider(skills={list(self._last)!r})"
+        return f"{type(self).__name__}()"
 
 
 def _normalize(skills: SkillCatalog) -> dict[str, Skill]:
