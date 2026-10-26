@@ -507,6 +507,40 @@ async def test_client_nested_context_manager(fastmcp_server):
     assert client._session_state.session is None
 
 
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+async def test_stale_client_context_does_not_disconnect_reconnected_session(
+    fastmcp_server, mode
+):
+    client = Client(fastmcp_server, mode=mode)
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    exited = asyncio.Event()
+
+    async def old_context() -> None:
+        async with client:
+            entered.set()
+            await release.wait()
+        exited.set()
+
+    old_task = asyncio.create_task(old_context())
+    await entered.wait()
+    await client.close()
+
+    try:
+        async with client:
+            first = await client.call_tool("greet", {"name": "World"})
+            assert first.data == "Hello, World!"
+
+            release.set()
+            await exited.wait()
+
+            second = await client.call_tool("greet", {"name": "World"})
+            assert second.data == "Hello, World!"
+    finally:
+        release.set()
+        await old_task
+
+
 async def test_client_context_entry_cancelled_starter_cleans_up(fastmcp_server):
     connect_started = anyio.Event()
     allow_connect = anyio.Event()

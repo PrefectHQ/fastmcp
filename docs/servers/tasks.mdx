@@ -231,7 +231,7 @@ async def double(value: int) -> int:
     return value * 2
 ```
 
-You can also supply a provider that implements `get_credentials_async()`, or a provider from your cloud authentication library. FastMCP does not generate or refresh cloud tokens itself. Docket manages connection authentication, including refresh notifications from streaming providers; see [Docket credential providers](https://docket.lol/en/latest/production/#credential-providers) for details about long-lived connections and provider ownership.
+You can also supply a provider that implements `get_credentials_async()`. FastMCP does not generate or refresh cloud tokens itself, and `TasksExtension` rejects streaming providers (such as redis-entraid's) for now, because a token refresh can hand one Redis connection to two commands at once. See [Docket credential providers](https://docket.lol/en/latest/production/#credential-providers) for details about long-lived connections and provider ownership.
 
 Configure the provider in your server module. [Additional workers](#workers) load that same module and use its registered extension, so no separate worker flag is needed. Provider objects are runtime configuration, not `FASTMCP_DOCKET_*` environment settings. The default `memory://` backend ignores them.
 
