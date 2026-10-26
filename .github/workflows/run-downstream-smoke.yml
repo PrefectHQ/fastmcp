@@ -13,6 +13,9 @@ env:
   PYDANTIC_AI_VERSION: "2.47.0"
   LANGCHAIN_MCP_ADAPTERS_VERSION: "0.3.2"
   LANGCHAIN_VERSION: "1.4.2"
+  BOTOCORE_VERSION: "1.43.118"
+  CACHETOOLS_VERSION: "7.2.4"
+  REDIS_ENTRAID_VERSION: "1.2.2"
 
 on:
   push:
@@ -61,6 +64,9 @@ jobs:
       pydantic-ai: ${{ steps.versions.outputs.pydantic-ai }}
       langchain-mcp-adapters: ${{ steps.versions.outputs.langchain-mcp-adapters }}
       langchain: ${{ steps.versions.outputs.langchain }}
+      botocore: ${{ steps.versions.outputs.botocore }}
+      cachetools: ${{ steps.versions.outputs.cachetools }}
+      redis-entraid: ${{ steps.versions.outputs.redis-entraid }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -104,10 +110,16 @@ jobs:
           pydantic_ai=$(pick pydantic-ai-slim "$PYDANTIC_AI_VERSION")
           adapters=$(pick langchain-mcp-adapters "$LANGCHAIN_MCP_ADAPTERS_VERSION")
           langchain=$(pick langchain "$LANGCHAIN_VERSION")
+          botocore=$(pick botocore "$BOTOCORE_VERSION")
+          cachetools=$(pick cachetools "$CACHETOOLS_VERSION")
+          redis_entraid=$(pick redis-entraid "$REDIS_ENTRAID_VERSION")
           {
             echo "pydantic-ai=$pydantic_ai"
             echo "langchain-mcp-adapters=$adapters"
             echo "langchain=$langchain"
+            echo "botocore=$botocore"
+            echo "cachetools=$cachetools"
+            echo "redis-entraid=$redis_entraid"
           } | tee -a "$GITHUB_OUTPUT" > versions.txt
           {
             echo "### Downstream smoke plan"
@@ -265,6 +277,18 @@ jobs:
             with: >-
               --with "langchain-mcp-adapters==${{ needs.plan.outputs.langchain-mcp-adapters }}"
               --with "langchain==${{ needs.plan.outputs.langchain }}"
+          # fastmcp-tasks on the Redis credential providers deployments use:
+          # AWS's ElastiCache IAM provider and redis-entraid's Entra ID one.
+          - consumer: redis credential providers
+            script: smoke_redis_credentials.py
+            redis: true
+            with: >-
+              --with "fastmcp @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp-4*.whl)"
+              --with "fastmcp-slim @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp_slim-*.whl)"
+              --with "fastmcp-tasks @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp_tasks-*.whl)"
+              --with "botocore==${{ needs.plan.outputs.botocore }}"
+              --with "cachetools==${{ needs.plan.outputs.cachetools }}"
+              --with "redis-entraid==${{ needs.plan.outputs.redis-entraid }}"
     env:
       FASTMCP_EXPECTED_VERSION: ${{ needs.plan.outputs.fastmcp }}
     steps:
@@ -280,6 +304,14 @@ jobs:
         with:
           name: fastmcp-wheels
           path: dist
+
+      - name: Install redis-server
+        if: matrix.redis
+        run: |
+          if ! command -v redis-server >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y redis-server
+          fi
 
       # Resolved outside the project and without its config, as a user's install is.
       - name: Resolve ${{ matrix.consumer }} environment
