@@ -200,6 +200,8 @@ class MontySandboxProvider:
         self,
         *,
         limits: "ResourceLimits | None | _UnsetType" = _UNSET,
+        wall_clock_timeout_secs: float | None = None,
+        max_external_calls: int | None = None,
     ) -> None:
         # Copy the baseline so each provider owns its dict — `limits` is a
         # mutable public attribute, and sharing the module-level object would
@@ -207,6 +209,8 @@ class MontySandboxProvider:
         self.limits: ResourceLimits | None = (
             _DEFAULT_LIMITS.copy() if isinstance(limits, _UnsetType) else limits
         )
+        self.wall_clock_timeout_secs = wall_clock_timeout_secs
+        self.max_external_calls = max_external_calls
 
     async def run(
         self,
@@ -239,14 +243,23 @@ class MontySandboxProvider:
         # Keep their tasks alive and join them before leaving this execution.
         pending: set[asyncio.Task[Any]] = set()
         finished = False
+        external_call_count = 0
 
         def track(fn: Callable[..., Any]) -> Callable[..., Any]:
             async_fn = _ensure_async(fn)
 
             async def wrapped(*args: Any, **kwargs: Any) -> Any:
+                nonlocal external_call_count
                 # A callback queued by the native bridge may start after exit.
                 if finished:
                     raise asyncio.CancelledError
+                if self.max_external_calls is not None:
+                    external_call_count += 1
+                    if external_call_count > self.max_external_calls:
+                        raise RuntimeError(
+                            f"External call limit exceeded: at most {self.max_external_calls} "
+                            "external function invocations are allowed per run()."
+                        )
                 task = asyncio.current_task()
                 assert task is not None
                 pending.add(task)
@@ -271,12 +284,15 @@ class MontySandboxProvider:
             )
         )
         try:
+            if self.wall_clock_timeout_secs is not None:
+                return await asyncio.wait_for(
+                    future, timeout=self.wall_clock_timeout_secs
+                )
             return await future
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, asyncio.TimeoutError):
             # Awaiting alone does not stop the sandbox worker when the
-            # surrounding task is cancelled (e.g. an HTTP client disconnects
-            # mid-execution). Explicitly cancel so the Monty runtime tears the
-            # worker down instead of leaving it running to completion.
+            # surrounding task is cancelled or times out. Explicitly cancel so the
+            # Monty runtime tears the worker down instead of leaving it running to completion.
             future.cancel()
             raise
         finally:
@@ -629,12 +645,19 @@ class CodeMode(CatalogTransform):
         execute_tool_name: str = "execute",
         execute_description: str | None = None,
         max_tool_calls: int | None = 50,
+        wall_clock_timeout_secs: float | None = None,
     ) -> None:
         super().__init__()
         self.execute_tool_name = execute_tool_name
         self.execute_description = execute_description
         self.max_tool_calls = max_tool_calls
-        self.sandbox_provider = sandbox_provider or MontySandboxProvider()
+        self.wall_clock_timeout_secs = wall_clock_timeout_secs
+        if sandbox_provider is not None:
+            self.sandbox_provider = sandbox_provider
+        else:
+            self.sandbox_provider = MontySandboxProvider(
+                wall_clock_timeout_secs=wall_clock_timeout_secs
+            )
 
         self._discovery_factories = (
             discovery_tools
@@ -744,10 +767,23 @@ class CodeMode(CatalogTransform):
                     )
                 return _unwrap_tool_result(result)
 
-            return await transform.sandbox_provider.run(
+            coro = transform.sandbox_provider.run(
                 code,
                 external_functions={"call_tool": call_tool},
             )
+            try:
+                if transform.wall_clock_timeout_secs is not None:
+                    return await asyncio.wait_for(
+                        coro, timeout=transform.wall_clock_timeout_secs
+                    )
+                return await coro
+            except asyncio.TimeoutError as exc:
+                timeout_msg = (
+                    f"Execution timed out after {transform.wall_clock_timeout_secs} seconds."
+                    if transform.wall_clock_timeout_secs is not None
+                    else "Execution timed out."
+                )
+                raise ToolError(timeout_msg) from exc
 
         return Tool.from_function(
             fn=execute,
