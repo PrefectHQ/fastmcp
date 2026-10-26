@@ -88,8 +88,14 @@ async def test_sync_skills_installs_code_defined_skills(tmp_path: Path):
     server = FastMCP("Skills", providers=[SkillCatalogProvider([REVIEW, DEPLOY])])
     async with Client(server) as client:
         await sync_skills(client, tmp_path)
-    assert Skill.from_directory(tmp_path / "review") == REVIEW
-    assert Skill.from_directory(tmp_path / "deploy") == DEPLOY
+    # download_skill writes text files in text mode, so compare file sets and
+    # binary bytes rather than exact text bytes (Windows translates newlines).
+    for skill in (REVIEW, DEPLOY):
+        installed = Skill.from_directory(tmp_path / skill.name)
+        assert installed.frontmatter == skill.frontmatter
+        assert set(installed.files) == set(skill.files)
+    review = Skill.from_directory(tmp_path / "review")
+    assert review.files["refs/logo.bin"] == REVIEW.files["refs/logo.bin"]
 
 
 async def test_load_skills_is_called_once_per_request():

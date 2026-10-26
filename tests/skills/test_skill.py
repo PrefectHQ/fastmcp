@@ -16,7 +16,7 @@ def write_skill(root: Path, name: str = "review") -> Path:
     (folder / "SKILL.md").write_bytes(
         f"---\r\nname: {name}\r\ndescription: Review changes\r\n---\r\n# Review\r\n".encode()
     )
-    (folder / "refs" / "checklist.md").write_text("- tests\n")
+    (folder / "refs" / "checklist.md").write_bytes(b"- tests\n")
     (folder / "logo.bin").write_bytes(b"\x00\xff")
     return folder
 
@@ -77,7 +77,7 @@ def test_from_directory_snapshots_exact_bytes(tmp_path: Path):
         "logo.bin": b"\x00\xff",
         "refs/checklist.md": b"- tests\n",
     }
-    (folder / "refs" / "checklist.md").write_text("changed")
+    (folder / "refs" / "checklist.md").write_bytes(b"changed")
     assert skill.files["refs/checklist.md"] == b"- tests\n"
 
 
