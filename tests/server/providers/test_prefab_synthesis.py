@@ -10,6 +10,7 @@ exercise the synthesis path directly through the public server API.
 from __future__ import annotations
 
 import pytest
+from mcp_types import TextResourceContents
 
 from fastmcp import Client, FastMCP, FastMCPApp
 
@@ -254,6 +255,34 @@ class TestReadResource:
         assert len(contents) > 0
         text = contents[0].text if hasattr(contents[0], "text") else ""
         assert "<html" in text.lower() or "<!doctype" in text.lower()
+
+    async def test_renderer_html_is_built_on_read_not_list(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Listing must not build the renderer page once per tool (#6038)."""
+        calls = 0
+
+        def fake_renderer_html() -> str:
+            nonlocal calls
+            calls += 1
+            return "<!doctype html><html>renderer</html>"
+
+        monkeypatch.setattr("prefab_ui.renderer.get_renderer_html", fake_renderer_html)
+
+        mcp = FastMCP("test")
+        for i in range(3):
+            mcp.tool(name=f"view_{i}", app=True)(lambda: "view")
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            assert len(resources) == 3
+            assert calls == 0
+
+            contents = await client.read_resource(resources[0].uri)
+
+        assert calls == 1
+        assert isinstance(contents[0], TextResourceContents)
+        assert contents[0].text == "<!doctype html><html>renderer</html>"
 
 
 class TestNonPrefabToolsUntouched:

@@ -15,7 +15,7 @@ from prefab_ui.components.base import Component
 
 from fastmcp import Client, FastMCP
 from fastmcp.apps import UI_MIME_TYPE, AppConfig
-from fastmcp.resources.types import TextResource
+from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.server.providers.local_provider.decorators.tools import (
     PREFAB_RENDERER_URI,
 )
@@ -143,7 +143,7 @@ class TestAppTrue:
 
         resources = list(await mcp.list_resources())
         renderer = next(r for r in resources if "prefab/tool" in str(r.uri))
-        assert isinstance(renderer, TextResource)
+        assert isinstance(renderer, FunctionResource)
         assert renderer.mime_type == UI_MIME_TYPE
 
     async def test_renderer_resource_has_csp(self):

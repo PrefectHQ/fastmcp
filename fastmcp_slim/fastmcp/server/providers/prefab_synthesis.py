@@ -73,7 +73,7 @@ def _merge_domain_lists(
 
 
 def _build_resource_for_tool(tool: Tool) -> Resource | None:
-    """Synthesize a TextResource for a prefab tool. Returns None if prefab_ui isn't installed."""
+    """Synthesize a FunctionResource for a prefab tool. Returns None if prefab_ui isn't installed."""
     try:
         from prefab_ui.renderer import get_renderer_csp, get_renderer_html
     except ImportError:
@@ -85,7 +85,7 @@ def _build_resource_for_tool(tool: Tool) -> Resource | None:
         ResourceCSP,
         app_config_to_meta_dict,
     )
-    from fastmcp.resources.types import TextResource
+    from fastmcp.resources.function_resource import FunctionResource
 
     tool_hash = _get_tool_hash(tool)
     if tool_hash is None:
@@ -154,10 +154,11 @@ def _build_resource_for_tool(tool: Tool) -> Resource | None:
     )
     uri = f"ui://prefab/tool/{tool_hash}/renderer.html"
 
-    return TextResource(
+    # The page is built on read: listing would otherwise build one copy per tool.
+    return FunctionResource(
         uri=cast(Any, uri),
         name=f"Prefab Renderer ({tool.name})",
-        text=get_renderer_html(),
+        fn=get_renderer_html,
         mime_type=UI_MIME_TYPE,
         meta={"ui": app_config_to_meta_dict(resource_app)},
     )
