@@ -118,9 +118,9 @@ def test_skill_is_immutable():
         skill.files["SKILL.md"] = b""  # ty: ignore[invalid-assignment]
 
 
-def test_entry_describes_every_file(tmp_path: Path):
+def test_to_mcp_skill_describes_every_file(tmp_path: Path):
     skill = Skill.from_directory(write_skill(tmp_path))
-    entry = skill.entry("team/review")
+    entry = skill.to_mcp_skill("team/review")
 
     assert entry.uri == "skill://team/review/SKILL.md"
     assert entry.frontmatter == skill.frontmatter

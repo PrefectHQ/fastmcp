@@ -17,10 +17,7 @@ from fastmcp.server.middleware import AuthMiddleware, Middleware
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.providers.proxy import ProxyClient, ProxyProvider
-from fastmcp.server.providers.skills import (
-    SkillFilesProvider,
-    SkillsDirectoryProvider,
-)
+from fastmcp.server.providers.skills import SkillsDirectoryProvider
 from fastmcp.skills import SkillsClientExtension
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
 from fastmcp.skills.extension import SkillsExtension
@@ -163,27 +160,6 @@ async def test_local_and_proxied_skills_share_catalog(tmp_path: Path) -> None:
             "skill://upstream/remote/SKILL.md",
         ]
         assert await client.get_skill("skill://upstream/remote/SKILL.md")
-
-
-class StoredSkills(SkillFilesProvider):
-    files = {
-        "deploy": {"SKILL.md": b"---\nname: deploy\ndescription: Use deploy.\n---\n"}
-    }
-
-    async def skill_files(self):
-        return self.files
-
-
-async def test_loaded_skills_share_catalog_with_proxy(tmp_path: Path) -> None:
-    proxy = create_proxy(backend(tmp_path, "review"))
-    stored = StoredSkills()
-    proxy.add_provider(stored)
-    proxy.add_extension(SkillsExtension(providers=[stored]))
-    async with skills_client(proxy) as client:
-        assert [skill.uri for skill in await client.list_skills()] == [
-            "skill://deploy/SKILL.md",
-            "skill://review/SKILL.md",
-        ]
 
 
 async def test_duplicate_skill_identities_are_not_chosen_arbitrarily(

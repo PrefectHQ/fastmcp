@@ -26,7 +26,7 @@ from fastmcp.skills.models import (
     ListSkillsParams,
     ListSkillsRequest,
     ListSkillsResult,
-    SkillEntry,
+    MCPSkill,
 )
 
 if TYPE_CHECKING:
@@ -58,7 +58,7 @@ class _ProxySkillSource(_SkillSource):
         self, context: ServerRequestContext[Any, Any]
     ) -> _Catalog:
         meta = _session_request_meta(_forwardable_request_meta(get_context()))
-        skills: list[SkillEntry] = []
+        skills: list[MCPSkill] = []
         cursor: str | None = None
         seen: set[str] = set()
         async with self._client() as client:

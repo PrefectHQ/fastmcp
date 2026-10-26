@@ -154,7 +154,7 @@ class SkillCatalogProvider(Provider, _SkillSource):
     ) -> _Catalog:
         catalog = await self._catalog()
         entries = [
-            skill.entry(path)
+            skill.to_mcp_skill(path)
             for path, skill in catalog.items()
             if await self._is_served(path, skill)
         ]
@@ -166,7 +166,9 @@ class SkillCatalogProvider(Provider, _SkillSource):
         for path, skill in (await self._catalog()).items():
             if _skill_md_uri(path) == uri:
                 served = await self._is_served(path, skill)
-                return _Lookup(matches=1, skill=skill.entry(path) if served else None)
+                return _Lookup(
+                    matches=1, skill=skill.to_mcp_skill(path) if served else None
+                )
         return _Lookup()
 
     async def _is_served(self, path: str, skill: Skill) -> bool:

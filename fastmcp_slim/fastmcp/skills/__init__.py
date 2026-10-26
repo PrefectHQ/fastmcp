@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from fastmcp.skills.models import (
     GetSkillResult,
     ListSkillsResult,
-    SkillEntry,
+    MCPSkill,
     SkillFrontmatter,
     SkillResource,
 )
@@ -13,8 +13,8 @@ from fastmcp.skills.skill import Skill
 __all__ = [
     "GetSkillResult",
     "ListSkillsResult",
+    "MCPSkill",
     "Skill",
-    "SkillEntry",
     "SkillFrontmatter",
     "SkillResource",
     "SkillsClientExtension",

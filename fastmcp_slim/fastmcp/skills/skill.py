@@ -12,7 +12,7 @@ from urllib.parse import quote
 
 from pydantic import JsonValue
 
-from fastmcp.skills.models import SkillEntry, SkillFrontmatter, SkillResource
+from fastmcp.skills.models import MCPSkill, SkillFrontmatter, SkillResource
 
 # SEP-2640 per-skill limits; servers should not serve skills that exceed them.
 MAX_SKILL_FILES = 512
@@ -195,7 +195,7 @@ class Skill:
         """Every file in the skill, keyed by relative path, including `SKILL.md`."""
         return self._files
 
-    def entry(self, path: str | None = None) -> SkillEntry:
+    def to_mcp_skill(self, path: str | None = None) -> MCPSkill:
         """Build the Skills extension entry for this skill served at `skill://{path}/`."""
         prefix = f"skill://{quote(path or self.name, safe='/')}/"
         resources = [
@@ -206,7 +206,7 @@ class Skill:
             )
             for relative, content in self._files.items()
         ]
-        return SkillEntry(
+        return MCPSkill(
             uri=f"{prefix}SKILL.md", frontmatter=self._frontmatter, resources=resources
         )
 

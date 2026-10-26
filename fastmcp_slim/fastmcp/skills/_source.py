@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from mcp.server.context import ServerRequestContext
 
-from fastmcp.skills.models import SkillEntry
+from fastmcp.skills.models import MCPSkill
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.proxy import ClientFactoryT
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class _Catalog:
-    skills: list[SkillEntry]
+    skills: list[MCPSkill]
     identities: tuple[str, ...]
     owners: dict[str, ClientFactoryT | FastMCP] = field(default_factory=dict)
 
@@ -25,7 +25,7 @@ class _Catalog:
 @dataclass(frozen=True)
 class _Lookup:
     matches: int = 0
-    skill: SkillEntry | None = None
+    skill: MCPSkill | None = None
     owner: ClientFactoryT | FastMCP | None = None
 
 
@@ -50,7 +50,7 @@ class _SkillSource(ABC):
     ) -> _Lookup: ...
 
 
-def _manifest_uris(skill: SkillEntry) -> list[str]:
+def _manifest_uris(skill: MCPSkill) -> list[str]:
     if isinstance(skill.resources, list):
         return [resource.uri for resource in skill.resources]
     return [skill.uri]

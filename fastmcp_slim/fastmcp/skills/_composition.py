@@ -15,7 +15,7 @@ from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.context import Context
 from fastmcp.server.transforms import Namespace, Visibility
 from fastmcp.skills._source import _Catalog, _Lookup, _manifest_uris, _SkillSource
-from fastmcp.skills.models import SkillEntry
+from fastmcp.skills.models import MCPSkill
 from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.logging import get_logger
 
@@ -136,7 +136,7 @@ class _TransformedSkills(_SkillSource):
                 uri = original
         return uri
 
-    def _skill(self, skill: SkillEntry) -> SkillEntry:
+    def _skill(self, skill: MCPSkill) -> MCPSkill:
         return skill.model_copy(
             update={
                 "uri": self._forward(skill.uri),
@@ -149,7 +149,7 @@ class _TransformedSkills(_SkillSource):
             }
         )
 
-    async def _visible(self, skill: SkillEntry) -> bool:
+    async def _visible(self, skill: MCPSkill) -> bool:
         if not any(isinstance(t, Visibility) for t in self.provider.transforms):
             return True
         for uri in _manifest_uris(skill):
@@ -202,7 +202,7 @@ class _ServerSkills(_SkillSource):
         return await self.source._owns_skill_resource(uri)
 
     async def _visible(
-        self, skill: SkillEntry, owner: ClientFactoryT | FastMCP | None
+        self, skill: MCPSkill, owner: ClientFactoryT | FastMCP | None
     ) -> bool:
         from fastmcp.server.providers.fastmcp_provider import (
             FastMCPProviderResource,

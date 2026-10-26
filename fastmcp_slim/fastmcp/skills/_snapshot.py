@@ -15,7 +15,7 @@ import yaml
 from mcp.shared.path_security import safe_join
 from yaml.nodes import MappingNode
 
-from fastmcp.skills.models import SkillEntry, SkillFrontmatter, SkillResource
+from fastmcp.skills.models import MCPSkill, SkillFrontmatter, SkillResource
 
 # SEP-2640 per-skill limits; servers should not serve skills that exceed them.
 MAX_SKILL_RESOURCES = 512
@@ -91,7 +91,7 @@ def scan_files(root: Path) -> list[Path]:
 
 @dataclass(frozen=True)
 class Snapshot:
-    entry: SkillEntry
+    entry: MCPSkill
     files: tuple[tuple[str, Path], ...]
 
 
@@ -99,7 +99,7 @@ def file_uri(skill_path: str, relative_path: str) -> str:
     return f"skill://{quote(skill_path, safe='/')}/{quote(relative_path, safe='/')}"
 
 
-def build_entry(skill_path: str, files: Mapping[str, bytes]) -> SkillEntry:
+def build_entry(skill_path: str, files: Mapping[str, bytes]) -> MCPSkill:
     """Build a Skills entry whose manifest describes exactly these file bytes."""
     if "SKILL.md" not in files:
         raise ValueError("skill must contain SKILL.md")
@@ -107,7 +107,7 @@ def build_entry(skill_path: str, files: Mapping[str, bytes]) -> SkillEntry:
         raise ValueError(f"skill has more than {MAX_SKILL_RESOURCES} files")
     if sum(len(content) for content in files.values()) > MAX_SKILL_BYTES:
         raise ValueError(f"skill is larger than {MAX_SKILL_BYTES} bytes")
-    return SkillEntry(
+    return MCPSkill(
         uri=file_uri(skill_path, "SKILL.md"),
         frontmatter=parse_frontmatter(files["SKILL.md"]),
         resources=[

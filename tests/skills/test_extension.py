@@ -18,9 +18,10 @@ from pydantic import AnyUrl
 from fastmcp import Client, FastMCP
 from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import FunctionResource
+from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from fastmcp.server.providers import Provider
 from fastmcp.server.transforms import Namespace
-from fastmcp.skills import SkillEntry, SkillsClientExtension
+from fastmcp.skills import MCPSkill, SkillsClientExtension
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
 from fastmcp.skills._source import _Catalog, _Lookup, _SkillSource
 from fastmcp.skills.extension import SkillsExtension
@@ -37,9 +38,9 @@ SKILL_CONTENT = "# Review\n"
 DIGEST = f"sha256:{hashlib.sha256(SKILL_CONTENT.encode()).hexdigest()}"
 
 
-def make_skill(name: str) -> SkillEntry:
+def make_skill(name: str) -> MCPSkill:
     uri = f"skill://{name}/SKILL.md"
-    return SkillEntry.model_validate(
+    return MCPSkill.model_validate(
         {
             "uri": uri,
             "frontmatter": {"name": name, "description": f"Use {name}"},
@@ -54,8 +55,8 @@ class MemorySkillProvider(Provider, _SkillSource):
     def __init__(
         self,
         *,
-        listed: Sequence[SkillEntry],
-        addressable: Sequence[SkillEntry] | None = None,
+        listed: Sequence[MCPSkill],
+        addressable: Sequence[MCPSkill] | None = None,
     ) -> None:
         super().__init__()
         self.listed = list(listed)
@@ -383,6 +384,24 @@ async def test_extension_rejects_transform_added_after_registration() -> None:
             await client.list_skills()
 
     assert exc_info.value.error.code == INTERNAL_ERROR
+
+
+async def test_transform_added_after_registration_keeps_unrelated_reads() -> None:
+    provider = MemorySkillProvider(listed=[])
+    server = make_server(provider)
+    server.add_middleware(ResponseCachingMiddleware())
+
+    @server.resource("data://plain")
+    def plain() -> str:
+        return "plain"
+
+    server.add_transform(Namespace("docs"))
+
+    async with skills_client(server) as client:
+        result = await client.read_resource("data://docs/plain")
+
+    assert isinstance(result[0], TextResourceContents)
+    assert result[0].text == "plain"
 
 
 async def test_duplicate_uris_are_omitted_from_list_and_get(

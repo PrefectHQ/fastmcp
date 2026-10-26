@@ -23,7 +23,7 @@ from fastmcp.skills.models import (
     GetSkillResult,
     ListSkillsParams,
     ListSkillsResult,
-    SkillEntry,
+    MCPSkill,
 )
 from tests.server.providers.proxy.test_skills import backend, skills_client
 
@@ -90,8 +90,8 @@ async def test_manifest_and_bytes_stay_coherent_for_any_uri_scheme(
                 ),
             )
 
-        def current(self) -> SkillEntry:
-            return SkillEntry.model_validate(
+        def current(self) -> MCPSkill:
+            return MCPSkill.model_validate(
                 {
                     "uri": uri,
                     "frontmatter": {"name": "review", "description": "Review code"},

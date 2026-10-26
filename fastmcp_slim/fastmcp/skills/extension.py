@@ -90,9 +90,23 @@ class SkillsExtension(ServerExtension):
         return source
 
     async def _requires_live_resource(self, uri: str) -> bool:
-        """Keep manifest-backed resources coherent with current file bytes."""
-        source = self._source
-        return source is not None and await source._owns_skill_resource(uri)
+        """Keep manifest-backed resources coherent with current file bytes.
+
+        This runs on every resource read, so it skips configuration validation:
+        a misconfigured extension fails Skills requests, not unrelated reads.
+        """
+        sources: list[_SkillSource] = [
+            provider
+            for provider in self._providers
+            if isinstance(provider, _SkillSource)
+        ]
+        proxied = self.server._get_skills_source()
+        if proxied is not None:
+            sources.append(proxied)
+        for source in sources:
+            if await source._owns_skill_resource(uri):
+                return True
+        return False
 
     def methods(self) -> Sequence[MethodBinding]:
         return (
