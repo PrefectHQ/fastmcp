@@ -274,9 +274,10 @@ async def test_get_unknown_skill_returns_invalid_params() -> None:
     assert exc_info.value.error.code == INVALID_PARAMS
 
 
-async def test_list_rejects_invalid_cursor() -> None:
+@pytest.mark.parametrize("page_size", [None, 1])
+async def test_list_rejects_invalid_cursor(page_size: int | None) -> None:
     server = make_server(
-        MemorySkillProvider(listed=[make_skill("review")]), page_size=1
+        MemorySkillProvider(listed=[make_skill("review")]), page_size=page_size
     )
 
     async with skills_client(server) as client:
