@@ -49,21 +49,18 @@ Refer to supporting files by their path relative to the skill folder, as `refere
 
 ## Serve the folder
 
-`SkillsDirectoryProvider` publishes every skill folder under a root directory. Setting `experimental_skills=True` on it, and registering `SkillsExtension` with the same provider instance, also turns on Skills discovery.
+`SkillsDirectoryProvider` publishes every skill folder under a root directory. Setting `experimental_skills=True` on it also turns on Skills discovery: the provider registers `SkillsExtension` on the server for you.
 
 ```python
 from pathlib import Path
 
 from fastmcp import FastMCP
 from fastmcp.server.providers.skills import SkillsDirectoryProvider
-from fastmcp.skills.extension import SkillsExtension
-
 SKILLS_DIR = Path(__file__).parent / "skills"
 
 mcp = FastMCP("Team Skills")
 skills = SkillsDirectoryProvider(SKILLS_DIR, experimental_skills=True)
 mcp.add_provider(skills)
-mcp.add_extension(SkillsExtension(providers=[skills]))
 
 if __name__ == "__main__":
     mcp.run(transport="http", port=8000)
@@ -71,7 +68,7 @@ if __name__ == "__main__":
 
 Save this as `server.py` next to the `skills/` folder and run `python server.py`. The server can carry tools, resources, and prompts as usual; skills are one more provider.
 
-To serve skills as resources only, leave out `experimental_skills=True` and the `SkillsExtension` line. To turn discovery off again later, remove both.
+To serve skills as resources only, leave out `experimental_skills=True`.
 
 ## Read skills as resources
 
@@ -229,7 +226,6 @@ A skill doesn't have to live in a folder. `Skill` holds a skill's files in memor
 from fastmcp import FastMCP
 from fastmcp.skills.provider import SkillCatalogProvider
 from fastmcp.skills import Skill
-from fastmcp.skills.extension import SkillsExtension
 
 release_notes = Skill(
     name="release-notes",
@@ -243,7 +239,6 @@ review = Skill.from_package("my_package", "skills/review")
 mcp = FastMCP("Skills")
 skills = SkillCatalogProvider([release_notes, deploy, review])
 mcp.add_provider(skills)
-mcp.add_extension(SkillsExtension(providers=[skills]))
 ```
 
 The constructor writes `SKILL.md` from `name`, `description`, `instructions`, and any extra `frontmatter`. `Skill.from_directory()` and `Skill.from_package()` read a folder once and keep its exact bytes, so later edits to the folder don't change the served skill. Every `Skill` is validated when you create it: frontmatter follows the same strict rules as discovery mode, and a folder's name must match the `name` in its `SKILL.md`.
@@ -373,12 +368,21 @@ Without the flag, the provider keeps its permissive resource-mode behavior: fron
 
 Skills discovery respects the same rules as resource reads. A skill is omitted from `skills/list` when any of its files is hidden from the caller or denied by `Middleware.check_resource_access`, the hook that [`AuthMiddleware`](/servers/authorization) and the default `on_read_resource` use. Implement custom resource authorization in that hook so discovery can apply it; restrictions applied in other middleware hooks are invisible to discovery.
 
+## Mounted servers
+
+<VersionBadge version="4.2.0" />
+
+Skills follow a [mounted server](/servers/composition) to its parent. The parent's `skills/list` includes the child's skills at the URIs the parent serves them at, so `mount(child, namespace="team")` turns `skill://review/SKILL.md` into `skill://team/review/SKILL.md`, and every file in the manifest moves with it. This works through any depth of mounts.
+
+The parent lists a mounted skill only when it routes every file back to the child and the caller passes the parent's own access checks. A parent resource that shadows one of the files, or a parent middleware rule that denies one, hides the skill. Two mounts that publish the same skill URI hide each other's copy.
+
+To limit discovery to specific providers instead, register the extension yourself with `mcp.add_extension(SkillsExtension(providers=[...]))`. An explicit registration replaces the automatic one and doesn't include mounted servers.
+
 ## Current limits
 
-Skills discovery currently serves skills from `SkillsDirectoryProvider` and `SkillCatalogProvider` instances registered directly on the server you run.
+Skills discovery serves skills from `SkillsDirectoryProvider` and `SkillCatalogProvider` instances registered on the server you run or on servers mounted into it.
 
-- `SkillsExtension` raises when the server or the skills provider has transforms, including namespaces, or when the provider is not registered directly on the same server.
-- Skills in a [mounted server](/servers/composition) are served as resources through the parent, but the parent does not list them in `skills/list`.
+- A skill provider added with a namespace or other transforms is left out of `skills/list`. To namespace skills, mount a server that holds the provider. A server with server-level transforms lists no skills.
 - A proxy in front of the server forwards the skill files as resources, but not `skills/list` or `skills/get`.
 - The optional `directoryRead` capability is not implemented.
 
