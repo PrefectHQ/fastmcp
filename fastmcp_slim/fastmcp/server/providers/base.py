@@ -59,7 +59,6 @@ if TYPE_CHECKING:
         GetToolNext,
         Transform,
     )
-    from fastmcp.skills._source import _SkillSource
     from fastmcp.tools.base import Tool
 
 
@@ -95,10 +94,6 @@ class Provider:
 
     def __init__(self) -> None:
         self._transforms: list[Transform] = []
-
-    def _get_skills_source(self) -> _SkillSource | None:
-        """Optional resource-backed Skills support; not a component registry."""
-        return None
 
     def required_extensions(self) -> Sequence[ServerExtension]:
         """Extensions bundled with this provider.

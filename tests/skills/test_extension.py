@@ -18,12 +18,10 @@ from pydantic import AnyUrl
 from fastmcp import Client, FastMCP
 from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import FunctionResource
-from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from fastmcp.server.providers import Provider
 from fastmcp.server.transforms import Namespace
 from fastmcp.skills import MCPSkill, SkillsClientExtension
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
-from fastmcp.skills._source import _Catalog, _Lookup, _SkillSource
 from fastmcp.skills.extension import SkillsExtension
 from fastmcp.skills.models import (
     GetSkillParams,
@@ -51,7 +49,7 @@ def make_skill(name: str) -> MCPSkill:
     )
 
 
-class MemorySkillProvider(Provider, _SkillSource):
+class MemorySkillProvider(Provider):
     def __init__(
         self,
         *,
@@ -66,18 +64,26 @@ class MemorySkillProvider(Provider, _SkillSource):
         }
         self.contexts: list[ServerRequestContext[Any, Any]] = []
 
+    def _validate_skill_source(self) -> None:
+        pass
+
+    async def _skill_uris(self, uri: str | None = None) -> Sequence[str]:
+        return [key for key in self.addressable if uri is None or key == uri]
+
+    def _owns_skill_resource(self, uri: str) -> bool:
+        return False
+
     async def _list_skill_entries(
         self, context: ServerRequestContext[Any, Any]
-    ) -> _Catalog:
+    ) -> Sequence[MCPSkill]:
         self.contexts.append(context)
-        return _Catalog(self.listed, tuple(self.addressable))
+        return self.listed
 
     async def _get_skill_entry(
         self, uri: str, context: ServerRequestContext[Any, Any]
-    ) -> _Lookup:
+    ) -> MCPSkill | None:
         self.contexts.append(context)
-        skill = self.addressable.get(uri)
-        return _Lookup(matches=int(skill is not None), skill=skill)
+        return self.addressable.get(uri)
 
     async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
@@ -384,24 +390,6 @@ async def test_extension_rejects_transform_added_after_registration() -> None:
             await client.list_skills()
 
     assert exc_info.value.error.code == INTERNAL_ERROR
-
-
-async def test_transform_added_after_registration_keeps_unrelated_reads() -> None:
-    provider = MemorySkillProvider(listed=[])
-    server = make_server(provider)
-    server.add_middleware(ResponseCachingMiddleware())
-
-    @server.resource("data://plain")
-    def plain() -> str:
-        return "plain"
-
-    server.add_transform(Namespace("docs"))
-
-    async with skills_client(server) as client:
-        result = await client.read_resource("data://docs/plain")
-
-    assert isinstance(result[0], TextResourceContents)
-    assert result[0].text == "plain"
 
 
 async def test_duplicate_uris_are_omitted_from_list_and_get(

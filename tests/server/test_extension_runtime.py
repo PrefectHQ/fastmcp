@@ -177,7 +177,6 @@ async def test_shared_child_rejection_leaves_its_registrations_unchanged(
     bundle: BundledLocalProvider,
 ):
     child = FastMCP("shared child")
-    defaults = child._extensions.copy()
     first, second = FastMCP("first"), FastMCP("second")
     first.add_extension(RuntimeExtension())
     first.mount(child)
@@ -186,7 +185,7 @@ async def test_shared_child_rejection_leaves_its_registrations_unchanged(
         async with Client(second, mode="auto"):
             with pytest.raises(RuntimeError):
                 child.add_provider(bundle)
-            assert child._extensions == defaults
+            assert child._extensions == {}
             assert len(child.providers) == 1
         child.add_provider(bundle)
 
@@ -216,7 +215,6 @@ async def test_standalone_child_still_rejects_unavailable_extension(
     bundle: BundledLocalProvider, standalone_first: bool
 ):
     child = FastMCP("child")
-    defaults = child._extensions.copy()
     root = FastMCP("root")
     root.add_extension(RuntimeExtension())
     root.mount(child)
@@ -227,7 +225,7 @@ async def test_standalone_child_still_rejects_unavailable_extension(
                 child.add_provider(bundle)
             standalone = first_client if standalone_first else second_client
             assert await standalone.list_tools() == []
-            assert child._extensions == defaults
+            assert child._extensions == {}
 
 
 async def test_standalone_aggregate_releases_descendant_restrictions(
