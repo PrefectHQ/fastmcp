@@ -142,3 +142,27 @@ async def test_server_transforms_disable_discovery_without_failing_mount():
     async with skills_client(parent) as client:
         assert await client.list_skills() == []
         assert len(await client.list_resources()) == 3
+
+
+async def test_hidden_parent_resource_hides_mounted_template_file(tmp_path: Path):
+    folder = tmp_path / "skills" / "deploy"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_bytes(
+        b"---\nname: deploy\ndescription: Deploy the app\n---\n# Deploy\n"
+    )
+    (folder / "notes.md").write_bytes(b"- tests\n")
+    folders = FastMCP(
+        "Folders",
+        providers=[
+            SkillsDirectoryProvider(tmp_path / "skills", experimental_skills=True)
+        ],
+    )
+    parent = FastMCP("Parent")
+
+    @parent.resource("skill://deploy/notes.md", auth=lambda ctx: False)
+    def hidden() -> str:
+        return "secret"
+
+    parent.mount(folders)
+    async with skills_client(parent) as client:
+        assert await client.list_skills() == []
