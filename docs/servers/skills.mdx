@@ -71,8 +71,8 @@ Run through `references/checklist.md` before deploying.
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.skills.provider import SkillCatalogProvider
 from fastmcp.skills import Skill
+from fastmcp.skills.provider import SkillCatalogProvider
 
 release_notes = Skill(
     name="release-notes",
@@ -82,7 +82,8 @@ release_notes = Skill(
 )
 
 mcp = FastMCP("Team Skills")
-skills = SkillCatalogProvider([release_notes, Skill.from_directory("skills/deploy")])
+deploy = Skill.from_directory("skills/deploy")
+skills = SkillCatalogProvider([release_notes, deploy])
 mcp.add_provider(skills)
 
 if __name__ == "__main__":
@@ -99,8 +100,8 @@ To serve skills that change while the server runs, such as rows in a database, s
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.skills.provider import SkillCatalogProvider
 from fastmcp.skills import Skill
+from fastmcp.skills.provider import SkillCatalogProvider
 
 # Stands in for your storage: one dict of files per skill.
 SKILL_ROWS = [
@@ -179,7 +180,21 @@ Skills follow a [mounted server](/servers/composition) to its parent. The parent
 
 The parent lists a mounted skill only when it routes every file back to the child and the caller passes the parent's own access checks. A parent resource that shadows one of the files, or a parent middleware rule that denies one, hides the skill. Two mounts that publish the same skill URI hide each other's copy.
 
-To limit discovery to specific providers instead, register the extension yourself with `mcp.add_extension(SkillsExtension(providers=[...]))`. An explicit registration replaces the automatic one and doesn't include mounted servers.
+To limit discovery to specific providers instead, register the extension yourself. An explicit registration replaces the automatic one and doesn't include mounted servers.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.skills import Skill
+from fastmcp.skills.extension import SkillsExtension
+from fastmcp.skills.provider import SkillCatalogProvider
+
+triage = Skill(name="triage", description="Triage new issues.", instructions="# Triage\n")
+
+mcp = FastMCP("Team Skills")
+public = SkillCatalogProvider([triage])
+mcp.add_provider(public)
+mcp.add_extension(SkillsExtension(providers=[public]))
+```
 
 ## Read skills from a client
 
@@ -269,7 +284,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-`client.list_skills()` and `client.get_skill()` return `MCPSkill` objects: the wire record that describes a skill, much as `MCPTool` describes a tool. `Skill.to_mcp_skill()` builds the same record from a `Skill`. `client.list_skills()` follows every page of `skills/list`; use `list_skills_mcp()` to fetch one page at a time.
+`client.list_skills()` and `client.get_skill()` return `MCPSkill` objects: the wire record that describes a skill, much as `MCPTool` describes a tool. `Skill.to_mcp_skill()` builds the same record from a `Skill`. `client.list_skills()` follows every page of `skills/list`; use `list_skills_mcp()` to fetch one page at a time. A server that can't enumerate a skill's files sends `resources` as the string `"dynamic"` instead of a list; FastMCP servers always send a list.
 
 Listing returns metadata only. The agent reads the files it needs through `resources/read`, and should check each file against its manifest record before using it:
 
