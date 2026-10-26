@@ -44,11 +44,11 @@ class ExtensionsMixin:
             ),
         ]
 
-    async def _requires_live_resource(self: FastMCP, uri: str) -> bool:
-        for extension in self._extensions.values():
-            if await extension._requires_live_resource(uri):
-                return True
-        return False
+    def _requires_live_resource(self: FastMCP, uri: str) -> bool:
+        return any(
+            extension._requires_live_resource(uri)
+            for extension in self._extensions.values()
+        )
 
     def add_extension(self: FastMCP, extension: ServerExtension) -> None:
         """Register a server extension (SEP-2133).

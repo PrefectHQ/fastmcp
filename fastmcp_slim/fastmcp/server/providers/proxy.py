@@ -73,7 +73,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from fastmcp.client.transports import ClientTransport
-    from fastmcp.skills._source import _SkillSource
 
 logger = get_logger(__name__)
 
@@ -907,13 +906,6 @@ class ProxyProvider(Provider):
         self._resources_cache: _CacheEntry[Resource] | None = None
         self._templates_cache: _CacheEntry[ResourceTemplate] | None = None
         self._prompts_cache: _CacheEntry[Prompt] | None = None
-        self._skills_resources_live = False
-
-    def _get_skills_source(self) -> _SkillSource | None:
-        from fastmcp.server.providers.skills._proxy import _ProxySkillSource
-        from fastmcp.skills._composition import _transformed
-
-        return _transformed(_ProxySkillSource(self), self)
 
     async def _get_client(self) -> Client:
         """Gets a client instance by calling the sync or async factory."""

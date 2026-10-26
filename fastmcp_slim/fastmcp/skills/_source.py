@@ -1,56 +1,35 @@
-"""Private, dependency-light source contract for resource-backed Skills."""
+"""Private source contract consumed by `SkillsExtension`."""
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from collections.abc import Sequence
+from typing import Any, Protocol, runtime_checkable
 
 from mcp.server.context import ServerRequestContext
 
 from fastmcp.skills.models import MCPSkill
 
-if TYPE_CHECKING:
-    from fastmcp.server.providers.proxy import ClientFactoryT
-    from fastmcp.server.server import FastMCP
 
+@runtime_checkable
+class _SkillSource(Protocol):
+    """A provider capable of producing caller-scoped Skills entries."""
 
-@dataclass(frozen=True)
-class _Catalog:
-    skills: list[MCPSkill]
-    identities: tuple[str, ...]
-    owners: dict[str, ClientFactoryT | FastMCP] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class _Lookup:
-    matches: int = 0
-    skill: MCPSkill | None = None
-    owner: ClientFactoryT | FastMCP | None = None
-
-
-class _SkillSource(ABC):
-    """Keep identity before authorization alongside the visible skills."""
-
-    def _validate_skill_source(self) -> None:
-        """Reject source configurations that cannot publish a Skills catalog."""
-        return None
-
-    async def _owns_skill_resource(self, uri: str) -> bool:
-        return False
-
-    @abstractmethod
     async def _list_skill_entries(
         self, context: ServerRequestContext[Any, Any]
-    ) -> _Catalog: ...
+    ) -> Sequence[MCPSkill]: ...
 
-    @abstractmethod
     async def _get_skill_entry(
         self, uri: str, context: ServerRequestContext[Any, Any]
-    ) -> _Lookup: ...
+    ) -> MCPSkill | None: ...
 
+    def _validate_skill_source(self) -> None:
+        """Reject sources that have not opted into protocol publication."""
+        ...
 
-def _manifest_uris(skill: MCPSkill) -> list[str]:
-    if isinstance(skill.resources, list):
-        return [resource.uri for resource in skill.resources]
-    return [skill.uri]
+    async def _skill_uris(self, uri: str | None = None) -> Sequence[str]:
+        """Return identities before authorization/validation, preserving duplicates."""
+        ...
+
+    def _owns_skill_resource(self, uri: str) -> bool:
+        """Whether manifest coherence requires this URI to be read live."""
+        ...

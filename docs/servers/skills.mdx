@@ -227,7 +227,7 @@ A skill doesn't have to live in a folder. `Skill` holds a skill's files in memor
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.providers.skills import SkillCatalogProvider
+from fastmcp.skills.provider import SkillCatalogProvider
 from fastmcp.skills import Skill
 from fastmcp.skills.extension import SkillsExtension
 
@@ -253,14 +253,19 @@ The constructor writes `SKILL.md` from `name`, `description`, `instructions`, an
 To serve skills that change at runtime, subclass the provider and override `load_skills()`. FastMCP calls it once per MCP request, and every lookup in that request sees the same skills.
 
 ```python
-from fastmcp.server.providers.skills import SkillCatalogProvider
+from fastmcp.skills.provider import SkillCatalogProvider
 from fastmcp.skills import Skill
 
 
-class DatabaseSkills(SkillCatalogProvider):
+# Stands in for your storage: one dict of files per skill.
+SKILL_ROWS = [
+    {"SKILL.md": "---\nname: triage\ndescription: Triage new issues.\n---\n# Triage\n"},
+]
+
+
+class StoredSkills(SkillCatalogProvider):
     async def load_skills(self) -> list[Skill]:
-        rows = await fetch_skill_rows()  # your storage
-        return [Skill.from_files(row.files) for row in rows]
+        return [Skill.from_files(files) for files in SKILL_ROWS]
 ```
 
 ## Configure the provider
@@ -349,10 +354,6 @@ mcp = FastMCP("My Claude Skills")
 mcp.add_provider(ClaudeSkillsProvider())
 ```
 
-## Discover skills through a proxy
-
-A [proxy](/servers/providers/proxy#skills) forwards `skills/list` and `skills/get` to its backend without any extra registration, including proxies mounted under a namespace. Namespaces apply to each skill URI and every file URI in its manifest, while frontmatter, sizes, and digests pass through unchanged. A backend without Skills contributes an empty catalog. When a server also registers `SkillsExtension`, its own skills and its proxied backends share one catalog.
-
 ## What discovery mode changes
 
 Setting `experimental_skills=True` makes the provider stricter, because a discovery entry promises exact bytes:
@@ -374,10 +375,11 @@ Skills discovery respects the same rules as resource reads. A skill is omitted f
 
 ## Current limits
 
-Skills discovery serves skills from `SkillsDirectoryProvider` and `SkillCatalogProvider` instances registered directly on the server you run, and from proxied backends.
+Skills discovery currently serves skills from `SkillsDirectoryProvider` and `SkillCatalogProvider` instances registered directly on the server you run.
 
-- `SkillsExtension` raises when the server or one of its providers has transforms, including namespaces, or when a provider is not registered directly on the same server. Proxied backends are the exception: their namespaces and visibility rules apply.
-- Skills from a [mounted server](/servers/composition)'s own providers are served as resources through the parent, but the parent does not list them in `skills/list`. Skills a mounted server proxies are listed.
+- `SkillsExtension` raises when the server or the skills provider has transforms, including namespaces, or when the provider is not registered directly on the same server.
+- Skills in a [mounted server](/servers/composition) are served as resources through the parent, but the parent does not list them in `skills/list`.
+- A proxy in front of the server forwards the skill files as resources, but not `skills/list` or `skills/get`.
 - The optional `directoryRead` capability is not implemented.
 
-Resource mode has none of these limits. Serve skills as resources everywhere, and add discovery on the server that clients connect to directly or on a proxy in front of it.
+Resource mode has none of these limits. Serve skills as resources everywhere, and add discovery on the server that clients connect to directly.

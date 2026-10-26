@@ -229,10 +229,6 @@ class ServerExtension:
             )
         return server
 
-    def _is_advertised(self) -> bool:
-        """Whether this registration appears in the server's capabilities."""
-        return True
-
     def settings(self) -> dict[str, Any]:
         """Per-extension settings advertised at `capabilities.extensions[identifier]`.
 
@@ -240,7 +236,7 @@ class ServerExtension:
         """
         return {}
 
-    async def _requires_live_resource(self, uri: str) -> bool:
+    def _requires_live_resource(self, uri: str) -> bool:
         """Whether an extension requires this resource to bypass response caching."""
         return False
 

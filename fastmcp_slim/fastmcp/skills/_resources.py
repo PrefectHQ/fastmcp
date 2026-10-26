@@ -1,4 +1,4 @@
-"""Byte-preserving resource reads for strict skills."""
+"""Byte-preserving resource reads for strict filesystem skills."""
 
 from __future__ import annotations
 
@@ -35,16 +35,8 @@ def read_file(root: Path, relative_path: str) -> ResourceResult:
         raise ValueError("skill files must not be symlinks")
     if not path.is_file():
         raise ValueError("skill resource must be a regular file")
-    return file_content(path.name, path.read_bytes())
-
-
-def file_mime_type(name: str) -> str:
-    return mimetypes.guess_type(name)[0] or "application/octet-stream"
-
-
-def file_content(name: str, content: bytes) -> ResourceResult:
-    """Serve skill file bytes unchanged, as text only when they are UTF-8 text."""
-    mime_type = file_mime_type(name)
+    content = path.read_bytes()
+    mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     value: str | bytes = content
     if mime_type.startswith("text/"):
         with suppress(UnicodeDecodeError):
