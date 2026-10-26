@@ -104,7 +104,9 @@ async def test_parent_access_rules_hide_mounted_skills():
     blocked = {"skill://team/review/notes.md"}
     parent = FastMCP(
         "Parent",
-        middleware=[AuthMiddleware(auth=lambda ctx: str(ctx.component.uri) not in blocked)],
+        middleware=[
+            AuthMiddleware(auth=lambda ctx: str(ctx.component.uri) not in blocked)
+        ],
     )
     parent.mount(child(), namespace="team")
     async with skills_client(parent) as client:
