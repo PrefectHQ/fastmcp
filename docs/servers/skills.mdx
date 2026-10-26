@@ -140,7 +140,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-`fastmcp.utilities.skills` also provides `list_skills()`, which lists skill names from the resource listing, and `get_skill_manifest()`, which reads one manifest. These helpers work with any server that publishes skills as resources, with or without discovery.
+`fastmcp.utilities.skills` also provides `list_skill_summaries()`, which lists skill names from the resource listing, and `get_skill_manifest()`, which reads one manifest. These helpers work with any server that publishes skills as resources, with or without discovery. Earlier releases named the summary helper `list_skills()`; that name still works with a deprecation warning. It is unrelated to `client.list_skills()`, described below.
 
 ## Discover skills with the Skills extension
 
