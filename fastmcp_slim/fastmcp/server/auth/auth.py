@@ -64,7 +64,7 @@ logger = get_logger(__name__)
 class AccessToken(_SDKAccessToken):
     """AccessToken that includes all JWT claims."""
 
-    claims: dict[str, Any] = Field(default_factory=dict)
+    claims: dict[str, Any] = Field(default_factory=dict)  # ty:ignore[invalid-mutable-override]
     original_client_id: str | None = None
     """Client ID before MultiAuth qualified it with its configured source."""
 

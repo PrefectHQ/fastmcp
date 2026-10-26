@@ -146,8 +146,13 @@ You can extend `RemoteAuthProvider` to add additional endpoints beyond the stand
 
 ```python
 import httpx2
+from pydantic import AnyHttpUrl
 from starlette.responses import JSONResponse
 from starlette.routing import Route
+
+from fastmcp import FastMCP
+from fastmcp.server.auth import RemoteAuthProvider
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 class CompanyAuthProvider(RemoteAuthProvider):
     def __init__(self):
@@ -163,11 +168,11 @@ class CompanyAuthProvider(RemoteAuthProvider):
             base_url="https://api.yourcompany.com"  # Your server base URL
         )
     
-    def get_routes(self) -> list[Route]:
+    def get_routes(self, mcp_path: str | None = None) -> list[Route]:
         """Add custom endpoints to the standard protected resource routes."""
         
         # Get the standard OAuth protected resource routes
-        routes = super().get_routes()
+        routes = super().get_routes(mcp_path)
         
         # Add authorization server metadata forwarding for client convenience
         async def authorization_server_metadata(request):
@@ -187,7 +192,7 @@ class CompanyAuthProvider(RemoteAuthProvider):
 mcp = FastMCP(name="Company API", auth=CompanyAuthProvider())
 ```
 
-This pattern uses `super().get_routes()` to get the standard protected resource routes, then adds additional endpoints as needed. A common use case is providing authorization server metadata forwarding, which allows MCP clients to discover your identity provider's capabilities through your MCP server rather than contacting the identity provider directly.
+This pattern uses `super().get_routes(mcp_path)` to get the standard protected resource routes, then adds additional endpoints as needed. `http_app()` passes the MCP path into `get_routes`, and the base implementation uses that path for the protected-resource metadata URL. A common use case is providing authorization server metadata forwarding, which allows MCP clients to discover your identity provider's capabilities through your MCP server rather than contacting the identity provider directly.
 
 ## WorkOS AuthKit Integration
 

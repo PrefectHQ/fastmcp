@@ -7,7 +7,7 @@ import os
 import sys
 import tempfile
 import time
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -179,7 +179,7 @@ def _make_protocol_era_server(name: str, starts: list[str] | None = None) -> Fas
     else:
 
         @asynccontextmanager
-        async def lifespan(_server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+        async def lifespan(_server: FastMCP) -> AsyncGenerator[dict[str, Any], None]:
             starts.append(name)
             yield {}
 
@@ -288,7 +288,7 @@ async def test_failed_known_legacy_backend_does_not_downgrade_healthy_backends()
     @asynccontextmanager
     async def unavailable_lifespan(
         server: FastMCP,
-    ) -> AsyncIterator[dict[str, Any]]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         if server.name == "unavailable":
             raise RuntimeError("backend unavailable")
         yield {}

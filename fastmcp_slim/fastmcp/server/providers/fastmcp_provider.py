@@ -10,7 +10,7 @@ executed.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncGenerator, Generator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Any
 
@@ -421,7 +421,7 @@ class FastMCPProvider(Provider):
     @contextmanager
     def _extension_runtime(
         self, available: frozenset[str], *, root: FastMCP | None
-    ) -> Iterator[None]:
+    ) -> Generator[None, None, None]:
         with self.server._extension_runtime(available, root=root):
             yield
 
@@ -448,14 +448,22 @@ class FastMCPProvider(Provider):
         exact version matching and range filtering. Uses get_tool to ensure
         the nested server's transforms are applied.
         """
-        raw_tool = await self.server.get_tool(name, version)
+        # Lookups must use the child's state store, just as its list and
+        # execution methods do, before the parent applies its own rules.
+        from fastmcp.server.context import Context
+
+        async with Context(fastmcp=self.server):
+            raw_tool = await self.server.get_tool(name, version)
         if raw_tool is None:
             return None
         return FastMCPProviderTool.wrap(self.server, raw_tool)
 
     async def get_app_tool(self, app_name: str, tool_name: str) -> Tool | None:
         """Delegate to nested server's get_app_tool, wrapping for middleware."""
-        raw_tool = await self.server.get_app_tool(app_name, tool_name)
+        from fastmcp.server.context import Context
+
+        async with Context(fastmcp=self.server):
+            raw_tool = await self.server.get_app_tool(app_name, tool_name)
         if raw_tool is None:
             return None
         wrapped = FastMCPProviderTool.wrap(self.server, raw_tool)
@@ -472,7 +480,10 @@ class FastMCPProvider(Provider):
         resolves the same tool again rather than whatever its listed name
         reaches.
         """
-        raw_tool = await self.server.get_tool_by_hash(tool_hash, tool_name)
+        from fastmcp.server.context import Context
+
+        async with Context(fastmcp=self.server):
+            raw_tool = await self.server.get_tool_by_hash(tool_hash, tool_name)
         if raw_tool is None:
             return None
         wrapped = FastMCPProviderTool.wrap(self.server, raw_tool)
@@ -502,7 +513,10 @@ class FastMCPProvider(Provider):
         exact version matching and range filtering. Uses get_resource to ensure
         the nested server's transforms are applied.
         """
-        raw_resource = await self.server.get_resource(uri, version)
+        from fastmcp.server.context import Context
+
+        async with Context(fastmcp=self.server):
+            raw_resource = await self.server.get_resource(uri, version)
         if raw_resource is None:
             return None
         return FastMCPProviderResource.wrap(self.server, raw_resource)
@@ -532,7 +546,10 @@ class FastMCPProvider(Provider):
         exact version matching and range filtering. Uses get_resource_template
         to ensure the nested server's transforms are applied.
         """
-        raw_template = await self.server.get_resource_template(uri, version)
+        from fastmcp.server.context import Context
+
+        async with Context(fastmcp=self.server):
+            raw_template = await self.server.get_resource_template(uri, version)
         if raw_template is None:
             return None
         return FastMCPProviderResourceTemplate.wrap(self.server, raw_template)
@@ -560,7 +577,10 @@ class FastMCPProvider(Provider):
         exact version matching and range filtering. Uses get_prompt to ensure
         the nested server's transforms are applied.
         """
-        raw_prompt = await self.server.get_prompt(name, version)
+        from fastmcp.server.context import Context
+
+        async with Context(fastmcp=self.server):
+            raw_prompt = await self.server.get_prompt(name, version)
         if raw_prompt is None:
             return None
         return FastMCPProviderPrompt.wrap(self.server, raw_prompt)
@@ -591,7 +611,7 @@ class FastMCPProvider(Provider):
     # -------------------------------------------------------------------------
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         """Start the mounted server's lifespan.
 
         Sets ``_lifespan_root_active=True`` to signal to the wrapped server's

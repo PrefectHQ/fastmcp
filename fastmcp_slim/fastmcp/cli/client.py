@@ -208,7 +208,9 @@ async def _terminal_elicitation_handler(
     """
     from mcp_types import ElicitRequestFormParams
 
-    console.print(f"\n[bold yellow]Server asks:[/bold yellow] {message}")
+    console.print(
+        f"\n[bold yellow]Server asks:[/bold yellow] {_sanitize_untrusted_text(message)}"
+    )
 
     if not isinstance(params, ElicitRequestFormParams):
         answer = console.input(
@@ -236,9 +238,12 @@ async def _terminal_elicitation_handler(
 
     result: dict[str, Any] = {}
     for field_name, field_schema in properties.items():
-        type_hint = field_schema.get("type", "string")
+        type_hint = _sanitize_untrusted_text(str(field_schema.get("type", "string")))
         req_marker = " [red]*[/red]" if field_name in required else ""
-        prompt_text = f"  [cyan]{field_name}[/cyan] ({type_hint}){req_marker}: "
+        prompt_text = (
+            f"  [cyan]{_sanitize_untrusted_text(field_name)}[/cyan] "
+            f"({type_hint}){req_marker}: "
+        )
 
         raw = console.input(prompt_text)
         if raw.strip().lower() == "decline":

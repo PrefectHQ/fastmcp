@@ -1,11 +1,12 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import patch
 
 import anyio
 import pytest
+from mcp import MCPError
 from pydantic import ConfigDict
 
 from fastmcp import Client, ClientGroup, Context, FastMCP
@@ -216,7 +217,7 @@ async def test_group_keeps_one_connection_per_server():
     lifecycles = {"entered": 0, "exited": 0}
 
     @asynccontextmanager
-    async def lifespan(_server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+    async def lifespan(_server: FastMCP) -> AsyncGenerator[dict[str, Any], None]:
         lifecycles["entered"] += 1
         try:
             yield {}
@@ -449,3 +450,28 @@ async def test_exit_under_cancelled_scope_disconnects_members():
             await anyio.sleep(0.01)
     assert group._nesting_counter == 0
     assert group._exit_stack is None
+
+
+@pytest.mark.parametrize("mode", ["legacy", "auto"])
+@pytest.mark.parametrize("timeout", [None, 0, 500])
+async def test_from_config_applies_entry_timeout(
+    mode: str, timeout: int | None
+) -> None:
+    server = FastMCP("Timeout")
+
+    @server.tool
+    async def slow() -> str:
+        await asyncio.sleep(0.7)
+        return "completed"
+
+    group = ClientGroup.from_config(
+        MCPConfig(mcpServers={"backend": InMemoryServer(mcp=server, timeout=timeout)}),
+        default_mode=mode,
+    )
+    async with group:
+        await group.list_tools()
+        if timeout:
+            with pytest.raises(MCPError, match="timed out"):
+                await group.call_tool("backend_slow")
+        else:
+            assert (await group.call_tool("backend_slow")).data == "completed"

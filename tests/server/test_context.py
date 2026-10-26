@@ -1,7 +1,10 @@
+import logging
+from collections.abc import Iterator
 from unittest.mock import MagicMock
 
 import pytest
 
+from fastmcp import Client
 from fastmcp.server.context import (
     Context,
     reset_transport,
@@ -550,3 +553,63 @@ class TestContextLogExtra:
 
         assert result.data == "ok"
         assert received == [{"msg": "hello", "extra": {"request_id": "r-1"}}]
+
+
+class TestContextToClientLogger:
+    @pytest.fixture
+    def to_client_logger(self) -> Iterator[logging.Logger]:
+        logger = logging.getLogger("fastmcp.server.context.to_client")
+        yield logger
+        logger.setLevel(logging.NOTSET)
+
+    @staticmethod
+    async def call_log_tool(method: str) -> list[str]:
+        """Call a tool that logs "hello" with `ctx.<method>`.
+
+        Returns the levels of the log messages the client received.
+        """
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        async def emit(ctx: Context) -> str:
+            await getattr(ctx, method)("hello")
+            return "ok"
+
+        received: list[str] = []
+
+        async def log_handler(message):
+            received.append(message.level)
+
+        async with Client(mcp, log_handler=log_handler) as client:
+            await client.call_tool("emit", {})
+        return received
+
+    @pytest.mark.parametrize("method", ["debug", "info", "warning", "error"])
+    async def test_server_side_copy_is_not_logged_at_info_level(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        to_client_logger: logging.Logger,
+        method: str,
+    ):
+        to_client_logger.setLevel(logging.INFO)
+
+        assert await self.call_log_tool(method) == [method]
+
+        assert [r for r in caplog.records if r.name == to_client_logger.name] == []
+
+    @pytest.mark.parametrize("method", ["debug", "info", "warning", "error"])
+    async def test_server_side_copy_is_logged_at_debug_level_when_enabled(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        to_client_logger: logging.Logger,
+        method: str,
+    ):
+        to_client_logger.setLevel(logging.DEBUG)
+
+        assert await self.call_log_tool(method) == [method]
+
+        assert [
+            (r.levelno, r.levelname, r.getMessage())
+            for r in caplog.records
+            if r.name == to_client_logger.name
+        ] == [(logging.DEBUG, "DEBUG", f"Sending {method.upper()} to client: hello")]
