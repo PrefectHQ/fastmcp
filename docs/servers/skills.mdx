@@ -226,6 +226,10 @@ A skill doesn't have to live in a folder. `Skill` holds a skill's files in memor
 from fastmcp import FastMCP
 from fastmcp.skills.provider import SkillCatalogProvider
 from fastmcp.skills import Skill
+<<<<<<< HEAD
+=======
+from fastmcp.skills.extension import SkillsExtension
+>>>>>>> origin/main
 
 release_notes = Skill(
     name="release-notes",
@@ -239,6 +243,10 @@ review = Skill.from_package("my_package", "skills/review")
 mcp = FastMCP("Skills")
 skills = SkillCatalogProvider([release_notes, deploy, review])
 mcp.add_provider(skills)
+<<<<<<< HEAD
+=======
+mcp.add_extension(SkillsExtension(providers=[skills]))
+>>>>>>> origin/main
 ```
 
 The constructor writes `SKILL.md` from `name`, `description`, `instructions`, and any extra `frontmatter`. `Skill.from_directory()` and `Skill.from_package()` read a folder once and keep its exact bytes, so later edits to the folder don't change the served skill. Every `Skill` is validated when you create it: frontmatter follows the same strict rules as discovery mode, and a folder's name must match the `name` in its `SKILL.md`.
@@ -380,7 +388,11 @@ To limit discovery to specific providers instead, register the extension yoursel
 
 ## Current limits
 
+<<<<<<< HEAD
 Skills discovery serves skills from `SkillsDirectoryProvider` and `SkillCatalogProvider` instances registered on the server you run or on servers mounted into it.
+=======
+Skills discovery currently serves skills from `SkillsDirectoryProvider` and `SkillCatalogProvider` instances registered directly on the server you run.
+>>>>>>> origin/main
 
 - A skill provider added with a namespace or other transforms is left out of `skills/list`. To namespace skills, mount a server that holds the provider. A server with server-level transforms lists no skills.
 - A proxy in front of the server forwards the skill files as resources, but not `skills/list` or `skills/get`.
