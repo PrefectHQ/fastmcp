@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import mcp_types
 import pytest
 
+from fastmcp import Client, FastMCP
 from fastmcp.cli.generate import generate_cli_script
 
 
@@ -58,3 +59,32 @@ async def test_complex_parameter_preserves_parsed_suffix_parameter(
             ),
         },
     )
+
+
+async def test_parameter_named_json_does_not_break_json_arguments() -> None:
+    server = FastMCP("Requests")
+    received: list[tuple[dict[str, int], dict[str, str]]] = []
+
+    @server.tool
+    def post(json: dict[str, int], headers: dict[str, str]) -> None:
+        received.append((json, headers))
+
+    async with Client(server) as client:
+        tools = await client.list_tools()
+    script = generate_cli_script(
+        server_name="requests",
+        server_spec="requests",
+        transport_code=repr("http://unused/mcp"),
+        extra_imports=set(),
+        tools=tools,
+    )
+    namespace: dict[str, Any] = {"__name__": "generated_cli"}
+    exec(compile(script, "<generated>", "exec"), namespace)
+    namespace["CLIENT_SPEC"] = server
+
+    await namespace["app"].run_async(
+        ["call-tool", "post", "--json", '{"a": 1}', "--headers", '{"b": "2"}'],
+        result_action="return_value",
+    )
+
+    assert received == [({"a": 1}, {"b": "2"})]

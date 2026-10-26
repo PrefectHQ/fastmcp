@@ -224,6 +224,10 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
         help_text = prop_schema.get("description", "")
         is_required = prop_name in required
         safe_name = _to_python_identifier(prop_name)
+        if safe_name in {"_call_tool", "isinstance", "json", "str"}:
+            # The command body refers to these names, so a parameter must not
+            # shadow them. Cyclopts drops the trailing underscore from the flag.
+            safe_name = f"{safe_name}_"
 
         # Check for name collisions after sanitization
         if safe_name in seen_names:
