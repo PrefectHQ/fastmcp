@@ -14,7 +14,7 @@ import yaml
 from mcp.shared.path_security import safe_join
 from yaml.nodes import MappingNode
 
-from fastmcp.skills.models import Skill, SkillFrontmatter, SkillResource
+from fastmcp.skills.models import MCPSkill, SkillFrontmatter, SkillResource
 
 # SEP-2640 per-skill limits; servers should not serve skills that exceed them.
 MAX_SKILL_RESOURCES = 512
@@ -90,7 +90,7 @@ def scan_files(root: Path) -> list[Path]:
 
 @dataclass(frozen=True)
 class Snapshot:
-    entry: Skill
+    entry: MCPSkill
     files: tuple[tuple[str, Path], ...]
 
 
@@ -125,7 +125,7 @@ def snapshot(root: Path, skill_path: str) -> Snapshot:
     if sum(record.size for record in records) > MAX_SKILL_BYTES:
         raise ValueError(f"skill is larger than {MAX_SKILL_BYTES} bytes")
     assert frontmatter is not None
-    entry = Skill(
+    entry = MCPSkill(
         uri=f"skill://{quote(skill_path, safe='/')}/SKILL.md",
         frontmatter=frontmatter,
         resources=records,

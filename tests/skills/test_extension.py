@@ -20,7 +20,7 @@ from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.server.providers import Provider
 from fastmcp.server.transforms import Namespace
-from fastmcp.skills import Skill, SkillsClientExtension
+from fastmcp.skills import MCPSkill, SkillsClientExtension
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
 from fastmcp.skills.extension import SkillsExtension
 from fastmcp.skills.models import (
@@ -36,9 +36,9 @@ SKILL_CONTENT = "# Review\n"
 DIGEST = f"sha256:{hashlib.sha256(SKILL_CONTENT.encode()).hexdigest()}"
 
 
-def make_skill(name: str) -> Skill:
+def make_skill(name: str) -> MCPSkill:
     uri = f"skill://{name}/SKILL.md"
-    return Skill.model_validate(
+    return MCPSkill.model_validate(
         {
             "uri": uri,
             "frontmatter": {"name": name, "description": f"Use {name}"},
@@ -53,8 +53,8 @@ class MemorySkillProvider(Provider):
     def __init__(
         self,
         *,
-        listed: Sequence[Skill],
-        addressable: Sequence[Skill] | None = None,
+        listed: Sequence[MCPSkill],
+        addressable: Sequence[MCPSkill] | None = None,
     ) -> None:
         super().__init__()
         self.listed = list(listed)
@@ -75,13 +75,13 @@ class MemorySkillProvider(Provider):
 
     async def _list_skill_entries(
         self, context: ServerRequestContext[Any, Any]
-    ) -> Sequence[Skill]:
+    ) -> Sequence[MCPSkill]:
         self.contexts.append(context)
         return self.listed
 
     async def _get_skill_entry(
         self, uri: str, context: ServerRequestContext[Any, Any]
-    ) -> Skill | None:
+    ) -> MCPSkill | None:
         self.contexts.append(context)
         return self.addressable.get(uri)
 

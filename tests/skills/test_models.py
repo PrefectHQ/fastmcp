@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from fastmcp.skills.models import (
     GetSkillResult,
     ListSkillsResult,
-    Skill,
+    MCPSkill,
     SkillFrontmatter,
     SkillResource,
 )
@@ -16,7 +16,7 @@ from fastmcp.skills.models import (
 DIGEST = f"sha256:{'a' * 64}"
 
 
-def make_skill(**overrides: object) -> Skill:
+def make_skill(**overrides: object) -> MCPSkill:
     values: dict[str, object] = {
         "uri": "skill://acme/review/SKILL.md",
         "frontmatter": {
@@ -34,7 +34,7 @@ def make_skill(**overrides: object) -> Skill:
         ],
     }
     values.update(overrides)
-    return Skill.model_validate(values)
+    return MCPSkill.model_validate(values)
 
 
 def test_frontmatter_preserves_unknown_json_fields() -> None:

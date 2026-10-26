@@ -68,7 +68,8 @@ class SkillsExtension(ServerExtension):
                 )
             if not isinstance(provider, _SkillSource):
                 raise TypeError(
-                    f"{type(provider).__name__} is not a SkillsExtension source"
+                    f"{type(provider).__name__} is not a SkillsExtension source; "
+                    "use SkillCatalogProvider to publish Skill objects"
                 )
 
             provider._validate_skill_source()

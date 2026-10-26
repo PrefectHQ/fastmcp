@@ -17,7 +17,7 @@ from fastmcp.skills.models import (
     ListSkillsParams,
     ListSkillsRequest,
     ListSkillsResult,
-    Skill,
+    MCPSkill,
 )
 from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.logging import get_logger
@@ -105,7 +105,7 @@ class ClientSkillsMixin:
         max_pages: int = AUTO_PAGINATION_MAX_PAGES,
         *,
         cache_mode: CacheMode = "use",
-    ) -> list[Skill]:
+    ) -> list[MCPSkill]:
         """Retrieve every page returned by `skills/list`.
 
         Args:
@@ -119,7 +119,7 @@ class ClientSkillsMixin:
             RuntimeError: If Skills was not negotiated or the page limit is reached.
             MCPError: If the server rejects a request.
         """
-        skills: list[Skill] = []
+        skills: list[MCPSkill] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
@@ -196,7 +196,7 @@ class ClientSkillsMixin:
         uri: str,
         *,
         cache_mode: CacheMode = "use",
-    ) -> Skill:
+    ) -> MCPSkill:
         """Retrieve one skill entry by its `SKILL.md` resource URI.
 
         Args:

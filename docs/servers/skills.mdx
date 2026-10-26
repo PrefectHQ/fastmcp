@@ -176,7 +176,7 @@ skill://server-authoring/SKILL.md - Build, extend, and review MCP servers in thi
    skill://server-authoring/references/testing.md 88 sha256:a4ea8ebc...
 ```
 
-Listing returns metadata only. The agent reads the files it needs through `resources/read`, and should check each file against its manifest record before using it:
+`client.list_skills()` and `client.get_skill()` return `MCPSkill` objects: the wire record for a skill, not the skill itself. Listing returns metadata only. The agent reads the files it needs through `resources/read`, and should check each file against its manifest record before using it:
 
 ```python
 import asyncio
@@ -218,6 +218,55 @@ asyncio.run(main())
 A mismatch means the file changed between discovery and the read. Refresh the entry with `client.get_skill(uri)` and read again. `client.list_skills()` follows every page of `skills/list`; use `list_skills_mcp()` to fetch one page at a time.
 
 The client methods only transport entries. Deciding when to load a skill, asking a user to approve it, and running anything it describes are the host's job.
+
+## Define skills in code
+
+A skill doesn't have to live in a folder. `Skill` holds a skill's files in memory, and `SkillCatalogProvider` serves any list of them, so you can write skills in Python, ship them inside a package, or build them from a database. A folder is just one way to create a `Skill`.
+
+<VersionBadge version="4.2.0" />
+
+```python
+from fastmcp import FastMCP
+from fastmcp.skills.provider import SkillCatalogProvider
+from fastmcp.skills import Skill
+from fastmcp.skills.extension import SkillsExtension
+
+release_notes = Skill(
+    name="release-notes",
+    description="Write release notes from merged pull requests.",
+    instructions="# Release notes\n\nGroup changes by theme. Follow template.md.\n",
+    files={"template.md": "## Highlights\n\n## Fixes\n"},
+)
+deploy = Skill.from_directory("skills/deploy")
+review = Skill.from_package("my_package", "skills/review")
+
+mcp = FastMCP("Skills")
+skills = SkillCatalogProvider([release_notes, deploy, review])
+mcp.add_provider(skills)
+mcp.add_extension(SkillsExtension(providers=[skills]))
+```
+
+The constructor writes `SKILL.md` from `name`, `description`, `instructions`, and any extra `frontmatter`. `Skill.from_directory()` and `Skill.from_package()` read a folder once and keep its exact bytes, so later edits to the folder don't change the served skill. Every `Skill` is validated when you create it: frontmatter follows the same strict rules as discovery mode, and a folder's name must match the `name` in its `SKILL.md`.
+
+`SkillCatalogProvider` serves each skill at `skill://{name}/` both as resources and through Skills discovery, so plain MCP clients, `sync_skills()`, and discovery clients all see the same files. Pass a mapping to choose the path, such as `{"team/review": review}`; the last segment must match the skill's name.
+
+To serve skills that change at runtime, subclass the provider and override `load_skills()`. FastMCP calls it once per MCP request, and every lookup in that request sees the same skills.
+
+```python
+from fastmcp.skills.provider import SkillCatalogProvider
+from fastmcp.skills import Skill
+
+
+# Stands in for your storage: one dict of files per skill.
+SKILL_ROWS = [
+    {"SKILL.md": "---\nname: triage\ndescription: Triage new issues.\n---\n# Triage\n"},
+]
+
+
+class StoredSkills(SkillCatalogProvider):
+    async def load_skills(self) -> list[Skill]:
+        return [Skill.from_files(files) for files in SKILL_ROWS]
+```
 
 ## Configure the provider
 
@@ -280,7 +329,7 @@ mcp = FastMCP("Release Skill")
 mcp.add_provider(SkillProvider(Path("skills") / "server-authoring"))
 ```
 
-`SkillProvider` serves resources only; Skills discovery reads from `SkillsDirectoryProvider`.
+`SkillProvider` serves resources only. For discovery, serve `Skill.from_directory(path)` with `SkillCatalogProvider`.
 
 ### Serve a coding agent's skills folder
 
@@ -326,7 +375,7 @@ Skills discovery respects the same rules as resource reads. A skill is omitted f
 
 ## Current limits
 
-Skills discovery currently serves skills from `SkillsDirectoryProvider` instances registered directly on the server you run.
+Skills discovery currently serves skills from `SkillsDirectoryProvider` and `SkillCatalogProvider` instances registered directly on the server you run.
 
 - `SkillsExtension` raises when the server or the skills provider has transforms, including namespaces, or when the provider is not registered directly on the same server.
 - Skills in a [mounted server](/servers/composition) are served as resources through the parent, but the parent does not list them in `skills/list`.

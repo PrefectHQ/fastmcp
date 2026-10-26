@@ -27,7 +27,7 @@ from fastmcp.server.providers.skills.skill_provider import (
 )
 from fastmcp.skills._resources import is_skill_file
 from fastmcp.skills._snapshot import Snapshot, snapshot
-from fastmcp.skills.models import Skill
+from fastmcp.skills.models import MCPSkill
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec
 
@@ -374,7 +374,7 @@ class SkillsDirectoryProvider(AggregateProvider):
         provider = self._resource_provider(root, name, relative)
         return await provider.get_resource_template(uri, version)
 
-    async def _visible_entry(self, snap: Snapshot) -> Skill | None:
+    async def _visible_entry(self, snap: Snapshot) -> MCPSkill | None:
         server = get_context().fastmcp
         for uri, path in snap.files:
             component: Resource | ResourceTemplate | None = await server.get_resource(
@@ -404,7 +404,7 @@ class SkillsDirectoryProvider(AggregateProvider):
 
     async def _list_skill_entries(
         self, context: ServerRequestContext[Any, Any]
-    ) -> Sequence[Skill]:
+    ) -> Sequence[MCPSkill]:
         entries = []
         for snap in await run_sync(self._snapshots):
             entry = await self._visible_entry(snap)
@@ -414,7 +414,7 @@ class SkillsDirectoryProvider(AggregateProvider):
 
     async def _get_skill_entry(
         self, uri: str, context: ServerRequestContext[Any, Any]
-    ) -> Skill | None:
+    ) -> MCPSkill | None:
         parts = self._uri_parts(uri)
         if parts is None or parts[-1] != "SKILL.md":
             return None
