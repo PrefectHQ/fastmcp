@@ -618,6 +618,23 @@ _SUBSCHEMA_VALUE_KEYS = frozenset(
 _SUBSCHEMA_LIST_KEYS = frozenset({"allOf", "anyOf", "oneOf", "prefixItems"})
 
 
+def _def_name_from_ref(ref: str) -> str | None:
+    """Return the ``$defs`` key a local ``$ref`` points at, if it points into ``$defs``.
+
+    The fragment is a URI, so it may be percent-encoded, and its JSON Pointer
+    tokens escape ``~`` and ``/``. A pointer may also continue below the
+    definition (``#/$defs/Container/properties/value``), which still references
+    ``Container``.
+    """
+    prefix = "#/$defs/"
+    if not ref.startswith(prefix):
+        return None
+    token = unquote(ref[len(prefix) :]).split("/", 1)[0]
+    if not token:
+        return None
+    return token.replace("~1", "/").replace("~0", "~")
+
+
 def _single_pass_optimize(
     schema: dict[str, Any],
     prune_titles: bool = False,
@@ -718,8 +735,10 @@ def _single_pass_optimize(
             # still pins the referenced $def as "used".
             if prune_defs:
                 ref = node.get("$ref")
-                if isinstance(ref, str) and ref.startswith("#/$defs/"):
-                    referenced_def = ref.split("/")[-1]
+                referenced_def = (
+                    _def_name_from_ref(ref) if isinstance(ref, str) else None
+                )
+                if referenced_def is not None:
                     if current_def_name:
                         # We're inside a $def, so this is a def->def reference
                         def_dependencies[referenced_def].append(current_def_name)

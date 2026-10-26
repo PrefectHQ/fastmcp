@@ -496,6 +496,36 @@ class TestCompressSchema:
             node = node["items"]
         assert node == {"$ref": "#/$defs/Leaf"}
 
+    def test_keeps_defs_referenced_through_escaped_or_subpath_pointers(self):
+        """A $ref may percent-encode or JSON-Pointer-escape its target, or point below it.
+
+        Reading only the last path segment drops the definition the pointer
+        actually names, leaving a dangling $ref behind.
+        """
+        schema = {
+            "type": "object",
+            "properties": {
+                "spaced": {"$ref": "#/$defs/Alias%20One"},
+                "slashed": {"$ref": "#/$defs/a~1b"},
+                "tilded": {"$ref": "#/$defs/c~0d"},
+                "subpath": {"$ref": "#/$defs/Container/properties/value"},
+            },
+            "$defs": {
+                "Alias One": {"type": "string"},
+                "a/b": {"type": "integer"},
+                "c~d": {"type": "boolean"},
+                "Container": {
+                    "type": "object",
+                    "properties": {"value": {"type": "number"}},
+                },
+                "Unused": {"type": "null"},
+            },
+        }
+
+        result = compress_schema(schema)
+
+        assert set(result["$defs"]) == {"Alias One", "a/b", "c~d", "Container"}
+
     def test_preserves_refs_by_default(self):
         """Test that compress_schema preserves $refs by default."""
         schema = {
