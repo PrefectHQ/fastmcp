@@ -188,7 +188,8 @@ class Skill:
 
     @property
     def frontmatter(self) -> SkillFrontmatter:
-        return self._frontmatter
+        """A copy of the parsed frontmatter; changing it does not change the skill."""
+        return self._frontmatter.model_copy(deep=True)
 
     @property
     def files(self) -> Mapping[str, bytes]:
@@ -207,7 +208,7 @@ class Skill:
             for relative, content in self._files.items()
         ]
         return MCPSkill(
-            uri=f"{prefix}SKILL.md", frontmatter=self._frontmatter, resources=resources
+            uri=f"{prefix}SKILL.md", frontmatter=self.frontmatter, resources=resources
         )
 
     def __eq__(self, other: object) -> bool:

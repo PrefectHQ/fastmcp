@@ -6,6 +6,7 @@ import json
 from collections.abc import Iterable
 from pathlib import Path
 
+import anyio
 import pytest
 from mcp.shared.exceptions import MCPError
 from mcp_types import BlobResourceContents, TextResourceContents
@@ -111,6 +112,30 @@ async def test_load_skills_is_called_once_per_request():
     async with skills_client(server) as client:
         calls = 0
         assert len(await client.list_skills()) == 2
+        assert calls == 1
+
+
+async def test_concurrent_lookups_share_one_load():
+    calls = 0
+
+    class Slow(SkillCatalogProvider):
+        async def load_skills(self) -> Iterable[Skill]:
+            nonlocal calls
+            calls += 1
+            await anyio.sleep(0.01)
+            return [REVIEW]
+
+    server = FastMCP("Skills", providers=[Slow()])
+
+    @server.tool
+    async def read_two() -> None:
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(server.get_resource, "skill://review/SKILL.md")
+            tg.start_soon(server.get_resource, "skill://review/notes.md")
+
+    async with Client(server) as client:
+        calls = 0
+        await client.call_tool("read_two")
         assert calls == 1
 
 

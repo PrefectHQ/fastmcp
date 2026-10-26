@@ -10,6 +10,7 @@ from contextlib import suppress
 from typing import Any, cast
 from urllib.parse import quote, unquote
 
+import anyio
 from mcp.server.context import ServerRequestContext
 from pydantic import AnyUrl, ConfigDict
 
@@ -110,13 +111,16 @@ class SkillCatalogProvider(Provider, _SkillSource):
         context = None
         with suppress(RuntimeError):
             context = get_context()
+        if context is None:
+            return _normalize(await self.load_skills())
+        # Concurrent lookups in one request wait on the same lock, so
+        # load_skills() runs once and every caller sees the same catalog.
         key = f"_fastmcp_skill_catalog:{id(self)}"
-        if context is not None and key in context._request_state:
+        lock = context._request_state.setdefault(f"{key}:lock", anyio.Lock())
+        async with lock:
+            if key not in context._request_state:
+                context._request_state[key] = _normalize(await self.load_skills())
             return context._request_state[key]
-        catalog = _normalize(await self.load_skills())
-        if context is not None:
-            context._request_state[key] = catalog
-        return catalog
 
     # -------------------------------------------------------------------------
     # Resources

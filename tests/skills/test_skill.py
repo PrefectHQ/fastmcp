@@ -118,6 +118,14 @@ def test_skill_is_immutable():
         skill.files["SKILL.md"] = b""  # ty: ignore[invalid-assignment]
 
 
+def test_frontmatter_changes_do_not_leak_into_the_skill():
+    skill = Skill(name="review", description="Review", instructions="")
+    skill.frontmatter.root["description"] = "changed"
+    skill.to_mcp_skill().frontmatter.root["description"] = "changed"
+    assert skill.description == "Review"
+    assert skill.to_mcp_skill().frontmatter.description == "Review"
+
+
 def test_to_mcp_skill_describes_every_file(tmp_path: Path):
     skill = Skill.from_directory(write_skill(tmp_path))
     entry = skill.to_mcp_skill("team/review")
