@@ -14,9 +14,9 @@ from mcp_types import BlobResourceContents, TextResourceContents
 from fastmcp import Client, FastMCP
 from fastmcp.server.middleware import Middleware
 from fastmcp.server.middleware.authorization import AuthMiddleware
-from fastmcp.skills.provider import SkillCatalogProvider
 from fastmcp.skills import Skill, SkillsClientExtension
 from fastmcp.skills.extension import SkillsExtension
+from fastmcp.skills.provider import SkillCatalogProvider
 from fastmcp.utilities.skills import list_skill_summaries, sync_skills
 
 REVIEW = Skill(
