@@ -37,18 +37,19 @@ def _trace_meta() -> mcp_types.RequestParamsMeta | None:
 class ClientSkillsMixin:
     """Mixin providing SEP-2640 Skills methods for `Client`."""
 
-    def _require_skills_extension(self: Client) -> None:
+    def _skills_unavailable_reason(self: Client) -> str | None:
+        """Why this connection can't send Skills requests, or None if it can."""
         if self.protocol_version is None:
-            raise RuntimeError(
+            return (
                 "Client is not connected. Use the 'async with client:' context "
                 "manager first."
             )
         if self.protocol_version not in MODERN_PROTOCOL_VERSIONS:
-            raise RuntimeError("The Skills extension requires a modern MCP connection")
+            return "The Skills extension requires a modern MCP connection"
 
         client_extensions = self._session_kwargs.get("extensions") or {}
         if SKILLS_EXTENSION_ID not in client_extensions:
-            raise RuntimeError(
+            return (
                 "This client did not opt into the Skills extension; pass "
                 "SkillsClientExtension() in Client(extensions=[...])"
             )
@@ -56,7 +57,13 @@ class ClientSkillsMixin:
         capabilities = self.server_capabilities
         server_extensions = capabilities.extensions if capabilities else None
         if not server_extensions or SKILLS_EXTENSION_ID not in server_extensions:
-            raise RuntimeError("The server does not advertise the Skills extension")
+            return "The server does not advertise the Skills extension"
+        return None
+
+    def _require_skills_extension(self: Client) -> None:
+        reason = self._skills_unavailable_reason()
+        if reason is not None:
+            raise RuntimeError(reason)
 
     async def list_skills_mcp(
         self: Client,
