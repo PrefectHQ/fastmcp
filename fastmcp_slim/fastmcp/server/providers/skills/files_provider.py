@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import yaml
@@ -18,6 +19,7 @@ from fastmcp.skills._snapshot import build_entry, file_uri
 from fastmcp.skills._source import _Catalog, _Lookup, _SkillSource
 from fastmcp.skills.models import Skill
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.versions import VersionSpec
 
 logger = get_logger(__name__)
 
@@ -27,6 +29,12 @@ class _LoadedSkillFile(Resource):
 
     async def read(self) -> ResourceResult:
         return file_content(str(self.uri), self.data)
+
+
+@dataclass(frozen=True, slots=True)
+class _LoadedSkills:
+    skills: Mapping[str, Mapping[str, bytes]]
+    resources: dict[str, _LoadedSkillFile]
 
 
 class SkillFilesProvider(Provider, _SkillSource):
@@ -44,32 +52,56 @@ class SkillFilesProvider(Provider, _SkillSource):
         """Return each skill's files, keyed by skill path and then file path.
 
         For example, `{"deploy": {"SKILL.md": b"...", "checklist.md": b"..."}}`
-        publishes `skill://deploy/SKILL.md`. Called for every list, lookup, and
-        read, so cache the result when loading is expensive.
+        publishes `skill://deploy/SKILL.md`. Called once per MCP request; every
+        lookup and read in that request reuses the result.
         """
 
-    @override
-    async def _list_resources(self) -> Sequence[Resource]:
-        return [
-            _LoadedSkillFile(
+    async def _load(self) -> _LoadedSkills:
+        """Load once per request so every lookup and entry sees the same bytes."""
+        from fastmcp.server.context import _current_context
+
+        context = _current_context.get()
+        key = f"_fastmcp_skill_files:{id(self)}"
+        if context is not None and key in context._request_state:
+            return context._request_state[key]
+        skills = await self.skill_files()
+        resources = {
+            file_uri(skill_path, relative_path): _LoadedSkillFile(
                 uri=file_uri(skill_path, relative_path),
                 name=f"{skill_path}/{relative_path}",
                 mime_type=file_mime_type(relative_path),
                 data=content,
             )
-            for skill_path, files in (await self.skill_files()).items()
+            for skill_path, files in skills.items()
             for relative_path, content in files.items()
-        ]
+        }
+        loaded = _LoadedSkills(skills, resources)
+        if context is not None:
+            context._request_state[key] = loaded
+        return loaded
+
+    @override
+    async def _list_resources(self) -> Sequence[Resource]:
+        return list((await self._load()).resources.values())
+
+    @override
+    async def _get_resource(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> Resource | None:
+        resource = (await self._load()).resources.get(uri)
+        if resource is None or (version and not version.matches(resource.version)):
+            return None
+        return resource
 
     @override
     async def _owns_skill_resource(self, uri: str) -> bool:
-        return await self._get_resource(uri) is not None
+        return uri in (await self._load()).resources
 
     @override
     async def _list_skill_entries(
         self, context: ServerRequestContext[Any, Any]
     ) -> _Catalog:
-        skills = await self.skill_files()
+        skills = (await self._load()).skills
         entries: list[Skill] = []
         for skill_path, files in skills.items():
             entry = await self._served_entry(skill_path, files)
@@ -81,7 +113,7 @@ class SkillFilesProvider(Provider, _SkillSource):
     async def _get_skill_entry(
         self, uri: str, context: ServerRequestContext[Any, Any]
     ) -> _Lookup:
-        for skill_path, files in (await self.skill_files()).items():
+        for skill_path, files in (await self._load()).skills.items():
             if file_uri(skill_path, "SKILL.md") == uri:
                 entry = await self._served_entry(skill_path, files)
                 return _Lookup(matches=1, skill=entry)

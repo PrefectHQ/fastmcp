@@ -19,8 +19,10 @@ class StoredSkills(SkillFilesProvider):
     def __init__(self, files: Mapping[str, Mapping[str, bytes]]) -> None:
         super().__init__()
         self.files = files
+        self.loads = 0
 
     async def skill_files(self) -> Mapping[str, Mapping[str, bytes]]:
+        self.loads += 1
         return self.files
 
 
@@ -71,6 +73,23 @@ async def test_get_skill_returns_the_listed_entry() -> None:
         fetched = await client.get_skill("skill://deploy/SKILL.md")
 
     assert fetched == listed
+
+
+async def test_listing_loads_the_files_once() -> None:
+    provider = StoredSkills(
+        {
+            name: {
+                "SKILL.md": f"---\nname: {name}\ndescription: Use {name}.\n---\n".encode(),
+                "logo.png": LOGO,
+                "guide.md": b"guide",
+            }
+            for name in ("build", "deploy", "review", "test", "write")
+        }
+    )
+    async with skills_client(skills_server(provider)) as client:
+        loads_before_listing = provider.loads
+        assert len(await client.list_skills()) == 5
+        assert provider.loads == loads_before_listing + 1
 
 
 async def test_nested_skill_path_is_part_of_the_uri() -> None:

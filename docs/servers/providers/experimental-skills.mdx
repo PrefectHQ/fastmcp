@@ -75,7 +75,7 @@ mcp.add_provider(stored)
 mcp.add_extension(SkillsExtension(providers=[stored]))
 ```
 
-The outer keys are skill paths and the inner keys are paths within the skill, so `{"team/deploy": {"SKILL.md": ...}}` publishes `skill://team/deploy/SKILL.md`. `SkillsExtension` combines these skills with every other registered source and with [proxied backends](/servers/providers/proxy#skills). FastMCP calls `skill_files()` for every list, lookup, and read, so cache the result when loading is expensive, and use `get_context()` when the skills depend on the caller.
+The outer keys are skill paths and the inner keys are paths within the skill, so `{"team/deploy": {"SKILL.md": ...}}` publishes `skill://team/deploy/SKILL.md`. `SkillsExtension` combines these skills with every other registered source and with [proxied backends](/servers/providers/proxy#skills). FastMCP calls `skill_files()` once per MCP request and answers every list, lookup, and read in that request from the same bytes, so a catalog loaded from a database costs one query per request. Use `get_context()` when the skills depend on the caller.
 
 ## Discover and read
 
