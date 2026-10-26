@@ -2,10 +2,11 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
-from mcp_types import EmbeddedResource, TextResourceContents
+from mcp_types import INVALID_PARAMS, EmbeddedResource, TextResourceContents
 from pydantic import Field
 
 from fastmcp import Client, FastMCP
+from fastmcp.exceptions import MCPError, ValidationError
 from fastmcp.prompts.base import (
     Message,
     Prompt,
@@ -61,7 +62,7 @@ class TestRenderPrompt:
             return f"Hello, {name}! You're {age} years old."
 
         prompt = Prompt.from_function(fn)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValidationError):
             await prompt.render(arguments=dict(age=40))
 
     async def test_fn_with_positional_only_parameters_not_allowed(self):
@@ -960,3 +961,33 @@ class TestPromptCallableAndConcurrency:
             prompt.render(),
         )
         assert all(r.messages == [Message("done")] for r in results)
+
+
+class TestMissingPromptArguments:
+    async def test_missing_required_argument_is_invalid_params(self):
+        mcp = FastMCP("test")
+
+        @mcp.prompt
+        def summarize(topic: str) -> str:
+            return f"Summarize {topic}"
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError) as exc_info:
+                await client.get_prompt("summarize", {})
+
+        assert exc_info.value.error.code == INVALID_PARAMS
+        assert "topic" in exc_info.value.error.message
+
+    async def test_missing_argument_message_survives_error_masking(self):
+        mcp = FastMCP("test", mask_error_details=True)
+
+        @mcp.prompt
+        def summarize(topic: str) -> str:
+            return f"Summarize {topic}"
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError) as exc_info:
+                await client.get_prompt("summarize", {})
+
+        assert exc_info.value.error.code == INVALID_PARAMS
+        assert "topic" in exc_info.value.error.message

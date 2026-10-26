@@ -22,7 +22,7 @@ import pydantic_core
 from mcp_types import Icon
 from pydantic.json_schema import SkipJsonSchema
 
-from fastmcp.exceptions import FastMCPError, PromptError
+from fastmcp.exceptions import FastMCPError, PromptError, ValidationError
 from fastmcp.prompts.base import Prompt, PromptArgument, PromptResult
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
@@ -329,7 +329,7 @@ class FunctionPrompt(Prompt):
             provided = set(arguments or {})
             missing = required - provided
             if missing:
-                raise ValueError(f"Missing required arguments: {missing}")
+                raise ValidationError(f"Missing required arguments: {missing}")
 
         try:
             # Prepare arguments
