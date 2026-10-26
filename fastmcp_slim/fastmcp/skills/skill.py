@@ -107,8 +107,12 @@ class Skill:
             parts = path.split("/")
             for index in range(1, len(parts)):
                 if "/".join(parts[:index]) in normalized:
-                    raise ValueError(f"Skill file is also used as a directory: {path!r}")
-        object.__setattr__(self, "_frontmatter", parse_frontmatter(normalized["SKILL.md"]))
+                    raise ValueError(
+                        f"Skill file is also used as a directory: {path!r}"
+                    )
+        object.__setattr__(
+            self, "_frontmatter", parse_frontmatter(normalized["SKILL.md"])
+        )
         object.__setattr__(
             self, "_files", MappingProxyType(dict(sorted(normalized.items())))
         )
