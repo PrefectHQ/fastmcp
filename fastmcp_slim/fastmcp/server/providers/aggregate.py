@@ -26,6 +26,7 @@ from contextlib import AsyncExitStack, ExitStack, asynccontextmanager, contextma
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeVar
 
+import fastmcp
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.transforms import Namespace
@@ -66,7 +67,8 @@ class AggregateProvider(Provider):
 
     Errors from individual providers are logged and skipped by default. Set
     ``provider_error_strategy="raise"`` to fail the aggregate operation when
-    any provider fails.
+    any provider fails. The ``mounted_components_raise_on_load_error`` setting
+    does the same for every aggregate.
 
     Example:
         ```python
@@ -181,6 +183,16 @@ class AggregateProvider(Provider):
                     "Finish composing providers before serving."
                 )
 
+    def _raises_on_provider_error(self) -> bool:
+        """Whether a failing provider fails the aggregate operation.
+
+        The global setting is read on every call so it can be toggled at runtime.
+        """
+        return (
+            self.provider_error_strategy == "raise"
+            or fastmcp.settings.mounted_components_raise_on_load_error
+        )
+
     def _collect_list_results(
         self, results: list[Sequence[T] | BaseException], operation: str
     ) -> list[T]:
@@ -199,7 +211,7 @@ class AggregateProvider(Provider):
         seen_keys: dict[str, int] = {}
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
-                if self.provider_error_strategy == "raise":
+                if self._raises_on_provider_error():
                     raise result
                 logger.warning(
                     f"Error during {operation} from provider "
@@ -233,7 +245,7 @@ class AggregateProvider(Provider):
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 if not isinstance(result, NotFoundError):
-                    if self.provider_error_strategy == "raise":
+                    if self._raises_on_provider_error():
                         raise result
                     logger.warning(
                         f"Error during {operation} from provider "
@@ -279,7 +291,7 @@ class AggregateProvider(Provider):
         )
         for r in results:
             if isinstance(r, BaseException):
-                if self.provider_error_strategy == "raise":
+                if self._raises_on_provider_error():
                     raise r
                 continue
             if r is not None:
@@ -310,7 +322,7 @@ class AggregateProvider(Provider):
         matches: list[Tool] = []
         for r in results:
             if isinstance(r, BaseException):
-                if isinstance(r, ToolError) or self.provider_error_strategy == "raise":
+                if isinstance(r, ToolError) or self._raises_on_provider_error():
                     raise r
                 continue
             if r is not None:
