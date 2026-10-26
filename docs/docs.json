@@ -138,8 +138,7 @@
                       "servers/providers/local",
                       "servers/providers/filesystem",
                       "servers/providers/proxy",
-                      "servers/providers/skills",
-                      "servers/providers/experimental-skills",
+                      "servers/skills",
                       "servers/composition",
                       "servers/providers/custom"
                     ]
@@ -428,6 +427,14 @@
     ]
   },
   "redirects": [
+    {
+      "destination": "/servers/skills",
+      "source": "/servers/providers/skills"
+    },
+    {
+      "destination": "/servers/skills#discover-skills-with-the-skills-extension",
+      "source": "/servers/providers/experimental-skills"
+    },
     {
       "destination": "/getting-started/whats-new",
       "source": "/development/v4-notes/index"

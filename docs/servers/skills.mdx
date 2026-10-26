@@ -1,0 +1,336 @@
+---
+title: Skills over MCP
+sidebarTitle: Skills
+description: Serve a folder of agent skills from a FastMCP server so every connected agent reads the same maintained copy.
+icon: wand-magic-sparkles
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.0.0" />
+
+An agent skill is a folder with a `SKILL.md` file of instructions and any supporting files those instructions refer to. Agents usually load skills from a local folder, so every machine needs its own copy and every copy drifts. Serving skills from an MCP server keeps one maintained copy in your repository: agents that connect read the current version, and an update ships when you deploy the server.
+
+FastMCP serves a skills folder in two ways at once:
+
+- **As resources.** Each skill's files are ordinary MCP resources under `skill://` URIs. Every MCP client can list and read them today.
+- **Through Skills discovery.** Since FastMCP 4.1.2, the [MCP Skills extension](https://modelcontextprotocol.io/seps/2640-skills-extension) adds `skills/list` and `skills/get`, which return each skill's frontmatter and a manifest of its files with sizes and SHA-256 digests. A host that supports the extension can offer your skills to its agent without a separate install step. This support is experimental in FastMCP, and few hosts read it yet.
+
+The rest of this page builds one server that does both, then shows what each kind of client sees.
+
+## Lay out the skills folder
+
+Keep skills in a folder in the repository that owns them, one folder per skill. The folder name is the skill's name and becomes its URI.
+
+```text
+skills/
+├── server-authoring/
+│   ├── SKILL.md
+│   └── references/
+│       └── testing.md
+└── client-cli/
+    └── SKILL.md
+```
+
+Start each `SKILL.md` with [Agent Skills](https://agentskills.io/specification) frontmatter. Skills discovery requires a `name` equal to the folder name, made of lowercase letters, digits, and single hyphens, and a `description` of up to 1,024 characters. The description is what an agent reads to decide whether the skill applies, so say when to use it.
+
+```markdown
+---
+name: server-authoring
+description: Build, extend, and review MCP servers in this repository.
+---
+
+# Server authoring
+
+Before changing a tool, read `references/testing.md` and test through an in-memory client.
+```
+
+Refer to supporting files by their path relative to the skill folder, as `references/testing.md` does above. Clients resolve that path against the skill's URI.
+
+## Serve the folder
+
+`SkillsDirectoryProvider` publishes every skill folder under a root directory. Setting `experimental_skills=True` on it, and registering `SkillsExtension` with the same provider instance, also turns on Skills discovery.
+
+```python
+from pathlib import Path
+
+from fastmcp import FastMCP
+from fastmcp.server.providers.skills import SkillsDirectoryProvider
+from fastmcp.skills.extension import SkillsExtension
+
+SKILLS_DIR = Path(__file__).parent / "skills"
+
+mcp = FastMCP("Team Skills")
+skills = SkillsDirectoryProvider(SKILLS_DIR, experimental_skills=True)
+mcp.add_provider(skills)
+mcp.add_extension(SkillsExtension(providers=[skills]))
+
+if __name__ == "__main__":
+    mcp.run(transport="http", port=8000)
+```
+
+Save this as `server.py` next to the `skills/` folder and run `python server.py`. The server can carry tools, resources, and prompts as usual; skills are one more provider.
+
+To serve skills as resources only, leave out `experimental_skills=True` and the `SkillsExtension` line. To turn discovery off again later, remove both.
+
+## Read skills as resources
+
+Any MCP client sees each skill as two listed resources: its `SKILL.md` and a synthetic `_manifest`.
+
+```python
+import asyncio
+
+from fastmcp import Client
+
+
+async def main() -> None:
+    async with Client("http://localhost:8000/mcp") as client:
+        for resource in await client.list_resources():
+            print(resource.uri)
+
+        result = await client.read_resource("skill://server-authoring/SKILL.md")
+        print(result[0].text)
+
+
+asyncio.run(main())
+```
+
+```text
+skill://client-cli/SKILL.md
+skill://client-cli/_manifest
+skill://server-authoring/SKILL.md
+skill://server-authoring/_manifest
+```
+
+Supporting files are not listed one by one. Each skill exposes a resource template, `skill://server-authoring/{path*}`, and the manifest names the files that template serves:
+
+```json
+{
+  "skill": "server-authoring",
+  "files": [
+    {"path": "SKILL.md", "size": 214, "hash": "sha256:751c708f..."},
+    {"path": "references/testing.md", "size": 88, "hash": "sha256:a4ea8ebc..."}
+  ]
+}
+```
+
+Read a supporting file by joining its path onto the skill's URI, such as `skill://server-authoring/references/testing.md`. To list every file as its own resource instead, see [supporting files](#list-supporting-files-as-resources).
+
+### Install skills into a local agent
+
+Agents that only read skills from disk can still use a served copy. `sync_skills()` downloads every skill on the server into a local skills folder, and `download_skill()` downloads one. Both skip skills that already exist unless you pass `overwrite=True`.
+
+```python
+import asyncio
+from pathlib import Path
+
+from fastmcp import Client
+from fastmcp.utilities.skills import sync_skills
+
+AGENT_SKILLS_DIR = Path.home() / ".claude" / "skills"
+
+
+async def main() -> None:
+    async with Client("http://localhost:8000/mcp") as client:
+        installed = await sync_skills(client, AGENT_SKILLS_DIR, overwrite=True)
+        for path in installed:
+            print(path)
+
+
+asyncio.run(main())
+```
+
+`fastmcp.utilities.skills` also provides `list_skills()`, which lists skill names from the resource listing, and `get_skill_manifest()`, which reads one manifest. These helpers work with any server that publishes skills as resources, with or without discovery.
+
+## Discover skills with the Skills extension
+
+A client that opts into the extension can ask the server for its skills directly. Discovery requires a connection on a modern MCP protocol version, which `Client` negotiates by default.
+
+```python
+import asyncio
+
+from fastmcp import Client
+from fastmcp.skills import SkillsClientExtension
+
+
+async def main() -> None:
+    client = Client(
+        "http://localhost:8000/mcp",
+        extensions=[SkillsClientExtension()],
+    )
+    async with client:
+        for skill in await client.list_skills():
+            print(skill.uri, "-", skill.frontmatter.description)
+            for file in skill.resources:
+                print("  ", file.uri, file.size, file.digest)
+
+
+asyncio.run(main())
+```
+
+```text
+skill://client-cli/SKILL.md - Discover and call tools on an existing MCP server from the command line.
+   skill://client-cli/SKILL.md 179 sha256:6208dfcc...
+skill://server-authoring/SKILL.md - Build, extend, and review MCP servers in this repository.
+   skill://server-authoring/SKILL.md 214 sha256:751c708f...
+   skill://server-authoring/references/testing.md 88 sha256:a4ea8ebc...
+```
+
+Listing returns metadata only. The agent reads the files it needs through `resources/read`, and should check each file against its manifest record before using it:
+
+```python
+import asyncio
+import base64
+import hashlib
+
+from fastmcp import Client
+from fastmcp.skills import SkillsClientExtension
+
+
+async def read_verified(client: Client, uri: str, size: int, digest: str) -> bytes:
+    contents = await client.read_resource(uri)
+    content = contents[0]
+    if hasattr(content, "blob"):
+        data = base64.b64decode(content.blob)
+    else:
+        data = content.text.encode()
+    actual = "sha256:" + hashlib.sha256(data).hexdigest()
+    if len(data) != size or actual != digest:
+        raise ValueError(f"{uri} changed since discovery; refresh with get_skill()")
+    return data
+
+
+async def main() -> None:
+    client = Client(
+        "http://localhost:8000/mcp",
+        extensions=[SkillsClientExtension()],
+    )
+    async with client:
+        skill = await client.get_skill("skill://server-authoring/SKILL.md")
+        for file in skill.resources:
+            data = await read_verified(client, file.uri, file.size, file.digest)
+            print(file.uri, len(data), "bytes verified")
+
+
+asyncio.run(main())
+```
+
+A mismatch means the file changed between discovery and the read. Refresh the entry with `client.get_skill(uri)` and read again. `client.list_skills()` follows every page of `skills/list`; use `list_skills_mcp()` to fetch one page at a time.
+
+The client methods only transport entries. Deciding when to load a skill, asking a user to approve it, and running anything it describes are the host's job.
+
+## Configure the provider
+
+### Search several roots
+
+Pass a list to serve more than one folder. When the same skill name appears in more than one root, the first root wins in resource mode. In discovery mode, duplicate skill paths are omitted from `skills/list`.
+
+```python
+from pathlib import Path
+
+from fastmcp import FastMCP
+from fastmcp.server.providers.skills import SkillsDirectoryProvider
+
+mcp = FastMCP("Skills")
+mcp.add_provider(
+    SkillsDirectoryProvider(
+        roots=[
+            Path.cwd() / "skills",
+            Path.home() / ".claude" / "skills",
+        ]
+    )
+)
+```
+
+### List supporting files as resources
+
+With the default `supporting_files="template"`, clients find supporting files through each skill's manifest. Set `supporting_files="resources"` to list every file in `resources/list` as well, for clients that expect a flat resource list.
+
+```python
+from pathlib import Path
+
+from fastmcp.server.providers.skills import SkillsDirectoryProvider
+
+skills = SkillsDirectoryProvider(Path("skills"), supporting_files="resources")
+```
+
+### Pick up edits without restarting
+
+In resource mode the provider scans its roots once. Set `reload=True` to re-scan on every request while you edit skills locally; it adds a directory scan to each request, so leave it off in production. Discovery mode ignores `reload` and always serves current files.
+
+```python
+from pathlib import Path
+
+from fastmcp.server.providers.skills import SkillsDirectoryProvider
+
+skills = SkillsDirectoryProvider(Path("skills"), reload=True)
+```
+
+### Serve one skill
+
+`SkillProvider` serves a single skill folder, for a server that ships exactly one skill.
+
+```python
+from pathlib import Path
+
+from fastmcp import FastMCP
+from fastmcp.server.providers.skills import SkillProvider
+
+mcp = FastMCP("Release Skill")
+mcp.add_provider(SkillProvider(Path("skills") / "server-authoring"))
+```
+
+`SkillProvider` serves resources only; Skills discovery reads from `SkillsDirectoryProvider`.
+
+### Serve a coding agent's skills folder
+
+Vendor providers are `SkillsDirectoryProvider` subclasses whose roots are fixed to a coding agent's default skills folder. They take the same options except `roots`.
+
+| Provider | Folder |
+|----------|--------|
+| `ClaudeSkillsProvider` | `~/.claude/skills/` |
+| `CursorSkillsProvider` | `~/.cursor/skills/` |
+| `VSCodeSkillsProvider` | `~/.copilot/skills/` |
+| `CodexSkillsProvider` | `/etc/codex/skills/`, then `~/.codex/skills/` |
+| `GeminiSkillsProvider` | `~/.gemini/skills/` |
+| `GooseSkillsProvider` | `~/.config/agents/skills/` |
+| `CopilotSkillsProvider` | `~/.copilot/skills/` |
+| `OpenCodeSkillsProvider` | `~/.config/opencode/skills/` |
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.providers.skills import ClaudeSkillsProvider
+
+mcp = FastMCP("My Claude Skills")
+mcp.add_provider(ClaudeSkillsProvider())
+```
+
+## What discovery mode changes
+
+Setting `experimental_skills=True` makes the provider stricter, because a discovery entry promises exact bytes:
+
+- **Validation.** A skill without valid frontmatter is left out of `skills/list` with a warning, but its files stay readable as resources. Frontmatter must have unique string keys and JSON-compatible values; timestamps, binary values, non-finite numbers, and YAML aliases are rejected.
+- **Nested skills.** A skill folder inside another skill, such as `skills/team/review/SKILL.md`, gets its own entry with the URI `skill://team/review/SKILL.md`. The parent's manifest includes the nested files too.
+- **Exact reads.** Files are read from disk on every request and returned byte for byte, including CRLF line endings and binary content. Reads that discovery depends on bypass `ResponseCachingMiddleware`.
+- **Limits.** A skill with more than 512 files or 16 MiB in total is omitted. Skill roots and their contents must not be symbolic links.
+- **Everything is published.** Every file in a skill folder becomes part of the skill, including hidden files, so keep version control and editor files out of skill folders.
+- **Generic resource descriptions.** Listed resources carry descriptions such as `Skill: server-authoring` instead of the frontmatter description, so a malformed file can't break resource listing. The author's description appears in the discovery entry.
+
+The manifest is a point-in-time record, not a filesystem snapshot. If a file changes between discovery and a read, the digest check above catches it.
+
+Without the flag, the provider keeps its permissive resource-mode behavior: frontmatter is optional, the description falls back to the first line of the file, links to skill folders elsewhere on disk are followed, and the first root wins on duplicate names.
+
+## Access control
+
+Skills discovery respects the same rules as resource reads. A skill is omitted from `skills/list` when any of its files is hidden from the caller or denied by `Middleware.check_resource_access`, the hook that [`AuthMiddleware`](/servers/authorization) and the default `on_read_resource` use. Implement custom resource authorization in that hook so discovery can apply it; restrictions applied in other middleware hooks are invisible to discovery.
+
+## Current limits
+
+Skills discovery currently serves skills from `SkillsDirectoryProvider` instances registered directly on the server you run.
+
+- `SkillsExtension` raises when the server or the skills provider has transforms, including namespaces, or when the provider is not registered directly on the same server.
+- Skills in a [mounted server](/servers/composition) are served as resources through the parent, but the parent does not list them in `skills/list`.
+- A proxy in front of the server forwards the skill files as resources, but not `skills/list` or `skills/get`.
+- The optional `directoryRead` capability is not implemented.
+
+Resource mode has none of these limits. Serve skills as resources everywhere, and add discovery on the server that clients connect to directly.
