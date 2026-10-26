@@ -243,16 +243,9 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             help_text = f"{help_text}\\n{schema_help}" if help_text else schema_help
             json_params.append((prop_name, safe_name))
 
-        # Escape special characters in help text
-        help_escaped = (
-            help_text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-        )
-
         # Build parameter annotation
         if is_required:
-            annotation = (
-                f'Annotated[{py_type}, cyclopts.Parameter(help="{help_escaped}")]'
-            )
+            annotation = f"Annotated[{py_type}, cyclopts.Parameter(help={help_text!r})]"
             param_lines.append(f"    {safe_name}: {annotation},")
         else:
             default = prop_schema.get("default")
@@ -260,15 +253,19 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
                 # For complex types with defaults, serialize to JSON string
                 if needs_json:
                     default_str = pydantic_core.to_json(default, fallback=str).decode()
-                    annotation = f'Annotated[{py_type}, cyclopts.Parameter(help="{help_escaped}")]'
+                    annotation = (
+                        f"Annotated[{py_type}, cyclopts.Parameter(help={help_text!r})]"
+                    )
                     param_lines.append(
                         f"    {safe_name}: {annotation} = {default_str!r},"
                     )
                 else:
-                    annotation = f'Annotated[{py_type}, cyclopts.Parameter(help="{help_escaped}")]'
+                    annotation = (
+                        f"Annotated[{py_type}, cyclopts.Parameter(help={help_text!r})]"
+                    )
                     param_lines.append(f"    {safe_name}: {annotation} = {default!r},")
             else:
-                annotation = f'Annotated[{py_type} | None, cyclopts.Parameter(help="{help_escaped}")]'
+                annotation = f"Annotated[{py_type} | None, cyclopts.Parameter(help={help_text!r})]"
                 param_lines.append(f"    {safe_name}: {annotation} = None,")
 
         call_args.append(f"{prop_name!r}: {safe_name}")
