@@ -25,7 +25,7 @@ The recommended path is to define each skill as a `Skill` object, and serve them
 A `Skill` holds one skill's files in memory, exactly as they will be served. You can write it in Python, read it from a folder, or load it from an installed package.
 
 ```python
-from fastmcp.skills import Skill
+from fastmcp import Skill
 
 release_notes = Skill(
     name="release-notes",

@@ -138,3 +138,9 @@ def test_to_mcp_skill_describes_every_file(tmp_path: Path):
         record = records[f"skill://team/review/{path}"]
         assert record.size == len(content)
         assert record.digest == f"sha256:{hashlib.sha256(content).hexdigest()}"
+
+
+def test_skill_is_exported_from_fastmcp():
+    import fastmcp
+
+    assert fastmcp.Skill is Skill
