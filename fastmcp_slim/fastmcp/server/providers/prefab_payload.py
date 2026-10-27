@@ -26,7 +26,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from fastmcp.server.providers.addressing import parse_hashed_backend_name
+from fastmcp.server.providers.addressing import (
+    parse_hashed_backend_name,
+    parse_legacy_hashed_backend_name,
+)
 
 #: Action discriminator emitted by ``prefab_ui``'s ``CallTool``.
 _TOOL_CALL_ACTION = "toolCall"
@@ -136,7 +139,9 @@ def rewrite_payload_tool_names(
 
     rebound: dict[str, str] = {}
     for current_name, address in addresses.items():
-        parsed = parse_hashed_backend_name(address)
+        parsed = parse_hashed_backend_name(address) or parse_legacy_hashed_backend_name(
+            address
+        )
         new_name = resolve(parsed[0]) if parsed is not None else None
         if new_name is None:
             new_name = address

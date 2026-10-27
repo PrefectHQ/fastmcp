@@ -90,6 +90,15 @@ def parse_hashed_backend_name(name: str) -> tuple[str, str] | None:
     return prefix, name[HASH_LENGTH + 1 :]
 
 
+def parse_legacy_hashed_backend_name(name: str) -> tuple[str, str] | None:
+    """Parse the pre-4.2 ``<hash>_<local_name>`` address, which had no ``__`` prefix.
+
+    Only safe where the parsed hash must still match a real tool's identity,
+    since an ordinary tool name can have this shape.
+    """
+    return parse_hashed_backend_name(f"__{name}")
+
+
 def hashed_resource_uri(app_name: str, tool_name: str) -> str:
     """Per-tool Prefab renderer resource URI."""
     return f"ui://prefab/tool/{hash_tool(app_name, tool_name)}/renderer.html"
