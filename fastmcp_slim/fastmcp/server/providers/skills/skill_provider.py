@@ -32,6 +32,21 @@ logger = get_logger(__name__)
 mimetypes.add_type("text/markdown", ".md")
 
 
+def _resolve_supporting_file(root: Path, file_path: str) -> Path:
+    try:
+        return resolve_within(root, file_path)
+    except PathEscapeError as exc:
+        raise ValueError(f"Invalid path: {exc}") from exc
+
+
+def _read_supporting_file(path: Path) -> str | bytes:
+    mime_type, _ = mimetypes.guess_type(str(path))
+    content = path.read_bytes()
+    if mime_type and mime_type.startswith("text/"):
+        return content.decode("utf-8")
+    return content
+
+
 # -----------------------------------------------------------------------------
 # Skill-specific Resource and ResourceTemplate subclasses
 # -----------------------------------------------------------------------------
@@ -89,12 +104,7 @@ class SkillFileTemplate(ResourceTemplate):
         if self.skill_info.preserve_bytes:
             return await run_sync(read_file, self.skill_info.path, file_path)
 
-        # Security: reject traversal, absolute-path injection, null bytes, and
-        # symlink escapes before touching the filesystem.
-        try:
-            full_path = resolve_within(self.skill_info.path, file_path)
-        except PathEscapeError as e:
-            raise ValueError(f"Invalid path: {e}") from e
+        full_path = _resolve_supporting_file(self.skill_info.path, file_path)
 
         if not full_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
@@ -102,12 +112,7 @@ class SkillFileTemplate(ResourceTemplate):
         if not full_path.is_file():
             raise ValueError(f"Not a file: {file_path}")
 
-        # Determine if binary or text based on mime type
-        mime_type, _ = mimetypes.guess_type(str(full_path))
-        if mime_type and mime_type.startswith("text/"):
-            return full_path.read_bytes().decode("utf-8")
-        else:
-            return full_path.read_bytes()
+        return _read_supporting_file(full_path)
 
     async def _read(
         self,
@@ -127,12 +132,7 @@ class SkillFileTemplate(ResourceTemplate):
         """
         file_path = params.get("path", "")
 
-        # Security: reject traversal, absolute-path injection, null bytes, and
-        # symlink escapes before touching the filesystem.
-        try:
-            full_path = resolve_within(self.skill_info.path, file_path)
-        except PathEscapeError as e:
-            raise ValueError(f"Invalid path: {e}") from e
+        full_path = _resolve_supporting_file(self.skill_info.path, file_path)
 
         mime_type, _ = mimetypes.guess_type(str(full_path))
 
@@ -165,21 +165,12 @@ class SkillFileResource(Resource):
         """Read the file content."""
         if self.skill_info.preserve_bytes:
             return await run_sync(read_file, self.skill_info.path, self.file_path)
-        # Security: reject traversal, absolute-path injection, null bytes, and
-        # symlink escapes before touching the filesystem.
-        try:
-            full_path = resolve_within(self.skill_info.path, self.file_path)
-        except PathEscapeError as e:
-            raise ValueError(f"Invalid path: {e}") from e
+        full_path = _resolve_supporting_file(self.skill_info.path, self.file_path)
 
         if not full_path.exists():
             raise FileNotFoundError(f"File not found: {self.file_path}")
 
-        mime_type, _ = mimetypes.guess_type(str(full_path))
-        if mime_type and mime_type.startswith("text/"):
-            return full_path.read_bytes().decode("utf-8")
-        else:
-            return full_path.read_bytes()
+        return _read_supporting_file(full_path)
 
 
 # -----------------------------------------------------------------------------
