@@ -17,7 +17,7 @@ from fastmcp import Client, ClientGroup, FastMCP
 from fastmcp.server.providers.skills import SkillProvider, SkillsDirectoryProvider
 from fastmcp.skills import Skill, SkillsClientExtension
 from fastmcp.skills.extension import SkillsExtension
-from fastmcp.skills.models import MCPSkill
+from fastmcp.skills.models import MCPSkill, SkillFrontmatter
 from fastmcp.skills.provider import SkillCatalogProvider
 
 REVIEW = Skill(
@@ -38,6 +38,45 @@ async def test_read_skill_returns_an_equal_skill_through_the_extension():
         skill = await client.read_skill("skill://review/SKILL.md")
     assert skill == REVIEW
     assert skill.files["refs/logo.bin"] == b"\x00\xff\r\n"
+
+
+@pytest.mark.parametrize(
+    "advertised",
+    [
+        {"description": "Different instructions"},
+        {"custom": {"enabled": 1}},
+        {"custom": {"enabled": True, "extra": "claim"}},
+    ],
+)
+async def test_read_skill_reconciles_all_advertised_frontmatter(
+    advertised: dict[str, Any],
+):
+    original = Skill(
+        name="review",
+        description="Review changes",
+        instructions="# Review\n",
+        frontmatter={"custom": {"enabled": True}},
+    )
+    requests = 0
+
+    class Inconsistent(SkillCatalogProvider):
+        async def _get_skill_entry(
+            self, uri: str, context: ServerRequestContext[Any, Any]
+        ) -> MCPSkill | None:
+            nonlocal requests
+            requests += 1
+            entry = await super()._get_skill_entry(uri, context)
+            assert entry is not None
+            frontmatter = SkillFrontmatter.model_validate(
+                {**entry.frontmatter.root, **advertised}
+            )
+            return entry.model_copy(update={"frontmatter": frontmatter})
+
+    server = FastMCP("Skills", providers=[Inconsistent([original])])
+    async with skills_client(server) as client:
+        with pytest.raises(ValueError, match="frontmatter"):
+            await client.read_skill("skill://review/SKILL.md")
+    assert requests == 1
 
 
 async def test_read_skill_falls_back_to_the_manifest_resource():
