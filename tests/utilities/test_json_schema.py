@@ -526,6 +526,18 @@ class TestCompressSchema:
 
         assert set(result["$defs"]) == {"Alias One", "a/b", "c~d", "Container"}
 
+    def test_keeps_definition_with_an_empty_name(self):
+        """``#/$defs/`` names the definition whose key is the empty string."""
+        schema = {
+            "type": "object",
+            "properties": {"empty": {"$ref": "#/$defs/"}},
+            "$defs": {"": {"type": "string"}},
+        }
+
+        result = compress_schema(schema)
+
+        assert set(result["$defs"]) == {""}
+
     def test_preserves_refs_by_default(self):
         """Test that compress_schema preserves $refs by default."""
         schema = {

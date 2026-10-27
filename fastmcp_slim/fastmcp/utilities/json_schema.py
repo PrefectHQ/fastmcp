@@ -624,14 +624,13 @@ def _def_name_from_ref(ref: str) -> str | None:
     The fragment is a URI, so it may be percent-encoded, and its JSON Pointer
     tokens escape ``~`` and ``/``. A pointer may also continue below the
     definition (``#/$defs/Container/properties/value``), which still references
-    ``Container``.
+    ``Container``, and ``#/$defs/`` names the definition whose key is the empty
+    string.
     """
     prefix = "#/$defs/"
     if not ref.startswith(prefix):
         return None
     token = unquote(ref[len(prefix) :]).split("/", 1)[0]
-    if not token:
-        return None
     return token.replace("~1", "/").replace("~0", "~")
 
 
