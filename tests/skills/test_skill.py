@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from fastmcp.skills import Skill
+from fastmcp.skills._constants import MAX_SKILL_BYTES, MAX_SKILL_FILES
 
 
 def write_skill(root: Path, name: str = "review") -> Path:
@@ -88,6 +89,30 @@ def test_from_directory_requires_matching_name(tmp_path: Path):
     renamed = folder.rename(tmp_path / "other")
     with pytest.raises(ValueError, match="must match"):
         Skill.from_directory(renamed)
+
+
+@pytest.mark.parametrize("limit", ["count", "size"])
+def test_from_directory_checks_limits_before_reading_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit: str
+):
+    folder = write_skill(tmp_path)
+    if limit == "count":
+        for index in range(MAX_SKILL_FILES):
+            (folder / f"extra-{index}.txt").touch()
+    else:
+        with (folder / "large.bin").open("wb") as file:
+            file.truncate(MAX_SKILL_BYTES + 1)
+    reads = []
+    read_bytes = Path.read_bytes
+
+    def observed_read(path: Path) -> bytes:
+        reads.append(path)
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", observed_read)
+    with pytest.raises(ValueError, match="at most"):
+        Skill.from_directory(folder)
+    assert reads == []
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges")

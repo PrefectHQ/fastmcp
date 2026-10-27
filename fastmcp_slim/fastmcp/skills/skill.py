@@ -18,6 +18,13 @@ from fastmcp.skills._constants import MAX_SKILL_BYTES, MAX_SKILL_FILES
 from fastmcp.skills.models import MCPSkill, SkillFrontmatter, SkillResource
 
 
+def _validate_limits(file_count: int, total_bytes: int) -> None:
+    if file_count > MAX_SKILL_FILES:
+        raise ValueError(f"A skill may contain at most {MAX_SKILL_FILES} files")
+    if total_bytes > MAX_SKILL_BYTES:
+        raise ValueError(f"A skill may contain at most {MAX_SKILL_BYTES} bytes")
+
+
 def _validate_relative_path(path: str) -> str:
     if not isinstance(path, str) or not path:
         raise ValueError("Skill file paths must be non-empty strings")
@@ -103,10 +110,7 @@ class Skill:
             )
         if "SKILL.md" not in normalized:
             raise ValueError("A skill must contain SKILL.md")
-        if len(normalized) > MAX_SKILL_FILES:
-            raise ValueError(f"A skill may contain at most {MAX_SKILL_FILES} files")
-        if sum(map(len, normalized.values())) > MAX_SKILL_BYTES:
-            raise ValueError(f"A skill may contain at most {MAX_SKILL_BYTES} bytes")
+        _validate_limits(len(normalized), sum(map(len, normalized.values())))
         for path in normalized:
             parts = path.split("/")
             for index in range(1, len(parts)):
@@ -144,10 +148,9 @@ class Skill:
         from fastmcp.skills._snapshot import scan_files
 
         root = Path(path).absolute()
-        files = {
-            file.relative_to(root).as_posix(): file.read_bytes()
-            for file in scan_files(root)
-        }
+        paths = scan_files(root)
+        _validate_limits(len(paths), sum(file.stat().st_size for file in paths))
+        files = {file.relative_to(root).as_posix(): file.read_bytes() for file in paths}
         skill = cls.from_files(files)
         if skill.name != root.name:
             raise ValueError(

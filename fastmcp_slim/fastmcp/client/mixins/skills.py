@@ -27,7 +27,7 @@ from fastmcp.skills.models import (
     SkillResource,
     _parse_resource_uri,
 )
-from fastmcp.skills.skill import Skill, _validate_relative_path
+from fastmcp.skills.skill import Skill, _validate_limits, _validate_relative_path
 from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.logging import get_logger
 
@@ -260,6 +260,9 @@ class ClientSkillsMixin:
         if not segments or segments[-1] != "SKILL.md":
             raise ValueError(f"read_skill takes a skill's SKILL.md URI, got {uri!r}")
         manifest, entry = await self._skill_manifest(uri, cache_mode)
+        _validate_limits(
+            len(manifest), sum(record.size for record in manifest.values())
+        )
         for path in manifest:
             _validate_relative_path(path)
         files: dict[str, bytes] = {}

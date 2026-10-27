@@ -13,9 +13,8 @@ import yaml
 from mcp.shared.path_security import safe_join
 from yaml.nodes import MappingNode
 
-from fastmcp.skills._constants import MAX_SKILL_BYTES, MAX_SKILL_FILES
 from fastmcp.skills.models import MCPSkill, SkillFrontmatter
-from fastmcp.skills.skill import Skill
+from fastmcp.skills.skill import Skill, _validate_limits
 
 
 class _FrontmatterLoader(yaml.SafeLoader):
@@ -96,10 +95,7 @@ def snapshot(root: Path, skill_path: str) -> Snapshot:
     main = root / "SKILL.md"
     if main not in paths:
         raise ValueError("skill must contain SKILL.md")
-    if len(paths) > MAX_SKILL_FILES:
-        raise ValueError(f"skill has more than {MAX_SKILL_FILES} files")
-    if sum(path.stat().st_size for path in paths) > MAX_SKILL_BYTES:
-        raise ValueError(f"skill is larger than {MAX_SKILL_BYTES} bytes")
+    _validate_limits(len(paths), sum(path.stat().st_size for path in paths))
     contents: dict[str, bytes] = {}
     files: list[tuple[str, Path]] = []
     for path in paths:

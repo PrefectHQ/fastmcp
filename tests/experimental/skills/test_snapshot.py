@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from fastmcp.skills import _snapshot
+from fastmcp.skills import skill as skill_module
 from fastmcp.skills._snapshot import parse_frontmatter, snapshot
 
 
@@ -128,6 +128,6 @@ def test_snapshot_rejects_skills_over_spec_limits(
         "---\nname: review\ndescription: Review code\n---\n"
     )
     (tmp_path / "notes.md").write_bytes(b"x" * 64)
-    monkeypatch.setattr(_snapshot, limit, value)
+    monkeypatch.setattr(skill_module, limit, value)
     with pytest.raises(ValueError, match="skill"):
         snapshot(tmp_path, "review")
