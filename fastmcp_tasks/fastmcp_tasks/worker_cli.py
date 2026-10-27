@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 from typing import TYPE_CHECKING, Annotated
+from urllib.parse import urlsplit, urlunsplit
 
 import cyclopts
 from rich.console import Console
@@ -49,6 +51,17 @@ def resolve_docket_settings(server: FastMCP) -> DocketSettings:
 
     assert isinstance(extension, TasksExtension)
     return extension.docket_settings
+
+
+def redact_backend_url(url: str) -> str:
+    """`url` with the password in its userinfo and query parameters masked."""
+    parts = urlsplit(url)
+    userinfo, at, hosts = parts.netloc.rpartition("@")
+    if at and ":" in userinfo:
+        user = userinfo.split(":", 1)[0]
+        parts = parts._replace(netloc=f"{user}:***@{hosts}")
+    query = re.sub(r"((?:^|&)[^=&]*password=)[^&]*", r"\1***", parts.query)
+    return urlunsplit(parts._replace(query=query))
 
 
 def check_distributed_backend(settings: DocketSettings) -> None:
@@ -126,7 +139,7 @@ def worker(
                 f"[bold green]✓[/bold green] Starting worker for [cyan]{server.name}[/cyan]"
             )
             console.print(f"  Docket: {settings.name}")
-            console.print(f"  Backend: {settings.url}")
+            console.print(f"  Backend: {redact_backend_url(settings.url)}")
             console.print(f"  Concurrency: {settings.concurrency}")
 
             # Server's lifespan has started its worker - just camp here forever
