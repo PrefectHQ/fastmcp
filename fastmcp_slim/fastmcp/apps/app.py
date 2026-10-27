@@ -61,7 +61,7 @@ def _make_resolver(app_name: str | None = None) -> Any:
     inside whatever composition the server has, so nothing here can know
     what these tools will be *called* by the time the payload reaches a
     host. References therefore start out identity-addressed, as
-    ``<hash>_<local_name>``.
+    ``__<hash>_<local_name>``.
 
     Each FastMCP server rewrites those references on the way out to the
     name it lists that tool under, so what a renderer finally receives is
@@ -76,8 +76,7 @@ def _make_resolver(app_name: str | None = None) -> Any:
 
     def _prefix(local_name: str) -> str:
         if app_name:
-            # Don't re-hash an already-addressed name (same guard the
-            # old ___ resolver had with "___" not in name).
+            # Don't re-hash a reference that already has an identity address.
             if parse_hashed_backend_name(local_name) is not None:
                 return local_name
             return hashed_backend_name(app_name, local_name)

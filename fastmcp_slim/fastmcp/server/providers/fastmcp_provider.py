@@ -487,7 +487,7 @@ class FastMCPProvider(Provider):
         if raw_tool is None:
             return None
         wrapped = FastMCPProviderTool.wrap(self.server, raw_tool)
-        wrapped._original_name = f"{tool_hash}_{tool_name}"
+        wrapped._original_name = f"__{tool_hash}_{tool_name}"
         return wrapped
 
     # -------------------------------------------------------------------------
