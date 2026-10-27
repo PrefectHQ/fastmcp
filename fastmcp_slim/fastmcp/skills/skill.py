@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path, PureWindowsPath
 from types import MappingProxyType
@@ -189,7 +190,9 @@ class Skill:
         The folder name must match the skill's `name`, so `from_directory` can
         read it back. An existing folder raises `FileExistsError` unless
         `overwrite` is set, in which case it is replaced: files that aren't
-        part of the skill are removed.
+        part of the skill are removed. Files are staged before replacing an
+        existing folder. If replacement and restoration both fail, the error
+        identifies where the previous folder has been retained.
         """
         root = Path(path)
         if root.name != self.name:
@@ -206,11 +209,33 @@ class Skill:
                 )
             if not root.is_dir():
                 raise ValueError(f"Skill folder is not a directory: {root}")
-            shutil.rmtree(root)
-        for relative, content in self._files.items():
-            target = root / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(content)
+        root.parent.mkdir(parents=True, exist_ok=True)
+        staging = Path(tempfile.mkdtemp(prefix=f".{root.name}-", dir=root.parent))
+        previous = staging / "previous"
+        try:
+            replacement = staging / "new"
+            for relative, content in self._files.items():
+                target = replacement / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+            if root.exists():
+                root.rename(previous)
+            try:
+                replacement.rename(root)
+            except OSError:
+                if previous.exists():
+                    try:
+                        previous.rename(root)
+                    except OSError as exc:
+                        raise OSError(
+                            f"Could not restore {root}; previous skill remains at {previous}"
+                        ) from exc
+                raise
+            if previous.exists():
+                shutil.rmtree(previous)
+        finally:
+            if not previous.exists():
+                shutil.rmtree(staging)
         return root
 
     @property
