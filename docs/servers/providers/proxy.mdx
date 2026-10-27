@@ -179,6 +179,8 @@ proxy = create_proxy(Path("advanced_backend.py"))
 # - Reports progress → shown in your client
 ```
 
+Protocol extensions are not forwarded automatically, because the proxy doesn't know which ones its backend supports. To forward a backend's Skills discovery, pass `skills=True` to `create_proxy` or `ProxyProvider`; see [Proxied servers](/servers/skills#proxied-servers).
+
 ### Disabling Features
 
 Selectively disable forwarding:

@@ -103,6 +103,29 @@ Discovery never shows a skill the caller can't read. If any of its files is hidd
 
 Skills come along when you [mount](/servers/composition) a server, at the URIs the parent serves them at: `mount(child, namespace="team")` turns `skill://review/` into `skill://team/review/`. If you'd rather choose exactly which providers are discoverable, register the extension yourself with `mcp.add_extension(SkillsExtension(providers=[...]))` from `fastmcp.skills.extension`.
 
+## Proxied servers
+
+A [proxy](/servers/providers/proxy) passes a backend's skill files through as resources, but it can't know whether the backend speaks the Skills extension, so discovery is opt-in. Pass `skills=True` and the proxying server's `skills/list` includes the backend's skills alongside its own:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.providers.proxy import ProxyClient, ProxyProvider
+
+backend = ProxyProvider(lambda: ProxyClient("https://backend.example/mcp"), skills=True)
+
+gateway = FastMCP("Gateway")
+gateway.add_provider(backend)
+```
+
+Backend entries pass through unchanged, and the same access rules apply: a skill shows up only if the gateway serves every one of its files from that backend to that caller. A backend without the Skills extension contributes nothing. To namespace a backend's skills, mount a proxy instead:
+
+```python
+from fastmcp.server import create_proxy
+
+proxy = create_proxy("https://backend.example/mcp", skills=True)
+gateway.mount(proxy, namespace="github")
+```
+
 ## Read skills from a client
 
 ### Discover skills with the Skills extension
@@ -153,6 +176,6 @@ Downloads now require valid `SKILL.md` frontmatter with a `name` matching the sk
 
 ## Current limits
 
-- Skills behind a proxy are readable as resources but don't show up in `skills/list`.
 - A provider added with a namespace or other transforms isn't discoverable; mount a server instead.
+- A proxied skill whose manifest is `"dynamic"` is left out, since the gateway can't check its files.
 - `directoryRead` isn't implemented.

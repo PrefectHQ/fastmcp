@@ -14,10 +14,10 @@ import anyio
 from mcp.server.context import ServerRequestContext
 from pydantic import AnyUrl, ConfigDict
 
-from fastmcp.exceptions import AuthorizationError
 from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.providers.base import Provider
+from fastmcp.skills._routing import _may_read, _resolve_read
 from fastmcp.skills.models import MCPSkill
 from fastmcp.skills.skill import Skill, _validate_relative_path
 from fastmcp.utilities.logging import get_logger
@@ -191,12 +191,12 @@ class SkillCatalogProvider(Provider):
         server = get_context().fastmcp
         for file in skill.files:
             uri = _file_uri(path, file)
-            served = await server.get_resource(uri)
-            if not isinstance(served, SkillFileResource) or served.skill != skill:
-                return False
-            try:
-                await server._check_resource_access(uri)
-            except AuthorizationError:
+            served = await _resolve_read(server, uri)
+            if not (
+                isinstance(served, SkillFileResource)
+                and served.skill == skill
+                and await _may_read(server, uri)
+            ):
                 return False
         return True
 

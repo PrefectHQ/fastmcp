@@ -41,9 +41,10 @@ class SkillsExtension(ServerExtension):
 
     Skill providers register this extension automatically, so most servers
     never construct it. With no `providers`, it serves every skill source
-    registered directly on the server plus the skills of mounted servers,
+    registered directly on the server, the backend skills of each
+    `ProxyProvider(..., skills=True)`, and the skills of mounted servers,
     rewritten to the URIs the parent serves them at. Pass `providers` to limit
-    discovery to an explicit list of directly registered providers.
+    discovery to an explicit list of directly registered skill providers.
     """
 
     identifier = SKILLS_EXTENSION_ID
@@ -108,11 +109,14 @@ class SkillsExtension(ServerExtension):
             )
         if server.transforms:
             return ()
+        # Deferred so that registering Skills doesn't load the client stack.
+        from fastmcp.skills._proxy import _proxied_source
+
         sources: list[_SkillSource] = []
         for provider in server.providers:
-            mounted = _mounted_source(provider)
-            if mounted is not None:
-                sources.append(mounted)
+            source = _mounted_source(provider) or _proxied_source(provider)
+            if source is not None:
+                sources.append(source)
             elif isinstance(provider, _SkillSource) and not provider.transforms:
                 try:
                     provider._validate_skill_source()

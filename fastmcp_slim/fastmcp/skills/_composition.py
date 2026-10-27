@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 
 from mcp.server.context import ServerRequestContext
 
-from fastmcp.exceptions import AuthorizationError
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.fastmcp_provider import (
@@ -17,6 +16,7 @@ from fastmcp.server.providers.fastmcp_provider import (
 )
 from fastmcp.server.providers.wrapped_provider import _WrappedProvider
 from fastmcp.server.transforms import Transform
+from fastmcp.skills._routing import _may_read, _resolve_read
 from fastmcp.skills.models import MCPSkill
 
 if TYPE_CHECKING:
@@ -126,29 +126,18 @@ class _MountedSkills:
 
     async def _routes_to_child(self, uri: str, child_uri: str) -> bool:
         parent = get_context().fastmcp
-        resource, exists = await parent._lookup_resource(uri)
-        if resource is None:
-            if exists:
-                # A hidden concrete resource blocks the template, as in reads.
-                return False
-            template = await parent.get_resource_template(uri)
-            if not isinstance(template, FastMCPProviderResourceTemplate):
-                return False
-            params = template.matches(uri)
+        component = await _resolve_read(parent, uri)
+        if isinstance(component, FastMCPProviderResourceTemplate):
+            params = component.matches(uri)
             if params is None:
                 return False
-            resource = await template.create_resource(uri, params)
-        if not (
-            isinstance(resource, FastMCPProviderResource)
-            and resource._server is self._server
-            and resource._original_uri == child_uri
-        ):
-            return False
-        try:
-            await parent._check_resource_access(uri)
-        except AuthorizationError:
-            return False
-        return True
+            component = await component.create_resource(uri, params)
+        return (
+            isinstance(component, FastMCPProviderResource)
+            and component._server is self._server
+            and component._original_uri == child_uri
+            and await _may_read(parent, uri)
+        )
 
 
 def _mounted_source(provider: Provider) -> _MountedSkills | None:
