@@ -31,7 +31,7 @@ def automations(tmp_path):
         "        target.write_text(json.dumps(data))\n"
         "        print(json.dumps({'id': '11111111-1111-4111-8111-111111111111'}))\n"
         "    else:\n"
-        "        print('[]')\n"
+        "        print(json.dumps([{'id': os.environ['INTAKE_ID']}]) if 'deployments' in data else '[]')\n"
     )
     executable.chmod(0o755)
     runtime = tmp_path / "runtime.json"
@@ -51,7 +51,27 @@ def automations(tmp_path):
             **os.environ,
             "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
             "CAPTURE": str(tmp_path),
+            "INTAKE_ID": intake,
             "PREFECT_API_URL": "https://api.prefect.cloud/api/accounts/a/workspaces/w",
+        },
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        [
+            "bash",
+            str(ROOT / "scripts/agentic_stack.sh"),
+            "alerts",
+            str(runtime),
+            notify,
+        ],
+        env={
+            **os.environ,
+            "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+            "CAPTURE": str(tmp_path),
+            "INTAKE_ID": intake,
+            "PREFECT_API_URL": "https://api.prefect.cloud/api/accounts/test/workspaces/test",
         },
         check=True,
         capture_output=True,
@@ -144,6 +164,56 @@ def test_launches_coalesce_per_github_item_and_fetch_after_the_window(automation
         assert trigger.within.total_seconds() == 60
         assert trigger.for_each == {"prefect.resource.id"}
         assert config["actions"][0]["schedule_after"] == 60
+
+
+@pytest.mark.parametrize("state", ["Failed", "Crashed", "TimedOut", "Degraded"])
+def test_failure_alert_is_once_at_intake_not_each_child(automations, state):
+    configs, controller, intake = automations
+    trigger = AutomationCore.model_validate(
+        configs["fastmcp-triage-failure-alert"]
+    ).trigger
+    for deployment, expected in [
+        (intake, True),
+        (controller, False),
+        (str(uuid4()), False),
+    ]:
+        event = Event.model_validate(
+            {
+                "id": uuid4(),
+                "occurred": datetime.now(UTC),
+                "event": "prefect.flow-run." + state,
+                "resource": {"prefect.resource.id": "prefect.flow-run." + str(uuid4())},
+                "related": [
+                    {
+                        "prefect.resource.id": "prefect.deployment." + deployment,
+                        "prefect.resource.role": "deployment",
+                    }
+                ],
+            }
+        )
+        assert (trigger.covers(event) and trigger.expects(event.event)) is expected
+
+
+def test_failure_alert_shows_the_cause_and_one_run_link(automations):
+    configs, _, _ = automations
+    register_user_template_filters(
+        {"ui_url": lambda run: "https://app.prefect.cloud/runs/" + run["id"]}
+    )
+    message = render_user_template_sync(
+        configs["fastmcp-triage-failure-alert"]["actions"][0]["body"],
+        {
+            "flow_run": {
+                "id": "run",
+                "state": {
+                    "name": "Degraded",
+                    "message": "#4866: contribution verification did not complete",
+                },
+            },
+        },
+    )
+    assert "triage degraded" in message
+    assert "#4866: contribution verification did not complete" in message
+    assert message.count("https://app.prefect.cloud/runs/run") == 1
 
 
 def test_notification_announces_admitted_issues_only(automations):

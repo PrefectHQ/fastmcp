@@ -407,7 +407,7 @@ def triage_intake(
             run_id = dispatch(plan) if plan["batch"] else None
         except ValueError as error:
             result = finish(plan, current.id, config.scope(), None, str(error))
-            return Completed(name="Degraded", data=result)
+            return Completed(name="Degraded", data=result, message=str(error))
         while run_id:
             with get_client(sync_client=True) as client:
                 child = client.read_flow_run(run_id)
@@ -416,5 +416,11 @@ def triage_intake(
             time.sleep(5)
         result = finish(plan, current.id, config.scope(), run_id)
         if result["review"] and result["review"]["bins"]["operational"]:
-            return Completed(name="Degraded", data=result)
+            reasons = [
+                f"#{item.get('issue_number', '?')}: {item.get('reason') or item.get('status', 'needs operational attention')}"
+                for item in result["review"]["bins"]["operational"]
+            ]
+            return Completed(
+                name="Degraded", data=result, message="; ".join(reasons)[:2000]
+            )
         return result

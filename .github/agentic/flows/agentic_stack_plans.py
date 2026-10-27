@@ -22,6 +22,7 @@ class Assessment(BaseModel):
     contract: str = Field(max_length=6000)
     prior_art: list[str] = Field(max_length=20)
     question: str = Field(max_length=2000)
+    verification_prs: list[int] = Field(default_factory=list, max_length=3)
 
 
 class Reproduction(BaseModel):
@@ -85,7 +86,12 @@ whether the work justifies ongoing maintenance. Inspect relevant history before 
 a policy decision is unresolved. Existing contributions, including closed gate-rejected PRs,
 must be read with discussion, bot review, and author replies; closure and AI assistance alone
 are not negative evidence. Existing-work lanes return existing_review with concrete findings
-and links, never reproduce for a competing patch. Check unfamiliar contributors using the
+and links, never reproduce for a competing patch. Select at most three relevant unmerged
+contributions in verification_prs for execution, prioritizing the reporter's current proposal
+and explaining the selection in reason. Reading historical PRs does not select them for
+execution. Closed assignment-gated proposals remain eligible. Use an empty selection only
+when no execution is warranted and explain the remaining maintainer decision.
+Check unfamiliar contributors using the
 supplied review-issue skill when assignment is relevant, but only recommend assignment.
 Missing evidence returns one precise request. Low-value leaf fixes may return prune with
 the actual tradeoff even when the bug is real. Preserve human interventions and existing

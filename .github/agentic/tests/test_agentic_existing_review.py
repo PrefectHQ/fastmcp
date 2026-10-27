@@ -31,12 +31,47 @@ def test_merged_history_is_not_verified_and_other_release_lines_are_not_substitu
     item = {
         "evidence": {**evidence, "stacks": [], "prs": [pr]},
         "route": {"pull_requests": [{"number": 2}]},
+        "assessment": {"verification_prs": [2]},
     }
     assert verification_specs(group, item, {}) == []
     pr["merged"] = False
     with pytest.raises(ValueError, match="different release line"):
         verification_specs(group, item, {})
     item["route"]["pull_requests"].append({"number": 3})
+    item["assessment"]["verification_prs"].append(3)
+    with pytest.raises(ValueError, match="evidence is missing"):
+        verification_specs(group, item, {})
+
+
+@pytest.mark.parametrize("selected", [[6106], [4872], []])
+def test_verification_selects_candidates_without_executing_all_history(
+    evidence, selected
+):
+    group = Group(
+        name="history",
+        rationale="Review historical and current work",
+        branch="main",
+        base_sha="a" * 40,
+        items=[{"issue_number": 4866, "mode": "mre"}],
+    )
+    prs = [
+        {
+            "number": n,
+            "state": "open" if n == 6106 else "closed",
+            "merged": False,
+            "base_ref": "main",
+            "head_sha": "b" * 40,
+        }
+        for n in [4872, 4874, 4876, 6106]
+    ]
+    item = {
+        "evidence": {**evidence, "stacks": [], "prs": prs},
+        "route": {"pull_requests": [{"number": p["number"]} for p in prs]},
+        "assessment": {"verification_prs": selected},
+    }
+    assert [s.pr_number for s in verification_specs(group, item, {})] == selected
+    assert len(item["evidence"]["prs"]) == 4
+    item["assessment"]["verification_prs"] = [9999]
     with pytest.raises(ValueError, match="evidence is missing"):
         verification_specs(group, item, {})
 

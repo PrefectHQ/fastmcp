@@ -107,11 +107,12 @@ def review_markdown(result: dict) -> str:
                     verdict = (
                         "A regression was reproduced; repair it before merge review."
                     )
-                elif any(
-                    check["tests"][stage]["status"] != "passed"
-                    for stage in ("head", "adjacent")
-                ):
+                elif check["tests"]["head"]["status"] != "passed" or check["tests"][
+                    "adjacent"
+                ]["status"] not in {"passed", "not_run"}:
                     verdict = "Executed checks need investigation."
+                elif check["tests"]["adjacent"]["status"] == "not_run":
+                    verdict = "Head checks passed; adjacent checks were not run. Compatibility and merge review remain."
                 else:
                     verdict = (
                         "Executed checks passed; compatibility and merge review remain."
@@ -126,6 +127,11 @@ def review_markdown(result: dict) -> str:
                         "",
                     ]
                 )
+                for limitation in check.get("limitations", []):
+                    lines.extend([f"Limitation: {plain(limitation)}", ""])
+                adjacent = check.get("tests", {}).get("adjacent", {})
+                if adjacent.get("status") == "not_run" and adjacent.get("reason"):
+                    lines.extend([f"Adjacent checks: {plain(adjacent['reason'])}", ""])
                 for case in regressions:
                     lines.append(f"- {plain(case)}")
                 if regressions:

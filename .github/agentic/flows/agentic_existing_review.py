@@ -57,6 +57,7 @@ def summary(result: dict) -> dict:
         stage = result.get(name, {})
         stages[name] = {
             "status": stage.get("status", "not_run"),
+            "reason": stage.get("reason"),
             "counts": dict(Counter(case["state"] for case in stage.get("cases", []))),
             "failures": [
                 case
@@ -82,9 +83,10 @@ def verification_specs(
     group: Group, item: dict, probes: dict[str, str]
 ) -> list[VerificationSpec]:
     evidence = item["evidence"]
-    selected = {pr["number"] for pr in item["route"].get("pull_requests", [])}
+    selected = set(item["assessment"]["verification_prs"])
+    admitted = {pr["number"] for pr in item["route"].get("pull_requests", [])}
     contributions = [pr for pr in evidence["prs"] if pr["number"] in selected]
-    if not selected or {pr["number"] for pr in contributions} != selected:
+    if not selected <= admitted or {pr["number"] for pr in contributions} != selected:
         raise ValueError("Selected contribution evidence is missing")
     prs = [pr for pr in contributions if not pr["merged"]]
     if len(prs) > 3:
@@ -210,6 +212,9 @@ def verify_existing(
         if results
         else "Review the assessment of merged contributions and subsequent history; no unmerged contribution was sent to verification"
     )
+    if not results and any(not pr["merged"] for pr in evidence["prs"]):
+        status = "verification_selection_required"
+        next_step = "Review why assessment selected no contribution for execution; no tests were run"
     if change != "unchanged":
         status, next_step = change, "Refresh changed evidence"
     review = {

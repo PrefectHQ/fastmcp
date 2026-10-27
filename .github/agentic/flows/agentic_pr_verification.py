@@ -273,15 +273,34 @@ def verify(
     baseline = run_tests(base, selected, env, directory / "base.xml")
     candidate = run_tests(head, selected, env, directory / "head.xml")
     parents = sorted({str(PurePosixPath(p).parent) for p in paths})
+    tracked = git(
+        head, env, "ls-tree", "-r", "--name-only", "HEAD", "--", "tests"
+    ).splitlines()
     neighbors = [
         path
-        for path in parents
-        if not any(path.startswith(other + "/") for other in parents if other != path)
+        for path in tracked
+        if str(PurePosixPath(path).parent) in parents
+        and PurePosixPath(path).name.startswith("test_")
+        and path.endswith(".py")
+        and path not in paths
     ]
+    limitations = [
+        "Current target-branch composition and full-suite/static validation remain separate checks.",
+        "Author tests are not independent contract verification; supplied probes are identified separately.",
+    ]
+    if len(neighbors) > 20:
+        limitations.append(
+            f"Adjacent verification omitted: {len(neighbors)} sibling modules exceeds the twenty-module budget."
+        )
+        neighbors = []
     adjacent = (
         run_tests(head, neighbors, env, directory / "adjacent.xml")
         if neighbors
-        else candidate
+        else {
+            "status": "not_run",
+            "cases": [],
+            "reason": "No sibling modules within the verification budget",
+        }
     )
     status = "verification_recorded"
     if any(
@@ -294,11 +313,9 @@ def verify(
         "base": baseline,
         "head": candidate,
         "adjacent": adjacent,
+        "adjacent_tests": neighbors,
         "comparison": outcomes(baseline, candidate),
-        "limitations": [
-            "Current target-branch composition and full-suite/static validation remain separate checks.",
-            "Author tests are not independent contract verification; supplied probes are identified separately.",
-        ],
+        "limitations": limitations,
     }
 
 

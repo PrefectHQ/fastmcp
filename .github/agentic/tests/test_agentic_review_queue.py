@@ -55,6 +55,45 @@ def test_model_text_cannot_create_links_or_override_queue_formatting():
     assert plain(None) == "unknown"
 
 
+def test_omitted_adjacent_checks_are_visible_without_becoming_failures():
+    result = {
+        "batch_id": "trial",
+        "bins": {
+            "existing_review": [
+                {
+                    "issue_number": 1,
+                    "assessment": {"reason": "Review current proposal"},
+                    "verification": [
+                        {
+                            "pr_number": 2,
+                            "head_sha": "a" * 40,
+                            "baseline_sha": "b" * 40,
+                            "run_id": "run",
+                            "status": "verification_recorded",
+                            "comparison": {},
+                            "tests": {
+                                "head": {"status": "passed"},
+                                "adjacent": {
+                                    "status": "not_run",
+                                    "reason": "No sibling modules within budget",
+                                },
+                            },
+                            "limitations": [
+                                "Adjacent verification omitted: 21 sibling modules exceeds budget"
+                            ],
+                        }
+                    ],
+                }
+            ]
+        },
+    }
+    markdown = review_markdown(result)
+    assert "Head checks passed; adjacent checks were not run" in markdown
+    assert "21 sibling modules exceeds budget" in markdown
+    assert "No sibling modules within budget" in markdown
+    assert "Executed checks need investigation" not in markdown
+
+
 def test_reproduction_queue_preserves_probe_and_contains_fence_like_output():
     probe = "diff --git a/test_probe.py b/test_probe.py\n+assert result == expected\n"
     observed = "Expected 200, received 404\n```\n[untrusted](https://example.com)"

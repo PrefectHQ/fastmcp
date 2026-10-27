@@ -1,0 +1,3 @@
+{% set state = flow_run.state.name %}{{ {'Failed': '❌', 'Crashed': '💥', 'TimedOut': '⏱️', 'Degraded': '⚠️'}.get(state, '⚠️') }} triage {{ {'TimedOut': 'timed out'}.get(state, state|lower) }}
+{{ flow_run.state.message or 'See the retained review queue for the failure details.' }}
+<{{ flow_run|ui_url }}|run and review queue>
