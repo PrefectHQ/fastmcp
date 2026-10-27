@@ -93,7 +93,20 @@ class FolderSkills(SkillCatalogProvider):
         ]
 ```
 
-For recursive folder discovery that skips invalid skills, use `SkillsDirectoryProvider(path, experimental_skills=True)`. Presets like `ClaudeSkillsProvider` point it at a coding agent's own skills folder.
+For recursive folder discovery that skips invalid skills, use `SkillsDirectoryProvider(path, experimental_skills=True)`. To discover a coding agent's own skills folder through the extension, pass its path explicitly:
+
+```python
+from pathlib import Path
+
+from fastmcp import FastMCP
+from fastmcp.server.providers.skills import SkillsDirectoryProvider
+
+root = Path.home() / ".claude" / "skills"
+provider = SkillsDirectoryProvider(root, experimental_skills=True)
+mcp = FastMCP("Local Skills", providers=[provider])
+```
+
+Presets such as `ClaudeSkillsProvider` expose ordinary resources and do not accept the `experimental_skills` option.
 
 ## Access control
 
@@ -175,6 +188,8 @@ async with Client("http://localhost:8000/mcp") as client:
 ```
 
 Downloads now require valid `SKILL.md` frontmatter with a `name` matching the skill's URI and a `description`; add these fields to older resource-only skills before downloading them. Digest or size mismatches raise an error before writing. `overwrite=True` replaces the existing skill folder, including removing locally added files.
+
+If a folder uses a custom main filename, create a standard `SKILL.md` with those fields and update affected relative references before exporting it as a skill. Existing resource providers can still serve the original documents through `resources/read`.
 
 ## Current limits
 

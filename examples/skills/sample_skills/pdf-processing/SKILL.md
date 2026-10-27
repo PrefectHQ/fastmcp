@@ -1,4 +1,5 @@
 ---
+name: pdf-processing
 description: Extract text from PDFs, fill forms, and merge documents
 version: "1.0.0"
 tags: [document, pdf, extraction]
