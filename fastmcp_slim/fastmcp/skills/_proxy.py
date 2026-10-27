@@ -11,6 +11,7 @@ from mcp.shared.exceptions import MCPError
 from mcp_types import INVALID_PARAMS, METHOD_NOT_FOUND
 
 from fastmcp.client.client import Client
+from fastmcp.client.mixins.skills import AUTO_PAGINATION_MAX_PAGES
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.proxy import (
@@ -102,7 +103,7 @@ class _ProxiedSkills:
         cursor: str | None = None
         seen: set[str] = set()
         async with self._client() as client:
-            while True:
+            for _ in range(AUTO_PAGINATION_MAX_PAGES):
                 request = ListSkillsRequest(
                     params=ListSkillsParams(cursor=cursor, meta=meta)
                 )
@@ -119,6 +120,10 @@ class _ProxiedSkills:
                     return entries
                 seen.add(page.next_cursor)
                 cursor = page.next_cursor
+        raise RuntimeError(
+            f"Reached auto-pagination limit ({AUTO_PAGINATION_MAX_PAGES} pages) "
+            "listing the backend's skills"
+        )
 
     async def _get_backend(self, uri: str) -> MCPSkill | None:
         meta = _session_request_meta(_forwardable_request_meta(get_context()))
