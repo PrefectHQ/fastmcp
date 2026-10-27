@@ -147,6 +147,31 @@ def _validation_error_summary(error: PydanticValidationError) -> dict[str, Any]:
     return {"error_count": error.error_count(), "error_types": sorted(error_types)}
 
 
+def _validation_error_message(tool_name: str, error: PydanticValidationError) -> str:
+    """Client-facing summary: which argument failed and why, nothing else.
+
+    `str(PydanticValidationError)` embeds the exact pydantic version URL, the
+    internal adapter name (`call[<tool>]`), and every submitted value with its
+    inferred type. None of that helps a caller fix the call, and the first two
+    are version/internal-name disclosure, so the message is rebuilt from the
+    error details without the URL, context or inputs.
+    """
+    details = error.errors(
+        include_url=False, include_context=False, include_input=False
+    )
+    lines = [
+        (
+            f"Invalid arguments for tool {tool_name!r}:"
+            f" {len(details)} validation error{'s' if len(details) != 1 else ''}"
+        )
+    ]
+    for detail in details:
+        location = ".".join(str(part) for part in detail.get("loc", ()))
+        message = detail.get("msg", "Invalid value")
+        lines.append(f"- {location}: {message}" if location else f"- {message}")
+    return "\n".join(lines)
+
+
 def _version_request_meta(
     version: VersionSpec | None,
 ) -> mcp_types.RequestParamsMeta | None:
@@ -1504,8 +1529,11 @@ class FastMCP(
                             name,
                             _validation_error_summary(cause),
                         )
-                    else:
-                        logger.warning("Invalid arguments for tool %r", name)
+                        # Re-raise a rebuilt message: the original carries the
+                        # pydantic version URL and the adapter name into the
+                        # tool result the caller reads.
+                        raise ToolError(_validation_error_message(name, cause)) from e
+                    logger.warning("Invalid arguments for tool %r", name)
                     raise
                 except FastMCPError as e:
                     logger.log(
