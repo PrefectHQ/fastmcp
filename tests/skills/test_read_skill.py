@@ -298,6 +298,7 @@ async def test_read_skill_preserves_extension_errors():
             raise MCPError(code=INTERNAL_ERROR, message="Catalog unavailable")
 
     server = FastMCP("Skills", providers=[Broken([REVIEW])])
+    server.provider_error_strategy = "raise"
     async with skills_client(server) as client:
         with pytest.raises(MCPError) as exc:
             await client.read_skill("skill://review/SKILL.md")

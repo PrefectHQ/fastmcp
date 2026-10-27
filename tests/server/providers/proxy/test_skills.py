@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -13,12 +14,14 @@ from fastmcp.server import create_proxy
 from fastmcp.server.middleware import Middleware
 from fastmcp.server.middleware.authorization import AuthMiddleware
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+from fastmcp.server.providers.aggregate import ProviderErrorStrategy
 from fastmcp.server.providers.proxy import ProxyClient, ProxyProvider
 from fastmcp.server.providers.skills import SkillsDirectoryProvider
 from fastmcp.skills import Skill, SkillsClientExtension
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
 from fastmcp.skills.extension import SkillsExtension
 from fastmcp.skills.provider import SkillCatalog, SkillCatalogProvider
+from fastmcp.utilities.tests import temporary_settings
 
 REVIEW = Skill(
     name="review",
@@ -151,6 +154,44 @@ async def test_local_and_proxied_skills_share_one_catalog() -> None:
         "skill://deploy/SKILL.md",
         "skill://review/SKILL.md",
     ]
+
+
+@pytest.mark.parametrize("operation", ["list", "get", "read"])
+@pytest.mark.parametrize(
+    ("strategy", "global_raise"), [("warn", False), ("raise", False), ("warn", True)]
+)
+async def test_unavailable_proxy_obeys_provider_error_policy(
+    operation: str,
+    strategy: ProviderErrorStrategy,
+    global_raise: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def unavailable() -> ProxyClient:
+        raise ConnectionError("backend unavailable")
+
+    server = gateway(backend(REVIEW))
+    server.provider_error_strategy = strategy
+    server.add_provider(SkillCatalogProvider([DEPLOY]))
+    server.add_provider(ProxyProvider(unavailable, skills=True))
+
+    with temporary_settings(mounted_components_raise_on_load_error=global_raise):
+        async with skills_client(server) as client:
+            raises = strategy == "raise" or global_raise
+            with pytest.raises(MCPError) if raises else nullcontext():
+                if operation == "list":
+                    listed = await client.list_skills()
+                    assert [entry.uri for entry in listed] == [
+                        "skill://deploy/SKILL.md",
+                        "skill://review/SKILL.md",
+                    ]
+                elif operation == "get":
+                    entry = await client.get_skill("skill://deploy/SKILL.md")
+                    assert entry.uri == "skill://deploy/SKILL.md"
+                else:
+                    skill = await client.read_skill("skill://deploy/SKILL.md")
+                    assert skill.files == DEPLOY.files
+            if not raises:
+                assert "backend unavailable" in caplog.text
 
 
 async def test_denied_file_hides_skill_without_reading_it() -> None:

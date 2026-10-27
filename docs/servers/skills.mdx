@@ -126,6 +126,8 @@ proxy = create_proxy("https://backend.example/mcp", skills=True)
 gateway.mount(proxy, namespace="github")
 ```
 
+Skills listing and lookup follow the gateway's `provider_error_strategy`: the default `"warn"` logs a failing source and keeps healthy skills available. Set `gateway.provider_error_strategy = "raise"` to fail the operation when a source fails.
+
 ## Read skills from a client
 
 ### Discover skills with the Skills extension
