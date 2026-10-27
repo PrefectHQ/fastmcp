@@ -5,9 +5,11 @@ import hashlib
 import json
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 import anyio
 import pytest
+from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
 from mcp_types import BlobResourceContents, TextResourceContents
 
@@ -16,6 +18,7 @@ from fastmcp.server.middleware import Middleware
 from fastmcp.server.middleware.authorization import AuthMiddleware
 from fastmcp.skills import Skill, SkillsClientExtension
 from fastmcp.skills.extension import SkillsExtension
+from fastmcp.skills.models import MCPSkill
 from fastmcp.skills.provider import SkillCatalogProvider
 from fastmcp.utilities.skills import list_skill_summaries, sync_skills
 
@@ -194,3 +197,39 @@ async def test_shadowed_file_hides_skill():
 def test_invalid_catalogs(skills: object, message: str):
     with pytest.raises(ValueError, match=message):
         SkillCatalogProvider(skills)  # ty: ignore[invalid-argument-type]
+
+
+async def test_read_skill_returns_the_served_skill():
+    server = serve(SkillCatalogProvider({"team/review": REVIEW, "deploy": DEPLOY}))
+    async with skills_client(server) as client:
+        assert await client.read_skill("skill://team/review/SKILL.md") == REVIEW
+        assert await client.read_skill("skill://deploy/SKILL.md") == DEPLOY
+
+
+async def test_read_skill_can_be_served_again():
+    source = serve(SkillCatalogProvider([REVIEW]))
+    async with skills_client(source) as client:
+        skill = await client.read_skill("skill://review/SKILL.md")
+
+    mirror = serve(SkillCatalogProvider([skill]))
+    async with skills_client(mirror) as client:
+        assert await client.read_skill("skill://review/SKILL.md") == REVIEW
+
+
+async def test_read_skill_rejects_bytes_that_miss_the_manifest():
+    class PublishedManifest(SkillCatalogProvider):
+        async def _get_skill_entry(
+            self, uri: str, context: ServerRequestContext[Any, Any]
+        ) -> MCPSkill | None:
+            return REVIEW.to_mcp_skill()
+
+    provider = PublishedManifest([REVIEW])
+    server = serve(provider)
+
+    @server.resource("skill://review/notes.md")
+    def tampered() -> str:
+        return "tampered!\n"
+
+    async with skills_client(server) as client:
+        with pytest.raises(ValueError, match="does not match its manifest"):
+            await client.read_skill("skill://review/SKILL.md")

@@ -10,10 +10,13 @@ from typing import Any
 
 import pytest
 from mcp.server.context import ServerRequestContext
+from mcp.shared.exceptions import MCPError
+from mcp_types import INTERNAL_ERROR
 
 from fastmcp import Client, ClientGroup, FastMCP
 from fastmcp.server.providers.skills import SkillProvider, SkillsDirectoryProvider
 from fastmcp.skills import Skill, SkillsClientExtension
+from fastmcp.skills.extension import SkillsExtension
 from fastmcp.skills.models import MCPSkill
 from fastmcp.skills.provider import SkillCatalogProvider
 
@@ -285,3 +288,50 @@ async def test_client_group_read_skill_uses_the_named_server():
             await group.read_skill("c", "skill://review/SKILL.md")
     with pytest.raises(RuntimeError, match="not connected"):
         await group.read_skill("a", "skill://review/SKILL.md")
+
+
+async def test_read_skill_preserves_extension_errors():
+    class Broken(SkillCatalogProvider):
+        async def _get_skill_entry(
+            self, uri: str, context: ServerRequestContext[Any, Any]
+        ) -> MCPSkill | None:
+            raise MCPError(code=INTERNAL_ERROR, message="Catalog unavailable")
+
+    server = FastMCP("Skills", providers=[Broken([REVIEW])])
+    async with skills_client(server) as client:
+        with pytest.raises(MCPError) as exc:
+            await client.read_skill("skill://review/SKILL.md")
+        assert exc.value.error.code == INTERNAL_ERROR
+
+
+@pytest.mark.parametrize("query", ["", "?ref=main"])
+async def test_read_skill_preserves_manifest_resource_uris(query: str):
+    main_uri = f"github://repo/review/SKILL.md{query}"
+    original = REVIEW.to_mcp_skill()
+    assert isinstance(original.resources, list)
+    records = [
+        record.model_copy(
+            update={
+                "uri": main_uri
+                if record.uri.endswith("/SKILL.md")
+                else record.uri.replace("skill://review/", "github://repo/review/")
+                + "?ref=main"
+            }
+        )
+        for record in original.resources
+    ]
+    entry = original.model_copy(update={"uri": main_uri, "resources": records})
+
+    class Published(SkillsExtension):
+        async def _get_entry(
+            self, uri: str, context: ServerRequestContext[Any, Any]
+        ) -> MCPSkill | None:
+            return entry if uri == main_uri else None
+
+    server = FastMCP("Custom URIs")
+    server.add_extension(Published())
+    for path, record in zip(REVIEW.files, records, strict=True):
+        server.resource(record.uri)(_constant(REVIEW.files[path]))
+
+    async with skills_client(server) as client:
+        assert await client.read_skill(main_uri) == REVIEW

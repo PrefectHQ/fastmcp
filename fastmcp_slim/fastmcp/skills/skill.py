@@ -6,7 +6,7 @@ import hashlib
 import os
 import shutil
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from types import MappingProxyType
 from typing import Any
 from urllib.parse import quote
@@ -23,7 +23,12 @@ MAX_SKILL_BYTES = 16 * 1024 * 1024
 def _validate_relative_path(path: str) -> str:
     if not isinstance(path, str) or not path:
         raise ValueError("Skill file paths must be non-empty strings")
-    if path.startswith("/") or "\\" in path or "\x00" in path:
+    if (
+        path.startswith("/")
+        or PureWindowsPath(path).drive
+        or "\\" in path
+        or "\x00" in path
+    ):
         raise ValueError(f"Skill file path must be relative POSIX: {path!r}")
     parts = path.split("/")
     if any(part in {"", ".", ".."} for part in parts):

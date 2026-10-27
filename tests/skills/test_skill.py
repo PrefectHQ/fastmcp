@@ -47,6 +47,8 @@ def test_keyword_constructor_renders_skill_md():
         ({"files": {"SKILL.md": "x"}}, "instructions"),
         ({"files": {"../escape.md": "x"}}, "invalid segment"),
         ({"files": {"/abs.md": "x"}}, "relative POSIX"),
+        ({"files": {"C:/escape.md": "x"}}, "relative POSIX"),
+        ({"files": {"C:escape.md": "x"}}, "relative POSIX"),
         ({"files": {"a": "x", "a/b": "y"}}, "also used as a directory"),
     ],
 )
