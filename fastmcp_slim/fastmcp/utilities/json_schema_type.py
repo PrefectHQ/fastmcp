@@ -10,7 +10,7 @@ for validation with Pydantic. It supports:
 - String constraints (minLength, maxLength, pattern)
 - Array constraints (minItems, maxItems, uniqueItems)
 - Object properties with defaults
-- References and recursive schemas
+- References and recursive schemas, including references into arrays
 - Enums and constants
 - Union types
 
@@ -407,10 +407,20 @@ def _schema_digest(schema: Mapping[str, Any] | bool) -> tuple[str, int]:
 def _resolve_ref(ref: str, schemas: Mapping[str, Any]) -> Mapping[str, Any]:
     """Resolve JSON Schema reference to target schema."""
     path = ref.replace("#/", "").split("/")
-    current = schemas
+    current: Any = schemas
     for part in path:
         part = part.replace("~1", "/").replace("~0", "~")
-        current = current.get(part, {})
+        if isinstance(current, list):
+            if re.fullmatch(r"0|[1-9][0-9]*", part) is None:
+                raise ValueError(f"Invalid array index {part!r} in reference {ref!r}")
+            try:
+                current = current[int(part)]
+            except (IndexError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid array index {part!r} in reference {ref!r}"
+                ) from exc
+        else:
+            current = current.get(part, {})
     return current
 
 
