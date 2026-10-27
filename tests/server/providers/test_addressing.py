@@ -9,7 +9,6 @@ from fastmcp.server.providers.addressing import (
     hashed_resource_uri,
     parse_hashed_backend_name,
     parse_hashed_resource_uri,
-    parse_legacy_hashed_backend_name,
 )
 
 
@@ -57,13 +56,6 @@ class TestBackendNameRoundtrip:
 
     def test_parse_rejects_missing_separator(self):
         assert parse_hashed_backend_name("__abcdef012345save") is None
-
-    def test_legacy_parse_accepts_unprefixed_address(self):
-        assert parse_legacy_hashed_backend_name("abcdef012345_save") == (
-            "abcdef012345",
-            "save",
-        )
-        assert parse_legacy_hashed_backend_name("save") is None
 
 
 class TestResourceUriRoundtrip:

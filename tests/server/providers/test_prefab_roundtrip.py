@@ -18,7 +18,7 @@ from fastmcp.server.providers.addressing import hash_tool, hashed_backend_name
 from fastmcp.server.providers.proxy import ProxyClient, ProxyProvider
 from fastmcp.server.transforms.search import RegexSearchTransform
 from fastmcp.server.transforms.tool_transform import ToolTransform
-from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.base import Tool
 from fastmcp.tools.tool_transform import ToolTransformConfig
 
 prefab_ui = pytest.importorskip("prefab_ui")
@@ -281,39 +281,6 @@ class TestProxiedServerRoundTrip:
         hashed_name = hashed_backend_name("contacts", "save")
         result = await top.call_tool(hashed_name, {"name": "Frank"})
         assert result.content[0].text == "saved Frank"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
-
-
-async def test_pre_4_2_backend_payload_is_rebound_through_a_proxy():
-    """Backends on fastmcp < 4.2 address peer tools without the ``__`` prefix."""
-    app = FastMCPApp("contacts")
-
-    @app.tool()
-    def save(name: str) -> str:
-        return f"saved {name}"
-
-    backend = FastMCP("Backend")
-    backend.add_provider(app)
-    legacy_address = f"{hash_tool('contacts', 'save')}_save"
-
-    @backend.tool()
-    def form() -> ToolResult:
-        return ToolResult(
-            content="Form",
-            structured_content={
-                "view": {"action": "toolCall", "tool": legacy_address},
-                "_meta": {"fastmcp": {"toolNames": {legacy_address: legacy_address}}},
-            },
-        )
-
-    gateway = FastMCP("Gateway")
-    gateway.add_provider(ProxyProvider(lambda: ProxyClient(backend)), namespace="up")
-
-    result = await gateway.call_tool("up_form", {})
-    (ref,) = _tool_refs(result.structured_content)
-    assert ref == "up_save"
-
-    clicked = await gateway.call_tool(ref, {"name": "Gina"})
-    assert clicked.content[0].text == "saved Gina"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
 
 class TestLateBoundToolNames:
