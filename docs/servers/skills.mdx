@@ -124,11 +124,16 @@ A [proxy](/servers/providers/proxy) passes a backend's skill files through as re
 from fastmcp import FastMCP
 from fastmcp.server.providers.proxy import ProxyClient, ProxyProvider
 
-backend = ProxyProvider(lambda: ProxyClient("https://backend.example/mcp"), skills=True)
+backend = ProxyProvider(
+    lambda: ProxyClient("https://backend.example/mcp", mode="auto"),
+    skills=True,
+)
 
 gateway = FastMCP("Gateway")
 gateway.add_provider(backend)
 ```
+
+A custom `ProxyClient` factory needs `mode="auto"` to negotiate the modern protocol used by Skills. Directly constructed `ProxyClient` instances default to the legacy handshake. `create_proxy(..., skills=True)` handles protocol mirroring for you.
 
 Backend entries pass through unchanged, and the same access rules apply: a skill shows up only if the gateway serves every one of its files from that backend to that caller. A backend without the Skills extension contributes nothing. To namespace a backend's skills, mount a proxy instead:
 
