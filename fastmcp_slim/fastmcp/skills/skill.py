@@ -13,11 +13,8 @@ from urllib.parse import quote
 
 from pydantic import JsonValue
 
+from fastmcp.skills._constants import MAX_SKILL_BYTES, MAX_SKILL_FILES
 from fastmcp.skills.models import MCPSkill, SkillFrontmatter, SkillResource
-
-# SEP-2640 per-skill limits; servers should not serve skills that exceed them.
-MAX_SKILL_FILES = 512
-MAX_SKILL_BYTES = 16 * 1024 * 1024
 
 
 def _validate_relative_path(path: str) -> str:

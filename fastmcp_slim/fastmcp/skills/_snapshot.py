@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import math
 import re
 from dataclasses import dataclass
@@ -14,11 +13,9 @@ import yaml
 from mcp.shared.path_security import safe_join
 from yaml.nodes import MappingNode
 
-from fastmcp.skills.models import MCPSkill, SkillFrontmatter, SkillResource
-
-# SEP-2640 per-skill limits; servers should not serve skills that exceed them.
-MAX_SKILL_RESOURCES = 512
-MAX_SKILL_BYTES = 16 * 1024 * 1024
+from fastmcp.skills._constants import MAX_SKILL_BYTES, MAX_SKILL_FILES
+from fastmcp.skills.models import MCPSkill, SkillFrontmatter
+from fastmcp.skills.skill import Skill
 
 
 class _FrontmatterLoader(yaml.SafeLoader):
@@ -99,35 +96,19 @@ def snapshot(root: Path, skill_path: str) -> Snapshot:
     main = root / "SKILL.md"
     if main not in paths:
         raise ValueError("skill must contain SKILL.md")
-    if len(paths) > MAX_SKILL_RESOURCES:
-        raise ValueError(f"skill has more than {MAX_SKILL_RESOURCES} files")
+    if len(paths) > MAX_SKILL_FILES:
+        raise ValueError(f"skill has more than {MAX_SKILL_FILES} files")
     if sum(path.stat().st_size for path in paths) > MAX_SKILL_BYTES:
         raise ValueError(f"skill is larger than {MAX_SKILL_BYTES} bytes")
-    records: list[SkillResource] = []
+    contents: dict[str, bytes] = {}
     files: list[tuple[str, Path]] = []
-    frontmatter: SkillFrontmatter | None = None
     for path in paths:
-        safe_join(root, path.relative_to(root).as_posix())
-        content = path.read_bytes()
-        uri = f"skill://{quote(skill_path, safe='/')}/{quote(path.relative_to(root).as_posix(), safe='/')}"
-        records.append(
-            SkillResource(
-                uri=uri,
-                digest=f"sha256:{hashlib.sha256(content).hexdigest()}",
-                size=len(content),
-            )
-        )
+        relative = path.relative_to(root).as_posix()
+        safe_join(root, relative)
+        contents[relative] = path.read_bytes()
+        uri = f"skill://{quote(skill_path, safe='/')}/{quote(relative, safe='/')}"
         files.append((uri, path))
-        if path == main:
-            frontmatter = parse_frontmatter(content)
     if scan_files(root) != paths:
         raise ValueError("skill files changed while building the manifest")
-    if sum(record.size for record in records) > MAX_SKILL_BYTES:
-        raise ValueError(f"skill is larger than {MAX_SKILL_BYTES} bytes")
-    assert frontmatter is not None
-    entry = MCPSkill(
-        uri=f"skill://{quote(skill_path, safe='/')}/SKILL.md",
-        frontmatter=frontmatter,
-        resources=records,
-    )
+    entry = Skill.from_files(contents).to_mcp_skill(skill_path)
     return Snapshot(entry=entry, files=tuple(files))
