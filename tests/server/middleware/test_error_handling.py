@@ -8,7 +8,7 @@ from mcp import MCPError
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.exceptions import NotFoundError, ToolError
+from fastmcp.exceptions import NotFoundError, ToolError, ValidationError
 from fastmcp.server.middleware.error_handling import (
     ErrorHandlingMiddleware,
     RetryMiddleware,
@@ -132,6 +132,21 @@ class TestErrorHandlingMiddleware:
         assert isinstance(result, MCPError)
         assert result.error.code == -32602
         assert "Invalid params: test error" in result.error.message
+
+    def test_transform_error_fastmcp_validation_error(self, mock_context):
+        """A FastMCP ValidationError is a params problem, not an internal error.
+
+        Without this mapping a missing prompt argument surfaced as -32603 when
+        ErrorHandlingMiddleware was installed with its default settings.
+        """
+        middleware = ErrorHandlingMiddleware()
+        error = ValidationError("Missing required arguments: {'topic'}")
+
+        result = middleware._transform_error(error, mock_context)
+
+        assert isinstance(result, MCPError)
+        assert result.error.code == -32602
+        assert "Invalid params" in result.error.message
 
     def test_transform_error_not_found_for_resource_method(self):
         """Test that not-found errors use -32002 for resource methods."""
