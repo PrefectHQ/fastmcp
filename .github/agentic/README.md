@@ -96,10 +96,15 @@ explicit file paths; verification never expands a parent directory into the full
 suite. More than twenty sibling modules are omitted with a recorded limitation.
 An omitted adjacent stage is `not_run`, not a duplicated passing head result. The repository
 lockfile is installed without re-resolution; JUnit cases distinguish assertion
-failures, setup errors, skips and missing tests. Test processes receive a separate
-home and an explicit environment without controller credentials; this is not an
-operating-system sandbox. Each command has a timeout that terminates its process
-group.
+failures, setup errors, skips and missing tests. The managed supervisor launches
+verification as UID/GID 65534 with no supplementary groups, capabilities, or
+inherited credentials, and with privilege escalation disabled. The supervisor's
+runner and input files remain root-owned; verification has its own home and
+scratch directory. A network-disabled container canary checks access to a dummy
+supervisor environment and private file. Linux, a root supervisor, and `setpriv`
+are required; an unavailable boundary fails closed. This isolates supervisor
+credentials, not all networking or world-readable files. Command process groups
+have timeouts; the managed container deadline is the final lifetime bound.
 
 Results retain the source revisions, probe source, commands, exit codes and test
 transitions. The controller checks deployment version and exact inputs before

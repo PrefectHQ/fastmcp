@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from flows.agentic_stack import digest
 from flows.agentic_validate_patch import install_tools
+from flows.agentic_verification_process import isolated_verification
 
 
 class VerificationSpec(BaseModel):
@@ -324,7 +325,7 @@ def verify_contribution(spec: VerificationSpec) -> dict:
     with tempfile.TemporaryDirectory(prefix="fastmcp-contribution-") as temporary:
         directory = Path(temporary)
         install_tools(directory / "tools")
-        result = verify(spec, directory)
+        result = isolated_verification(spec, directory)
     with get_client(sync_client=True) as client:
         client.create_artifact(
             ArtifactCreate(
@@ -339,12 +340,25 @@ def verify_contribution(spec: VerificationSpec) -> dict:
 
 if __name__ == "__main__":
     import argparse
+    import resource
+
+    if sys.platform == "linux":
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        resource.setrlimit(resource.RLIMIT_CPU, (2400, 2400))
+        resource.setrlimit(resource.RLIMIT_AS, (4 * 1024**3, 4 * 1024**3))
+        resource.setrlimit(resource.RLIMIT_NPROC, (256, 256))
+        resource.setrlimit(resource.RLIMIT_NOFILE, (512, 512))
+        resource.setrlimit(resource.RLIMIT_FSIZE, (128 * 1024**2, 128 * 1024**2))
 
     parser = argparse.ArgumentParser()
     parser.add_argument("spec", type=Path)
-    parser.add_argument("output", type=Path)
+    parser.add_argument("output", nargs="?", type=Path)
     args = parser.parse_args()
     spec = VerificationSpec.model_validate_json(args.spec.read_text())
     with tempfile.TemporaryDirectory(prefix="fastmcp-contribution-") as temporary:
         result = verify(spec, Path(temporary))
-    args.output.write_text(json.dumps(result, indent=2) + "\n")
+    rendered = json.dumps(result, indent=2) + "\n"
+    if args.output is None:
+        sys.stdout.write(rendered)
+    else:
+        args.output.write_text(rendered)

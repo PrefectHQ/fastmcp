@@ -33,3 +33,14 @@ jobs:
       - run: uv run ruff check . && uv run ruff format --check .
       - run: uv run ty check
       - run: uv run pytest -q
+      - name: Check verifier credential boundary
+        run: >-
+          docker run --rm --network none --read-only
+          --cap-drop ALL --cap-add SETUID --cap-add SETGID --cap-add SETPCAP --cap-add CHOWN
+          --cap-add DAC_OVERRIDE --cap-add FOWNER
+          --security-opt no-new-privileges --pids-limit 128 --memory 512m --cpus 1
+          --tmpfs /tmp:rw,exec,nosuid,nodev,size=128m
+          --env PREFECT_API_KEY=dummy-controller-token
+          --env GH_TOKEN=dummy-github-token
+          --mount type=bind,src=${{ github.workspace }}/.github/agentic,dst=/source,readonly
+          python:3.12-slim python /source/tests/verification_canary.py
