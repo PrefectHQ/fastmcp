@@ -483,3 +483,35 @@ class TestPathTraversal:
         async with Client(skills_server) as client:
             with pytest.raises(ValueError, match="would escape the target directory"):
                 await download_skill(client, malicious_name, target)
+
+
+class TestMountedSkills:
+    @pytest.fixture
+    def mounted_server(self, skills_dir: Path) -> FastMCP:
+        parent = FastMCP("parent")
+        for namespace in ("ops", "web"):
+            child = FastMCP(namespace, providers=[SkillsDirectoryProvider(skills_dir)])
+            parent.mount(child, namespace=namespace)
+        return parent
+
+    async def test_download_installs_nested_skill_by_name(
+        self, mounted_server: FastMCP, tmp_path: Path
+    ):
+        async with Client(mounted_server) as client:
+            path = await download_skill(client, "ops/pdf-processing", tmp_path)
+
+        assert path == tmp_path / "pdf-processing"
+        assert (path / "SKILL.md").exists()
+
+    async def test_sync_installs_first_of_colliding_names(
+        self, mounted_server: FastMCP, tmp_path: Path
+    ):
+        async with Client(mounted_server) as client:
+            results = await sync_skills(client, tmp_path)
+
+        assert sorted(path.name for path in results) == [
+            "code-review",
+            "nested-skill",
+            "pdf-processing",
+        ]
+        assert not (tmp_path / "ops").exists()

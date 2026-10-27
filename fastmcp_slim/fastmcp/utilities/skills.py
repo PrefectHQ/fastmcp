@@ -12,9 +12,12 @@ from typing import TYPE_CHECKING
 import mcp_types
 
 from fastmcp._warnings import FastMCPDeprecationWarning
+from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -154,11 +157,14 @@ async def download_skill(
 ) -> Path:
     """Download a skill and all its files to a local directory.
 
-    Creates a subdirectory named after the skill containing all files.
+    Creates a subdirectory named after the skill containing all files. A
+    skill served at a nested path, such as a mounted server's `ops/deploy`,
+    is installed as `deploy`, since agents look for skill folders one level
+    deep.
 
     Args:
         client: Connected FastMCP client
-        skill_name: Name of the skill to download
+        skill_name: Name or path of the skill to download
         target_dir: Directory where skill folder will be created
         overwrite: If True, overwrite existing skill directory. If False
             (default), raise FileExistsError if directory exists.
@@ -185,10 +191,13 @@ async def download_skill(
         ```
     """
     target_dir = Path(target_dir).expanduser().resolve()
-    skill_dir = (target_dir / skill_name).resolve()
+    segments = skill_name.split("/")
+    skill_dir = (target_dir / segments[-1]).resolve()
 
-    # Security: ensure skill_dir stays within target_dir
-    if not skill_dir.is_relative_to(target_dir):
+    # Security: reject relative segments and ensure skill_dir stays within target_dir
+    if any(segment in ("", ".", "..") for segment in segments) or (
+        not skill_dir.is_relative_to(target_dir)
+    ):
         raise ValueError(f"Skill name {skill_name!r} would escape the target directory")
 
     # Check if directory exists
@@ -244,6 +253,10 @@ async def sync_skills(
 ) -> list[Path]:
     """Download all available skills from a server.
 
+    Each skill is installed in a folder named after it. When two skills share
+    a name, such as `ops/deploy` and `web/deploy`, only the first is
+    installed.
+
     Args:
         client: Connected FastMCP client
         target_dir: Directory where skill folders will be created
@@ -264,8 +277,18 @@ async def sync_skills(
     """
     skills = await list_skill_summaries(client)
     downloaded = []
+    installed_names: set[str] = set()
 
     for skill in skills:
+        folder_name = skill.name.rsplit("/", 1)[-1]
+        if folder_name in installed_names:
+            logger.warning(
+                "Skipping skill %r: a skill named %r was already installed",
+                skill.name,
+                folder_name,
+            )
+            continue
+        installed_names.add(folder_name)
         try:
             path = await download_skill(
                 client, skill.name, target_dir, overwrite=overwrite
