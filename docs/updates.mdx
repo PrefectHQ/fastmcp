@@ -5,6 +5,16 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 4.2.0a1" description="October 27, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.2.0a1: Skill Issue"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0a1"
+cta="Read the release notes"
+>
+FastMCP 4.2's first alpha brings code-defined skills, discovery through mounted and proxied servers, and verified downloads into one workflow. Build a `Skill` in Python or load one from a folder or package, publish it through `SkillCatalogProvider`, and let clients discover its metadata or download and export its files. Proxy discovery is opt-in with `skills=True`. Skills support remains experimental; this prerelease is intended for integration testing. It also includes lazy, shared Prefab renderer resources and backend-addressing fixes. Migration: `Skill` now represents file contents; the wire metadata model is named `MCPSkill`. Whole-skill downloads require a standard `SKILL.md` with a `name` matching its URI and a `description`. Exports with `overwrite=True` replace the installed folder, including locally added files. Ordinary resource providers still support their existing document formats. Thanks to our 8 contributors, including 3 first-time contributors.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.1.4" description="October 26, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.1.4: Token Gesture"

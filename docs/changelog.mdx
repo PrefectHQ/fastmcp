@@ -5,6 +5,54 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.2.0a1" description="2026-10-27">
+
+**[v4.2.0a1: Skill Issue](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0a1)**
+
+FastMCP 4.2's first alpha brings code-defined skills, discovery through mounted and proxied servers, and verified downloads into one workflow. Build a `Skill` in Python or load one from a folder or package, publish it through `SkillCatalogProvider`, and let clients discover its metadata or download and export its files. Proxy discovery is opt-in with `skills=True`. Skills support remains experimental; this prerelease is intended for integration testing. It also includes lazy, shared Prefab renderer resources and backend-addressing fixes. Migration: `Skill` now represents file contents; the wire metadata model is named `MCPSkill`. Whole-skill downloads require a standard `SKILL.md` with a `name` matching its URI and a `description`. Exports with `overwrite=True` replace the installed folder, including locally added files. Ordinary resource providers still support their existing document formats. Thanks to our 8 contributors, including 3 first-time contributors.
+
+### Breaking Changes ⚠️
+* Make Skill a storage-neutral object with folders as one loader by [@zzstoatzz](https://github.com/zzstoatzz) in [#6065](https://github.com/PrefectHQ/fastmcp/pull/6065)
+### Enhancements ✨
+* Rename the resource-era list_skills helper to list_skill_summaries by [@zzstoatzz](https://github.com/zzstoatzz) in [#6051](https://github.com/PrefectHQ/fastmcp/pull/6051)
+* Discover skills through mounted servers by [@zzstoatzz](https://github.com/zzstoatzz) in [#6067](https://github.com/PrefectHQ/fastmcp/pull/6067)
+* Share Prefab renderer resources across equivalent tools by [@jlowin](https://github.com/jlowin), [@fprieto14](https://github.com/fprieto14), and [@keremoktener](https://github.com/keremoktener) in [#6077](https://github.com/PrefectHQ/fastmcp/pull/6077)
+* Export Skill from fastmcp by [@zzstoatzz](https://github.com/zzstoatzz) in [#6071](https://github.com/PrefectHQ/fastmcp/pull/6071)
+* Add skills discovery to ClientGroup by [@zzstoatzz](https://github.com/zzstoatzz) in [#6072](https://github.com/PrefectHQ/fastmcp/pull/6072)
+* Add --skills to fastmcp list by [@zzstoatzz](https://github.com/zzstoatzz) in [#6073](https://github.com/PrefectHQ/fastmcp/pull/6073)
+* Add Client.read_skill and tighten skills docs by [@zzstoatzz](https://github.com/zzstoatzz) in [#6087](https://github.com/PrefectHQ/fastmcp/pull/6087)
+* Verify and export skills with resource-manifest fallback by [@zzstoatzz](https://github.com/zzstoatzz) in [#6086](https://github.com/PrefectHQ/fastmcp/pull/6086)
+* Forward Skills discovery through proxies by [@jakekaplan](https://github.com/jakekaplan) in [#5788](https://github.com/PrefectHQ/fastmcp/pull/5788)
+* Share strict skill snapshot projection by [@zzstoatzz](https://github.com/zzstoatzz) in [#6089](https://github.com/PrefectHQ/fastmcp/pull/6089)
+* Use scoped local tests and leave full suites to CI by [@zzstoatzz](https://github.com/zzstoatzz) in [#6094](https://github.com/PrefectHQ/fastmcp/pull/6094)
+* Share ClientGroup skill client lookup by [@zzstoatzz](https://github.com/zzstoatzz) in [#6101](https://github.com/PrefectHQ/fastmcp/pull/6101)
+* Share filesystem skill supporting-file reads by [@zzstoatzz](https://github.com/zzstoatzz) in [#6102](https://github.com/PrefectHQ/fastmcp/pull/6102)
+### Security 🔒
+* Verify advertised skill frontmatter when reading content by [@zzstoatzz](https://github.com/zzstoatzz) in [#6090](https://github.com/PrefectHQ/fastmcp/pull/6090)
+* Check skill limits before reading directory and remote files by [@zzstoatzz](https://github.com/zzstoatzz) in [#6092](https://github.com/PrefectHQ/fastmcp/pull/6092)
+### Fixes 🐞
+* Make the version-check InvalidURL regression independent of proxy parsing by [@HootRock](https://github.com/HootRock) in [#6048](https://github.com/PrefectHQ/fastmcp/pull/6048)
+* Build the Prefab renderer page on read, not on resources/list by [@adam-zovos](https://github.com/adam-zovos) in [#6039](https://github.com/PrefectHQ/fastmcp/pull/6039)
+* Install mounted skills under their own name in sync_skills by [@zzstoatzz](https://github.com/zzstoatzz) in [#6078](https://github.com/PrefectHQ/fastmcp/pull/6078)
+* Stage skill exports before replacing installed files by [@zzstoatzz](https://github.com/zzstoatzz) in [#6091](https://github.com/PrefectHQ/fastmcp/pull/6091)
+* fix: Prefix backend hash addresses with double underscores by [@jlowin](https://github.com/jlowin) and [@BlueX888](https://github.com/BlueX888) in [#6100](https://github.com/PrefectHQ/fastmcp/pull/6100)
+### Docs 📚
+* Consolidate skills docs into one Skills over MCP page by [@zzstoatzz](https://github.com/zzstoatzz) in [#6049](https://github.com/PrefectHQ/fastmcp/pull/6049)
+* Rewrite skills docs around Skill and SkillCatalogProvider by [@zzstoatzz](https://github.com/zzstoatzz) in [#6066](https://github.com/PrefectHQ/fastmcp/pull/6066)
+* Tighten skills docs examples by [@zzstoatzz](https://github.com/zzstoatzz) in [#6070](https://github.com/PrefectHQ/fastmcp/pull/6070)
+* Shorten the skills docs page by [@zzstoatzz](https://github.com/zzstoatzz) in [#6079](https://github.com/PrefectHQ/fastmcp/pull/6079)
+* Badge the skills page as 4.2.0 by [@zzstoatzz](https://github.com/zzstoatzz) in [#6083](https://github.com/PrefectHQ/fastmcp/pull/6083)
+* Consolidate skills examples around verified Skill values by [@zzstoatzz](https://github.com/zzstoatzz) in [#6093](https://github.com/PrefectHQ/fastmcp/pull/6093)
+
+## New Contributors
+* @fprieto14 made their first contribution in [#6077](https://github.com/PrefectHQ/fastmcp/pull/6077)
+* @keremoktener made their first contribution in [#6077](https://github.com/PrefectHQ/fastmcp/pull/6077)
+* @adam-zovos made their first contribution in [#6039](https://github.com/PrefectHQ/fastmcp/pull/6039)
+
+**Full Changelog**: [v4.1.4...v4.2.0a1](https://github.com/PrefectHQ/fastmcp/compare/v4.1.4...v4.2.0a1)
+
+</Update>
+
 <Update label="v4.1.4" description="2026-10-26">
 
 **[v4.1.4: Token Gesture](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.4)**
