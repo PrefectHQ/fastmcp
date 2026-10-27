@@ -7,7 +7,7 @@ icon: wand-magic-sparkles
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
 
-<VersionBadge version="3.0.0" />
+<VersionBadge version="4.2.0" />
 
 A skill is a `SKILL.md` of instructions plus whatever files it points to. Most agents load skills from a local folder, which means every laptop has its own copy and none of them agree. Put the skills on an MCP server instead: one copy, and an update ships when you deploy.
 
@@ -29,8 +29,6 @@ mcp.add_provider(SkillCatalogProvider([release_notes]))
 That's a skills server. Every client can read `skill://release-notes/SKILL.md` and `template.md` as ordinary resources. Clients that speak the [Skills extension](https://modelcontextprotocol.io/seps/2640-skills-extension) can also call `skills/list` and get each skill's description and a hashed manifest of its files, so a host can offer the skill without an install step. Few hosts do yet, and FastMCP's support is experimental, but you get both from the same provider. Run `fastmcp list server.py --skills` to see what you're serving.
 
 ## Where skills come from
-
-<VersionBadge version="4.2.0" />
 
 A `Skill` is just files. Write it in Python as above, or load what you already have:
 
