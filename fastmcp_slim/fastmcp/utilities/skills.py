@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import warnings
 from dataclasses import dataclass
@@ -155,25 +154,27 @@ async def download_skill(
     *,
     overwrite: bool = False,
 ) -> Path:
-    """Download a skill and all its files to a local directory.
+    """Read a skill from the server and write it to a local directory.
 
     Creates a subdirectory named after the skill containing all files. A
     skill served at a nested path, such as a mounted server's `ops/deploy`,
     is installed as `deploy`, since agents look for skill folders one level
-    deep.
+    deep. Every file is checked against the server's manifest before it is
+    written; see `Client.read_skill`.
 
     Args:
         client: Connected FastMCP client
         skill_name: Name or path of the skill to download
         target_dir: Directory where skill folder will be created
-        overwrite: If True, overwrite existing skill directory. If False
+        overwrite: If True, replace an existing skill directory. If False
             (default), raise FileExistsError if directory exists.
 
     Returns:
         Path to the downloaded skill directory
 
     Raises:
-        ValueError: If skill cannot be found or downloaded
+        ValueError: If the skill cannot be found, fails verification, or is
+            not a valid skill
         FileExistsError: If skill directory exists and overwrite=False
 
     Example:
@@ -200,49 +201,14 @@ async def download_skill(
     ):
         raise ValueError(f"Skill name {skill_name!r} would escape the target directory")
 
-    # Check if directory exists
     if skill_dir.exists() and not overwrite:
         raise FileExistsError(
             f"Skill directory already exists: {skill_dir}. "
             "Use overwrite=True to replace."
         )
 
-    # Get manifest to know what files to download
-    manifest = await get_skill_manifest(client, skill_name)
-
-    # Create skill directory
-    skill_dir.mkdir(parents=True, exist_ok=True)
-
-    # Download each file
-    for file_info in manifest.files:
-        # Security: reject absolute paths and paths that escape skill_dir
-        if Path(file_info.path).is_absolute():
-            continue
-        file_path = (skill_dir / file_info.path).resolve()
-        if not file_path.is_relative_to(skill_dir):
-            continue
-
-        file_uri = f"skill://{skill_name}/{file_info.path}"
-        result = await client.read_resource(file_uri)
-
-        if not result:
-            continue
-
-        content = result[0]
-
-        # Create parent directories if needed
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Write content
-        if isinstance(content, mcp_types.TextResourceContents):
-            file_path.write_text(content.text, encoding="utf-8")
-        elif isinstance(content, mcp_types.BlobResourceContents):
-            file_path.write_bytes(base64.b64decode(content.blob))
-        else:
-            # Skip unknown content types
-            continue
-
-    return skill_dir
+    skill = await client.read_skill(f"skill://{skill_name}/SKILL.md")
+    return skill.to_directory(skill_dir, overwrite=overwrite)
 
 
 async def sync_skills(

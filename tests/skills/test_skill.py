@@ -144,3 +144,48 @@ def test_skill_is_exported_from_fastmcp():
     import fastmcp
 
     assert fastmcp.Skill is Skill
+
+
+def test_to_directory_round_trips_through_from_directory(tmp_path: Path):
+    skill = Skill(
+        name="review",
+        description="Review changes",
+        instructions="# Review\r\n",
+        files={"notes.md": "line one\r\n", "refs/logo.bin": b"\x00\xff\r\n"},
+    )
+    folder = skill.to_directory(tmp_path / "review")
+    assert folder == tmp_path / "review"
+    assert (folder / "refs" / "logo.bin").read_bytes() == b"\x00\xff\r\n"
+    assert Skill.from_directory(folder) == skill
+
+
+def test_to_directory_requires_a_matching_folder_name(tmp_path: Path):
+    skill = Skill(name="review", description="Review", instructions="# Review\n")
+    with pytest.raises(ValueError, match="must match the skill's name"):
+        skill.to_directory(tmp_path / "renamed")
+    assert not (tmp_path / "renamed").exists()
+
+
+def test_to_directory_overwrite_replaces_the_folder(tmp_path: Path):
+    skill = Skill(name="review", description="Review", instructions="# Review\n")
+    folder = tmp_path / "review"
+    folder.mkdir()
+    (folder / "stale.md").write_text("old")
+
+    with pytest.raises(FileExistsError, match="overwrite=True"):
+        skill.to_directory(folder)
+    assert (folder / "stale.md").exists()
+
+    assert skill.to_directory(folder, overwrite=True) == folder
+    assert sorted(p.name for p in folder.iterdir()) == ["SKILL.md"]
+
+
+def test_to_directory_refuses_a_symlink(tmp_path: Path):
+    skill = Skill(name="review", description="Review", instructions="# Review\n")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    link = tmp_path / "review"
+    link.symlink_to(elsewhere, target_is_directory=True)
+    with pytest.raises(ValueError, match="symlink"):
+        skill.to_directory(link, overwrite=True)
+    assert elsewhere.exists()

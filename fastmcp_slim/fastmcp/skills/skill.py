@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
@@ -177,6 +178,38 @@ class Skill:
                 f"Skill folder {root.name!r} must match its SKILL.md name {skill.name!r}"
             )
         return skill
+
+    def to_directory(
+        self, path: str | os.PathLike[str], *, overwrite: bool = False
+    ) -> Path:
+        """Write the skill's files into `path`, a folder named after the skill.
+
+        The folder name must match the skill's `name`, so `from_directory` can
+        read it back. An existing folder raises `FileExistsError` unless
+        `overwrite` is set, in which case it is replaced: files that aren't
+        part of the skill are removed.
+        """
+        root = Path(path)
+        if root.name != self.name:
+            raise ValueError(
+                f"Skill folder {root.name!r} must match the skill's name {self.name!r}"
+            )
+        if root.is_symlink():
+            raise ValueError(f"Skill folder is a symlink: {root}")
+        if root.exists():
+            if not overwrite:
+                raise FileExistsError(
+                    f"Skill directory already exists: {root}. "
+                    "Use overwrite=True to replace."
+                )
+            if not root.is_dir():
+                raise ValueError(f"Skill folder is not a directory: {root}")
+            shutil.rmtree(root)
+        for relative, content in self._files.items():
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+        return root
 
     @property
     def name(self) -> str:

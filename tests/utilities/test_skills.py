@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import json
 from pathlib import Path
 from typing import cast
 
@@ -55,11 +54,11 @@ def skills_dir(tmp_path: Path) -> Path:
     skills = tmp_path / "skills"
     skills.mkdir()
 
-    # Create pdf-processing skill
     pdf_skill = skills / "pdf-processing"
     pdf_skill.mkdir()
     (pdf_skill / "SKILL.md").write_text(
         """---
+name: pdf-processing
 description: Process PDF documents
 ---
 
@@ -70,11 +69,11 @@ Instructions for PDF handling.
     )
     (pdf_skill / "reference.md").write_text("# Reference\n\nSome reference docs.")
 
-    # Create code-review skill
     code_skill = skills / "code-review"
     code_skill.mkdir()
     (code_skill / "SKILL.md").write_text(
         """---
+name: code-review
 description: Review code for quality
 ---
 
@@ -84,10 +83,17 @@ Instructions for reviewing code.
 """
     )
 
-    # Create skill with nested files
     nested_skill = skills / "nested-skill"
     nested_skill.mkdir()
-    (nested_skill / "SKILL.md").write_text("# Nested\n\nHas nested files.")
+    (nested_skill / "SKILL.md").write_text(
+        """---
+name: nested-skill
+description: Has nested files
+---
+
+# Nested
+"""
+    )
     scripts = nested_skill / "scripts"
     scripts.mkdir()
     (scripts / "helper.py").write_text("# Helper script\nprint('hello')")
@@ -279,53 +285,6 @@ class TestDownloadSkill:
         downloaded = (result / "SKILL.md").read_text()
         assert downloaded == original
 
-    async def test_writes_text_resources_as_utf8(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        content = "Use the tool — then stop."
-        manifest = {
-            "skill": "unicode",
-            "files": [
-                {
-                    "path": "SKILL.md",
-                    "size": len(content.encode("utf-8")),
-                    "hash": "sha256:unicode",
-                }
-            ],
-        }
-        client = FakeResourceReader(
-            {
-                "skill://unicode/_manifest": [
-                    text_resource("skill://unicode/_manifest", json.dumps(manifest))
-                ],
-                "skill://unicode/SKILL.md": [
-                    text_resource("skill://unicode/SKILL.md", content)
-                ],
-            }
-        )
-        original_write_text = Path.write_text
-
-        def locale_sensitive_write_text(
-            path: Path,
-            data: str,
-            encoding: str | None = None,
-            errors: str | None = None,
-            newline: str | None = None,
-        ) -> int:
-            return original_write_text(
-                path,
-                data,
-                encoding=encoding or "ascii",
-                errors=errors,
-                newline=newline,
-            )
-
-        monkeypatch.setattr(Path, "write_text", locale_sensitive_write_text)
-
-        result = await download_skill(cast(Client, client), "unicode", tmp_path)
-
-        assert (result / "SKILL.md").read_text(encoding="utf-8") == content
-
     async def test_raises_if_exists_without_overwrite(
         self, skills_server: FastMCP, tmp_path: Path
     ):
@@ -350,6 +309,28 @@ class TestDownloadSkill:
             )
 
         assert (result / "SKILL.md").exists()
+        assert not (result / "old-file.txt").exists()
+
+    async def test_rejects_a_file_that_does_not_match_the_manifest(
+        self, skills_server: FastMCP, skills_dir: Path, tmp_path: Path
+    ):
+        async with Client(skills_server) as client:
+            reference = skills_dir / "pdf-processing" / "reference.md"
+            reference.write_bytes(b"x" * len(reference.read_bytes()))
+            with pytest.raises(ValueError, match="does not match its manifest"):
+                await download_skill(client, "pdf-processing", tmp_path)
+        assert not (tmp_path / "pdf-processing").exists()
+
+    async def test_downloads_binary_files(self, skills_dir: Path, tmp_path: Path):
+        data = b"\x00\x01binary data"
+        (skills_dir / "pdf-processing" / "data.bin").write_bytes(data)
+        server = FastMCP("Skills Server")
+        server.add_provider(SkillsDirectoryProvider(roots=skills_dir))
+
+        async with Client(server) as client:
+            result = await download_skill(client, "pdf-processing", tmp_path)
+
+        assert (result / "data.bin").read_bytes() == data
 
     async def test_expands_user_path(self, skills_server: FastMCP, tmp_path: Path):
         # This tests that ~ expansion works (though we can't actually test ~)
@@ -357,58 +338,6 @@ class TestDownloadSkill:
             result = await download_skill(client, "code-review", tmp_path)
 
         assert result.exists()
-
-    async def test_skips_manifest_paths_that_escape_target(self, tmp_path: Path):
-        manifest = {
-            "skill": "malicious",
-            "files": [
-                {"path": "SKILL.md", "size": 6, "hash": "sha256:safe"},
-                {"path": "../escape.txt", "size": 6, "hash": "sha256:escape"},
-                {"path": "/absolute.txt", "size": 8, "hash": "sha256:absolute"},
-            ],
-        }
-
-        client = FakeResourceReader(
-            {
-                "skill://malicious/_manifest": [
-                    text_resource("skill://malicious/_manifest", json.dumps(manifest))
-                ],
-                "skill://malicious/SKILL.md": [
-                    text_resource("skill://malicious/SKILL.md", "# Safe")
-                ],
-            }
-        )
-
-        result = await download_skill(cast(Client, client), "malicious", tmp_path)
-
-        assert (result / "SKILL.md").read_text() == "# Safe"
-        assert not (tmp_path / "escape.txt").exists()
-        assert client.requested_uris == [
-            "skill://malicious/_manifest",
-            "skill://malicious/SKILL.md",
-        ]
-
-    async def test_downloads_blob_resources(self, tmp_path: Path):
-        data = b"\x00\x01binary data"
-        manifest = {
-            "skill": "binary",
-            "files": [{"path": "data.bin", "size": len(data), "hash": "sha256:data"}],
-        }
-
-        client = FakeResourceReader(
-            {
-                "skill://binary/_manifest": [
-                    text_resource("skill://binary/_manifest", json.dumps(manifest))
-                ],
-                "skill://binary/data.bin": [
-                    blob_resource("skill://binary/data.bin", data)
-                ],
-            }
-        )
-
-        result = await download_skill(cast(Client, client), "binary", tmp_path)
-
-        assert (result / "data.bin").read_bytes() == data
 
 
 class TestSyncSkills:

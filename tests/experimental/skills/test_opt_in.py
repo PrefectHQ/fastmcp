@@ -26,7 +26,7 @@ async def test_default_provider_keeps_legacy_publication(
             "skill://review/_manifest",
         }
         contents = await client.read_resource("skill://review/SKILL.md")
-        assert contents[0].text == "# No frontmatter\nLoose instructions\n"
+        assert contents[0].text == "# No frontmatter\r\nLoose instructions\r\n"
         assert client.server_capabilities is not None
         assert "io.modelcontextprotocol/skills" not in (
             client.server_capabilities.extensions or {}

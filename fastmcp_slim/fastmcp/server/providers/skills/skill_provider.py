@@ -64,7 +64,7 @@ class SkillResource(Resource):
             main_file_path = resolve_within(
                 self.skill_info.path, self.skill_info.main_file
             )
-            return main_file_path.read_text(encoding="utf-8")
+            return main_file_path.read_bytes().decode("utf-8")
 
     def _generate_manifest(self) -> str:
         """Generate JSON manifest for the skill."""
@@ -105,7 +105,7 @@ class SkillFileTemplate(ResourceTemplate):
         # Determine if binary or text based on mime type
         mime_type, _ = mimetypes.guess_type(str(full_path))
         if mime_type and mime_type.startswith("text/"):
-            return full_path.read_text(encoding="utf-8")
+            return full_path.read_bytes().decode("utf-8")
         else:
             return full_path.read_bytes()
 
@@ -177,7 +177,7 @@ class SkillFileResource(Resource):
 
         mime_type, _ = mimetypes.guess_type(str(full_path))
         if mime_type and mime_type.startswith("text/"):
-            return full_path.read_text(encoding="utf-8")
+            return full_path.read_bytes().decode("utf-8")
         else:
             return full_path.read_bytes()
 

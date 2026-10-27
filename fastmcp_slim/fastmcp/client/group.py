@@ -18,6 +18,7 @@ from fastmcp.client.client import CallToolResult, Client, ConnectMode
 from fastmcp.client.progress import ProgressHandler
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.skills.models import MCPSkill
+from fastmcp.skills.skill import Skill
 from fastmcp.utilities.async_utils import gather
 
 
@@ -297,6 +298,20 @@ class ClientGroup:
                 f"ClientGroup client for server {server_name!r} is not connected"
             )
         return await client.get_skill(uri, cache_mode=cache_mode)
+
+    async def read_skill(
+        self, server_name: str, uri: str, *, cache_mode: CacheMode = "use"
+    ) -> Skill:
+        """Read one whole skill from the named server; see `Client.read_skill`."""
+        try:
+            client = self._clients[server_name]
+        except KeyError as exc:
+            raise KeyError(f"Unknown ClientGroup server: {server_name!r}") from exc
+        if not client.is_connected():
+            raise RuntimeError(
+                f"ClientGroup client for server {server_name!r} is not connected"
+            )
+        return await client.read_skill(uri, cache_mode=cache_mode)
 
     async def resolve_tool(self, name: str) -> ToolRoute:
         """Resolve a public tool name to its client and upstream identity.
