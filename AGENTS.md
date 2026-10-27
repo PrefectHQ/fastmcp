@@ -100,7 +100,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 - Never amend commits to fix prek failures
 - Never apply labels manually or invent new ones — issues and PRs are auto-labeled by a bot based on title/body/code changes. Don't note a "suggested" or "appropriate" label anywhere in the PR body either. See the review-pr skill.
 - Improvements = enhancements (not features) unless specified
-- **NEVER** force-push on collaborative repos
+- Rebase PR branches when needed. Publish rewritten history with `--force-with-lease` against the verified remote head; use an atomic push when updating a stack. Never overwrite another contributor’s new work or rewrite shared release branches. A requested rebase includes publishing it safely; it does not require separate permission for the lease-protected push.
 - **ALWAYS** run applicable prek checks before PRs
 - **NEVER** create a release, comment on an issue, or open a PR unless specifically instructed to do so.
 - **NEVER** merge a PR marked as do-not-merge or draft. Check title, body, AND labels for `[DNM]`, `DNM`, `DO NOT MERGE`, `DON'T MERGE`, `DONT MERGE`, `do-not-merge`, `dont-merge`, `[DRAFT]`, or `DRAFT` (case-insensitive, any variation — some authors use `[DRAFT]` in the title even when `isDraft` is false). Authors use these as hard stops — respect them even if CI is green and review looks clean. When triaging a batch of PRs, filter these out up front AND re-check each one's labels immediately before merging, since labels can change mid-session.
