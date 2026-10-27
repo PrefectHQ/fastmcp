@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 from typing import TYPE_CHECKING, cast
 
 import mcp_types
@@ -18,12 +20,14 @@ from fastmcp.skills.models import (
     ListSkillsRequest,
     ListSkillsResult,
     MCPSkill,
+    _parse_resource_uri,
 )
 from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
     from fastmcp.client.client import Client
+    from fastmcp.skills.skill import Skill
 
 logger = get_logger(__name__)
 
@@ -219,3 +223,49 @@ class ClientSkillsMixin:
         """
         result = await self.get_skill_mcp(uri, cache_mode=cache_mode)
         return result.skill
+
+    async def read_skill(self: Client, uri: str) -> Skill:
+        """Fetch a whole skill and return it as a `Skill`.
+
+        Gets the skill's entry, reads every file in its manifest, and checks
+        each file's size and digest before building the `Skill`. The result
+        can be saved, inspected, or served again from another server with
+        `SkillCatalogProvider`.
+
+        Args:
+            uri: URI of the skill's `SKILL.md` resource.
+
+        Returns:
+            The skill, with every file's exact bytes.
+
+        Raises:
+            RuntimeError: If the client is disconnected or Skills was not negotiated.
+            ValueError: If the skill has no static manifest, or a file's bytes
+                don't match the manifest.
+            MCPError: If the server rejects a request.
+        """
+        from fastmcp.skills.skill import Skill
+
+        entry = await self.get_skill(uri)
+        if entry.resources == "dynamic":
+            raise ValueError(f"Skill {uri!r} has no static manifest to read")
+
+        root_depth = len(_parse_resource_uri(entry.uri)[2]) - 1
+        files: dict[str, bytes] = {}
+        for record in entry.resources:
+            contents = await self.read_resource(record.uri)
+            if len(contents) != 1:
+                raise ValueError(f"Skill file {record.uri!r} did not return one file")
+            content = contents[0]
+            if isinstance(content, mcp_types.TextResourceContents):
+                data = content.text.encode()
+            else:
+                data = base64.b64decode(content.blob)
+            digest = f"sha256:{hashlib.sha256(data).hexdigest()}"
+            if len(data) != record.size or digest != record.digest:
+                raise ValueError(
+                    f"Skill file {record.uri!r} does not match its manifest digest"
+                )
+            relative = "/".join(_parse_resource_uri(record.uri)[2][root_depth:])
+            files[relative] = data
+        return Skill.from_files(files)

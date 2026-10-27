@@ -194,3 +194,42 @@ async def test_shadowed_file_hides_skill():
 def test_invalid_catalogs(skills: object, message: str):
     with pytest.raises(ValueError, match=message):
         SkillCatalogProvider(skills)  # ty: ignore[invalid-argument-type]
+
+
+async def test_read_skill_returns_the_served_skill():
+    server = serve(SkillCatalogProvider({"team/review": REVIEW, "deploy": DEPLOY}))
+    async with skills_client(server) as client:
+        assert await client.read_skill("skill://team/review/SKILL.md") == REVIEW
+        assert await client.read_skill("skill://deploy/SKILL.md") == DEPLOY
+
+
+async def test_read_skill_can_be_served_again():
+    source = serve(SkillCatalogProvider([REVIEW]))
+    async with skills_client(source) as client:
+        skill = await client.read_skill("skill://review/SKILL.md")
+
+    mirror = serve(SkillCatalogProvider([skill]))
+    async with skills_client(mirror) as client:
+        assert await client.read_skill("skill://review/SKILL.md") == REVIEW
+
+
+async def test_read_skill_rejects_bytes_that_miss_the_manifest():
+    provider = SkillCatalogProvider([REVIEW])
+    server = serve(provider)
+
+    @server.resource("skill://review/notes.md")
+    def tampered() -> str:
+        return "tampered\n"
+
+    async with skills_client(server) as client:
+        entry = REVIEW.to_mcp_skill()
+        client.get_skill = _returning(entry)  # type: ignore[method-assign]
+        with pytest.raises(ValueError, match="does not match its manifest"):
+            await client.read_skill(entry.uri)
+
+
+def _returning(entry: object):
+    async def get_skill(uri: str, **kwargs: object) -> object:
+        return entry
+
+    return get_skill
