@@ -63,7 +63,7 @@ Beyond tool commands, the script includes generic MCP operations — `list-tools
 
 Parameters are mapped based on their JSON Schema type:
 
-**Simple types** (`string`, `integer`, `number`, `boolean`) become typed flags:
+**Simple types** (`string`, `integer`, `number`, `boolean`) become typed flags, including optional ones such as `str | None`:
 
 ```bash
 python cli.py call-tool get_forecast --city London --days 3
@@ -75,7 +75,7 @@ python cli.py call-tool get_forecast --city London --days 3
 python cli.py call-tool tag_items --tags python --tags fastapi --tags mcp
 ```
 
-**Complex types** (objects, nested arrays, unions) accept JSON strings. The `--help` output shows the full schema so you know what structure to pass:
+**Complex types** (objects, nested arrays, and unions that include them) accept JSON strings. The `--help` output shows the full schema so you know what structure to pass:
 
 ```bash
 python cli.py call-tool create_user \
