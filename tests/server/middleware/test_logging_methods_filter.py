@@ -12,6 +12,7 @@ import io
 import logging
 
 from fastmcp import Client, FastMCP
+from fastmcp.server.middleware import Middleware
 from fastmcp.server.middleware.logging import (
     LoggingMiddleware,
     StructuredLoggingMiddleware,
@@ -27,8 +28,8 @@ def _capture() -> tuple[io.StringIO, logging.Logger]:
     return stream, logger
 
 
-def _server(middleware: object) -> FastMCP:
-    mcp = FastMCP("methods-filter", middleware=[middleware])  # type: ignore[list-item]
+def _server(middleware: Middleware) -> FastMCP:
+    mcp = FastMCP("methods-filter", middleware=[middleware])
 
     @mcp.tool
     def ping() -> str:
