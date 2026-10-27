@@ -36,6 +36,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    PrivateAttr,
     model_validator,
 )
 from typing_extensions import Self, override
@@ -255,6 +256,11 @@ class RemoteMCPServer(BaseModel):
         ),
     ] = None
 
+    # Resolved `auth="oauth"` client, kept for the lifetime of this server
+    # config. See `_resolve_auth`.
+    _oauth_auth: Any = PrivateAttr(default=None)
+    _oauth_auth_url: str | None = PrivateAttr(default=None)
+
     # Timeout configuration
     sse_read_timeout: datetime.timedelta | int | float | None = None
     timeout: int | None = None  # Maximum response time in milliseconds
@@ -276,6 +282,33 @@ class RemoteMCPServer(BaseModel):
         extra="allow", arbitrary_types_allowed=True
     )  # Preserve unknown fields
 
+    def _resolve_auth(self) -> Any:
+        """The auth object to hand to a newly built transport.
+
+        ``auth="oauth"`` makes the transport construct an ``OAuth`` client, and
+        that client's token store defaults to per-instance memory. A multi-server
+        ``MCPConfig`` proxy rebuilds its backend transports for every request, so
+        each rebuild discarded the collected token and sent the user through the
+        browser flow again. A single-server config builds its transport once,
+        which is why it logged in once.
+
+        Keeping the resolved client on the server config gives one token store
+        per configured server however many transports are built. Every other
+        form is returned unchanged: a bearer string still resolves per
+        transport, and a caller-supplied ``httpx2.Auth`` is already an object
+        whose lifetime the caller owns.
+        """
+        if self.auth != "oauth":
+            return self.auth
+        # The client is bound to the URL it was built for, so a config whose URL
+        # was rewritten in place must not keep sending the user to the old one.
+        if self._oauth_auth is None or self._oauth_auth_url != self.url:
+            from fastmcp.client.auth.oauth import OAuth
+
+            self._oauth_auth = OAuth(self.url)
+            self._oauth_auth_url = self.url
+        return self._oauth_auth
+
     def to_transport(
         self,
     ) -> StreamableHttpTransport | SSETransport | FastMCPTransport:
@@ -293,7 +326,7 @@ class RemoteMCPServer(BaseModel):
             return SSETransport(
                 self.url,
                 headers=self.headers,
-                auth=self.auth,
+                auth=self._resolve_auth(),
                 sse_read_timeout=self.sse_read_timeout,
             )
         else:
@@ -301,7 +334,7 @@ class RemoteMCPServer(BaseModel):
             return StreamableHttpTransport(
                 self.url,
                 headers=self.headers,
-                auth=self.auth,
+                auth=self._resolve_auth(),
                 max_sse_event_size=self.max_sse_event_size,
             )
 
