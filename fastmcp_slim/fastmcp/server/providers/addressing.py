@@ -9,9 +9,9 @@ app name + tool name. The hash serves two purposes:
    matches and applies the same transforms, visibility, and auth as a lookup
    by the tool's listed name.
 
-2. **Per-tool Prefab renderer URIs.** Each prefab tool gets a unique renderer
-   resource at ``ui://prefab/tool/<hash>/renderer.html``. ``list_resources``
-   and ``read_resource`` synthesize these on demand from the tool's meta.
+2. **Legacy Prefab renderer aliases.** Previously advertised per-tool URIs at
+   ``ui://prefab/tool/<hash>/renderer.html`` remain readable. New renderer
+   resources are shared by effective configuration in ``prefab_synthesis``.
 
 The hash is computed at registration time from ``(app_name, tool_name)`` —
 both known at that moment — and stored in ``meta["fastmcp"]["tool_hash"]``.
