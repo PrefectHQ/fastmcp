@@ -55,6 +55,8 @@ FastMCP passes a `tool_resolver` callback to `to_json()`. Whenever the tree cont
 
 FastMCP still tags app tools with `meta["fastmcp"]["app"]`, but backend routing no longer depends on sending the app name through each tool call. During serialization, FastMCP passes a resolver to `PrefabApp.to_json()`. When the tree contains `CallTool(save_contact)`, the resolver turns it into a deterministic hashed name such as `__<hash>_save_contact`, where the hash is derived from the app name and backend tool name.
 
+The `__<12 lowercase hex>_<name>` pattern is reserved for these generated addresses. `FastMCPApp` rejects registered backend and UI tool names matching it, so the resolver can distinguish registered names from addresses. This reservation concerns the name sent in tool calls; a component key such as `tool:save@` is a separate lookup identifier. Other double-underscore names, such as `__save`, remain valid.
+
 That hashed name rides along inside `structuredContent` all the way to the renderer. When the renderer calls the backend tool, it sends the hashed tool name in the normal MCP `tools/call` request. The server recognizes that format and routes through the app-tool lookup path described below.
 
 ### ToolResult assembly
