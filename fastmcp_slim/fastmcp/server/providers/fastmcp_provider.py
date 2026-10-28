@@ -311,6 +311,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         # compiled pattern instead of rebuilding it per wrapper.
         template._compiled_pattern()
         wrapped._pattern = template._pattern
+        wrapped._list_query_params = template._list_query_params
         return wrapped
 
     async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:

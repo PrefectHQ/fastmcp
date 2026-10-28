@@ -915,6 +915,34 @@ class TestMalformedURITemplates:
         scalar = template.model_copy(update={"_list_query_params": frozenset()})
         assert scalar.matches("items://all?tags=a,b") == {"tags": "a,b"}
 
+    async def test_mounted_template_wrapper_preserves_list_query_params(self):
+        from fastmcp.exceptions import ResourceSecurityError
+        from fastmcp.server.providers.fastmcp_provider import (
+            FastMCPProviderResourceTemplate,
+        )
+
+        child = FastMCP("child", resource_security=None)
+
+        @child.resource("files://{category}{?paths}")
+        def read_files(
+            category: str, paths: list[str] = Field(default_factory=list)
+        ) -> str:
+            return str(paths)
+
+        [source] = await child.list_resource_templates()
+        wrapped = FastMCPProviderResourceTemplate.wrap(child, source)
+        assert wrapped.matches("files://docs?paths=a,b") == {
+            "category": "docs",
+            "paths": ["a", "b"],
+        }
+
+        parent = FastMCP("parent")
+        parent.mount(child)
+        with pytest.raises(ResourceSecurityError):
+            await parent.read_resource("files://docs?paths=safe.txt,..")
+        with pytest.raises(ResourceSecurityError):
+            await parent.read_resource("files://docs?paths=safe.txt,/etc/passwd")
+
     def test_shared_pattern_cache_is_bounded(self):
         """Template strings can come from a proxied server, so the shared cache
         must not grow with every template a remote ever sends."""
