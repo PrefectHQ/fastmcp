@@ -5,8 +5,10 @@ and positional item schema the server emits has to survive that round trip.
 """
 
 from datetime import date, datetime, time, timedelta
+from typing import Any
 from uuid import UUID
 
+import pytest
 from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
@@ -21,6 +23,48 @@ class Reading(BaseModel):
 
 
 class TestStructuredResultHydration:
+    @pytest.mark.parametrize(
+        ("field_schema", "value", "expected"),
+        [
+            ({"enum": [1, True]}, 1.0, 1),
+            ({"enum": [True, 1]}, 1.0, 1),
+            ({"enum": [1, True]}, 1, 1),
+            ({"enum": [1, True]}, True, True),
+            ({"enum": [0, False]}, 0.0, 0),
+            ({"enum": [False, 0]}, 0.0, 0),
+            ({"enum": [0, False]}, False, False),
+            ({"enum": [1.0, True]}, 1, 1.0),
+            ({"enum": [True, 1.0]}, 1, 1.0),
+            ({"const": 1}, 1.0, 1),
+            ({"const": 1.0}, 1, 1.0),
+            ({"anyOf": [{"const": 1}, {}]}, True, True),
+            ({"anyOf": [{"const": {}}, {"const": 1}]}, 1, 1),
+            ({"anyOf": [{"const": []}, {"const": 1}]}, [], []),
+        ],
+    )
+    async def test_const_enum_results_preserve_json_value_types(
+        self, field_schema: dict[str, Any], value: Any, expected: Any
+    ) -> None:
+        mcp = FastMCP()
+
+        @mcp.tool(
+            output_schema={
+                "type": "object",
+                "properties": {"value": field_schema},
+                "required": ["value"],
+            }
+        )
+        def constrained_result() -> dict[str, Any]:
+            return {"value": value}
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("constrained_result")
+
+        assert result.structured_content == {"value": value}
+        assert type(result.structured_content["value"]) is type(value)
+        assert result.data.value == expected
+        assert type(result.data.value) is type(expected)
+
     async def test_annotated_scalar_formats_arrive_as_python_types(self):
         mcp = FastMCP()
 
