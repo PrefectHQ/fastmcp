@@ -52,6 +52,32 @@ class TestResourcesAsToolsBasic:
             assert "list_resources" in tool_names
             assert "read_resource" in tool_names
 
+    async def test_does_not_override_user_defined_tools(self):
+        """User-defined tools named list_resources or read_resource take precedence."""
+        mcp = FastMCP("Test")
+
+        @mcp.tool
+        def list_resources() -> str:
+            return "user list_resources"
+
+        @mcp.tool
+        def read_resource(uri: str) -> str:
+            return f"user read_resource: {uri}"
+
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert tool_names.count("list_resources") == 1
+            assert tool_names.count("read_resource") == 1
+
+            result1 = await client.call_tool("list_resources", {})
+            assert result1.data == "user list_resources"
+
+            result2 = await client.call_tool("read_resource", {"uri": "test://uri"})
+            assert result2.data == "user read_resource: test://uri"
+
 
 class TestListResourcesTool:
     """Test the list_resources tool."""
