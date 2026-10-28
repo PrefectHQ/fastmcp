@@ -49,6 +49,32 @@ class TestPromptsAsToolsBasic:
             assert "list_prompts" in tool_names
             assert "get_prompt" in tool_names
 
+    async def test_does_not_override_user_defined_tools(self):
+        """User-defined tools named list_prompts or get_prompt take precedence."""
+        mcp = FastMCP("Test")
+
+        @mcp.tool
+        def list_prompts() -> str:
+            return "user list_prompts"
+
+        @mcp.tool
+        def get_prompt(name: str) -> str:
+            return f"user get_prompt: {name}"
+
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert tool_names.count("list_prompts") == 1
+            assert tool_names.count("get_prompt") == 1
+
+            result1 = await client.call_tool("list_prompts", {})
+            assert result1.data == "user list_prompts"
+
+            result2 = await client.call_tool("get_prompt", {"name": "test_prompt"})
+            assert result2.data == "user get_prompt: test_prompt"
+
 
 class TestListPromptsTool:
     """Test the list_prompts tool."""
