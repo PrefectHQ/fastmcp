@@ -96,7 +96,7 @@ def deliver_reviews(
 
                 def guard() -> None:
                     owner_alive(owner, batch.expires_at)
-                    fresh = collect(number, group.branch, publication=True)
+                    fresh = collect(number, group.branch)
                     if publication_revision(
                         before_delivery(fresh, receipts, app.slug + "[bot]")
                     ) != publication_revision(

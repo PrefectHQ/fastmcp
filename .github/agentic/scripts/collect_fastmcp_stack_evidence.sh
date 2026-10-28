@@ -86,7 +86,7 @@ printf '[]\n' > "$scratch/prs.json"
 while IFS= read -r number; do
   [[ -n $number ]] || continue
   api "repos/$repo/pulls/$number" | jq '{number,title,body,state,draft,merged,html_url,updated_at,user:(.user|{id,login,type}),labels:[.labels[].name],base_ref:.base.ref,base_sha:.base.sha,head_ref:.head.ref,head_sha:.head.sha,head_repository:.head.repo.full_name}' > "$scratch/pr.json"
-  if [[ $search_mode == route ]] && ! grep -qx "$number" "$scratch/linked"; then
+  if ! grep -qx "$number" "$scratch/linked"; then
     jq -s '.[0]+[.[1]+{discussion_collected:false}]' "$scratch/prs.json" "$scratch/pr.json" > "$scratch/next.json"
     mv "$scratch/next.json" "$scratch/prs.json"
     continue
