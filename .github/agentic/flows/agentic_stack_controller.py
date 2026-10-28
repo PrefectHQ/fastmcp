@@ -16,9 +16,11 @@ from prefect.client.schemas.objects import State
 from prefect.context import FlowRunContext
 from prefect.states import Completed
 
+from flows.agentic_claims import claim_issues, claim_work
 from flows.agentic_freshness import revalidate
 from flows.agentic_intake import policy_outcome, route_intake
 from flows.agentic_native_triage import run_native_triage
+from flows.agentic_reproduction_evidence import validate_reproduction_patch
 from flows.agentic_review_queue import retain_review_queue
 from flows.agentic_stack import StackLayer, StackSpec, digest, read_stack_artifact
 from flows.agentic_stack_plans import Review
@@ -39,6 +41,7 @@ from flows.agentic_stack_runtime import (
 )
 from flows.agentic_stack_usage import usage_report
 from flows.agentic_triage_records import Admission
+from flows.agentic_triage_review import apply_disposition
 from flows.agentic_validate_patch import fetch_source
 
 
@@ -90,7 +93,7 @@ def start_validation(
         run = client.create_flow_run_from_deployment(
             runtime.validator_id,
             parameters={"spec": spec.model_dump(mode="json")},
-            idempotency_key=f"{batch.id}-{spec.group}-{digest(spec.model_dump(mode='json'))}",
+            idempotency_key=f"fastmcp-validation-{owner}-{digest(spec.model_dump(mode='json'))}",
         )
     record.fn(
         owner,
@@ -274,7 +277,7 @@ def make_spec(batch: Batch, group: Group, items: list[dict], actor: dict) -> Sta
     )
 
 
-def run_batch(batch: Batch, runtime: Runtime) -> dict:
+def batch_owner(batch: Batch, runtime: Runtime) -> UUID:
     context = FlowRunContext.get()
     if context is None or context.flow_run is None:
         raise ValueError("A managed controller run is required")
@@ -289,6 +292,11 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
     if datetime.now(UTC) < batch.started_at:
         raise ValueError("Batch window has not started")
     owner_alive(owner, batch.expires_at)
+    return owner
+
+
+def run_batch(batch: Batch, runtime: Runtime) -> dict:
+    owner = batch_owner(batch, runtime)
     record(
         owner,
         f"{batch.id}-configuration",
@@ -317,6 +325,7 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
     calls = []
 
     def ask(role: str, bundle: dict, payload: dict, key: str) -> tuple[dict, str]:
+        payload["controller_owner"] = str(owner)
         result, run_id = judge(
             role,
             runtime.plans[role],
@@ -419,6 +428,40 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                     ),
                 )
                 calls.extend(native_calls)
+                if result.get("decision") == "reproduced":
+                    proof_digest = digest(
+                        [result["base_sha"], result.get("regression_patch", "")]
+                    )
+                    proof_key = f"{batch.id}-issue-{number}-regression-{proof_digest}"
+                    proof = saved(owner, proof_key)
+                    if proof is None:
+                        proof = validate_reproduction_patch(result)
+                        record(owner, proof_key, proof)
+                    result = {**result, "regression_validation": proof}
+                if "triage_review" in runtime.plans and destination in {
+                    "evidence",
+                    "existing_review",
+                }:
+                    final_evidence = saved(
+                        owner, f"{batch.id}-issue-{number}-review-evidence"
+                    )
+                    if final_evidence is None:
+                        raise ValueError(
+                            "Independent review requires retained native evidence"
+                        )
+                    if final_evidence != evidence:
+                        review_item = {**item, "evidence": final_evidence}
+                        projected = assessment_context(review_item)
+                        item_bundles = skills(final_evidence["base_sha"])
+                    review, review_run = ask(
+                        "triage_review",
+                        item_bundles["review_instructions"],
+                        {**projected, "outcome": result},
+                        f"issue-{number}-triage-review",
+                    )
+                    destination, result = apply_disposition(
+                        destination, result, review, review_run
+                    )
                 if not (
                     requested.mode == "fix"
                     and destination == "evidence"
@@ -593,7 +636,22 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
 
 @flow(name="fastmcp-stack-batch", timeout_seconds=7200)
 def stack_batch(batch: Batch, runtime: Runtime) -> dict | State:
-    with tempfile.TemporaryDirectory(prefix="fastmcp-stack-tools-") as temporary:
+    owner = batch_owner(batch, runtime)
+    with (
+        claim_issues(batch, owner),
+        claim_work(["fastmcp-triage-workers"], owner, batch.expires_at, slots=3),
+        tempfile.TemporaryDirectory(prefix="fastmcp-stack-tools-") as temporary,
+    ):
+        record(
+            owner,
+            f"{batch.id}-ownership",
+            {
+                "issues": sorted(
+                    item.issue_number for group in batch.groups for item in group.items
+                ),
+                "owner": str(owner),
+            },
+        )
         intake_tools(Path(temporary))
         result = run_batch(batch, runtime)
         if result["bins"]["operational"]:

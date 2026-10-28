@@ -22,6 +22,7 @@ from prefect.context import FlowRunContext
 from prefect.states import Completed
 
 from flows.agentic_backlog import Intake, due, inventory, settle
+from flows.agentic_claims import claim_work
 from flows.agentic_freshness import revalidate
 from flows.agentic_intake import evidence_revision, upgrade_policy_outcomes
 from flows.agentic_review_queue import plain, retain_markdown, retain_review_queue
@@ -395,10 +396,14 @@ def triage_intake(
     if (
         deployment.name != "cloud-triage-intake"
         or deployment.global_concurrency_limit is None
-        or deployment.global_concurrency_limit.limit != 1
+        or deployment.global_concurrency_limit.limit < 1
     ):
-        raise ValueError("Intake requires its serial deployment")
-    with tempfile.TemporaryDirectory(prefix="fastmcp-intake-") as temporary:
+        raise ValueError("Intake requires a bounded managed deployment")
+    deadline = datetime.now(UTC) + timedelta(hours=2)
+    with (
+        claim_work([config.scope()], current.id, deadline),
+        tempfile.TemporaryDirectory(prefix="fastmcp-intake-") as temporary,
+    ):
         intake_tools(Path(temporary))
         plan = admit(config, runtime, controller_id, current.id)
         if plan["phase"] == "committed":

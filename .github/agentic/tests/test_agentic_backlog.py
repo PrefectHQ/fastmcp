@@ -97,7 +97,7 @@ def test_event_intake_resolves_pull_requests_to_referenced_open_issues(github_se
     assert [row["issue_number"] for row in result["pending"]] == [5, 9]
     assert result["coverage"]["pull_requests"] == 1
     assert "/repos/PrefectHQ/fastmcp/issues/8" not in requests
-    assert config.scope() == Intake(issues=[1], queue="events").scope()
+    assert config.scope() != Intake(issues=[1], queue="events").scope()
     assert Intake(issues=[9]).scope() != config.scope()
 
 
@@ -370,7 +370,7 @@ def test_event_queue_adds_new_issues_to_retained_pending(github_server):
         ] == [2, 1]
 
 
-def test_event_target_is_admitted_ahead_of_a_full_retained_queue(github_server):
+def test_event_target_preserves_a_separate_retained_backlog(github_server):
     read, responses, _ = github_server
     for number in (1, 2, 3, 4):
         responses[f"/repos/PrefectHQ/fastmcp/issues/{number}"] = issue(number)
@@ -401,7 +401,8 @@ def test_event_target_is_admitted_ahead_of_a_full_retained_queue(github_server):
         owner = client.create_flow_run(controller_stub, state=Running()).id
         config = Intake(pull_requests=[9], queue="events", max_items=1)
         plan = admit(config, runtime, deployment, owner, read)
-        assert [row["issue_number"] for row in plan["pending"]] == [3, 1, 2, 4]
+        assert [row["issue_number"] for row in plan["pending"]] == [3]
+        assert checkpoint(scope)[1]["pending"] == retained
         assert [
             item["issue_number"] for item in plan["batch"]["groups"][0]["items"]
         ] == [3]
@@ -464,3 +465,34 @@ def test_finish_commits_policy_decisions_saved_by_an_older_controller(
         assert state["completed"] == [1]
         assert state["review"]["bins"]["decisions"] == [policy_outcome(1, legacy)]
         assert checkpoint(config.scope()) == (owner, state)
+
+
+def test_different_manual_pr_request_does_not_resume_previous_pr(github_server):
+    read, responses, requests = github_server
+    responses["/repos/PrefectHQ/fastmcp/pulls/10"] = {"body": "Fixes #1"}
+    responses["/repos/PrefectHQ/fastmcp/pulls/20"] = {"body": "Fixes #2"}
+    for number in (1, 2):
+        responses[f"/repos/PrefectHQ/fastmcp/issues/{number}"] = issue(number)
+    responses["/repos/PrefectHQ/fastmcp/commits/main"] = {"sha": "a" * 40}
+    with prefect_test_harness(), get_client(sync_client=True) as client:
+        runtime = Runtime(
+            plans={
+                role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
+                for role in ("assess", "reproduce", "prepare", "review")
+            },
+            validator_id=uuid4(),
+            source_sha="b" * 40,
+        )
+        old = client.create_flow_run(controller_stub, state=Running())
+        config = Intake(pull_requests=[10])
+        first = admit(config, runtime, uuid4(), old.id, read)
+        client.set_flow_run_state(old.id, Completed(), force=True)
+        new = client.create_flow_run(controller_stub, state=Running())
+        second = admit(Intake(pull_requests=[20]), runtime, uuid4(), new.id, read)
+        assert first["batch"]["groups"][0]["items"][0]["issue_number"] == 1
+        assert second["batch"]["groups"][0]["items"][0]["issue_number"] == 2
+        assert "/repos/PrefectHQ/fastmcp/pulls/20" in requests
+        assert (
+            Intake(queue="events", branch="main").scope()
+            != Intake(queue="events", branch="release/3.x").scope()
+        )

@@ -28,6 +28,14 @@ remain within the same assessment run. Preparation and independent review retain
 use the same connected assessment and reproduction as review and MRE batches; the
 standalone assessment and reproduction plans are no longer dispatched by the controller.
 
+An optional independent triage reviewer challenges the retained reproduction or
+verified contribution, using the exact source and executed checks. Its disposition
+and concrete next action lead each review item. The configured experiment uses
+GPT-6.1 Sol for this review while retaining Luna for assessment and reproduction.
+Serialized regression patches must materialize as tests on their stated baseline
+before a reproduced result can advance. Agent claims alone do not establish that
+those saved bytes are reusable. Review recommendations do not grant write permission.
+
 The draft-fix pilot accepts a manually selected issue in `fix` mode. Only a
 connected reproduction of a supported defect can reach preparation, full validation,
 independent review and deterministic draft publication. A review queue alone does
@@ -143,7 +151,19 @@ finalized decision snapshot is saved before receipts and presentation artifacts,
 so retrying an interrupted commit completes the same snapshot; a later intake
 recovery revalidates the child evidence before making a new snapshot.
 
-The deployment is serial and has no schedule. Intake uses `mre` mode: existing
+Intake has no schedule. Independent event targets have separate checkpoints;
+rolling backlog checkpoints remain scoped to their queue and release branch.
+Prefect leases serialize overlapping queue updates and issue work across intake,
+PR events and manual fix batches. Issue ownership is recorded before work starts.
+A takeover stops the prior controller and its proven children, waits for terminal
+acknowledgement and shared verification, then records its new ownership. The
+active-controller budget is separate from issue ownership, so waiting for another
+owner does not occupy an execution slot. Lease renewal failure stops the worker.
+This bounds controllers, not all child compute: orphan children may temporarily
+outlive a failed controller. Same-issue takeover drains those children before
+starting replacement work.
+
+Intake uses `mre` mode: existing
 contributions go to verification, new work can reach reproduction, and fix-stack
 publication is unavailable through this entrypoint. Public GitHub mutations and
 bot-owned label behavior remain unchanged. Independent probes for arbitrary

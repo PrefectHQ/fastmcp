@@ -128,7 +128,8 @@ class Runtime(BaseModel):
 
     @model_validator(mode="after")
     def check_roles(self) -> Runtime:
-        if set(self.plans) != set(OUTPUTS):
+        required = set(OUTPUTS) - {"triage_review"}
+        if not required <= set(self.plans) <= set(OUTPUTS):
             raise ValueError("Expected every stack agent role")
         native = (self.triage_plan, self.triage_verify_id, self.triage_finalize_id)
         if any(value is not None for value in native) and any(

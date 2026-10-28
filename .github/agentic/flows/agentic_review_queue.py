@@ -53,6 +53,23 @@ def review_markdown(result: dict) -> str:
                 else plain(item.get("group", "Group"))
             )
             lines.extend([f"### {label}", ""])
+            next_step = item.get("next_step")
+            adversarial = item.get("adversarial_review")
+            if adversarial:
+                lines.extend(
+                    [
+                        f"**Adversarial disposition:** {plain(adversarial['decision'])}",
+                        "",
+                        plain(adversarial["reason"]),
+                        "",
+                    ]
+                )
+                lines.extend(
+                    f"- {plain(finding)}" for finding in adversarial["findings"]
+                )
+                lines.append("")
+            if next_step:
+                lines.extend([f"Next: {plain(next_step)}", ""])
             for pr_number in item.get("pull_requests", []):
                 lines.extend(
                     [
@@ -154,9 +171,6 @@ def review_markdown(result: dict) -> str:
             question = assessment.get("question")
             if question:
                 lines.extend([f"**Decision needed:** {plain(question)}", ""])
-            next_step = item.get("next_step")
-            if next_step:
-                lines.extend([f"Next: {plain(next_step)}", ""])
     usage = result.get("usage", {})
     lines.extend(
         [

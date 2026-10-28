@@ -140,3 +140,23 @@ def test_policy_decisions_render_and_legacy_bins_upgrade(evidence):
     assert "Security\\-labeled report requires restricted review" in markdown
     _, completed = settle([{"issue_number": number, "attempts": 0}], [number], current)
     assert completed == [number]
+
+
+def test_actionable_disposition_precedes_the_raw_reproduction():
+    item = {
+        "issue_number": 1,
+        "observed": "raw observation",
+        "base_sha": "a" * 40,
+        "decision": "reproduced",
+        "next_step": "Prepare the scoped dispatch fix with disabled-tool coverage.",
+        "adversarial_review": {
+            "decision": "prepare_fix",
+            "reason": "Exact regression fails for the intended reason; controls pass.",
+            "findings": [],
+        },
+    }
+    markdown = review_markdown({"batch_id": "reviewed", "bins": {"evidence": [item]}})
+    assert "**Adversarial disposition:** prepare\\_fix" in markdown
+    assert markdown.index("Prepare the scoped dispatch") < markdown.index(
+        "raw observation"
+    )

@@ -18,7 +18,7 @@ upsert() {
 
 case "${1:-}" in
   validate)
-    for role in assess reproduce prepare review; do
+    for role in assess reproduce prepare review triage_review; do
       api POST /execution-plans/validate --data "@workflows/fastmcp-stack-$role.plan.json" | jq -e '.valid == true'
     done
     ;;
