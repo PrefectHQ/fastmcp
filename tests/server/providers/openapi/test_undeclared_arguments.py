@@ -106,6 +106,27 @@ async def test_undeclared_arguments_are_ignored(
     assert request.content == b""
 
 
+async def test_strict_input_validation_rejects_undeclared_arguments() -> None:
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    request_body = {"content": {"application/json": {"schema": schema}}}
+    spec = _spec("/agents", "post", {"requestBody": request_body})
+
+    requests: list[httpx2.Request] = []
+    async with _upstream_client(requests) as http_client:
+        server = FastMCP.from_openapi(
+            openapi_spec=spec, client=http_client, strict_input_validation=True
+        )
+        async with Client(server) as client:
+            with pytest.raises(
+                ToolError, match="Unknown arguments: usage_limits. Accepted: name"
+            ):
+                await client.call_tool(
+                    "operation", {"name": "agent", "usage_limits": {"requests": 5}}
+                )
+
+    assert requests == []
+
+
 async def test_undeclared_arguments_are_ignored_after_schema_precalculation_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

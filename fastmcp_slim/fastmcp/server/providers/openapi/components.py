@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -10,6 +11,7 @@ import httpx2
 from mcp_types import ToolAnnotations
 from pydantic.networks import AnyUrl
 
+from fastmcp.exceptions import ValidationError
 from fastmcp.resources import (
     Resource,
     ResourceContent,
@@ -18,6 +20,7 @@ from fastmcp.resources import (
 )
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.function_tool import _strict_input_validation
 from fastmcp.utilities.exceptions import is_request_error, is_timeout_error
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import HTTPRoute
@@ -203,6 +206,15 @@ class OpenAPITool(Tool):
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Execute the HTTP request using RequestDirector."""
+        # The director drops undeclared arguments; strict servers reject them.
+        if _strict_input_validation():
+            accepted = self.parameters.get("properties", {})
+            if unknown := sorted(arguments.keys() - accepted.keys()):
+                raise ValidationError(
+                    f"Unknown arguments: {', '.join(unknown)}. "
+                    f"Accepted: {', '.join(sorted(accepted)) or 'none'}",
+                    log_level=logging.WARNING,
+                )
         # Build the request — errors here are programming/schema issues,
         # not HTTP failures, so we catch them separately.
         try:
