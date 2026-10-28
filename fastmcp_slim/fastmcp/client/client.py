@@ -821,7 +821,8 @@ class Client(
             transport_options = replace(
                 transport_options or TransportOptions(),
                 backend_mode=self.mode,
-                backend_init_timeout=self._init_timeout,
+                # 0 (not None) so a disabled timeout is not replaced by the global setting
+                backend_init_timeout=self._init_timeout or 0,
             )
 
         # Only passed when this client actually wants non-default settings, so an

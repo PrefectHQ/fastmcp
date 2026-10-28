@@ -45,6 +45,7 @@ from fastmcp.server.elicitation import AcceptedElicitation
 from fastmcp.server.middleware import Middleware
 from fastmcp.server.providers.proxy import ProxyClient
 from fastmcp.tools.base import Tool as FastMCPTool
+from fastmcp.utilities.tests import temporary_settings
 
 # Some tests in this module spawn subprocess servers via stdio, each paying a
 # full interpreter startup plus `import fastmcp` (~0.7s). They take 3-6s idle,
@@ -1290,6 +1291,34 @@ async def test_multi_server_init_timeout_bounds_backend_connect():
             tools = await client.list_tools()
 
     assert [tool.name for tool in tools] == ["good_greet"]
+
+
+async def test_multi_server_disabled_init_timeout_overrides_global_setting():
+    """An explicit `init_timeout=0` reaches the backends as disabled, not as None.
+
+    A `None` would make each backend client reload the global setting.
+    """
+    config = MCPConfig(
+        mcpServers={
+            "a": InMemoryStdioMCPServer(mcp=_make_greet_server()),
+            "b": InMemoryStdioMCPServer(mcp=_make_greet_server()),
+        }
+    )
+    seen: list[Any] = []
+    from fastmcp.server.providers.proxy import StatefulProxyClient as real
+
+    def capture(*args: Any, **kwargs: Any):
+        seen.append(kwargs.get("init_timeout", "missing"))
+        return real(*args, **kwargs)
+
+    with (
+        temporary_settings(client_init_timeout=5),
+        patch("fastmcp.server.providers.proxy.StatefulProxyClient", capture),
+    ):
+        async with Client(config, init_timeout=0):
+            pass
+
+    assert seen == [0, 0]
 
 
 def _make_session_server() -> FastMCP:
