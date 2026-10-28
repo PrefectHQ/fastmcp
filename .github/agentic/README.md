@@ -296,7 +296,7 @@ into preparation; unresolved reproduction or product decisions must use
 `repair_evidence` or `maintainer`. Draft publication still requires final patch
 approval without findings, fresh ownership and contribution checks, and reporter credit.
 
-Runtime `publish_reviews: true` posts independent existing-contribution reviews as
+Runtime `publish_reviews: true` posts independent existing-contribution and generated-patch reviews as
 GitHub `COMMENT` reviews at the exact verified head. Configure `reviewer_app` with
 `app_id`, `slug` and `private_key_block`. The current reviewer is GitHub App
 `fastmcp-triage-reviewer` (5514681), owned by zzstoatzz and installed only on FastMCP.
@@ -307,9 +307,18 @@ with PR write and contents/issues/checks/statuses read permissions, then revokes
 Draft authorship continues through the separate existing publishing credential.
 
 PR claims serialize delivery across issues. A retained revision marker reconciles
-retries and lost responses without reposting. Drafts, explicit holds, changed heads,
+retries and lost responses without reposting. External drafts, explicit holds, changed heads,
 new discussion and self-authored PRs block posting. The review records executed
 checks, findings and next actions; it neither approves nor merges. Exact acknowledged
 App reviews are excluded from subsequent freshness comparisons, while new human
 or other bot evidence still invalidates an old result. Posted review URLs are retained
 alongside the original Cloud review evidence.
+
+After draft publication, the same delivery client posts the retained independent
+patch review and validator commands on each exact generated head. Only drafts whose
+author, body, branch, base and head match the validated publication qualify for this
+path. They remain drafts. Publication is recorded before a separate delivery task,
+which retries transient failures and reconciles lost POST responses. New PR comments,
+inline comments or reviews stop delivery; only the exact acknowledged App review is
+ignored on retry. Exhausted delivery failures retain the published PR receipt and an
+operational failure rather than discarding the useful patch or claiming review delivery.

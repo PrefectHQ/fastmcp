@@ -18,13 +18,13 @@ from prefect.states import Completed
 
 from flows.agentic_claims import claim_issues, claim_work
 from flows.agentic_freshness import revalidate
+from flows.agentic_generated_review import deliver_published_reviews, reviewed_stack
 from flows.agentic_intake import policy_outcome, route_intake
 from flows.agentic_native_triage import run_native_triage
 from flows.agentic_reproduction_evidence import validate_reproduction_patch
 from flows.agentic_review_delivery import deliver_reviews
 from flows.agentic_review_queue import retain_review_queue
 from flows.agentic_stack import StackLayer, StackSpec, digest, read_stack_artifact
-from flows.agentic_stack_plans import Review
 from flows.agentic_stack_policy import Batch, Group, publication_revision
 from flows.agentic_stack_publication import GitHub, reconcile_stack
 from flows.agentic_stack_runtime import (
@@ -151,37 +151,9 @@ def publish(
     review_run_id: str,
     review_parameters: dict,
 ) -> dict:
-    spec = StackSpec.model_validate(review_parameters["context"]["spec"])
-    artifact = read_stack_artifact.fn(
-        validation_run_id,
-        runtime.validator_id,
-        runtime.source_sha,
-        digest(spec.model_dump(mode="json")),
+    spec, artifact, _ = reviewed_stack(
+        runtime, validation_run_id, review_run_id, review_parameters
     )
-    if (
-        artifact["layers"] != review_parameters["context"]["layers"]
-        or str(validation_run_id) != review_parameters["context"]["validation_run_id"]
-    ):
-        raise ValueError("Review does not describe the validated chain")
-    with get_client(sync_client=True) as client:
-        run = client.read_flow_run(UUID(review_run_id))
-        if (
-            run.flow_id != runtime.plans["review"].flow_id
-            or run.parameters != review_parameters
-        ):
-            raise ValueError("Stored review used different inputs")
-    observation = api.fn("GET", f"/flow_runs/{review_run_id}/execution-plan")
-    if observation["status"] != "completed" or observation["snapshot"][
-        "execution_plan_version_id"
-    ] != str(runtime.plans["review"].version_id):
-        raise ValueError("Expected the completed pinned independent review")
-    approval = Review.model_validate(
-        api.fn("GET", f"/flow_runs/{review_run_id}/execution-plan/outputs/result")[
-            "decision"
-        ]
-    )
-    if approval.decision != "approved" or approval.findings:
-        raise ValueError("Independent review did not approve this stack")
     record.fn(
         owner,
         f"{batch.id}-{spec.group}-publication-intent",
@@ -583,6 +555,42 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                             "context": review_context,
                         },
                     )
+                    if runtime.publish_reviews:
+                        try:
+                            result = {
+                                **result,
+                                "review_delivery": deliver_published_reviews(
+                                    owner,
+                                    batch,
+                                    runtime,
+                                    result,
+                                    {
+                                        "instructions": bundles["review_instructions"],
+                                        "context": review_context,
+                                    },
+                                ),
+                            }
+                        except (
+                            ValueError,
+                            RuntimeError,
+                            TimeoutError,
+                            httpx.HTTPError,
+                            OSError,
+                        ) as error:
+                            result = {
+                                **result,
+                                "review_delivery": {
+                                    "status": "failed",
+                                    "reason": str(error)[:1000],
+                                },
+                            }
+                            bins["operational"].append(
+                                {
+                                    "group": group.name,
+                                    "reason": "Generated draft review delivery failed",
+                                    "detail": str(error)[:1000],
+                                }
+                            )
                     bins["stacks"].append(result)
                     break
                 if review["decision"] != "changes_requested" or attempt == 1:

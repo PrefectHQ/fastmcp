@@ -40,6 +40,8 @@ def endpoint():
             "user": {"login": "reporter"},
         },
         "reviews": [],
+        "comments": [],
+        "review_comments": [],
         "posts": [],
         "revoked": False,
         "disconnect": False,
@@ -66,7 +68,11 @@ def endpoint():
             assert claims["exp"] - claims["iat"] == 360
 
         def do_GET(self):
-            if self.path == "/app":
+            if callback := state.get("before_get"):
+                callback(self.path)
+            if self.path in state.get("routes", {}):
+                self.respond(state["routes"][self.path])
+            elif self.path == "/app":
                 self.app_auth()
                 self.respond({"id": state["app_id"], "slug": "reviewer"})
             elif self.path.endswith("/installation"):
@@ -74,6 +80,10 @@ def endpoint():
                 self.respond({"id": 10, "app_id": 42, "suspended_at": None})
             elif "/reviews?" in self.path:
                 self.respond(state["reviews"])
+            elif "/issues/" in self.path and "/comments?" in self.path:
+                self.respond(state["comments"])
+            elif "/pulls/" in self.path and "/comments?" in self.path:
+                self.respond(state["review_comments"])
             else:
                 self.respond(state["pr"])
 

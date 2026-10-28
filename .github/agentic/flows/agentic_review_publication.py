@@ -69,6 +69,8 @@ def post_review(
     reviewer: str,
     body: str,
     guard: Callable[[], None],
+    *,
+    allow_draft: bool = False,
 ) -> dict:
     if number < 1 or not all(
         re.fullmatch(r"[a-f0-9]{40}", x) for x in (head, baseline)
@@ -91,7 +93,7 @@ def post_review(
         if (
             pr["state"] != "open"
             or pr.get("merged")
-            or pr["draft"]
+            or (pr["draft"] and not allow_draft)
             or HOLD.search(text)
         ):
             raise ValueError("PR is closed, draft or explicitly held")
