@@ -4,6 +4,7 @@ import logging
 
 import httpx2
 import pytest
+from mcp.shared.exceptions import MCPError
 from mcp_types import TextContent
 
 from fastmcp import Client, FastMCP
@@ -81,7 +82,7 @@ async def test_http_error_is_logged_without_traceback(
 
     assert text == (
         f"Error calling tool 'get_item': HTTP error {status}: {reason} - "
-        "{'detail': 'nope'}"
+        '{"detail": "nope"}'
     )
     records = [
         r for r in caplog.records if r.getMessage() == "Error calling tool 'get_item'"
@@ -131,3 +132,28 @@ async def test_resource_http_429_returns_rate_limit_message() -> None:
             await server.read_resource(str(resource.uri))
 
     assert str(exc_info.value) == "Rate limited by upstream API, please retry later"
+
+
+@pytest.mark.parametrize("component", ["resource", "resource_template"])
+async def test_http_error_details_are_preserved_for_resources(component: str) -> None:
+    if component == "resource":
+        spec = RESOURCE_SPEC
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE)]
+    else:
+        spec = SPEC
+        route_maps = [RouteMap(pattern=r"\{", mcp_type=MCPType.RESOURCE_TEMPLATE)]
+
+    async with _upstream(409) as http_client:
+        server = FastMCP.from_openapi(
+            openapi_spec=spec, client=http_client, route_maps=route_maps
+        )
+        async with Client(server) as client:
+            if component == "resource":
+                [resource] = await client.list_resources()
+                uri = str(resource.uri)
+            else:
+                uri = "resource://get_item/x1"
+            with pytest.raises(MCPError) as exc_info:
+                await client.read_resource(uri)
+
+    assert '"detail": "nope"' in str(exc_info.value)

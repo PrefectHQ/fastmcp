@@ -875,9 +875,8 @@ class TestComposition:
         names = {t.name for t in tools}
         assert names == {"dashboard", "save"}
 
-    async def test_ui_synthesizes_per_tool_renderer_resource(self):
-        """Each @app.ui() tool gets its own renderer resource synthesized
-        on demand from the server's address registry."""
+    async def test_ui_synthesizes_renderer_resource(self):
+        """An @app.ui() tool gets its renderer resource synthesized on demand."""
         app = FastMCPApp("test")
 
         @app.ui()
@@ -888,7 +887,7 @@ class TestComposition:
         server.add_provider(app)
 
         resources = list(await server.list_resources())
-        prefab = [r for r in resources if "prefab/tool" in str(r.uri)]
+        prefab = [r for r in resources if "prefab/renderer" in str(r.uri)]
         assert len(prefab) == 1
 
 

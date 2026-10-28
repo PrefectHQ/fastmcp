@@ -69,7 +69,7 @@ async def test_main_file_links_within_skill_directory_remain_readable(
     skill.mkdir()
     content = "# Instructions\n\nRésumé"
     target = skill / "instructions.md"
-    target.write_text(content, encoding="utf-8")
+    target.write_bytes(content.encode("utf-8"))
     main_file = skill / main_file_name
     main_file.parent.mkdir(exist_ok=True)
     main_file.symlink_to(target)

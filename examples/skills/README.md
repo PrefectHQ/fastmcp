@@ -1,104 +1,34 @@
-# Skills Provider Example
+# Skills over MCP
 
-This example demonstrates how to expose agent skills (like Claude Code skills) as MCP resources.
+The server loads the two sample folders into `Skill` values and publishes them
+through `SkillCatalogProvider`. Each `SKILL.md` declares its name and description;
+supporting files retain their exact bytes.
 
-## Structure
+Run the client from the repository root:
 
-```
-skills/
-├── README.md              # This file
-├── server.py              # MCP server that exposes skills
-├── client.py              # Example client that discovers and reads skills
-└── sample_skills/         # Example skills directory
-    ├── pdf-processing/
-    │   ├── SKILL.md       # Main skill file
-    │   └── reference.md   # Supporting documentation
-    └── code-review/
-        └── SKILL.md       # Main skill file
+```bash
+uv run python -m examples.skills.client
 ```
 
-## Running the Example
+It connects to the example server in memory, discovers entries through the
+Skills extension, verifies each complete skill and exports it to a temporary
+directory. The temporary copies are removed when the example exits. No local
+agent's skills folder is changed.
 
-1. Start the server:
-   ```bash
-   uv run python examples/skills/server.py
-   ```
+The last connection uses resource-only discovery with `list_skill_summaries()`.
+`read_skill()` downloads the same content through the `_manifest` fallback, so
+this also works when the connection does not negotiate Skills.
 
-2. In another terminal, run the client:
-   ```bash
-   uv run python examples/skills/client.py
-   ```
+To launch the server over stdio for another MCP client:
 
-## How It Works
-
-The skills provider system has a two-layer architecture:
-
-- **`SkillProvider`** - Handles a single skill folder, exposing its files as resources
-- **`SkillsDirectoryProvider`** - Scans a directory, creates a `SkillProvider` per folder
-- **`ClaudeSkillsProvider`** - Convenience subclass for Claude Code skills (~/.claude/skills/)
-
-For each skill, the provider exposes:
-- A **Resource** for the main file (`skill://{name}/SKILL.md`)
-- A **Resource** for a synthetic manifest (`skill://{name}/_manifest`)
-- Supporting files via **ResourceTemplate** or **Resources** (configurable)
-
-### Progressive Disclosure
-
-When a client lists resources, they see skill names and descriptions (from frontmatter) without fetching the full content. This keeps the discovery cost low.
-
-By default, supporting files are exposed via ResourceTemplate (hidden from `list_resources()`). Set `supporting_files="resources"` to make them visible:
-
-```python
-SkillsDirectoryProvider(roots=skills_dir, supporting_files="resources")
+```bash
+uv run python -m examples.skills.server
 ```
 
-### The Manifest
+For live recursive folder discovery, use
+`SkillsDirectoryProvider(root, experimental_skills=True)`. The catalog in this
+example holds snapshots: changing a source file does not mutate an existing
+`Skill`.
 
-The `_manifest` resource provides a JSON listing of all files in a skill:
-
-```json
-{
-  "skill": "pdf-processing",
-  "files": [
-    {"path": "SKILL.md", "size": 1234, "hash": "sha256:abc..."},
-    {"path": "reference.md", "size": 5678, "hash": "sha256:def..."}
-  ]
-}
-```
-
-This enables clients to download entire skills for local use.
-
-## Usage Examples
-
-### Single Skill
-
-```python
-from pathlib import Path
-from fastmcp import FastMCP
-from fastmcp.server.providers.skills import SkillProvider
-
-mcp = FastMCP("My Skill")
-mcp.add_provider(SkillProvider(Path.home() / ".claude/skills/pdf-processing"))
-mcp.run()
-```
-
-### All Skills in a Directory
-
-```python
-from fastmcp.server.providers.skills import SkillsDirectoryProvider
-
-mcp = FastMCP("Skills")
-mcp.add_provider(SkillsDirectoryProvider(roots=Path.home() / ".claude" / "skills"))
-mcp.run()
-```
-
-### Claude Code Skills (default location)
-
-```python
-from fastmcp import FastMCP
-from fastmcp.server.providers.skills import ClaudeSkillsProvider
-
-mcp = FastMCP("My Skills")
-mcp.add_provider(ClaudeSkillsProvider())  # Uses ~/.claude/skills/
-mcp.run()
-```
+See [Skills over MCP](https://gofastmcp.com/servers/skills) for custom loaders,
+access control, mounts and installing skills into a local agent.

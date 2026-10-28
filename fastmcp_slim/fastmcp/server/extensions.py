@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import copy
 import weakref
-from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Generator, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -87,7 +87,7 @@ _extension_dispatch_scope: ContextVar[tuple[FastMCP, frozenset[str]] | None] = (
 
 
 @contextmanager
-def _extension_tool_call_scope(server: FastMCP) -> Iterator[None]:
+def _extension_tool_call_scope(server: FastMCP) -> Generator[None, None, None]:
     """Claim pending delegation for this dispatch, isolating independent calls."""
     delegated = _delegated_extension_scope.get()
     identifiers = (
@@ -105,7 +105,7 @@ def _extension_tool_call_scope(server: FastMCP) -> Iterator[None]:
 
 
 @contextmanager
-def _delegate_extension_interceptors(server: FastMCP) -> Iterator[None]:
+def _delegate_extension_interceptors(server: FastMCP) -> Generator[None, None, None]:
     try:
         caller = get_context().fastmcp
     except RuntimeError:
@@ -235,6 +235,10 @@ class ServerExtension:
         An empty dict (the default) advertises the extension with no settings.
         """
         return {}
+
+    def _requires_live_resource(self, uri: str) -> bool:
+        """Whether an extension requires this resource to bypass response caching."""
+        return False
 
     def methods(self) -> Sequence[MethodBinding]:
         """New request methods this extension serves (additive)."""
