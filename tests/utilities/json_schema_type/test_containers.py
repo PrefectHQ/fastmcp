@@ -387,6 +387,31 @@ class TestObjectTypes:
         object_schema = TypeAdapter(object).json_schema()
         assert object_schema == schema
 
+    @pytest.mark.parametrize(
+        "schema",
+        [
+            {"properties": {}, "additionalProperties": True},
+            {"type": "object", "properties": {}, "additionalProperties": True},
+            {"properties": {"name": {"type": "string"}}, "additionalProperties": True},
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "additionalProperties": True,
+            },
+        ],
+    )
+    def test_object_schema_without_type_preserves_additional_properties(self, schema):
+        """Object schemas with properties but no explicit type preserve additionalProperties (issue #6124)."""
+        target_type = json_schema_to_type(schema)
+        validator = TypeAdapter(target_type)
+        data = (
+            {"name": "x", "extra": 1}
+            if "name" in schema.get("properties", {})
+            else {"extra": 1}
+        )
+        dumped = validator.dump_python(validator.validate_python(data))
+        assert dumped.get("extra") == 1
+
 
 class TestPositionalArrayTypes:
     """Positional (``prefixItems``) arrays hydrate per position when pinned."""
