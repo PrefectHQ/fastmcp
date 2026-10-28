@@ -285,9 +285,9 @@ class RemoteMCPServer(BaseModel):
     def _resolve_auth(self) -> Any:
         """The auth object to hand to a newly built transport.
 
-        ``auth="oauth"`` makes the transport construct an ``OAuth`` client, and
+        `auth="oauth"` makes the transport construct an `OAuth` client, and
         that client's token store defaults to per-instance memory. A multi-server
-        ``MCPConfig`` proxy rebuilds its backend transports for every request, so
+        `MCPConfig` proxy rebuilds its backend transports for every request, so
         each rebuild discarded the collected token and sent the user through the
         browser flow again. A single-server config builds its transport once,
         which is why it logged in once.
@@ -295,7 +295,7 @@ class RemoteMCPServer(BaseModel):
         Keeping the resolved client on the server config gives one token store
         per configured server however many transports are built. Every other
         form is returned unchanged: a bearer string still resolves per
-        transport, and a caller-supplied ``httpx2.Auth`` is already an object
+        transport, and a caller-supplied `httpx2.Auth` is already an object
         whose lifetime the caller owns.
         """
         if self.auth != "oauth":

@@ -8,9 +8,11 @@ through the browser flow on every request. Single-server configs shared one
 `OAuth` through the client copy and logged in once.
 """
 
+from typing import Any
+
 from fastmcp.client.auth.oauth import OAuth
-from fastmcp.client.transports import StreamableHttpTransport
-from fastmcp.mcp_config import MCPConfig
+from fastmcp.client.transports import ClientTransport, StreamableHttpTransport
+from fastmcp.mcp_config import MCPConfig, MCPServerTypes, RemoteMCPServer
 
 
 def _oauth_config() -> MCPConfig:
@@ -24,65 +26,68 @@ def _oauth_config() -> MCPConfig:
     )
 
 
+def _http_auth(server: MCPServerTypes) -> Any:
+    """Build the server's transport and return the auth it resolved to."""
+    transport: ClientTransport = server.to_transport()
+    assert isinstance(transport, StreamableHttpTransport)
+    return transport.auth
+
+
 def test_oauth_auth_is_shared_across_transport_rebuilds():
-    config = _oauth_config()
+    server = _oauth_config().mcpServers["secure"]
 
-    first = config.mcpServers["secure"].to_transport()
-    second = config.mcpServers["secure"].to_transport()
+    first = _http_auth(server)
+    second = _http_auth(server)
 
-    assert isinstance(first, StreamableHttpTransport)
-    assert isinstance(first.auth, OAuth)
-    assert first.auth is second.auth
+    assert isinstance(first, OAuth)
+    assert first is second
 
 
 def test_oauth_token_store_survives_rebuilds():
-    config = _oauth_config()
+    server = _oauth_config().mcpServers["secure"]
 
-    first = config.mcpServers["secure"].to_transport()
-    assert isinstance(first.auth, OAuth)
+    first = _http_auth(server)
+    assert isinstance(first, OAuth)
     sentinel = object()
-    first.auth.__dict__["_test_token_store"] = sentinel
+    first.__dict__["_test_token_store"] = sentinel
 
-    second = config.mcpServers["secure"].to_transport()
-    assert isinstance(second.auth, OAuth)
-    assert second.auth.__dict__["_test_token_store"] is sentinel
+    second = _http_auth(server)
+    assert isinstance(second, OAuth)
+    assert second.__dict__["_test_token_store"] is sentinel
 
 
 def test_oauth_client_is_rebuilt_when_the_url_changes():
-    config = _oauth_config()
-    server = config.mcpServers["secure"]
+    server = _oauth_config().mcpServers["secure"]
+    assert isinstance(server, RemoteMCPServer)
 
-    first = server.to_transport()
+    first = _http_auth(server)
     server.url = "http://127.0.0.1:3/mcp"
-    second = server.to_transport()
+    second = _http_auth(server)
 
-    assert isinstance(first.auth, OAuth)
-    assert isinstance(second.auth, OAuth)
-    assert first.auth is not second.auth
+    assert isinstance(first, OAuth)
+    assert isinstance(second, OAuth)
+    assert first is not second
 
 
 def test_non_oauth_auth_is_untouched():
-    config = _oauth_config()
+    server = _oauth_config().mcpServers["plain"]
 
-    first = config.mcpServers["plain"].to_transport()
-    second = config.mcpServers["plain"].to_transport()
-
-    assert first.auth is None
-    assert second.auth is None
+    assert _http_auth(server) is None
+    assert _http_auth(server) is None
 
 
 def test_bearer_auth_strings_still_resolve_per_transport():
-    config = MCPConfig.from_dict(
+    server = MCPConfig.from_dict(
         {
             "mcpServers": {
                 "secure": {"url": "http://127.0.0.1:2/mcp", "auth": "token"},
             }
         }
-    )
+    ).mcpServers["secure"]
 
-    first = config.mcpServers["secure"].to_transport()
-    second = config.mcpServers["secure"].to_transport()
+    first = _http_auth(server)
+    second = _http_auth(server)
 
-    assert first.auth is not None
-    assert second.auth is not None
-    assert first.auth is not second.auth
+    assert first is not None
+    assert second is not None
+    assert first is not second
