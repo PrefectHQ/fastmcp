@@ -64,7 +64,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Hashable, Mapping
 from contextvars import ContextVar
 from copy import deepcopy
-from dataclasses import MISSING, dataclass, field, make_dataclass
+from dataclasses import MISSING, dataclass, field, fields, is_dataclass, make_dataclass
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache
 from typing import (
@@ -76,6 +76,7 @@ from typing import (
     TypeVar,
     Union,
     cast,
+    get_type_hints,
 )
 from uuid import UUID
 
@@ -236,8 +237,17 @@ class _Conversion:
     root_size: int
     resolved_refs: dict[str, Any] = field(default_factory=dict)
     building: set[tuple[str, str]] = field(default_factory=set)
+    classes: dict[tuple[str, str], type] = field(default_factory=dict)
+    recursive_refs: dict[str, tuple[str, str]] = field(default_factory=dict)
     depth: int = 0
     steps: int = 0
+
+    def reference(self, key: tuple[str, str]) -> ForwardRef:
+        """Refer to a class's identity rather than its possibly shared display name."""
+        digest = hashlib.sha256(repr(key).encode()).hexdigest()
+        name = f"_FastMCPRef_{digest}"
+        self.recursive_refs[name] = key
+        return ForwardRef(name)
 
 
 _conversion: ContextVar[_Conversion] = ContextVar("json_schema_conversion")
@@ -351,17 +361,48 @@ def json_schema_to_type(
 
 def _convert_normalized(schema: dict[str, Any], name: str | None) -> type:
     root_hash, root_size = _schema_digest(schema)
-    token = _conversion.set(_Conversion(root_hash=root_hash, root_size=root_size))
+    conversion = _Conversion(root_hash=root_hash, root_size=root_size)
+    token = _conversion.set(conversion)
     try:
         # Always use the top-level schema for references
         if schema.get("type") == "object":
-            return _object_schema_to_type(schema, schemas=schema, name=name)
+            result = _object_schema_to_type(schema, schemas=schema, name=name)
         elif name:
             raise ValueError(f"Can not apply name to non-object schema: {name}")
-        result = _schema_to_type(schema, schemas=schema)
+        else:
+            result = _schema_to_type(schema, schemas=schema)
+        _resolve_recursive_types(conversion)
+        # Publish only complete graphs: another conversion must not reuse a
+        # class whose recursive fields still depend on this conversion's namespace.
+        for key, cls in conversion.classes.items():
+            _classes.put(key, cls, conversion.root_size)
         return result  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
     finally:
         _conversion.reset(token)
+
+
+def _resolve_recursive_types(conversion: _Conversion) -> None:
+    """Bind recursive fields after every class in the conversion has been built."""
+    if not conversion.recursive_refs:
+        return
+    namespace = {
+        name: conversion.classes[key] for name, key in conversion.recursive_refs.items()
+    }
+    for cls in conversion.classes.values():
+        if is_dataclass(cls):
+            hints = get_type_hints(
+                cls,
+                localns={cls.__name__: cls, **namespace},
+                include_extras=True,
+            )
+            cls.__annotations__.update(hints)
+            for dataclass_field in fields(cls):
+                dataclass_field.type = hints[dataclass_field.name]
+    for cls in conversion.classes.values():
+        if issubclass(cls, BaseModel):
+            cls.model_rebuild(
+                force=True, _types_namespace={cls.__name__: cls, **namespace}
+            )
 
 
 def json_schema_to_type_adapter(schema: Mapping[str, Any] | bool) -> TypeAdapter[Any]:
@@ -998,12 +1039,12 @@ def _create_pydantic_model(
     cache_key = (schema_hash + conversion.root_hash, sanitized_name)
 
     # Return existing class if already built
-    existing = _classes.get(cache_key)
+    existing = conversion.classes.get(cache_key) or _classes.get(cache_key)
     if existing is not None:
         return existing
     # A recursive reference to a class that is still being built
     if cache_key in conversion.building:
-        return ForwardRef(sanitized_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        return conversion.reference(cache_key)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
 
     conversion.building.add(cache_key)
     try:
@@ -1012,7 +1053,7 @@ def _create_pydantic_model(
         )
     finally:
         conversion.building.discard(cache_key)
-    _classes.put(cache_key, cls, conversion.root_size)
+    conversion.classes[cache_key] = cls
     return cls
 
 
@@ -1079,12 +1120,12 @@ def _create_dataclass(
     cache_key = (schema_hash + conversion.root_hash, sanitized_name)
 
     # Return existing class if already built
-    existing = _classes.get(cache_key)
+    existing = conversion.classes.get(cache_key) or _classes.get(cache_key)
     if existing is not None:
         return existing
     # A recursive reference to a class that is still being built
     if cache_key in conversion.building:
-        return ForwardRef(sanitized_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        return conversion.reference(cache_key)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
 
     conversion.building.add(cache_key)
     try:
@@ -1092,7 +1133,7 @@ def _create_dataclass(
     finally:
         conversion.building.discard(cache_key)
     if isinstance(cls, type):
-        _classes.put(cache_key, cls, conversion.root_size)
+        conversion.classes[cache_key] = cls
     return cls
 
 
