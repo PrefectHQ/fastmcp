@@ -64,14 +64,16 @@ case "${1:-}" in
       > "$scratch/request.json"
     api POST "/deployments/$deployment/create_flow_run" --data "@$scratch/request.json"
     ;;
-  results)
+  results|mutations)
     run=${2:?controller run UUID required}
     [[ $run =~ ^[0-9a-f-]{36}$ ]] || exit 2
     scratch=$(mktemp -d)
     trap 'rm -rf "$scratch"' EXIT
     api GET "/flow_runs/$run" > "$scratch/run.json"
     jq '{id,state_type,state_name,parameters:{batch:.parameters.batch}}' "$scratch/run.json"
-    key=$(jq -er '.parameters.batch.id + "-review-bins"' "$scratch/run.json")
+    suffix=review-bins
+    if [[ $1 == mutations ]]; then suffix=mutation-batch; fi
+    key=$(jq -er --arg suffix "$suffix" '.parameters.batch.id + "-" + $suffix' "$scratch/run.json")
     jq -n --arg run "$run" --arg key "$key" \
       '{artifacts:{key:{any_:[$key]}},flow_runs:{id:{any_:[$run]}},limit:2}' > "$scratch/filter.json"
     api POST /artifacts/filter --data "@$scratch/filter.json" | jq -e 'if length==1 then .[0].data else error("Final review bins not available; inspect the run and retained stage artifacts") end'

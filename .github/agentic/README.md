@@ -322,3 +322,50 @@ which retries transient failures and reconciles lost POST responses. New PR comm
 inline comments or reviews stop delivery; only the exact acknowledged App review is
 ignored on retry. Exhausted delivery failures retain the published PR receipt and an
 operational failure rather than discarding the useful patch or claiming review delivery.
+
+
+### Reviewing mutation batches
+
+Each review queue also retains a `fastmcp-mutation-batch/1` JSON artifact under
+`<batch-id>-mutation-batch`. Read one with `agentic_stack.sh mutations <controller-run-id>`.
+The queue presents the exact proposed target, action, revisions, public comment or
+assignee, source runs, scope, norm evidence and remaining gates. Conflicting proposals
+for one target are blocked. No command in this path executes the proposals.
+
+The existing independent triage reviewer may propose assignment, localized PR finishing,
+PR review, duplicate PR consolidation, duplicate/completed issue closures or a closure backed by settled policy. Assignment
+requires explicit public-history and reporter-claim review; passing tests alone cannot
+qualify a contributor. Closure candidates now receive that same independent review.
+A merged reference alone cannot establish that the whole report is fixed: current-fix,
+revert and scope checks remain explicit. Missing canonical or merged-fix identities,
+negative norm checks, existing owners, security restrictions and holds block proposals.
+Duplicate automation and human interventions retain their existing authority.
+
+PR review/finishing proposals retain static checks, current CI, contributor credit and
+batch composition as separate gates before merge. Older retained verification outputs
+project to concrete per-PR review or regression-repair steps; their prose is never parsed
+into assignments or closures. Every proposal requires approval and a fresh claimed
+execution against its recorded evidence and referenced resolution snapshots.
+
+The retained-intake digest identifies the immutable original snapshot; its normalized
+`evidence_revision` supports freshness comparisons without collection-time churn.
+Acknowledged App review receipts are carried so only those exact own reviews can be
+excluded. Resolution fingerprints omit unrelated repository counters. The expanded
+Markdown view uses `<batch-id>-mutation-review-queue`, preserving older queue artifacts.
+
+PR consolidation uses explicit `close_pr` proposals with a named `canonical_pr` and
+both target and canonical revisions. The independent reviewer must compare coverage,
+read prior closed-PR discussions and preserve earlier maintainer canonical choices;
+matching titles or a newer pair of open PRs are not selection evidence. Both heads need
+retained verification. An open canonical PR is allowed; no PR is closed automatically.
+
+Assignment proposals always retain a live `platform_assignment_eligibility` gate.
+The executing maintainer must check repository assignee eligibility (HTTP 204), then
+read back issue assignees: `gh issue edit` can exit successfully while ignoring an
+ineligible nonparticipant. Public-history qualification and reporter ownership do not
+establish platform eligibility. No automatic gate bypass or claim comment is introduced.
+
+Closed unmerged canonical PRs retain a reopen/coordination gate; administrative closure
+is not a rejection. Bulk proposals block canonical closure chains/cycles and assigning
+a contribution that the same batch proposes closing. Resolve the surviving canonical
+before approval rather than applying individually plausible actions together.

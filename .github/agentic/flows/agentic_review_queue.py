@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import html
+import json
 import re
 from uuid import UUID
 
 from prefect.client.orchestration import get_client
 from prefect.client.schemas.actions import ArtifactCreate
 from prefect.client.schemas.filters import ArtifactFilter, FlowRunFilter
+
+from flows.agentic_mutation_batch import mutation_batch
 
 
 def plain(value: object) -> str:
@@ -40,6 +43,61 @@ def review_markdown(result: dict) -> str:
         "Review evidence at the recorded revisions. Recheck current GitHub state before acting. "
         "Closure candidates are proposals; a passing test is not merge approval.",
     ]
+    mutations = mutation_batch(result)["recommendations"]
+    if mutations:
+        lines.extend(
+            [
+                "",
+                "## Proposed mutations",
+                "",
+                "Every row requires maintainer approval. No mutations are executed by this queue.",
+                "",
+                "| Action | Target | Evidence | Remaining gates | Next step |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+        )
+        for mutation in mutations:
+            target = mutation["target"]
+            revision = (
+                mutation.get("head_sha") or mutation.get("baseline_sha") or "unbound"
+            )
+            gates = (
+                ", ".join(mutation["remaining_gates"]) or "Approval and live preflight"
+            )
+            lines.append(
+                f"| {plain(mutation['action'])} | [#{target['number']}]({target['url']}) | {plain(revision)} | {plain(gates)} | {plain(mutation['next_step'])} |"
+            )
+        for mutation in mutations:
+            target = mutation["target"]
+            lines.extend(
+                [
+                    "",
+                    f"### {plain(mutation['action'])} on {plain(target['kind'])} #{target['number']}",
+                    "",
+                    "Reason: " + plain(mutation["reason"]),
+                    "Scope: " + plain(mutation["scope_notes"]),
+                    "Before merge: "
+                    + plain(
+                        ", ".join(mutation.get("before_merge", []))
+                        or "Not a merge proposal"
+                    ),
+                    "",
+                ]
+            )
+            if mutation.get("payload"):
+                lines.extend(
+                    [
+                        "Proposed payload:",
+                        "",
+                        code_block(json.dumps(mutation["payload"], indent=2), "json"),
+                        "",
+                    ]
+                )
+            for check in mutation.get("norm_evidence", []):
+                lines.append(
+                    f"- {plain(check['check'])} ({'passed' if check['satisfied'] else 'unmet'}): {plain(check['summary'])} Sources: {plain(', '.join(check['evidence_urls']))}"
+                )
+            lines.append("")
     for key, title in sections.items():
         items = result["bins"].get(key, [])
         if not items:
@@ -194,12 +252,27 @@ def review_markdown(result: dict) -> str:
 
 
 def retain_review_queue(owner: UUID, result: dict) -> str:
+    retain_artifact(
+        owner,
+        f"{result['batch_id']}-mutation-batch",
+        mutation_batch(result, str(owner)),
+        "fastmcp-mutation-batch",
+        "Approval-required FastMCP mutation proposals; execution disabled",
+    )
     return retain_markdown(
-        owner, f"{result['batch_id']}-review-queue", review_markdown(result)
+        owner, f"{result['batch_id']}-mutation-review-queue", review_markdown(result)
     )
 
 
 def retain_markdown(owner: UUID, key: str, markdown: str) -> str:
+    return retain_artifact(
+        owner, key, markdown, "markdown", "FastMCP maintainer review queue"
+    )
+
+
+def retain_artifact(
+    owner: UUID, key: str, data: dict | str, artifact_type: str, description: str
+) -> str:
     with get_client(sync_client=True) as client:
         previous = client.read_artifacts(
             artifact_filter=ArtifactFilter(key={"any_": [key]}),
@@ -207,17 +280,21 @@ def retain_markdown(owner: UUID, key: str, markdown: str) -> str:
             limit=2,
         )
         if previous:
-            if len(previous) != 1 or previous[0].data != markdown:
+            if (
+                len(previous) != 1
+                or previous[0].data != data
+                or previous[0].type != artifact_type
+            ):
                 raise ValueError("Conflicting review queue artifact")
             return str(previous[0].id)
         return str(
             client.create_artifact(
                 ArtifactCreate(
                     key=key,
-                    type="markdown",
+                    type=artifact_type,
                     flow_run_id=owner,
-                    data=markdown,
-                    description="FastMCP maintainer review queue",
+                    data=data,
+                    description=description,
                 )
             ).id
         )

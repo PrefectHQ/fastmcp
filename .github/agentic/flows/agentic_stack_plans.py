@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from flows.agentic_mutation_models import MutationRecommendation
+
 
 class Assessment(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -68,6 +70,7 @@ class TriageReview(BaseModel):
     decision: Literal[
         "prepare_fix",
         "review_existing",
+        "propose_closure",
         "repair_evidence",
         "maintainer",
         "skip",
@@ -76,6 +79,9 @@ class TriageReview(BaseModel):
     reason: str = Field(min_length=1, max_length=6000)
     next_action: str = Field(min_length=1, max_length=4000)
     findings: list[str] = Field(max_length=20)
+    recommendations: list[MutationRecommendation] = Field(
+        default_factory=list, max_length=3
+    )
 
 
 OUTPUTS = {
@@ -123,6 +129,46 @@ maintainer only for a concrete unresolved product choice, or skip with a reason.
 failure is operational work, never a request that a maintainer reproduce the bug for you.
 next_action must identify the target and concrete next step, with any blocking finding; it must
 not be a generic request to investigate or review. Findings must be consequential and reachable.
+Return propose_closure only for an existing closure candidate or merged-contribution outcome,
+with a specific typed close_duplicate, close_completed or close_settled recommendation.
+Challenge partial fixes and reverts: a merged reference alone does not establish resolution.
+Use recommendations for exact proposed assignments, localized PR finishing, PR review, duplicate PR consolidation or issue
+closures. Copy context.retained_intake_sha256 into each evidence_sha256; PR actions and
+assignments copy the selected PR's full head_sha/base_sha. Name the issue target for assignment
+or closure and the PR target for PR actions. Every proposal states scope_notes, concrete
+next_step, reason and norm_evidence with source URLs and what was actually checked.
+Return at most three proposals for this issue, prioritizing useful concrete mutations.
+Keep each norm summary to one short factual sentence and cite at most three relevant URLs;
+do not repeat the investigation or create a separate proposal for each remaining gate.
+Set each norm_evidence.satisfied only when that check passed; missing or negative evidence
+remains an explicit gate, not a positive qualification.
+Assignment proposals name related_pr and its actual author as assignee, establishing worthwhile
+scope, supported contract, reporter first claim, prior discussion/bot feedback and brief public
+history per review-issue. Sparse profiles and AI assistance alone are not rejection grounds.
+Closure proposals include an exact public_comment, scope notes covering the whole report,
+and canonical_issue, merged_pr or policy_url. Link that reference in the public_comment.
+Verify duplicate equivalence or that the merged
+fix is current and not reverted; distinguish fixed on main from released. Existing duplicate
+automation retains its cooldown/closure ownership; human interventions need maintainer resolution.
+For competing PRs, propose close_pr only with canonical_pr and its exact canonical_head_sha
+(and canonical_base_sha when supplied), target PR head_sha/base_sha, a concrete public_comment
+and scope/coverage comparison. Read prior closed PR discussion and cite earlier maintainer
+canonical choices; an established choice outranks which competing pair is newest. Respect the
+reporter's first claim and existing contributor credit. norm_evidence must address
+maintainer_direction and coverage_parity, not just matching titles or duplicate labels.
+The deterministic qualifier requires retained verification at both exact heads; missing
+canonical verification is a concrete check to request, never evidence of equivalence.
+An open canonical PR is expected and does not block consolidation; closing its issue while
+active contributions remain still requires coordination. Use review_existing disposition
+for close_pr proposals; propose_closure is for issue closure only.
+Never infer readiness from passing focused tests: current CI, static checks, contributor credit
+and batch composition remain separate merge gates. Do not propose merges or automatic writes.
+Assignment eligibility is a separate live platform preflight: a successful gh issue edit
+can silently ignore an ineligible nonparticipant. Verify repository assignee eligibility and
+read back assignees after any approved assignment; sparse history is not platform eligibility.
+Do not ask contributors to post claim comments or invent automatic gate bypasses.
+Missing identity or evidence must remain explicit; deterministic code will block incomplete
+recommendations. No extra model stage runs for these proposals.
 You do not authorize publication, closure, assignment, merge or any GitHub write.""",
     "assess": """Assess context.evidence in its deterministic context.route. Establish user impact,
 supported release line, intended behavior from docs/history and maintainer decisions, and
