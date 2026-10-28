@@ -88,6 +88,7 @@ from pydantic import (
     Field,
     Json,
     PlainValidator,
+    PydanticUserError,
     StringConstraints,
     TypeAdapter,
     create_model,
@@ -1041,9 +1042,22 @@ def _create_pydantic_model(
     return cls
 
 
-def _is_valid_default(field_type: Any, default_value: Any) -> bool:
+def _is_valid_default(
+    field_type: Any,
+    default_value: Any,
+    *,
+    types_namespace: dict[str, Any] | None = None,
+) -> bool | None:
+    """Return None when validation must wait for forward references to resolve."""
     try:
-        TypeAdapter(field_type).validate_python(default_value)
+        adapter = TypeAdapter(field_type)
+        if types_namespace is not None:
+            adapter.rebuild(_types_namespace=types_namespace)
+        adapter.validate_python(default_value)
+    except PydanticUserError as exc:
+        if exc.code == "class-not-fully-defined":
+            return None
+        return False
     except Exception:
         return False
     return True
@@ -1146,6 +1160,7 @@ def _build_dataclass(
     required = schema.get("required", [])
 
     fields: list[tuple[Any, ...]] = []
+    deferred_defaults: dict[str, tuple[Any, Any]] = {}
     used_field_names: set[str] = set()
     for prop_name, prop_schema in properties.items():
         field_name = _sanitize_name(prop_name)
@@ -1177,6 +1192,8 @@ def _build_dataclass(
 
         if default_val is not MISSING:
             meta["validate_default"] = _is_valid_default(field_type, default_val)
+            if meta["validate_default"] is None:
+                deferred_defaults[prop_name] = (field_type, default_val)
             if isinstance(default_val, dict | list):
                 field_def = field(
                     default_factory=lambda d=default_val: deepcopy(d), metadata=meta
@@ -1202,7 +1219,15 @@ def _build_dataclass(
     def _apply_defaults(cls, data: Mapping[str, Any]):
         if isinstance(data, dict):
             # Let field defaults control validation while preserving object merges.
-            return _merge_defaults(data, original_schema, apply_property_defaults=False)
+            result = _merge_defaults(
+                data, original_schema, apply_property_defaults=False
+            )
+            for prop_name, (field_type, default_val) in deferred_defaults.items():
+                if prop_name not in result and _is_valid_default(
+                    field_type, default_val, types_namespace={sanitized_name: cls}
+                ):
+                    result[prop_name] = deepcopy(default_val)
+            return result
         return data
 
     cls._apply_defaults = _apply_defaults  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]

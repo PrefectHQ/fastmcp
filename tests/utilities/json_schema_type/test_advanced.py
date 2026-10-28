@@ -62,6 +62,61 @@ class TestDefaultValues:
         with pytest.raises(ValidationError):
             validator.validate_python({"user": {"name": None}})
 
+    @pytest.mark.parametrize("many", [False, True])
+    def test_recursive_defaults_are_hydrated(self, many: bool) -> None:
+        child = {"name": "child", "child": [] if many else None}
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "child": {
+                    **(
+                        {"type": "array", "items": {"$ref": "#"}}
+                        if many
+                        else {"anyOf": [{"$ref": "#"}, {"type": "null"}]}
+                    ),
+                    "default": [child] if many else child,
+                },
+            },
+        }
+        node_type = json_schema_to_type(schema)
+        validator: TypeAdapter[Any] = TypeAdapter(node_type)
+
+        result = validator.validate_python({})
+        default_child = result.child[0] if many else result.child
+        assert isinstance(default_child, node_type)
+        assert default_child.name == "child"
+        assert default_child.child == ([] if many else None)
+        other = validator.validate_python({})
+        assert default_child is not (other.child[0] if many else other.child)
+
+        override = {"name": "override", "child": [] if many else None}
+        result = validator.validate_python({"child": [override] if many else override})
+        explicit_child = result.child[0] if many else result.child
+        assert isinstance(explicit_child, node_type)
+        assert explicit_child.name == "override"
+        invalid = {"name": 1, "child": [] if many else None}
+        with pytest.raises(ValidationError):
+            validator.validate_python({"child": [invalid] if many else invalid})
+
+    @pytest.mark.parametrize("default", ["invalid", {"name": 1, "child": None}])
+    def test_invalid_recursive_defaults_are_preserved(self, default: Any) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "child": {
+                    "anyOf": [{"$ref": "#"}, {"type": "null"}],
+                    "default": default,
+                },
+            },
+        }
+        validator: TypeAdapter[Any] = TypeAdapter(json_schema_to_type(schema))
+
+        assert validator.validate_python({}).child == default
+        with pytest.raises(ValidationError):
+            validator.validate_python({"child": default})
+
     async def test_tool_result_preserves_invalid_schema_default(self) -> None:
         server = FastMCP("Defaults")
 
