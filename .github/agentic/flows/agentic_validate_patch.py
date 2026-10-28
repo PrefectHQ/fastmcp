@@ -47,7 +47,10 @@ def run_command(
         check=False,
     )
     logger.info("%s", result.stdout[-24000:])
-    result.check_returncode()
+    if result.returncode:
+        raise RuntimeError(
+            f"Check exited {result.returncode}: {command!r}\n{result.stdout[-20000:]}"
+        )
     return {
         "command": command,
         "directory": str(directory),

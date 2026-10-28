@@ -100,6 +100,12 @@ def start_validation(
     return run.id
 
 
+class ValidationFailure(RuntimeError):
+    def __init__(self, run_id: UUID, message: str):
+        self.run_id = run_id
+        super().__init__(message)
+
+
 def validate(
     owner: UUID, batch: Batch, runtime: Runtime, spec: StackSpec
 ) -> tuple[dict, UUID]:
@@ -110,6 +116,14 @@ def validate(
         if run["state_type"] in {"COMPLETED", "FAILED", "CRASHED", "CANCELLED"}:
             break
         time.sleep(5)
+    if run["state_type"] == "FAILED":
+        message = (run.get("state") or {}).get("message") or "Validator failed"
+        record(
+            owner,
+            f"{batch.id}-{spec.group}-validation-failed-{run_id}",
+            {"run_id": str(run_id), "message": message[-24000:]},
+        )
+        raise ValidationFailure(run_id, message[-24000:])
     artifact = read_stack_artifact(
         run_id,
         runtime.validator_id,
@@ -461,20 +475,32 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
         try:
             for attempt in range(2):
                 spec = make_spec(batch, group, ready, actor)
-                artifact, validation_run = validate(owner, batch, runtime, spec)
-                review_context = {
-                    "spec": spec.model_dump(mode="json"),
-                    "layers": artifact["layers"],
-                    "validation_run_id": str(validation_run),
-                    "items": ready,
-                }
-                review, review_run = ask(
-                    "review",
-                    bundles["review_instructions"],
-                    review_context,
-                    f"{group.name}-review-{attempt}",
-                )
+                try:
+                    artifact, validation_run = validate(owner, batch, runtime, spec)
+                except ValidationFailure as error:
+                    review_run = None
+                    review = {
+                        "decision": "changes_requested",
+                        "reason": "Exact candidate failed deterministic validation",
+                        "findings": [str(error)],
+                        "validation_run_id": str(error.run_id),
+                    }
+                else:
+                    review_context = {
+                        "spec": spec.model_dump(mode="json"),
+                        "layers": artifact["layers"],
+                        "validation_run_id": str(validation_run),
+                        "items": ready,
+                    }
+                    review, review_run = ask(
+                        "review",
+                        bundles["review_instructions"],
+                        review_context,
+                        f"{group.name}-review-{attempt}",
+                    )
                 if review["decision"] == "approved" and not review["findings"]:
+                    if review_run is None:
+                        raise ValueError("Publication requires independent review")
                     result = publish(
                         owner,
                         batch,
