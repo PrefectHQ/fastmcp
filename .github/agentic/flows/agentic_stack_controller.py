@@ -21,6 +21,7 @@ from flows.agentic_freshness import revalidate
 from flows.agentic_intake import policy_outcome, route_intake
 from flows.agentic_native_triage import run_native_triage
 from flows.agentic_reproduction_evidence import validate_reproduction_patch
+from flows.agentic_review_delivery import deliver_reviews
 from flows.agentic_review_queue import retain_review_queue
 from flows.agentic_stack import StackLayer, StackSpec, digest, read_stack_artifact
 from flows.agentic_stack_plans import Review
@@ -462,6 +463,33 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                     destination, result = apply_disposition(
                         destination, result, review, review_run
                     )
+                    if runtime.publish_reviews and destination == "existing_review":
+                        try:
+                            delivery = deliver_reviews(
+                                owner,
+                                batch,
+                                item_group,
+                                runtime,
+                                result,
+                                final_evidence,
+                            )
+                        except (
+                            ValueError,
+                            RuntimeError,
+                            TimeoutError,
+                            httpx.HTTPError,
+                            OSError,
+                        ) as error:
+                            delivery = {"status": "failed", "reason": str(error)[:1000]}
+                            bins["operational"].append(
+                                {
+                                    "issue_number": number,
+                                    "reason": "Review delivery failed",
+                                    "detail": str(error)[:1000],
+                                }
+                            )
+                        result["review_delivery"] = delivery
+                        result["published_reviews"] = delivery.get("posted", [])
                 if not (
                     requested.mode == "fix"
                     and destination == "evidence"

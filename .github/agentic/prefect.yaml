@@ -82,6 +82,7 @@ deployments:
         pip_packages:
           - prefect==3.8.2
           - fastapi==0.141.1
+          - PyJWT[crypto]==2.15.1
         compute_profile: medium
         timeout: 7500
   - name: cloud-stack-validation

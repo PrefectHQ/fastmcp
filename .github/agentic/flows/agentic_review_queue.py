@@ -70,6 +70,14 @@ def review_markdown(result: dict) -> str:
                 lines.append("")
             if next_step:
                 lines.extend([f"Next: {plain(next_step)}", ""])
+            for receipt in item.get("published_reviews", []):
+                lines.extend(
+                    [
+                        f"[Posted review on PR #{receipt['pr_number']}]({receipt['review_url']}) "
+                        f"at `{receipt['head_sha']}`.",
+                        "",
+                    ]
+                )
             for pr_number in item.get("pull_requests", []):
                 lines.extend(
                     [

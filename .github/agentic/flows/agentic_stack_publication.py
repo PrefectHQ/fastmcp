@@ -20,10 +20,13 @@ class GitHub:
         self.token = token
         self.url = url.rstrip("/")
 
-    def request(self, path: str, body: dict | None = None) -> dict | list | None:
+    def request(
+        self, path: str, body: dict | None = None, *, method: str | None = None
+    ) -> dict | list | None:
         request = urllib.request.Request(
             self.url + "/" + path,
             data=json.dumps(body).encode() if body is not None else None,
+            method=method,
             headers={
                 "Authorization": "Bearer " + self.token,
                 "Accept": "application/vnd.github+json",
@@ -33,7 +36,7 @@ class GitHub:
         )
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
-                return json.load(response)
+                return None if response.status == 204 else json.load(response)
         except urllib.error.HTTPError as error:
             if error.code == 404 and body is None:
                 return None

@@ -135,7 +135,7 @@ def admit(
         pending = admitted + [
             item for item in pending if item["issue_number"] not in targets
         ]
-    selected = pending[: config.max_items]
+    selected = pending[: 1 if runtime.prepare_fixes else config.max_items]
     batch = None
     if selected:
         base = read(f"repos/PrefectHQ/fastmcp/commits/{config.branch}")
@@ -153,7 +153,10 @@ def admit(
                         "branch": config.branch,
                         "base_sha": base["sha"],
                         "items": [
-                            {"issue_number": row["issue_number"], "mode": "mre"}
+                            {
+                                "issue_number": row["issue_number"],
+                                "mode": "fix" if runtime.prepare_fixes else "mre",
+                            }
                             for row in selected
                         ],
                     }

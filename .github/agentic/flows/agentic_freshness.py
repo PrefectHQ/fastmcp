@@ -6,6 +6,7 @@ from copy import deepcopy
 
 import httpx
 
+from flows.agentic_review_publication import before_delivery
 from flows.agentic_stack_policy import publication_revision
 
 
@@ -43,6 +44,15 @@ def revalidate(
             if original is not None:
                 if not isinstance(current, dict):
                     raise ValueError("Invalid fresh evidence")
+                receipts = [
+                    receipt
+                    for _, item in outcomes
+                    for receipt in item.get("published_reviews", [])
+                ]
+                for reviewer in {r["reviewer_login"] for r in receipts}:
+                    own = [r for r in receipts if r["reviewer_login"] == reviewer]
+                    original = before_delivery(original, own, reviewer)
+                    current = before_delivery(current, own, reviewer)
                 status = change_kind(original, current)
                 if status == "unchanged":
                     continue

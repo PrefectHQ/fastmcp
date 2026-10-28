@@ -23,6 +23,7 @@ from prefect.utilities.asyncutils import run_coro_as_sync
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from flows.agentic_assessment_cache import assessment_candidates, assessment_key
+from flows.agentic_review_app import ReviewApp
 from flows.agentic_stack import digest
 from flows.agentic_stack_context import assessment_context as project_assessment
 from flows.agentic_stack_plans import OUTPUTS
@@ -125,12 +126,21 @@ class Runtime(BaseModel):
     triage_verify_id: UUID | None = None
     triage_finalize_id: UUID | None = None
     source_sha: str = Field(pattern=r"^[a-f0-9]{40}$")
+    prepare_fixes: bool = False
+    publish_reviews: bool = False
+    reviewer_app: ReviewApp | None = None
 
     @model_validator(mode="after")
     def check_roles(self) -> Runtime:
         required = set(OUTPUTS) - {"triage_review"}
         if not required <= set(self.plans) <= set(OUTPUTS):
             raise ValueError("Expected every stack agent role")
+        if (
+            self.prepare_fixes or self.publish_reviews
+        ) and "triage_review" not in self.plans:
+            raise ValueError("Automatic publication requires independent triage review")
+        if self.publish_reviews and self.reviewer_app is None:
+            raise ValueError("Review publication requires a separate GitHub App")
         native = (self.triage_plan, self.triage_verify_id, self.triage_finalize_id)
         if any(value is not None for value in native) and any(
             value is None for value in native

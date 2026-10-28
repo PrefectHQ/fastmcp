@@ -27,17 +27,17 @@ def test_disposition_routes_automatic_triage_to_its_action_queue(decision, desti
         assert result["decision"] == "evidence_needed"
 
 
-def test_findings_block_fix_preparation_and_contributions_require_evidence():
+def test_prepare_disposition_carries_scope_controls_to_preparation():
     review = {
         "decision": "prepare_fix",
-        "reason": "Neighbor regression",
-        "next_action": "Repair control case",
-        "findings": ["Disabled tool must still resolve generated fallback"],
+        "reason": "Worthwhile scoped fix",
+        "next_action": "Preserve masking and rate limits while repairing formatting",
+        "findings": ["Include shared resource controls when implementing"],
     }
     category, _ = apply_disposition(
         "evidence", {"decision": "reproduced"}, review, "review-run"
     )
-    assert category == "decisions"
+    assert category == "evidence"
     with pytest.raises(ValueError, match="reproduced bug"):
         apply_disposition(
             "evidence", {"decision": "not_reproduced"}, review, "review-run"

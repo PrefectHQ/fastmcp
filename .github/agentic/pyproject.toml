@@ -2,7 +2,11 @@
 name = "fastmcp-agentic-maintenance"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["prefect==3.8.2", "httpx>=0.28,<0.29"]
+dependencies = [
+    "prefect==3.8.2",
+    "httpx>=0.28,<0.29",
+    "pyjwt[crypto]>=2.10,<3",
+]
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "ruff==0.14.10", "ty>=0.0.1"]

@@ -28,13 +28,7 @@ def apply_disposition(
     destination = destinations[decision]
     if decision == "repair_evidence":
         result["decision"] = "evidence_needed"
-    if (
-        decision == "environment_failure"
-        or decision == "prepare_fix"
-        and review["findings"]
-    ):
-        destination = (
-            "operational" if decision == "environment_failure" else "decisions"
-        )
+    if decision == "environment_failure":
+        destination = "operational"
         result["reason"] = review["reason"]
     return destination, result

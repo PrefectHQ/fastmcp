@@ -252,7 +252,13 @@ def test_queue_recovers_same_controller_and_commits_only_saved_outcomes(
         runtime = Runtime(
             plans={
                 role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-                for role in ("assess", "reproduce", "prepare", "review")
+                for role in (
+                    "assess",
+                    "reproduce",
+                    "prepare",
+                    "review",
+                    "triage_review",
+                )
             },
             validator_id=uuid4(),
             source_sha="b" * 40,
@@ -261,6 +267,7 @@ def test_queue_recovers_same_controller_and_commits_only_saved_outcomes(
         plan = admit(config, runtime, deployment, owner, read)
         assert len(plan["pending"]) == 3
         assert len(plan["batch"]["groups"][0]["items"]) == 2
+        assert {item["mode"] for item in plan["batch"]["groups"][0]["items"]} == {"mre"}
         assert checkpoint(config.scope())[1] == plan
         child = dispatch.fn(plan)
         assert dispatch.fn(plan) == child
@@ -496,3 +503,35 @@ def test_different_manual_pr_request_does_not_resume_previous_pr(github_server):
             Intake(queue="events", branch="main").scope()
             != Intake(queue="events", branch="release/3.x").scope()
         )
+
+
+def test_automatic_fixes_keep_unrelated_candidates_independently_publishable(
+    github_server,
+):
+    read, responses, _ = github_server
+    for number in (1, 2, 3):
+        responses[f"/repos/PrefectHQ/fastmcp/issues/{number}"] = issue(number)
+    responses["/repos/PrefectHQ/fastmcp/commits/main"] = {"sha": "a" * 40}
+    runtime = Runtime(
+        plans={
+            role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
+            for role in ["assess", "reproduce", "prepare", "review", "triage_review"]
+        },
+        validator_id=uuid4(),
+        source_sha="b" * 40,
+        prepare_fixes=True,
+    )
+    with prefect_test_harness(), get_client(sync_client=True) as client:
+        owner = client.create_flow_run(controller_stub, state=Running()).id
+        plan = admit(
+            Intake(issues=[1, 2, 3], max_items=3), runtime, uuid4(), owner, read
+        )
+        assert plan["batch"]["groups"][0]["items"] == [
+            {"issue_number": 1, "mode": "fix", "verification_probes": {}}
+        ]
+        assert [row["issue_number"] for row in plan["pending"]] == [1, 2, 3]
+        other = client.create_flow_run(controller_stub, state=Running()).id
+        independent = admit(
+            Intake(issues=[2], queue="events"), runtime, uuid4(), other, read
+        )
+        assert independent["batch"]["groups"][0]["items"][0]["issue_number"] == 2

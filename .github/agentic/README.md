@@ -285,3 +285,31 @@ readback, cancellation and observed token usage on a bounded batch. Cancellation
 stops further publication; an already-started child can run to its own limit.
 Public comments, closures, assignments, ready transitions, merges and recurring
 schedules are outside this initial automation's authority.
+
+### Delivering reviews and draft fixes
+
+Runtime `prepare_fixes: true` admits automatic issues in fix mode. A reproduced,
+independently recommended unclaimed issue proceeds through the existing preparation,
+credential-isolated validation, independent patch review and draft publication path.
+The triage review's `prepare_fix` disposition carries its implementation controls
+into preparation; unresolved reproduction or product decisions must use
+`repair_evidence` or `maintainer`. Draft publication still requires final patch
+approval without findings, fresh ownership and contribution checks, and reporter credit.
+
+Runtime `publish_reviews: true` posts independent existing-contribution reviews as
+GitHub `COMMENT` reviews at the exact verified head. Configure `reviewer_app` with
+`app_id`, `slug` and `private_key_block`. The current reviewer is GitHub App
+`fastmcp-triage-reviewer` (5514681), owned by zzstoatzz and installed only on FastMCP.
+Its signing key lives in the Prefect Secret `fastmcp-triage-reviewer-private-key`;
+it is loaded only by trusted delivery code. Agent nodes and verification subprocesses
+receive no App credential. Each delivery mints a short-lived repository-scoped token
+with PR write and contents/issues/checks/statuses read permissions, then revokes it.
+Draft authorship continues through the separate existing publishing credential.
+
+PR claims serialize delivery across issues. A retained revision marker reconciles
+retries and lost responses without reposting. Drafts, explicit holds, changed heads,
+new discussion and self-authored PRs block posting. The review records executed
+checks, findings and next actions; it neither approves nor merges. Exact acknowledged
+App reviews are excluded from subsequent freshness comparisons, while new human
+or other bot evidence still invalidates an old result. Posted review URLs are retained
+alongside the original Cloud review evidence.
