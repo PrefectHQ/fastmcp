@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import quote, unquote
 
-from mcp.shared.path_security import PathEscapeError
+from anyio.to_thread import run_sync
+from mcp.shared.path_security import PathEscapeError, safe_join
 from pydantic import AnyUrl
 
 from fastmcp.resources.base import Resource, ResourceResult
@@ -21,6 +22,7 @@ from fastmcp.server.providers.skills._common import (
     resolve_within,
     scan_skill_files,
 )
+from fastmcp.skills._resources import read_file
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec
 
@@ -28,6 +30,21 @@ logger = get_logger(__name__)
 
 # Ensure .md is recognized as text/markdown on all platforms (Windows may not have this)
 mimetypes.add_type("text/markdown", ".md")
+
+
+def _resolve_supporting_file(root: Path, file_path: str) -> Path:
+    try:
+        return resolve_within(root, file_path)
+    except PathEscapeError as exc:
+        raise ValueError(f"Invalid path: {exc}") from exc
+
+
+def _read_supporting_file(path: Path) -> str | bytes:
+    mime_type, _ = mimetypes.guess_type(str(path))
+    content = path.read_bytes()
+    if mime_type and mime_type.startswith("text/"):
+        return content.decode("utf-8")
+    return content
 
 
 # -----------------------------------------------------------------------------
@@ -55,10 +72,14 @@ class SkillResource(Resource):
         if self.is_manifest:
             return self._generate_manifest()
         else:
+            if self.skill_info.preserve_bytes:
+                return await run_sync(
+                    read_file, self.skill_info.path, self.skill_info.main_file
+                )
             main_file_path = resolve_within(
                 self.skill_info.path, self.skill_info.main_file
             )
-            return main_file_path.read_text(encoding="utf-8")
+            return main_file_path.read_bytes().decode("utf-8")
 
     def _generate_manifest(self) -> str:
         """Generate JSON manifest for the skill."""
@@ -80,13 +101,10 @@ class SkillFileTemplate(ResourceTemplate):
     async def read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult:
         """Read a file from the skill directory."""
         file_path = arguments.get("path", "")
+        if self.skill_info.preserve_bytes:
+            return await run_sync(read_file, self.skill_info.path, file_path)
 
-        # Security: reject traversal, absolute-path injection, null bytes, and
-        # symlink escapes before touching the filesystem.
-        try:
-            full_path = resolve_within(self.skill_info.path, file_path)
-        except PathEscapeError as e:
-            raise ValueError(f"Invalid path: {e}") from e
+        full_path = _resolve_supporting_file(self.skill_info.path, file_path)
 
         if not full_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
@@ -94,12 +112,7 @@ class SkillFileTemplate(ResourceTemplate):
         if not full_path.is_file():
             raise ValueError(f"Not a file: {file_path}")
 
-        # Determine if binary or text based on mime type
-        mime_type, _ = mimetypes.guess_type(str(full_path))
-        if mime_type and mime_type.startswith("text/"):
-            return full_path.read_text(encoding="utf-8")
-        else:
-            return full_path.read_bytes()
+        return _read_supporting_file(full_path)
 
     async def _read(
         self,
@@ -119,12 +132,7 @@ class SkillFileTemplate(ResourceTemplate):
         """
         file_path = params.get("path", "")
 
-        # Security: reject traversal, absolute-path injection, null bytes, and
-        # symlink escapes before touching the filesystem.
-        try:
-            full_path = resolve_within(self.skill_info.path, file_path)
-        except PathEscapeError as e:
-            raise ValueError(f"Invalid path: {e}") from e
+        full_path = _resolve_supporting_file(self.skill_info.path, file_path)
 
         mime_type, _ = mimetypes.guess_type(str(full_path))
 
@@ -155,21 +163,14 @@ class SkillFileResource(Resource):
 
     async def read(self) -> str | bytes | ResourceResult:
         """Read the file content."""
-        # Security: reject traversal, absolute-path injection, null bytes, and
-        # symlink escapes before touching the filesystem.
-        try:
-            full_path = resolve_within(self.skill_info.path, self.file_path)
-        except PathEscapeError as e:
-            raise ValueError(f"Invalid path: {e}") from e
+        if self.skill_info.preserve_bytes:
+            return await run_sync(read_file, self.skill_info.path, self.file_path)
+        full_path = _resolve_supporting_file(self.skill_info.path, self.file_path)
 
         if not full_path.exists():
             raise FileNotFoundError(f"File not found: {self.file_path}")
 
-        mime_type, _ = mimetypes.guess_type(str(full_path))
-        if mime_type and mime_type.startswith("text/"):
-            return full_path.read_text(encoding="utf-8")
-        else:
-            return full_path.read_bytes()
+        return _read_supporting_file(full_path)
 
 
 # -----------------------------------------------------------------------------
@@ -216,15 +217,20 @@ class SkillProvider(Provider):
         skill_path: str | Path,
         main_file_name: str = "SKILL.md",
         supporting_files: Literal["template", "resources"] = "template",
+        *,
+        _skill_info: SkillInfo | None = None,
     ) -> None:
         super().__init__()
-        self._skill_path = Path(skill_path).resolve()
+        self._skill_path = (
+            _skill_info.path if _skill_info is not None else Path(skill_path).resolve()
+        )
         self._main_file_name = main_file_name
         self._supporting_files = supporting_files
-        self._skill_info: SkillInfo | None = None
+        self._skill_info = _skill_info
 
         # Load at init to catch errors early
-        self._load_skill()
+        if self._skill_info is None:
+            self._load_skill()
 
     def _load_skill(self) -> None:
         """Load and parse the skill directory."""
@@ -293,7 +299,7 @@ class SkillProvider(Provider):
         resources.append(
             SkillResource(
                 uri=AnyUrl(
-                    f"skill://{skill.name}/{quote(self._main_file_name, safe='/')}"
+                    f"{skill.uri_prefix}{quote(self._main_file_name, safe='/')}"
                 ),
                 name=f"{skill.name}/{self._main_file_name}",
                 description=skill.description,
@@ -306,7 +312,7 @@ class SkillProvider(Provider):
         # Synthetic manifest
         resources.append(
             SkillResource(
-                uri=AnyUrl(f"skill://{skill.name}/_manifest"),
+                uri=AnyUrl(f"{skill.uri_prefix}_manifest"),
                 name=f"{skill.name}/_manifest",
                 description=f"File listing for {skill.name}",
                 mime_type="application/json",
@@ -326,7 +332,7 @@ class SkillProvider(Provider):
                 resources.append(
                     SkillFileResource(
                         uri=AnyUrl(
-                            f"skill://{skill.name}/{quote(file_info.path, safe='/')}"
+                            f"{skill.uri_prefix}{quote(file_info.path, safe='/')}"
                         ),
                         name=f"{skill.name}/{file_info.path}",
                         description=f"File from {skill.name} skill",
@@ -344,19 +350,10 @@ class SkillProvider(Provider):
         """Get a resource by URI."""
         skill = self.skill_info
 
-        # Parse URI: skill://{skill_name}/{file_path}
-        if not uri.startswith("skill://"):
+        if not uri.startswith(skill.uri_prefix):
             return None
-
-        path_part = uri[len("skill://") :]
-        parts = path_part.split("/", 1)
-        if len(parts) != 2:
-            return None
-
-        skill_name, file_path = parts
-        if skill_name != skill.name:
-            return None
-        file_path = unquote(file_path)
+        skill_name = skill.name
+        file_path = unquote(uri[len(skill.uri_prefix) :])
 
         if file_path == "_manifest":
             return SkillResource(
@@ -377,18 +374,19 @@ class SkillProvider(Provider):
                 is_manifest=False,
             )
         elif self._supporting_files == "resources":
-            # Check if it's a known supporting file
-            for file_info in skill.files:
-                if file_info.path == file_path:
-                    mime_type, _ = mimetypes.guess_type(file_path)
-                    return SkillFileResource(
-                        uri=AnyUrl(uri),
-                        name=f"{skill_name}/{file_path}",
-                        description=f"File from {skill_name} skill",
-                        mime_type=mime_type or "application/octet-stream",
-                        skill_info=skill,
-                        file_path=file_path,
-                    )
+            known = any(file_info.path == file_path for file_info in skill.files)
+            if skill.preserve_bytes:
+                known = safe_join(skill.path, file_path).is_file()
+            if known:
+                mime_type, _ = mimetypes.guess_type(file_path)
+                return SkillFileResource(
+                    uri=AnyUrl(uri),
+                    name=f"{skill_name}/{file_path}",
+                    description=f"File from {skill_name} skill",
+                    mime_type=mime_type or "application/octet-stream",
+                    skill_info=skill,
+                    file_path=file_path,
+                )
 
         return None
 
@@ -401,7 +399,7 @@ class SkillProvider(Provider):
         skill = self.skill_info
         return [
             SkillFileTemplate(
-                uri_template=f"skill://{skill.name}/{{path*}}",
+                uri_template=f"{skill.uri_prefix}{{path*}}",
                 name=f"{skill.name}_files",
                 description=f"Access files within {skill.name}",
                 mime_type="application/octet-stream",
@@ -424,24 +422,16 @@ class SkillProvider(Provider):
 
         skill = self.skill_info
 
-        if not uri.startswith("skill://"):
+        if not uri.startswith(skill.uri_prefix):
             return None
-
-        path_part = uri[len("skill://") :]
-        parts = path_part.split("/", 1)
-        if len(parts) != 2:
-            return None
-
-        skill_name, file_path = parts
-        if skill_name != skill.name:
-            return None
+        file_path = uri[len(skill.uri_prefix) :]
 
         # Don't match known resources (main file, manifest)
         if file_path == "_manifest" or file_path == self._main_file_name:
             return None
 
         return SkillFileTemplate(
-            uri_template=f"skill://{skill.name}/{{path*}}",
+            uri_template=f"{skill.uri_prefix}{{path*}}",
             name=f"{skill.name}_files",
             description=f"Access files within {skill.name}",
             mime_type="application/octet-stream",

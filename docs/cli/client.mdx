@@ -35,6 +35,12 @@ By default, only tools are shown. Add `--resources` or `--prompts` to include th
 fastmcp list server.py --resources --prompts
 ```
 
+`--skills` lists the server's [Skills extension](/servers/skills) entries with each skill's files. A server that doesn't advertise the extension shows no skills and says why.
+
+```bash
+fastmcp list server.py --skills
+```
+
 ### Machine-Readable Output
 
 The `--json` flag switches to structured JSON with full schemas included. This is the format to use when feeding tool definitions to an LLM or building automation:
@@ -51,6 +57,7 @@ fastmcp list server.py --json
 | Transport | `--transport`, `-t` | Force `http` or `sse` for URL targets |
 | Resources | `--resources` | Include resources in output |
 | Prompts | `--prompts` | Include prompts in output |
+| Skills | `--skills` | Include Skills extension entries in output |
 | Input Schema | `--input-schema` | Show full input schemas |
 | Output Schema | `--output-schema` | Show full output schemas |
 | JSON | `--json` | Structured JSON output |

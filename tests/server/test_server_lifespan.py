@@ -1,7 +1,7 @@
 """Tests for server_lifespan and session_lifespan behavior."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -23,7 +23,7 @@ class TestServerLifespan:
         lifespan_events: list[str] = []
 
         @asynccontextmanager
-        async def server_lifespan(mcp: FastMCP) -> AsyncIterator[dict[str, Any]]:
+        async def server_lifespan(mcp: FastMCP) -> AsyncGenerator[dict[str, Any], None]:
             lifespan_events.append("enter")
             try:
                 yield {"initialized": True}
@@ -64,7 +64,7 @@ class TestServerLifespan:
         resource_state = "missing"
 
         @asynccontextmanager
-        async def server_lifespan(mcp: FastMCP) -> AsyncIterator[dict[str, Any]]:
+        async def server_lifespan(mcp: FastMCP) -> AsyncGenerator[dict[str, Any], None]:
             nonlocal resource_state
             lifespan_events.append("enter")
             resource_state = "open"
@@ -99,7 +99,7 @@ class TestServerLifespan:
         """Test that server_lifespan context is available to tools."""
 
         @asynccontextmanager
-        async def server_lifespan(mcp: FastMCP) -> AsyncIterator[dict]:
+        async def server_lifespan(mcp: FastMCP) -> AsyncGenerator[dict, None]:
             yield {"db_connection": "mock_db"}
 
         mcp = FastMCP("TestServer", lifespan=server_lifespan)
@@ -269,7 +269,9 @@ class TestComposableLifespans:
         events: list[str] = []
 
         @asynccontextmanager
-        async def legacy_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+        async def legacy_lifespan(
+            server: FastMCP,
+        ) -> AsyncGenerator[dict[str, Any], None]:
             events.append("legacy_enter")
             try:
                 yield {"legacy": True}
@@ -308,7 +310,9 @@ class TestComposableLifespans:
         """Test that existing @asynccontextmanager lifespans still work."""
 
         @asynccontextmanager
-        async def old_style_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+        async def old_style_lifespan(
+            server: FastMCP,
+        ) -> AsyncGenerator[dict[str, Any], None]:
             yield {"old_style": True}
 
         mcp = FastMCP("TestServer", lifespan=old_style_lifespan)
@@ -330,7 +334,9 @@ class TestComposableLifespans:
             yield {"key": "value"}
 
         @asynccontextmanager
-        async def regular_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+        async def regular_lifespan(
+            server: FastMCP,
+        ) -> AsyncGenerator[dict[str, Any], None]:
             yield {"regular": True}
 
         # Composing with non-Lifespan should raise TypeError with helpful message
@@ -348,7 +354,7 @@ class TestCombineLifespans:
         events: list[str] = []
 
         @asynccontextmanager
-        async def first_lifespan(app: Any) -> AsyncIterator[None]:
+        async def first_lifespan(app: Any) -> AsyncGenerator[None, None]:
             events.append("first_enter")
             try:
                 yield
@@ -356,7 +362,7 @@ class TestCombineLifespans:
                 events.append("first_exit")
 
         @asynccontextmanager
-        async def second_lifespan(app: Any) -> AsyncIterator[None]:
+        async def second_lifespan(app: Any) -> AsyncGenerator[None, None]:
             events.append("second_enter")
             try:
                 yield
@@ -377,7 +383,7 @@ class TestCombineLifespans:
         events: list[str] = []
 
         @asynccontextmanager
-        async def db_lifespan(app: Any) -> AsyncIterator[dict[str, Any]]:
+        async def db_lifespan(app: Any) -> AsyncGenerator[dict[str, Any], None]:
             events.append("db_enter")
             try:
                 yield {"db": "connected"}
@@ -385,7 +391,7 @@ class TestCombineLifespans:
                 events.append("db_exit")
 
         @asynccontextmanager
-        async def cache_lifespan(app: Any) -> AsyncIterator[dict[str, Any]]:
+        async def cache_lifespan(app: Any) -> AsyncGenerator[dict[str, Any], None]:
             events.append("cache_enter")
             try:
                 yield {"cache": "ready"}
@@ -405,7 +411,7 @@ class TestCombineLifespans:
         events: list[str] = []
 
         @asynccontextmanager
-        async def fastapi_lifespan(app: Any) -> AsyncIterator[None]:
+        async def fastapi_lifespan(app: Any) -> AsyncGenerator[None, None]:
             events.append("fastapi_enter")
             try:
                 yield  # FastAPI-style: yield None
@@ -413,7 +419,7 @@ class TestCombineLifespans:
                 events.append("fastapi_exit")
 
         @asynccontextmanager
-        async def fastmcp_lifespan(app: Any) -> AsyncIterator[dict[str, Any]]:
+        async def fastmcp_lifespan(app: Any) -> AsyncGenerator[dict[str, Any], None]:
             events.append("fastmcp_enter")
             try:
                 yield {"mcp": "initialized"}  # FastMCP-style: yield dict
@@ -438,11 +444,11 @@ class TestCombineLifespans:
         """Test that later lifespans overwrite earlier ones on key conflict."""
 
         @asynccontextmanager
-        async def first(app: Any) -> AsyncIterator[dict[str, Any]]:
+        async def first(app: Any) -> AsyncGenerator[dict[str, Any], None]:
             yield {"key": "first", "only_first": "yes"}
 
         @asynccontextmanager
-        async def second(app: Any) -> AsyncIterator[dict[str, Any]]:
+        async def second(app: Any) -> AsyncGenerator[dict[str, Any], None]:
             yield {"key": "second", "only_second": "yes"}
 
         combined = combine_lifespans(first, second)
@@ -459,7 +465,7 @@ class TestCombineLifespans:
         events: list[str] = []
 
         @asynccontextmanager
-        async def ls_a(app: Any) -> AsyncIterator[dict[str, Any]]:
+        async def ls_a(app: Any) -> AsyncGenerator[dict[str, Any], None]:
             events.append("a_enter")
             try:
                 yield {"a": 1}
@@ -467,7 +473,7 @@ class TestCombineLifespans:
                 events.append("a_exit")
 
         @asynccontextmanager
-        async def ls_b(app: Any) -> AsyncIterator[dict[str, Any]]:
+        async def ls_b(app: Any) -> AsyncGenerator[dict[str, Any], None]:
             events.append("b_enter")
             try:
                 yield {"b": 2}
@@ -475,7 +481,7 @@ class TestCombineLifespans:
                 events.append("b_exit")
 
         @asynccontextmanager
-        async def ls_c(app: Any) -> AsyncIterator[dict[str, Any]]:
+        async def ls_c(app: Any) -> AsyncGenerator[dict[str, Any], None]:
             events.append("c_enter")
             try:
                 yield {"c": 3}
@@ -515,7 +521,7 @@ class TestCombineLifespans:
         events: list[str] = []
 
         @asynccontextmanager
-        async def mapping_lifespan(app: Any) -> AsyncIterator[Mapping[str, Any]]:
+        async def mapping_lifespan(app: Any) -> AsyncGenerator[Mapping[str, Any], None]:
             """Simulates a Starlette-style lifespan that yields a Mapping."""
             events.append("mapping_enter")
             try:
@@ -524,7 +530,7 @@ class TestCombineLifespans:
                 events.append("mapping_exit")
 
         @asynccontextmanager
-        async def dict_lifespan(app: Any) -> AsyncIterator[dict[str, Any]]:
+        async def dict_lifespan(app: Any) -> AsyncGenerator[dict[str, Any], None]:
             events.append("dict_enter")
             try:
                 yield {"fastmcp_state": "ready"}
@@ -561,7 +567,7 @@ class TestLifespanTeardownShielding:
         events: list[str] = []
 
         @asynccontextmanager
-        async def server_lifespan(mcp: FastMCP) -> AsyncIterator[dict[str, Any]]:
+        async def server_lifespan(mcp: FastMCP) -> AsyncGenerator[dict[str, Any], None]:
             events.append("setup")
             try:
                 yield {}
@@ -590,7 +596,7 @@ class TestLifespanTeardownShielding:
 
         class TestProvider(Provider):
             @asynccontextmanager
-            async def lifespan(self) -> AsyncIterator[None]:
+            async def lifespan(self) -> AsyncGenerator[None, None]:
                 events.append("provider_setup")
                 try:
                     yield
@@ -618,7 +624,7 @@ class TestLifespanTeardownShielding:
         events: list[str] = []
 
         @asynccontextmanager
-        async def server_lifespan(mcp: FastMCP) -> AsyncIterator[dict[str, Any]]:
+        async def server_lifespan(mcp: FastMCP) -> AsyncGenerator[dict[str, Any], None]:
             events.append("server_setup")
             try:
                 yield {}
@@ -629,7 +635,7 @@ class TestLifespanTeardownShielding:
 
         class TestProvider(Provider):
             @asynccontextmanager
-            async def lifespan(self) -> AsyncIterator[None]:
+            async def lifespan(self) -> AsyncGenerator[None, None]:
                 events.append("provider_setup")
                 try:
                     yield

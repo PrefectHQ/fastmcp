@@ -14,7 +14,7 @@ logger = get_logger("cli.config")
 class UVEnvironment(Environment):
     """Configuration for Python environment setup."""
 
-    type: Literal["uv"] = "uv"
+    type: Literal["uv"] = "uv"  # ty:ignore[invalid-mutable-override]
 
     python: str | None = Field(
         default=None,

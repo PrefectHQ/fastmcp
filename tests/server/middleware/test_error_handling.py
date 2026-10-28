@@ -1,10 +1,12 @@
 """Tests for error handling middleware."""
 
 import logging
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcp import MCPError
+from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -718,3 +720,59 @@ class TestRetryMiddlewareIntegration:
 
         # Should have error logs from error handling middleware
         assert "Error in tools/call:" in log_text
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("mask_error_details", [False, True])
+@pytest.mark.parametrize("transform_errors", [False, True])
+async def test_missing_prompt_argument_preserves_invalid_params(
+    mode: Literal["auto", "legacy"], mask_error_details: bool, transform_errors: bool
+) -> None:
+    server = FastMCP(mask_error_details=mask_error_details)
+    server.add_middleware(
+        ErrorHandlingMiddleware()
+        if transform_errors
+        else ErrorHandlingMiddleware(transform_errors=False)
+    )
+    called = False
+
+    @server.prompt
+    def summarize(topic: str) -> str:
+        nonlocal called
+        called = True
+        return topic
+
+    async with Client(server, mode=mode) as client:
+        with pytest.raises(MCPError) as exc_info:
+            await client.get_prompt("summarize", {})
+        assert not called
+        result = await client.get_prompt("summarize", {"topic": "valid"})
+
+    assert exc_info.value.error.code == -32602
+    assert "Missing required arguments: {'topic'}" in exc_info.value.error.message
+    assert result.messages[0].content == TextContent(type="text", text="valid")
+    assert called
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("mask_error_details", [False, True])
+@pytest.mark.parametrize("transform_errors", [False, True])
+async def test_prompt_handler_failure_remains_internal(
+    mode: Literal["auto", "legacy"], mask_error_details: bool, transform_errors: bool
+) -> None:
+    server = FastMCP(mask_error_details=mask_error_details)
+    server.add_middleware(
+        ErrorHandlingMiddleware()
+        if transform_errors
+        else ErrorHandlingMiddleware(transform_errors=False)
+    )
+
+    @server.prompt
+    def summarize(topic: str) -> str:
+        raise RuntimeError("private handler failure")
+
+    async with Client(server, mode=mode) as client:
+        with pytest.raises(MCPError) as exc_info:
+            await client.get_prompt("summarize", {"topic": "valid"})
+
+    assert exc_info.value.error.code == -32603

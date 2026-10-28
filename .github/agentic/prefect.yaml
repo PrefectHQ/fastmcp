@@ -1,0 +1,101 @@
+name: fastmcp-agentic-maintenance
+build: []
+push: []
+pull:
+  - prefect.deployments.steps.git_clone:
+      id: source
+      repository: https://github.com/PrefectHQ/fastmcp.git
+      commit_sha: "{{ $FASTMCP_AGENTIC_REF }}"
+  - prefect.deployments.steps.set_working_directory:
+      directory: "{{ source.directory }}/.github/agentic"
+deployments:
+  - name: cloud-triage-verify
+    version: "{{ $FASTMCP_AGENTIC_REF }}"
+    entrypoint: flows/agentic_triage_nodes.py:triage_verify
+    schedules: []
+    concurrency_limit: 1
+    parameters: {}
+    work_pool:
+      name: managed
+      job_variables:
+        image: prefecthq/prefect:3-python3.12
+        pip_packages:
+          - prefect==3.8.2
+          - fastapi==0.141.1
+        compute_profile: medium
+        timeout: 7200
+  - name: cloud-triage-finalize
+    version: "{{ $FASTMCP_AGENTIC_REF }}"
+    entrypoint: flows/agentic_triage_nodes.py:triage_finalize
+    schedules: []
+    concurrency_limit: 1
+    parameters: {}
+    work_pool:
+      name: managed
+      job_variables:
+        image: prefecthq/prefect:3-python3.12
+        pip_packages:
+          - prefect==3.8.2
+          - fastapi==0.141.1
+        compute_profile: small
+        timeout: 600
+  - name: cloud-triage-intake
+    version: "{{ $FASTMCP_AGENTIC_REF }}"
+    entrypoint: flows/agentic_triage.py:triage_intake
+    schedules: []
+    concurrency_limit: 1
+    parameters: {}
+    work_pool:
+      name: managed
+      job_variables:
+        image: prefecthq/prefect:3-python3.12
+        pip_packages:
+          - prefect==3.8.2
+          - fastapi==0.141.1
+        compute_profile: medium
+        timeout: 7800
+  - name: cloud-contribution-verification
+    version: "{{ $FASTMCP_AGENTIC_REF }}"
+    entrypoint: flows/agentic_pr_verification.py:verify_contribution
+    schedules: []
+    concurrency_limit: 1
+    parameters: {}
+    work_pool:
+      name: managed
+      job_variables:
+        image: prefecthq/prefect:3-python3.12
+        pip_packages:
+          - prefect==3.8.2
+          - fastapi==0.141.1
+        compute_profile: medium
+        timeout: 3300
+  - name: cloud-stack-batch
+    version: "{{ $FASTMCP_AGENTIC_REF }}"
+    entrypoint: flows/agentic_stack_controller.py:stack_batch
+    schedules: []
+    concurrency_limit: 1
+    parameters: {}
+    work_pool:
+      name: managed
+      job_variables:
+        image: prefecthq/prefect:3-python3.12
+        pip_packages:
+          - prefect==3.8.2
+          - fastapi==0.141.1
+        compute_profile: medium
+        timeout: 7500
+  - name: cloud-stack-validation
+    version: "{{ $FASTMCP_AGENTIC_REF }}"
+    entrypoint: flows/agentic_stack.py:validate_stack
+    schedules: []
+    concurrency_limit: 1
+    parameters: {}
+    work_pool:
+      name: managed
+      job_variables:
+        image: prefecthq/prefect:3-python3.12
+        pip_packages:
+          - prefect==3.8.2
+          - fastapi==0.141.1
+        compute_profile: medium
+        timeout: 6900

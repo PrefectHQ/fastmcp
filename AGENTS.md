@@ -6,14 +6,33 @@ FastMCP is a comprehensive Python framework (Python ≥3.10) for building Model 
 
 ## Required Development Workflow
 
-**CRITICAL**: Always run these commands in sequence before committing.
+Install dependencies before running local checks:
 
 ```bash
 uv sync                              # Install dependencies
-uv run pytest -n auto                # Run full test suite
 ```
 
-In addition, you must pass static checks. This is generally done as a pre-commit hook with `prek` but you can run it manually with:
+Run the tests relevant to the behavior you changed, including neighboring paths
+that share the implementation. For example:
+
+```bash
+uv run pytest tests/skills tests/utilities/test_skills.py -n 0
+```
+
+Broaden the selection when a concrete dependency or failure warrants it and the
+check is expedient. Full-suite and platform-matrix testing belong in CI; do not
+run the full suite locally by default or repeat it for each commit or PR in a
+stack. Run it locally only when explicitly requested or when investigating a
+failure that requires it.
+
+In addition, you must pass static checks. These generally run as pre-commit hooks
+with `prek`. To check changed files before committing:
+
+```bash
+uv run prek run --files path/to/changed_file.py
+```
+
+For repository-wide configuration changes, run:
 
 ```bash
 uv run prek run --all-files          # Ruff + Prettier + ty + gitleaks
@@ -21,7 +40,7 @@ uv run prek run --all-files          # Ruff + Prettier + ty + gitleaks
 
 The gitleaks hook needs the `gitleaks` binary on `PATH` (`brew install gitleaks`, or see [gitleaks releases](https://github.com/gitleaks/gitleaks/releases)) — it isn't a `uv`-managed dependency, so `uv sync` alone won't provide it.
 
-**Tests must pass and lint/typing must be clean before committing.**
+**Relevant tests and applicable static checks must pass before committing.**
 
 ## Repository Structure
 
@@ -81,12 +100,12 @@ When modifying MCP functionality, changes typically need to be applied across al
 - Never amend commits to fix prek failures
 - Never apply labels manually or invent new ones — issues and PRs are auto-labeled by a bot based on title/body/code changes. Don't note a "suggested" or "appropriate" label anywhere in the PR body either. See the review-pr skill.
 - Improvements = enhancements (not features) unless specified
-- **NEVER** force-push on collaborative repos
-- **ALWAYS** run prek before PRs
+- Rebase PR branches when needed. Publish rewritten history with `--force-with-lease` against the verified remote head; use an atomic push when updating a stack. Never overwrite another contributor’s new work or rewrite shared release branches. A requested rebase includes publishing it safely; it does not require separate permission for the lease-protected push.
+- **ALWAYS** run applicable prek checks before PRs
 - **NEVER** create a release, comment on an issue, or open a PR unless specifically instructed to do so.
 - **NEVER** merge a PR marked as do-not-merge or draft. Check title, body, AND labels for `[DNM]`, `DNM`, `DO NOT MERGE`, `DON'T MERGE`, `DONT MERGE`, `do-not-merge`, `dont-merge`, `[DRAFT]`, or `DRAFT` (case-insensitive, any variation — some authors use `[DRAFT]` in the title even when `isDraft` is false). Authors use these as hard stops — respect them even if CI is green and review looks clean. When triaging a batch of PRs, filter these out up front AND re-check each one's labels immediately before merging, since labels can change mid-session.
-- **ALWAYS** read review-bot comments before approving a PR. CodeRabbit and chatgpt-codex-connector (Codex) leave substantive review comments on most PRs in this repo — these bots have read the diff and often flag real issues that aren't in the PR description. Use `gh pr view <num> --comments` and read the bot feedback as part of review. Unlike proposed solutions from issue reporters, review-bot feedback should be evaluated on its merits, not discounted.
-- **Be constructively skeptical of bot review comments on your own PRs.** CodeRabbit, Codex, and claude[bot] run a fresh review pass on every push, which means a PR with active churn can accumulate bot comments in a stream that never really ends — each fix surfaces a new edge case the next pass can flag. Most of the early feedback is real and worth acting on; diminishing returns set in fast. Evaluate each comment on its merits, the same way you would a human reviewer: is this a real bug users will hit, or a hypothetical that requires an adversarial setup? Does the fix introduce more complexity than the problem? Has the bot missed context that's obvious to a human reader (a `*,` keyword-only marker, a design decision documented elsewhere, something already resolved on a later commit)? When a comment is pedantic, a false positive, or flagging something already fixed, reply on the thread explaining the reasoning and move on — don't keep iterating just because more comments arrive. If you find yourself three rounds deep and the feedback is shifting toward "what if someone does X" hypotheticals, you're past the point where each fix is improving the PR. Stop, document the contract as-is, and ship.
+- **ALWAYS** read review-bot comments before approving a PR. chatgpt-codex-connector (Codex) and claude[bot] leave substantive review comments on most PRs in this repo — these bots have read the diff and often flag real issues that aren't in the PR description. Use `gh pr view <num> --comments` and read the bot feedback as part of review. Unlike proposed solutions from issue reporters, review-bot feedback should be evaluated on its merits, not discounted.
+- **Be constructively skeptical of bot review comments on your own PRs.** Codex and claude[bot] run a fresh review pass on every push, which means a PR with active churn can accumulate bot comments in a stream that never really ends — each fix surfaces a new edge case the next pass can flag. Most of the early feedback is real and worth acting on; diminishing returns set in fast. Evaluate each comment on its merits, the same way you would a human reviewer: is this a real bug users will hit, or a hypothetical that requires an adversarial setup? Does the fix introduce more complexity than the problem? Has the bot missed context that's obvious to a human reader (a `*,` keyword-only marker, a design decision documented elsewhere, something already resolved on a later commit)? When a comment is pedantic, a false positive, or flagging something already fixed, reply on the thread explaining the reasoning and move on — don't keep iterating just because more comments arrive. If you find yourself three rounds deep and the feedback is shifting toward "what if someone does X" hypotheticals, you're past the point where each fix is improving the PR. Stop, document the contract as-is, and ship.
 - **Resolve a review thread when you fix it; reply when you're declining it.** A fix explains itself through the commit, so resolving is enough — and it leaves unresolved threads meaning unfinished business, which is the signal worth having. A decline needs a one-line reason in a reply, because resolving collapses the thread and a hidden objection is worse than a visible one. Doing both is noise. Get thread ids from the GraphQL `reviewThreads` field, then resolve:
 
   ```bash
@@ -121,7 +140,7 @@ Load the `release` skill to cut one; it holds the procedure. The policy it imple
 - Keep commit messages brief - ideally just headlines, not detailed messages
 - Focus on what changed, not how or why
 - Always read issue comments for follow-up information (treat maintainers as authoritative)
-- **Treat proposed solutions in issues skeptically.** This applies to solutions proposed by *users* in issue reports — not to feedback from configured review bots (CodeRabbit, chatgpt-codex-connector, etc.), which should be evaluated on their merits. The ideal issue contains a concise problem description and an MRE — nothing more. Proposed solutions are only worth considering if they clearly reflect genuine, non-obvious investigation of the codebase. If a solution reads like speculation, or like it was generated by an LLM without deep framework knowledge, ignore it and diagnose from the repro. Most reporters — human or AI — do not have sufficient understanding of FastMCP internals to correctly diagnose anything beyond a trivial bug. We can ask the same questions of an LLM when implementing; we don't need the reporter to do it for us, and a wrong diagnosis is worse than none.
+- **Treat proposed solutions in issues skeptically.** This applies to solutions proposed by *users* in issue reports — not to feedback from configured review bots (chatgpt-codex-connector, claude[bot], etc.), which should be evaluated on their merits. The ideal issue contains a concise problem description and an MRE — nothing more. Proposed solutions are only worth considering if they clearly reflect genuine, non-obvious investigation of the codebase. If a solution reads like speculation, or like it was generated by an LLM without deep framework knowledge, ignore it and diagnose from the repro. Most reporters — human or AI — do not have sufficient understanding of FastMCP internals to correctly diagnose anything beyond a trivial bug. We can ask the same questions of an LLM when implementing; we don't need the reporter to do it for us, and a wrong diagnosis is worse than none.
 
 ### PR Messages - Required Structure
 

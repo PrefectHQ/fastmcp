@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -59,7 +59,7 @@ class TestRunServerAsync:
 
     async def test_startup_failure_raises(self):
         @asynccontextmanager
-        async def failing_lifespan(server: FastMCP) -> AsyncIterator[None]:
+        async def failing_lifespan(server: FastMCP) -> AsyncGenerator[None, None]:
             raise RuntimeError("database unavailable")
             yield
 

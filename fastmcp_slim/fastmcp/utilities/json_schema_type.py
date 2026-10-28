@@ -87,6 +87,7 @@ from pydantic import (
     EmailStr,
     Field,
     Json,
+    PlainValidator,
     StringConstraints,
     TypeAdapter,
     create_model,
@@ -503,6 +504,52 @@ def _constrain_raw_string(
     ]
 
 
+def _exclusive_bound(schema: Mapping[str, Any], modifier: str, bound: str) -> Any:
+    """Value for a strict bound, or None when the schema states no strict bound.
+
+    ``exclusiveMinimum``/``exclusiveMaximum`` take a number since draft-06. Draft-04
+    instead writes a boolean that tightens the numeric sibling: ``{"minimum": 1,
+    "exclusiveMinimum": true}`` excludes 1. Passing that boolean straight through as
+    Pydantic's ``gt``/``lt`` reads it as the number 1, which rejects every value
+    except 0 regardless of the sibling.
+    """
+    value = schema.get(modifier)
+    if isinstance(value, bool):
+        return schema.get(bound) if value else None
+    return value
+
+
+def _inclusive_bound(
+    schema: Mapping[str, Any], modifier: str, bound: str, *, lower: bool
+) -> Any:
+    """Value for a non-strict bound, or None when a strict bound replaces the sibling.
+
+    A boolean ``true`` (draft-04) always replaces the sibling: ``{"minimum": 1,
+    "exclusiveMinimum": true}`` means exactly ``minimum > 1``.
+
+    A numeric ``exclusiveMinimum``/``exclusiveMaximum`` (draft-06+) is instead a
+    separate keyword, and an instance must satisfy both. The sibling is redundant —
+    and can be dropped — only when the exclusive bound is at least as strict, which
+    compares ``exclusive >= minimum`` for a lower bound and ``exclusive <= maximum``
+    for an upper one. A *looser* numeric exclusive must keep the sibling, otherwise
+    the generated ``lt``/``gt`` widens the accepted range: ``{"maximum": 10,
+    "exclusiveMaximum": 15}`` would accept 12.
+    """
+    value = schema.get(bound)
+    exclusive = schema.get(modifier)
+    if exclusive is True:
+        return None
+    if (
+        isinstance(exclusive, (int, float))
+        and not isinstance(exclusive, bool)
+        and isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and (exclusive >= value if lower else exclusive <= value)
+    ):
+        return None
+    return value
+
+
 def _create_numeric_type(
     base: type[int | float], schema: Mapping[str, Any]
 ) -> type | Annotated[Any, ...]:
@@ -513,10 +560,10 @@ def _create_numeric_type(
     constraints = {
         k: v
         for k, v in {
-            "gt": schema.get("exclusiveMinimum"),
-            "ge": schema.get("minimum"),
-            "lt": schema.get("exclusiveMaximum"),
-            "le": schema.get("maximum"),
+            "gt": _exclusive_bound(schema, "exclusiveMinimum", "minimum"),
+            "ge": _inclusive_bound(schema, "exclusiveMinimum", "minimum", lower=True),
+            "lt": _exclusive_bound(schema, "exclusiveMaximum", "maximum"),
+            "le": _inclusive_bound(schema, "exclusiveMaximum", "maximum", lower=False),
             "multiple_of": schema.get("multipleOf"),
         }.items()
         if v is not None
@@ -525,15 +572,39 @@ def _create_numeric_type(
     return Annotated[base, Field(**constraints)] if constraints else base  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
 
 
-def _create_enum(name: str, values: list[Any]) -> type:
+def _create_enum(name: str, values: list[Any]) -> Any:
     """Create enum type from list of values."""
     if not values:
         # Empty enum means no value is valid (same semantics as ``false``
         # schema).  Return the unsatisfiable type instead of ``Literal[()]``
         # which triggers an AssertionError in Pydantic.
-        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        return _UnsatisfiableType
     # Always return Literal for enum fields to preserve the literal nature
-    return Literal[tuple(values)]  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
+    literal = Literal[tuple(values)]  # ty:ignore[invalid-type-form]
+    if all(value is None or isinstance(value, str) for value in values):
+        return literal
+
+    try:
+        hash(literal)
+    except TypeError:
+        hashable = False
+    else:
+        hashable = True
+
+    # Pydantic matches Literal values with Python equality, so True would pass
+    # for 1, also inside arrays and objects.
+    def check(value: Any) -> Any:
+        for allowed in values:
+            if _json_values_equal(value, allowed):
+                return allowed if hashable else value
+        raise ValueError(f"Input should be one of {values!r}")
+
+    if not hashable:
+        # A Literal holding an object or array cannot be hashed into a Union.
+        return Annotated[
+            Any, BeforeValidator(check), Field(json_schema_extra={"enum": values})
+        ]
+    return Annotated[literal, PlainValidator(check, json_schema_input_type=literal)]
 
 
 def _json_values_equal(left: Any, right: Any) -> bool:
@@ -782,7 +853,7 @@ def _convert_schema(
         return resolved_refs[ref]
 
     if "const" in schema:
-        return Literal[schema["const"]]  # type: ignore
+        return _create_enum(f"Const_{len(_classes)}", [schema["const"]])
 
     if "enum" in schema:
         return _create_enum(f"Enum_{len(_classes)}", schema["enum"])
@@ -999,7 +1070,7 @@ def _build_pydantic_model(
             #    validation errors that would be caught and logged during parsing
             validate_default = False
             try:
-                TypeAdapter(field_type).validate_python(default_value)
+                TypeAdapter(field_type).validate_python(default_value)  # ty:ignore[invalid-argument-type]
                 validate_default = True
             except Exception:  # noqa: S110
                 # Default doesn't satisfy its own type; keep it as-is

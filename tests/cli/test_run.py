@@ -1069,6 +1069,68 @@ class TestInspectorModuleMode:
         # --module should be in the subprocess command
         cmd = mock_subprocess.call_args[0][0]
         assert "--module" in cmd
+        # `fastmcp run --module` ignores --transport and warns about it
+        assert "--transport" not in cmd
+
+
+class TestInspectorHttpDeployment:
+    """Test the inspector command with an HTTP deployment in fastmcp.json."""
+
+    @pytest.fixture
+    def http_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        monkeypatch.delenv("SERVER_PORT", raising=False)
+        server_file = tmp_path / "server.py"
+        server_file.write_text("from fastmcp import FastMCP\n\nmcp = FastMCP('test')\n")
+        config_file = tmp_path / "fastmcp.json"
+        config_file.write_text(
+            json.dumps(
+                {
+                    "source": {"path": str(server_file), "entrypoint": "mcp"},
+                    "deployment": {"transport": "http", "port": 8000},
+                }
+            )
+        )
+        return config_file
+
+    async def _run_inspector(self, config_file: Path, **kwargs) -> MagicMock:
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+        with (
+            patch("fastmcp.cli.cli._get_npx_command", return_value="npx"),
+            patch(
+                "fastmcp.cli.cli.subprocess.run", return_value=mock_process
+            ) as mock_subprocess,
+            pytest.raises(SystemExit),
+        ):
+            await inspector(str(config_file), **kwargs)
+        return mock_subprocess
+
+    async def test_server_runs_over_stdio(self, http_config: Path):
+        """The Inspector connects over stdio, so the child must not serve HTTP."""
+        mock_subprocess = await self._run_inspector(http_config)
+
+        assert mock_subprocess.call_args.args[0] == [
+            "npx",
+            "@modelcontextprotocol/inspector",
+            "fastmcp",
+            "run",
+            str(http_config),
+            "--no-banner",
+            "--transport",
+            "stdio",
+            "--reload",
+        ]
+
+    async def test_deployment_port_is_not_the_proxy_port(self, http_config: Path):
+        """The MCP server's HTTP port is unrelated to the Inspector proxy port."""
+        mock_subprocess = await self._run_inspector(http_config)
+
+        assert "SERVER_PORT" not in mock_subprocess.call_args.kwargs["env"]
+
+    async def test_server_port_option_sets_the_proxy_port(self, http_config: Path):
+        mock_subprocess = await self._run_inspector(http_config, server_port=6277)
+
+        assert mock_subprocess.call_args.kwargs["env"]["SERVER_PORT"] == "6277"
 
 
 class TestRunDevApps:

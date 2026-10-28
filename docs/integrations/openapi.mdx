@@ -90,6 +90,12 @@ Use `timeout=None` on the HTTP client to disable timeouts, or an `httpx2.Timeout
 
 If you omit the `client` argument, FastMCP creates an HTTP client with a 30-second timeout using the first server URL in your OpenAPI specification.
 
+## Upstream HTTP errors
+
+When an OpenAPI request receives a non-success status, FastMCP reports the status and reason to the MCP caller. HTTP 429 retains the rate-limit message, "Rate limited by upstream API, please retry later". If your HTTP client returns a redirect response, the error includes its `Location` header. Redirect following is controlled by the HTTP client configuration.
+
+JSON error bodies are rendered as JSON; HTML pages are omitted, and other response text is limited to 1,000 characters with a truncation marker. These details are shared by generated tools, resources, and resource templates. Configure `mask_error_details=True` on `FastMCP.from_openapi()` when callers should not see upstream error details.
+
 ## Route Mapping
 
 By default, FastMCP converts **every endpoint** in your OpenAPI specification into an MCP **Tool**. This provides a simple, predictable starting point that ensures all your API's functionality is immediately available to the vast majority of LLM clients which only support MCP tools.

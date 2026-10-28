@@ -131,21 +131,10 @@ class TestFetchLatestVersion:
             version = _fetch_latest_version()
             assert version is None
 
-    def test_fetch_invalid_proxy_environment(self, monkeypatch: pytest.MonkeyPatch):
-        """A proxy setting the HTTP client can't parse returns None (#5638)."""
-        for key in (
-            "HTTP_PROXY",
-            "HTTPS_PROXY",
-            "ALL_PROXY",
-            "http_proxy",
-            "https_proxy",
-            "all_proxy",
-        ):
-            monkeypatch.delenv(key, raising=False)
-        monkeypatch.setenv("NO_PROXY", "[::1]")
-        monkeypatch.setenv("no_proxy", "[::1]")
-
-        assert _fetch_latest_version() is None
+    def test_fetch_invalid_url(self):
+        """Invalid URL errors during client setup return None (#5638)."""
+        with patch("httpx2.get", side_effect=httpx2.InvalidURL("Invalid proxy URL")):
+            assert _fetch_latest_version() is None
 
     def test_fetch_invalid_response(self):
         """Invalid response returns None."""
