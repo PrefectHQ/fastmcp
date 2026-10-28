@@ -571,15 +571,33 @@ def _create_numeric_type(
     return Annotated[base, Field(**constraints)] if constraints else base  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
 
 
-def _create_enum(name: str, values: list[Any]) -> type:
+def _create_enum(name: str, values: list[Any]) -> Any:
     """Create enum type from list of values."""
     if not values:
         # Empty enum means no value is valid (same semantics as ``false``
         # schema).  Return the unsatisfiable type instead of ``Literal[()]``
         # which triggers an AssertionError in Pydantic.
-        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        return _UnsatisfiableType
     # Always return Literal for enum fields to preserve the literal nature
-    return Literal[tuple(values)]  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
+    literal = Literal[tuple(values)]  # ty:ignore[invalid-type-form]
+    if all(value is None or isinstance(value, str) for value in values):
+        return literal
+
+    # Pydantic matches Literal values with Python equality, so True would pass
+    # for 1, also inside arrays and objects.
+    def check(value: Any) -> Any:
+        if not any(_json_values_equal(value, allowed) for allowed in values):
+            raise ValueError(f"Input should be one of {values!r}")
+        return value
+
+    try:
+        hash(literal)
+    except TypeError:
+        # A Literal holding an object or array cannot be hashed into a Union.
+        return Annotated[
+            Any, BeforeValidator(check), Field(json_schema_extra={"enum": values})
+        ]
+    return Annotated[literal, BeforeValidator(check)]
 
 
 def _json_values_equal(left: Any, right: Any) -> bool:
@@ -828,7 +846,7 @@ def _convert_schema(
         return resolved_refs[ref]
 
     if "const" in schema:
-        return Literal[schema["const"]]  # type: ignore
+        return _create_enum(f"Const_{len(_classes)}", [schema["const"]])
 
     if "enum" in schema:
         return _create_enum(f"Enum_{len(_classes)}", schema["enum"])
