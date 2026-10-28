@@ -87,6 +87,7 @@ from pydantic import (
     EmailStr,
     Field,
     Json,
+    PlainValidator,
     StringConstraints,
     TypeAdapter,
     create_model,
@@ -583,21 +584,27 @@ def _create_enum(name: str, values: list[Any]) -> Any:
     if all(value is None or isinstance(value, str) for value in values):
         return literal
 
-    # Pydantic matches Literal values with Python equality, so True would pass
-    # for 1, also inside arrays and objects.
-    def check(value: Any) -> Any:
-        if not any(_json_values_equal(value, allowed) for allowed in values):
-            raise ValueError(f"Input should be one of {values!r}")
-        return value
-
     try:
         hash(literal)
     except TypeError:
+        hashable = False
+    else:
+        hashable = True
+
+    # Pydantic matches Literal values with Python equality, so True would pass
+    # for 1, also inside arrays and objects.
+    def check(value: Any) -> Any:
+        for allowed in values:
+            if _json_values_equal(value, allowed):
+                return allowed if hashable else value
+        raise ValueError(f"Input should be one of {values!r}")
+
+    if not hashable:
         # A Literal holding an object or array cannot be hashed into a Union.
         return Annotated[
             Any, BeforeValidator(check), Field(json_schema_extra={"enum": values})
         ]
-    return Annotated[literal, BeforeValidator(check)]
+    return Annotated[literal, PlainValidator(check, json_schema_input_type=literal)]
 
 
 def _json_values_equal(left: Any, right: Any) -> bool:

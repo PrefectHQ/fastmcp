@@ -288,6 +288,38 @@ class TestConstrainedTypes:
             TypeAdapter(type_).validate_python(3)
 
     @pytest.mark.parametrize(
+        "values",
+        [
+            [1, True],
+            [True, 1],
+            [0, False],
+            [False, 0],
+            [1.0, True],
+            [True, 1.0],
+            [0.0, False],
+            [False, 0.0],
+        ],
+    )
+    def test_mixed_boolean_numeric_enums_preserve_value_types(
+        self, values: list[int | float | bool]
+    ) -> None:
+        validator = TypeAdapter(json_schema_to_type({"enum": values}))
+        for value in values:
+            result = validator.validate_python(value)
+            assert result == value
+            assert type(result) is type(value)
+        number = next(value for value in values if not isinstance(value, bool))
+        alternate = int(number) if isinstance(number, float) else float(number)
+        result = validator.validate_python(alternate)
+        assert result == number
+        assert type(result) is type(number)
+        for expected, actual in zip(
+            values, validator.json_schema()["enum"], strict=True
+        ):
+            assert actual == expected
+            assert type(actual) is type(expected)
+
+    @pytest.mark.parametrize(
         "schema, value",
         [
             ({"const": 1}, True),
