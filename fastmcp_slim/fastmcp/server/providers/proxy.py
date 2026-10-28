@@ -73,6 +73,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from fastmcp.client.transports import ClientTransport
+    from fastmcp.server.extensions import ServerExtension
 
 logger = get_logger(__name__)
 
@@ -888,6 +889,8 @@ class ProxyProvider(Provider):
         self,
         client_factory: ClientFactoryT,
         cache_ttl: float | None = None,
+        *,
+        skills: bool = False,
     ):
         """Initialize a ProxyProvider.
 
@@ -898,14 +901,25 @@ class ProxyProvider(Provider):
             cache_ttl: How long (in seconds) to cache component lists for
                       individual lookups.  Defaults to 300.  Set to 0 to
                       disable caching.
+            skills: Forward the backend's Skills discovery (`skills/list` and
+                `skills/get`). Registers `SkillsExtension` on the server
+                this provider is added to.
         """
         super().__init__()
         self.client_factory = client_factory
+        self._skills = skills
         self._cache_ttl = cache_ttl if cache_ttl is not None else _DEFAULT_CACHE_TTL
         self._tools_cache: _CacheEntry[Tool] | None = None
         self._resources_cache: _CacheEntry[Resource] | None = None
         self._templates_cache: _CacheEntry[ResourceTemplate] | None = None
         self._prompts_cache: _CacheEntry[Prompt] | None = None
+
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        if not self._skills:
+            return ()
+        from fastmcp.skills.extension import SkillsExtension
+
+        return (SkillsExtension(),)
 
     async def _get_client(self) -> Client:
         """Gets a client instance by calling the sync or async factory."""
@@ -1460,6 +1474,7 @@ class FastMCPProxy(FastMCP):
         client_factory: ClientFactoryT,
         provider_error_strategy: ProviderErrorStrategy = "warn",
         identity: ProxyIdentity = "proxy",
+        skills: bool = False,
         **kwargs,
     ):
         """Initialize the proxy server.
@@ -1477,12 +1492,13 @@ class FastMCPProxy(FastMCP):
             identity: Whether clients see the proxy's server identity or the
                 upstream server's when available. Defaults to ``"proxy"``
                 for compatibility.
+            skills: Forward the backend's Skills discovery.
             **kwargs: Additional settings for the FastMCP server.
         """
         super().__init__(**kwargs)
         self.provider_error_strategy = provider_error_strategy
         self.client_factory = client_factory
-        provider = ProxyProvider(client_factory)
+        provider = ProxyProvider(client_factory, skills=skills)
         self.add_provider(provider)
         self.middleware.append(ProxyMetadataMiddleware(provider, identity=identity))
         self._setup_proxy_ping_handler()

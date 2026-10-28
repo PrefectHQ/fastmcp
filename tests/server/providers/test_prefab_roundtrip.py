@@ -174,6 +174,39 @@ class TestMountedServerRoundTrip:
         assert result.content[0].text == "saved Carol"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
 
+@pytest.mark.parametrize("tool_name", ["abcdef012345_save", "__save"])
+@pytest.mark.parametrize("composition", ["provider", "mount"])
+async def test_hash_shaped_user_name_round_trip(tool_name: str, composition: str):
+    app = FastMCPApp("contacts")
+
+    @app.tool(name=tool_name)
+    def save(name: str) -> str:
+        return f"saved {name}"
+
+    @app.ui()
+    def form() -> Column:
+        return Column(
+            children=[Button(label="Save", on_click=CallTool(tool=tool_name))]
+        )
+
+    server = FastMCP("Platform")
+    if composition == "provider":
+        server.add_provider(app, namespace="ns")
+    else:
+        inner = FastMCP("Inner")
+        inner.add_provider(app)
+        server.mount(inner, namespace="ns")
+
+    result = await server.call_tool("ns_form", {})
+    assert result.structured_content is not None
+    (ref,) = _tool_refs(result.structured_content)
+    assert ref == f"ns_{tool_name}"
+    assert ref in [tool.name for tool in await server.list_tools()]
+
+    clicked = await server.call_tool(ref, {"name": "Alice"})
+    assert clicked.content[0].text == "saved Alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+
+
 class TestProxiedServerRoundTrip:
     """A gateway proxying an app-bearing backend.
 

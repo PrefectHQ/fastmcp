@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from fastmcp.skills import _snapshot
+from fastmcp.skills import skill as skill_module
 from fastmcp.skills._snapshot import parse_frontmatter, snapshot
 
 
@@ -32,6 +32,27 @@ def test_snapshot_preserves_raw_bytes_and_frontmatter(tmp_path: Path):
         )
         for name, content in [("SKILL.md", main), ("data.bin", binary)]
     ]
+
+
+def test_snapshot_retains_backing_paths_for_encoded_nested_files(tmp_path: Path):
+    (tmp_path / "SKILL.md").write_bytes(
+        b"---\r\nname: review\r\ndescription: Review code\r\n---\r\n"
+    )
+    (tmp_path / "refs").mkdir()
+    supporting = tmp_path / "refs" / "100% #notes.md"
+    supporting.write_bytes(b"\x00\xff\r\n")
+
+    snap = snapshot(tmp_path, "team/review")
+
+    assert dict(snap.files) == {
+        "skill://team/review/SKILL.md": tmp_path / "SKILL.md",
+        "skill://team/review/refs/100%25%20%23notes.md": supporting,
+    }
+    assert isinstance(snap.entry.resources, list)
+    for resource in snap.entry.resources:
+        content = dict(snap.files)[resource.uri].read_bytes()
+        assert resource.size == len(content)
+        assert resource.digest == f"sha256:{hashlib.sha256(content).hexdigest()}"
 
 
 @pytest.mark.parametrize(
@@ -98,7 +119,7 @@ def test_frontmatter_tolerates_utf8_bom():
 
 @pytest.mark.parametrize(
     ("limit", "value"),
-    [("MAX_SKILL_RESOURCES", 1), ("MAX_SKILL_BYTES", 64)],
+    [("MAX_SKILL_FILES", 1), ("MAX_SKILL_BYTES", 64)],
 )
 def test_snapshot_rejects_skills_over_spec_limits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit: str, value: int
@@ -107,6 +128,6 @@ def test_snapshot_rejects_skills_over_spec_limits(
         "---\nname: review\ndescription: Review code\n---\n"
     )
     (tmp_path / "notes.md").write_bytes(b"x" * 64)
-    monkeypatch.setattr(_snapshot, limit, value)
+    monkeypatch.setattr(skill_module, limit, value)
     with pytest.raises(ValueError, match="skill"):
         snapshot(tmp_path, "review")

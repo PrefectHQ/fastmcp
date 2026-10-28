@@ -712,7 +712,7 @@ class TestPrefabAppConfig:
         assert config.csp.frame_domains == ["https://example.com"]
 
     async def test_auto_synthesizes_renderer_resource(self):
-        """Each prefab tool gets a per-tool renderer resource on demand."""
+        """Prefab tools synthesize shared renderer resources on demand."""
         from fastmcp.apps import PrefabAppConfig
 
         server = FastMCP("test")
@@ -722,11 +722,11 @@ class TestPrefabAppConfig:
             return "hello"
 
         resources = list(await server.list_resources())
-        prefab = [r for r in resources if "prefab/tool" in str(r.uri)]
+        prefab = [r for r in resources if "prefab/renderer" in str(r.uri)]
         assert len(prefab) == 1
 
     async def test_equivalent_to_app_true(self):
-        """PrefabAppConfig() and app=True both synthesize a per-tool renderer."""
+        """PrefabAppConfig() and app=True produce equivalent renderer identities."""
         from fastmcp.apps import PrefabAppConfig
 
         server1 = FastMCP("test1")
@@ -748,6 +748,7 @@ class TestPrefabAppConfig:
         assert tools2[0].meta is not None
         ui2 = tools2[0].meta.get("ui", {})
 
-        # Both produce per-tool URIs in the prefab/tool/<hash>/ form.
-        assert ui1.get("resourceUri", "").startswith("ui://prefab/tool/")
-        assert ui2.get("resourceUri", "").startswith("ui://prefab/tool/")
+        assert ui1["resourceUri"] == ui2["resourceUri"]
+        # Equivalent configurations produce the same shared renderer URI.
+        assert ui1.get("resourceUri", "").startswith("ui://prefab/renderer/")
+        assert ui2.get("resourceUri", "").startswith("ui://prefab/renderer/")

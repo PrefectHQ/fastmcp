@@ -140,7 +140,7 @@ class SkillResource(BaseModel):
         return value
 
 
-class Skill(BaseModel):
+class MCPSkill(BaseModel):
     """A complete SEP-2640 skill entry."""
 
     model_config = ConfigDict(extra="forbid")
@@ -151,7 +151,7 @@ class Skill(BaseModel):
     meta: dict[str, JsonValue] | None = Field(default=None, alias="_meta")
 
     @model_validator(mode="after")
-    def validate_entry(self) -> Skill:
+    def validate_entry(self) -> MCPSkill:
         scheme, authority, path_segments = _parse_resource_uri(self.uri)
         if not path_segments or path_segments[-1] != "SKILL.md":
             raise ValueError("uri must identify a SKILL.md resource")
@@ -198,14 +198,14 @@ class GetSkillParams(mcp_types.RequestParams):
 class ListSkillsResult(mcp_types.PaginatedResult, mcp_types.CacheableResult):
     """Result from `skills/list`."""
 
-    skills: list[Skill]
+    skills: list[MCPSkill]
     result_type: Literal["complete"] = "complete"
 
 
 class GetSkillResult(mcp_types.CacheableResult):
     """Result from `skills/get`."""
 
-    skill: Skill
+    skill: MCPSkill
     result_type: Literal["complete"] = "complete"
 
 

@@ -38,6 +38,8 @@ class StreamableHttpTransport(ClientTransport):
         auth: httpx2.Auth | Literal["oauth"] | str | None = None,
         httpx_client_factory: McpHttpClientFactory | None = None,
         verify: ssl.SSLContext | bool | str | None = None,
+        *,
+        max_sse_event_size: int | None = 1024 * 1024,
     ):
         """Initialize a Streamable HTTP transport.
 
@@ -54,6 +56,8 @@ class StreamableHttpTransport(ClientTransport):
                 verification, a path to a CA bundle, or an ssl.SSLContext
                 for full control. None (default) uses httpx defaults (verification
                 enabled). Ignored when httpx_client_factory is provided.
+            max_sse_event_size: Maximum size in bytes of an incoming SSE event.
+                Defaults to 1 MiB. None disables the limit.
         """
         if isinstance(url, AnyUrl):
             url = str(url)
@@ -67,6 +71,7 @@ class StreamableHttpTransport(ClientTransport):
         self.headers = headers or {}
         self.httpx_client_factory = httpx_client_factory
         self.verify: ssl.SSLContext | bool | str | None = verify
+        self.max_sse_event_size = max_sse_event_size
 
         if httpx_client_factory is not None and verify is not None:
             import warnings
@@ -214,7 +219,11 @@ class StreamableHttpTransport(ClientTransport):
         # yields a 2-tuple (read, write); get_session_id is gone from the transport.
         async with (
             http_client,
-            streamable_http_client(self.url, http_client=http_client) as (
+            streamable_http_client(
+                self.url,
+                http_client=http_client,
+                max_sse_event_size=self.max_sse_event_size,
+            ) as (
                 read_stream,
                 write_stream,
             ),
