@@ -93,7 +93,13 @@ supported release line, intended behavior from docs/history and maintainer decis
 whether the work justifies ongoing maintenance. Inspect relevant history before claiming
 a policy decision is unresolved. Existing contributions, including closed gate-rejected PRs,
 must be read with discussion, bot review, and author replies; closure and AI assistance alone
-are not negative evidence. Existing-work lanes return existing_review with concrete findings
+are not negative evidence. Check discussion for prepared corrections and substantive requests
+for assignment even when there is no PR or assignee. A contributor saying they have prepared
+a fix and are waiting for assignment is existing implementation work: return maintainer,
+identify the contributor and comment, and request coordination before any competing fix.
+A reproduction report alone is not an implementation claim. Distinguish the issue author
+from other commenters and preserve the reporter's first claim. Existing-work lanes return
+existing_review with concrete findings
 and links, never reproduce for a competing patch. Select at most three relevant unmerged
 contributions in verification_prs for execution, prioritizing the reporter's current proposal
 and explaining the selection in reason. Reading historical PRs does not select them for
