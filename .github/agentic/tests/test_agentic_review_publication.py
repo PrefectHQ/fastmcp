@@ -1,3 +1,4 @@
+import hashlib
 import json
 import threading
 from copy import deepcopy
@@ -200,17 +201,42 @@ def test_changes_and_holds_prevent_posts(endpoint, change):
     assert not state["posts"]
 
 
+def retained_delivery():
+    review = {
+        "id": 1,
+        "state": "COMMENTED",
+        "commit_id": HEAD,
+        "body": "Retained review",
+        "user": {"login": BOT, "type": "Bot"},
+    }
+    receipt = {
+        "pr_number": 7,
+        "review_id": 1,
+        "reviewer_login": BOT,
+        "head_sha": HEAD,
+        "body_sha256": hashlib.sha256(review["body"].encode()).hexdigest(),
+    }
+    return review, receipt
+
+
 def test_delivery_normalization_ignores_only_acknowledged_bot_reviews():
     original = {
         "prs": [{"number": 7, "updated_at": "before", "reviews": [], "timeline": []}]
     }
+    review, receipt = retained_delivery()
     current = deepcopy(original)
     current["prs"][0].update(
         updated_at="after",
-        reviews=[{"id": 1, "user": {"login": BOT}}],
-        timeline=[{"id": 1, "event": "reviewed", "actor": {"login": BOT}}],
+        reviews=[review],
+        timeline=[
+            {
+                "id": 1,
+                "event": "reviewed",
+                "actor": {"id": None, "login": None, "type": None},
+            }
+        ],
     )
-    receipts = [{"pr_number": 7, "review_id": 1}]
+    receipts = [receipt]
     assert before_delivery(current, receipts, BOT) == before_delivery(
         original, receipts, BOT
     )
@@ -231,11 +257,18 @@ def test_posted_review_remains_current_but_new_human_evidence_invalidates(eviden
         "stacks": [],
         "prs": [{"number": 7, "updated_at": "before", "reviews": [], "timeline": []}],
     }
+    review, receipt = retained_delivery()
     current = deepcopy(original)
     current["prs"][0].update(
         updated_at="after",
-        reviews=[{"id": 1, "user": {"login": BOT}}],
-        timeline=[{"id": 1, "event": "reviewed", "actor": {"login": BOT}}],
+        reviews=[review],
+        timeline=[
+            {
+                "id": 1,
+                "event": "reviewed",
+                "actor": {"id": None, "login": None, "type": None},
+            }
+        ],
     )
     number = original["issue"]["number"]
     result = {
@@ -243,9 +276,7 @@ def test_posted_review_remains_current_but_new_human_evidence_invalidates(eviden
             "existing_review": [
                 {
                     "issue_number": number,
-                    "published_reviews": [
-                        {"pr_number": 7, "review_id": 1, "reviewer_login": BOT}
-                    ],
+                    "published_reviews": [receipt],
                 }
             ],
             "operational": [],
@@ -374,3 +405,25 @@ def test_history_only_review_retains_skip_without_loading_a_write_credential():
         "posted": [],
         "skipped": [{"reason": "No verified contribution selected"}],
     }
+
+
+@pytest.mark.parametrize("change", ["dismissal", "edit"])
+def test_human_changes_to_posted_bot_review_are_not_hidden(change):
+    review, receipt = retained_delivery()
+    original = {
+        "prs": [
+            {
+                "number": 7,
+                "reviews": [review],
+                "timeline": [{"id": 1, "event": "reviewed", "actor": None}],
+            }
+        ]
+    }
+    current = deepcopy(original)
+    if change == "dismissal":
+        current["prs"][0]["reviews"][0]["state"] = "DISMISSED"
+    else:
+        current["prs"][0]["reviews"][0]["body"] = "Edited after publication"
+    assert before_delivery(original, [receipt], BOT) != before_delivery(
+        current, [receipt], BOT
+    )

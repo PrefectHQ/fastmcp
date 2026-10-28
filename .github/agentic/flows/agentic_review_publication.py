@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Callable
 from copy import deepcopy
@@ -15,22 +16,24 @@ def before_delivery(evidence: dict, receipts: list[dict], reviewer: str) -> dict
             if pr["number"] != receipt["pr_number"]:
                 continue
             pr.pop("updated_at", None)
-            pr["reviews"] = [
-                review
+            own = {
+                review["id"]
                 for review in pr.get("reviews", [])
-                if not (
-                    review["id"] == receipt["review_id"]
-                    and review.get("user", {}).get("login") == reviewer
-                )
+                if review["id"] == receipt["review_id"]
+                and review.get("user", {}).get("login") == reviewer
+                and review.get("user", {}).get("type") == "Bot"
+                and review.get("state") == "COMMENTED"
+                and review.get("commit_id") == receipt.get("head_sha")
+                and hashlib.sha256((review.get("body") or "").encode()).hexdigest()
+                == receipt.get("body_sha256")
+            }
+            pr["reviews"] = [
+                review for review in pr.get("reviews", []) if review["id"] not in own
             ]
             pr["timeline"] = [
                 event
                 for event in pr.get("timeline", [])
-                if not (
-                    event.get("id") == receipt["review_id"]
-                    and event.get("event") == "reviewed"
-                    and event.get("actor", {}).get("login") == reviewer
-                )
+                if not (event.get("id") in own and event.get("event") == "reviewed")
             ]
     return result
 
@@ -132,5 +135,6 @@ def post_review(
         "review_id": review["id"],
         "review_url": review["html_url"],
         "reviewer_login": reviewer,
+        "body_sha256": hashlib.sha256(review["body"].encode()).hexdigest(),
         "status": "already_posted" if existing else "posted",
     }

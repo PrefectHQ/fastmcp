@@ -215,6 +215,8 @@ def reconcile_stack(
     check()
     receipt = {
         "status": "published",
+        "group": spec.group,
+        "issue_numbers": [layer.issue_number for layer in spec.layers],
         "pull_requests": numbers,
         "pr_urls": links,
         "spec_sha256": artifact["spec_sha256"],

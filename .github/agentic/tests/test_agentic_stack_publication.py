@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from flows.agentic_backlog import settle
 from flows.agentic_stack import assemble_stack, git
 from flows.agentic_stack_publication import GitHub, reconcile_stack
 from tests.test_agentic_stack import command, probe
@@ -163,6 +164,14 @@ def test_lost_write_response_resumes_same_branches_prs_and_stack(
         result = reconcile_stack(checkout, artifact, api, approved, dict(os.environ))
         assert result["pull_requests"] == [100, 101]
         assert result["stack_number"] == 200
+        issue_numbers = [layer["issue_number"] for layer in artifact["spec"]["layers"]]
+        assert result["issue_numbers"] == issue_numbers
+        pending, completed = settle(
+            [{"issue_number": n, "attempts": 0} for n in issue_numbers],
+            issue_numbers,
+            {"bins": {"stacks": [result], "operational": []}},
+        )
+        assert pending == [] and completed == issue_numbers
         assert server.posts == 3
         assert len(server.prs) == 2
         assert len(server.stacks) == 1

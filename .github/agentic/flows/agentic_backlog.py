@@ -135,6 +135,9 @@ def settle(
         if name == "operational":
             continue
         for item in items:
+            if name == "stacks" and item.get("status") == "published":
+                seen.update(item.get("issue_numbers", []))
+                continue
             number = item.get("issue_number")
             if item.get("status") in {"stale", "baseline_changed"} or any(
                 check["status"] == "environment_failure"
