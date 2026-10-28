@@ -722,6 +722,22 @@ class TestAdditionalProperties:
         assert result == data
         assert isinstance(result, dict)
 
+    def test_untyped_object_with_additional_keeps_extra_fields(self):
+        """A properties-only object without "type" still honours additionalProperties"""
+        schema_type = json_schema_to_type(
+            {"properties": {"name": {"type": "string"}}, "additionalProperties": True}
+        )
+        result = TypeAdapter(schema_type).validate_python({"name": "x", "extra": 1})
+        assert result.name == "x"  # type: ignore[attr-defined]
+        assert result.extra == 1  # type: ignore[attr-defined]
+
+    def test_untyped_empty_properties_with_additional_returns_dict(self):
+        """An empty properties map with additionalProperties=True keeps unknown keys"""
+        schema_type = json_schema_to_type(
+            {"properties": {}, "additionalProperties": True}
+        )
+        assert schema_type == dict[str, Any]
+
     def test_properties_with_additional_returns_basemodel(
         self, properties_with_additional
     ):
