@@ -67,15 +67,23 @@ Keep the change scoped to one problem and fix the causal code path. Avoid specul
 
 For a bug fix, run the regression on unchanged code and confirm it fails for the reported reason, then run it with the fix. Assert the actual result and relevant types. Exercise neighboring supported behavior as well. The [Testing Guide](/development/tests) covers fixtures, protocol tests, HTTP helpers, and subprocess tests.
 
-Before committing, run these commands in order, followed by the static checks:
+Before committing, install dependencies and run the tests relevant to your change,
+including neighboring behavior that shares its implementation. For example, a
+skills change can use:
 
 ```bash
 uv sync
-uv run pytest -n auto
-uv run prek run --all-files
+uv run pytest tests/skills tests/utilities/test_skills.py -n 0
+uv run prek run --files path/to/changed_file.py
 ```
 
 Prek runs lint, formatting, typing, and other repository checks; pytest is separate. Hooks also run on commit. Fix failures before committing, and use a new commit rather than amending to repair a failed hook.
+
+Broaden local testing when a concrete dependency or failure warrants it and the
+check is expedient. Routine full-suite and platform-matrix runs belong in CI;
+do not repeat them locally for each commit or PR in a stack. Run the full suite
+locally when explicitly requested or when investigating a failure that requires
+it. Repository-wide configuration changes may also need `uv run prek run --all-files`.
 
 ## Update documentation
 
@@ -116,4 +124,4 @@ Decide whether FastMCP wants a change before verifying it. Name who hits the pro
 
 Labels such as `high-priority` and confident diagnoses from bots or commenters are claims, not evidence. Before treating an issue as a bug, confirm its current state, since a fix may already be merged or reverted, and check whether the behavior is a decision already made in maintainer comments, closed PRs, upgrade guides, or docs. Close a settled decision with that history linked; leave a deferred design open as its tracker. When intended behavior surprises users, fix the docs or the behavior rather than adding a warning.
 
-When PRs compete for one issue, prefer the reporter's, then the one fixing the right layer with a real regression test, then the smaller one. Before merging several PRs together, merge them onto current `main` and run the full suite and static checks there, and confirm CI actually ran on each PR's current head: fork PR runs can wait for approval, and runs older than a month cannot be re-run, so update the branch instead.
+When PRs compete for one issue, prefer the reporter's, then the one fixing the right layer with a real regression test, then the smaller one. Before merging several PRs together, verify their composition on current `main` with relevant tests and applicable static checks, and confirm full CI actually ran on the combined revision. Fork PR runs can wait for approval, and runs older than a month cannot be re-run, so update the branch instead.

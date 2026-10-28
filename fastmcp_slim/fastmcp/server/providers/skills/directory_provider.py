@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import quote, unquote
 
 import yaml
@@ -27,9 +27,12 @@ from fastmcp.server.providers.skills.skill_provider import (
 )
 from fastmcp.skills._resources import is_skill_file
 from fastmcp.skills._snapshot import Snapshot, snapshot
-from fastmcp.skills.models import Skill
+from fastmcp.skills.models import MCPSkill
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec
+
+if TYPE_CHECKING:
+    from fastmcp.server.extensions import ServerExtension
 
 logger = get_logger(__name__)
 
@@ -374,7 +377,7 @@ class SkillsDirectoryProvider(AggregateProvider):
         provider = self._resource_provider(root, name, relative)
         return await provider.get_resource_template(uri, version)
 
-    async def _visible_entry(self, snap: Snapshot) -> Skill | None:
+    async def _visible_entry(self, snap: Snapshot) -> MCPSkill | None:
         server = get_context().fastmcp
         for uri, path in snap.files:
             component: Resource | ResourceTemplate | None = await server.get_resource(
@@ -404,7 +407,7 @@ class SkillsDirectoryProvider(AggregateProvider):
 
     async def _list_skill_entries(
         self, context: ServerRequestContext[Any, Any]
-    ) -> Sequence[Skill]:
+    ) -> Sequence[MCPSkill]:
         entries = []
         for snap in await run_sync(self._snapshots):
             entry = await self._visible_entry(snap)
@@ -414,7 +417,7 @@ class SkillsDirectoryProvider(AggregateProvider):
 
     async def _get_skill_entry(
         self, uri: str, context: ServerRequestContext[Any, Any]
-    ) -> Skill | None:
+    ) -> MCPSkill | None:
         parts = self._uri_parts(uri)
         if parts is None or parts[-1] != "SKILL.md":
             return None
@@ -435,6 +438,13 @@ class SkillsDirectoryProvider(AggregateProvider):
             self._directories_for_name("/".join(parts[:length]))
             for length in range(len(parts) - 1, 0, -1)
         )
+
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        if not self._experimental_skills:
+            return ()
+        from fastmcp.skills.extension import SkillsExtension
+
+        return (SkillsExtension(),)
 
     def _validate_skill_source(self) -> None:
         if not self._experimental_skills:

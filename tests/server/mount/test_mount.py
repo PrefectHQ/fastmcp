@@ -1,8 +1,10 @@
 """Basic mounting functionality tests."""
 
 import logging
+from collections.abc import Sequence
 
 import httpx2
+import mcp_types as mt
 import pytest
 from mcp_types import TextContent
 
@@ -10,8 +12,12 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import SSETransport
 from fastmcp.server import create_proxy
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.server.providers import Provider
 from fastmcp.tools.base import Tool
 from fastmcp.tools.tool_transform import TransformedTool
+from fastmcp.utilities.tests import temporary_settings
+from fastmcp.utilities.versions import VersionSpec
 from tests.utilities.httpx2_mock import HTTPXMock
 
 
@@ -317,6 +323,80 @@ class TestMultipleServerMount:
             "Error during list_prompts from provider" in msg for msg in warning_messages
         )
         assert httpx_mock.get_requests(url=unreachable_url)
+
+
+class FailingListToolsMiddleware(Middleware):
+    async def on_list_tools(
+        self,
+        context: MiddlewareContext[mt.ListToolsRequest],
+        call_next: CallNext[mt.ListToolsRequest, Sequence[Tool]],
+    ) -> Sequence[Tool]:
+        raise RuntimeError("child unavailable")
+
+
+class FailingGetToolProvider(Provider):
+    async def _get_tool(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Tool | None:
+        raise RuntimeError("child unavailable")
+
+
+class TestMountedComponentsRaiseOnLoadError:
+    """The `mounted_components_raise_on_load_error` setting turns a failing
+    provider during listing or lookup from a logged warning into an error."""
+
+    def _parent_with_failing_list(self) -> FastMCP:
+        parent = FastMCP("Parent")
+
+        @parent.tool
+        def parent_tool() -> str:
+            return "parent"
+
+        parent.mount(
+            FastMCP("Child", middleware=[FailingListToolsMiddleware()]),
+            namespace="child",
+        )
+        return parent
+
+    async def test_list_skips_failing_mount_by_default(self, caplog):
+        parent = self._parent_with_failing_list()
+
+        caplog.set_level(logging.WARNING, logger="fastmcp")
+        tools = await parent.list_tools()
+
+        assert [t.name for t in tools] == ["parent_tool"]
+        assert any(
+            "Error during list_tools from provider" in r.message
+            and "child unavailable" in r.message
+            for r in caplog.records
+        )
+
+    async def test_list_raises_for_failing_mount_when_enabled(self):
+        parent = self._parent_with_failing_list()
+
+        with temporary_settings(mounted_components_raise_on_load_error=True):
+            with pytest.raises(RuntimeError, match="child unavailable"):
+                await parent.list_tools()
+
+    async def test_get_skips_failing_mount_by_default(self, caplog):
+        parent = FastMCP("Parent")
+        parent.mount(FastMCP("Child", providers=[FailingGetToolProvider()]))
+
+        caplog.set_level(logging.WARNING, logger="fastmcp")
+
+        assert await parent.get_tool("missing") is None
+        assert any(
+            "Error during get_tool('missing') from provider" in r.message
+            for r in caplog.records
+        )
+
+    async def test_get_raises_for_failing_mount_when_enabled(self):
+        parent = FastMCP("Parent")
+        parent.mount(FastMCP("Child", providers=[FailingGetToolProvider()]))
+
+        with temporary_settings(mounted_components_raise_on_load_error=True):
+            with pytest.raises(RuntimeError, match="child unavailable"):
+                await parent.get_tool("missing")
 
 
 class TestPrefixConflictResolution:

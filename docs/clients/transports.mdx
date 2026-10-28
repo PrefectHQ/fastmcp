@@ -109,6 +109,23 @@ transport = StdioTransport(command="python", args=["server.py"], keep_alive=Fals
 
 HTTP transport connects to MCP servers running as web services. This is the recommended transport for production deployments.
 
+Incoming SSE events are limited to 1 MiB by default. If a server returns larger
+tool results or resources, set `max_sse_event_size` on `StreamableHttpTransport`
+to a byte limit that accommodates them, or use `None` to disable the limit:
+
+```python
+from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
+
+transport = StreamableHttpTransport(
+    "https://api.example.com/mcp",
+    max_sse_event_size=8 * 1024 * 1024,
+)
+client = Client(transport)
+```
+
+The same field is available as `max_sse_event_size` on an [MCP config](/integrations/mcp-json-configuration)'s remote server entry, which forwards it when building the transport. A client created from a bare URL (`Client("https://api.example.com/mcp")`) keeps the 1 MiB default; pass an explicit `StreamableHttpTransport` as above to raise or disable it.
+
 ```python
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport

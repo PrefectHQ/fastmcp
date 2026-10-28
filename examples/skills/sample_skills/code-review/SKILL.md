@@ -1,4 +1,5 @@
 ---
+name: code-review
 description: Review code for quality, maintainability, and correctness
 version: "1.0.0"
 tags: [code, review, quality]

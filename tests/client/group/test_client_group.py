@@ -418,6 +418,41 @@ async def test_group_reconnects_after_last_exit():
     assert not client.is_connected()
 
 
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+async def test_stale_group_context_does_not_disconnect_reconnected_session(
+    fastmcp_server, mode
+):
+    client = Client(fastmcp_server, mode=mode)
+    group = ClientGroup({"server": client})
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    exited = asyncio.Event()
+
+    async def old_group_context() -> None:
+        async with group:
+            entered.set()
+            await release.wait()
+        exited.set()
+
+    old_task = asyncio.create_task(old_group_context())
+    await entered.wait()
+    await client.close()
+
+    try:
+        async with client:
+            first = await client.call_tool("greet", {"name": "World"})
+            assert first.data == "Hello, World!"
+
+            release.set()
+            await exited.wait()
+
+            second = await client.call_tool("greet", {"name": "World"})
+            assert second.data == "Hello, World!"
+    finally:
+        release.set()
+        await old_task
+
+
 async def test_failed_entry_leaves_group_reenterable():
     good = Client(make_server("good"))
     bad = Client(FastMCPTransport(make_server("bad")))

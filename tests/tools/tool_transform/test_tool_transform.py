@@ -1007,9 +1007,11 @@ async def test_transform_fn_blocking_sync_generator_does_not_stall_event_loop():
         await client.call_tool("gen_blocking", {})  # warm up call machinery
         heartbeat_task = asyncio.create_task(heartbeat())
         try:
-            started = loop.time()
+            # perf_counter, not loop.time(): on Windows the loop clock ticks
+            # every ~15.6ms and can read the full blocking duration as short.
+            started = time.perf_counter()
             result = await client.call_tool("gen_blocking", {})
-            elapsed = loop.time() - started
+            elapsed = time.perf_counter() - started
         finally:
             heartbeat_task.cancel()
 
