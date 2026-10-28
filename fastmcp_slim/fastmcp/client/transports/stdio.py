@@ -373,9 +373,15 @@ class FastMCPStdioTransport(StdioTransport):
         # is a Python entry point with the same sanitized child environment.
         env = {"PYTHONUTF8": "1", **(env or {})}
 
+        full_args = ["run", str(script_path)]
+        if args:
+            # The CLI parses its own options up to `--`, so server arguments
+            # (including flag-shaped ones) have to come after the delimiter.
+            full_args.extend(("--", *args))
+
         super().__init__(
             command="fastmcp",
-            args=["run", str(script_path)],
+            args=full_args,
             env=env,
             cwd=cwd,
             keep_alive=keep_alive,

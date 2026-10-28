@@ -894,3 +894,39 @@ class TestPythonTransportEnvironment:
             script_path=script, env={"PYTHONUTF8": "0", "EXTRA": "kept"}
         )
         assert custom.env == {"PYTHONUTF8": "0", "EXTRA": "kept"}
+
+
+class TestFastMCPTransportArguments:
+    """Extra arguments belong to the server command, not just the constructor (GH-6117)."""
+
+    def test_extra_args_follow_the_script(self, tmp_path):
+        script = tmp_path / "server.py"
+        script.write_text("", encoding="utf-8")
+
+        transport = FastMCPStdioTransport(script_path=script, args=["hello", "world"])
+
+        assert transport.args == ["run", str(script), "--", "hello", "world"]
+
+    def test_flag_shaped_args_are_separated_from_cli_options(self, tmp_path):
+        script = tmp_path / "server.py"
+        script.write_text("", encoding="utf-8")
+
+        transport = FastMCPStdioTransport(
+            script_path=script, args=["--config", "config.json"]
+        )
+
+        assert transport.args == [
+            "run",
+            str(script),
+            "--",
+            "--config",
+            "config.json",
+        ]
+
+    def test_no_args_keeps_the_plain_run_command(self, tmp_path):
+        script = tmp_path / "server.py"
+        script.write_text("", encoding="utf-8")
+
+        transport = FastMCPStdioTransport(script_path=script)
+
+        assert transport.args == ["run", str(script)]
