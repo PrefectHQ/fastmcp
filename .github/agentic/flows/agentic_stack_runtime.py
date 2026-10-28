@@ -371,7 +371,17 @@ def judge(
         observation = api("GET", f"/flow_runs/{run_id}/execution-plan")
         if observation["snapshot"]["execution_plan_version_id"] != str(plan.version_id):
             raise ValueError("Agent run selected a different plan version")
-        if observation["status"] in {"completed", "failed", "cancelled", "blocked"}:
+        terminal = observation["status"] in {
+            "completed",
+            "failed",
+            "cancelled",
+            "blocked",
+        }
+        waiting_for_result = observation["status"] == "completed" and any(
+            output["output"] == "result" and output["status"] == "waiting"
+            for output in observation.get("outputs", [])
+        )
+        if terminal and not waiting_for_result:
             break
         time.sleep(5)
     if observation["status"] != "completed":

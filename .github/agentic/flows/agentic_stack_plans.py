@@ -142,7 +142,10 @@ edge-case expansion. For docs, execute the changed example. Reuse investigation 
 repeating broad searches. If context.previous is present, repair its patch against the same
 base using the review's concrete findings, still returning the entire replacement diff.
 Return prepared only with a justified nonempty complete git diff --binary (including new
-files), concise PR title, and repository-conformant body. Touch only maintained library code,
+files), concise PR title, and repository-conformant body. Read the patch from the actual
+Git diff and return it verbatim: do not reconstruct or rewrite diff headers or file paths.
+Apply the exact diff to a second clean checkout and execute the focused regression there
+before returning prepared; checks in the editing checkout do not validate serialized bytes. Touch only maintained library code,
 tests or docs. Do not alter skills, dependencies, hooks, generated docs/schemas or CI.
 Contributor credit is added deterministically. observed retains actual commands/results.
 If blocked, preserve useful patch/evidence with the precise unresolved decision.""",
