@@ -87,8 +87,10 @@ from pydantic import (
     EmailStr,
     Field,
     Json,
+    PydanticUserError,
     StringConstraints,
     TypeAdapter,
+    ValidationError,
     create_model,
     model_validator,
 )
@@ -1144,9 +1146,19 @@ def _build_dataclass(
         is_required = prop_name in required
 
         # Include alias in field metadata
-        meta = {"alias": prop_name}
+        meta: dict[str, Any] = {"alias": prop_name}
 
         if default_val is not MISSING:
+            # Hydrate valid defaults, but preserve incompatible annotations
+            # without treating them as explicitly supplied field values.
+            meta["validate_default"] = True
+            try:
+                TypeAdapter(field_type).validate_python(default_val)  # ty:ignore[invalid-argument-type]
+            except (ValidationError, TypeError):
+                meta["validate_default"] = False
+            except PydanticUserError:
+                # Recursive references may only resolve after the class is built.
+                pass
             if isinstance(default_val, dict | list):
                 field_def = field(
                     default_factory=lambda d=default_val: deepcopy(d), metadata=meta
@@ -1171,7 +1183,7 @@ def _build_dataclass(
     @classmethod
     def _apply_defaults(cls, data: Mapping[str, Any]):
         if isinstance(data, dict):
-            return _merge_defaults(data, original_schema)
+            return _merge_defaults(data, original_schema, property_defaults=False)
         return data
 
     cls._apply_defaults = _apply_defaults  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
@@ -1182,8 +1194,10 @@ def _merge_defaults(
     data: Mapping[str, Any],
     schema: Mapping[str, Any],
     parent_default: Mapping[str, Any] | None = None,
+    *,
+    property_defaults: bool = True,
 ) -> dict[str, Any]:
-    """Merge defaults with provided data at all levels."""
+    """Merge object defaults, optionally leaving property defaults to field validation."""
     # If we have no data
     if not data:
         # Start with parent default if available
@@ -1205,7 +1219,12 @@ def _merge_defaults(
                 and isinstance(result[key], dict)
             ):
                 # recursively merge nested dicts
-                result[key] = _merge_defaults(value, {"properties": {}}, result[key])
+                result[key] = _merge_defaults(
+                    value,
+                    {"properties": {}},
+                    result[key],
+                    property_defaults=property_defaults,
+                )
             else:
                 result[key] = value
     # Otherwise just use the data
@@ -1222,7 +1241,7 @@ def _merge_defaults(
         if prop_name not in result:
             if parent_default and prop_name in parent_default:
                 result[prop_name] = parent_default[prop_name]
-            elif "default" in prop_schema:
+            elif property_defaults and "default" in prop_schema:
                 result[prop_name] = prop_schema["default"]
 
         # If property exists and is an object, recursively merge
@@ -1239,7 +1258,10 @@ def _merge_defaults(
                 nested_default = prop_schema["default"]
 
             result[prop_name] = _merge_defaults(
-                result[prop_name], prop_schema, nested_default
+                result[prop_name],
+                prop_schema,
+                nested_default,
+                property_defaults=property_defaults,
             )
 
     return result
