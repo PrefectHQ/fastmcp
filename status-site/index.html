@@ -5,122 +5,112 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="FastMCP maintenance: current checks, contributor queue, and automation activity."
+      content="FastMCP's public backlog: open issues and pull requests over time, incoming reports, closures and merged work."
     />
-    <title>FastMCP / maintenance</title>
+    <title>FastMCP / backlog</title>
     <link rel="stylesheet" href="style.css" />
     <script src="app.js" defer></script>
   </head>
   <body>
     <main>
       <header>
-        <h1>
-          <a href="https://github.com/PrefectHQ/fastmcp">fastmcp</a
-          ><span> / maintenance</span>
-        </h1>
+        <div>
+          <h1>
+            <a href="https://github.com/PrefectHQ/fastmcp">fastmcp</a>
+            <span>/ backlog</span>
+          </h1>
+          <p>What’s arriving, what’s getting done, and what’s left.</p>
+        </div>
         <nav aria-label="Page controls">
-          <button id="refresh">refresh</button
+          <button id="refresh">Refresh</button
           ><button id="theme" aria-label="Switch color theme">◐</button>
         </nav>
       </header>
-      <div class="status-line">
-        <span id="health">◌ reading snapshot</span
-        ><span id="freshness" role="status"></span>
-      </div>
+      <p id="freshness" class="caption" role="status">
+        Reading public history…
+      </p>
       <p id="notice" class="notice" hidden></p>
-      <section class="metrics" aria-label="At a glance" id="metrics"></section>
-      <section aria-labelledby="ranking-title">
+      <section aria-labelledby="backlog-heading">
         <div class="section-heading">
-          <h2 id="ranking-title">what to look at</h2>
-          <span class="muted">ranked issue signals</span>
+          <h2 id="backlog-heading">Open issues &amp; pull requests</h2>
+          <div class="ranges" role="group" aria-label="Time range">
+            <button data-days="7">7d</button
+            ><button data-days="30" aria-pressed="true">30d</button
+            ><button data-days="90">90d</button
+            ><button data-days="365">1y</button
+            ><button data-days="all">All</button>
+          </div>
         </div>
-        <p id="ranking-coverage" class="caption">
-          Ranking unavailable in this snapshot.
-        </p>
-        <div class="ranking-controls">
-          <select id="ranking-kind" aria-label="Filter ranked issues by kind">
-            <option value="all">all kinds</option></select
-          ><label
-            ><input type="checkbox" id="ranking-unanswered" /> unanswered
-            only</label
-          >
-        </div>
-        <div id="ranking"></div>
-        <button id="ranking-more" hidden>show more</button>
-      </section>
-      <section aria-labelledby="attention-title">
-        <div class="section-heading">
-          <h2 id="attention-title">operational attention</h2>
-          <span class="muted">public evidence</span>
-        </div>
-        <div id="attention">Loading…</div>
-      </section>
-      <section aria-labelledby="main-title">
-        <div class="section-heading">
-          <h2 id="main-title">main</h2>
-          <a
-            id="commit"
-            href="https://github.com/PrefectHQ/fastmcp/commits/main"
-            >commits</a
-          >
-        </div>
-        <div id="main-checks" class="checks"></div>
-      </section>
-      <section aria-labelledby="activity-title">
-        <div class="section-heading">
-          <h2 id="activity-title">automation activity</h2>
-          <select
-            id="activity-filter"
-            aria-label="Filter activity by automation"
-          >
-            <option value="all">all automation</option>
-          </select>
-        </div>
-        <div id="activity-totals" class="legend"></div>
-        <div id="chart"></div>
-        <p class="caption">
-          Daily completed runs, UTC. Today is partial. Gate failures include
-          expected rejections and execution errors.
-        </p>
-      </section>
-      <section aria-labelledby="queue-title">
-        <div class="section-heading">
-          <h2 id="queue-title">awaiting assignment</h2>
-          <a id="queue-link" href="https://github.com/PrefectHQ/fastmcp/pulls"
-            >all requests</a
-          >
+        <div id="totals" class="totals"></div>
+        <div id="backlog-chart" class="chart-container"></div>
+        <div id="backlog-readout" class="readout" aria-live="polite">
+          Hover, tap, or use arrow keys to inspect a date.
         </div>
         <p class="caption">
-          Oldest open requests first. Time waiting is not a judgment of the
-          contribution.
+          Solid lines are recorded snapshots; dashed lines are reconstructed
+          history. Counts include draft PRs.
+          <a href="#method">About the data</a>
         </p>
-        <div id="queue"></div>
       </section>
-      <section aria-labelledby="automation-title">
+      <section aria-labelledby="recent-heading">
         <div class="section-heading">
-          <h2 id="automation-title">automation health</h2>
-          <label
-            ><input type="checkbox" id="attention-only" /> issues only</label
-          >
+          <h2 id="recent-heading">Yesterday and today</h2>
+          <span class="caption">America/Chicago · today is partial</span>
         </div>
-        <div id="automations"></div>
+        <div id="recent" class="recent"></div>
+      </section>
+      <section aria-labelledby="activity-heading">
+        <div class="section-heading">
+          <h2 id="activity-heading">Incoming &amp; closed</h2>
+          <div class="ranges" role="group" aria-label="Activity type">
+            <button data-kind="issues" aria-pressed="true">Issues</button
+            ><button data-kind="prs">Pull requests</button>
+          </div>
+        </div>
+        <div id="activity-legend" class="legend"></div>
+        <div id="activity-chart" class="chart-container"></div>
+        <div id="activity-readout" class="readout" aria-live="polite">
+          Select a day to see the work behind the numbers.
+        </div>
+        <p class="caption">
+          New items above the baseline; closures below it. Closure dates reflect
+          the latest closed state, so previous close/reopen cycles are not
+          counted. Days use America/Chicago.
+        </p>
+        <details id="activity-detail">
+          <summary id="detail-title">Browse recent work</summary>
+          <div id="detail-items"></div>
+        </details>
+      </section>
+      <section id="method" class="method" aria-labelledby="method-heading">
+        <h2 id="method-heading">About the data</h2>
+        <p>
+          Recorded counts began October 16, 2026, from the existing half-hourly
+          backlog collector. Earlier counts are reconstructed from creation and
+          latest closure dates; they cannot recover periods when an item was
+          closed and later reopened.
+        </p>
+        <p>
+          Activity comes from GitHub’s public issue and PR records, not changes
+          in the total. Issue outcomes use the reason attached to the latest
+          closure: completed, not planned, or unspecified. “Completed” is
+          GitHub’s closure category, not a claim that a fix shipped. PRs
+          distinguish merged from closed without merging. Historical draft state
+          is not reconstructed.
+        </p>
+        <p>
+          Snapshots are scheduled every 30 minutes and may be delayed by GitHub
+          Actions. The page checks for fresh data every five minutes. Recent
+          work details cover the last 30 days.
+        </p>
       </section>
       <footer>
-        <div>
-          <a href="status.json">json</a
-          ><a href="https://github.com/PrefectHQ/fastmcp/blob/status/STATUS.md"
-            >snapshot</a
-          ><a href="https://github.com/PrefectHQ/fastmcp/tree/main/status-site"
-            >source</a
-          ><a
-            href="https://github.com/PrefectHQ/fastmcp/blob/main/docs/development/contributing.mdx"
-            >development guide</a
-          >
-        </div>
-        <p>
-          Published twice daily. This page checks for a newer snapshot every
-          five minutes.
-        </p>
+        <a id="data-link" href="backlog.json">Download data</a
+        ><button id="export">Export counts CSV</button
+        ><a href="operations.html">Automation health</a
+        ><a href="https://github.com/PrefectHQ/fastmcp/tree/main/status-site"
+          >Source</a
+        >
       </footer>
     </main>
   </body>

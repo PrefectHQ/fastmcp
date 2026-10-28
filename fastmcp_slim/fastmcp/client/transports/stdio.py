@@ -3,7 +3,7 @@ import contextlib
 import os
 import shutil
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import TextIO, cast
 
@@ -80,7 +80,7 @@ class StdioTransport(ClientTransport):
         *,
         transport_options: TransportOptions | None = None,
         **session_kwargs: Unpack[SessionKwargs],
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         try:
             await self.connect(transport_options=transport_options, **session_kwargs)
             self._active_sessions += 1
@@ -352,7 +352,10 @@ class PythonStdioTransport(StdioTransport):
 
 
 class FastMCPStdioTransport(StdioTransport):
-    """Transport for running FastMCP servers using the FastMCP CLI."""
+    """Transport for running FastMCP servers using the FastMCP CLI.
+
+    `args` are passed to the server script, not interpreted as FastMCP CLI options.
+    """
 
     def __init__(
         self,
@@ -369,13 +372,17 @@ class FastMCPStdioTransport(StdioTransport):
         if not str(script_path).endswith(".py"):
             raise ValueError(f"Not a Python script: {script_path}")
 
+        full_args = ["run", str(script_path)]
+        if args:
+            full_args.extend(["--", *args])
+
         # Same UTF-8 default as PythonStdioTransport: the `fastmcp` command
         # is a Python entry point with the same sanitized child environment.
         env = {"PYTHONUTF8": "1", **(env or {})}
 
         super().__init__(
             command="fastmcp",
-            args=["run", str(script_path)],
+            args=full_args,
             env=env,
             cwd=cwd,
             keep_alive=keep_alive,

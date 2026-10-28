@@ -1,5 +1,5 @@
 import contextlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
 from mcp import ClientSession
@@ -113,7 +113,7 @@ class MCPConfigTransport(ClientTransport):
             self._request_state_security = _RequestStateSecurity.ephemeral()
 
     @property
-    def legacy_only(self) -> bool:
+    def legacy_only(self) -> bool:  # ty:ignore[invalid-property-type-override]
         """Whether the connected composite resolved to the legacy protocol era.
 
         A single-server config delegates directly to the underlying transport
@@ -132,9 +132,12 @@ class MCPConfigTransport(ClientTransport):
         *,
         transport_options: TransportOptions | None = None,
         **session_kwargs: Unpack[SessionKwargs],
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         # Single server - delegate directly to pre-created transport
         if len(self.config.mcpServers) == 1:
+            config = next(iter(self.config.mcpServers.values()))
+            if config.timeout is not None:
+                session_kwargs["read_timeout_seconds"] = config.timeout / 1000 or None
             async with self.transport.connect_session(
                 transport_options=transport_options, **session_kwargs
             ) as session:
@@ -358,6 +361,8 @@ class MCPConfigTransport(ClientTransport):
             client_kwargs["forward_incoming_headers"] = (
                 transport_options.forward_incoming_headers
             )
+        if config.timeout is not None:
+            timeout = config.timeout / 1000
         client = StatefulProxyClient(
             transport=transport, timeout=timeout, **client_kwargs
         )

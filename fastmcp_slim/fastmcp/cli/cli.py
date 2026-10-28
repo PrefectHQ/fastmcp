@@ -239,13 +239,7 @@ async def inspector(
             with_requirements=with_requirements,
             project=project,
             editable=[str(p) for p in with_editable] if with_editable else None,
-            port=server_port,  # Use deployment config for server port
         )
-
-        # Get server port from config if not specified via CLI
-        if not server_port:
-            server_port = config.deployment.port
-
     except FileNotFoundError:
         sys.exit(1)
 
@@ -293,9 +287,12 @@ async def inspector(
         # Build the fastmcp run command
         fastmcp_cmd = ["fastmcp", "run", server_spec, "--no-banner"]
 
-        # Forward module mode flag
+        # The Inspector connects over stdio, so a fastmcp.json deployment
+        # must not make the child serve HTTP. Module mode ignores --transport.
         if module:
             fastmcp_cmd.append("--module")
+        else:
+            fastmcp_cmd.extend(["--transport", "stdio"])
 
         # Add reload flags if enabled - the server will handle reloading
         if reload:

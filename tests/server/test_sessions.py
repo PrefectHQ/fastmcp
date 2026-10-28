@@ -6,7 +6,7 @@ Covers the principal helpers, the `(principal, session_id)` key scheme, and the
 
 import functools
 import json
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 
 from mcp.server.auth.middleware.auth_context import auth_context_var
@@ -41,7 +41,7 @@ def principal_string(token: SDKAccessToken) -> str:
 
 
 @contextmanager
-def as_principal(token: SDKAccessToken | None) -> Iterator[None]:
+def as_principal(token: SDKAccessToken | None) -> Generator[None, None, None]:
     if token is None:
         yield
         return

@@ -8,11 +8,12 @@ Test the behavior a user relies on through the smallest boundary that exercises 
 
 ## Run tests
 
-Install the repository dependencies before running tests:
+Install the repository dependencies and select the tests relevant to your change.
+For example, to check client behavior:
 
 ```bash
 uv sync
-uv run pytest -n auto
+uv run pytest tests/client/client/test_client.py -n 0
 ```
 
 During development, run the owning test module or select a behavior by name:
@@ -27,6 +28,11 @@ Use `-n 0` for a single process when debugging. The full suite uses pytest-xdist
 ```bash
 uv run pytest -n auto -m "not integration and not client_process and not subprocess_heavy and not conformance"
 ```
+
+Broaden local coverage when a concrete dependency or failure warrants it. Leave
+routine full-suite and platform-matrix runs to CI, rather than repeating them for
+each commit or PR in a stack. Run `uv run pytest -n auto` locally when explicitly
+requested or when investigating a failure that requires the full suite.
 
 The default timeout is five seconds, and `asyncio_mode = "auto"` enables async tests without `@pytest.mark.asyncio`. These settings and the registered markers live in [pyproject.toml](https://github.com/PrefectHQ/fastmcp/blob/main/pyproject.toml).
 
@@ -251,4 +257,4 @@ uv run pytest tests/docs -n 0
 
 The docs tests parse Python fences and resolve FastMCP imports. They do not execute every example or detect every missing non-import name, so run changed examples yourself. Use `just docs` to preview rendering. Without just, run `npx --yes mint@latest broken-links` or `npx --yes mint@latest dev` from `docs/`.
 
-See the [Contributing Guide](/development/contributing#implement-and-verify) for the full checks required before committing.
+See the [Contributing Guide](/development/contributing#implement-and-verify) for local checks before committing and CI expectations.

@@ -7,7 +7,7 @@ import os
 import sys
 import tempfile
 import time
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -179,7 +179,7 @@ def _make_protocol_era_server(name: str, starts: list[str] | None = None) -> Fas
     else:
 
         @asynccontextmanager
-        async def lifespan(_server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+        async def lifespan(_server: FastMCP) -> AsyncGenerator[dict[str, Any], None]:
             starts.append(name)
             yield {}
 
@@ -288,7 +288,7 @@ async def test_failed_known_legacy_backend_does_not_downgrade_healthy_backends()
     @asynccontextmanager
     async def unavailable_lifespan(
         server: FastMCP,
-    ) -> AsyncIterator[dict[str, Any]]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         if server.name == "unavailable":
             raise RuntimeError("backend unavailable")
         yield {}
@@ -578,6 +578,39 @@ def test_parse_single_remote_config():
     transport = mcp_config.mcpServers["test_server"].to_transport()
     assert isinstance(transport, StreamableHttpTransport)
     assert transport.url == "http://localhost:8000"
+
+
+def test_parse_single_remote_config_default_sse_event_size():
+    config = {
+        "mcpServers": {
+            "test_server": {
+                "url": "http://localhost:8000",
+            }
+        }
+    }
+    mcp_config = MCPConfig.from_dict(config)
+    server = mcp_config.mcpServers["test_server"]
+    assert isinstance(server, RemoteMCPServer)
+    assert server.max_sse_event_size == 1024 * 1024
+    transport = server.to_transport()
+    assert isinstance(transport, StreamableHttpTransport)
+    assert transport.max_sse_event_size == 1024 * 1024
+
+
+def test_remote_config_max_sse_event_size_passthrough():
+    """max_sse_event_size is forwarded from RemoteMCPServer to StreamableHttpTransport."""
+    server = RemoteMCPServer(url="http://localhost:8000", max_sse_event_size=None)
+    assert server.max_sse_event_size is None
+    transport = server.to_transport()
+    assert isinstance(transport, StreamableHttpTransport)
+    assert transport.max_sse_event_size is None
+
+    server = RemoteMCPServer(
+        url="http://localhost:8000", max_sse_event_size=4 * 1024 * 1024
+    )
+    transport = server.to_transport()
+    assert isinstance(transport, StreamableHttpTransport)
+    assert transport.max_sse_event_size == 4 * 1024 * 1024
 
 
 def test_parse_remote_config_with_transport():
