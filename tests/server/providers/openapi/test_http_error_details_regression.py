@@ -3,10 +3,7 @@
 import httpx2
 import pytest
 
-from fastmcp.server.providers.openapi.components import (
-    _ERROR_BODY_LIMIT,
-    _raise_for_status,
-)
+from fastmcp.server.providers.openapi.components import _raise_for_status
 
 
 def _error(response: httpx2.Response) -> str:
@@ -80,9 +77,9 @@ def test_json_and_malformed_error_bodies_are_readable(
 
 
 def test_plain_text_error_body_is_bounded_with_truncation_marker() -> None:
-    message = _error(httpx2.Response(500, text="x" * (_ERROR_BODY_LIMIT + 50)))
-    assert "x" * _ERROR_BODY_LIMIT + "… (truncated)" in message
-    assert "x" * (_ERROR_BODY_LIMIT + 1) not in message
+    message = _error(httpx2.Response(500, text="x" * 1050))
+    assert "x" * 1000 + "… (truncated)" in message
+    assert "x" * 1001 not in message
 
 
 def test_redirect_without_location_has_no_extra_detail() -> None:
