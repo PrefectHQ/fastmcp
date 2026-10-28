@@ -1041,6 +1041,14 @@ def _create_pydantic_model(
     return cls
 
 
+def _is_valid_default(field_type: Any, default_value: Any) -> bool:
+    try:
+        TypeAdapter(field_type).validate_python(default_value)
+    except Exception:
+        return False
+    return True
+
+
 def _build_pydantic_model(
     schema: Mapping[str, Any],
     name: str,
@@ -1068,16 +1076,12 @@ def _build_pydantic_model(
             # 1. Valid defaults get hydrated (e.g., date strings → date objects)
             # 2. Invalid defaults are preserved as-is rather than causing
             #    validation errors that would be caught and logged during parsing
-            validate_default = False
-            try:
-                TypeAdapter(field_type).validate_python(default_value)  # ty:ignore[invalid-argument-type]
-                validate_default = True
-            except Exception:  # noqa: S110
-                # Default doesn't satisfy its own type; keep it as-is
-                pass
             field_definitions[prop_name] = (
                 field_type,
-                Field(default=default_value, validate_default=validate_default),
+                Field(
+                    default=default_value,
+                    validate_default=_is_valid_default(field_type, default_value),
+                ),
             )
         elif prop_name in required:
             field_definitions[prop_name] = (field_type, ...)
@@ -1169,9 +1173,10 @@ def _build_dataclass(
         is_required = prop_name in required
 
         # Include alias in field metadata
-        meta = {"alias": prop_name}
+        meta: dict[str, Any] = {"alias": prop_name}
 
         if default_val is not MISSING:
+            meta["validate_default"] = _is_valid_default(field_type, default_val)
             if isinstance(default_val, dict | list):
                 field_def = field(
                     default_factory=lambda d=default_val: deepcopy(d), metadata=meta
@@ -1196,7 +1201,8 @@ def _build_dataclass(
     @classmethod
     def _apply_defaults(cls, data: Mapping[str, Any]):
         if isinstance(data, dict):
-            return _merge_defaults(data, original_schema)
+            # Let field defaults control validation while preserving object merges.
+            return _merge_defaults(data, original_schema, apply_property_defaults=False)
         return data
 
     cls._apply_defaults = _apply_defaults  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
@@ -1207,6 +1213,8 @@ def _merge_defaults(
     data: Mapping[str, Any],
     schema: Mapping[str, Any],
     parent_default: Mapping[str, Any] | None = None,
+    *,
+    apply_property_defaults: bool = True,
 ) -> dict[str, Any]:
     """Merge defaults with provided data at all levels."""
     # If we have no data
@@ -1244,7 +1252,7 @@ def _merge_defaults(
             continue
 
         # If property is missing, apply defaults in priority order
-        if prop_name not in result:
+        if apply_property_defaults and prop_name not in result:
             if parent_default and prop_name in parent_default:
                 result[prop_name] = parent_default[prop_name]
             elif "default" in prop_schema:
@@ -1264,7 +1272,10 @@ def _merge_defaults(
                 nested_default = prop_schema["default"]
 
             result[prop_name] = _merge_defaults(
-                result[prop_name], prop_schema, nested_default
+                result[prop_name],
+                prop_schema,
+                nested_default,
+                apply_property_defaults=apply_property_defaults,
             )
 
     return result

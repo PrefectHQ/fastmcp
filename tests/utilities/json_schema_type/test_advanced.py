@@ -6,6 +6,8 @@ from typing import Any, Union
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
+from fastmcp import Client, FastMCP
+from fastmcp.tools import ToolResult
 from fastmcp.utilities.json_schema_type import (
     _hash_schema,
     _merge_defaults,
@@ -19,6 +21,64 @@ def get_dataclass_field(type: type, field_name: str) -> Field:
 
 class TestDefaultValues:
     """Test suite for default value handling."""
+
+    @pytest.mark.parametrize("additional_properties", [None, True, False])
+    def test_invalid_defaults_only_apply_to_omitted_fields(
+        self, additional_properties: bool | None
+    ) -> None:
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "default": None},
+                "count": {"type": "integer", "minimum": 1, "default": 0},
+            },
+        }
+        if additional_properties is not None:
+            schema["additionalProperties"] = additional_properties
+        validator: TypeAdapter[Any] = TypeAdapter(json_schema_to_type(schema))
+
+        result = validator.validate_python({})
+        assert result.name is None
+        assert result.count == 0
+        assert validator.validate_python({"name": "Alice", "count": 2}).name == "Alice"
+        with pytest.raises(ValidationError):
+            validator.validate_python({"name": None})
+        with pytest.raises(ValidationError):
+            validator.validate_python({"count": 0})
+
+    def test_nested_omitted_field_preserves_invalid_default(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string", "default": None}},
+                }
+            },
+        }
+        validator: TypeAdapter[Any] = TypeAdapter(json_schema_to_type(schema))
+
+        assert validator.validate_python({"user": {}}).user.name is None
+        with pytest.raises(ValidationError):
+            validator.validate_python({"user": {"name": None}})
+
+    async def test_tool_result_preserves_invalid_schema_default(self) -> None:
+        server = FastMCP("Defaults")
+
+        @server.tool(
+            output_schema={
+                "type": "object",
+                "properties": {"name": {"type": "string", "default": None}},
+            }
+        )
+        def lookup() -> ToolResult:
+            return ToolResult(structured_content={})
+
+        async with Client(server) as client:
+            result = await client.call_tool("lookup", {})
+
+        assert result.data is not None
+        assert result.data.name is None
 
     @pytest.fixture
     def simple_defaults(self):
