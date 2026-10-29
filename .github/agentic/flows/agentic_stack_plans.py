@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from flows.agentic_mutation_models import MutationRecommendation
 
@@ -56,6 +57,31 @@ class Preparation(BaseModel):
     observed: str = Field(min_length=1, max_length=8000)
 
 
+class PublicReview(BaseModel):
+    """Contributor-facing feedback, separate from retained execution evidence."""
+
+    model_config = ConfigDict(extra="forbid")
+    pr_number: int = Field(gt=0)
+    summary: str = Field(min_length=1, max_length=450)
+    requested_change: str = Field(max_length=350)
+    evidence: str = Field(min_length=1, max_length=250)
+
+    @model_validator(mode="after")
+    def concise_feedback(self) -> PublicReview:
+        text = "\n".join([self.summary, self.requested_change, self.evidence])
+        if len(text.split()) > 120:
+            raise ValueError("Public review exceeds 120 words")
+        if re.search(
+            r"(?i)want:|commands actually executed|next action:|uv run |"
+            r"assignee.eligibility|issue.link gate|independent triage review run|"
+            r"[a-f0-9]{40}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}|"
+            r"<[^>]+>|```",
+            text,
+        ):
+            raise ValueError("Public review contains internal execution material")
+        return self
+
+
 class Review(BaseModel):
     model_config = ConfigDict(extra="forbid")
     decision: Literal[
@@ -79,6 +105,7 @@ class TriageReview(BaseModel):
     reason: str = Field(min_length=1, max_length=6000)
     next_action: str = Field(min_length=1, max_length=4000)
     findings: list[str] = Field(max_length=20)
+    public_reviews: list[PublicReview] = Field(default_factory=list, max_length=3)
     recommendations: list[MutationRecommendation] = Field(
         default_factory=list, max_length=3
     )
@@ -111,7 +138,15 @@ Keep tool output focused. Return explicit unavailable evidence rather than guess
 """
 OBJECTIVES = {
     "triage_review": """Adversarially review this issue's retained triage outcome and return an actionable
-disposition, not another investigation summary. context.outcome contains executed reproduction
+disposition, not another investigation summary.
+For review_existing, supply public_reviews with exactly one entry per verified PR, bound by
+pr_number. Write a concise contributor-facing summary of the actual finding and impact,
+the requested localized change (empty if none), and a short statement of checks/results.
+Use at most 120 words total per entry. Explain each finding once. Never copy internal reason
+or next_action into public_reviews. Do not include command transcripts, setup history,
+Want/Next action prefixes, UUIDs, full SHAs, assignment/eligibility or CI gate administration,
+HTML, code fences, or generic maintainer instructions. Keep all detailed evidence in reason;
+it remains private. Public feedback may include short inline code necessary to explain a bug. context.outcome contains executed reproduction
 or contribution checks; context.evidence contains current contribution history. Challenge the
 claimed contract, prove the observed failure is the reported bug rather than setup, and check
 controls and supported neighboring behavior. Inspect the pinned source and relevant docs.

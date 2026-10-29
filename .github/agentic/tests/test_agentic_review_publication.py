@@ -4,6 +4,7 @@ import threading
 from copy import deepcopy
 from http.client import RemoteDisconnected
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 import jwt
 import pytest
@@ -143,23 +144,89 @@ def body():
                 "reason": "Base fails; head passes the supported controls.",
                 "findings": [],
                 "next_action": "Run static checks at this head.",
+                "public_reviews": [
+                    {
+                        "pr_number": 7,
+                        "summary": "The supplied value now survives rendering.",
+                        "requested_change": "",
+                        "evidence": "Focused regression and controls pass.",
+                    }
+                ],
             },
             "triage_review_run_id": "review-run",
         },
     )
 
 
-def test_review_keeps_evidence_and_follow_up_collapsed():
+def test_review_keeps_only_public_feedback():
     rendered = body()
     visible, details = rendered.split("<details>", 1)
     assert "FastMCP triage reviewer bot" in visible
-    assert "0 observations for #1" in visible
-    assert "Base fails" not in visible and "Run static checks" not in visible
-    assert "Base fails; head passes the supported controls." in details
-    assert "Run static checks at this head." in details
-    assert HEAD in details and BASE in details and "review-run" in details
+    assert "The supplied value now survives rendering." in visible
+    assert "Focused regression and controls pass." in details
+    assert "Base fails" not in rendered and "Run static checks" not in rendered
+    assert "review-run" not in rendered
+    assert rendered.count(HEAD) == rendered.count(BASE) == 1
     assert "<details open" not in rendered
     assert rendered.endswith("</details>")
+
+
+def incident_result():
+    return json.loads((Path(__file__).parent / "fixtures/review-5836.json").read_text())
+
+
+def test_5836_review_contains_finding_without_internal_report():
+    result = incident_result()
+    rendered = review_body(5836, HEAD, BASE, result)
+    assert len(rendered.split()) < 140
+    assert "validation_alias" in rendered and "silently use defaults" in rendered
+    assert "71 prompt-module tests pass" in rendered
+    for private in [
+        "Want:",
+        "Commands actually executed",
+        "Next action:",
+        "uv run",
+        "assignee",
+        "triage review run",
+        result["triage_review_run_id"],
+    ]:
+        assert private not in rendered
+    assert rendered.count("required arguments error") == 1
+    assert result["adversarial_review"]["reason"].startswith("Want:")
+
+
+@pytest.mark.parametrize(
+    "public",
+    [None, [], [{"pr_number": 999}], [{"pr_number": 5836}, {"pr_number": 5836}]],
+)
+def test_publication_never_falls_back_to_private_report(public):
+    result = incident_result()
+    if public is None:
+        result["adversarial_review"].pop("public_reviews")
+    else:
+        result["adversarial_review"]["public_reviews"] = public
+    with pytest.raises(ValueError):
+        review_body(5836, HEAD, BASE, result)
+
+
+@pytest.mark.parametrize(
+    "material",
+    [
+        "Want: internal",
+        "uv run pytest tests",
+        "Commands actually executed: fetch",
+        "assignee-eligibility check",
+        HEAD,
+        "06ae39c2-6165-70d7-8000-b3e275d4f1da",
+        "<details>internal</details>",
+        "word " * 121,
+    ],
+)
+def test_public_feedback_rejects_internal_material(material):
+    result = incident_result()
+    result["adversarial_review"]["public_reviews"][0]["summary"] = material
+    with pytest.raises(ValueError):
+        review_body(5836, HEAD, BASE, result)
 
 
 def test_review_evidence_cannot_close_the_collapsed_section():

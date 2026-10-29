@@ -304,6 +304,14 @@ into preparation; unresolved reproduction or product decisions must use
 `repair_evidence` or `maintainer`. Draft publication still requires final patch
 approval without findings, fresh ownership and contribution checks, and reporter credit.
 
+Public reviews are separate from retained investigation records. Existing-contribution
+reviewers return a PR-bound `public_reviews` entry with a short finding, requested
+change and check evidence (at most 120 words). Missing or invalid public feedback
+stops delivery; internal `reason`, `findings` and `next_action` are never a fallback.
+Generated-draft reviews summarize successful validation without publishing the
+reviewer's internal report or command transcripts. Full evidence remains in the
+original Prefect artifacts; revision markers bind the public review to that evidence.
+
 Runtime `publish_reviews: true` posts independent existing-contribution and generated-patch reviews as
 GitHub `COMMENT` reviews at the exact verified head. Configure `reviewer_app` with
 `app_id`, `slug` and `private_key_block`. The current reviewer is GitHub App

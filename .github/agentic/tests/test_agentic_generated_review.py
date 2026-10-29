@@ -76,14 +76,13 @@ def test_generated_draft_review_survives_lost_response(endpoint, repository):
     review = state["reviews"][0]
     assert review["state"] == "COMMENTED"
     assert review["commit_id"] == artifact["layers"][0]["head_sha"]
-    assert "tests/probe.py`" in review["body"] and "exit 0" in review["body"]
-    assert "review-run" in review["body"] and "not merge approval" in review["body"]
+    assert "Supported controls verified." not in review["body"]
+    assert "review-run" not in review["body"] and "validation-run" not in review["body"]
     visible, details = review["body"].split("<details>", 1)
     assert "FastMCP triage reviewer bot" in visible
-    assert "Patch review passed" in visible
-    assert "tests/probe.py" not in visible
-    assert "Supported controls verified." in details
-    assert "tests/probe.py" in details
+    assert "Independent patch review found no blocking issues" in visible
+    assert "1 recorded validation checks passed" in details
+    assert "tests/probe.py" not in review["body"]
     assert state["pr"]["draft"] is True
 
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shlex
 from collections.abc import Callable
 from urllib.error import HTTPError
 from uuid import UUID
@@ -51,26 +50,16 @@ def deliver_generated_reviews(
         publication["pull_requests"], spec.layers, artifact["layers"], strict=True
     ):
         head, base = manifest["head_sha"], manifest["parent_sha"]
-        checks = "\n".join(
-            f"- `{shlex.join(check['command'])}`: exit {check['exit_code']}"
-            for check in manifest["checks"]
-        )
-        details = "\n\n".join(
-            [
-                f"Reviewed generated draft `{head}` against `{base}` for issue #{layer.issue_number} as part of the proposed chain.",
-                approval.reason,
-                "Executed by the credential-isolated validator:\n" + checks,
-                f"Validation run: `{validation_run_id}`. Independent patch review run: `{review_run_id}`.",
-                "Next action: maintainer consideration of the patch and evidence above. This records the independent workflow review; it is not merge approval. The PR remains a draft.",
-            ]
-        )
+        passed = sum(check["exit_code"] == 0 for check in manifest["checks"])
+        if passed != len(manifest["checks"]) or not passed:
+            raise ValueError("Generated review requires successful executed checks")
         body = format_review(
             number,
             head,
             base,
-            f"**Patch review passed** for #{layer.issue_number}. "
-            "Executed checks passed. The draft awaits maintainer review.",
-            details,
+            "Independent patch review found no blocking issues. "
+            "This draft is ready for maintainer review.",
+            f"All {passed} recorded validation checks passed for this draft.",
         )
         drafts.append((number, layer, manifest, body))
 
