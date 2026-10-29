@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from typing import TYPE_CHECKING, Annotated
+from urllib.parse import urlsplit, urlunsplit
 
 import cyclopts
 from rich.console import Console
@@ -85,6 +86,46 @@ def check_distributed_backend(settings: DocketSettings) -> None:
         sys.exit(1)
 
 
+_PASSWORD_QUERY_KEYS = ("password", "sentinel_password")
+
+
+def _redact_password(url: str) -> str:
+    """Mask the password in a backend URL so it can be printed or logged.
+
+    Redis URLs carry the password in the userinfo component
+    (``redis://user:secret@host``) or in a query parameter
+    (``?password=secret``, ``?sentinel_password=secret``). Both forms are
+    masked; everything else in the URL is left untouched.
+    """
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+
+    netloc = parts.netloc
+    redacted = False
+    if "@" in netloc:
+        userinfo, _, host = netloc.rpartition("@")
+        if ":" in userinfo:
+            username = userinfo.partition(":")[0]
+            netloc = f"{username}:***@{host}"
+            redacted = True
+
+    query_parts: list[str] = []
+    for param in parts.query.split("&"):
+        key, sep, _ = param.partition("=")
+        if sep and key.lower() in _PASSWORD_QUERY_KEYS:
+            param = f"{key}=***"
+            redacted = True
+        query_parts.append(param)
+
+    if not redacted:
+        return url
+
+    query = "&".join(query_parts)
+    return urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment))
+
+
 @tasks_app.command
 def worker(
     server_spec: Annotated[
@@ -126,7 +167,7 @@ def worker(
                 f"[bold green]✓[/bold green] Starting worker for [cyan]{server.name}[/cyan]"
             )
             console.print(f"  Docket: {settings.name}")
-            console.print(f"  Backend: {settings.url}")
+            console.print(f"  Backend: {_redact_password(settings.url)}")
             console.print(f"  Concurrency: {settings.concurrency}")
 
             # Server's lifespan has started its worker - just camp here forever
