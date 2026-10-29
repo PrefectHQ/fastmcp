@@ -10,24 +10,22 @@ Cloud workers fetch an immutable commit from `PrefectHQ/fastmcp` and execute her
 Use Google's [Elephant–Goldfish Model](https://github.com/google/elephant-goldfish-model)
 in the maintainer's interactive session to review a saved triage proposal. Install
 the **complete upstream plugin**, following its [Codex integration guide](https://github.com/google/elephant-goldfish-model/blob/main/docs/codex.md),
-then start a fresh session. Its skills depend on bundled reviewer personas and
-document standards; copying a skill file alone is insufficient.
+then start a fresh session. The plugin includes the reviewer personas and
+document standards its skills load during review.
 
 Use the installed `egm-review-loop` skill with the proposal as `TargetFile` and
 `full file` as `SemanticTarget`. Configure its upstream reviewers and standards
 through that skill's configuration step. Supply FastMCP's contribution policy,
 applicable review skills, and the proposal's pinned source and evidence as
 `GoldfishContext`. Follow upstream's review and resolution gates; retain its
-report with the proposal for the maintainer's decision. Completing an EGM review
-does not itself authorize GitHub actions.
+report with the proposal for the maintainer's decision. The maintainer authorizes
+the selected GitHub actions after reviewing the proposal.
 
 Cloud nodes receive role-specific FastMCP instruction files through
 `instructions.files`, loaded at the issue's pinned base revision by
-`scripts/load_fastmcp_skills.sh`. That loader does not install plugins or follow
-Markdown links. The interactive EGM skill is not part of these bundles. Running
-EGM inside Cloud would require a separate integration proving fresh-subagent
-support and access to the full upstream bundle. This proposal adds no such
-runtime support, approval executor, or automatic publication permission.
+`scripts/load_fastmcp_skills.sh`. The maintainer session loads EGM from the
+installed plugin. Running EGM inside Cloud requires access to the full upstream
+bundle and verified support for fresh subagents.
 
 ## Review outputs
 
