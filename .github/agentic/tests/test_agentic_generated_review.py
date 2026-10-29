@@ -78,6 +78,12 @@ def test_generated_draft_review_survives_lost_response(endpoint, repository):
     assert review["commit_id"] == artifact["layers"][0]["head_sha"]
     assert "tests/probe.py`" in review["body"] and "exit 0" in review["body"]
     assert "review-run" in review["body"] and "not merge approval" in review["body"]
+    visible, details = review["body"].split("<details>", 1)
+    assert "FastMCP triage reviewer bot" in visible
+    assert "Patch review passed" in visible
+    assert "tests/probe.py" not in visible
+    assert "Supported controls verified." in details
+    assert "tests/probe.py" in details
     assert state["pr"]["draft"] is True
 
 

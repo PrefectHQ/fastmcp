@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import re
 from collections.abc import Callable
 from copy import deepcopy
@@ -38,26 +39,54 @@ def before_delivery(evidence: dict, receipts: list[dict], reviewer: str) -> dict
     return result
 
 
+def format_review(
+    number: int, head: str, baseline: str, summary: str, details: str
+) -> str:
+    details = re.sub(
+        r"</?(?:details|summary)\b[^>]*>",
+        lambda match: html.escape(match.group()),
+        details,
+        flags=re.IGNORECASE,
+    )
+    return "\n\n".join(
+        [
+            f"<!-- fastmcp-triage-review:v1 pr:{number} head:{head} base:{baseline} -->",
+            "Automated review by the **FastMCP triage reviewer bot**.",
+            summary,
+            "<details>\n<summary>Findings, checks, and next steps</summary>",
+            details,
+            "</details>",
+        ]
+    )
+
+
 def review_body(number: int, head: str, baseline: str, result: dict) -> str:
     review = result["adversarial_review"]
     if review["decision"] != "review_existing":
         raise ValueError("Publication requires an independent contribution review")
-    marker = (
-        f"<!-- fastmcp-triage-review:v1 pr:{number} head:{head} base:{baseline} -->"
-    )
     findings = "\n".join(f"- {finding}" for finding in review["findings"])
-    return "\n\n".join(
+    details = "\n\n".join(
         text
         for text in [
-            marker,
             f"Reviewed `{head}` against `{baseline}` for issue #{result['issue_number']}.",
+            "### Assessment",
             review["reason"],
-            findings,
-            "Next action: " + review["next_action"],
+            "### Observations\n\n" + findings if findings else "",
+            "### Next steps\n\n" + review["next_action"],
             "Independent triage review run: `" + result["triage_review_run_id"] + "`.",
             "This records the checks and limitations above; it is not merge approval.",
         ]
         if text
+    )
+    count = len(review["findings"])
+    observations = f"{count} observation{'s' if count != 1 else ''}"
+    return format_review(
+        number,
+        head,
+        baseline,
+        f"**Review recorded:** {observations} for #{result['issue_number']}. "
+        "Maintainer review is needed; evidence and next steps are below.",
+        details,
     )
 
 

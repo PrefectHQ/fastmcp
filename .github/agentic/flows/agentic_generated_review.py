@@ -12,7 +12,7 @@ from prefect.client.schemas.objects import State, TaskRun
 
 from flows.agentic_claims import claim_work
 from flows.agentic_review_app import review_client
-from flows.agentic_review_publication import post_review
+from flows.agentic_review_publication import format_review, post_review
 from flows.agentic_stack import StackSpec, digest, read_stack_artifact
 from flows.agentic_stack_plans import Review
 from flows.agentic_stack_policy import Batch, publication_revision
@@ -55,15 +55,22 @@ def deliver_generated_reviews(
             f"- `{shlex.join(check['command'])}`: exit {check['exit_code']}"
             for check in manifest["checks"]
         )
-        body = "\n\n".join(
+        details = "\n\n".join(
             [
-                f"<!-- fastmcp-triage-review:v1 pr:{number} head:{head} base:{base} -->",
                 f"Reviewed generated draft `{head}` against `{base}` for issue #{layer.issue_number} as part of the proposed chain.",
                 approval.reason,
                 "Executed by the credential-isolated validator:\n" + checks,
                 f"Validation run: `{validation_run_id}`. Independent patch review run: `{review_run_id}`.",
                 "Next action: maintainer consideration of the patch and evidence above. This records the independent workflow review; it is not merge approval. The PR remains a draft.",
             ]
+        )
+        body = format_review(
+            number,
+            head,
+            base,
+            f"**Patch review passed** for #{layer.issue_number}. "
+            "Executed checks passed. The draft awaits maintainer review.",
+            details,
         )
         drafts.append((number, layer, manifest, body))
 

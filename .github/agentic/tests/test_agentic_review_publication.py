@@ -11,7 +11,12 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from flows.agentic_review_app import ReviewApp, review_client
-from flows.agentic_review_publication import before_delivery, post_review, review_body
+from flows.agentic_review_publication import (
+    before_delivery,
+    format_review,
+    post_review,
+    review_body,
+)
 from flows.agentic_stack_publication import GitHub
 
 HEAD = "a" * 40
@@ -142,6 +147,26 @@ def body():
             "triage_review_run_id": "review-run",
         },
     )
+
+
+def test_review_keeps_evidence_and_follow_up_collapsed():
+    rendered = body()
+    visible, details = rendered.split("<details>", 1)
+    assert "FastMCP triage reviewer bot" in visible
+    assert "0 observations for #1" in visible
+    assert "Base fails" not in visible and "Run static checks" not in visible
+    assert "Base fails; head passes the supported controls." in details
+    assert "Run static checks at this head." in details
+    assert HEAD in details and BASE in details and "review-run" in details
+    assert "<details open" not in rendered
+    assert rendered.endswith("</details>")
+
+
+def test_review_evidence_cannot_close_the_collapsed_section():
+    evidence = "Evidence </details> escaped <SUMMARY>summary</SUMMARY>"
+    rendered = format_review(7, HEAD, BASE, "Review recorded.", evidence)
+    assert rendered.count("</details>") == 1
+    assert "Evidence &lt;/details&gt; escaped &lt;SUMMARY&gt;" in rendered
 
 
 def test_real_signed_app_auth_scopes_token_and_revokes_on_failure(endpoint):
