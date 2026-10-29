@@ -27,6 +27,32 @@ def code_block(value: str, language: str = "text") -> str:
     return f"{fence}{language}\n{value}\n{fence}"
 
 
+def published_reviews(result: dict) -> list[dict]:
+    receipts = {}
+
+    def collect(item: dict) -> None:
+        posted = [
+            *item.get("published_reviews", []),
+            *item.get("review_delivery", {}).get("posted", []),
+        ]
+        for receipt in posted:
+            identity = (receipt["pr_number"], receipt["review_id"])
+            if identity in receipts and {
+                key: value
+                for key, value in receipts[identity].items()
+                if key != "status"
+            } != {key: value for key, value in receipt.items() if key != "status"}:
+                raise ValueError("Conflicting retained public review receipts")
+            receipts[identity] = receipt
+        for retained in item.get("retained_outcomes", []):
+            collect(retained["result"])
+
+    for items in result.get("bins", {}).values():
+        for item in items:
+            collect(item)
+    return list(receipts.values())
+
+
 def review_markdown(result: dict) -> str:
     sections = {
         "existing_review": "Existing contributions",
@@ -43,6 +69,24 @@ def review_markdown(result: dict) -> str:
         "Review evidence at the recorded revisions. Recheck current GitHub state before acting. "
         "Closure candidates are proposals; a passing test is not merge approval.",
     ]
+    posted = published_reviews(result)
+    if posted:
+        lines.extend(["", "## Published reviews", ""])
+        for receipt in posted:
+            lines.extend(
+                [
+                    f"[Posted review on PR #{receipt['pr_number']}]({receipt['review_url']}) "
+                    f"at `{receipt['head_sha']}`.",
+                    "",
+                ]
+            )
+        lines.extend(
+            [
+                "Publication is a recorded side effect. Later freshness stops below "
+                "still require rechecking the current contribution before acting.",
+                "",
+            ]
+        )
     mutations = mutation_batch(result)["recommendations"]
     if mutations:
         lines.extend(
@@ -128,14 +172,6 @@ def review_markdown(result: dict) -> str:
                 lines.append("")
             if next_step:
                 lines.extend([f"Next: {plain(next_step)}", ""])
-            for receipt in item.get("published_reviews", []):
-                lines.extend(
-                    [
-                        f"[Posted review on PR #{receipt['pr_number']}]({receipt['review_url']}) "
-                        f"at `{receipt['head_sha']}`.",
-                        "",
-                    ]
-                )
             for pr_number in item.get("pull_requests", []):
                 lines.extend(
                     [

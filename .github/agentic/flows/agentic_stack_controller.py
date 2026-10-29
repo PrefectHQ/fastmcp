@@ -382,7 +382,7 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                 if projected is None:
                     projected = assessment_context(item)
                     record(owner, assessment_key, projected)
-                destination, result, native_calls = run_native_triage(
+                destination, result, native_calls, final_evidence = run_native_triage(
                     owner,
                     Admission(
                         batch=batch,
@@ -416,13 +416,6 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                     "existing_review",
                     "pruning",
                 }:
-                    final_evidence = saved(
-                        owner, f"{batch.id}-issue-{number}-review-evidence"
-                    )
-                    if final_evidence is None:
-                        raise ValueError(
-                            "Independent review requires retained native evidence"
-                        )
                     if final_evidence != evidence:
                         review_item = {**item, "evidence": final_evidence}
                         projected = assessment_context(review_item)

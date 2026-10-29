@@ -36,6 +36,14 @@ Serialized regression patches must materialize as tests on their stated baseline
 before a reproduced result can advance. Agent claims alone do not establish that
 those saved bytes are reusable. Review recommendations do not grant write permission.
 
+Contribution-review freshness follows code revisions, contribution state, holds and
+substantive discussion. CI progress and PR activity timestamps do not invalidate a
+review; exact acknowledged reviewer receipts are excluded from its own discussion
+comparison. Draft-fix publication keeps its stricter evidence comparison. Posted
+reviews remain visible and counted when later evidence becomes stale, including
+reviews delivered on generated drafts. Native triage retains its evidence durably
+and returns that exact evidence to independent review without an immediate lookup.
+
 The draft-fix pilot accepts a manually selected issue in `fix` mode. Only a
 connected reproduction of a supported defect can reach preparation, full validation,
 independent review and deterministic draft publication. A review queue alone does
@@ -369,3 +377,10 @@ Closed unmerged canonical PRs retain a reopen/coordination gate; administrative 
 is not a rejection. Bulk proposals block canonical closure chains/cycles and assigning
 a contribution that the same batch proposes closing. Resolve the surviving canonical
 before approval rather than applying individually plausible actions together.
+
+Evidence collection follows at most three one-hop, same-repository canonical or
+superseding PR hints from repository-associated human discussion. It verifies each
+number is a PR, retains full discussion and source-comment provenance, and rechecks
+source and canonical revisions after enrichment. Hints are discovery evidence,
+never selection authority. Foreign references, ordinary contributor comments and
+bot comments do not expand discovery; existing candidate and byte bounds remain.

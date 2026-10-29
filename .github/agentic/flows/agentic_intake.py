@@ -25,7 +25,9 @@ CONTROL_LABELS = {
     "triage-martian",
 }
 HOLD = re.compile(
-    r"\b(?:dnm|do[\s_-]*not[\s_-]*merge|don['’]?t[\s_-]*merge|draft)\b", re.I
+    r"\b(?:dnm|do[\s_-]*not[\s_-]*merge|don['’]?t[\s_-]*merge|"
+    r"draft(?!-(?:0?[3467]|2019-09|2020-12)\b))\b",
+    re.I,
 )
 
 
@@ -166,6 +168,16 @@ def route_intake(evidence: dict) -> dict:
         if directly_addresses(pr.get("body") or "", issue["number"])
     ]
     if direct:
+        direct_numbers = {pr["number"] for pr in direct}
+        candidates = direct + [
+            pr
+            for pr in evidence["prs"]
+            if pr["number"] not in direct_numbers
+            and any(
+                source.get("source_pr") in direct_numbers
+                for source in pr.get("canonical_references", [])
+            )
+        ]
         return result(
             "review_existing",
             "Explicit fixing references; inspect contribution history before new work",
@@ -176,7 +188,7 @@ def route_intake(evidence: dict) -> dict:
                     "merged": pr["merged"],
                     "state": pr["state"],
                 }
-                for pr in direct
+                for pr in candidates
             ],
         )
     if issue["assignees"]:

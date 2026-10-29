@@ -25,7 +25,12 @@ from flows.agentic_backlog import Intake, due, inventory, settle
 from flows.agentic_claims import claim_work
 from flows.agentic_freshness import revalidate
 from flows.agentic_intake import evidence_revision, upgrade_policy_outcomes
-from flows.agentic_review_queue import plain, retain_markdown, retain_review_queue
+from flows.agentic_review_queue import (
+    plain,
+    published_reviews,
+    retain_markdown,
+    retain_review_queue,
+)
 from flows.agentic_stack_policy import Batch
 from flows.agentic_stack_runtime import (
     Runtime,
@@ -333,6 +338,7 @@ def finish(
         "review": result,
     }
     metrics = {
+        "published_reviews": len(published_reviews(result)) if result else 0,
         "selected": len(plan["batch"]["groups"][0]["items"]) if plan["batch"] else 0,
         "triaged": len(completed),
         "pending": len(pending),

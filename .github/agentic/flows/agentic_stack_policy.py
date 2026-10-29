@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -97,3 +98,32 @@ def publication_revision(
         value.pop(key, None)
     value["issue"].pop("updated_at", None)
     return digest(value)
+
+
+def review_revision(evidence: dict) -> str:
+    value = revision_evidence(evidence)
+    timelines = [value.get("timeline", [])]
+    for pr in value.get("prs", []):
+        for field in ("checks", "statuses", "updated_at"):
+            pr.pop(field, None)
+        timelines.append(pr.get("timeline", []))
+    for timeline in timelines:
+        timeline[:] = [event for event in timeline if not _foreign_reference(event)]
+    return publication_revision(value)
+
+
+def _foreign_reference(event: dict) -> bool:
+    if event.get("event") != "cross-referenced":
+        return False
+    source = (event.get("source") or {}).get("issue") or {}
+    repositories = []
+    name = (source.get("repository") or {}).get("full_name")
+    if name:
+        repositories.append(name.lower())
+    url = urlsplit(source.get("html_url") or "")
+    parts = url.path.strip("/").split("/")
+    if url.hostname == "github.com" and len(parts) >= 4:
+        repositories.append("/".join(parts[:2]).lower())
+    return bool(repositories) and all(
+        name != "prefecthq/fastmcp" for name in repositories
+    )

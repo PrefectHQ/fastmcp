@@ -9,7 +9,7 @@ from flows.agentic_intake import held
 from flows.agentic_review_app import review_client
 from flows.agentic_review_publication import before_delivery, post_review, review_body
 from flows.agentic_stack import digest
-from flows.agentic_stack_policy import Batch, Group, publication_revision
+from flows.agentic_stack_policy import Batch, Group, review_revision
 from flows.agentic_stack_runtime import (
     Runtime,
     collect,
@@ -97,9 +97,9 @@ def deliver_reviews(
                 def guard() -> None:
                     owner_alive(owner, batch.expires_at)
                     fresh = collect(number, group.branch)
-                    if publication_revision(
+                    if review_revision(
                         before_delivery(fresh, receipts, app.slug + "[bot]")
-                    ) != publication_revision(
+                    ) != review_revision(
                         before_delivery(evidence, receipts, app.slug + "[bot]")
                     ):
                         raise ValueError("Issue or contribution changed after review")
