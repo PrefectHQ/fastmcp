@@ -351,6 +351,20 @@ class RequestDirector:
         }
 
         serialized: dict[str, Any] = {}
+
+        def add_serialized(name: str, value: Any) -> None:
+            if name not in serialized:
+                serialized[name] = value
+                return
+
+            existing = serialized[name]
+            values = list(existing) if isinstance(existing, list) else [existing]
+            if isinstance(value, list):
+                values.extend(value)
+            else:
+                values.append(value)
+            serialized[name] = values
+
         for key, value in query_params.items():
             param_info = param_lookup.get(key)
             if param_info is not None:
@@ -372,7 +386,7 @@ class RequestDirector:
                             property_name = _query_scalar_to_str(k)
                             if param_info.style == "deepObject":
                                 property_name = f"{key}[{property_name}]"
-                            serialized[property_name] = _query_scalar_to_str(v)
+                            add_serialized(property_name, _query_scalar_to_str(v))
                     else:
                         delimiter = self._STYLE_DELIMITERS.get(style, ",")
                         # form,explode=false on objects: key,value pairs
@@ -392,7 +406,7 @@ class RequestDirector:
                             _query_scalar_to_str(v) for v in value
                         )
                         continue
-            serialized[key] = value
+            add_serialized(key, value)
         return serialized
 
     def _build_url(
