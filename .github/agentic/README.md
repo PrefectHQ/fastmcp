@@ -65,6 +65,18 @@ two-hour window. Haiku is configured as a comparison candidate, not an automatic
 fallback. Missing telemetry remains unknown; these are execution bounds, not a
 hard token or dollar cap.
 
+`workflows/stack-skills.json` declares the instruction files loaded by
+`scripts/load_fastmcp_skills.sh`. The controller fetches their complete contents
+and hashes at the issue's pinned base SHA and passes each role its bundle in
+`instructions.files`. Markdown links are not loaded recursively. Shared
+[decision-stack guidance](../../.agents/skills/triage/references/decision-stacks.md)
+is an explicit common file so every role receives it alongside its own skills.
+Node objectives, output schemas, budgets, and existing permissions still bound
+the role. This guidance does not implement a batch reviewer, approval queue, or
+executor. Changed skills enter new bundles after their source revision is
+selected; editing a local skill does not update running or already pinned work,
+and adding an instruction path requires that file to exist at the selected base.
+
 Qualified patches become two- or three-layer draft GitHub Stacks. Each layer is
 validated on its actual parent with the full FastMCP suite and static checks.
 Immutable Prefect artifacts retain the exact commits, patches, credit and review.

@@ -33,3 +33,5 @@ For a cleanup pass, the mechanical wins are open PRs whose linked issue is alrea
 Lead with the strongest pick as soon as evidence supports it: link, what breaks, why it matters, where the cause is, and the next action. Include a few alternatives when useful. Do not turn selection into an exhaustive audit or a full review of every linked PR. Save continuation notes only when needed.
 
 When the user chooses implementation, use [fix-issue](../fix-issue/SKILL.md). For an assignment decision on an external contribution, use [review-issue](../review-issue/SKILL.md). Triage alone does not authorize public mutations or implementation.
+
+When asked for a batch of maintainer decisions, use [decision stacks](references/decision-stacks.md). Return concrete proposals with evidence, ownership, dependencies, and remaining questions; independent review and maintainer sign-off remain separate from investigation. In an agentic node, finish the assigned stage using its output schema rather than taking over the whole batch.

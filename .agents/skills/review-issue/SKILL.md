@@ -13,6 +13,8 @@ This skill ends in a recommendation for the maintainer:
 
 Assignment commits us to reviewing the PR, not to merging it. A gate closure is administrative, so a closed PR gets the same bar as an open one.
 
+For a batch of assignment or closure proposals, use [decision stacks](../triage/references/decision-stacks.md). Retain the exact proposed action and its supporting history for each target, including which contribution survives a duplicate or supersession decision. Reviewing the recommendation does not authorize executing it.
+
 ## How the gate works
 
 [require-issue-link.yml](../../../.github/workflows/require-issue-link.yml) checks every external PR:
