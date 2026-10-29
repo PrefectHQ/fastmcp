@@ -5,6 +5,12 @@ The landing page reads `backlog.json`; automation health remains at
 `operations.html` and reads `status.json`. Both use raw GitHub data in production
 so the data can refresh independently of the Pages deployment.
 
+`triage.html` is an interactive, static explanation of the deployed triage path
+and its outcome vocabulary. Its dated examples link to public GitHub reviews and
+PRs; they are not live health measurements. Update the HTML, CSS, and scenario
+data together when the documented behavior changes. It loads no private workflow
+records, credentials, analytics, or third-party assets.
+
 `backlog-status.yml` runs every 30 minutes, retaining the previous snapshot
 series and refreshing creation/latest-closure outcomes from public GitHub
 records. The build job has read-only access; the publisher only copies its
