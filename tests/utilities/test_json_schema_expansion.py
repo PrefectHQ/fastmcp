@@ -1,6 +1,7 @@
 """`dereference_refs` inlines references unless the result would be very large."""
 
 from collections.abc import Callable
+from copy import deepcopy
 from typing import Any
 
 import pytest
@@ -79,6 +80,41 @@ def test_schema_is_inlined(defs_key: str, pointer: str) -> None:
         assert len(value["anyOf"]) == 3
         value = value["anyOf"][0]
     assert value == {"type": "string"}
+
+
+@pytest.mark.parametrize("keyword", ["default", "const", "examples", "enum"])
+def test_inlined_reference_instance_data_is_independent(keyword: str) -> None:
+    value: Any = {
+        "items": [1],
+        "a": {"$ref": "#/$defs/Item"},
+        "b": {"$ref": "#/$defs/Item"},
+    }
+    if keyword in {"examples", "enum"}:
+        value = [value]
+    definition = {"type": "object", keyword: value}
+    schema = {
+        "type": "object",
+        "properties": {
+            "left": {"$ref": "#/$defs/Record"},
+            "right": {"$ref": "#/$defs/Record"},
+        },
+        "$defs": {"Record": definition, "Item": {"type": "object"}},
+    }
+    original = deepcopy(schema)
+    result = dereference_refs(schema)
+    left = result["properties"]["left"][keyword]
+    right = result["properties"]["right"][keyword]
+    if isinstance(left, list):
+        left = left[0]
+        right = right[0]
+    left["items"].append(2)
+    left["a"]["changed"] = True
+
+    assert right["items"] == [1]
+    assert "changed" not in left["b"]
+    assert "changed" not in right["a"]
+    assert "changed" not in right["b"]
+    assert schema == original
 
 
 @pytest.mark.parametrize("build", LIST_SCHEMAS)

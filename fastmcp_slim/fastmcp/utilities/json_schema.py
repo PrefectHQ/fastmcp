@@ -209,7 +209,7 @@ def _strip_remote_refs(obj: Any) -> Any:
     return obj
 
 
-def _strip_discriminator(obj: Any) -> Any:
+def _strip_discriminator(obj: Any, *, copy_data: bool = False) -> Any:
     """Recursively remove OpenAPI ``discriminator`` keys from a schema.
 
     Pydantic emits ``discriminator.mapping`` with values like
@@ -235,12 +235,17 @@ def _strip_discriminator(obj: Any) -> Any:
             if k in _SUBSCHEMA_MAP_KEYS and isinstance(v, dict):
                 # The keys here are user property/definition names, so one
                 # named like a keyword above still holds a sub-schema.
-                result[k] = {name: _strip_discriminator(sub) for name, sub in v.items()}
+                result[k] = {
+                    name: _strip_discriminator(sub, copy_data=copy_data)
+                    for name, sub in v.items()
+                }
+            elif k in _DATA_KEYS:
+                result[k] = _copy_schema({"value": v})["value"] if copy_data else v
             else:
-                result[k] = v if k in _DATA_KEYS else _strip_discriminator(v)
+                result[k] = _strip_discriminator(v, copy_data=copy_data)
         return result
     if isinstance(obj, list):
-        return [_strip_discriminator(item) for item in obj]
+        return [_strip_discriminator(item, copy_data=copy_data) for item in obj]
     return obj
 
 
@@ -283,6 +288,30 @@ def require_discriminator_property(schema: dict[str, Any]) -> dict[str, Any]:
             for variant in variants
         ]
     return result
+
+
+def _needs_ref_merge(schema: dict[str, Any]) -> bool:
+    """Keep sibling restoration and the existing handling of other pointers."""
+    stack: list[Any] = [schema]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if "$ref" in node:
+                ref = node["$ref"]
+                # The merge only traverses referenced definitions under $defs.
+                # Other pointers retain their previous shared literal values.
+                # jsonref also normalizes these characters before URI lookup.
+                if (
+                    not isinstance(ref, str)
+                    or not ref.startswith("#/$defs/")
+                    or any(character in ref for character in "\t\r\n")
+                    or any(key not in ("$ref", "$defs") for key in node)
+                ):
+                    return True
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    return False
 
 
 def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
@@ -341,10 +370,11 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
 
         # Merge sibling keywords that were lost during dereferencing
         # Pydantic puts description, default, examples as siblings to $ref
-        merged = _merge_ref_siblings(schema, dereferenced, schema)
+        needs_merge = _needs_ref_merge(schema)
+        if needs_merge:
+            dereferenced = _merge_ref_siblings(schema, dereferenced, schema)
         # Type assertion: top-level schema is always a dict
-        assert isinstance(merged, dict)
-        dereferenced = merged
+        assert isinstance(dereferenced, dict)
 
         # Remove $defs since all references have been resolved
         if "$defs" in dereferenced:
@@ -361,7 +391,10 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         # is an OpenAPI extension; after inlining, the `anyOf` variants
         # already carry `const` on the discriminant field, making the
         # mapping redundant.
-        dereferenced = _strip_discriminator(dereferenced)
+        # Without the sibling pass, jsonref still shares referenced containers.
+        # This traversal copies schemas; also copy literal instance data to keep
+        # each reference's defaults, consts, examples and enums independent.
+        dereferenced = _strip_discriminator(dereferenced, copy_data=not needs_merge)
 
         if not _text_within_limit(dereferenced):
             return resolve_root_ref(schema)
