@@ -349,12 +349,20 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
             # accepts nothing, which {"not": {}} expresses in dict form.
             # Without this, one tool with a boolean $ref target crashed the
             # whole tools/list via the assert below.
+            # The siblings themselves must be dereferenced first: copying
+            # them raw leaves any nested $ref dangling once $defs is
+            # stripped below, and dropping them for `false` would lose the
+            # root `type: object` MCP output schemas require.
+            siblings = {
+                k: v for k, v in schema.items() if k not in ("$ref", "$defs")
+            }
+            if "$defs" in schema:
+                siblings["$defs"] = schema["$defs"]
+            siblings = dereference_refs(siblings)
             if merged:
-                dereferenced = {
-                    k: v for k, v in schema.items() if k not in ("$ref", "$defs")
-                }
+                dereferenced = siblings
             else:
-                dereferenced = {"not": {}}
+                dereferenced = {**siblings, "not": {}}
         else:
             # Type assertion: top-level schema is always a dict
             assert isinstance(merged, dict)
