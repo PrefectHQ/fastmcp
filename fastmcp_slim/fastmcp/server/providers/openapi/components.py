@@ -24,7 +24,7 @@ from fastmcp.tools.function_tool import _strict_input_validation
 from fastmcp.utilities.exceptions import is_request_error, is_timeout_error
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import HTTPRoute
-from fastmcp.utilities.openapi.director import RequestDirector
+from fastmcp.utilities.openapi.director import RequestDirector, _prepare_parameter_map
 from fastmcp.utilities.tasks import TaskConfig
 
 if TYPE_CHECKING:
@@ -206,10 +206,12 @@ class OpenAPITool(Tool):
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Execute the HTTP request using RequestDirector."""
-        # The director drops undeclared arguments; strict servers reject them.
+        # The director drops arguments outside its parameter map; strict
+        # servers reject them instead, using the same key set.
         if _strict_input_validation():
-            accepted = self.parameters.get("properties", {})
-            if unknown := sorted(arguments.keys() - accepted.keys()):
+            _, parameter_map = _prepare_parameter_map(self._route)
+            accepted = {*self.parameters.get("properties", {}), *parameter_map}
+            if unknown := sorted(arguments.keys() - accepted):
                 raise ValidationError(
                     f"Unknown arguments: {', '.join(unknown)}. "
                     f"Accepted: {', '.join(sorted(accepted)) or 'none'}",
