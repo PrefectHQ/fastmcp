@@ -414,6 +414,35 @@ class TestDereferenceRefs:
         for variant in result["properties"][name]["anyOf"]:
             assert variant["required"] == ["kind"]
 
+    def test_root_ref_to_true_schema_keeps_sibling_keywords(self):
+        """A root $ref to `true` resolves to its sibling keywords, not a crash."""
+        schema = {
+            "type": "object",
+            "$ref": "#/$defs/Any",
+            "$defs": {"Any": True},
+        }
+        result = dereference_refs(schema)
+
+        assert result == {"type": "object"}
+
+    def test_root_ref_to_true_schema_without_siblings(self):
+        """A bare root $ref to `true` resolves to the empty schema."""
+        schema = {"$ref": "#/$defs/Any", "$defs": {"Any": True}}
+        result = dereference_refs(schema)
+
+        assert result == {}
+
+    def test_root_ref_to_false_schema(self):
+        """A root $ref to `false` resolves to the accept-nothing dict form."""
+        schema = {
+            "type": "object",
+            "$ref": "#/$defs/Nothing",
+            "$defs": {"Nothing": False},
+        }
+        result = dereference_refs(schema)
+
+        assert result == {"not": {}}
+
 
 class TestCompressSchema:
     """Tests for the compress_schema function."""

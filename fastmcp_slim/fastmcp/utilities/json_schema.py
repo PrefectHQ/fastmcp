@@ -342,9 +342,23 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         # Merge sibling keywords that were lost during dereferencing
         # Pydantic puts description, default, examples as siblings to $ref
         merged = _merge_ref_siblings(schema, dereferenced, schema)
-        # Type assertion: top-level schema is always a dict
-        assert isinstance(merged, dict)
-        dereferenced = merged
+        if isinstance(merged, bool):
+            # A $ref may resolve to a boolean schema, which is valid JSON
+            # Schema but not a dict. `true` conjoins with the root's sibling
+            # keywords, so the siblings alone describe the result; `false`
+            # accepts nothing, which {"not": {}} expresses in dict form.
+            # Without this, one tool with a boolean $ref target crashed the
+            # whole tools/list via the assert below.
+            if merged:
+                dereferenced = {
+                    k: v for k, v in schema.items() if k not in ("$ref", "$defs")
+                }
+            else:
+                dereferenced = {"not": {}}
+        else:
+            # Type assertion: top-level schema is always a dict
+            assert isinstance(merged, dict)
+            dereferenced = merged
 
         # Remove $defs since all references have been resolved
         if "$defs" in dereferenced:
