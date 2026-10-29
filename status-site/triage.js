@@ -423,13 +423,17 @@ function initializeGraph() {
             : "#3d2d5d",
       }),
     );
-    textElement(
-      group,
-      26,
-      31,
-      deployment ? "↗" : node.kind === "Inputs" ? "→" : "◇",
-      "kind",
-      { fill: color, "text-anchor": "middle" },
+    group.append(
+      svgElement("path", {
+        d: deployment
+          ? "M22 30 L31 21 M24 21 H31 V28"
+          : node.kind === "Inputs"
+            ? "M21 26 H31 M27 22 L31 26 L27 30"
+            : "M26 20 L32 26 L26 32 L20 26 Z",
+        fill: "none",
+        stroke: color,
+        "stroke-width": 1.5,
+      }),
     );
     textElement(
       group,
