@@ -75,7 +75,7 @@ COMPONENT_LABELS = {
     "low_effort": "low-effort report",
     "spray": "author opens PRs across many repos",
     "dismissed": "labeled invalid, duplicate, or wontfix",
-    "waiting": "waiting on the reporter",
+    "waiting": "information-request label",
     "priority": "labeled high priority",
     "deprioritized": "labeled low priority",
     "security_label": "labeled security",
