@@ -17,8 +17,6 @@ Use [python-tests](../python-tests/SKILL.md). Reproduce the failure on unchanged
 
 Self-review the full change with [review-pr](../review-pr/SKILL.md), including docs and dependency bounds. Separate necessary compatibility changes from accidental regressions and say whether a breaking change remains. Do not infer compatibility from passing tests.
 
-When preparing a fix for a [decision stack](../triage/references/decision-stacks.md), retain the exact patch and parent revision, executed validation, contributor credit, and dependencies for independent review. Return repair findings to preparation within the assigned budget; unresolved findings stay attached to the proposal. A preparation node returns its declared output and does not publish merely because the patch passed review.
-
 Run the repository's required dependency sync, full tests, and static checks before committing. Honor branch and attribution conventions. If a required check fails, investigate and report evidence rather than hiding the failure.
 
 ## Publish and follow through

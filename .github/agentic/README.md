@@ -5,6 +5,30 @@ the execution plans, deterministic controller, tests and deployment definitions.
 It is an isolated Python 3.12 project; Prefect is not a FastMCP library dependency.
 Cloud workers fetch an immutable commit from `PrefectHQ/fastmcp` and execute here.
 
+## Maintainer review with EGM
+
+Use Google's [Elephant–Goldfish Model](https://github.com/google/elephant-goldfish-model)
+in the maintainer's interactive session to review a saved triage proposal. Install
+the **complete upstream plugin**, following its [Codex integration guide](https://github.com/google/elephant-goldfish-model/blob/main/docs/codex.md),
+then start a fresh session. Its skills depend on bundled reviewer personas and
+document standards; copying a skill file alone is insufficient.
+
+Use the installed `egm-review-loop` skill with the proposal as `TargetFile` and
+`full file` as `SemanticTarget`. Configure its upstream reviewers and standards
+through that skill's configuration step. Supply FastMCP's contribution policy,
+applicable review skills, and the proposal's pinned source and evidence as
+`GoldfishContext`. Follow upstream's review and resolution gates; retain its
+report with the proposal for the maintainer's decision. Completing an EGM review
+does not itself authorize GitHub actions.
+
+Cloud nodes receive role-specific FastMCP instruction files through
+`instructions.files`, loaded at the issue's pinned base revision by
+`scripts/load_fastmcp_skills.sh`. That loader does not install plugins or follow
+Markdown links. The interactive EGM skill is not part of these bundles. Running
+EGM inside Cloud would require a separate integration proving fresh-subagent
+support and access to the full upstream bundle. This proposal adds no such
+runtime support, approval executor, or automatic publication permission.
+
 ## Review outputs
 
 The connected triage plan is built by `flows.agentic_triage_plan.build_triage_plan`
@@ -64,18 +88,6 @@ attempt and a 180-second platform limit. The batch allows one repair round and a
 two-hour window. Haiku is configured as a comparison candidate, not an automatic
 fallback. Missing telemetry remains unknown; these are execution bounds, not a
 hard token or dollar cap.
-
-`workflows/stack-skills.json` declares the instruction files loaded by
-`scripts/load_fastmcp_skills.sh`. The controller fetches their complete contents
-and hashes at the issue's pinned base SHA and passes each role its bundle in
-`instructions.files`. Markdown links are not loaded recursively. Shared
-[decision-stack guidance](../../.agents/skills/triage/references/decision-stacks.md)
-is an explicit common file so every role receives it alongside its own skills.
-Node objectives, output schemas, budgets, and existing permissions still bound
-the role. This guidance does not implement a batch reviewer, approval queue, or
-executor. Changed skills enter new bundles after their source revision is
-selected; editing a local skill does not update running or already pinned work,
-and adding an instruction path requires that file to exist at the selected base.
 
 Qualified patches become two- or three-layer draft GitHub Stacks. Each layer is
 validated on its actual parent with the full FastMCP suite and static checks.

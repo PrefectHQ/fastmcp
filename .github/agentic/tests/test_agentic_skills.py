@@ -112,15 +112,12 @@ def test_loads_exact_pinned_content_and_stage_specific_skills(repository, tmp_pa
 
 
 @pytest.mark.parametrize(
-    "failure",
-    ["missing", "empty", "symlink", "oversized", "reference", "decision_contract"],
+    "failure", ["missing", "empty", "symlink", "oversized", "reference"]
 )
 def test_missing_or_invalid_required_skill_stops_setup(repository, failure):
     repo, _ = repository
     path = (
-        ".agents/skills/triage/references/decision-stacks.md"
-        if failure == "decision_contract"
-        else "docs/development/contributing.mdx"
+        "docs/development/contributing.mdx"
         if failure == "reference"
         else ".agents/skills/fix-issue/SKILL.md"
     )
