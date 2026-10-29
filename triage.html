@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A visual guide to FastMCP issue triage: how work is checked, what gets published, and what a Degraded result means."
+    />
+    <title>FastMCP / how triage works</title>
+    <link rel="stylesheet" href="triage.css" />
+    <script src="triage.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to explanation</a>
+    <header class="site-header">
+      <a class="brand" href="./">fastmcp<span> / triage</span></a>
+      <nav aria-label="Site navigation">
+        <a href="./">Backlog</a>
+        <a href="operations.html">Maintenance</a>
+        <a href="triage.html" aria-current="page">How triage works</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="intro" aria-labelledby="title">
+        <div>
+          <h1 id="title">How FastMCP triage works</h1>
+          <p class="lead">
+            An issue becomes evidence, a review, or a proposed next action. A
+            maintainer still decides what ships.
+          </p>
+        </div>
+        <aside class="definition" aria-labelledby="degraded-title">
+          <span class="status-symbol" aria-hidden="true">!</span>
+          <div>
+            <h2 id="degraded-title">What does Degraded mean?</h2>
+            <p>
+              The run finished, but some selected work needs attention. A review
+              may already have been posted. Read the output and the freshness
+              result separately.
+            </p>
+            <a href="#status-meaning">Understand the status</a>
+          </div>
+        </aside>
+      </section>
+
+      <section class="explorer" aria-labelledby="explore-title">
+        <div class="explorer-heading">
+          <div>
+            <h2 id="explore-title">Follow a piece of work</h2>
+            <p>Choose an example, then select a stage to inspect it.</p>
+          </div>
+          <span class="example-label"
+            >Recorded examples · October 28–29, 2026</span
+          >
+        </div>
+        <div
+          class="scenario-controls"
+          role="group"
+          aria-label="Choose a triage example"
+        >
+          <button type="button" data-scenario="delivered" aria-pressed="false">
+            Review delivered
+          </button>
+          <button type="button" data-scenario="stale" aria-pressed="true">
+            Posted, then Degraded
+          </button>
+          <button type="button" data-scenario="blocked" aria-pressed="false">
+            Evidence unavailable
+          </button>
+          <button type="button" data-scenario="draft" aria-pressed="false">
+            Draft fix published
+          </button>
+        </div>
+        <div class="scenario-context">
+          <div>
+            <h3 id="case-title">
+              A review was posted, then its result became stale
+            </h3>
+            <p id="case-summary">
+              The review on PR #5588 created GitHub cross-references. Final
+              freshness treated those publication effects as new evidence and
+              marked intake Degraded.
+            </p>
+          </div>
+          <span id="case-status" class="case-status attention">Degraded</span>
+        </div>
+        <div
+          id="flow"
+          class="flow"
+          aria-label="Stages in the selected example"
+        ></div>
+        <div
+          id="stage-detail"
+          class="stage-detail"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+        <dl
+          id="outcomes"
+          class="outcomes"
+          aria-label="Separate facts about this result"
+        ></dl>
+        <div id="receipt" class="receipt"></div>
+        <p id="case-caveat" class="case-caveat"></p>
+        <noscript
+          ><p class="no-script">
+            Enable JavaScript to explore the recorded examples. The status
+            definitions and responsibilities below remain available without it.
+          </p></noscript
+        >
+      </section>
+
+      <section
+        id="status-meaning"
+        class="meaning"
+        aria-labelledby="meaning-title"
+      >
+        <div class="section-intro">
+          <h2 id="meaning-title">A run status is only part of the result</h2>
+          <p>
+            Execution, delivery, freshness, and acceptance answer different
+            questions. One cannot stand in for the others.
+          </p>
+        </div>
+        <div
+          class="status-table-wrap"
+          role="region"
+          aria-label="Triage status definitions"
+          tabindex="0"
+        >
+          <table class="status-table">
+            <thead>
+              <tr>
+                <th scope="col">Signal</th>
+                <th scope="col">What it tells you</th>
+                <th scope="col">What to check next</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row"><span class="dot green"></span>Completed</th>
+                <td>The selected, bounded work finished.</td>
+                <td>
+                  Read its findings and public receipts. This does not mean a
+                  fix was merged or the backlog is empty.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row"><span class="dot amber"></span>Degraded</th>
+                <td>
+                  The workflow retained an operational problem or a stale result
+                  at its final check.
+                </td>
+                <td>
+                  Check what was already published, what stopped, and whether
+                  the cause needs a refresh or a repair.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  <span class="dot red"></span>Failed / Crashed
+                </th>
+                <td>Execution itself did not finish normally.</td>
+                <td>
+                  Inspect the error and retained evidence. Check GitHub before
+                  retrying an uncertain write.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  <span class="dot purple"></span>Awaiting a maintainer
+                </th>
+                <td>A proposal or contribution needs a human decision.</td>
+                <td>
+                  Review its evidence and remaining gates. A pending decision
+                  alone is not an execution failure.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="technical-note">
+          In the current Prefect workflow, <code>Degraded</code> is a custom
+          name on a <code>Completed</code> state. It records a business outcome
+          that needs attention, even though the flow reached its end. This label
+          can therefore coexist with a successfully posted review.
+        </p>
+      </section>
+
+      <section class="responsibilities" aria-labelledby="owners-title">
+        <div class="section-intro">
+          <h2 id="owners-title">Who is responsible for what?</h2>
+          <p>
+            FastMCP uses more than one automation system. Their responsibilities
+            and permissions matter.
+          </p>
+        </div>
+        <div class="owners">
+          <article>
+            <span class="owner-mark github" aria-hidden="true">G</span>
+            <h3>GitHub Actions</h3>
+            <p>
+              Applies labels, enforces contribution gates, and runs the existing
+              duplicate-marking and closure cooldowns.
+            </p>
+            <p class="owner-note">
+              Those existing closers retain their own rules for human comments
+              and objections.
+            </p>
+          </article>
+          <article>
+            <span class="owner-mark prefect" aria-hidden="true">P</span>
+            <h3>Prefect triage</h3>
+            <p>
+              Assesses selected issues, reproduces behavior, verifies existing
+              contributions, and obtains an independent review.
+            </p>
+            <p class="owner-note">
+              Configured publication can post review comments or publish
+              validated fixes as draft PRs.
+            </p>
+          </article>
+          <article>
+            <span class="owner-mark human" aria-hidden="true">✓</span>
+            <h3>Maintainers</h3>
+            <p>
+              Decide contributor assignments, contribution readiness, supported
+              behavior, and what gets merged.
+            </p>
+            <p class="owner-note">
+              Assignment, finishing, and closure recommendations from triage
+              require approval.
+            </p>
+          </article>
+        </div>
+        <div class="permission-note">
+          <strong>A bot review is a comment, not merge approval.</strong>
+          <p>
+            The dedicated reviewer App posts findings against a recorded PR
+            head. The triage path does not automatically merge PRs or execute
+            its assignment and closure proposals. Existing GitHub
+            duplicate-closing automation is a separate lifecycle.
+          </p>
+        </div>
+      </section>
+
+      <section class="guards" aria-labelledby="guards-title">
+        <div class="section-intro">
+          <h2 id="guards-title">Why work can stop</h2>
+          <p>
+            Stopping can protect a contributor or prevent an outdated action. An
+            operational defect can also stop useful work.
+          </p>
+        </div>
+        <div class="guard-columns">
+          <div>
+            <h3>Reasons to recheck the decision</h3>
+            <ul>
+              <li>
+                A new commit or substantive review finding changes the evidence.
+              </li>
+              <li>
+                A contributor claims the work, or a maintainer changes
+                direction.
+              </li>
+              <li>
+                An author adds a hold, closes the contribution, or withdraws it.
+              </li>
+              <li>A security concern requires restricted review.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Problems in the automation</h3>
+            <ul>
+              <li>
+                A worker cannot execute or required evidence cannot be loaded.
+              </li>
+              <li>
+                A GitHub write has an uncertain outcome and needs readback.
+              </li>
+              <li>
+                A freshness check mistakes the bot’s own publication effects for
+                new evidence.
+              </li>
+            </ul>
+            <p>
+              The #5588 example documents that last defect. It is a limitation
+              of the workflow, not a contributor error.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="reading" aria-labelledby="reading-title">
+        <h2 id="reading-title">Reading a triage result</h2>
+        <ol>
+          <li>
+            <strong>Find the output.</strong> Is there an actual review, a draft
+            PR, a recommendation, or only retained evidence?
+          </li>
+          <li>
+            <strong>Check the revision and limitations.</strong> What code was
+            tested? Did the checks execute? Has relevant evidence changed?
+          </li>
+          <li>
+            <strong>Identify the next owner.</strong> Does a maintainer need to
+            decide, a contributor need to finish a change, or an operator need
+            to repair the workflow?
+          </li>
+          <li>
+            <strong>Count acceptance later.</strong> A posted review or draft is
+            an output. A merged fix or an approved action is a separate outcome.
+          </li>
+        </ol>
+      </section>
+
+      <footer>
+        <p>
+          This is a static explanation of recorded behavior, not a live health
+          dashboard. The triage design is under review; the examples preserve
+          both useful outputs and known failures.
+        </p>
+        <div>
+          <a href="operations.html">Maintenance snapshot</a
+          ><a href="./">Backlog history</a
+          ><a href="https://github.com/PrefectHQ/fastmcp/pull/6116"
+            >Triage implementation</a
+          ><a
+            href="https://github.com/PrefectHQ/fastmcp/blob/main/docs/development/contributing.mdx"
+            >Contribution policy</a
+          >
+        </div>
+      </footer>
+    </main>
+  </body>
+</html>
