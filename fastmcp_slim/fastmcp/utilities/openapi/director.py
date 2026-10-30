@@ -46,6 +46,180 @@ def _uses_default_multipart_encoding(encoding: dict[str, Any]) -> bool:
     )
 
 
+def _is_json_media_type(content_type: str | None) -> bool:
+    """Return whether a media type denotes JSON, ignoring parameters."""
+    if not content_type:
+        return False
+    media_type = content_type.split(";")[0].strip().lower()
+    return media_type == "application/json" or media_type.endswith("+json")
+
+
+def _resolve_schema_ref(
+    schema: Any,
+    definitions: dict[str, Any],
+    active_refs: frozenset[str] = frozenset(),
+) -> tuple[dict[str, Any], frozenset[str]]:
+    """Resolve a local `$ref`, tracking references active on this traversal path.
+
+    Returns the resolved schema (empty when the chain cycles or cannot be
+    resolved) plus the extended active-reference set. Callers recurse through
+    composition keywords with that set so mutually recursive component graphs
+    terminate instead of overflowing the stack.
+    """
+    while isinstance(schema, dict) and isinstance(schema.get("$ref"), str):
+        ref = schema["$ref"]
+        if ref in active_refs:
+            return {}, active_refs
+        active_refs = active_refs | {ref}
+        target = definitions.get(ref.rsplit("/", 1)[-1])
+        if not isinstance(target, dict):
+            return {}, active_refs
+        schema = target
+    return (schema if isinstance(schema, dict) else {}), active_refs
+
+
+def _schema_type_includes(schema: dict[str, Any], type_name: str) -> bool:
+    """Return whether `type` declares the given type, including type lists."""
+    schema_type = schema.get("type")
+    if schema_type == type_name:
+        return True
+    return isinstance(schema_type, list) and type_name in schema_type
+
+
+def _schema_is_object(
+    schema: Any,
+    definitions: dict[str, Any],
+    active_refs: frozenset[str] = frozenset(),
+) -> bool:
+    """Return whether a schema (or any composition branch) describes an object."""
+    schema, active_refs = _resolve_schema_ref(schema, definitions, active_refs)
+    if not schema:
+        return False
+    if (
+        _schema_type_includes(schema, "object")
+        or "properties" in schema
+        or "additionalProperties" in schema
+    ):
+        return True
+    for keyword in ("allOf", "anyOf", "oneOf"):
+        members = schema.get(keyword)
+        if isinstance(members, list) and any(
+            _schema_is_object(member, definitions, active_refs) for member in members
+        ):
+            return True
+    return False
+
+
+def _schema_is_array_of_objects(
+    schema: Any,
+    definitions: dict[str, Any],
+    value: list[Any],
+    active_refs: frozenset[str] = frozenset(),
+) -> bool:
+    """Return whether a schema describes an object array matching `value`.
+
+    Composition alternatives are chosen against the runtime items: a `oneOf`
+    or `anyOf` that offers both `array<object>` and `array<string>` keeps a
+    string list on the string branch, so it is not JSON-encoded for an unused
+    object branch.
+    """
+    schema, active_refs = _resolve_schema_ref(schema, definitions, active_refs)
+    if not schema:
+        return False
+    if _schema_type_includes(schema, "array"):
+        item_schemas: list[Any] = []
+        items = schema.get("items")
+        if isinstance(items, list):
+            item_schemas.extend(items)
+        elif items is not None:
+            item_schemas.append(items)
+        prefix_items = schema.get("prefixItems")
+        if isinstance(prefix_items, list):
+            item_schemas.extend(prefix_items)
+        if any(
+            _schema_is_object(item, definitions, active_refs) for item in item_schemas
+        ):
+            # Empty arrays carry no runtime type information; preserve the
+            # object-array behavior there.
+            return not value or any(isinstance(item, dict) for item in value)
+        return False
+    for keyword in ("allOf", "anyOf", "oneOf"):
+        members = schema.get(keyword)
+        if isinstance(members, list) and any(
+            _schema_is_array_of_objects(member, definitions, value, active_refs)
+            for member in members
+        ):
+            return True
+    return False
+
+
+def _form_property_schemas(
+    body_schema: dict[str, Any], definitions: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Collect a form body's property schemas, merging `allOf` members.
+
+    Returns the declared properties plus the `additionalProperties` schema
+    (if any) that applies to names not declared in `properties`.
+    """
+    properties: dict[str, Any] = {}
+    additional_properties: dict[str, Any] | None = None
+
+    def collect(schema: Any, active_refs: frozenset[str] = frozenset()) -> None:
+        nonlocal additional_properties
+        schema, active_refs = _resolve_schema_ref(schema, definitions, active_refs)
+        if not schema:
+            return
+        if isinstance(schema.get("properties"), dict):
+            properties.update(schema["properties"])
+        if additional_properties is None:
+            extra = schema.get("additionalProperties")
+            if isinstance(extra, dict):
+                additional_properties = extra
+        members = schema.get("allOf")
+        if isinstance(members, list):
+            for member in members:
+                collect(member, active_refs)
+
+    collect(body_schema)
+    return properties, additional_properties
+
+
+def _build_form_urlencoded_data(
+    body: dict[str, Any],
+    body_schema: dict[str, Any],
+    encoding: dict[str, dict[str, Any]],
+    definitions: dict[str, Any],
+) -> dict[str, Any]:
+    """Serialize structured urlencoded fields as JSON per the OAS Encoding Object.
+
+    Object properties default to `contentType: application/json`, so they must
+    be JSON-encoded rather than passed to httpx for Python `repr` stringification.
+    An explicit encoding `contentType` overrides that default. Scalars and
+    arrays of scalars keep httpx's form encoding (arrays repeat the key).
+    """
+    properties, additional_properties = _form_property_schemas(body_schema, definitions)
+    data: dict[str, Any] = {}
+    for name, value in body.items():
+        content_type = encoding.get(name, {}).get("contentType")
+        if content_type is not None:
+            json_encode = _is_json_media_type(content_type)
+        else:
+            prop_schema = properties.get(name, additional_properties or {})
+            json_encode = (
+                (
+                    isinstance(value, dict)
+                    and _schema_is_object(prop_schema, definitions)
+                )
+                or (
+                    isinstance(value, list)
+                    and _schema_is_array_of_objects(prop_schema, definitions, value)
+                )
+                or (value is None and _schema_is_object(prop_schema, definitions))
+            )
+        data[name] = _json.dumps(value, allow_nan=False) if json_encode else value
+    return data
+
+
 def _prepare_parameter_map(
     route: HTTPRoute,
 ) -> tuple[HTTPRoute, dict[str, dict[str, str]]]:
@@ -182,7 +356,23 @@ class RequestDirector:
                 declared_content_type == "application/x-www-form-urlencoded"
                 and isinstance(body, dict)
             ):
-                data = body
+                request_body = route.request_body
+                body_schema = (
+                    request_body.content_schema.get(raw_content_type, {})
+                    if request_body and raw_content_type is not None
+                    else {}
+                )
+                definitions = dict(route.request_schemas)
+                if isinstance(body_schema.get("$defs"), dict):
+                    definitions.update(body_schema["$defs"])
+                encoding = (
+                    request_body.encoding.get(raw_content_type, {})
+                    if request_body and raw_content_type is not None
+                    else {}
+                )
+                data = _build_form_urlencoded_data(
+                    body, body_schema, encoding, definitions
+                )
             elif (
                 isinstance(body, dict | list)
                 or declared_content_type == "application/json"
