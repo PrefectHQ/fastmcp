@@ -56,4 +56,9 @@ just issues --public --judge none --limit 500
 
 The public issue list supports kind and unanswered filters, expandable score contributions, and linked fixes. Comment histories that are incomplete do not count as unanswered. The terminal browser also supports loading additional pages, reranking, and private author context.
 
+Format flags and unconfirmed duplicate suggestions do not count as dismissal.
+Labels do not establish that a maintainer has replied. Information-request labels
+remain ranking hints; their presence does not prove that the reporter still owes
+a response. Check the discussion and later edits before acting on them.
+
 On GitHub Pages, the browser reads JSON directly from the public `status` branch: bot commits do not trigger a Pages rebuild. Other hosts and local previews use adjacent `status.json`. Publishing the UI itself still requires a Pages deployment.

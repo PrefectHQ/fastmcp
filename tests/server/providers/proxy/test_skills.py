@@ -144,6 +144,33 @@ async def test_follows_backend_pagination() -> None:
     ]
 
 
+class ListSkillsRequests(Middleware):
+    def __init__(self) -> None:
+        self.count = 0
+
+    async def on_request(self, context, call_next):
+        if context.method == "skills/list":
+            self.count += 1
+        return await call_next(context)
+
+
+async def test_backend_pagination_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    # raising=False keeps this a behavioral failure on code without the bound.
+    monkeypatch.setattr(
+        "fastmcp.skills._proxy.AUTO_PAGINATION_MAX_PAGES", 1, raising=False
+    )
+    upstream = backend(REVIEW, DEPLOY, page_size=1)
+    requests = ListSkillsRequests()
+    upstream.add_middleware(requests)
+    server = gateway(upstream)
+    server.provider_error_strategy = "raise"
+
+    async with skills_client(server) as client:
+        with pytest.raises(MCPError):
+            await client.list_skills()
+    assert requests.count == 1
+
+
 async def test_local_and_proxied_skills_share_one_catalog() -> None:
     server = gateway(backend(REVIEW))
     server.add_provider(SkillCatalogProvider([DEPLOY]))
