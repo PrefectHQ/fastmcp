@@ -172,6 +172,7 @@ class TestContextState:
         """Test that two different clients can store the same key independently.
 
         Each client gets an auto-generated session ID, and their state is isolated.
+        Handshake-era only: 2026-07-28 connections scope state per process off HTTP.
         """
         import json
 
@@ -194,7 +195,7 @@ class TestContextState:
             }
 
         # Client 1 stores "value-from-client-1"
-        async with Client(server) as client1:
+        async with Client(server, mode="legacy") as client1:
             result1 = await client1.call_tool(
                 "store_and_read", {"value": "value-from-client-1"}
             )
@@ -204,7 +205,7 @@ class TestContextState:
             session_id_1 = data1["session_id"]
 
         # Client 2 stores "value-from-client-2" with the SAME key
-        async with Client(server) as client2:
+        async with Client(server, mode="legacy") as client2:
             result2 = await client2.call_tool(
                 "store_and_read", {"value": "value-from-client-2"}
             )
@@ -220,7 +221,7 @@ class TestContextState:
         assert session_id_1 != session_id_2
 
         # Client 1 reconnects and should still see their value
-        async with Client(server) as client1_again:
+        async with Client(server, mode="legacy") as client1_again:
             # But this is a NEW session (new connection = new session ID)
             result3 = await client1_again.call_tool(
                 "store_and_read", {"value": "value-from-client-1-again"}
@@ -229,6 +230,25 @@ class TestContextState:
             # New session, so existing value is None
             assert data3["existing_value"] is None
             assert data3["session_id"] != session_id_1  # Different session
+
+    async def test_state_persists_across_calls_on_modern_protocol(self):
+        """Regression for #5134: state survives between calls in default mode."""
+        from fastmcp import Client
+
+        server = FastMCP("test")
+
+        @server.tool
+        async def remember(value: str, ctx: Context) -> None:
+            await ctx.set_state("value", value)
+
+        @server.tool
+        async def recall(ctx: Context) -> str | None:
+            return await ctx.get_state("value")
+
+        async with Client(server) as client:
+            await client.call_tool("remember", {"value": "hello"})
+            result = await client.call_tool("recall", {})
+            assert result.data == "hello"
 
 
 class TestContextStateSerializable:
