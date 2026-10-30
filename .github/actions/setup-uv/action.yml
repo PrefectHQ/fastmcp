@@ -23,11 +23,13 @@ runs:
 
     - name: Install dependencies
       shell: bash
+      env:
+        RESOLUTION: ${{ inputs.resolution }}
       run: |
-        if [ "${{ inputs.resolution }}" == "locked" ]; then
+        if [ "$RESOLUTION" == "locked" ]; then
           uv sync --locked
-        elif [ "${{ inputs.resolution }}" == "upgrade" ]; then
+        elif [ "$RESOLUTION" == "upgrade" ]; then
           uv sync --upgrade
         else
-          uv sync --resolution ${{ inputs.resolution }}
+          uv sync --resolution "$RESOLUTION"
         fi
