@@ -180,12 +180,13 @@ def _scan_claude_code(start_dir: Path) -> list[DiscoveredServer]:
     if not isinstance(data, dict):
         return []
 
-    results: list[DiscoveredServer] = []
+    global_results: list[DiscoveredServer] = []
+    project_results: list[DiscoveredServer] = []
 
     # Global servers
     if global_servers := data.get("mcpServers"):
         if isinstance(global_servers, dict):
-            results.extend(
+            global_results.extend(
                 _parse_mcp_servers(
                     global_servers, source="claude-code", config_path=path
                 )
@@ -199,7 +200,7 @@ def _scan_claude_code(start_dir: Path) -> list[DiscoveredServer]:
         if isinstance(project_data, dict):
             if project_servers := project_data.get("mcpServers"):
                 if isinstance(project_servers, dict):
-                    results.extend(
+                    project_results.extend(
                         _parse_mcp_servers(
                             project_servers,
                             source="claude-code",
@@ -207,7 +208,13 @@ def _scan_claude_code(start_dir: Path) -> list[DiscoveredServer]:
                         )
                     )
 
-    return results
+    # Claude Code's project-local entries override same-name user entries.
+    # Returning both under the same qualified name makes the CLI ambiguous and
+    # would otherwise select the lower-priority user definition.
+    project_names = {server.name for server in project_results}
+    return [
+        server for server in global_results if server.name not in project_names
+    ] + project_results
 
 
 def _scan_cursor_workspace(start_dir: Path) -> list[DiscoveredServer]:
