@@ -285,6 +285,24 @@ def _apply_meta_override(
     return merged
 
 
+def _map_parent_arguments(
+    arguments: dict[str, Any],
+    new_to_old: dict[str, str],
+    hidden_defaults: dict[str, ArgTransform],
+    *,
+    include_hidden_factories: bool = True,
+) -> dict[str, Any]:
+    parent_args = {
+        new_to_old.get(name, name): value for name, value in arguments.items()
+    }
+    for old_name, transform in hidden_defaults.items():
+        if transform.default is not NotSet:
+            parent_args[old_name] = transform.default
+        elif include_hidden_factories and callable(transform.default_factory):
+            parent_args[old_name] = transform.default_factory()
+    return parent_args
+
+
 class TransformedTool(Tool):
     """A tool that is transformed from another tool.
 
@@ -313,6 +331,22 @@ class TransformedTool(Tool):
         Callable[..., Any]
     ]  # Always present, handles arg transformation
     transform_args: dict[str, ArgTransform]
+
+    def _map_arguments_for_validation(
+        self, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        new_to_old: dict[str, str] = {}
+        hidden_defaults: dict[str, ArgTransform] = {}
+        for old_name in self.parent_tool.parameters.get("properties", {}):
+            transform = self.transform_args.get(old_name, ArgTransform())
+            if transform.hide:
+                hidden_defaults[old_name] = transform
+            else:
+                new_name = old_name if transform.name is NotSet else transform.name
+                new_to_old[new_name] = old_name
+        return _map_parent_arguments(
+            arguments, new_to_old, hidden_defaults, include_hidden_factories=False
+        )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Run the tool with context set for forward() functions.
@@ -632,6 +666,8 @@ class TransformedTool(Tool):
             meta=final_meta,
             transform_args=transform_args,
             auth=tool.auth,
+            task_config=tool.task_config,
+            execution=tool.execution,
         )
 
         return transformed_tool
@@ -757,20 +793,7 @@ class TransformedTool(Tool):
                     f"Missing required argument(s): {', '.join(sorted(missing_args))}"
                 )
 
-            # Map arguments to parent names
-            parent_args = {}
-            for new_name, value in kwargs.items():
-                old_name = new_to_old.get(new_name, new_name)
-                parent_args[old_name] = value
-
-            # Add hidden defaults (constant values for hidden parameters)
-            for old_name, transform in hidden_defaults.items():
-                if transform.default is not NotSet:
-                    parent_args[old_name] = transform.default
-                elif transform.default_factory is not NotSet:
-                    # Type check to ensure default_factory is callable
-                    if callable(transform.default_factory):
-                        parent_args[old_name] = transform.default_factory()
+            parent_args = _map_parent_arguments(kwargs, new_to_old, hidden_defaults)
 
             return await parent_tool.run(parent_args)
 

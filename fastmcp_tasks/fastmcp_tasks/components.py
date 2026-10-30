@@ -26,7 +26,9 @@ import inspect
 import logging
 from typing import TYPE_CHECKING, Any
 
+from pydantic import AliasChoices, AliasPath
 from pydantic import ValidationError as PydanticValidationError
+from pydantic.fields import FieldInfo
 
 from fastmcp.exceptions import ValidationError
 from fastmcp.prompts.base import Prompt
@@ -40,8 +42,9 @@ from fastmcp.tools.function_tool import (
     _resolve_param_hints,
     _validate_input,
 )
+from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.components import FastMCPComponent
-from fastmcp.utilities.types import get_cached_typeadapter
+from fastmcp.utilities.types import NotSet, get_cached_typeadapter
 from fastmcp_tasks.input_loop import reentrant_task_fn
 
 if TYPE_CHECKING:
@@ -159,13 +162,18 @@ def coerce_task_arguments(
     task's Redis metadata and initial status notification exist — otherwise a
     coercion failure during queueing would orphan a task the client has already
     observed. Only ``FunctionTool`` splats arguments into a typed Python callable
-    and therefore mirrors the synchronous validation path; every other component
-    type is a no-op passthrough.
+    and therefore mirrors the synchronous validation path; ``TransformedTool`` is
+    checked against its own advertised schema (see
+    ``_validate_transformed_arguments``); every other component type is a no-op
+    passthrough.
 
     When ``strict`` is set (server-level ``strict_input_validation``), arguments
     are validated in strict mode so the task path rejects lax coercions (e.g. the
     string ``"1"`` into an ``int``) exactly as the synchronous call path does.
     """
+    if isinstance(component, TransformedTool):
+        return _validate_transformed_arguments(component, arguments, strict=strict)
+
     if not isinstance(component, FunctionTool):
         return arguments
 
@@ -192,7 +200,107 @@ def coerce_task_arguments(
     return validated
 
 
-def _call_shape_probe(fn: Callable[..., Any]) -> Callable[..., dict[str, Any]]:
+def _validate_transformed_arguments(
+    tool: TransformedTool,
+    arguments: dict[str, Any],
+    *,
+    strict: bool | None = None,
+) -> dict[str, Any]:
+    """Reject a transformed-tool submission its own advertised schema forbids.
+
+    A transformed tool is registered with Docket as a base ``Tool``, so the
+    worker invokes ``TransformedTool.run`` — the only place its argument
+    contract is enforced. Submission happens before that, so without this check
+    a call the synchronous path rejects is instead persisted as a task and only
+    surfaces as an ``is_error`` result once a worker picks it up.
+
+    The checks mirror what the forwarding function performs before it runs the
+    parent: unknown arguments and, after schema defaults are applied, missing
+    required ones. Both are read off ``parameters``, which is the same schema
+    advertised to clients, so "required" and "unknown" mean here what they mean
+    on the wire.
+
+    Pure forwards to FunctionTool also use the parent's real call validators.
+    Custom transform functions may normalize inputs before forwarding, so their
+    execution remains responsible for type validation. Factories run in the worker.
+    """
+    parameters = tool.parameters or {}
+    properties = parameters.get("properties", {})
+
+    supplied = set(arguments) | {
+        name
+        for name, schema in properties.items()
+        if isinstance(schema, dict) and "default" in schema
+    }
+    unknown = sorted(set(arguments) - set(properties))
+    missing = sorted(set(parameters.get("required", [])) - supplied)
+
+    if not (unknown or missing):
+        if _is_pure_forward(tool):
+            _validate_forwarded_arguments(tool, arguments, strict=strict)
+        return arguments
+
+    details = []
+    if unknown:
+        details.append(f"unexpected argument(s): {', '.join(unknown)}")
+    if missing:
+        details.append(f"missing required argument(s): {', '.join(missing)}")
+    raise ValidationError(
+        f"Invalid arguments for tool {tool.name!r}: {'; '.join(details)}",
+        log_level=logging.WARNING,
+    )
+
+
+def _is_pure_forward(tool: TransformedTool) -> bool:
+    return tool.fn is tool.forwarding_fn and isinstance(tool.parent_tool, FunctionTool)
+
+
+def _validate_forwarded_arguments(
+    tool: TransformedTool, arguments: dict[str, Any], *, strict: bool | None
+) -> None:
+    from fastmcp.server.dependencies import without_injected_parameters
+
+    prepared = arguments.copy()
+    excluded = {
+        name for name, transform in tool.transform_args.items() if transform.hide
+    }
+    for name, schema in tool.parameters.get("properties", {}).items():
+        if name in prepared:
+            continue
+        if "default" not in schema:
+            if name not in tool.parameters.get("required", []):
+                original_name = next(
+                    (
+                        old_name
+                        for old_name, transform in tool.transform_args.items()
+                        if (old_name if transform.name is NotSet else transform.name)
+                        == name
+                    ),
+                    name,
+                )
+                excluded.add(original_name)
+            continue
+        prepared[name] = schema["default"]
+    mapped = tool._map_arguments_for_validation(prepared)
+    parent = tool.parent_tool
+    assert isinstance(parent, FunctionTool)
+    fn = without_injected_parameters(parent.fn, run_in_thread=parent.run_in_thread)
+    adapter = get_cached_typeadapter(
+        _call_shape_probe(fn, exclude_parameters=frozenset(excluded))
+    )
+    try:
+        _validate_input(
+            adapter,
+            {name: value for name, value in mapped.items() if name not in excluded},
+            strict=strict,
+        )
+    except PydanticValidationError as exc:
+        raise ValidationError(str(exc), log_level=logging.WARNING) from exc
+
+
+def _call_shape_probe(
+    fn: Callable[..., Any], *, exclude_parameters: frozenset[str] = frozenset()
+) -> Callable[..., dict[str, Any]]:
     """Mirror ``fn``'s signature on a function that only returns its keyword arguments.
 
     ``TypeAdapter`` validates a callable's arguments by calling it, so validating
@@ -205,7 +313,34 @@ def _call_shape_probe(fn: Callable[..., Any]) -> Callable[..., dict[str, Any]]:
         return inspect.signature(probe).bind(*args, **kwargs).arguments
 
     hints = _resolve_param_hints(fn)
-    sig = inspect.signature(fn)
+    original_signature = inspect.signature(fn)
+
+    def keep_parameter(name: str, parameter: inspect.Parameter) -> bool:
+        if not exclude_parameters:
+            return True
+        if name in exclude_parameters:
+            return False
+        annotation = hints.get(name, parameter.annotation)
+        field = (
+            FieldInfo.from_annotation(annotation)
+            if parameter.default is inspect.Parameter.empty
+            else FieldInfo.from_annotated_attribute(annotation, parameter.default)
+        )
+        alias = field.validation_alias or field.alias
+        aliases = alias.choices if isinstance(alias, AliasChoices) else [alias]
+        for item in aliases:
+            candidate = item.path[0] if isinstance(item, AliasPath) else item
+            if isinstance(candidate, str) and candidate in exclude_parameters:
+                return False
+        return True
+
+    sig = original_signature.replace(
+        parameters=[
+            p
+            for name, p in original_signature.parameters.items()
+            if keep_parameter(name, p)
+        ]
+    )
     annotations = {
         name: hints.get(name, param.annotation)
         for name, param in sig.parameters.items()
