@@ -828,6 +828,13 @@ def _convert_schema(
         return object
 
     if "type" not in schema and "properties" in schema:
+        # A schema with properties but no "type" is still an object schema. When
+        # it allows additional properties, take the object path so unknown keys
+        # are kept, exactly as if "type": "object" were spelled out.
+        if schema.get("additionalProperties"):
+            return _object_schema_to_type(
+                schema, schemas, resolving_refs=resolving_refs
+            )
         return _create_dataclass(schema, schema.get("title", "<unknown>"), schemas)
 
     # Handle references first
