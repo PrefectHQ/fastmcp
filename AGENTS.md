@@ -100,6 +100,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 - Never amend commits to fix prek failures
 - Never apply labels manually or invent new ones — issues and PRs are auto-labeled by a bot based on title/body/code changes. Don't note a "suggested" or "appropriate" label anywhere in the PR body either. See the review-pr skill.
 - Improvements = enhancements (not features) unless specified
+- Branches are `main`, the release lines, and plain feature branches. Never use harness prefixes like `claude/` or `codex/`.
 - Rebase PR branches when needed. Publish rewritten history with `--force-with-lease` against the verified remote head; use an atomic push when updating a stack. Never overwrite another contributor’s new work or rewrite shared release branches. A requested rebase includes publishing it safely; it does not require separate permission for the lease-protected push.
 - **ALWAYS** run applicable prek checks before PRs
 - **NEVER** create a release, comment on an issue, or open a PR unless specifically instructed to do so.
@@ -118,6 +119,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 - Never pass GitHub, Linear, or Slack comment bodies inline through shell arguments when the body contains `$`, `${...}`, backticks, `$(...)`, environment-variable examples, secrets, or config interpolation examples.
 - Use a body file or structured API payload for outbound comments, then inspect the exact outgoing text before posting. Prefer `gh ... --body-file /path/to/comment.md` over `--body "..."`.
 - When explaining environment interpolation, use placeholders and fenced code blocks. Never include raw `.env` contents in outbound comments.
+- Reviews and comments: the finding and its impact once, then the requested change, in at most 120 visible words. Put evidence in a collapsed `<details><summary>Checks</summary>`. No "Want:" prefixes, command transcripts, full SHAs, run ids, gate administration, or AI-review disclaimers. `.github/scripts/public_text.py` enforces this as a pre-tool hook for Claude Code and Codex; when it blocks a post, rewrite the text rather than working around it.
 
 ### Releases
 

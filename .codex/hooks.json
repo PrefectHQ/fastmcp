@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'python3 \"$(git rev-parse --show-toplevel)/.github/scripts/public_text.py\"'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
