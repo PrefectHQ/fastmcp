@@ -1,6 +1,12 @@
+import json
+from pathlib import Path
+from uuid import uuid4
+
 import pytest
 
-from flows.agentic_triage_review import apply_disposition
+from flows.agentic_stack_plans import build_plans
+from flows.agentic_stack_runtime import AgentPlan, Runtime
+from flows.agentic_triage_review import apply_disposition, requires_review
 
 
 @pytest.mark.parametrize(
@@ -45,4 +51,44 @@ def test_prepare_disposition_carries_scope_controls_to_preparation():
     with pytest.raises(ValueError, match="existing contribution"):
         apply_disposition(
             "evidence", {}, {**review, "decision": "review_existing"}, "review-run"
+        )
+
+
+@pytest.mark.parametrize(
+    "destination", ["evidence", "existing_review", "pruning", "decisions", "unchanged"]
+)
+def test_every_public_facing_outcome_requires_adversarial_review(destination):
+    assert requires_review(destination)
+
+
+def test_operational_failures_are_not_triage_decisions():
+    assert not requires_review("operational")
+
+
+def test_native_triage_cannot_run_without_adversarial_review():
+    plans = {
+        role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
+        for role in ("assess", "reproduce", "prepare", "review")
+    }
+    native = {
+        "validator_id": uuid4(),
+        "source_sha": "b" * 40,
+        "triage_plan": AgentPlan(flow_id=uuid4(), version_id=uuid4()),
+        "triage_verify_id": uuid4(),
+        "triage_finalize_id": uuid4(),
+    }
+    with pytest.raises(ValueError, match="adversarial triage review"):
+        Runtime(plans=plans, **native)
+    plans["triage_review"] = AgentPlan(flow_id=uuid4(), version_id=uuid4())
+    Runtime(plans=plans, **native)
+
+
+def test_public_facing_reviewers_run_on_sol():
+    directory = Path(__file__).resolve().parents[1] / "workflows"
+    plans = build_plans(directory)
+    for role in ("triage_review", "review"):
+        assert plans[role]["nodes"][role]["model"]["id"] == "gpt-6.1-sol"
+        assert (
+            json.loads((directory / f"fastmcp-stack-{role}.plan.json").read_text())
+            == plans[role]
         )

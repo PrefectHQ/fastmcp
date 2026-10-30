@@ -41,7 +41,7 @@ def admission():
     runtime = Runtime(
         plans={
             role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-            for role in ("assess", "reproduce", "prepare", "review")
+            for role in ("assess", "reproduce", "prepare", "review", "triage_review")
         },
         validator_id=uuid4(),
         verification_id=uuid4(),
