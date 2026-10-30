@@ -102,7 +102,7 @@ def duplicate_intervention(evidence: dict) -> bool:
         comment
         for comment in comments
         if comment["user"]["type"] == "Bot"
-        and "possible duplicate issues" in comment["body"].lower()
+        and "possible duplicate issue" in comment["body"].lower()
     ]
     if any(
         comment["user"]["type"] == "Bot"

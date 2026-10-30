@@ -219,10 +219,11 @@ class GitHubClient:
 def find_duplicate_comment(comments: list[Comment]) -> Comment | None:
     """Find a bot comment marking the issue as duplicate."""
     for comment in comments:
-        # Check for the specific duplicate message format from a bot
+        # Check for the specific duplicate message format from a bot. With
+        # one duplicate the comment says "issue", not "issues".
         if (
             comment.user_type == "Bot"
-            and "possible duplicate issues" in comment.body.lower()
+            and "possible duplicate issue" in comment.body.lower()
         ):
             return comment
     return None

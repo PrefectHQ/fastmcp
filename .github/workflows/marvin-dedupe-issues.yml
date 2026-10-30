@@ -123,9 +123,9 @@ jobs:
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
           permission-issues: write
 
-      # The comment always goes to this issue, in this format. The model only
-      # chooses which issue numbers appear in it.
-      - name: Post duplicate comment
+      # The comment and label always go to this issue, and the comment always
+      # has this format. The model only chooses which issue numbers appear.
+      - name: Post duplicate comment and label
         env:
           GH_TOKEN: ${{ steps.marvin-write-token.outputs.token }}
           REPO: ${{ github.repository }}
@@ -199,24 +199,5 @@ jobs:
             echo "- To prevent auto-closure, add a comment or 👎 this comment"
           } > "$body"
           gh issue comment "$ISSUE" -R "$REPO" --body-file "$body"
-
-      - name: Add potential-duplicate label if bot commented in this run
-        env:
-          GH_TOKEN: ${{ steps.marvin-write-token.outputs.token }}
-          ISSUE: ${{ github.event.issue.number || inputs.issue_number }}
-        run: |
-          # Only match bot comments created in the last 10 minutes (this run)
-          CUTOFF=$(date -u -d '10 minutes ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
-            || date -u -v-10M '+%Y-%m-%dT%H:%M:%SZ')
-          HAS_RECENT=$(gh api "repos/${{ github.repository }}/issues/${ISSUE}/comments?sort=created&direction=desc&per_page=10" \
-            --jq "[.[] | select(
-              .user.type == \"Bot\" and
-              (.body | test(\"possible duplicate issues\"; \"i\")) and
-              .created_at >= \"${CUTOFF}\"
-            )] | length")
-          if [ "$HAS_RECENT" -gt 0 ]; then
-            gh issue edit "$ISSUE" --add-label "potential-duplicate" -R "${{ github.repository }}"
-            echo "Added potential-duplicate label to #${ISSUE}"
-          else
-            echo "No recent duplicate comment found, skipping label"
-          fi
+          gh issue edit "$ISSUE" -R "$REPO" --add-label "potential-duplicate"
+          echo "Posted $count possible duplicate(s) and added potential-duplicate to #$ISSUE"
