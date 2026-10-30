@@ -1312,6 +1312,53 @@ class TestMalformedURITemplates:
         assert match.group("id") == "123"
 
 
+class TestResourceTemplateAliases:
+    """Pydantic field aliases on template parameters must work on every read."""
+
+    async def test_field_alias_for_path_parameter(self):
+        mcp = FastMCP()
+
+        @mcp.resource("data://items/{id}")
+        def item(id: str = Field(alias="identifier")) -> str:
+            return f"item:{id}"
+
+        async with Client(mcp) as client:
+            [contents] = await client.read_resource("data://items/7")
+
+        assert isinstance(contents, TextResourceContents)
+        assert contents.text == "item:7"
+
+    async def test_field_alias_for_query_parameter(self):
+        mcp = FastMCP()
+
+        @mcp.resource("data://search{?q}")
+        def search(q: str = Field(default="all", alias="query")) -> str:
+            return f"search:{q}"
+
+        async with Client(mcp) as client:
+            reads = {
+                "data://search?q=hi": "search:hi",
+                "data://search": "search:all",
+            }
+            for uri, expected in reads.items():
+                [contents] = await client.read_resource(uri)
+                assert isinstance(contents, TextResourceContents)
+                assert contents.text == expected
+
+    async def test_validation_alias_preserves_type_coercion(self):
+        mcp = FastMCP()
+
+        @mcp.resource("data://count/{n}")
+        def count(n: int = Field(validation_alias="number")) -> str:
+            return str(n + 1)
+
+        async with Client(mcp) as client:
+            [contents] = await client.read_resource("data://count/41")
+
+        assert isinstance(contents, TextResourceContents)
+        assert contents.text == "42"
+
+
 class TestExpandUriTemplate:
     """Test expand_uri_template — the inverse of match_uri_template."""
 
