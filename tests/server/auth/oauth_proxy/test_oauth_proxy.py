@@ -1,6 +1,7 @@
 """Tests for OAuth proxy initialization and configuration."""
 
 import time
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
@@ -656,3 +657,74 @@ class TestCIMDTokenEndpointAudience:
             metadata = client.get("/.well-known/oauth-authorization-server").json()
 
         assert proxy.token_endpoint_url == metadata["token_endpoint"]
+
+
+async def test_load_access_token_restores_fastmcp_client_identity(oauth_proxy):
+    from mcp.server.auth.handlers.revoke import RevocationHandler
+    from mcp.server.auth.provider import AccessToken
+    from starlette.requests import Request
+
+    oauth_proxy.get_routes()
+
+    oauth_proxy.jwt_issuer.verify_token = lambda token: {
+        "jti": "dcr-jti",
+        "client_id": "dcr-client",
+    }
+    oauth_proxy._jti_mapping_store.get = AsyncMock(
+        return_value=SimpleNamespace(upstream_token_id="upstream-id")
+    )
+    oauth_proxy._upstream_token_store.get = AsyncMock(
+        return_value=SimpleNamespace(
+            access_token="upstream-access-token",
+            refresh_token=None,
+            expires_at=time.time() + 3600,
+        )
+    )
+    oauth_proxy._get_verification_token = lambda token_set: "upstream-access-token"
+    oauth_proxy._token_validator.verify_token = AsyncMock(
+        return_value=AccessToken(
+            token="upstream-access-token",
+            client_id="upstream-client",
+            scopes=["read"],
+        )
+    )
+
+    result = await oauth_proxy.load_access_token("fastmcp-jwt")
+
+    assert result is not None
+    assert result.client_id == "upstream-client"
+    oauth_proxy._token_validator.verify_token.assert_awaited_once_with(
+        "upstream-access-token"
+    )
+
+    oauth_proxy._upstream_revocation_endpoint = "https://auth.example.com/revoke"
+    result = await oauth_proxy.load_access_token("fastmcp-jwt")
+    assert result is not None
+    assert result.client_id == "dcr-client"
+
+    async def receive():
+        return {
+            "type": "http.request",
+            "body": b"token=fastmcp-jwt&client_id=dcr-client&client_secret=",
+            "more_body": False,
+        }
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "headers": [(b"content-type", b"application/x-www-form-urlencoded")],
+        },
+        receive,
+    )
+    authenticator = SimpleNamespace(
+        authenticate_request=AsyncMock(
+            return_value=SimpleNamespace(client_id="dcr-client")
+        )
+    )
+    oauth_proxy.load_access_token = AsyncMock(return_value=result)
+    oauth_proxy.revoke_token = AsyncMock()
+    response = await RevocationHandler(oauth_proxy, authenticator).handle(request)
+
+    assert response.status_code == 200
+    oauth_proxy.revoke_token.assert_awaited_once_with(result)

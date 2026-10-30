@@ -187,6 +187,16 @@ def _assertion_granted_scopes(claims: dict[str, Any]) -> list[str]:
     return []
 
 
+def _apply_fastmcp_client_id(
+    access_token: AccessToken, payload: dict[str, Any]
+) -> AccessToken:
+    """Attach the DCR client identity to a validated upstream access token."""
+    client_id = payload.get("client_id")
+    if not isinstance(client_id, str) or not client_id:
+        return access_token
+    return access_token.model_copy(update={"client_id": client_id})
+
+
 class OAuthProxy(OAuthProvider, ConsentMixin):
     """OAuth provider that presents a DCR-compliant interface while proxying to non-DCR IDPs.
 
@@ -2333,6 +2343,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         "expires_at": int(upstream_token_set.expires_at),
                     }
                 )
+
+            # The SDK revocation handler compares AccessToken.client_id with
+            # the DCR client id in the verified FastMCP JWT. Upstream validation
+            # returns the upstream application's client id, so restore the
+            # FastMCP identity before the token reaches ownership checks.
+            if self._upstream_revocation_endpoint:
+                validated = _apply_fastmcp_client_id(validated, payload)
 
             # Propagate upstream claims from the verified FastMCP JWT into the
             # final AccessToken object. This allows subclasses to access custom
