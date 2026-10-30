@@ -258,6 +258,40 @@ async def test_multi_server_auto_falls_back_all_legs_when_one_backend_is_legacy(
     assert starts.count("legacy") == 1
 
 
+async def test_clone_era_resolution_is_observable_on_source_transport():
+    """A clone's connect resolves `legacy_only` on the transport it copied.
+
+    Adapters such as langchain's MCPAdapter hold the source transport while
+    `Client.new()` performs each connection. Before clones got per-instance
+    state the two shared one object, so the source observed the resolution;
+    keep that behavior while teardown stays ownership-scoped.
+    """
+    starts: list[str] = []
+    config = MCPConfig(
+        mcpServers={
+            "modern": InMemoryStdioMCPServer(
+                mcp=_make_protocol_era_server("modern", starts)
+            ),
+            "legacy": LegacyInMemoryStdioMCPServer(
+                mcp=_make_protocol_era_server("legacy", starts)
+            ),
+        }
+    )
+    transport = MCPConfigTransport(config)
+    client = Client(transport)
+    clone = client.new()
+
+    assert transport.legacy_only is False
+
+    async with clone:
+        assert isinstance(clone.transport, MCPConfigTransport)
+        assert clone.transport.legacy_only is True
+        assert transport.legacy_only is True
+
+    # The resolution is connection-scoped, so it resets on disconnect.
+    assert transport.legacy_only is False
+
+
 async def test_legacy_first_connection_preserves_declared_mount_precedence():
     starts: list[str] = []
     modern = _make_protocol_era_server("modern", starts)
@@ -901,6 +935,39 @@ async def test_remote_config_with_oauth_literal():
     assert isinstance(client.transport.transport.auth, OAuthClientProvider)
 
 
+async def test_remote_config_oauth_survives_new_clone():
+    """A `new()` clone reuses the OAuth provider and its token store.
+
+    Rebuilding a single-server config transport from raw config would construct
+    a second `OAuth` with a fresh `MemoryStore`, losing every token acquired by
+    the source client. Proxy factories call `new()` per request, so that would
+    launch a new interactive authorization flow on every request.
+    """
+    config = {
+        "mcpServers": {
+            "test_server": {
+                "url": "http://localhost:8000",
+                "auth": "oauth",
+            }
+        }
+    }
+    original = Client(config)
+    assert isinstance(original.transport, MCPConfigTransport)
+    assert isinstance(original.transport.transport, StreamableHttpTransport)
+    auth = original.transport.transport.auth
+    assert isinstance(auth, OAuthClientProvider)
+
+    clone = original.new()
+    assert isinstance(clone.transport, MCPConfigTransport)
+    assert clone.transport is not original.transport
+    assert isinstance(clone.transport.transport, StreamableHttpTransport)
+    assert clone.transport.transport.auth is auth
+    # `token_storage_adapter` is assigned by `OAuth._bind()`, after construction.
+    assert getattr(clone.transport.transport.auth, "token_storage_adapter") is getattr(
+        auth, "token_storage_adapter"
+    )
+
+
 def _make_log_server() -> FastMCP:
     app = FastMCP()
 
@@ -1380,6 +1447,327 @@ async def test_multi_server_clone_does_not_close_original_backends():
         assert result.data == 3
 
     assert len(closed) == 4
+
+
+def _two_tracked_add_servers(closed: list[FastMCPTransport]) -> MCPConfig:
+    return MCPConfig(
+        mcpServers={
+            "server1": ClosingInMemoryStdioMCPServer(
+                mcp=_make_add_server(), closed=closed
+            ),
+            "server2": ClosingInMemoryStdioMCPServer(
+                mcp=_make_add_server(), closed=closed
+            ),
+        }
+    )
+
+
+async def test_unconnected_original_close_does_not_close_live_clone_backends():
+    """Closing a never-connected original must leave a live clone's backends alone.
+
+    The symmetric case of #5618: `Client.new()` clones share the original's
+    transport, so a transport-wide backend list lets an unconnected client
+    tear down a connected sibling's backends.
+    """
+    closed: list[FastMCPTransport] = []
+    original = Client(_two_tracked_add_servers(closed))
+    clone = original.new()
+
+    async with clone:
+        result = await clone.call_tool("server1_add", {"a": 1, "b": 2})
+        assert result.data == 3
+
+        await original.close()
+        assert closed == []
+
+        result = await clone.call_tool("server2_add", {"a": 1, "b": 2})
+        assert result.data == 3
+
+    assert len(closed) == 2
+
+
+async def test_unconnected_clone_close_does_not_close_live_original_backends():
+    """Closing a never-connected clone must leave the original's backends alone."""
+    closed: list[FastMCPTransport] = []
+    original = Client(_two_tracked_add_servers(closed))
+    clone = original.new()
+
+    async with original:
+        result = await original.call_tool("server1_add", {"a": 1, "b": 2})
+        assert result.data == 3
+
+        await clone.close()
+        assert closed == []
+
+        result = await original.call_tool("server2_add", {"a": 1, "b": 2})
+        assert result.data == 3
+
+    assert len(closed) == 2
+
+
+async def test_connected_client_close_tears_down_only_its_own_backends():
+    """A connected client's close releases its own backends, not a clone's."""
+    closed: list[FastMCPTransport] = []
+    original = Client(_two_tracked_add_servers(closed))
+    clone = original.new()
+
+    async with original:
+        assert isinstance(original.transport, MCPConfigTransport)
+        original_transports = list(original.transport._transports)
+        assert len(original_transports) == 2
+
+        async with clone:
+            assert isinstance(clone.transport, MCPConfigTransport)
+            clone_transports = list(clone.transport._transports)
+            assert len(clone_transports) == 2
+            assert not set(original_transports) & set(clone_transports)
+
+            await original.close()
+
+            # `close()` tears down the original's current connection; the
+            # clone's still-live backends are untouched.
+            assert set(closed) == set(original_transports)
+            result = await clone.call_tool("server1_add", {"a": 1, "b": 2})
+            assert result.data == 3
+
+        # Leaving the clone releases its own backends too.
+        assert set(closed) == set(original_transports) | set(clone_transports)
+
+
+class ScriptedFastMCPTransport(FastMCPTransport):
+    """In-memory backend whose Nth connect can block forever or fail."""
+
+    def __init__(
+        self,
+        mcp: FastMCP,
+        *,
+        block_call: int | None = None,
+        fail_call: int | None = None,
+        started: asyncio.Event | None = None,
+        closed: list[FastMCPTransport] | None = None,
+    ):
+        super().__init__(mcp=mcp)
+        self.calls = 0
+        self.block_call = block_call
+        self.fail_call = fail_call
+        self.started = started
+        self.closed = closed
+
+    @asynccontextmanager
+    async def connect_session(
+        self,
+        *,
+        transport_options: Any = None,
+        **session_kwargs: Any,
+    ) -> AsyncGenerator[Any, None]:
+        self.calls += 1
+        if self.fail_call is not None and self.calls == self.fail_call:
+            raise RuntimeError("simulated connection failure")
+        if self.block_call is not None and self.calls == self.block_call:
+            assert self.started is not None
+            self.started.set()
+            await asyncio.Event().wait()
+        async with super().connect_session(
+            transport_options=transport_options, **session_kwargs
+        ) as session:
+            yield session
+
+    async def close(self):
+        if self.closed is not None:
+            self.closed.append(self)
+
+
+class ScriptedInMemoryStdioMCPServer(InMemoryStdioMCPServer):
+    """Config entry that hands out one pre-built scripted transport."""
+
+    scripted_transport: Any
+
+    def to_transport(self) -> FastMCPTransport:
+        return self.scripted_transport
+
+
+def _scripted_single_server_client(
+    *,
+    block_call: int | None = None,
+    fail_call: int | None = None,
+    started: asyncio.Event | None = None,
+    closed: list[FastMCPTransport] | None = None,
+) -> Client:
+    return Client(
+        MCPConfig(
+            mcpServers={
+                "only": ScriptedInMemoryStdioMCPServer(
+                    mcp=_make_add_server(),
+                    scripted_transport=ScriptedFastMCPTransport(
+                        mcp=_make_add_server(),
+                        block_call=block_call,
+                        fail_call=fail_call,
+                        started=started,
+                        closed=closed,
+                    ),
+                )
+            }
+        )
+    )
+
+
+async def test_unconnected_original_close_does_not_close_live_single_server_clone():
+    """Single-server configs share their built backend; a close must not disturb it."""
+    closed: list[FastMCPTransport] = []
+    config = MCPConfig(
+        mcpServers={
+            "only": ClosingInMemoryStdioMCPServer(mcp=_make_add_server(), closed=closed)
+        }
+    )
+    original = Client(config)
+    clone = original.new()
+
+    async with clone:
+        result = await clone.call_tool("add", {"a": 1, "b": 2})
+        assert result.data == 3
+
+        await original.close()
+        assert closed == []
+
+        result = await clone.call_tool("add", {"a": 1, "b": 2})
+        assert result.data == 3
+
+
+async def test_clone_close_after_disconnect_does_not_close_live_original():
+    """A clone that connected before must not close a still-live original."""
+    closed: list[FastMCPTransport] = []
+    original = _scripted_single_server_client(closed=closed)
+    clone = original.new()
+
+    async with original:
+        async with clone:
+            result = await clone.call_tool("add", {"a": 1, "b": 2})
+            assert result.data == 3
+
+        # The clone's own context has exited, but the original is still using
+        # the shared single-server backend.
+        await clone.close()
+        assert closed == []
+
+        result = await original.call_tool("add", {"a": 3, "b": 4})
+        assert result.data == 7
+
+
+async def test_stale_clone_close_does_not_close_original_connected_later():
+    """A disconnected clone's close must not reach an original that connects later."""
+    closed: list[FastMCPTransport] = []
+    original = _scripted_single_server_client(closed=closed)
+    clone = original.new()
+
+    async with clone:
+        result = await clone.call_tool("add", {"a": 1, "b": 2})
+        assert result.data == 3
+
+    # The clone has connected and disconnected; only now does the original
+    # connect to the shared backend.
+    async with original:
+        await clone.close()
+        assert closed == []
+
+        result = await original.call_tool("add", {"a": 3, "b": 4})
+        assert result.data == 7
+
+
+async def test_cancelled_clone_connect_does_not_close_live_original():
+    """Cancelling a clone's connect must not release a live original's backend."""
+    started = asyncio.Event()
+    closed: list[FastMCPTransport] = []
+    original = _scripted_single_server_client(
+        block_call=2, started=started, closed=closed
+    )
+    clone = original.new()
+
+    async with original:
+        task = asyncio.create_task(clone.__aenter__())
+        await asyncio.wait_for(started.wait(), timeout=5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert closed == []
+
+        result = await original.call_tool("add", {"a": 1, "b": 2})
+        assert result.data == 3
+
+
+async def test_failed_clone_connect_does_not_close_live_original():
+    """A failed connect leaves nothing for close() to release."""
+    closed: list[FastMCPTransport] = []
+    original = _scripted_single_server_client(fail_call=2, closed=closed)
+    clone = original.new()
+
+    async with original:
+        with pytest.raises(RuntimeError, match="simulated connection failure"):
+            async with clone:
+                pass
+
+        # A failed connect leaves nothing for the transport to release. (Client
+        # close() would re-raise the failed session task first, so exercise the
+        # transport teardown the connection path calls.)
+        assert isinstance(clone.transport, MCPConfigTransport)
+        await clone.transport.close()
+        assert closed == []
+
+        result = await original.call_tool("add", {"a": 1, "b": 2})
+        assert result.data == 3
+
+
+class CustomMCPConfigTransport(MCPConfigTransport):
+    """A public subclass `Client.new()` must preserve rather than flatten."""
+
+    marker = "custom"
+
+
+async def test_new_preserves_mcp_config_transport_subclass():
+    transport = CustomMCPConfigTransport(
+        MCPConfig(
+            mcpServers={
+                "only": InMemoryStdioMCPServer(mcp=_make_add_server()),
+            }
+        )
+    )
+    client = Client(transport)
+
+    clone = client.new()
+
+    assert type(clone.transport) is CustomMCPConfigTransport
+    assert clone.transport is not transport
+    assert clone.transport.marker == "custom"
+    assert clone.transport.config is transport.config
+    # The eagerly-built backend is shared, preserving auth state such as OAuth.
+    assert clone.transport.transport is transport.transport
+    assert clone.transport._transports is not transport._transports
+
+
+async def test_new_shares_request_state_security_across_clones():
+    """MRTR request-state tokens minted by one clone must validate in another.
+
+    `create_proxy(config)` builds a fresh client per request through
+    `Client.new()`, and a guard tool's multi-round-trip can span those clients.
+    The sealing policy is held on the transport for exactly that reason, so a
+    clone must share it rather than mint a new key.
+    """
+    original = Client(
+        MCPConfig(
+            mcpServers={
+                "server1": InMemoryStdioMCPServer(mcp=_make_add_server()),
+                "server2": InMemoryStdioMCPServer(mcp=_make_add_server()),
+            }
+        )
+    )
+    assert isinstance(original.transport, MCPConfigTransport)
+    security = original.transport._request_state_security
+    assert security is not None
+
+    clone = original.new()
+
+    assert isinstance(clone.transport, MCPConfigTransport)
+    assert clone.transport._request_state_security is security
 
 
 async def test_single_server_config_transport():
