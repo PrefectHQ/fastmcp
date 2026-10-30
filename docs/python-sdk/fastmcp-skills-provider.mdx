@@ -1,0 +1,71 @@
+---
+title: provider
+sidebarTitle: provider
+---
+
+# `fastmcp.skills.provider`
+
+
+Provider that serves `Skill` objects defined in code or loaded from any source.
+
+## Classes
+
+### `SkillFileResource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/skills/provider.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+One file of a `Skill`, served with its exact bytes.
+
+
+**Methods:**
+
+#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/skills/provider.py#L45" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+read(self) -> ResourceResult
+```
+
+### `SkillManifestResource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/skills/provider.py#L54" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+The resource-mode `_manifest` listing used by `sync_skills` and `download_skill`.
+
+
+**Methods:**
+
+#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/skills/provider.py#L61" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+read(self) -> str
+```
+
+### `SkillCatalogProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/skills/provider.py#L73" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Serve `Skill` objects as MCP resources and Skills extension entries.
+
+Each skill's files are served under `skill://{path}/`, where `path` defaults
+to the skill's name. Pass a mapping to choose paths; the last path segment
+must equal the skill's name. Every client can read the files as resources,
+and the provider registers `SkillsExtension` so discovery clients can use
+`skills/list` and `skills/get`.
+
+For skills that change at runtime, such as rows in a database, subclass and
+override `load_skills()`. It is called once per MCP request.
+
+
+**Methods:**
+
+#### `required_extensions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/skills/provider.py#L107" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+required_extensions(self) -> Sequence[ServerExtension]
+```
+
+#### `load_skills` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/skills/provider.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+load_skills(self) -> SkillCatalog
+```
+
+Return the skills to serve. Override to load them from another source.
+

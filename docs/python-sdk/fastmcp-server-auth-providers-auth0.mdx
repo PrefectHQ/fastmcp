@@ -45,7 +45,7 @@ Example (Auth for MCP):
 
 ## Classes
 
-### `Auth0Provider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/auth0.py#L61" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Auth0Provider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/auth0.py#L62" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 An Auth0 provider implementation for FastMCP.
@@ -54,7 +54,7 @@ This provider is a complete Auth0 integration that's ready to use with
 just the configuration URL, client ID, client secret, audience, and base URL.
 
 
-### `Auth0JWTVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/auth0.py#L191" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Auth0JWTVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/auth0.py#L196" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 JWT verifier for Auth0 MCP access tokens.
@@ -64,7 +64,7 @@ the ``permissions`` claim. Standard OAuth ``scope``/``scp`` claims are checked
 first; ``permissions`` is included when present.
 
 
-### `Auth0MCPProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/auth0.py#L209" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Auth0MCPProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/auth0.py#L214" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Auth0 resource server provider for Auth for MCP (DCR/CIMD).
@@ -78,7 +78,7 @@ API whose identifier matches this server's resource URL (logged at startup).
 
 **Methods:**
 
-#### `set_mcp_path` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/auth0.py#L286" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_mcp_path` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/auth0.py#L291" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_mcp_path(self, mcp_path: str | None) -> None
@@ -87,7 +87,7 @@ set_mcp_path(self, mcp_path: str | None) -> None
 Bind the default verifier's audience to this server's resource URL.
 
 
-#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/auth0.py#L303" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/auth0.py#L308" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_routes(self, mcp_path: str | None = None) -> list[Route]
