@@ -432,7 +432,7 @@ Standard [identity attributes](https://opentelemetry.io/docs/specs/semconv/attri
 
 | Attribute | Description |
 |-----------|-------------|
-| `enduser.id` | Client ID from access token (when authenticated) |
+| `enduser.id` | Token subject (`sub`) when present, else client ID (when authenticated) |
 | `enduser.scope` | Space-separated OAuth scopes (when authenticated) |
 
 ### FastMCP Custom Attributes
