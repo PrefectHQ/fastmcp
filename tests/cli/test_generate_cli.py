@@ -157,7 +157,7 @@ class TestToolFunctionSource:
             },
         )
         source = _tool_function_source(tool)
-        assert "async def greet(" in source
+        assert "async def tool_greet(" in source
         assert "name: Annotated[str" in source
         assert "= None" not in source
         assert "_call_tool('greet', {'name': name})" in source
@@ -203,7 +203,7 @@ class TestToolFunctionSource:
             input_schema={"properties": {}},
         )
         source = _tool_function_source(tool)
-        assert "async def ping(" in source
+        assert "async def tool_ping(" in source
         assert "_call_tool('ping', {})" in source
 
     def test_preserves_underscores(self):
@@ -215,7 +215,7 @@ class TestToolFunctionSource:
             },
         )
         source = _tool_function_source(tool)
-        assert "async def get_forecast(" in source
+        assert "async def tool_get_forecast(" in source
 
     def test_sanitizes_tool_name(self):
         tool = mcp_types.Tool(
@@ -223,7 +223,7 @@ class TestToolFunctionSource:
             input_schema={"properties": {}},
         )
         source = _tool_function_source(tool)
-        assert "async def my_tool_v2(" in source
+        assert "async def tool_my_tool_v2(" in source
         assert "name='my.tool/v2'" in source
 
     def test_sanitizes_param_name(self):
@@ -453,8 +453,8 @@ class TestGenerateCliScript:
             extra_imports=set(),
             tools=self._make_tools(),
         )
-        assert "async def greet(" in script
-        assert "async def add_numbers(" in script
+        assert "async def tool_greet(" in script
+        assert "async def tool_add_numbers(" in script
 
     def test_contains_generic_commands(self):
         script = generate_cli_script(
@@ -626,8 +626,8 @@ class TestGenerateCliCommand:
         output = tmp_path / "cli.py"
         await generate_cli_command("test-server", str(output))
         content = output.read_text(encoding="utf-8")
-        assert "async def greet(" in content
-        assert "async def add(" in content
+        assert "async def tool_greet(" in content
+        assert "async def tool_add(" in content
 
     @pytest.mark.usefixtures("_patch_client")
     async def test_default_output_path(
@@ -651,7 +651,7 @@ class TestGenerateCliCommand:
         await generate_cli_command("test-server", str(output), force=True)
         content = output.read_text(encoding="utf-8")
         assert content != "existing"
-        assert "async def greet(" in content
+        assert "async def tool_greet(" in content
 
     @pytest.mark.skipif(
         sys.platform == "win32", reason="Unix executable bits N/A on Windows"
