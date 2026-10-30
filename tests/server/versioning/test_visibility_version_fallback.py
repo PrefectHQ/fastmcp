@@ -374,3 +374,122 @@ class TestFallbackRespectsAuth:
         tool = await mcp.get_tool("calc")
         assert tool is not None
         assert tool.version == "1.0"
+
+
+class TestEquivalentVersionSpellings:
+    """PEP 440-equivalent spellings are one version for lookup purposes.
+
+    ``VersionSpec(eq=...)`` matches "1" and "1.0" alike, so an exact lookup
+    answers with the group's deterministic pick. Disabling the other spelling
+    must not leave the listed, enabled component unresolvable.
+    """
+
+    async def test_key_disabled_spelling_does_not_hide_enabled_sibling(self):
+        mcp = FastMCP()
+
+        @mcp.tool(version="1")
+        def calc() -> str:
+            return "one"
+
+        @mcp.tool(version="1.0")
+        def calc() -> str:
+            return "one-zero"
+
+        mcp.disable(keys={"tool:calc@1.0"})
+
+        listed = [(t.name, t.version) for t in await mcp.list_tools()]
+        assert listed == [("calc", "1")]
+
+        tool = await mcp.get_tool("calc")
+        assert tool is not None
+        assert tool.version == "1"
+
+        result = await mcp.call_tool("calc", {})
+        content = result.content[0]
+        assert isinstance(content, TextContent)
+        assert content.text == "one"
+
+    async def test_tag_disabled_spelling_does_not_hide_enabled_sibling(self):
+        mcp = FastMCP()
+
+        @mcp.tool(version="1", tags={"public"})
+        def calc() -> str:
+            return "one"
+
+        @mcp.tool(version="1.0", tags={"internal"})
+        def calc() -> str:
+            return "one-zero"
+
+        mcp.disable(tags={"internal"})
+
+        listed = [(t.name, t.version) for t in await mcp.list_tools()]
+        assert listed == [("calc", "1")]
+
+        tool = await mcp.get_tool("calc")
+        assert tool is not None
+        assert tool.version == "1"
+
+        result = await mcp.call_tool("calc", {})
+        content = result.content[0]
+        assert isinstance(content, TextContent)
+        assert content.text == "one"
+
+    async def test_unversioned_tool_falls_back_when_higher_version_disabled(self):
+        """An unversioned component is not the highest version in a lookup."""
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def calc() -> str:
+            return "local"
+
+        child = FastMCP()
+
+        @child.tool(version="2.0")
+        def calc() -> str:
+            return "child"
+
+        mcp.mount(child)
+        mcp.disable(version=VersionSpec(eq="2.0"))
+
+        listed = [(t.name, t.version) for t in await mcp.list_tools()]
+        assert listed == [("calc", None)]
+
+        tool = await mcp.get_tool("calc")
+        assert tool is not None
+        assert tool.version is None
+
+        result = await mcp.call_tool("calc", {})
+        content = result.content[0]
+        assert isinstance(content, TextContent)
+        assert content.text == "local"
+
+    async def test_duplicate_same_version_resolves_enabled_provider(self):
+        """A disabled duplicate must not shadow an enabled same-version one."""
+        first = FastMCP()
+
+        @first.tool(version="1.0", tags={"a"})
+        def calc() -> str:
+            return "first"
+
+        second = FastMCP()
+
+        @second.tool(version="1.0", tags={"b"})
+        def calc() -> str:
+            return "second"
+
+        mcp = FastMCP()
+        mcp.mount(first)
+        mcp.mount(second)
+        mcp.disable(tags={"a"})
+
+        listed = [(t.name, t.version, sorted(t.tags)) for t in await mcp.list_tools()]
+        assert listed == [("calc", "1.0", ["b"])]
+
+        tool = await mcp.get_tool("calc")
+        assert tool is not None
+        assert tool.tags == {"b"}
+
+        result = await mcp.call_tool("calc", {})
+        content = result.content[0]
+        assert isinstance(content, TextContent)
+        assert content.text == "second"
