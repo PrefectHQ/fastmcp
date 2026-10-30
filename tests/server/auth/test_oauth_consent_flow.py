@@ -16,6 +16,7 @@ import asyncio
 import re
 import secrets
 import time
+from collections.abc import Mapping
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -25,6 +26,7 @@ from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 from starlette.applications import Starlette
+from starlette.requests import Request
 from starlette.testclient import TestClient
 
 from fastmcp.server.auth.auth import AccessToken, TokenVerifier
@@ -710,6 +712,303 @@ class TestConcurrentConsentRenders:
                 },
             )
             assert response.status_code == 302
+
+
+async def _assert_responses_bind_to_transaction(
+    proxy: OAuthProxy, txn_id: str, *set_cookies: Mapping[str, str]
+) -> None:
+    """Each response's binding cookie matches the token the callback checks."""
+    txn = await proxy._transaction_store.get(key=txn_id)
+    assert txn is not None
+    assert txn.consent_token
+    for response_cookies in set_cookies:
+        cookies = "; ".join(f"{k}={v}" for k, v in response_cookies.items())
+        request = Request({"type": "http", "headers": [(b"cookie", cookies.encode())]})
+        assert proxy._verify_consent_binding_cookie(request, txn_id, txn.consent_token)
+
+
+class TestRepeatedConsentSubmit:
+    """Submitting the consent form again after approving it."""
+
+    async def test_resubmitted_approval_redirects_to_upstream_again(
+        self, oauth_proxy_with_storage
+    ):
+        """A double-click on Approve must not end the flow on an error page.
+
+        Approving retires the CSRF token, so a second submit of the same form
+        used to fail with "Invalid or expired consent token". A browser shows
+        the response to the last submit, so the user lands on that error even
+        though the first submit was accepted and the flow is still valid.
+        """
+        txn_id, _ = await _start_flow(
+            oauth_proxy_with_storage,
+            "double-submit-client",
+            "http://localhost:9090/callback",
+        )
+
+        app = Starlette(routes=oauth_proxy_with_storage.get_routes())
+        with TestClient(app, base_url="https://myserver.com") as browser:
+            csrf = _extract_csrf(browser.get(f"/consent?txn_id={txn_id}").text)
+            assert csrf
+            form = {"action": "approve", "txn_id": txn_id, "csrf_token": csrf}
+
+            first = browser.post("/consent", data=form, follow_redirects=False)
+            second = browser.post("/consent", data=form, follow_redirects=False)
+
+            assert first.status_code == 302
+            assert second.status_code == 302
+            assert second.headers["location"] == first.headers["location"]
+
+    async def test_repeat_sent_before_the_first_response_arrives(
+        self, oauth_proxy_with_storage
+    ):
+        """A fast double-click: the repeat leaves before the first response lands.
+
+        It carries the browser's cookies as they were before the approval, so no
+        binding cookie yet, but still the consent-state cookie the approval would
+        have cleared. Whichever response the browser ends up applying, its binding
+        must match the consent token the callback will check.
+        """
+        proxy = oauth_proxy_with_storage
+        txn_id, _ = await _start_flow(
+            proxy, "double-submit-fast", "http://localhost:9090/callback"
+        )
+
+        app = Starlette(routes=proxy.get_routes())
+        with TestClient(app, base_url="https://myserver.com") as browser:
+            csrf = _extract_csrf(browser.get(f"/consent?txn_id={txn_id}").text)
+            assert csrf
+            cookies_before_approval = dict(browser.cookies)
+            form = {"action": "approve", "txn_id": txn_id, "csrf_token": csrf}
+
+            first = browser.post("/consent", data=form, follow_redirects=False)
+
+        with TestClient(
+            app, base_url="https://myserver.com", cookies=cookies_before_approval
+        ) as same_browser_earlier:
+            second = same_browser_earlier.post(
+                "/consent", data=form, follow_redirects=False
+            )
+
+        assert first.status_code == 302
+        assert second.status_code == 302
+        assert second.headers["location"] == first.headers["location"]
+
+        await _assert_responses_bind_to_transaction(
+            proxy, txn_id, first.cookies, second.cookies
+        )
+
+    async def test_overlapping_approvals_bind_to_the_same_token(
+        self, oauth_proxy_with_storage
+    ):
+        """Two submits that both read the CSRF token before either retires it.
+
+        Neither is a repeat as far as the handler can tell, since the token is
+        valid for both. Whichever stores its approval last and whichever
+        response the browser applies last, the binding must still match.
+        """
+        proxy = oauth_proxy_with_storage
+        txn_id, _ = await _start_flow(
+            proxy, "double-submit-overlap", "http://localhost:9090/callback"
+        )
+
+        app = Starlette(routes=proxy.get_routes())
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="https://myserver.com",
+        ) as browser:
+            csrf = _extract_csrf((await browser.get(f"/consent?txn_id={txn_id}")).text)
+            assert csrf
+            form = {"action": "approve", "txn_id": txn_id, "csrf_token": csrf}
+
+            gate = _RenderGate(2)
+            original_get = proxy._consent_csrf_store.get
+
+            async def gated_get(*args, **kwargs):
+                result = await original_get(*args, **kwargs)
+                await gate.wait()
+                return result
+
+            proxy._consent_csrf_store.get = gated_get
+            first, second = await asyncio.gather(
+                browser.post("/consent", data=form),
+                browser.post("/consent", data=form),
+            )
+
+        assert first.status_code == 302
+        assert second.status_code == 302
+        assert second.headers["location"] == first.headers["location"]
+        await _assert_responses_bind_to_transaction(
+            proxy, txn_id, first.cookies, second.cookies
+        )
+
+    @pytest.mark.parametrize("repeat_before_first_response", [True, False])
+    async def test_repeat_of_a_page_rendered_before_the_csrf_store(
+        self, oauth_proxy_with_storage, repeat_before_first_response
+    ):
+        """A form rendered by an older version keeps its token on the transaction.
+
+        That token stays valid after approval unless the approval retires it,
+        and a repeat that still finds it valid would be treated as a fresh
+        approval. The repeat must bind to the same token either way.
+        """
+        proxy = oauth_proxy_with_storage
+        txn_id, _ = await _start_flow(
+            proxy, "double-submit-legacy", "http://localhost:9090/callback"
+        )
+        csrf = "token-rendered-before-upgrade"
+        txn_model = await proxy._transaction_store.get(key=txn_id)
+        assert txn_model is not None
+        txn_model.csrf_token = csrf
+        txn_model.csrf_expires_at = time.time() + 15 * 60
+        await proxy._transaction_store.put(key=txn_id, value=txn_model, ttl=15 * 60)
+
+        app = Starlette(routes=proxy.get_routes())
+        legacy_cookie = {
+            proxy._cookie_name(_CONSENT_STATE_COOKIE_BASE): proxy._encode_list_cookie(
+                [csrf]
+            )
+        }
+        form = {"action": "approve", "txn_id": txn_id, "csrf_token": csrf}
+        with TestClient(
+            app, base_url="https://myserver.com", cookies=legacy_cookie
+        ) as browser:
+            first = browser.post("/consent", data=form, follow_redirects=False)
+            # Before the first response, the repeat carries the cookies the
+            # browser had when it rendered the form.
+            repeater = (
+                TestClient(app, base_url="https://myserver.com", cookies=legacy_cookie)
+                if repeat_before_first_response
+                else browser
+            )
+            second = repeater.post("/consent", data=form, follow_redirects=False)
+
+        assert first.status_code == 302
+        assert second.status_code == 302
+        assert second.headers["location"] == first.headers["location"]
+        await _assert_responses_bind_to_transaction(
+            proxy, txn_id, first.cookies, second.cookies
+        )
+
+    async def test_repeat_remembers_the_client_like_the_approval(
+        self, oauth_proxy_https_remember
+    ):
+        """In "remember" mode the repeat sets the remembered-client cookie too.
+
+        If the browser follows the repeat's response rather than the approval's,
+        the approval's cookie is never applied, and only the repeat can carry it.
+        """
+        proxy = oauth_proxy_https_remember
+        txn_id, _ = await _start_flow(
+            proxy, "double-submit-remember", "http://localhost:9090/callback"
+        )
+
+        app = Starlette(routes=proxy.get_routes())
+        with TestClient(app, base_url="https://myserver.example") as browser:
+            csrf = _extract_csrf(browser.get(f"/consent?txn_id={txn_id}").text)
+            assert csrf
+            cookies_before_approval = dict(browser.cookies)
+            form = {"action": "approve", "txn_id": txn_id, "csrf_token": csrf}
+            browser.post("/consent", data=form, follow_redirects=False)
+
+        with TestClient(
+            app, base_url="https://myserver.example", cookies=cookies_before_approval
+        ) as same_browser_earlier:
+            repeat = same_browser_earlier.post(
+                "/consent", data=form, follow_redirects=False
+            )
+
+        assert repeat.status_code == 302
+        assert "__Host-MCP_APPROVED_CLIENTS" in repeat.cookies
+
+    async def test_spent_token_does_not_approve_an_unapproved_transaction(
+        self, oauth_proxy_with_storage
+    ):
+        """The state cookie alone is not enough: the transaction must be approved.
+
+        A token spent on a denial leaves its state cookie in a browser that sends
+        the request before the denial response arrives, but nothing was approved,
+        so there is nothing to repeat.
+        """
+        txn_id, _ = await _start_flow(
+            oauth_proxy_with_storage,
+            "double-submit-denied-then-approved",
+            "http://localhost:9090/callback",
+        )
+
+        app = Starlette(routes=oauth_proxy_with_storage.get_routes())
+        with TestClient(app, base_url="https://myserver.com") as browser:
+            csrf = _extract_csrf(browser.get(f"/consent?txn_id={txn_id}").text)
+            assert csrf
+            cookies_before_denial = dict(browser.cookies)
+            denied = browser.post(
+                "/consent",
+                data={"action": "deny", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+
+        with TestClient(
+            app, base_url="https://myserver.com", cookies=cookies_before_denial
+        ) as same_browser_earlier:
+            approved = same_browser_earlier.post(
+                "/consent",
+                data={"action": "approve", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+
+        assert denied.status_code == 302
+        assert approved.status_code == 400
+
+    async def test_resubmitted_token_rejected_without_this_browsers_approval(
+        self, oauth_proxy_with_storage
+    ):
+        """Only the browser that approved can repeat the approval.
+
+        The redirect is re-issued on the strength of the consent binding cookie
+        the approval set, not the spent token, so another browser holding that
+        token still gets nothing.
+        """
+        txn_id, _ = await _start_flow(
+            oauth_proxy_with_storage,
+            "double-submit-other-browser",
+            "http://localhost:9090/callback",
+        )
+
+        app = Starlette(routes=oauth_proxy_with_storage.get_routes())
+        with TestClient(app, base_url="https://myserver.com") as approver:
+            csrf = _extract_csrf(approver.get(f"/consent?txn_id={txn_id}").text)
+            assert csrf
+            form = {"action": "approve", "txn_id": txn_id, "csrf_token": csrf}
+            assert (
+                approver.post("/consent", data=form, follow_redirects=False).status_code
+                == 302
+            )
+
+        with TestClient(app, base_url="https://myserver.com") as other:
+            other.get(f"/consent?txn_id={txn_id}")
+            response = other.post("/consent", data=form, follow_redirects=False)
+            assert response.status_code == 400
+            assert "Invalid or expired consent token" in response.text
+
+    async def test_resubmitted_denial_is_still_rejected(self, oauth_proxy_with_storage):
+        """A denial is not repeated: nothing was approved for this browser."""
+        txn_id, _ = await _start_flow(
+            oauth_proxy_with_storage,
+            "double-submit-deny",
+            "http://localhost:9090/callback",
+        )
+
+        app = Starlette(routes=oauth_proxy_with_storage.get_routes())
+        with TestClient(app, base_url="https://myserver.com") as browser:
+            csrf = _extract_csrf(browser.get(f"/consent?txn_id={txn_id}").text)
+            assert csrf
+            form = {"action": "deny", "txn_id": txn_id, "csrf_token": csrf}
+
+            first = browser.post("/consent", data=form, follow_redirects=False)
+            second = browser.post("/consent", data=form, follow_redirects=False)
+
+            assert first.status_code == 302
+            assert second.status_code == 400
 
 
 class TestConsentStateCookieScope:
