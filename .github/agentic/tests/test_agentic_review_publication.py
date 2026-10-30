@@ -550,6 +550,16 @@ def test_existing_review_with_different_feedback_is_not_adopted(endpoint):
     assert len(state["reviews"]) == 1
 
 
+def test_existing_review_with_crlf_feedback_is_adopted(endpoint):
+    state, url, _ = endpoint
+    client = GitHub("test-installation", url)
+    crlf = body().replace("now survives rendering.", "now survives\r\nrendering.")
+    post_review(client, 7, HEAD, BASE, BOT, crlf, lambda: None)
+    state["reviews"][0]["body"] = state["reviews"][0]["body"].replace("\r\n", "\n")
+    receipt = post_review(client, 7, HEAD, BASE, BOT, crlf, lambda: None)
+    assert receipt["status"] == "already_posted"
+
+
 def test_partial_delivery_failure_keeps_already_posted_receipts(monkeypatch):
     @flow
     def controller():
