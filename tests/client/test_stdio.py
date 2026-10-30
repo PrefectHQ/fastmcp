@@ -894,3 +894,72 @@ class TestPythonTransportEnvironment:
             script_path=script, env={"PYTHONUTF8": "0", "EXTRA": "kept"}
         )
         assert custom.env == {"PYTHONUTF8": "0", "EXTRA": "kept"}
+
+
+class TestFastMCPTransportArguments:
+    @pytest.mark.parametrize(
+        ("args", "expected_tail"),
+        [(None, []), ([], []), (["hello"], ["--", "hello"]), ([""], ["--", ""])],
+    )
+    def test_builds_script_arguments(
+        self, tmp_path: Path, args: list[str] | None, expected_tail: list[str]
+    ) -> None:
+        script = tmp_path / "server.py"
+        script.write_text("", encoding="utf-8")
+        original_args = args.copy() if args is not None else None
+
+        transport = FastMCPStdioTransport(script, args=args)
+
+        assert transport.command == "fastmcp"
+        assert transport.args == ["run", str(script), *expected_tail]
+        assert args == original_args
+
+    def test_omitted_arguments_keep_existing_command(self, tmp_path: Path) -> None:
+        script = tmp_path / "server.py"
+        script.write_text("", encoding="utf-8")
+
+        transport = FastMCPStdioTransport(str(script))
+
+        assert transport.args == ["run", str(script)]
+
+    @pytest.mark.client_process
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["hello"],
+            [""],
+            ["--transport", "http", "two words", "", "雪", "--", "--literal"],
+        ],
+    )
+    async def test_script_receives_arguments(
+        self, tmp_path: Path, args: list[str]
+    ) -> None:
+        script = tmp_path / "server with spaces.py"
+        script.write_text(
+            inspect.cleandoc("""
+                import sys
+                from fastmcp import FastMCP
+
+                arguments = sys.argv[1:]
+                mcp = FastMCP()
+
+                @mcp.tool
+                def get_arguments() -> list[str]:
+                    return arguments
+            """),
+            encoding="utf-8",
+        )
+        transport = FastMCPStdioTransport(
+            script,
+            args=args,
+            env={
+                "FASTMCP_SHOW_SERVER_BANNER": "false",
+                "FASTMCP_CHECK_FOR_UPDATES": "off",
+            },
+            keep_alive=False,
+        )
+
+        async with Client(transport) as client:
+            result = await client.call_tool("get_arguments")
+
+        assert result.data == args

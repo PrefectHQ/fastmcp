@@ -339,6 +339,31 @@ class ClientToolsMixin:
         )
 
 
+def _wrapped_result_schema(output_schema: dict[str, Any]) -> dict[str, Any] | bool:
+    """Narrow a wrapped output schema to `properties.result` and keep its defs.
+
+    The server leaves `$defs` and draft-07 `definitions` on the root schema,
+    beside `properties.result`. Validating the inner schema without them makes
+    every local `$ref` resolve to an empty object.
+    """
+    properties = output_schema.get("properties")
+    if not isinstance(properties, dict):
+        return output_schema
+    narrowed = properties.get("result")
+    if isinstance(narrowed, bool):
+        return narrowed
+    if not isinstance(narrowed, dict):
+        return output_schema
+    carried = {
+        key: output_schema[key]
+        for key in ("$defs", "definitions")
+        if key in output_schema and key not in narrowed
+    }
+    if not carried:
+        return narrowed
+    return {**narrowed, **carried}
+
+
 async def _parse_call_tool_result(
     name: str,
     result: mcp_types.CallToolResult,
@@ -403,9 +428,7 @@ async def _parse_call_tool_result(
             output_schema = tool_output_schemas.get(name)
             if output_schema:
                 if wrap_from_meta or output_schema.get("x-fastmcp-wrap-result"):
-                    output_schema = output_schema.get("properties", {}).get(
-                        "result", output_schema
-                    )
+                    output_schema = _wrapped_result_schema(output_schema)
                 type_adapter = json_schema_to_type_adapter(output_schema)
                 data = type_adapter.validate_python(structured_content)
             else:

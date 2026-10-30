@@ -91,12 +91,10 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "feature_label": -1.0,
 }
 
-# Maintainer (or triage-bot) labels are the strongest facts available; each
-# set feeds one component. Override per repository through Config.
+# Labels are ranking hints, not evidence of a human response or a verdict.
+# Override per repository through Config.
 DEFAULT_LABEL_SIGNALS: dict[str, frozenset[str]] = {
-    "dismissed": frozenset(
-        {"invalid", "duplicate", "wontfix", "potential-duplicate", "too-long", "spam"}
-    ),
+    "dismissed": frozenset({"invalid", "duplicate", "wontfix", "spam"}),
     "waiting": frozenset({"needs more info", "needs MRE"}),
     "priority": frozenset({"high-priority", "critical"}),
     "deprioritized": frozenset({"low-priority"}),
@@ -857,9 +855,6 @@ def score_issue(
             "handled": handled,
         }
     )
-    if components.get("dismissed") or components.get("waiting"):
-        # A triage label is a maintainer response.
-        components["neglect"] = 0.0
     if judgment:
         components.update(
             severity=judgment.severity,
@@ -1036,7 +1031,7 @@ PUBLIC_COMPONENTS = {
     "feature": "enhancement request",
     "question": "usage question",
     "dismissed": "existing triage label",
-    "waiting": "waiting for reporter information",
+    "waiting": "information-request label",
     "priority": "priority label",
     "deprioritized": "low-priority label",
     "security_label": "security label",

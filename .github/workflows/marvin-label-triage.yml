@@ -66,6 +66,17 @@ jobs:
           permission-issues: write
           permission-pull-requests: write
 
+      - name: Read repository labels
+        id: repository-labels
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          labels=$(gh api --paginate --slurp "repos/$REPO/labels?per_page=100" \
+            | jq -c 'add | map({name, description})')
+          printf 'labels=%s\n' "$labels" >> "$GITHUB_OUTPUT"
+
       - name: Set triage prompt
         id: triage-prompt
         run: |
@@ -81,7 +92,7 @@ jobs:
             remove: `bash .github/scripts/triage-label.sh remove "label1"`
           - The helper uses the additive REST labels endpoint, so it works for both issues and PRs and never clobbers labels applied by other workflows — notably the Require Issue Link workflow's `missing-issue-link` control label, which must survive or an auto-closed PR won't reopen when its author is assigned.
           - The helper is your ONLY GitHub write access. Do NOT use raw `gh api`, `gh issue edit`, `gh pr edit`, or any other mutation — they are not available to you.
-          - Only apply labels that exist in the repository (from `gh label list` in step 1). Never invent labels.
+          - Only apply labels from the complete repository label list below. Never invent labels.
           - Use `remove` only to correct a label you believe is wrong, and never remove the control labels `missing-issue-link`, `bypass-issue-check`, or `trusted-contributor`.
 
           Issue/PR Information:
@@ -91,8 +102,8 @@ jobs:
 
           TRIAGE PROCESS:
 
-          1. Get available labels:
-             Run: `gh label list`
+          1. Read the available labels and descriptions collected from every repository label page:
+             ${{ steps.repository-labels.outputs.labels }}
 
           2. Retrieve issue/PR details using GitHub tools:
              - mcp__github__get_issue: Get the issue/PR details
@@ -101,7 +112,7 @@ jobs:
 
           3. Analyze and apply labels based on these guidelines:
 
-          CORE CATEGORIES (apply EXACTLY ONE - these are mutually exclusive; skip if applying too-long):
+          CORE CATEGORIES (apply EXACTLY ONE - these are mutually exclusive, including when applying too-long):
           - bug: Reports of broken functionality OR PRs that fix bugs
           - enhancement: New functions/endpoints, improvements to existing features, internal tooling, workflow improvements, minor new capabilities
           - feature: ONLY for major headline functionality worthy of a blog post announcement (2-4 per release, never for issues)
@@ -191,7 +202,7 @@ jobs:
           allowed_non_write_users: "*"
           allowed_bots: "marvin-context-protocol"
           claude_args: |
-            --allowedTools "Bash(gh label list:*)","Bash(bash .github/scripts/triage-label.sh:*)",mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__add_issue_comment,mcp__github__get_pull_request,mcp__github__get_pull_request_files
+            --allowedTools "Bash(bash .github/scripts/triage-label.sh:*)",mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__add_issue_comment,mcp__github__get_pull_request,mcp__github__get_pull_request_files
           settings: |
             {
               "model": "claude-sonnet-5",
@@ -240,8 +251,7 @@ jobs:
                 | map(.tool_input.command // "")
                 | { total: length,
                     granted: map(select(
-                      startswith("gh label list")
-                      or startswith("bash .github/scripts/triage-label.sh")
+                      startswith("bash .github/scripts/triage-label.sh")
                     ))
                   }
                 | "\(.total)\t\(.granted | length)\t\(.granted | join(" | "))"

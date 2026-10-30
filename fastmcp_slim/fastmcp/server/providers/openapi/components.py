@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -10,6 +11,7 @@ import httpx2
 from mcp_types import ToolAnnotations
 from pydantic.networks import AnyUrl
 
+from fastmcp.exceptions import ValidationError
 from fastmcp.resources import (
     Resource,
     ResourceContent,
@@ -18,10 +20,11 @@ from fastmcp.resources import (
 )
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.function_tool import _strict_input_validation
 from fastmcp.utilities.exceptions import is_request_error, is_timeout_error
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import HTTPRoute
-from fastmcp.utilities.openapi.director import RequestDirector
+from fastmcp.utilities.openapi.director import RequestDirector, _prepare_parameter_map
 from fastmcp.utilities.tasks import TaskConfig
 
 if TYPE_CHECKING:
@@ -57,25 +60,43 @@ logger = get_logger(__name__)
 
 # Default MIME type when no response content type can be inferred
 _DEFAULT_MIME_TYPE = "application/json"
+_ERROR_BODY_LIMIT = 1000
+_ERROR_BODY_TRUNCATION = "… (truncated)"
+
+
+def _bounded_error_body(body: str) -> str:
+    """Limit upstream error text included in a tool error."""
+    if len(body) <= _ERROR_BODY_LIMIT:
+        return body
+    return body[:_ERROR_BODY_LIMIT] + _ERROR_BODY_TRUNCATION
 
 
 def _raise_for_status(response: httpx2.Response) -> None:
-    """Raise an OpenAPI-formatted error without relying on client exception types.
-
-    The error is an `httpx2.HTTPStatusError` whatever library the client
-    belongs to, so the server can recognize an upstream error response by its
-    status code.
-    """
+    """Raise an OpenAPI-formatted error with concise upstream details."""
     if 200 <= response.status_code < 300:
         return
 
     error_message = f"HTTP error {response.status_code}: {response.reason_phrase}"
-    try:
-        error_data = response.json()
-        error_message += f" - {error_data}"
-    except (json.JSONDecodeError, ValueError):
-        if response.text:
-            error_message += f" - {response.text}"
+    headers = getattr(response, "headers", {})
+    if 300 <= response.status_code < 400:
+        location = headers.get("location")
+        if location:
+            error_message += f" - Location: {location}"
+
+    content_type = headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    body = getattr(response, "text", "")
+    is_html = content_type in {"text/html", "application/xhtml+xml"}
+    if body and not is_html:
+        try:
+            error_data = response.json()
+        except (json.JSONDecodeError, ValueError):
+            # Some upstreams omit Content-Type, so avoid forwarding obvious HTML.
+            if not body.lstrip().lower().startswith(("<!doctype html", "<html")):
+                error_message += f" - {_bounded_error_body(body)}"
+        else:
+            error_message += (
+                f" - {_bounded_error_body(json.dumps(error_data, ensure_ascii=False))}"
+            )
     raise httpx2.HTTPStatusError(
         error_message, request=response.request, response=response
     )
@@ -85,9 +106,17 @@ async def _send_request(
     client: httpx2.AsyncClient,
     request: httpx2.Request,
 ) -> httpx2.Response:
-    """Send a request while preserving transitional legacy-client errors."""
+    """Send a request, preserving native httpx2 transport errors.
+
+    Native `httpx2` transport errors are re-raised unchanged so the server's
+    actionable error mapping (for example, timeouts) can recognize them.
+    Legacy-httpx clients, still accepted through the deprecation bridge, are
+    normalized to `ValueError` with the original error details.
+    """
     try:
         return await client.send(request)
+    except httpx2.RequestError:
+        raise
     except Exception as exc:
         if is_timeout_error(exc):
             raise ValueError(f"HTTP request timed out ({type(exc).__name__})") from exc
@@ -203,6 +232,17 @@ class OpenAPITool(Tool):
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Execute the HTTP request using RequestDirector."""
+        # The director drops arguments outside its parameter map; strict
+        # servers reject them instead, using the same key set.
+        if _strict_input_validation():
+            _, parameter_map = _prepare_parameter_map(self._route)
+            accepted = {*self.parameters.get("properties", {}), *parameter_map}
+            if unknown := sorted(arguments.keys() - accepted):
+                raise ValidationError(
+                    f"Unknown arguments: {', '.join(unknown)}. "
+                    f"Accepted: {', '.join(sorted(accepted)) or 'none'}",
+                    log_level=logging.WARNING,
+                )
         # Build the request — errors here are programming/schema issues,
         # not HTTP failures, so we catch them separately.
         try:
@@ -233,50 +273,44 @@ class OpenAPITool(Tool):
                 f"{self._route.path}: {type(e).__name__}: {e}"
             ) from e
 
-        # Send the request and process the response.
+        # Send the request and process the response. Transport errors from
+        # httpx2 are left intact for the server's actionable error mapping.
+        logger.debug(
+            f"run - sending request; headers: {_redact_headers(request.headers)}"
+        )
+
+        response = await _send_request(self._client, request)
+        _raise_for_status(response)
+
+        # Try to parse as JSON first
         try:
-            logger.debug(
-                f"run - sending request; headers: {_redact_headers(request.headers)}"
-            )
+            result = response.json()
 
-            response = await _send_request(self._client, request)
-            _raise_for_status(response)
-
-            # Try to parse as JSON first
-            try:
-                result = response.json()
-
-                # Handle structured content based on output schema
-                wrap_result = False
-                if self.output_schema is not None:
-                    if self.output_schema.get("x-fastmcp-wrap-result"):
-                        structured_output = {"result": result}
-                    else:
-                        structured_output = result
-                elif not isinstance(result, dict):
+            # Handle structured content based on output schema
+            wrap_result = False
+            if self.output_schema is not None:
+                if self.output_schema.get("x-fastmcp-wrap-result"):
                     structured_output = {"result": result}
-                    wrap_result = True
                 else:
                     structured_output = result
+            elif not isinstance(result, dict):
+                structured_output = {"result": result}
+                wrap_result = True
+            else:
+                structured_output = result
 
-                # Structured content must be a dict for the MCP protocol.
-                # Wrap non-dict values that slipped through (e.g. a backend
-                # returning an array when the schema declared an object).
-                if not isinstance(structured_output, dict):
-                    structured_output = {"result": structured_output}
+            # Structured content must be a dict for the MCP protocol.
+            # Wrap non-dict values that slipped through (e.g. a backend
+            # returning an array when the schema declared an object).
+            if not isinstance(structured_output, dict):
+                structured_output = {"result": structured_output}
 
-                return ToolResult(
-                    structured_content=structured_output,
-                    meta={"fastmcp": {"wrap_result": True}} if wrap_result else None,
-                )
-            except json.JSONDecodeError:
-                return ToolResult(content=response.text)
-
-        except httpx2.TimeoutException as exc:
-            raise ValueError(f"HTTP request timed out ({type(exc).__name__})") from exc
-
-        except httpx2.RequestError as exc:
-            raise ValueError(f"Request error ({type(exc).__name__}): {exc!s}") from exc
+            return ToolResult(
+                structured_content=structured_output,
+                meta={"fastmcp": {"wrap_result": True}} if wrap_result else None,
+            )
+        except json.JSONDecodeError:
+            return ToolResult(content=response.text)
 
 
 class OpenAPIResource(Resource):
@@ -313,64 +347,53 @@ class OpenAPIResource(Resource):
 
     async def read(self) -> ResourceResult:
         """Fetch the resource data by making an HTTP request."""
-        try:
-            base_url = str(self._client.base_url) or "http://localhost"
-            directed_request = self._director.build(
-                self._route, self._arguments, base_url
+        base_url = str(self._client.base_url) or "http://localhost"
+        directed_request = self._director.build(self._route, self._arguments, base_url)
+        # Build through the configured client so its defaults are applied.
+        request = self._client.build_request(
+            method=directed_request.method,
+            url=str(directed_request.url.copy_with(query=None)),
+            params=list(directed_request.url.params.multi_items()),
+            headers=list(directed_request.headers.raw),
+            # read() materializes streaming bodies (multipart files=)
+            # that .content would refuse with RequestNotRead; idempotent
+            # for plain byte bodies.
+            content=directed_request.read(),
+        )
+        mcp_headers = get_http_headers()
+        if mcp_headers:
+            for key, value in mcp_headers.items():
+                if key not in request.headers:
+                    request.headers[key] = value
+
+        # Transport errors from httpx2 are left intact for the server's
+        # actionable error mapping.
+        response = await _send_request(self._client, request)
+        _raise_for_status(response)
+
+        content_type = response.headers.get("content-type", "").lower()
+        media_type = content_type.split(";")[0].strip()
+
+        # RFC 6839: a "+json" suffix marks a JSON media type
+        if media_type == "application/json" or media_type.endswith("+json"):
+            result = response.json()
+            return ResourceResult(
+                contents=[
+                    ResourceContent(content=json.dumps(result), mime_type=media_type)
+                ]
             )
-            # Build through the configured client so its defaults are applied.
-            request = self._client.build_request(
-                method=directed_request.method,
-                url=str(directed_request.url.copy_with(query=None)),
-                params=list(directed_request.url.params.multi_items()),
-                headers=list(directed_request.headers.raw),
-                # read() materializes streaming bodies (multipart files=)
-                # that .content would refuse with RequestNotRead; idempotent
-                # for plain byte bodies.
-                content=directed_request.read(),
+        elif any(ct in content_type for ct in ["text/", "application/xml"]):
+            return ResourceResult(
+                contents=[
+                    ResourceContent(content=response.text, mime_type=self.mime_type)
+                ]
             )
-            mcp_headers = get_http_headers()
-            if mcp_headers:
-                for key, value in mcp_headers.items():
-                    if key not in request.headers:
-                        request.headers[key] = value
-
-            response = await _send_request(self._client, request)
-            _raise_for_status(response)
-
-            content_type = response.headers.get("content-type", "").lower()
-            media_type = content_type.split(";")[0].strip()
-
-            # RFC 6839: a "+json" suffix marks a JSON media type
-            if media_type == "application/json" or media_type.endswith("+json"):
-                result = response.json()
-                return ResourceResult(
-                    contents=[
-                        ResourceContent(
-                            content=json.dumps(result), mime_type=media_type
-                        )
-                    ]
-                )
-            elif any(ct in content_type for ct in ["text/", "application/xml"]):
-                return ResourceResult(
-                    contents=[
-                        ResourceContent(content=response.text, mime_type=self.mime_type)
-                    ]
-                )
-            else:
-                return ResourceResult(
-                    contents=[
-                        ResourceContent(
-                            content=response.content, mime_type=self.mime_type
-                        )
-                    ]
-                )
-
-        except httpx2.TimeoutException as exc:
-            raise ValueError(f"HTTP request timed out ({type(exc).__name__})") from exc
-
-        except httpx2.RequestError as exc:
-            raise ValueError(f"Request error ({type(exc).__name__}): {exc!s}") from exc
+        else:
+            return ResourceResult(
+                contents=[
+                    ResourceContent(content=response.content, mime_type=self.mime_type)
+                ]
+            )
 
 
 def _path_argument_name(route: HTTPRoute, parameter_name: str) -> str:
