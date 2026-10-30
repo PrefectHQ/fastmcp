@@ -1,16 +1,23 @@
 import hashlib
 import json
 import threading
+from contextlib import nullcontext
 from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from http.client import RemoteDisconnected
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from uuid import uuid4
 
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from prefect import flow
+from prefect.client.orchestration import get_client
+from prefect.testing.utilities import prefect_test_harness
 
+from flows import agentic_review_delivery as delivery
 from flows.agentic_review_app import ReviewApp, review_client
 from flows.agentic_review_publication import (
     before_delivery,
@@ -18,7 +25,9 @@ from flows.agentic_review_publication import (
     post_review,
     review_body,
 )
+from flows.agentic_stack_policy import Batch
 from flows.agentic_stack_publication import GitHub
+from flows.agentic_stack_runtime import Runtime, record
 
 HEAD = "a" * 40
 BASE = "b" * 40
@@ -529,3 +538,106 @@ def test_human_changes_to_posted_bot_review_are_not_hidden(change):
     assert before_delivery(original, [receipt], BOT) != before_delivery(
         current, [receipt], BOT
     )
+
+
+def test_existing_review_with_different_feedback_is_not_adopted(endpoint):
+    state, url, _ = endpoint
+    client = GitHub("test-installation", url)
+    post_review(client, 7, HEAD, BASE, BOT, body(), lambda: None)
+    different = body().replace("now survives rendering", "is still dropped")
+    with pytest.raises(ValueError, match="different review already exists"):
+        post_review(client, 7, HEAD, BASE, BOT, different, lambda: None)
+    assert len(state["reviews"]) == 1
+
+
+def test_existing_review_with_crlf_feedback_is_adopted(endpoint):
+    state, url, _ = endpoint
+    client = GitHub("test-installation", url)
+    crlf = body().replace("now survives rendering.", "now survives\r\nrendering.")
+    post_review(client, 7, HEAD, BASE, BOT, crlf, lambda: None)
+    state["reviews"][0]["body"] = state["reviews"][0]["body"].replace("\r\n", "\n")
+    receipt = post_review(client, 7, HEAD, BASE, BOT, crlf, lambda: None)
+    assert receipt["status"] == "already_posted"
+
+
+def test_partial_delivery_failure_keeps_already_posted_receipts(monkeypatch):
+    @flow
+    def controller():
+        return None
+
+    posted = []
+
+    def post(github, number, head, baseline, reviewer, body, guard):
+        if posted:
+            raise ValueError("Issue or contribution changed after review")
+        posted.append({"pr_number": number, "head_sha": head, "status": "posted"})
+        return posted[-1]
+
+    monkeypatch.setattr(delivery, "review_client", lambda *_: nullcontext())
+    monkeypatch.setattr(delivery, "secret_sync", lambda _: "key")
+    monkeypatch.setattr(delivery, "claim_work", lambda *_: nullcontext())
+    monkeypatch.setattr(delivery, "post_review", post)
+    monkeypatch.setattr(delivery, "owner_alive", lambda *_: None)
+    monkeypatch.setattr(delivery, "review_body", lambda *_: "review")
+    now = datetime.now(UTC)
+    batch = Batch(
+        id="partial",
+        started_at=now,
+        expires_at=now + timedelta(minutes=5),
+        groups=[
+            {
+                "name": "review",
+                "rationale": "Deliver two verified contributions",
+                "base_sha": BASE,
+                "branch": "main",
+                "items": [{"issue_number": 1}],
+            }
+        ],
+    )
+    runtime = Runtime(
+        plans={
+            role: {"flow_id": uuid4(), "version_id": uuid4()}
+            for role in ["assess", "reproduce", "prepare", "review", "triage_review"]
+        },
+        validator_id=uuid4(),
+        source_sha=BASE,
+        publish_reviews=True,
+        reviewer_app={"app_id": 42, "slug": "reviewer", "private_key_block": "k"},
+    )
+    review = {"decision": "review_existing", "reason": "r", "findings": []}
+    prs = [
+        {"number": n, "state": "open", "merged": False, "head_sha": HEAD}
+        for n in (7, 8)
+    ]
+    outcome = {
+        "issue_number": 1,
+        "adversarial_review": review,
+        "triage_review_run_id": "review-run",
+        "verification": [
+            {
+                "pr_number": n,
+                "status": "verification_recorded",
+                "head_sha": HEAD,
+                "baseline_sha": BASE,
+            }
+            for n in (7, 8)
+        ],
+    }
+    with prefect_test_harness(), get_client(sync_client=True) as client:
+        owner = client.create_flow_run(controller).id
+        record.fn(
+            owner,
+            "partial-issue-1-triage-review",
+            {"run_id": "review-run", "result": review},
+        )
+        with pytest.raises((ValueError, RuntimeError)) as failure:
+            delivery.deliver_reviews.fn(
+                owner,
+                batch,
+                batch.groups[0],
+                runtime,
+                outcome,
+                {"prs": prs, "base_sha": BASE},
+            )
+    assert [r["pr_number"] for r in posted] == [7]
+    assert getattr(failure.value, "posted", []) == posted
