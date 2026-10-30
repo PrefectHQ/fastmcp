@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="The deployed FastMCP triage graph: branches, node ports, and the controller that publishes reviews."
+    />
+    <title>FastMCP / triage graph</title>
+    <link rel="stylesheet" href="triage.css" />
+    <script src="triage.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="./">fastmcp <span>/ triage</span></a>
+      <nav aria-label="Site navigation">
+        <a href="./">Backlog</a><a href="operations.html">Maintenance</a
+        ><a href="https://github.com/PrefectHQ/fastmcp/pull/6116">Source</a>
+      </nav>
+    </header>
+    <main>
+      <div class="heading">
+        <div>
+          <p class="eyebrow">Deployed workflow · October 29, 2026</p>
+          <h1>The triage graph</h1>
+        </div>
+        <p class="intro">
+          Assessment chooses a branch. Verification and reproduction return
+          evidence to the finalizer. The controller handles what happens next.
+        </p>
+      </div>
+      <section class="workspace" aria-labelledby="graph-title">
+        <div class="toolbar">
+          <div>
+            <h2 id="graph-title">FastMCP triage</h2>
+            <span class="version">Plan 5aca5f8f · schema 0.2</span>
+          </div>
+          <div class="exports">
+            <button id="expand" type="button" aria-pressed="false">
+              Expand
+            </button>
+            <button id="export-svg" type="button">Export SVG ↗</button
+            ><button id="export-json" type="button">Topology JSON ↓</button>
+          </div>
+        </div>
+        <div
+          class="branches"
+          role="group"
+          aria-label="Highlight an assessment branch"
+        >
+          <span>Trace branch</span
+          ><button data-branch="all" aria-pressed="true">All edges</button
+          ><button data-branch="verify" aria-pressed="false">verify</button
+          ><button data-branch="reproduce" aria-pressed="false">
+            reproduce</button
+          ><button data-branch="record" aria-pressed="false">record</button
+          ><button data-branch="blocked" aria-pressed="false">blocked</button>
+        </div>
+        <div
+          id="canvas"
+          tabindex="0"
+          aria-label="Workflow graph. Drag to pan. Use plus and minus to zoom, zero to fit."
+        >
+          <svg
+            id="graph"
+            xmlns="http://www.w3.org/2000/svg"
+            role="group"
+            aria-labelledby="svg-title svg-description"
+          >
+            <title id="svg-title">
+              FastMCP connected triage execution plan
+            </title>
+            <desc id="svg-description">
+              Three plan inputs feed assessment, verification, reproduction, and
+              finalization. Assessment selects verify, reproduce, record, or
+              blocked. All sixteen declared edges are preserved.
+            </desc>
+          </svg>
+          <div class="canvas-controls" role="group" aria-label="Graph view">
+            <button id="zoom-in" aria-label="Zoom in">+</button
+            ><button id="zoom-out" aria-label="Zoom out">−</button
+            ><button id="fit" aria-label="Fit graph">Fit</button>
+          </div>
+        </div>
+        <div class="canvas-caption">
+          <span
+            ><i class="dot agent"></i>Agent
+            <i class="dot deployment"></i>Deployment
+            <span class="diamond">◇</span>Selects one output</span
+          ><span
+            >Drag to pan · click a node · scroll inside canvas to zoom</span
+          >
+        </div>
+        <div id="inspector" aria-live="polite"></div>
+      </section>
+      <p class="provenance">
+        Nodes, ports, and all 16 edges come from the active Cloud plan. Layout
+        uses ELK, the same engine as Prefect’s graph UI. Node descriptions are
+        shortened here; prompts, credentials, and deployment identifiers are
+        excluded. Branch highlighting shows topology, not a live run.
+      </p>
+      <noscript
+        ><p>
+          This graph needs JavaScript. Its assessment selects verification,
+          reproduction, a recorded decision, or a blocked result. All branches
+          feed the evidence finalizer.
+        </p></noscript
+      >
+      <section class="controller" aria-labelledby="controller-title">
+        <div>
+          <p class="eyebrow">Outside this Cloud plan</p>
+          <h2 id="controller-title">
+            The Python controller owns the write paths
+          </h2>
+          <p>
+            The graph above ends after retaining evidence. The controller claims
+            each issue before invoking it, then reads the result and chooses the
+            next action.
+          </p>
+        </div>
+        <dl>
+          <div>
+            <dt>Existing PR</dt>
+            <dd>
+              Independent triage review → freshness check → reviewer App posts a
+              GitHub <code>COMMENT</code> review.
+            </dd>
+          </div>
+          <div>
+            <dt>Reproduced issue, fix mode</dt>
+            <dd>
+              Prepare patch → validate the exact candidate → independent patch
+              review → publication preflight → draft PR. Failed validation or
+              requested changes can return to preparation once.
+            </dd>
+          </div>
+          <div>
+            <dt>Held work or a maintainer decision</dt>
+            <dd>
+              Retain the reason or proposed action. Assignment, closure, and
+              finishing recommendations await approval. This path does not merge
+              PRs.
+            </dd>
+          </div>
+          <div>
+            <dt>Intake completion</dt>
+            <dd>
+              Check freshness again and commit processed/pending state.
+              Operational records or stale evidence can produce
+              <code>Completed(name="Degraded")</code>.
+            </dd>
+          </div>
+        </dl>
+      </section>
+      <section class="incident" aria-labelledby="degraded-title">
+        <div>
+          <p class="eyebrow">What “Degraded” meant in the recent run</p>
+          <h2 id="degraded-title">
+            The review posted. The final check invalidated it.
+          </h2>
+          <p>
+            The App’s review on PR #5588 mentioned related issues and PRs.
+            GitHub added four cross-reference events. The final intake check
+            treated those events as new evidence and left the issue pending.
+          </p>
+          <p>
+            That is a freshness-check defect. It did not undo the review. The
+            label also covers operational failures, so the word alone cannot
+            tell you which step stopped.
+          </p>
+          <a
+            href="https://github.com/PrefectHQ/fastmcp/pull/5588#pullrequestreview-5692456169"
+            >Read the posted review ↗</a
+          >
+        </div>
+        <div class="receipt">
+          <p>Recorded result · #6034</p>
+          <dl>
+            <div>
+              <dt>Review publication</dt>
+              <dd class="ok">Posted</dd>
+            </div>
+            <div>
+              <dt>Final freshness check</dt>
+              <dd class="warn">Rejected own backlinks</dd>
+            </div>
+            <div>
+              <dt>Intake disposition</dt>
+              <dd class="warn">Pending / Degraded</dd>
+            </div>
+            <div>
+              <dt>Merge or closure</dt>
+              <dd>Neither performed</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+      <footer>
+        <p>
+          Static export of the deployed plan and controller behavior.
+          <a href="https://github.com/PrefectHQ/fastmcp/pull/6144"
+            >Page source</a
+          >
+          ·
+          <a href="https://github.com/PrefectHQ/fastmcp/pull/6116"
+            >Workflow source</a
+          >
+        </p>
+      </footer>
+    </main>
+  </body>
+</html>

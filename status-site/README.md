@@ -5,6 +5,18 @@ The landing page reads `backlog.json`; automation health remains at
 `operations.html` and reads `status.json`. Both use raw GitHub data in production
 so the data can refresh independently of the Pages deployment.
 
+`triage.html` renders the deployed Cloud execution plan's topology and explains
+the surrounding Python controller. The embedded snapshot in `triage.js` retains
+the plan version, semantic hash, nodes, named ports, and edges, with positions
+computed using ELK's layered/rightward layout and fixed port order. This matches
+the graph model used by Prefect's UI; it is not a live run or a screenshot export
+of that UI. SVG and JSON downloads work without credentials or network calls.
+When refreshing the snapshot, compare it with the plan version pinned in the
+deployed controller runtime, not just a similarly named pilot flow. Export only
+topology and model names: exclude prompts, connection IDs, deployment IDs, secret
+references, and run parameters. Update controller explanations against source.
+The page loads no private records, analytics, or third-party assets.
+
 `backlog-status.yml` runs every 30 minutes, retaining the previous snapshot
 series and refreshing creation/latest-closure outcomes from public GitHub
 records. The build job has read-only access; the publisher only copies its
