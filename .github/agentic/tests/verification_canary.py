@@ -60,6 +60,7 @@ with tempfile.TemporaryDirectory(prefix="verification-canary-") as temporary:
     helper = package / "agentic_verification_process.py"
     shutil.copyfile(ROOT / "flows/agentic_verification_process.py", helper)
     (package / "agentic_pr_verification.py").write_text(RUNNER)
+    (package / "agentic_stack_process.py").write_text(RUNNER)
     private = root / "supervisor-private"
     private.write_text("dummy-private-data")
     private.chmod(0o600)
@@ -72,18 +73,24 @@ with tempfile.TemporaryDirectory(prefix="verification-canary-") as temporary:
     module = importlib.util.module_from_spec(module_spec)
     module_spec.loader.exec_module(module)
     spec = Spec({"private_file": str(private), "parent_pid": os.getpid()})
-    for oversized in (False, True):
-        spec.values["oversize"] = oversized
-        run = root / ("large" if oversized else "normal")
-        run.mkdir()
-        try:
-            result = module.isolated_verification(spec, run)
-        except ValueError as error:
-            assert oversized and "exceeds 16 MB" in str(error)
-        else:
-            assert not oversized
-            assert result["status"] == "canary_passed"
-            assert result["execution"]["uid"] == 65534
+    for target in ("contribution", "stack"):
+        for oversized in (False, True):
+            spec.values["oversize"] = oversized
+            run = root / (target + ("-large" if oversized else "-normal"))
+            run.mkdir()
+            try:
+                if target == "contribution":
+                    result = module.isolated_verification(spec, run)
+                else:
+                    result = module.isolated_process(
+                        spec, run, "flows.agentic_stack_process", 10
+                    )
+            except ValueError as error:
+                assert oversized and "exceeds 16 MB" in str(error)
+            else:
+                assert not oversized
+                assert result["status"] == "canary_passed"
+                assert result["execution"]["uid"] == 65534
     print(
         "credential boundary, capabilities, runner ownership, and output bounds passed"
     )

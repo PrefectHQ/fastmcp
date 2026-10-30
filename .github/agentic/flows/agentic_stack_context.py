@@ -162,7 +162,7 @@ def assessment_context(item: dict, read: Read) -> dict:
     for pr in raw.get("prs", []):
         result = fields(
             pr,
-            "number title body state draft merged html_url labels base_ref base_sha head_sha head_repository",
+            "number title body state draft merged html_url labels base_ref base_sha head_sha head_repository canonical_references",
         )
         result["author"] = fields(pr.get("user", {}), "login type")
         result["comments"] = discussion(pr.get("comments", []))

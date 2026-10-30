@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from flows.agentic_backlog import settle
 from flows.agentic_stack import assemble_stack, git
 from flows.agentic_stack_publication import GitHub, reconcile_stack
 from tests.test_agentic_stack import command, probe
@@ -163,6 +164,14 @@ def test_lost_write_response_resumes_same_branches_prs_and_stack(
         result = reconcile_stack(checkout, artifact, api, approved, dict(os.environ))
         assert result["pull_requests"] == [100, 101]
         assert result["stack_number"] == 200
+        issue_numbers = [layer["issue_number"] for layer in artifact["spec"]["layers"]]
+        assert result["issue_numbers"] == issue_numbers
+        pending, completed = settle(
+            [{"issue_number": n, "attempts": 0} for n in issue_numbers],
+            issue_numbers,
+            {"bins": {"stacks": [result], "operational": []}},
+        )
+        assert pending == [] and completed == issue_numbers
         assert server.posts == 3
         assert len(server.prs) == 2
         assert len(server.stacks) == 1
@@ -262,3 +271,29 @@ def test_changed_stack_membership_is_not_repaired_over_human_changes(
             101,
             100,
         ]
+
+
+@pytest.mark.parametrize("lost_response", [False, True])
+def test_single_fix_publishes_one_recoverable_draft_without_stack(
+    tmp_path, repository, lost_response
+):
+    repo, spec = repository
+    spec = spec.model_copy(update={"layers": spec.layers[:1]})
+    with publication(tmp_path, (repo, spec)) as (server, checkout, artifact, api):
+        if lost_response:
+            server.disconnect_after = 1
+            with pytest.raises(RemoteDisconnected):
+                reconcile_stack(checkout, artifact, api, approved, dict(os.environ))
+        result = reconcile_stack(checkout, artifact, api, approved, dict(os.environ))
+        assert result["pull_requests"] == [100]
+        assert "stack_number" not in result
+        assert server.stacks == {}
+        assert server.posts == 1
+        assert server.prs[100]["draft"] is True
+        assert server.prs[100]["base"]["ref"] == "main"
+        assert "Co-authored-by: reporter1" in server.prs[100]["body"]
+        assert (
+            reconcile_stack(checkout, artifact, api, approved, dict(os.environ))
+            == result
+        )
+        assert server.posts == 1

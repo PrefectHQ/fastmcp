@@ -16,13 +16,15 @@ from prefect.client.schemas.objects import State
 from prefect.context import FlowRunContext
 from prefect.states import Completed
 
-from flows.agentic_baseline import review_existing
+from flows.agentic_claims import claim_issues, claim_work
 from flows.agentic_freshness import revalidate
+from flows.agentic_generated_review import deliver_published_reviews, reviewed_stack
 from flows.agentic_intake import policy_outcome, route_intake
 from flows.agentic_native_triage import run_native_triage
+from flows.agentic_reproduction_evidence import validate_reproduction_patch
+from flows.agentic_review_delivery import deliver_reviews
 from flows.agentic_review_queue import retain_review_queue
 from flows.agentic_stack import StackLayer, StackSpec, digest, read_stack_artifact
-from flows.agentic_stack_plans import Review
 from flows.agentic_stack_policy import Batch, Group, publication_revision
 from flows.agentic_stack_publication import GitHub, reconcile_stack
 from flows.agentic_stack_runtime import (
@@ -40,6 +42,7 @@ from flows.agentic_stack_runtime import (
 )
 from flows.agentic_stack_usage import usage_report
 from flows.agentic_triage_records import Admission
+from flows.agentic_triage_review import apply_disposition
 from flows.agentic_validate_patch import fetch_source
 
 
@@ -91,7 +94,7 @@ def start_validation(
         run = client.create_flow_run_from_deployment(
             runtime.validator_id,
             parameters={"spec": spec.model_dump(mode="json")},
-            idempotency_key=f"{batch.id}-{spec.group}-{digest(spec.model_dump(mode='json'))}",
+            idempotency_key=f"fastmcp-validation-{owner}-{digest(spec.model_dump(mode='json'))}",
         )
     record.fn(
         owner,
@@ -99,6 +102,12 @@ def start_validation(
         {"run_id": str(run.id)},
     )
     return run.id
+
+
+class ValidationFailure(RuntimeError):
+    def __init__(self, run_id: UUID, message: str):
+        self.run_id = run_id
+        super().__init__(message)
 
 
 def validate(
@@ -111,6 +120,14 @@ def validate(
         if run["state_type"] in {"COMPLETED", "FAILED", "CRASHED", "CANCELLED"}:
             break
         time.sleep(5)
+    if run["state_type"] == "FAILED":
+        message = (run.get("state") or {}).get("message") or "Validator failed"
+        record(
+            owner,
+            f"{batch.id}-{spec.group}-validation-failed-{run_id}",
+            {"run_id": str(run_id), "message": message[-24000:]},
+        )
+        raise ValidationFailure(run_id, message[-24000:])
     artifact = read_stack_artifact(
         run_id,
         runtime.validator_id,
@@ -134,37 +151,9 @@ def publish(
     review_run_id: str,
     review_parameters: dict,
 ) -> dict:
-    spec = StackSpec.model_validate(review_parameters["context"]["spec"])
-    artifact = read_stack_artifact.fn(
-        validation_run_id,
-        runtime.validator_id,
-        runtime.source_sha,
-        digest(spec.model_dump(mode="json")),
+    spec, artifact, _ = reviewed_stack(
+        runtime, validation_run_id, review_run_id, review_parameters
     )
-    if (
-        artifact["layers"] != review_parameters["context"]["layers"]
-        or str(validation_run_id) != review_parameters["context"]["validation_run_id"]
-    ):
-        raise ValueError("Review does not describe the validated chain")
-    with get_client(sync_client=True) as client:
-        run = client.read_flow_run(UUID(review_run_id))
-        if (
-            run.flow_id != runtime.plans["review"].flow_id
-            or run.parameters != review_parameters
-        ):
-            raise ValueError("Stored review used different inputs")
-    observation = api.fn("GET", f"/flow_runs/{review_run_id}/execution-plan")
-    if observation["status"] != "completed" or observation["snapshot"][
-        "execution_plan_version_id"
-    ] != str(runtime.plans["review"].version_id):
-        raise ValueError("Expected the completed pinned independent review")
-    approval = Review.model_validate(
-        api.fn("GET", f"/flow_runs/{review_run_id}/execution-plan/outputs/result")[
-            "decision"
-        ]
-    )
-    if approval.decision != "approved" or approval.findings:
-        raise ValueError("Independent review did not approve this stack")
     record.fn(
         owner,
         f"{batch.id}-{spec.group}-publication-intent",
@@ -218,6 +207,13 @@ def publish(
         result = reconcile_stack(
             repository, artifact, GitHub(token), guard, environment
         )
+    result.update(
+        {
+            "validation_run_id": str(validation_run_id),
+            "review_run_id": review_run_id,
+            "controller_run_id": str(owner),
+        }
+    )
     record.fn(owner, f"{batch.id}-{spec.group}-published", result)
     return result
 
@@ -254,7 +250,7 @@ def make_spec(batch: Batch, group: Group, items: list[dict], actor: dict) -> Sta
     )
 
 
-def run_batch(batch: Batch, runtime: Runtime) -> dict:
+def batch_owner(batch: Batch, runtime: Runtime) -> UUID:
     context = FlowRunContext.get()
     if context is None or context.flow_run is None:
         raise ValueError("A managed controller run is required")
@@ -269,6 +265,11 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
     if datetime.now(UTC) < batch.started_at:
         raise ValueError("Batch window has not started")
     owner_alive(owner, batch.expires_at)
+    return owner
+
+
+def run_batch(batch: Batch, runtime: Runtime) -> dict:
+    owner = batch_owner(batch, runtime)
     record(
         owner,
         f"{batch.id}-configuration",
@@ -297,6 +298,7 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
     calls = []
 
     def ask(role: str, bundle: dict, payload: dict, key: str) -> tuple[dict, str]:
+        payload["controller_owner"] = str(owner)
         result, run_id = judge(
             role,
             runtime.plans[role],
@@ -380,77 +382,113 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                 if projected is None:
                     projected = assessment_context(item)
                     record(owner, assessment_key, projected)
-                if requested.mode != "fix":
-                    destination, result, native_calls = run_native_triage(
-                        owner,
-                        Admission(
-                            batch=batch,
-                            group=item_group,
-                            requested=requested,
-                            runtime=runtime,
-                            item=item,
-                            request={
-                                "instructions": bundle,
-                                "context": {**projected, "mode": requested.mode},
-                            },
-                            reproduce_request={
-                                "instructions": item_bundles["reproduce_instructions"],
-                                "context": projected,
-                            },
-                        ),
+                destination, result, native_calls, final_evidence = run_native_triage(
+                    owner,
+                    Admission(
+                        batch=batch,
+                        group=item_group,
+                        requested=requested,
+                        runtime=runtime,
+                        item=item,
+                        request={
+                            "instructions": bundle,
+                            "context": {**projected, "mode": requested.mode},
+                        },
+                        reproduce_request={
+                            "instructions": item_bundles["reproduce_instructions"],
+                            "context": projected,
+                        },
+                    ),
+                )
+                calls.extend(native_calls)
+                if result.get("decision") == "reproduced":
+                    proof_digest = digest(
+                        [result["base_sha"], result.get("regression_patch", "")]
                     )
+                    proof_key = f"{batch.id}-issue-{number}-regression-{proof_digest}"
+                    proof = saved(owner, proof_key)
+                    if proof is None:
+                        proof = validate_reproduction_patch(result)
+                        record(owner, proof_key, proof)
+                    result = {**result, "regression_validation": proof}
+                if "triage_review" in runtime.plans and destination in {
+                    "evidence",
+                    "existing_review",
+                    "pruning",
+                }:
+                    if final_evidence != evidence:
+                        review_item = {**item, "evidence": final_evidence}
+                        projected = assessment_context(review_item)
+                        item_bundles = skills(final_evidence["base_sha"])
+                    review, review_run = ask(
+                        "triage_review",
+                        item_bundles["review_instructions"],
+                        {**projected, "outcome": result},
+                        f"issue-{number}-triage-review",
+                    )
+                    mutation_reader = None
+                    if any(
+                        proposed["action"]
+                        in {"close_duplicate", "close_completed", "close_pr"}
+                        for proposed in review.get("recommendations", [])
+                    ):
+                        mutation_github = GitHub(secret_sync("fastmcp-triage-gh-token"))
+
+                        def mutation_reader(endpoint: str) -> dict | None:
+                            value = mutation_github.request(endpoint)
+                            if value is not None and not isinstance(value, dict):
+                                raise ValueError("Expected a closure evidence object")
+                            return value
+
+                    destination, result = apply_disposition(
+                        destination,
+                        result,
+                        review,
+                        review_run,
+                        evidence=final_evidence,
+                        read=mutation_reader,
+                    )
+                    if runtime.publish_reviews and destination == "existing_review":
+                        try:
+                            delivery = deliver_reviews(
+                                owner,
+                                batch,
+                                item_group,
+                                runtime,
+                                result,
+                                final_evidence,
+                            )
+                        except (
+                            ValueError,
+                            RuntimeError,
+                            TimeoutError,
+                            httpx.HTTPError,
+                            OSError,
+                        ) as error:
+                            delivery = {"status": "failed", "reason": str(error)[:1000]}
+                            bins["operational"].append(
+                                {
+                                    "issue_number": number,
+                                    "reason": "Review delivery failed",
+                                    "detail": str(error)[:1000],
+                                }
+                            )
+                        result["review_delivery"] = delivery
+                        result["published_reviews"] = delivery.get("posted", [])
+                if not (
+                    requested.mode == "fix"
+                    and destination == "evidence"
+                    and result.get("decision") == "reproduced"
+                    and route["route"] != "review_existing"
+                ):
                     bins[destination].append(result)
-                    calls.extend(native_calls)
                     continue
-                assessment, _ = ask(
-                    "assess", bundle, projected, f"issue-{number}-assess"
-                )
-                item["assessment"] = assessment
-                if (
-                    route["route"] == "review_existing"
-                    and assessment["decision"] == "existing_review"
-                ):
-                    destination, review = review_existing(
-                        owner,
-                        batch,
-                        item_group,
-                        runtime,
-                        item,
-                        requested.verification_probes,
-                        bundle,
-                        ask,
-                    )
-                    bins[destination].append(review)
-                    continue
-                if (
-                    assessment["decision"] != "reproduce"
-                    or route["route"] == "review_existing"
-                    or requested.mode == "review"
-                ):
-                    destination = {
-                        "prune": "pruning",
-                        "evidence_needed": "evidence",
-                        "existing_review": "existing_review",
-                        "skip": "unchanged",
-                        "environment_failure": "operational",
-                    }.get(assessment["decision"], "decisions")
-                    bins[destination].append({"issue_number": number, **assessment})
-                    continue
-                reproduction, _ = ask(
-                    "reproduce",
-                    item_bundles["reproduce_instructions"],
-                    item,
-                    f"issue-{number}-reproduce",
-                )
-                item["reproduction"] = reproduction
-                if reproduction["decision"] != "reproduced" or requested.mode == "mre":
-                    destination = (
-                        "operational"
-                        if reproduction["decision"] == "environment_failure"
-                        else "evidence"
-                    )
-                    bins[destination].append({"issue_number": number, **reproduction})
-                    continue
+                item["assessment"] = result["assessment"]
+                item["reproduction"] = {
+                    key: value
+                    for key, value in result.items()
+                    if key not in {"issue_number", "assessment"}
+                }
                 prepared, _ = ask(
                     "prepare",
                     bundles["prepare_instructions"],
@@ -483,15 +521,7 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                         "detail": str(error)[:1000],
                     }
                 )
-        if len(ready) < 2:
-            for item in ready:
-                bins["decisions"].append(
-                    {
-                        "issue_number": item["evidence"]["issue"]["number"],
-                        "reason": "A scoped patch is retained, but no coherent second layer is ready",
-                        "preparation": item["preparation"],
-                    }
-                )
+        if not ready:
             record(
                 owner,
                 f"{batch.id}-{group.name}-outcome",
@@ -501,20 +531,32 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
         try:
             for attempt in range(2):
                 spec = make_spec(batch, group, ready, actor)
-                artifact, validation_run = validate(owner, batch, runtime, spec)
-                review_context = {
-                    "spec": spec.model_dump(mode="json"),
-                    "layers": artifact["layers"],
-                    "validation_run_id": str(validation_run),
-                    "items": ready,
-                }
-                review, review_run = ask(
-                    "review",
-                    bundles["review_instructions"],
-                    review_context,
-                    f"{group.name}-review-{attempt}",
-                )
+                try:
+                    artifact, validation_run = validate(owner, batch, runtime, spec)
+                except ValidationFailure as error:
+                    review_run = None
+                    review = {
+                        "decision": "changes_requested",
+                        "reason": "Exact candidate failed deterministic validation",
+                        "findings": [str(error)],
+                        "validation_run_id": str(error.run_id),
+                    }
+                else:
+                    review_context = {
+                        "spec": spec.model_dump(mode="json"),
+                        "layers": artifact["layers"],
+                        "validation_run_id": str(validation_run),
+                        "items": ready,
+                    }
+                    review, review_run = ask(
+                        "review",
+                        bundles["review_instructions"],
+                        review_context,
+                        f"{group.name}-review-{attempt}",
+                    )
                 if review["decision"] == "approved" and not review["findings"]:
+                    if review_run is None:
+                        raise ValueError("Publication requires independent review")
                     result = publish(
                         owner,
                         batch,
@@ -526,6 +568,42 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                             "context": review_context,
                         },
                     )
+                    if runtime.publish_reviews:
+                        try:
+                            result = {
+                                **result,
+                                "review_delivery": deliver_published_reviews(
+                                    owner,
+                                    batch,
+                                    runtime,
+                                    result,
+                                    {
+                                        "instructions": bundles["review_instructions"],
+                                        "context": review_context,
+                                    },
+                                ),
+                            }
+                        except (
+                            ValueError,
+                            RuntimeError,
+                            TimeoutError,
+                            httpx.HTTPError,
+                            OSError,
+                        ) as error:
+                            result = {
+                                **result,
+                                "review_delivery": {
+                                    "status": "failed",
+                                    "reason": str(error)[:1000],
+                                },
+                            }
+                            bins["operational"].append(
+                                {
+                                    "group": group.name,
+                                    "reason": "Generated draft review delivery failed",
+                                    "detail": str(error)[:1000],
+                                }
+                            )
                     bins["stacks"].append(result)
                     break
                 if review["decision"] != "changes_requested" or attempt == 1:
@@ -585,11 +663,18 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
         "agent_runs": calls,
         "usage": usage,
     }
+    proposed_issues = {
+        item["issue_number"]
+        for values in bins.values()
+        for item in values
+        if item.get("mutation_recommendations")
+        and isinstance(item.get("issue_number"), int)
+    }
     branches = {
         item.issue_number: group.branch
         for group in batch.groups
         for item in group.items
-        if item.mode != "fix"
+        if item.mode != "fix" or item.issue_number in proposed_issues
     }
     originals = {}
     for number in branches:
@@ -607,7 +692,22 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
 
 @flow(name="fastmcp-stack-batch", timeout_seconds=7200)
 def stack_batch(batch: Batch, runtime: Runtime) -> dict | State:
-    with tempfile.TemporaryDirectory(prefix="fastmcp-stack-tools-") as temporary:
+    owner = batch_owner(batch, runtime)
+    with (
+        claim_issues(batch, owner),
+        claim_work(["fastmcp-triage-workers"], owner, batch.expires_at, slots=3),
+        tempfile.TemporaryDirectory(prefix="fastmcp-stack-tools-") as temporary,
+    ):
+        record(
+            owner,
+            f"{batch.id}-ownership",
+            {
+                "issues": sorted(
+                    item.issue_number for group in batch.groups for item in group.items
+                ),
+                "owner": str(owner),
+            },
+        )
         intake_tools(Path(temporary))
         result = run_batch(batch, runtime)
         if result["bins"]["operational"]:

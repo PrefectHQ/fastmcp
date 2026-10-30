@@ -23,9 +23,16 @@ class Intake(BaseModel):
         return bool(self.issues or self.pull_requests)
 
     def scope(self) -> str:
+        identity = [
+            self.branch,
+            sorted(set(self.issues)),
+            sorted(set(self.pull_requests)),
+        ]
         if self.queue:
-            return "fastmcp-intake-" + self.queue
-        return "fastmcp-intake-" + digest([self.branch, sorted(set(self.issues))])[:24]
+            if self.scoped():
+                return f"fastmcp-intake-{self.queue}-{digest(identity)[:24]}"
+            return f"fastmcp-intake-{self.queue}-{digest([self.branch])[:12]}"
+        return "fastmcp-intake-" + digest(identity)[:24]
 
 
 REFERENCE = re.compile(
@@ -128,6 +135,9 @@ def settle(
         if name == "operational":
             continue
         for item in items:
+            if name == "stacks" and item.get("status") == "published":
+                seen.update(item.get("issue_numbers", []))
+                continue
             number = item.get("issue_number")
             if item.get("status") in {"stale", "baseline_changed"} or any(
                 check["status"] == "environment_failure"

@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
 
@@ -19,7 +20,8 @@ def run_command(
     directory: Path,
     timeout: int = 900,
     environment_overrides: dict[str, str] | None = None,
-) -> None:
+) -> dict:
+    started = time.monotonic()
     try:
         logger = get_run_logger()
     except MissingContextError:
@@ -45,7 +47,17 @@ def run_command(
         check=False,
     )
     logger.info("%s", result.stdout[-24000:])
-    result.check_returncode()
+    if result.returncode:
+        raise RuntimeError(
+            f"Check exited {result.returncode}: {command!r}\n{result.stdout[-20000:]}"
+        )
+    return {
+        "command": command,
+        "directory": str(directory),
+        "exit_code": result.returncode,
+        "elapsed_seconds": round(time.monotonic() - started, 3),
+        "output": result.stdout[-24000:],
+    }
 
 
 def apply_patch(repository: Path, patch: str) -> list[str]:
@@ -81,24 +93,31 @@ def apply_patch(repository: Path, patch: str) -> list[str]:
     return paths
 
 
-def validate_tree(repository: Path, paths: list[str]) -> None:
+def validate_tree(repository: Path, paths: list[str]) -> list[dict]:
     before = subprocess.check_output(
         ["git", "diff", "HEAD", "--binary"], cwd=repository
     )
-    run_command(["uv", "sync"], repository)
-    run_command(["uv", "run", "pytest", "-n", "auto"], repository, timeout=1200)
-    run_command(["uv", "run", "prek", "run", "--all-files"], repository)
+    checks = [run_command(["uv", "sync"], repository)]
+    checks.append(
+        run_command(["uv", "run", "pytest", "-n", "auto"], repository, timeout=1200)
+    )
+    checks.append(run_command(["uv", "run", "prek", "run", "--all-files"], repository))
     if any(path.startswith("docs/") for path in paths):
-        run_command(["uv", "run", "pytest", "tests/docs", "-n", "0"], repository)
-        run_command(
-            ["npx", "--yes", "mint@latest", "broken-links"], repository / "docs"
+        checks.append(
+            run_command(["uv", "run", "pytest", "tests/docs", "-n", "0"], repository)
         )
-    run_command(["git", "diff", "--check"], repository)
+        checks.append(
+            run_command(
+                ["npx", "--yes", "mint@latest", "broken-links"], repository / "docs"
+            )
+        )
+    checks.append(run_command(["git", "diff", "--check"], repository))
     if (
         subprocess.check_output(["git", "diff", "HEAD", "--binary"], cwd=repository)
         != before
     ):
         raise ValueError("Validation changed the candidate; submit the corrected patch")
+    return checks
 
 
 @task(retries=3, retry_delay_seconds=[2, 5, 10], retry_jitter_factor=1)

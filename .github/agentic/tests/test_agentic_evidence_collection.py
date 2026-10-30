@@ -124,3 +124,20 @@ def test_route_evidence_links_referencing_prs_and_summarizes_keyword_matches(tmp
     full, summary = evidence["prs"]
     assert "reviews" in full and "discussion_collected" not in full
     assert summary["discussion_collected"] is False and "reviews" not in summary
+    publication = subprocess.run(
+        [
+            "bash",
+            str(ROOT / "scripts/collect_fastmcp_stack_evidence.sh"),
+            "2026",
+            "main",
+            "publication",
+        ],
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin"},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert publication.returncode == 0, publication.stderr
+    fresh = json.loads(publication.stdout)
+    assert fresh["prs"] == evidence["prs"]
+    assert fresh["searches"] == evidence["searches"]

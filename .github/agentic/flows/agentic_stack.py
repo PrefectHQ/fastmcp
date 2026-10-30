@@ -20,7 +20,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from flows.agentic_validate_patch import (
     apply_patch,
-    fetch_source,
     install_tools,
     run_command,
     validate_tree,
@@ -66,7 +65,7 @@ class StackSpec(BaseModel):
     created_at: datetime
     publisher_login: str = Field(pattern=r"^[A-Za-z0-9-]+$")
     publisher_id: int = Field(gt=0)
-    layers: list[StackLayer] = Field(min_length=2, max_length=3)
+    layers: list[StackLayer] = Field(min_length=1, max_length=3)
 
     @model_validator(mode="after")
     def check_layers(self) -> StackSpec:
@@ -95,7 +94,7 @@ def digest(value: object) -> str:
 def assemble_stack(
     repository: Path,
     spec: StackSpec,
-    check: Callable[[Path, list[str]], None] = validate_tree,
+    check: Callable[[Path, list[str]], list[dict] | None] = validate_tree,
 ) -> dict:
     if git(repository, "rev-parse", "HEAD") != spec.trunk_sha:
         raise ValueError("Checkout is not the specified trunk revision")
@@ -120,7 +119,7 @@ def assemble_stack(
         tree = git(repository, "write-tree")
         if tree == git(repository, "rev-parse", "HEAD^{tree}"):
             raise ValueError("A stack layer must contain a real change")
-        check(repository, paths)
+        checks = check(repository, paths)
         run_command(["git", "add", "--all"], repository)
         if git(repository, "write-tree") != tree:
             raise ValueError("Validation changed a stack layer")
@@ -145,6 +144,7 @@ def assemble_stack(
         layers.append(
             {
                 "issue_number": layer.issue_number,
+                "checks": checks or [],
                 "branch": branch,
                 "base_ref": base_ref,
                 "parent_sha": parent,
@@ -265,11 +265,9 @@ def validate_stack(spec: StackSpec) -> dict[str, str]:
     with tempfile.TemporaryDirectory(prefix="fastmcp-stack-validation-") as temporary:
         root = Path(temporary)
         install_tools(root / "tools")
-        repository = root / "fastmcp"
-        fetch_source(repository, spec.trunk_sha)
-        run_command(["uv", "sync"], repository)
-        run_command(["uv", "run", "prek", "install"], repository)
-        result = assemble_stack(repository, spec)
+        from flows.agentic_stack_process import isolated_stack_validation
+
+        result = isolated_stack_validation(spec, root)
     artifact_id = save_stack_artifact(spec, result)
     return {
         "artifact_id": artifact_id,

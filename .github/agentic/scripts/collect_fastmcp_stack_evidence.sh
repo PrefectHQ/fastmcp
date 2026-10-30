@@ -9,6 +9,7 @@ search_mode=${3:-route}
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 repo=PrefectHQ/fastmcp
+script_dir=$(cd "$(dirname "$0")" && pwd)
 api() {
   local attempt
   for attempt in 1 2 3; do
@@ -83,35 +84,72 @@ if (($(wc -l < "$scratch/unique-numbers") > 30)); then
   exit 1
 fi
 printf '[]\n' > "$scratch/prs.json"
+collect_prs() {
+  local number
+  while IFS= read -r number; do
+    [[ -n $number ]] || continue
+    api "repos/$repo/pulls/$number" | jq '{number,title,body,state,draft,merged,html_url,updated_at,user:(.user|{id,login,type}),labels:[.labels[].name],base_ref:.base.ref,base_sha:.base.sha,head_ref:.head.ref,head_sha:.head.sha,head_repository:.head.repo.full_name}' > "$scratch/pr.json"
+    if ! grep -qx "$number" "$scratch/linked"; then
+      jq -s '.[0]+[.[1]+{discussion_collected:false}]' "$scratch/prs.json" "$scratch/pr.json" > "$scratch/next.json"
+      mv "$scratch/next.json" "$scratch/prs.json"
+      continue
+    fi
+    pages "repos/$repo/issues/$number/comments" | jq '[.[]|{id,body,html_url,created_at,updated_at,author_association,user:(.user|{id,login,type})}]' > "$scratch/pr-comments.json"
+    pages "repos/$repo/issues/$number/timeline" | jq '[.[]|{id,event,created_at,label,source:(.source|if .==null then null else {type,issue:(.issue|if .==null then null else {number,title,state,html_url,pull_request:(.pull_request!=null),repository:{full_name:.repository.full_name}} end)} end),actor:(.actor|{id,login,type})}]' > "$scratch/pr-timeline.json"
+    pages "repos/$repo/pulls/$number/reviews" | jq '[.[]|{id,state,body,submitted_at,commit_id,html_url,user:(.user|{id,login,type})}]' > "$scratch/pr-reviews.json"
+    pages "repos/$repo/pulls/$number/comments" | jq '[.[]|{id,body,path,line,original_line,commit_id,original_commit_id,created_at,updated_at,html_url,in_reply_to_id,user:(.user|{id,login,type})}]' > "$scratch/pr-review-comments.json"
+    head_sha=$(jq -er '.head_sha' "$scratch/pr.json")
+    pages "repos/$repo/commits/$head_sha/check-runs?filter=latest" '.check_runs' | jq '[.[]|{id,name,head_sha,status,conclusion,details_url,completed_at}]' > "$scratch/pr-checks.json"
+    pages "repos/$repo/commits/$head_sha/statuses" | jq '[.[]|{id,context,state,target_url,created_at,updated_at}]' > "$scratch/pr-statuses.json"
+    jq --slurpfile comments "$scratch/pr-comments.json" --slurpfile timeline "$scratch/pr-timeline.json" \
+      --slurpfile reviews "$scratch/pr-reviews.json" --slurpfile review_comments "$scratch/pr-review-comments.json" \
+      --slurpfile checks "$scratch/pr-checks.json" --slurpfile statuses "$scratch/pr-statuses.json" \
+      '. + {comments:$comments[0],timeline:$timeline[0],reviews:$reviews[0],review_comments:$review_comments[0],checks:$checks[0],statuses:$statuses[0]}' "$scratch/pr.json" > "$scratch/next-pr.json"
+    mv "$scratch/next-pr.json" "$scratch/pr.json"
+    jq -s '.[0]+[.[1]]' "$scratch/prs.json" "$scratch/pr.json" > "$scratch/next.json"
+    mv "$scratch/next.json" "$scratch/prs.json"
+  done < "$1"
+}
+collect_prs "$scratch/unique-numbers"
+jq -f "$script_dir/canonical_pr_references.jq" "$scratch/prs.json" > "$scratch/canonical-references.json"
+jq -nr --slurpfile refs "$scratch/canonical-references.json" --slurpfile prs "$scratch/prs.json" --arg issue "$issue" '
+  [$refs[0][].number | select(tostring != $issue)] - [$prs[0][] | select(.discussion_collected != false) | .number] | unique[]
+' > "$scratch/canonical-candidates"
+if (($(wc -l < "$scratch/canonical-candidates") > 3)); then
+  echo 'More than three canonical PR references; narrow the maintainer discussion before collection' >&2
+  exit 1
+fi
+cat "$scratch/unique-numbers" "$scratch/canonical-candidates" | sort -nu > "$scratch/canonical-total"
+if (($(wc -l < "$scratch/canonical-total") > 30)); then
+  echo 'Canonical references exceed the 30 PR candidate bound' >&2
+  exit 1
+fi
+printf '' > "$scratch/canonical-numbers"
 while IFS= read -r number; do
   [[ -n $number ]] || continue
-  api "repos/$repo/pulls/$number" | jq '{number,title,body,state,draft,merged,html_url,updated_at,user:(.user|{id,login,type}),labels:[.labels[].name],base_ref:.base.ref,base_sha:.base.sha,head_ref:.head.ref,head_sha:.head.sha,head_repository:.head.repo.full_name}' > "$scratch/pr.json"
-  if [[ $search_mode == route ]] && ! grep -qx "$number" "$scratch/linked"; then
-    jq -s '.[0]+[.[1]+{discussion_collected:false}]' "$scratch/prs.json" "$scratch/pr.json" > "$scratch/next.json"
+  api "repos/$repo/issues/$number" > "$scratch/canonical-identity.json"
+  if jq -e --argjson number "$number" --arg repo "$repo" '.number == $number and .pull_request != null and .html_url == ("https://github.com/" + $repo + "/pull/" + ($number|tostring))' "$scratch/canonical-identity.json" >/dev/null; then
+    printf '%s\n' "$number" >> "$scratch/canonical-numbers"
+    jq --argjson number "$number" 'map(select(.number != $number))' "$scratch/prs.json" > "$scratch/next.json"
     mv "$scratch/next.json" "$scratch/prs.json"
-    continue
   fi
-  pages "repos/$repo/issues/$number/comments" | jq '[.[]|{id,body,html_url,created_at,updated_at,user:(.user|{id,login,type})}]' > "$scratch/pr-comments.json"
-  pages "repos/$repo/issues/$number/timeline" | jq '[.[]|{id,event,created_at,label,source:(.source|if .==null then null else {type,issue:(.issue|if .==null then null else {number,title,state,html_url,pull_request:(.pull_request!=null),repository:{full_name:.repository.full_name}} end)} end),actor:(.actor|{id,login,type})}]' > "$scratch/pr-timeline.json"
-  pages "repos/$repo/pulls/$number/reviews" | jq '[.[]|{id,state,body,submitted_at,commit_id,html_url,user:(.user|{id,login,type})}]' > "$scratch/pr-reviews.json"
-  pages "repos/$repo/pulls/$number/comments" | jq '[.[]|{id,body,path,line,original_line,commit_id,original_commit_id,created_at,updated_at,html_url,in_reply_to_id,user:(.user|{id,login,type})}]' > "$scratch/pr-review-comments.json"
-  head_sha=$(jq -er '.head_sha' "$scratch/pr.json")
-  pages "repos/$repo/commits/$head_sha/check-runs?filter=latest" '.check_runs' | jq '[.[]|{id,name,head_sha,status,conclusion,details_url,completed_at}]' > "$scratch/pr-checks.json"
-  pages "repos/$repo/commits/$head_sha/statuses" | jq '[.[]|{id,context,state,target_url,created_at,updated_at}]' > "$scratch/pr-statuses.json"
-  jq --slurpfile comments "$scratch/pr-comments.json" --slurpfile timeline "$scratch/pr-timeline.json" \
-    --slurpfile reviews "$scratch/pr-reviews.json" --slurpfile review_comments "$scratch/pr-review-comments.json" \
-    --slurpfile checks "$scratch/pr-checks.json" --slurpfile statuses "$scratch/pr-statuses.json" \
-    '. + {comments:$comments[0],timeline:$timeline[0],reviews:$reviews[0],review_comments:$review_comments[0],checks:$checks[0],statuses:$statuses[0]}' "$scratch/pr.json" > "$scratch/next-pr.json"
-  mv "$scratch/next-pr.json" "$scratch/pr.json"
+done < "$scratch/canonical-candidates"
+cat "$scratch/canonical-numbers" >> "$scratch/linked"
+collect_prs "$scratch/canonical-numbers"
+jq --slurpfile refs "$scratch/canonical-references.json" '
+  map(. as $pr | [$refs[0][] | select(.number == $pr.number) | del(.number)] as $sources |
+      if $sources|length > 0 then . + {canonical_references:$sources} else . end) | sort_by(.number)
+' "$scratch/prs.json" > "$scratch/next.json"
+mv "$scratch/next.json" "$scratch/prs.json"
+while IFS= read -r number; do
+  jq --argjson number "$number" '.[]|select(.number==$number)' "$scratch/prs.json" > "$scratch/pr.json"
   api "repos/$repo/pulls/$number" | jq -e --slurpfile original "$scratch/pr.json" '
     .updated_at == $original[0].updated_at and .head.sha == $original[0].head_sha and
     .base.ref == $original[0].base_ref and .base.sha == $original[0].base_sha and
     .state == $original[0].state and .draft == $original[0].draft and
     ([.labels[].name]|sort) == ($original[0].labels|sort)
   ' >/dev/null || { echo 'Contribution changed during collection; retry intake' >&2; exit 1; }
-  jq -s '.[0]+[.[1]]' "$scratch/prs.json" "$scratch/pr.json" > "$scratch/next.json"
-  mv "$scratch/next.json" "$scratch/prs.json"
-done < "$scratch/unique-numbers"
+done < <(jq -r '.[]|select(.discussion_collected != false)|.number' "$scratch/prs.json")
 api "repos/$repo/issues/$issue" | jq -e --slurpfile original "$scratch/issue.json" '
   .updated_at == $original[0].updated_at and .state == $original[0].state and
   ([.labels[].name]|sort) == ($original[0].labels|sort) and

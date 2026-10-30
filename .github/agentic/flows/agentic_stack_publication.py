@@ -20,10 +20,13 @@ class GitHub:
         self.token = token
         self.url = url.rstrip("/")
 
-    def request(self, path: str, body: dict | None = None) -> dict | list | None:
+    def request(
+        self, path: str, body: dict | None = None, *, method: str | None = None
+    ) -> dict | list | None:
         request = urllib.request.Request(
             self.url + "/" + path,
             data=json.dumps(body).encode() if body is not None else None,
+            method=method,
             headers={
                 "Authorization": "Bearer " + self.token,
                 "Accept": "application/vnd.github+json",
@@ -33,7 +36,7 @@ class GitHub:
         )
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
-                return json.load(response)
+                return None if response.status == 204 else json.load(response)
         except urllib.error.HTTPError as error:
             if error.code == 404 and body is None:
                 return None
@@ -210,6 +213,17 @@ def reconcile_stack(
         published.append((layer, manifest))
 
     check()
+    receipt = {
+        "status": "published",
+        "group": spec.group,
+        "issue_numbers": [layer.issue_number for layer in spec.layers],
+        "pull_requests": numbers,
+        "pr_urls": links,
+        "spec_sha256": artifact["spec_sha256"],
+        "bundle_sha256": artifact["bundle_sha256"],
+    }
+    if len(numbers) == 1:
+        return receipt
     found: dict[int, dict] = {}
     for number in numbers:
         for stack in github.pages(f"{prefix}/stacks?pull_request={number}"):
@@ -229,11 +243,7 @@ def reconcile_stack(
     verify_stack(stack, spec, numbers, artifact["layers"])
     check()
     return {
-        "status": "published",
+        **receipt,
         "stack_number": stack["number"],
         "stack_api_url": stack["url"],
-        "pull_requests": numbers,
-        "pr_urls": links,
-        "spec_sha256": artifact["spec_sha256"],
-        "bundle_sha256": artifact["bundle_sha256"],
     }
