@@ -3,7 +3,7 @@ import contextlib
 import os
 import shutil
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import TextIO, cast
 
@@ -68,6 +68,7 @@ class StdioTransport(ClientTransport):
 
         self._session: ClientSession | None = None
         self._session_options: TransportOptions | None = None
+        self._session_read_timeout: float | None = None
         self._active_sessions = 0
         self._connect_lock = anyio.Lock()
         self._connect_task: asyncio.Task | None = None
@@ -80,7 +81,7 @@ class StdioTransport(ClientTransport):
         *,
         transport_options: TransportOptions | None = None,
         **session_kwargs: Unpack[SessionKwargs],
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         try:
             await self.connect(transport_options=transport_options, **session_kwargs)
             self._active_sessions += 1
@@ -109,7 +110,13 @@ class StdioTransport(ClientTransport):
             # to a client that wants different ones would silently give it the
             # first client's behavior. Rebuild it when it's idle; refuse when
             # another client is using it, since tearing it down would break them.
-            if self._connect_task is not None and self._session_options != options:
+            # Compare the timeout value, not callback identity: proxy clients
+            # rebind forwarding callbacks for each request on the same transport.
+            if self._connect_task is not None and (
+                self._session_options != options
+                or self._session_read_timeout
+                != session_kwargs.get("read_timeout_seconds")
+            ):
                 if self._active_sessions:
                     raise RuntimeError(
                         "This stdio transport has a live session built for different "
@@ -136,6 +143,7 @@ class StdioTransport(ClientTransport):
             # comparing against an unset value would read it as a mismatch and
             # tear down the connection being established.
             self._session_options = options
+            self._session_read_timeout = session_kwargs.get("read_timeout_seconds")
 
             # start the connection task
             self._connect_task = asyncio.create_task(
@@ -192,6 +200,7 @@ class StdioTransport(ClientTransport):
         self._connect_task = None
         self._session = None
         self._session_options = None
+        self._session_read_timeout = None
         self._stop_event = anyio.Event()
         self._ready_event = anyio.Event()
 
@@ -335,6 +344,11 @@ class PythonStdioTransport(StdioTransport):
         if args:
             full_args.extend(args)
 
+        # mcp.client.stdio spawns the child with a sanitized environment
+        # that drops PYTHONUTF8; default it back so a Windows code page
+        # cannot leak into log_file. An explicit env still wins.
+        env = {"PYTHONUTF8": "1", **(env or {})}
+
         super().__init__(
             command=python_cmd,
             args=full_args,
@@ -347,7 +361,10 @@ class PythonStdioTransport(StdioTransport):
 
 
 class FastMCPStdioTransport(StdioTransport):
-    """Transport for running FastMCP servers using the FastMCP CLI."""
+    """Transport for running FastMCP servers using the FastMCP CLI.
+
+    `args` are passed to the server script, not interpreted as FastMCP CLI options.
+    """
 
     def __init__(
         self,
@@ -364,9 +381,17 @@ class FastMCPStdioTransport(StdioTransport):
         if not str(script_path).endswith(".py"):
             raise ValueError(f"Not a Python script: {script_path}")
 
+        full_args = ["run", str(script_path)]
+        if args:
+            full_args.extend(["--", *args])
+
+        # Same UTF-8 default as PythonStdioTransport: the `fastmcp` command
+        # is a Python entry point with the same sanitized child environment.
+        env = {"PYTHONUTF8": "1", **(env or {})}
+
         super().__init__(
             command="fastmcp",
-            args=["run", str(script_path)],
+            args=full_args,
             env=env,
             cwd=cwd,
             keep_alive=keep_alive,

@@ -10,6 +10,7 @@ exercise the synthesis path directly through the public server API.
 from __future__ import annotations
 
 import pytest
+from mcp_types import TextResourceContents
 
 from fastmcp import Client, FastMCP, FastMCPApp
 
@@ -37,7 +38,7 @@ class TestUserCSPReachesResource:
 
         # Find the synthesized prefab resource for this tool.
         resources = list(await mcp.list_resources())
-        renderer = next((r for r in resources if "prefab/tool" in str(r.uri)), None)
+        renderer = next((r for r in resources if "prefab/renderer" in str(r.uri)), None)
         assert renderer is not None, "no prefab resource was synthesized"
         assert renderer.meta is not None
 
@@ -65,7 +66,7 @@ class TestUserCSPReachesResource:
             return "x"
 
         resources = list(await mcp.list_resources())
-        renderer = next(r for r in resources if "prefab/tool" in str(r.uri))
+        renderer = next(r for r in resources if "prefab/renderer" in str(r.uri))
         assert renderer.meta is not None
         csp = renderer.meta["ui"]["csp"]
 
@@ -115,7 +116,7 @@ class TestDisplayMetaReachesResource:
             return "widget"
 
         resources = list(await mcp.list_resources())
-        renderer = next(r for r in resources if "prefab/tool" in str(r.uri))
+        renderer = next(r for r in resources if "prefab/renderer" in str(r.uri))
         assert renderer.meta is not None
         ui = renderer.meta["ui"]
         assert ui["domain"] == "https://widget.example.com"
@@ -134,7 +135,7 @@ class TestDisplayMetaReachesResource:
             return "widget"
 
         renderer = next(
-            r for r in await mcp.list_resources() if "prefab/tool" in str(r.uri)
+            r for r in await mcp.list_resources() if "prefab/renderer" in str(r.uri)
         )
         assert renderer.meta is not None
         assert renderer.meta["ui"]["prefersBorder"] is False
@@ -147,7 +148,7 @@ class TestDisplayMetaReachesResource:
             return "widget"
 
         renderer = next(
-            r for r in await mcp.list_resources() if "prefab/tool" in str(r.uri)
+            r for r in await mcp.list_resources() if "prefab/renderer" in str(r.uri)
         )
         assert renderer.meta is not None
         assert "domain" not in renderer.meta["ui"]
@@ -175,11 +176,10 @@ class TestDisplayMetaReachesResource:
         assert meta["ui"]["prefersBorder"] is True
 
 
-class TestPerToolURIs:
-    """Each prefab tool gets its own URI — distinct CSP per tool becomes
-    possible because no two tools share a renderer resource."""
+class TestSharedRendererURIs:
+    """Equivalent resource configurations share a renderer URI."""
 
-    async def test_two_tools_get_distinct_uris(self):
+    async def test_two_tools_share_uri(self):
         mcp = FastMCP("test")
 
         @mcp.tool(app=True)
@@ -197,15 +197,15 @@ class TestPerToolURIs:
         assert b.meta is not None
         uri_a = a.meta["ui"]["resourceUri"]
         uri_b = b.meta["ui"]["resourceUri"]
-        assert uri_a != uri_b
-        assert uri_a.startswith("ui://prefab/tool/")
-        assert uri_b.startswith("ui://prefab/tool/")
+        assert uri_a == uri_b
+        assert uri_a.startswith("ui://prefab/renderer/")
+        assert uri_b.startswith("ui://prefab/renderer/")
 
 
 class TestFastMCPAppMounts:
-    """Tools inside FastMCPApps get URIs derived from the app's mount address."""
+    """Tools inside FastMCPApps receive shared renderer resources."""
 
-    async def test_app_tool_uri_uses_address(self):
+    async def test_app_tool_synthesizes_renderer(self):
         app = FastMCPApp("dashboard")
 
         @app.ui()
@@ -216,7 +216,7 @@ class TestFastMCPAppMounts:
         mcp.add_provider(app)
 
         resources = list(await mcp.list_resources())
-        prefab = [r for r in resources if "prefab/tool" in str(r.uri)]
+        prefab = [r for r in resources if "prefab/renderer" in str(r.uri)]
         assert len(prefab) == 1
 
     async def test_namespaced_mount_still_synthesizes_resource(self):
@@ -230,7 +230,7 @@ class TestFastMCPAppMounts:
         mcp.add_provider(app, namespace="customers")
 
         resources = list(await mcp.list_resources())
-        prefab = [r for r in resources if "prefab/tool" in str(r.uri)]
+        prefab = [r for r in resources if "prefab/renderer" in str(r.uri)]
         assert len(prefab) == 1
 
 
@@ -255,6 +255,34 @@ class TestReadResource:
         text = contents[0].text if hasattr(contents[0], "text") else ""
         assert "<html" in text.lower() or "<!doctype" in text.lower()
 
+    async def test_renderer_html_is_built_on_read_not_list(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Listing must not build the renderer page once per tool (#6038)."""
+        calls = 0
+
+        def fake_renderer_html(mode: str | None = None) -> str:
+            nonlocal calls
+            calls += 1
+            return "<!doctype html><html>renderer</html>"
+
+        monkeypatch.setattr("prefab_ui.renderer.get_renderer_html", fake_renderer_html)
+
+        mcp = FastMCP("test")
+        for i in range(3):
+            mcp.tool(name=f"view_{i}", app=True)(lambda: "view")
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            assert len(resources) == 1
+            assert calls == 0
+
+            contents = await client.read_resource(resources[0].uri)
+
+        assert calls == 1
+        assert isinstance(contents[0], TextResourceContents)
+        assert contents[0].text == "<!doctype html><html>renderer</html>"
+
 
 class TestNonPrefabToolsUntouched:
     async def test_plain_tool_has_no_ui_meta(self):
@@ -276,4 +304,4 @@ class TestNonPrefabToolsUntouched:
             return name
 
         resources = list(await mcp.list_resources())
-        assert not any("prefab/tool" in str(r.uri) for r in resources)
+        assert not any("prefab/renderer" in str(r.uri) for r in resources)

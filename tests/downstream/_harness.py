@@ -10,7 +10,7 @@ import tempfile
 import time
 import traceback
 import warnings
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -102,7 +102,7 @@ class Server:
 
 
 @contextmanager
-def serve(transport: str) -> Iterator[Server]:
+def serve(transport: str) -> Generator[Server, None, None]:
     """Run server.py over `http`, `sse`, or `proxy` (HTTP) with bearer auth for the block."""
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -133,7 +133,7 @@ def serve(transport: str) -> Iterator[Server]:
 
 
 @contextmanager
-def quiet(*loggers: str) -> Iterator[None]:
+def quiet(*loggers: str) -> Generator[None, None, None]:
     """Silence loggers that report an interruption a check causes on purpose."""
     saved = {name: logging.getLogger(name).level for name in loggers}
     for name in loggers:
@@ -163,7 +163,7 @@ class Report:
     _transport: str = ""
 
     @contextmanager
-    def transport(self, name: str) -> Iterator[None]:
+    def transport(self, name: str) -> Generator[None, None, None]:
         self._transport = name
         print(
             f"::group::{self.consumer} via {name}"

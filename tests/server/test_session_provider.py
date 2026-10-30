@@ -10,7 +10,7 @@ principal.
 """
 
 import re
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 from uuid import UUID
@@ -56,7 +56,7 @@ def make_token(*, subject: str = "user-a") -> SDKAccessToken:
 
 
 @contextmanager
-def as_principal(token: SDKAccessToken | None) -> Iterator[None]:
+def as_principal(token: SDKAccessToken | None) -> Generator[None, None, None]:
     if token is None:
         yield
         return

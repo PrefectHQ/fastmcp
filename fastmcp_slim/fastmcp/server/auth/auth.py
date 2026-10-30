@@ -6,6 +6,8 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+from joserfc.errors import JoseError
+from joserfc.jws import extract_compact
 from mcp.server.auth.handlers.metadata import MetadataHandler
 from mcp.server.auth.handlers.token import TokenErrorResponse
 from mcp.server.auth.handlers.token import TokenHandler as _SDKTokenHandler
@@ -45,6 +47,7 @@ from mcp.server.auth.settings import (
 )
 from mcp.shared.auth import JWT_BEARER_GRANT_TYPE, OAuthClientInformationFull
 from pydantic import AnyHttpUrl, Field
+from starlette.datastructures import FormData
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import Request
@@ -61,7 +64,7 @@ logger = get_logger(__name__)
 class AccessToken(_SDKAccessToken):
     """AccessToken that includes all JWT claims."""
 
-    claims: dict[str, Any] = Field(default_factory=dict)
+    claims: dict[str, Any] = Field(default_factory=dict)  # ty:ignore[invalid-mutable-override]
     original_client_id: str | None = None
     """Client ID before MultiAuth qualified it with its configured source."""
 
@@ -262,11 +265,28 @@ class PrivateKeyJWTClientAuthenticator(_SDKClientAuthenticator):
         """
         form_data = await request.form()
         client_id = form_data.get("client_id")
+        assertion_type = form_data.get("client_assertion_type")
+        assertion = form_data.get("client_assertion")
+        inferred_client_id = False
 
-        # If client_id is not in form data, delegate to SDK
-        # This handles client_secret_basic which sends credentials in Authorization header
         if not client_id:
-            return await super().authenticate_request(request)
+            if assertion_type != JWT_BEARER_ASSERTION_TYPE:
+                return await super().authenticate_request(request)
+            if not isinstance(assertion, str) or not assertion:
+                raise AuthenticationError("Missing client_assertion")
+            # RFC 7523 identifies the client in sub; use it only for lookup.
+            # Signature and claims are still verified against that client's JWKS.
+            try:
+                compact = extract_compact(assertion.encode())
+                if not isinstance(compact.protected, dict):
+                    raise ValueError("Invalid assertion header")
+                claims = json.loads(compact.payload)
+            except (JoseError, ValueError, TypeError) as e:
+                raise AuthenticationError("Invalid client assertion") from e
+            client_id = claims.get("sub") if isinstance(claims, dict) else None
+            if not isinstance(client_id, str) or not client_id:
+                raise AuthenticationError("Missing client assertion subject")
+            inferred_client_id = True
 
         client = await self.provider.get_client(str(client_id))
         if not client:
@@ -275,9 +295,6 @@ class PrivateKeyJWTClientAuthenticator(_SDKClientAuthenticator):
         # Handle private_key_jwt authentication for CIMD clients
         if client.token_endpoint_auth_method == "private_key_jwt":
             # Validate assertion parameters
-            assertion_type = form_data.get("client_assertion_type")
-            assertion = form_data.get("client_assertion")
-
             if assertion_type != JWT_BEARER_ASSERTION_TYPE:
                 raise AuthenticationError(
                     f"Invalid client_assertion_type: expected {JWT_BEARER_ASSERTION_TYPE}"
@@ -296,7 +313,16 @@ class PrivateKeyJWTClientAuthenticator(_SDKClientAuthenticator):
             except ValueError as e:
                 raise AuthenticationError(f"Invalid client assertion: {e}") from e
 
+            if inferred_client_id:
+                # The SDK's token request models require client_id in the form,
+                # even when RFC 7523 authentication supplied it through sub.
+                request._form = FormData(
+                    [*form_data.multi_items(), ("client_id", str(client_id))]
+                )
             return client
+
+        if inferred_client_id:
+            raise AuthenticationError("Client does not use private_key_jwt")
 
         # Delegate to SDK for other authentication methods
         return await super().authenticate_request(request)

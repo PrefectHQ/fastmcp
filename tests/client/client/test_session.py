@@ -1,7 +1,7 @@
 """Client session and task error propagation tests."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -23,7 +23,7 @@ class _FailingTransport(ClientTransport):
     @asynccontextmanager
     async def connect_session(
         self, **session_kwargs: Any
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         raise self._exception
         yield
 

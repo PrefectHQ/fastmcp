@@ -8,6 +8,7 @@ import sys
 import warnings
 from pathlib import Path
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit, urlunsplit
 
 import cyclopts
 import mcp_types
@@ -30,6 +31,8 @@ from fastmcp.client.transports.base import ClientTransport
 from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.sse import SSETransport
 from fastmcp.client.transports.stdio import StdioTransport
+from fastmcp.skills.client import SkillsClientExtension
+from fastmcp.skills.models import MCPSkill
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger("cli.client")
@@ -64,9 +67,10 @@ def resolve_server_spec(
     Exactly one of ``server_spec`` or ``command`` should be provided.
 
     Resolution order for ``server_spec``:
-    1. URLs (``http://``, ``https://``) — passed through as-is.
-       If ``--transport`` is ``sse``, the URL is rewritten to end with ``/sse``
-       so ``infer_transport`` picks the right transport.
+    1. URLs (``http://``, ``https://``) — passed through as-is unless an
+       explicit transport is selected. In that case, the selected transport
+       is constructed directly; SSE URLs are rewritten to end with ``/sse``
+       while preserving their query and fragment.
     2. Existing file paths, or strings ending in ``.py``/``.js``/``.json``.
     3. Anything else — name-based resolution via ``resolve_name``.
 
@@ -94,8 +98,15 @@ def resolve_server_spec(
 
     # 1. URL
     if spec.startswith(("http://", "https://")):
-        if transport == "sse" and not spec.rstrip("/").endswith("/sse"):
-            spec = spec.rstrip("/") + "/sse"
+        if transport == "sse":
+            parsed = urlsplit(spec)
+            path = parsed.path
+            if not path.rstrip("/").endswith("/sse"):
+                path = f"{path.rstrip('/')}/sse"
+            spec = urlunsplit(parsed._replace(path=path))
+            return SSETransport(spec)
+        if transport == "http":
+            return StreamableHttpTransport(spec)
         return spec
 
     # 2. File path (must be a file, not a directory)
@@ -199,7 +210,9 @@ async def _terminal_elicitation_handler(
     """
     from mcp_types import ElicitRequestFormParams
 
-    console.print(f"\n[bold yellow]Server asks:[/bold yellow] {message}")
+    console.print(
+        f"\n[bold yellow]Server asks:[/bold yellow] {_sanitize_untrusted_text(message)}"
+    )
 
     if not isinstance(params, ElicitRequestFormParams):
         answer = console.input(
@@ -227,9 +240,12 @@ async def _terminal_elicitation_handler(
 
     result: dict[str, Any] = {}
     for field_name, field_schema in properties.items():
-        type_hint = field_schema.get("type", "string")
+        type_hint = _sanitize_untrusted_text(str(field_schema.get("type", "string")))
         req_marker = " [red]*[/red]" if field_name in required else ""
-        prompt_text = f"  [cyan]{field_name}[/cyan] ({type_hint}){req_marker}: "
+        prompt_text = (
+            f"  [cyan]{_sanitize_untrusted_text(field_name)}[/cyan] "
+            f"({type_hint}){req_marker}: "
+        )
 
         raw = console.input(prompt_text)
         if raw.strip().lower() == "decline":
@@ -250,11 +266,13 @@ def _build_client(
     *,
     timeout: float | None = None,
     auth: str | None = None,
+    skills: bool = False,
 ) -> Client:
     """Build a ``Client`` from a resolved server spec.
 
     Applies ``auth='oauth'`` automatically for HTTP-based targets unless
-    the caller explicitly passes ``--auth none`` to disable it.
+    the caller explicitly passes ``--auth none`` to disable it. ``skills=True``
+    opts the client into the Skills extension.
 
     ``auth=None`` means "not specified" (use default), ``auth="none"``
     means "explicitly disabled".
@@ -309,6 +327,7 @@ def _build_client(
             timeout=timeout,
             auth=effective_auth,
             elicitation_handler=_terminal_elicitation_handler,
+            extensions=[SkillsClientExtension()] if skills else None,
         )
 
 
@@ -741,6 +760,10 @@ async def list_command(
         bool,
         cyclopts.Parameter("--prompts", help="Also list prompts"),
     ] = False,
+    skills: Annotated[
+        bool,
+        cyclopts.Parameter("--skills", help="Also list Skills extension entries"),
+    ] = False,
     input_schema: Annotated[
         bool,
         cyclopts.Parameter("--input-schema", help="Show full input schemas"),
@@ -772,14 +795,22 @@ async def list_command(
         fastmcp list server.py
         fastmcp list mcp.json --json
         fastmcp list --command 'npx -y @mcp/server' --resources
+        fastmcp list server.py --skills
         fastmcp list http://server/mcp --transport sse
     """
 
     resolved = resolve_server_spec(server_spec, command=command, transport=transport)
     try:
-        client = _build_client(resolved, timeout=timeout, auth=auth)
+        client = _build_client(resolved, timeout=timeout, auth=auth, skills=skills)
         async with client:
             tools = await client.list_tools()
+            skill_entries: list[MCPSkill] = []
+            skills_unavailable: str | None = None
+            if skills:
+                try:
+                    skill_entries = await client.list_skills()
+                except RuntimeError as exc:
+                    skills_unavailable = str(exc)
 
             if json_output:
                 data: dict[str, Any] = {"tools": _tools_to_json(tools)}
@@ -803,6 +834,11 @@ async def list_command(
                             "arguments": [a.model_dump() for a in (p.arguments or [])],
                         }
                         for p in prm
+                    ]
+                if skills:
+                    data["skills"] = [
+                        entry.model_dump(mode="json", by_alias=True, exclude_none=True)
+                        for entry in skill_entries
                     ]
                 console.print_json(json.dumps(data))
                 return
@@ -858,6 +894,27 @@ async def list_command(
                     )
                     if p.description:
                         console.print(f"    {_sanitize_untrusted_text(p.description)}")
+                console.print()
+
+            if skills:
+                console.print(f"[bold]Skills ({len(skill_entries)})[/bold]")
+                console.print()
+                if skills_unavailable:
+                    console.print(f"  [dim]{skills_unavailable}[/dim]")
+                elif not skill_entries:
+                    console.print("  [dim]No skills found.[/dim]")
+                for entry in skill_entries:
+                    console.print(
+                        f"  [cyan]{_sanitize_untrusted_text(entry.uri)}[/cyan]"
+                    )
+                    description = entry.frontmatter.description
+                    console.print(f"    {_sanitize_untrusted_text(description)}")
+                    if isinstance(entry.resources, list):
+                        for resource in entry.resources:
+                            line = f"{resource.uri} ({resource.size} bytes)"
+                            console.print(
+                                f"    [dim]{_sanitize_untrusted_text(line)}[/dim]"
+                            )
                 console.print()
 
     except Exception as exc:

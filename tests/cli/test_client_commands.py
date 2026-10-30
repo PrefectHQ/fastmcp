@@ -20,6 +20,7 @@ from fastmcp.cli.client import (
     _format_call_result_text,
     _is_http_target,
     _sanitize_untrusted_text,
+    _terminal_elicitation_handler,
     call_command,
     coerce_value,
     format_tool_signature,
@@ -29,6 +30,7 @@ from fastmcp.cli.client import (
 )
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.client import CallToolResult
+from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.sse import SSETransport
 from fastmcp.client.transports.stdio import StdioTransport
 from fastmcp.mcp_config import RemoteMCPServer
@@ -354,19 +356,45 @@ class TestResolveServerSpec:
 
     def test_transport_sse_rewrites_url(self):
         result = resolve_server_spec("http://localhost:8000/mcp", transport="sse")
-        assert result == "http://localhost:8000/mcp/sse"
+        assert isinstance(result, SSETransport)
+        assert result.url == "http://localhost:8000/mcp/sse"
 
     def test_transport_sse_no_duplicate_suffix(self):
         result = resolve_server_spec("http://localhost:8000/sse", transport="sse")
-        assert result == "http://localhost:8000/sse"
+        assert isinstance(result, SSETransport)
+        assert result.url == "http://localhost:8000/sse"
 
     def test_transport_sse_trailing_slash(self):
         result = resolve_server_spec("http://localhost:8000/mcp/", transport="sse")
-        assert result == "http://localhost:8000/mcp/sse"
+        assert isinstance(result, SSETransport)
+        assert result.url == "http://localhost:8000/mcp/sse"
 
     def test_transport_http_leaves_url_unchanged(self):
         result = resolve_server_spec("http://localhost:8000/mcp", transport="http")
-        assert result == "http://localhost:8000/mcp"
+        assert isinstance(result, StreamableHttpTransport)
+        assert result.url == "http://localhost:8000/mcp"
+
+    @pytest.mark.parametrize("transport", ["http", "sse"])
+    def test_explicit_transport_preserves_query_and_fragment(self, transport):
+        result = resolve_server_spec(
+            "https://example.test/mcp?token=abc#section", transport=transport
+        )
+        if transport == "sse":
+            assert isinstance(result, SSETransport)
+            assert result.url == "https://example.test/mcp/sse?token=abc#section"
+        else:
+            assert isinstance(result, StreamableHttpTransport)
+            assert result.url == "https://example.test/mcp?token=abc#section"
+
+    def test_explicit_http_overrides_sse_path(self):
+        result = resolve_server_spec("https://example.test/sse", transport="http")
+        assert isinstance(result, StreamableHttpTransport)
+        assert result.url == "https://example.test/sse"
+
+    def test_no_explicit_transport_preserves_inference(self):
+        assert resolve_server_spec("https://example.test/sse?token=abc") == (
+            "https://example.test/sse?token=abc"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -824,3 +852,47 @@ class TestSanitizeUntrustedText:
         value = "[bold]hello[/bold]\x07"
         sanitized = _sanitize_untrusted_text(value)
         assert sanitized == "\\[bold]hello\\[/bold]\\x07"
+
+
+class TestTerminalElicitationHandler:
+    @pytest.fixture(autouse=True)
+    def _press_enter(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr("builtins.input", lambda *args: "")
+
+    @staticmethod
+    def _params(message: str, field: dict[str, Any], name: str = "answer"):
+        return mcp_types.ElicitRequestFormParams(
+            message=message,
+            requested_schema={"type": "object", "properties": {name: field}},
+        )
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Deploy to production? [y/N]",
+            "Branch to deploy [main]",
+            "Tag format is v[/]MAJOR",
+        ],
+    )
+    async def test_message_is_printed_verbatim(
+        self, message: str, capsys: pytest.CaptureFixture[str]
+    ):
+        result = await _terminal_elicitation_handler(
+            message, None, self._params(message, {"type": "string"}), None
+        )
+
+        assert result.action == "accept"
+        assert f"Server asks: {message}" in capsys.readouterr().out
+
+    @pytest.mark.parametrize(
+        ("field_name", "field_type"),
+        [("name[bold]", "string"), ("tag", "string[/]")],
+    )
+    async def test_field_prompt_is_printed_verbatim(
+        self, field_name: str, field_type: str, capsys: pytest.CaptureFixture[str]
+    ):
+        params = self._params("Pick one", {"type": field_type}, name=field_name)
+
+        await _terminal_elicitation_handler("Pick one", None, params, None)
+
+        assert f"  {field_name} ({field_type}): " in capsys.readouterr().out

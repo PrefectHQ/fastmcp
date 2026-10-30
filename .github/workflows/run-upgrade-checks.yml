@@ -32,7 +32,7 @@ jobs:
         uses: ./.github/actions/setup-gitleaks
 
       - name: Run prek
-        uses: j178/prek-action@v3.0.0
+        uses: j178/prek-action@v3.0.1
         env:
           SKIP: no-commit-to-branch
 

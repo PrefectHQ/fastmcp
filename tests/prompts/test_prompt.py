@@ -2,10 +2,12 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
-from mcp_types import EmbeddedResource, TextResourceContents
+from mcp import MCPError
+from mcp_types import INVALID_PARAMS, EmbeddedResource, TextResourceContents
 from pydantic import Field
 
 from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ValidationError
 from fastmcp.prompts.base import (
     Message,
     Prompt,
@@ -61,7 +63,9 @@ class TestRenderPrompt:
             return f"Hello, {name}! You're {age} years old."
 
         prompt = Prompt.from_function(fn)
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValidationError, match="Missing required arguments: {'name'}"
+        ):
             await prompt.render(arguments=dict(age=40))
 
     async def test_fn_with_positional_only_parameters_not_allowed(self):
@@ -824,6 +828,27 @@ class TestInternalMetaNotLeaked:
         assert result.meta is not None
         assert result.meta["team"] == "infra"
         assert result.meta["fastmcp"] == {"owner": "docs"}
+
+
+class TestMissingRequiredArguments:
+    """Omitting a required argument is a client error, not a server fault."""
+
+    @pytest.mark.parametrize("mask_error_details", [False, True])
+    async def test_get_prompt_missing_required_argument_is_invalid_params(
+        self, mask_error_details: bool
+    ):
+        mcp = FastMCP(mask_error_details=mask_error_details)
+
+        @mcp.prompt
+        def summarize(topic: str) -> str:
+            return f"Summarize {topic}"
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError) as exc_info:
+                await client.get_prompt("summarize", {})
+
+        assert exc_info.value.error.code == INVALID_PARAMS
+        assert exc_info.value.error.message == "Missing required arguments: {'topic'}"
 
 
 class TestPromptFieldDefaults:
