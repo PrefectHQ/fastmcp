@@ -16,10 +16,10 @@ for our specific use case.
 
 ## Functions
 
-### `convert_openapi_schema_to_json_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/openapi/json_schema_converter.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `convert_openapi_schema_to_json_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/openapi/json_schema_converter.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-convert_openapi_schema_to_json_schema(schema: dict[str, Any], openapi_version: str | None = None, remove_read_only: bool = False, remove_write_only: bool = False, convert_one_of_to_any_of: bool = True) -> dict[str, Any]
+convert_openapi_schema_to_json_schema(schema: dict[str, Any], openapi_version: str | None = None, remove_read_only: bool = False, remove_write_only: bool = False, convert_one_of_to_any_of: bool = True, definitions: dict[str, Any] | None = None) -> dict[str, Any]
 ```
 
 
@@ -30,7 +30,8 @@ This is a clean, systematic approach that:
 2. Converts nullable fields to type arrays (for OpenAPI 3.0 only)
 3. Converts oneOf to anyOf for overlapping union handling
 4. Recursively processes nested schemas
-5. Optionally removes readOnly/writeOnly properties
+5. Optionally removes readOnly/writeOnly properties (see
+   ``_filter_properties_by_access`` for the exact semantics)
 
 **Args:**
 - `schema`: OpenAPI schema dictionary
@@ -38,12 +39,15 @@ This is a clean, systematic approach that:
 - `remove_read_only`: Whether to remove readOnly properties
 - `remove_write_only`: Whether to remove writeOnly properties
 - `convert_one_of_to_any_of`: Whether to convert oneOf to anyOf
+- `definitions`: Unconverted schemas that local ``#/$defs/...`` references
+resolve against when deciding which properties to remove. Defaults
+to the schema's own ``$defs``.
 
 **Returns:**
 - JSON Schema-compatible dictionary
 
 
-### `convert_schema_definitions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/openapi/json_schema_converter.py#L328" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `convert_schema_definitions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/openapi/json_schema_converter.py#L404" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 convert_schema_definitions(schema_definitions: dict[str, Any] | None, openapi_version: str | None = None, **kwargs) -> dict[str, Any]

@@ -1,5 +1,6 @@
 """Tests for docstring-to-schema parameter description extraction."""
 
+import inspect
 from typing import Annotated
 
 from pydantic import Field
@@ -284,6 +285,73 @@ class TestEdgeCases:
         # filtering happens at the schema injection level
         assert parsed.parameters == {"nonexistent": "Wrong param name."}
 
+    def test_returns_section_excluded_no_params(self):
+        """A parameterless function's Returns section must not bleed into
+        the description, same as it doesn't for functions with Args."""
+
+        def fn() -> dict[str, bool]:
+            """Return current status.
+
+            Returns:
+                A dict containing the current status.
+            """
+            return {"ok": True}
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Return current status."
+        assert parsed.parameters == {}
+
+    def test_raises_section_excluded_no_params(self):
+        def fn() -> None:
+            """Do a thing.
+
+            Raises:
+                ValueError: If something goes wrong.
+            """
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Do a thing."
+        assert parsed.parameters == {}
+
+    def test_example_section_excluded_no_params(self):
+        def fn() -> int:
+            """Do a thing.
+
+            Example:
+                fn()
+            """
+            return 1
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Do a thing."
+        assert parsed.parameters == {}
+
+    def test_numpy_returns_section_excluded_no_params(self):
+        def fn() -> int:
+            """Do a thing.
+
+            Returns
+            -------
+            int
+                The answer.
+            """
+            return 1
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Do a thing."
+        assert parsed.parameters == {}
+
+    def test_prose_without_sections_unchanged_no_params(self):
+        def fn() -> int:
+            """Do a thing.
+
+            Then do another thing, with no section headings.
+            """
+            return 1
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == inspect.getdoc(fn)
+
     def test_async_function(self):
         async def fn(a: float) -> float:
             """Async summary.
@@ -544,6 +612,18 @@ class TestParsedFunctionIntegration:
         assert p.description == "Describes what the tool does."
         # x's description does NOT come from the class's constructor-focused Args
         assert "description" not in p.input_schema["properties"]["x"]
+
+    def test_parameterless_tool_returns_section_excluded(self):
+        def status() -> dict[str, bool]:
+            """Return current status.
+
+            Returns:
+                A dict containing the current status.
+            """
+            return {"ok": True}
+
+        p = ParsedFunction.from_function(status)
+        assert p.description == "Return current status."
 
     def test_callable_class_falls_back_to_call_description(self):
         """If the class has no docstring, fall back to __call__'s description."""

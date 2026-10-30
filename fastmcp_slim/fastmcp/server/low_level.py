@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import weakref
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
@@ -111,25 +111,23 @@ def _forward_ctx(
 def client_supports_extension(session: ServerSession, extension_id: str) -> bool:
     """Check whether the connected client supports a given MCP extension.
 
-    Inspects the ``extensions`` capability on ``ClientCapabilities`` sent by the
-    client during initialization. In v2 the client's initialize params are
-    reachable via ``session.client_params``.
+    Inspects the ``extensions`` capability the client declared, read from
+    ``session.client_capabilities``. On 2026-07-28+ capabilities ride every
+    request's ``_meta`` envelope while client info stays optional, so
+    capabilities can be present while ``session.client_params`` is ``None``.
 
     SDK v2 declares ``extensions`` as a real field on ``ClientCapabilities``, so
     a client sending ``ClientCapabilities(extensions={...})`` populates the field
     directly. We read that field first and fall back to ``model_extra`` only for
     legacy-serialized clients that carried ``extensions`` as an extra key.
     """
-    client_params = session.client_params
-    if client_params is None:
-        return False
-    caps = client_params.capabilities
+    caps = session.client_capabilities
     if caps is None:
         return False
     extensions: dict[str, Any] | None = caps.extensions
     if extensions is None:
         # Legacy fallback: clients that serialized `extensions` as an extra key
-        # (ClientCapabilities uses extra="allow") rather than the real field.
+        # rather than the real field.
         extras = caps.model_extra or {}
         extensions = extras.get("extensions")
     if not extensions:
@@ -277,7 +275,7 @@ class FastMCPServerMiddleware:
     @contextmanager
     def _seam_span(
         self, fastmcp: FastMCP | None, ctx: ServerRequestContext
-    ) -> Iterator[None]:
+    ) -> Generator[None, None, None]:
         """Open the per-request SERVER span at the middleware seam.
 
         The removed SDK ``OpenTelemetryMiddleware`` produced one SERVER span per
@@ -302,7 +300,9 @@ class FastMCPServerMiddleware:
             yield
 
     @contextmanager
-    def _apply_shared_context(self, fastmcp: FastMCP | None) -> Iterator[None]:
+    def _apply_shared_context(
+        self, fastmcp: FastMCP | None
+    ) -> Generator[None, None, None]:
         """Re-establish app-scoped SharedContext ContextVars for this request.
 
         The SDK v2 dispatcher runs handlers in the message sender's context, so

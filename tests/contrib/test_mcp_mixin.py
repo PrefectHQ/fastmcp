@@ -344,6 +344,57 @@ class TestMCPMixin:
         assert prompt.meta == {"priority": "high", "category": "analysis"}
 
 
+class TestMCPMixinRegistrationDoesNotReadAttributes:
+    """Registration should only look at methods, not evaluate other attributes."""
+
+    async def test_register_all_does_not_evaluate_properties(self):
+        evaluated: list[str] = []
+
+        class MyMixin(MCPMixin):
+            @property
+            def connection(self) -> str:
+                evaluated.append("connection")
+                raise RuntimeError("not connected")
+
+            @mcp_tool()
+            def sample_tool(self):
+                pass
+
+            @mcp_resource(uri="test://resource")
+            def sample_resource(self):
+                return "data"
+
+            @mcp_prompt()
+            def sample_prompt(self):
+                return "prompt text"
+
+        mcp = FastMCP()
+        MyMixin().register_all(mcp)
+
+        assert evaluated == []
+        assert [t.name for t in await mcp.list_tools()] == ["sample_tool"]
+        assert [str(r.uri) for r in await mcp.list_resources()] == ["test://resource"]
+        assert [p.name for p in await mcp.list_prompts()] == ["sample_prompt"]
+
+    async def test_static_and_class_methods_are_still_registered(self):
+        class MyMixin(MCPMixin):
+            @staticmethod
+            @mcp_tool()
+            def static_tool():
+                pass
+
+            @classmethod
+            @mcp_tool()
+            def class_tool(cls):
+                pass
+
+        mcp = FastMCP()
+        MyMixin().register_tools(mcp)
+
+        names = {t.name for t in await mcp.list_tools()}
+        assert names == {"static_tool", "class_tool"}
+
+
 class TestMCPMixinKwargsSync:
     """Verify that the valid-kwarg sets stay in sync with from_function signatures."""
 

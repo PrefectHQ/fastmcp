@@ -153,6 +153,22 @@ async def save_task_args(
         )
 
 
+async def refresh_args_ttl(
+    docket: Docket, task_scope: str | None, task_id: str, ttl_seconds: int
+) -> None:
+    """Extend the stored arguments' TTL (sliding expiration).
+
+    The arguments are written once at create, but a re-entered leg re-reads them
+    through ``load_task_args``. A task that waits out its arguments' wall-clock
+    TTL — an in-task input answered much later, or a long gap between legs —
+    would otherwise enqueue its next leg with empty arguments, because a missing
+    key loads as ``{}`` rather than failing. Refreshing alongside the other
+    per-task keys keeps them alive for as long as the task is.
+    """
+    async with docket.redis() as redis:
+        await redis.expire(_args_key(docket, task_scope, task_id), ttl_seconds)
+
+
 async def load_task_args(
     docket: Docket, task_scope: str | None, task_id: str
 ) -> dict[str, Any]:

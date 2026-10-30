@@ -1,456 +1,547 @@
 const $ = (id) => document.getElementById(id);
-let snapshot;
-let rankingLimit = 10;
-const snapshotUrl =
+const DATA_URL =
   window.location.origin === "https://prefecthq.github.io"
-    ? "https://raw.githubusercontent.com/PrefectHQ/fastmcp/status/status.json"
-    : new URL("status.json", window.location.href);
-
-const number = (value) => (value == null ? "—" : value.toLocaleString());
-function el(tag, text, className) {
-  const node = document.createElement(tag);
-  if (text != null) node.textContent = text;
-  if (className) node.className = className;
-  return node;
-}
-function link(text, url) {
-  const node = el("a", text);
-  try {
-    const parsed = new URL(url);
-    if (
-      parsed.origin === "https://github.com" &&
-      parsed.pathname.startsWith("/PrefectHQ/fastmcp/")
-    )
-      node.href = parsed.href;
-  } catch {}
-  return node;
-}
-function issue(a) {
-  return ["degraded", "off"].includes(a.state) || a.stale;
-}
-function attention(title, detail, state, url) {
-  const row = el("div", null, "attention-row");
-  row.append(
-    link(title, url),
-    el("span", state, `state ${state}`),
-    el("p", detail),
-  );
-  $("attention").append(row);
+    ? "https://raw.githubusercontent.com/PrefectHQ/fastmcp/status/backlog.json"
+    : new URL("backlog.json", window.location.href).href;
+const TZ = "America/Chicago";
+const DAY = 86400000;
+const labels = {
+  issues_opened: "Issues opened",
+  prs_opened: "PRs opened",
+  completed: "Completed",
+  not_planned: "Not planned",
+  other_closed: "Unspecified",
+  merged: "Merged",
+  closed_unmerged: "Closed unmerged",
+};
+const colors = {
+  issues_opened: "--opened",
+  prs_opened: "--opened",
+  completed: "--completed",
+  not_planned: "--not-planned",
+  other_closed: "--other",
+  merged: "--merged",
+  closed_unmerged: "--closed-unmerged",
+};
+let data,
+  days = 30,
+  category = "issues",
+  selectedDay;
+const number = (n) => n.toLocaleString();
+const dateLabel = (at, options = {}) =>
+  new Date(at).toLocaleString("en-US", {
+    timeZone: TZ,
+    month: "short",
+    day: "numeric",
+    ...options,
+  });
+const dayLabel = (day) => dateLabel(`${day}T12:00:00Z`);
+function node(tag, text, className) {
+  const el = document.createElement(tag);
+  if (text != null) el.textContent = text;
+  if (className) el.className = className;
+  return el;
 }
 function svg(tag, attrs, text) {
-  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
-  for (const [key, value] of Object.entries(attrs))
-    node.setAttribute(key, value);
-  if (text != null) node.textContent = text;
-  return node;
+  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  if (text != null) el.textContent = text;
+  return el;
 }
-function chart() {
-  const eligible = snapshot.automations.filter((a) => a.daily?.length);
-  const selected = $("activity-filter").value;
-  const rows = eligible.filter((a) => selected === "all" || a.id === selected);
-  const days = new Map();
-  for (const a of rows)
-    for (const b of a.daily) {
-      const day = days.get(b.day) || {
-        day: b.day,
-        succeeded: 0,
-        failed: 0,
-        blocked: 0,
-      };
-      for (const key of ["succeeded", "failed", "blocked"])
-        day[key] += b[key] || 0;
-      days.set(b.day, day);
-    }
-  const buckets = [...days.values()].sort((a, b) => a.day.localeCompare(b.day));
-  $("chart").replaceChildren();
-  $("activity-totals").replaceChildren();
-  if (!buckets.length) {
-    $("chart").append(el("p", "Activity history unavailable.", "empty"));
-    return;
-  }
-  const series = [
-    ["succeeded", "passed", "succeeded"],
-    ["failed", "failed", "failed"],
-    ["blocked", "blocked", "gate rejections / errors"],
-  ];
-  for (const [key, cls, label] of series)
-    $("activity-totals").append(
-      el(
-        "span",
-        `${number(buckets.reduce((sum, b) => sum + b[key], 0))} ${label}`,
-        cls,
-      ),
-    );
+function color(key) {
+  return `var(${colors[key]})`;
+}
+function selectedDaily() {
+  return days === "all" ? data.daily : data.daily.slice(-days);
+}
+function chartFrame(id, label, height = 250) {
+  const host = $(id);
+  host.replaceChildren();
+  const width = Math.max(280, host.clientWidth);
   const graph = svg("svg", {
-    viewBox: "0 0 800 210",
+    viewBox: `0 0 ${width} ${height}`,
     class: "chart",
     role: "img",
-    "aria-label":
-      "Daily completed automation runs; each bar lists its outcomes",
+    tabindex: 0,
+    "aria-label": label,
   });
-  const max = Math.max(
-    1,
-    ...buckets.map((b) => b.succeeded + b.failed + b.blocked),
+  host.append(graph);
+  return {
+    graph,
+    width,
+    height,
+    left: 42,
+    right: width - 12,
+    top: 16,
+    bottom: height - 30,
+  };
+}
+function horizontal(graph, left, right, y, label) {
+  graph.append(
+    svg("line", { x1: left, x2: right, y1: y, y2: y, class: "grid" }),
+    svg("text", { x: left - 8, y: y + 4, "text-anchor": "end" }, label),
   );
-  for (let i = 0; i <= 3; i++) {
-    const y = 175 - i * 50;
+}
+function dateTicks(graph, entries, x, bottom, width, label) {
+  const count = width < 500 ? 3 : 5;
+  const indices = new Set(
+    Array.from({ length: count }, (_, i) =>
+      Math.round((i * (entries.length - 1)) / (count - 1)),
+    ),
+  );
+  for (const i of indices)
     graph.append(
-      svg("line", { x1: 40, x2: 790, y1: y, y2: y, class: "grid" }),
       svg(
         "text",
-        { x: 32, y: y + 4, "text-anchor": "end" },
-        Math.round((max * i) / 3),
+        {
+          x: x(entries[i], i),
+          y: bottom + 23,
+          "text-anchor":
+            i === 0 ? "start" : i === entries.length - 1 ? "end" : "middle",
+        },
+        label(entries[i]),
       ),
     );
+}
+function interactions(graph, entries, nearest, show, choose) {
+  let index = entries.length - 1;
+  const pointAt = (event) => {
+    const rect = graph.getBoundingClientRect();
+    return nearest(
+      ((event.clientX - rect.left) * graph.viewBox.baseVal.width) / rect.width,
+    );
+  };
+  graph.addEventListener("pointermove", (event) => {
+    index = pointAt(event);
+    show(index);
+  });
+  graph.addEventListener("click", (event) => {
+    if (event.detail !== 0) index = pointAt(event);
+    show(index);
+    if (choose) choose(index);
+  });
+  graph.addEventListener("focus", () => show(index));
+  graph.addEventListener("keydown", (event) => {
+    if (
+      !["ArrowLeft", "ArrowRight", "Home", "End", "Enter", " "].includes(
+        event.key,
+      )
+    )
+      return;
+    event.preventDefault();
+    if (event.key === "ArrowLeft") index = Math.max(0, index - 1);
+    if (event.key === "ArrowRight")
+      index = Math.min(entries.length - 1, index + 1);
+    if (event.key === "Home") index = 0;
+    if (event.key === "End") index = entries.length - 1;
+    show(index);
+    if (["Enter", " "].includes(event.key) && choose) choose(index);
+  });
+}
+function backlog() {
+  const end = Date.parse(data.as_of),
+    start = days === "all" ? Date.parse(data.samples[0].at) : end - days * DAY;
+  let rows = data.samples.filter((row) => Date.parse(row.at) >= start);
+  const before = data.samples
+    .filter((row) => Date.parse(row.at) < start)
+    .at(-1);
+  if (before) rows = [before, ...rows];
+  if (!rows.length) {
+    $("backlog-chart").textContent = "No snapshots in this range.";
+    return;
   }
-  buckets.forEach((b, i) => {
-    const step = 750 / buckets.length,
-      x = 40 + i * step,
-      width = Math.min(56, step * 0.6);
-    const label = `${b.day}: ${b.succeeded} succeeded, ${b.failed} failed, ${b.blocked} gate rejections or errors`;
-    const group = svg("g", { class: "bar", tabindex: 0, "aria-label": label });
-    group.append(svg("title", {}, label));
-    let y = 175;
-    for (const [key, cls] of series) {
-      const height = (b[key] / max) * 150;
-      y -= height;
-      group.append(
-        svg("rect", {
-          x: x + (step - width) / 2,
-          y,
-          width,
-          height,
-          class: cls,
+  const { graph, left, right, top, bottom, width } = chartFrame(
+    "backlog-chart",
+    "Open issues and pull requests over time. Use left and right arrow keys to inspect snapshots.",
+    270,
+  );
+  const max = Math.max(
+    10,
+    ...rows.flatMap((row) => [row.issues.open, row.prs.open]),
+  );
+  const ceiling = Math.ceil(max / 50) * 50;
+  const x = (row) =>
+    left +
+    ((Math.max(start, Date.parse(row.at)) - start) / (end - start || DAY)) *
+      (right - left);
+  const y = (value) => bottom - (value / ceiling) * (bottom - top);
+  for (let i = 0; i <= 4; i++)
+    horizontal(
+      graph,
+      left,
+      right,
+      y((ceiling * i) / 4),
+      Math.round((ceiling * i) / 4),
+    );
+  for (const [key, stroke] of [
+    ["issues", "var(--issue)"],
+    ["prs", "var(--pr)"],
+  ]) {
+    const historical = rows.filter((row) => row.source !== "live");
+    const recorded = rows.filter((row) => row.source === "live");
+    if (historical.length && recorded.length) historical.push(recorded[0]);
+    for (const [segment, dashed] of [
+      [historical, true],
+      [recorded, false],
+    ]) {
+      if (!segment.length) continue;
+      graph.append(
+        svg("path", {
+          d: segment
+            .map((row, i) => `${i ? "L" : "M"}${x(row)},${y(row[key].open)}`)
+            .join(" "),
+          class: "series",
+          stroke,
+          "stroke-dasharray": dashed ? "5 5" : "none",
+        }),
+      );
+      const last = segment.at(-1);
+      graph.append(
+        svg("circle", {
+          cx: x(last),
+          cy: y(last[key].open),
+          r: 3,
+          fill: stroke,
         }),
       );
     }
-    graph.append(
-      group,
-      svg(
-        "text",
-        { x: x + step / 2, y: 201, "text-anchor": "middle" },
-        b.day.slice(5),
+  }
+  const tickCount = width < 500 ? 3 : 5;
+  const ticks = Array.from({ length: tickCount }, (_, i) => ({
+    at: new Date(start + ((end - start) * i) / (tickCount - 1)).toISOString(),
+  }));
+  dateTicks(graph, ticks, x, bottom, width, (row) => dateLabel(row.at));
+  const cursor = svg("line", {
+    y1: top,
+    y2: bottom,
+    x1: right,
+    x2: right,
+    class: "cursor",
+    visibility: "hidden",
+  });
+  graph.append(cursor);
+  const show = (index) => {
+    const row = rows[index];
+    cursor.setAttribute("x1", x(row));
+    cursor.setAttribute("x2", x(row));
+    cursor.setAttribute("visibility", "visible");
+    $("backlog-readout").textContent =
+      `${dateLabel(row.at, { year: "numeric", hour: "numeric", minute: "2-digit" })} Central: ${number(row.issues.open)} issues · ${number(row.prs.open)} PRs${row.prs.draft != null ? ` (${row.prs.draft} draft)` : ""} · ${row.source === "live" ? "recorded" : "reconstructed"}`;
+  };
+  interactions(
+    graph,
+    rows,
+    (pos) =>
+      rows.reduce(
+        (best, row, i) =>
+          Math.abs(x(row) - pos) < Math.abs(x(rows[best]) - pos) ? i : best,
+        0,
+      ),
+    show,
+  );
+  const latest = data.samples.at(-1),
+    first = rows[0];
+  $("totals").replaceChildren();
+  for (const [key, label, cls] of [
+    ["issues", "open issues", "issue"],
+    ["prs", "open PRs", "pr"],
+  ]) {
+    const item = node("div", null, `total ${cls}`),
+      delta = latest[key].open - first[key].open;
+    item.append(
+      node("strong", number(latest[key].open)),
+      node("span", label),
+      node("small", `${delta > 0 ? "+" : ""}${number(delta)} in view`),
+    );
+    $("totals").append(item);
+  }
+}
+function recent() {
+  $("recent").replaceChildren();
+  for (const [row, label] of [
+    [data.daily.at(-2), "Yesterday"],
+    [data.daily.at(-1), "Today so far"],
+  ]) {
+    const box = node("article", null, "day-summary"),
+      closed = row.completed + row.not_planned + row.other_closed;
+    box.append(node("h3", `${label} · ${dayLabel(row.day)}`));
+    for (const [text, kind] of [
+      [`${row.issues_opened} issues opened · ${closed} closed`, "issues"],
+      [
+        `${row.prs_opened} PRs opened · ${row.merged} merged · ${row.closed_unmerged} closed unmerged`,
+        "prs",
+      ],
+    ]) {
+      const line = node("p"),
+        button = node("button", text);
+      button.addEventListener("click", () => {
+        category = kind;
+        setCategory();
+        activity();
+        detail(row.day, true);
+        $("activity-detail").scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      });
+      line.append(button);
+      box.append(line);
+    }
+    box.append(
+      node(
+        "small",
+        `${row.completed} completed · ${row.not_planned} not planned${row.other_closed ? ` · ${row.other_closed} unspecified` : ""}`,
       ),
     );
-  });
-  $("chart").append(graph);
-  const missing = snapshot.automations.filter(
-    (a) => a.id !== "contributor-queue" && !a.daily?.length,
+    $("recent").append(box);
+  }
+}
+function activity() {
+  const rows = selectedDaily(),
+    opened = `${category}_opened`,
+    outcomes =
+      category === "issues"
+        ? ["completed", "not_planned", "other_closed"]
+        : ["merged", "closed_unmerged"];
+  const keys = [opened, ...outcomes];
+  $("activity-legend").replaceChildren();
+  for (const key of keys) {
+    const item = node("span"),
+      chip = node("span", null, "key");
+    chip.style.background = color(key);
+    item.append(
+      chip,
+      node(
+        "span",
+        `${labels[key]} ${number(rows.reduce((sum, row) => sum + row[key], 0))}`,
+      ),
+    );
+    $("activity-legend").append(item);
+  }
+  const { graph, left, right, top, bottom, width } = chartFrame(
+    "activity-chart",
+    `Daily ${category === "issues" ? "issue" : "pull request"} openings and closure outcomes. Use arrow keys then Enter to inspect a day.`,
+    270,
   );
-  if (selected === "all" && missing.length)
-    $("chart").append(
-      el(
+  const max = Math.max(
+    5,
+    ...rows.map((row) =>
+      Math.max(
+        row[opened],
+        outcomes.reduce((sum, key) => sum + row[key], 0),
+      ),
+    ),
+  );
+  const limit = Math.ceil(max / 5) * 5,
+    middle = (top + bottom) / 2,
+    scale = (bottom - top) / 2 / limit;
+  for (const value of [-limit, -limit / 2, 0, limit / 2, limit])
+    horizontal(
+      graph,
+      left,
+      right,
+      middle - value * scale,
+      Math.round(Math.abs(value)),
+    );
+  const step = (right - left) / rows.length,
+    barWidth = Math.max(1, Math.min(24, step * 0.68));
+  const x = (_, index) => left + (index + 0.5) * step;
+  rows.forEach((row, index) => {
+    const group = svg("g", {}, null);
+    group.append(
+      svg("rect", {
+        x: x(row, index) - barWidth / 2,
+        y: middle - row[opened] * scale,
+        width: barWidth,
+        height: row[opened] * scale,
+        fill: color(opened),
+      }),
+    );
+    let offset = middle;
+    for (const key of outcomes) {
+      const height = row[key] * scale;
+      group.append(
+        svg("rect", {
+          x: x(row, index) - barWidth / 2,
+          y: offset,
+          width: barWidth,
+          height,
+          fill: color(key),
+        }),
+      );
+      offset += height;
+    }
+    graph.append(group);
+  });
+  dateTicks(graph, rows, x, bottom, width, (row) => dayLabel(row.day));
+  const cursor = svg("rect", {
+    x: left,
+    y: top,
+    width: Math.max(step, 2),
+    height: bottom - top,
+    fill: "var(--text)",
+    opacity: 0.07,
+    visibility: "hidden",
+  });
+  graph.append(cursor);
+  const show = (index) => {
+    const row = rows[index];
+    cursor.setAttribute("x", left + index * step);
+    cursor.setAttribute("visibility", "visible");
+    $("activity-readout").textContent =
+      `${dayLabel(row.day)}: ${keys.map((key) => `${row[key]} ${labels[key].toLowerCase()}`).join(" · ")}`;
+  };
+  interactions(
+    graph,
+    rows,
+    (pos) =>
+      Math.max(0, Math.min(rows.length - 1, Math.floor((pos - left) / step))),
+    show,
+    (index) => detail(rows[index].day, true),
+  );
+  detail(selectedDay || rows.at(-1).day, false);
+}
+function detail(day, open) {
+  selectedDay = day;
+  $("detail-title").textContent =
+    `${dayLabel(day)} · ${category === "issues" ? "issues" : "pull requests"}`;
+  if (open) $("activity-detail").open = true;
+  const rows = data.events.filter(
+    (item) => item.day === day && item.kind === category,
+  );
+  $("detail-items").replaceChildren();
+  if (!rows.length) {
+    $("detail-items").append(
+      node(
         "p",
-        `History unavailable for ${missing.map((a) => a.name).join(", ")}.`,
+        day < data.daily.at(-31).day
+          ? "Item details are kept for the last 30 days. Totals above include older activity."
+          : "No recorded activity for this day.",
         "caption",
       ),
     );
-}
-function automations() {
-  const open = new Set(
-    [...$("automations").querySelectorAll("details[open]")].map(
-      (n) => n.dataset.id,
-    ),
-  );
-  $("automations").replaceChildren();
-  for (const a of snapshot.automations.filter(
-    (a) => a.id !== "contributor-queue",
-  )) {
-    if ($("attention-only").checked && !issue(a)) continue;
-    const row = el("details");
-    row.dataset.id = a.id;
-    row.open = open.has(a.id);
-    const summary = el("summary");
-    const count = Object.values(a.counts || {}).reduce((sum, n) => sum + n, 0);
-    const state = a.stale ? "stale" : a.state;
-    summary.append(
-      el("span", a.name, "name"),
-      el("span", state, `state ${state}`),
-      el(
-        "span",
-        `${Object.keys(a.counts || {}).length ? number(count) : "—"} outcomes`,
-        "count",
-      ),
-    );
-    const detail = el("div", null, "detail");
-    detail.append(
-      el("p", a.what),
-      el("p", `${a.cadence} · last success ${a.last_ok_day || "unavailable"}`),
-      link("inspect runs ↗", a.evidence_url),
-    );
-    row.append(summary, detail);
-    $("automations").append(row);
-  }
-  if (!$("automations").childElementCount)
-    $("automations").append(el("p", "No automation issues reported.", "empty"));
-}
-
-function ranking() {
-  const data = snapshot.attention;
-  $("ranking").replaceChildren();
-  if (!data || data.schema !== "fastmcp-attention/1") {
-    $("ranking-coverage").textContent =
-      "Issue ranking unavailable. Queue age below is not a priority ranking.";
-    $("ranking-more").hidden = true;
     return;
   }
-  const judged =
-    data.judged === data.examined
-      ? `judge: ${data.judge}`
-      : `${data.judged}/${data.examined} model-assessed; remaining issues use facts and labels only`;
-  $("ranking-coverage").textContent =
-    `${data.examined} ${data.has_more ? "newest open issues examined; older issues not included" : "open issues examined; complete at collection"}. ${judged}. Ranked ${new Date(data.as_of).toLocaleString()}. Contributor assessments excluded.`;
-  const kind = $("ranking-kind").value;
-  $("ranking-kind").replaceChildren(
-    Object.assign(el("option", "all kinds"), { value: "all" }),
-  );
-  for (const value of [...new Set(data.items.map((i) => i.kind))].sort())
-    $("ranking-kind").append(Object.assign(el("option", value), { value }));
-  if ([...$("ranking-kind").options].some((o) => o.value === kind))
-    $("ranking-kind").value = kind;
-  const items = data.items.filter(
-    (i) =>
-      ($("ranking-kind").value === "all" ||
-        i.kind === $("ranking-kind").value) &&
-      (!$("ranking-unanswered").checked || i.maintainer_replied === false),
-  );
-  for (const item of items.slice(0, rankingLimit)) {
-    const row = el("details", null, "ranked-issue");
-    const summary = el("summary");
-    const heading = el("div", null, "rank-heading");
-    heading.append(
-      el("span", `#${item.number}`, "muted"),
-      el("span", item.title),
-    );
-    const reasons = item.reasons
-      .slice(0, 3)
-      .map((r) => `${r.contribution > 0 ? "+" : "−"} ${r.text}`)
-      .join(" · ");
-    heading.append(
-      el("p", reasons || "No weighted signals available.", "caption"),
-    );
-    summary.append(
-      el("span", item.score.toFixed(1), "rank-score"),
-      heading,
-      el("span", "+", "muted"),
-    );
-    const detail = el("div", null, "detail");
-    detail.append(
-      el(
-        "p",
-        `${item.kind} · ${item.judged ? "model-assessed" : "facts and labels only"} · ${item.maintainer_replied ? "maintainer replied" : item.maintainer_replied === false ? "no maintainer reply found" : "reply history incomplete"} · ${item.assigned ? "assigned" : "unassigned"}`,
-      ),
-    );
-    for (const reason of item.reasons)
-      detail.append(
-        el(
-          "p",
-          `${reason.contribution > 0 ? "+" : ""}${reason.contribution.toFixed(2)} ${reason.text}`,
-        ),
-      );
-    detail.append(link("open issue ↗", item.url));
-    for (const pr of item.linked_prs)
-      detail.append(
-        link(
-          ` · fix #${pr} ↗`,
-          `https://github.com/PrefectHQ/fastmcp/pull/${pr}`,
-        ),
-      );
-    row.append(summary, detail);
-    $("ranking").append(row);
-  }
-  if (!items.length)
-    $("ranking").append(el("p", "No issues match these filters.", "empty"));
-  $("ranking-more").hidden = items.length <= rankingLimit;
-  $("ranking-more").textContent =
-    `show more (${items.length - rankingLimit} remaining)`;
-}
-
-function render() {
-  const doc = snapshot,
-    queue = doc.automations.find((a) => a.id === "contributor-queue");
-  const problems = doc.automations.filter(issue),
-    checks = doc.main?.checks || [];
-  const old = Date.now() - Date.parse(doc.as_of) > 86400000;
-  const green = checks.length && checks.every((c) => c.state === "ok");
-  $("health").textContent = old
-    ? "◌ snapshot is stale"
-    : green
-      ? "● main checks passing"
-      : "◌ main needs verification";
-  $("health").className = old || !green ? "warning" : "";
-  $("freshness").textContent =
-    `updated ${new Date(doc.as_of).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
-  $("notice").hidden = !old;
-  $("notice").textContent =
-    "Snapshot is over 24 hours old. Check GitHub for current evidence.";
-  $("metrics").replaceChildren();
-  const c = queue?.counts;
-  for (const [value, label, warn] of [
-    [doc.attention?.examined, "issues ranked", false],
-    [
-      doc.attention?.items.filter((i) => i.maintainer_replied === false).length,
-      "without maintainer reply",
-      false,
-    ],
-    [c?.waiting, "awaiting assignment", false],
-    [problems.length, "automation issues", problems.length > 0],
-  ]) {
-    const metric = el("div", null, `metric ${warn ? "warn" : ""}`);
-    metric.append(el("strong", number(value)), el("span", label));
-    $("metrics").append(metric);
-  }
-  $("attention").replaceChildren();
-  if (c?.waiting)
-    attention(
-      "Contributor assignments",
-      `${c.waiting} open requests; ${c.waiting_over_7_days} older than a week. Review their linked issues before assigning.`,
-      "review",
-      queue.evidence_url,
-    );
-  for (const a of problems)
-    attention(a.name, a.what, a.stale ? "stale" : a.state, a.evidence_url);
-  for (const check of checks.filter((c) =>
-    ["failed", "unknown"].includes(c.state),
-  ))
-    attention(
-      check.name,
-      check.state === "failed"
-        ? "Check failed on the current main commit."
-        : "No conclusive result for this main commit.",
-      check.state,
-      check.url || doc.main?.url,
-    );
-  if (!checks.length)
-    attention(
-      "Main checks",
-      "Current commit evidence is unavailable.",
-      "unknown",
-      doc.main?.url,
-    );
-  if (!$("attention").childElementCount)
-    $("attention").append(
-      el("p", "No action indicated by this snapshot.", "empty"),
-    );
-  $("main-checks").replaceChildren();
-  if (doc.main?.sha) {
-    const commit = link(doc.main.sha.slice(0, 7), doc.main.url);
-    commit.id = "commit";
-    $("commit").replaceWith(commit);
-  }
-  for (const check of checks) {
-    const item = link("", check.url);
-    item.className = "check";
-    item.append(
-      el("span", check.name),
-      el(
-        "span",
-        `${check.state === "ok" ? "●" : "◌"} ${check.state === "ok" ? "passing" : check.state}`,
-        `state ${check.state}`,
-      ),
-    );
-    $("main-checks").append(item);
-  }
-  if (!checks.length)
-    $("main-checks").append(el("p", "Checks unavailable", "empty"));
-  const selection = $("activity-filter").value;
-  $("activity-filter").replaceChildren(
-    Object.assign(el("option", "all automation"), { value: "all" }),
-  );
-  for (const a of doc.automations.filter((a) => a.daily?.length))
-    $("activity-filter").append(
-      Object.assign(el("option", a.name), { value: a.id }),
-    );
-  if ([...$("activity-filter").options].some((o) => o.value === selection))
-    $("activity-filter").value = selection;
-  chart();
-  automations();
-  ranking();
-  $("queue").replaceChildren();
-  if (queue) {
-    const all = link(
-      `all ${number(c?.waiting)} requests ↗`,
-      queue.evidence_url,
-    );
-    all.id = "queue-link";
-    $("queue-link").replaceWith(all);
-  }
-  for (const p of queue?.items || []) {
-    const row = el("div", null, "queue-row");
+  for (const item of rows) {
+    const row = node("div", null, "work-row"),
+      link = node("a", `#${item.number}`);
+    link.href = `https://github.com/PrefectHQ/fastmcp/${item.kind === "prs" ? "pull" : "issues"}/${item.number}`;
     row.append(
-      link(`#${p.number}`, p.url),
-      link(p.title, p.url),
-      el("span", `${p.age_days}d`, "age"),
+      link,
+      node("span", item.title),
+      node("span", labels[item.event], "state"),
     );
-    row.firstChild.className = "number";
-    $("queue").append(row);
+    $("detail-items").append(row);
   }
-  if (!$("queue").childElementCount)
-    $("queue").append(
-      el(
-        "p",
-        c?.waiting === 0
-          ? "No requests waiting."
-          : "Request details unavailable. Follow all requests for the current list.",
-        "empty",
-      ),
+}
+function setCategory() {
+  document
+    .querySelectorAll("[data-kind]")
+    .forEach((button) =>
+      button.setAttribute("aria-pressed", button.dataset.kind === category),
     );
+}
+function render() {
+  backlog();
+  recent();
+  activity();
+  const stale = Date.now() - Date.parse(data.as_of) > 2 * 60 * 60 * 1000;
+  $("freshness").textContent =
+    `Updated ${dateLabel(data.as_of, { year: "numeric", hour: "numeric", minute: "2-digit" })} Central${stale ? " · update overdue" : ""}`;
+  $("notice").hidden = !stale;
+  $("notice").textContent =
+    "The latest snapshot is over two hours old. Counts may have changed; follow GitHub for the current queue.";
 }
 async function refresh() {
   $("refresh").disabled = true;
   try {
-    const response = await fetch(snapshotUrl, {
-      cache: "no-store",
-    });
-    if (!response.ok) throw new Error("Snapshot request failed");
-    const doc = await response.json();
+    const response = await fetch(DATA_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error("Data unavailable");
+    const next = await response.json();
     if (
-      doc.schema !== "fastmcp-maintenance/1" ||
-      !Array.isArray(doc.automations) ||
-      !Number.isFinite(Date.parse(doc.as_of))
+      next.schema !== "fastmcp-backlog/1" ||
+      !next.samples?.length ||
+      !next.daily?.length ||
+      !Array.isArray(next.events) ||
+      !Number.isFinite(Date.parse(next.as_of))
     )
-      throw new Error("Invalid snapshot");
-    snapshot = doc;
+      throw new Error("Invalid data");
+    data = next;
     render();
   } catch {
     $("notice").hidden = false;
-    $("notice").textContent = snapshot
-      ? "Refresh failed. Displaying the last loaded snapshot."
-      : "Snapshot unavailable. Use the GitHub snapshot link below.";
-    $("health").textContent = "◌ freshness unverified";
-    $("health").className = "warning";
+    $("notice").textContent = data
+      ? "Refresh failed. Showing the last loaded data; check its timestamp above."
+      : "Backlog data is unavailable. Refresh to try again, or open the GitHub source below.";
   } finally {
     $("refresh").disabled = false;
   }
 }
+document.querySelectorAll("[data-days]").forEach((button) =>
+  button.addEventListener("click", () => {
+    days = button.dataset.days === "all" ? "all" : Number(button.dataset.days);
+    document
+      .querySelectorAll("[data-days]")
+      .forEach((item) => item.setAttribute("aria-pressed", item === button));
+    if (data) {
+      backlog();
+      activity();
+    }
+  }),
+);
+document.querySelectorAll("[data-kind]").forEach((button) =>
+  button.addEventListener("click", () => {
+    category = button.dataset.kind;
+    setCategory();
+    if (data) activity();
+  }),
+);
 try {
   document.documentElement.dataset.theme =
-    localStorage.getItem("maintenance-theme") || "dark";
+    localStorage.getItem("maintenance-theme") ||
+    (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
 } catch {}
 $("theme").addEventListener("click", () => {
   const theme =
-    document.documentElement.dataset.theme === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme === "dark" ? "light" : "dark";
   document.documentElement.dataset.theme = theme;
   try {
     localStorage.setItem("maintenance-theme", theme);
   } catch {}
 });
 $("refresh").addEventListener("click", refresh);
-$("activity-filter").addEventListener("change", chart);
-$("attention-only").addEventListener("change", automations);
-document.querySelector('footer a[href="status.json"]').href = snapshotUrl;
+$("data-link").href = DATA_URL;
+$("export").addEventListener("click", () => {
+  if (!data) return;
+  const csv =
+    "timestamp,source,open_issues,open_prs,draft_prs\n" +
+    data.samples
+      .map((row) =>
+        [
+          row.at,
+          row.source,
+          row.issues.open,
+          row.prs.open,
+          row.prs.draft ?? "",
+        ].join(","),
+      )
+      .join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  const a = node("a");
+  a.href = url;
+  a.download = "fastmcp-backlog.csv";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+let resize;
+new ResizeObserver(() => {
+  clearTimeout(resize);
+  resize = setTimeout(() => {
+    if (data) {
+      backlog();
+      activity();
+    }
+  }, 100);
+}).observe($("backlog-chart"));
 refresh();
 setInterval(refresh, 300000);
-
-$("ranking-kind").addEventListener("change", () => {
-  rankingLimit = 10;
-  ranking();
-});
-$("ranking-unanswered").addEventListener("change", () => {
-  rankingLimit = 10;
-  ranking();
-});
-$("ranking-more").addEventListener("click", () => {
-  rankingLimit += 10;
-  ranking();
-});

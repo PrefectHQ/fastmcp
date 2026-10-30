@@ -1,6 +1,6 @@
 """Extension requirements follow every runtime using live provider composition."""
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 
 import anyio
@@ -24,7 +24,7 @@ class RuntimeExtension(ServerExtension):
         self.events: list[str] = []
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         self.events.append("enter")
         try:
             yield
@@ -84,7 +84,7 @@ async def test_child_provider_lifespan_accepts_root_supported_bundle(
 
     class SetupProvider(Provider):
         @asynccontextmanager
-        async def lifespan(self) -> AsyncIterator[None]:
+        async def lifespan(self) -> AsyncGenerator[None, None]:
             child.add_provider(bundle)
             yield
 
@@ -265,7 +265,7 @@ async def test_failed_startup_releases_extension_restrictions(
 
     class FailingProvider(Provider):
         @asynccontextmanager
-        async def lifespan(self) -> AsyncIterator[None]:
+        async def lifespan(self) -> AsyncGenerator[None, None]:
             raise RuntimeError("setup failed")
             yield  # pragma: no cover
 

@@ -37,20 +37,25 @@ class TestHashFunction:
 class TestBackendNameRoundtrip:
     def test_format_and_parse(self):
         name = hashed_backend_name("contacts", "submit_form")
+        assert name == f"__{hash_tool('contacts', 'submit_form')}_submit_form"
         parsed = parse_hashed_backend_name(name)
         assert parsed is not None
         digest, local = parsed
         assert digest == hash_tool("contacts", "submit_form")
         assert local == "submit_form"
 
+    def test_parse_requires_double_underscore_prefix(self):
+        assert parse_hashed_backend_name("abcdef012345_save") is None
+        assert parse_hashed_backend_name("_abcdef012345_save") is None
+
     def test_parse_rejects_short_strings(self):
         assert parse_hashed_backend_name("foo") is None
 
     def test_parse_rejects_non_hex_prefix(self):
-        assert parse_hashed_backend_name("zzzzzzzzzzzz_save") is None
+        assert parse_hashed_backend_name("__zzzzzzzzzzzz_save") is None
 
     def test_parse_rejects_missing_separator(self):
-        assert parse_hashed_backend_name("abcdef012345save") is None
+        assert parse_hashed_backend_name("__abcdef012345save") is None
 
 
 class TestResourceUriRoundtrip:

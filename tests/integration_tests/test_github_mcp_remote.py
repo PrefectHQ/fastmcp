@@ -140,8 +140,6 @@ class TestGithubMCPRemote:
                 "list_commits", {"owner": "prefecthq", "repo": "fastmcp"}
             )
 
-            # at this time, the github server does not support structured content
-            assert result.structured_content is None
             assert isinstance(result.content, list)
             assert len(result.content) == 1
             assert isinstance(result.content[0], TextContent)

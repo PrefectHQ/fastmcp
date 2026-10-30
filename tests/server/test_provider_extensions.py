@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
@@ -75,7 +75,7 @@ class BundledExtension(ServerExtension):
         )
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         self.lifecycle.append("enter")
         try:
             yield
@@ -309,7 +309,7 @@ async def test_extensions_added_to_aggregate_before_startup_are_discovered():
 
 async def test_provider_added_in_user_lifespan_is_discovered():
     @asynccontextmanager
-    async def lifespan(server: FastMCP) -> AsyncIterator[None]:
+    async def lifespan(server: FastMCP) -> AsyncGenerator[None, None]:
         server.add_provider(BundledProvider())
         yield
 
@@ -341,7 +341,7 @@ async def test_registration_during_extension_startup_rejected():
         identifier = "com.example/registering"
 
         @asynccontextmanager
-        async def lifespan(self) -> AsyncIterator[None]:
+        async def lifespan(self) -> AsyncGenerator[None, None]:
             with pytest.raises(RuntimeError, match="lifespan has already started"):
                 self.server.add_extension(BundledExtension())
             yield
@@ -579,7 +579,7 @@ async def test_explicit_root_configuration_wins_over_mounted_child():
 
 async def test_mounted_child_lifespan_cannot_introduce_a_new_root_extension():
     @asynccontextmanager
-    async def lifespan(server: FastMCP) -> AsyncIterator[None]:
+    async def lifespan(server: FastMCP) -> AsyncGenerator[None, None]:
         server.add_provider(BundledProvider())
         yield
 
@@ -595,7 +595,7 @@ async def test_mounted_child_lifespan_cannot_introduce_a_new_root_extension():
 
 async def test_mounted_child_lifespan_can_use_an_existing_root_extension():
     @asynccontextmanager
-    async def lifespan(server: FastMCP) -> AsyncIterator[None]:
+    async def lifespan(server: FastMCP) -> AsyncGenerator[None, None]:
         server.add_provider(BundledProvider())
         yield
 
@@ -745,7 +745,7 @@ async def test_non_propagating_interceptors_keep_server_local_behavior():
 
 async def test_nested_child_setup_preserves_ancestor_interceptor_configuration():
     @asynccontextmanager
-    async def lifespan(server: FastMCP) -> AsyncIterator[None]:
+    async def lifespan(server: FastMCP) -> AsyncGenerator[None, None]:
         server.add_provider(BundledProvider(AuditExtension()))
         yield
 
@@ -807,7 +807,7 @@ async def test_aggregate_setup_cannot_introduce_a_new_root_extension():
 
     class SetupProvider(Provider):
         @asynccontextmanager
-        async def lifespan(self) -> AsyncIterator[None]:
+        async def lifespan(self) -> AsyncGenerator[None, None]:
             aggregate.add_provider(BundledProvider())
             yield
 
@@ -828,7 +828,7 @@ class MutatingProvider(Provider):
         self.target = target
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         self.target.add_provider(BundledProvider())
         yield
 

@@ -7,10 +7,17 @@ import hashlib
 import secrets
 import ssl
 import uuid
-from collections.abc import AsyncIterator, Callable, Coroutine, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    Callable,
+    Coroutine,
+    Mapping,
+    Sequence,
+)
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
 
 import anyio
@@ -66,6 +73,7 @@ from fastmcp.client.messages import MessageHandler, MessageHandlerT
 from fastmcp.client.mixins import (
     ClientPromptsMixin,
     ClientResourcesMixin,
+    ClientSkillsMixin,
     ClientToolsMixin,
 )
 from fastmcp.client.progress import ProgressHandler, default_progress_handler
@@ -139,7 +147,7 @@ The ``str`` arm is only for the version-pin case; ``Client.__init__`` rejects an
 @asynccontextmanager
 async def _conformant_discover_only(
     session: ClientSession,
-) -> AsyncIterator[None]:
+) -> AsyncGenerator[None, None]:
     """Hold ``session.send_discover`` to the same wire schema every later reply must meet.
 
     ``negotiate_auto`` accepts a probe that parses as the version-free
@@ -261,6 +269,7 @@ class CallToolResult:
 
 class Client(
     Generic[ClientTransportT],
+    ClientSkillsMixin,
     ClientResourcesMixin,
     ClientPromptsMixin,
     ClientToolsMixin,
@@ -582,6 +591,12 @@ class Client(
         self._disconnect_timeout: float = fastmcp.settings.client_disconnect_timeout
         # Session stops handed off by exiting contexts; referenced until done.
         self._stoppers: set[asyncio.Task[None]] = set()
+        # Context-manager holds belong to the task that entered them. Keeping
+        # the session task lets an exit from an older connection avoid
+        # decrementing the reference count of a connection opened afterward.
+        self._context_session_tasks: dict[
+            asyncio.Task[Any], list[asyncio.Task[Any]]
+        ] = {}
 
         # Session context management - see class docstring for detailed explanation
         self._session_state = ClientSessionState()
@@ -774,6 +789,7 @@ class Client(
         # share lifecycle state with the original instance.
         new_client._session_state = ClientSessionState()
         new_client._transport_options = self._transport_options
+        new_client._context_session_tasks = {}
 
         # Give the clone its own response cache so cached entries are not shared
         # across independent sessions, and rebuild the negotiated_version closure
@@ -947,11 +963,68 @@ class Client(
             )
         return self.initialize_result
 
+    async def _enter_context(self) -> asyncio.Task[Any]:
+        """Connect and return the session held by this context."""
+        await self._connect()
+        session_task = self._session_state.session_task
+        if session_task is None:
+            raise RuntimeError("Client connected without a session task")
+        return session_task
+
     async def __aenter__(self):
-        return await self._connect()
+        session_task = await self._enter_context()
+        task = asyncio.current_task()
+        if task is None:
+            raise RuntimeError("Client context entered outside an asyncio task")
+        self._context_session_tasks.setdefault(task, []).append(session_task)
+        return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self._disconnect()
+        task = asyncio.current_task()
+        session_task = None
+        if task is not None:
+            session_tasks = self._context_session_tasks.get(task)
+            if session_tasks:
+                session_task = session_tasks.pop()
+                if not session_tasks:
+                    del self._context_session_tasks[task]
+        await self._disconnect(held=session_task)
+
+    async def _exit_context(
+        self,
+        held: asyncio.Task[Any] | None,
+        entered_task: asyncio.Task[Any] | None,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> bool | None:
+        """Exit a context entered by another task, preserving its session hold."""
+        if entered_task is not None and held is not None:
+            self._remove_context_session(entered_task, held)
+
+        task = asyncio.current_task()
+        if task is None or held is None:
+            return await self.__aexit__(exc_type, exc_val, exc_tb)
+
+        self._context_session_tasks.setdefault(task, []).append(held)
+        try:
+            return await self.__aexit__(exc_type, exc_val, exc_tb)
+        finally:
+            self._remove_context_session(task, held)
+
+    def _remove_context_session(
+        self, task: asyncio.Task[Any], held: asyncio.Task[Any]
+    ) -> None:
+        """Remove one matching context hold from a task's pending exits."""
+        session_tasks = self._context_session_tasks.get(task)
+        if session_tasks is None:
+            return
+        for index in range(len(session_tasks) - 1, -1, -1):
+            if session_tasks[index] is held:
+                del session_tasks[index]
+                break
+        if not session_tasks:
+            del self._context_session_tasks[task]
 
     async def _connect(self):
         """
@@ -1051,7 +1124,9 @@ class Client(
 
         return self
 
-    async def _disconnect(self, force: bool = False):
+    async def _disconnect(
+        self, force: bool = False, held: asyncio.Task[Any] | None = None
+    ):
         """
         Disconnect from session using reference counting.
 
@@ -1069,6 +1144,13 @@ class Client(
             # An explicit close stops the session it finds, in order with the
             # contexts around it, so it runs here under the lock as before.
             await self._stop_session(None, force=True)
+            return
+
+        # A context entered before an explicit close owns the old session. If
+        # the client has since reconnected, its exit must not release the new
+        # session's hold. There is no await between this check and the counter
+        # update, so another task cannot replace the session in between.
+        if held is not None and self._session_state.session_task is not held:
             return
 
         # Release this context's hold before any await. A context that exits
@@ -1230,17 +1312,18 @@ class Client(
         method: str,
         *,
         cursor: str | None,
+        params_key: str = "",
         cache_mode: CacheMode,
         send: Callable[[], Coroutine[Any, Any, CacheableT]],
         absorb: Callable[[CacheableT], CacheableT] | None = None,
     ) -> CacheableT:
-        """Serve one of the cacheable list verbs through the response cache.
+        """Serve a cacheable request through the response cache.
 
-        Mirrors the SDK Client's `_cached_fetch`: cursorless `use` calls are served
-        from (and stored to) the cache; a cursor page skips the cache (and evicts on
-        an expired-cursor `INVALID_PARAMS`, which signals the listing changed). The
-        cache is inert on legacy connections because the SDK cache reads no TTL/scope
-        hints below the modern era, so nothing is ever stored to serve.
+        Mirrors the SDK Client's list caching while also supporting cacheable
+        extension methods whose request parameters form part of the cache key.
+        Cursor pages skip the cache and evict a listing on an expired-cursor
+        `INVALID_PARAMS`. The cache is inert on legacy connections because the SDK
+        cache reads no TTL/scope hints below the modern era.
 
         `absorb` (tools/list only) re-applies the session's derived per-tool state to a
         served cache hit, since a hit skips `session.list_tools`.
@@ -1259,12 +1342,15 @@ class Client(
                 if e.code == mcp_types.INVALID_PARAMS:
                     await cache.evict_method(method)
                 raise
-        if cache_mode == "use" and (hit := await cache.read(method, "")) is not None:
+        if (
+            cache_mode == "use"
+            and (hit := await cache.read(method, params_key)) is not None
+        ):
             served = cast(CacheableT, hit)
             return served if absorb is None else absorb(served)
-        gen = cache.capture(method, "")
+        gen = cache.capture(method, params_key)
         result = await send()
-        await cache.write(method, "", result, gen, cache_mode)
+        await cache.write(method, params_key, result, gen, cache_mode)
         return result
 
     async def _drive_input_required(
@@ -1376,7 +1462,12 @@ class Client(
         through the session — and returns the ordinary `CallToolResult` it
         produces. Mirrors the SDK Client's resolution path, including the
         output-schema revalidation the direct path performs.
+
+        A `None` per-call timeout falls back to the client timeout, as
+        `ClientSession.send_request` does; resolvers read `None` as unbounded.
         """
+        if read_timeout_seconds is None:
+            read_timeout_seconds = self._session_kwargs.get("read_timeout_seconds")
         claim = self._claim_by_model[type(result)]
         final = await claim.resolve(
             result,
