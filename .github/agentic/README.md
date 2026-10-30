@@ -50,10 +50,12 @@ remain within the same assessment run. Preparation and independent review retain
 use the same connected assessment and reproduction as review and MRE batches; the
 standalone assessment and reproduction plans are no longer dispatched by the controller.
 
-An optional independent triage reviewer challenges the retained reproduction or
-verified contribution, using the exact source and executed checks. Its disposition
-and concrete next action lead each review item. The configured experiment uses
-GPT-6.1 Sol for this review while retaining Luna for assessment and reproduction.
+A required independent triage reviewer adversarially challenges every non-operational
+outcome before it reaches the review queue: reproductions, verified contributions,
+evidence requests, closure candidates, maintainer questions and skips. It uses the exact
+source and executed checks. Its disposition and concrete next action lead each review
+item. Native triage refuses a runtime without it. GPT-6.1 Sol runs this review and the
+fix-stack review while Luna retains assessment, reproduction and preparation.
 Serialized regression patches must materialize as tests on their stated baseline
 before a reproduced result can advance. Agent claims alone do not establish that
 those saved bytes are reusable. Review recommendations do not grant write permission.
