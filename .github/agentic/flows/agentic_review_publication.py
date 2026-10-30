@@ -131,7 +131,8 @@ def post_review(
         raise ValueError("Multiple reviews exist for this revision")
     if existing:
         review = existing[0]
-        if review.get("body") != body:
+        # GitHub may normalize line endings; any other difference is new feedback.
+        if (review.get("body") or "").replace("\r\n", "\n") != body:
             raise ValueError("A different review already exists for this revision")
     else:
         guard()
