@@ -136,11 +136,7 @@ class RequestDirector:
 
         # httpx requires cookie values to be strings; use OpenAPI-style
         # serialization (e.g. true/false for booleans, not True/False)
-        cookies = (
-            {k: _query_scalar_to_str(v) for k, v in cookie_params.items()}
-            if cookie_params
-            else None
-        )
+        cookies = self._serialize_cookie_params(cookie_params) or None
 
         # Step 6: Handle request body — dispatch on declared content type.
         # httpx body kwargs (json, content, data, files) are mutually exclusive
@@ -324,6 +320,34 @@ class RequestDirector:
         "spaceDelimited": " ",
         "pipeDelimited": "|",
     }
+
+    def _serialize_cookie_params(self, cookie_params: dict[str, Any]) -> dict[str, str]:
+        """Serialize cookie values using OpenAPI form style.
+
+        Form is the only style valid for cookies. httpx's cookie mapping cannot
+        express repeated names, so explode has no effect: arrays join with
+        commas and objects alternate keys and values.
+        """
+        if not cookie_params:
+            return {}
+
+        serialized: dict[str, str] = {}
+        for key, value in cookie_params.items():
+            if isinstance(value, dict):
+                if not value:
+                    continue
+                parts: list[str] = []
+                for k, v in value.items():
+                    parts.append(_query_scalar_to_str(k))
+                    parts.append(_query_scalar_to_str(v))
+                serialized[key] = ",".join(parts)
+            elif isinstance(value, list):
+                if not value:
+                    continue
+                serialized[key] = ",".join(_query_scalar_to_str(item) for item in value)
+            else:
+                serialized[key] = _query_scalar_to_str(value)
+        return serialized
 
     def _serialize_query_params(
         self,
