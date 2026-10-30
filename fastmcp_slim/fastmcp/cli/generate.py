@@ -43,6 +43,27 @@ def _is_simple_type(schema: dict[str, Any]) -> bool:
     return schema_type in _SIMPLE_TYPES
 
 
+def _collapse_simple_union(schema: dict[str, Any]) -> dict[str, Any]:
+    """Express an `anyOf` of simple types as the equivalent `type` list.
+
+    Pydantic describes `str | None` with `anyOf` branches rather than
+    `type: ["string", "null"]`. Both should produce the same command, so a
+    plain value is not parsed as JSON.
+    """
+    branches = schema.get("anyOf")
+    if "type" in schema or not isinstance(branches, list) or not branches:
+        return schema
+    if not all(
+        isinstance(branch, dict) and _is_simple_type(branch) for branch in branches
+    ):
+        return schema
+    types: list[str] = []
+    for branch in branches:
+        branch_type = branch["type"]
+        types.extend(branch_type if isinstance(branch_type, list) else [branch_type])
+    return {**schema, "type": list(dict.fromkeys(types))}
+
+
 def _is_simple_array(schema: dict[str, Any]) -> tuple[bool, str | None]:
     """Check if schema is an array of simple types.
 
@@ -210,7 +231,10 @@ def _to_python_identifier(name: str) -> str:
 def _tool_function_source(tool: mcp_types.Tool) -> str:
     """Generate the source for a single ``@call_tool_app.command`` function."""
     schema = tool.input_schema
-    properties: dict[str, Any] = schema.get("properties", {})
+    properties: dict[str, Any] = {
+        name: _collapse_simple_union(prop_schema)
+        for name, prop_schema in schema.get("properties", {}).items()
+    }
     required = set(schema.get("required", []))
 
     # Build parameter lines and track which need JSON parsing
@@ -268,7 +292,10 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
                     annotation = f'Annotated[{py_type}, cyclopts.Parameter(help="{help_escaped}")]'
                     param_lines.append(f"    {safe_name}: {annotation} = {default!r},")
             else:
-                annotation = f'Annotated[{py_type} | None, cyclopts.Parameter(help="{help_escaped}")]'
+                optional_type = (
+                    py_type if "None" in py_type.split(" | ") else f"{py_type} | None"
+                )
+                annotation = f'Annotated[{optional_type}, cyclopts.Parameter(help="{help_escaped}")]'
                 param_lines.append(f"    {safe_name}: {annotation} = None,")
 
         call_args.append(f"{prop_name!r}: {safe_name}")
@@ -602,7 +629,10 @@ def _schema_type_label(prop_schema: dict[str, Any]) -> str:
 def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
     """Generate a SKILL.md section for a single tool."""
     schema = tool.input_schema
-    properties: dict[str, Any] = schema.get("properties", {})
+    properties: dict[str, Any] = {
+        name: _collapse_simple_union(prop_schema)
+        for name, prop_schema in schema.get("properties", {}).items()
+    }
     required = set(schema.get("required", []))
 
     # Build example invocation flags
