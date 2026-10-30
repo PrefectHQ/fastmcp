@@ -1,12 +1,20 @@
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from fastmcp import Client, FastMCP, FastMCPApp
+from fastmcp import Client, Context, FastMCP, FastMCPApp
 from fastmcp.client.auth import OAuth
-from fastmcp.client.transports import SSETransport, StreamableHttpTransport
+from fastmcp.client.elicitation import ElicitResult
+from fastmcp.client.logging import LogMessage
+from fastmcp.client.transports import (
+    FastMCPTransport,
+    SSETransport,
+    StreamableHttpTransport,
+)
 from fastmcp.exceptions import ToolError
 from fastmcp.server.providers.addressing import hashed_backend_name
+from fastmcp.server.providers.proxy import FastMCPProxy
 from fastmcp.tools import FunctionTool
 from fastmcp.utilities.versions import VersionSpec
 from fastmcp_remote.cli import (
@@ -16,6 +24,7 @@ from fastmcp_remote.cli import (
     parse_args,
     parse_header,
     parse_verify,
+    run,
 )
 
 
@@ -331,3 +340,57 @@ async def test_tool_not_ignored_is_callable_by_hashed_name():
 
     assert result.data == "saved alice"
     assert calls == ["alice"]
+
+
+async def test_run_forwards_server_initiated_requests_to_handshake_front(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    remote = FastMCP("remote")
+
+    @remote.tool
+    async def confirm(ctx: Context) -> str:
+        await ctx.info("hello from remote")
+        await ctx.report_progress(1, 2)
+        result = await ctx.elicit("Proceed?", response_type=bool)
+        return f"elicit action={result.action}"
+
+    served: list[FastMCPProxy] = []
+
+    async def run_async(self: FastMCPProxy, **kwargs: Any) -> None:
+        served.append(self)
+
+    monkeypatch.setattr(FastMCPProxy, "run_async", run_async)
+    monkeypatch.setattr(
+        "fastmcp_remote.cli.build_transport", lambda config: FastMCPTransport(remote)
+    )
+    await run(parse_args(["https://example.com/mcp", "--auth", "none"]))
+
+    prompts: list[str] = []
+    logs: list[LogMessage] = []
+    progress: list[tuple[float, float | None]] = []
+
+    async def elicitation_handler(message, response_type, params, ctx):
+        prompts.append(message)
+        return ElicitResult(action="accept", content={"value": True})
+
+    async def log_handler(message: LogMessage) -> None:
+        logs.append(message)
+
+    async def progress_handler(
+        value: float, total: float | None, message: str | None
+    ) -> None:
+        progress.append((value, total))
+
+    async with Client(
+        served[0],
+        mode="legacy",
+        elicitation_handler=elicitation_handler,
+        log_handler=log_handler,
+        progress_handler=progress_handler,
+    ) as client:
+        result = await client.call_tool("confirm", {})
+
+    assert result.data == "elicit action=accept"
+    assert prompts == ["Proceed?"]
+    assert [log.data["msg"] for log in logs] == ["hello from remote"]
+    assert progress == [(1, 2)]
