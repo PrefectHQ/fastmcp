@@ -47,6 +47,13 @@ class TestStreamEventList:
 
 
 class TestEventStore:
+    @pytest.mark.parametrize("max_events_per_stream", [0, -1])
+    def test_max_events_per_stream_must_be_positive(self, max_events_per_stream):
+        with pytest.raises(
+            ValueError, match="max_events_per_stream must be at least 1"
+        ):
+            EventStore(max_events_per_stream=max_events_per_stream)
+
     @pytest.fixture
     def event_store(self):
         return EventStore(max_events_per_stream=5, ttl=3600)
