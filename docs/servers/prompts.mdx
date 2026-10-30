@@ -219,6 +219,26 @@ The free-form text above the `Args` section — whether a single line or multipl
 
 If an argument already has an explicit description — via `Annotated[x, "..."]` or `Field(description=...)` — that description takes precedence over the docstring. This makes it safe to adopt docstring-based descriptions incrementally: existing annotations keep working, and docstrings fill in the gaps.
 
+### Argument Titles
+
+An argument's name is what clients send, so it is usually short. To show clients a human-readable label instead, give the parameter a title with `Field(title=...)`:
+
+```python
+from typing import Annotated
+
+from pydantic import Field
+
+
+@mcp.prompt
+def write_story(
+    topic: Annotated[str, Field(title="Story topic")],
+    tone: str = Field(default="playful", title="Tone of voice"),
+) -> str:
+    return f"Write a {tone} short story about {topic}."
+```
+
+The title becomes the `title` of the corresponding `PromptArgument` in the MCP protocol. Arguments without an explicit title are listed without one. A proxy keeps the argument titles its backend lists.
+
 ### Return Values
 
 Prompt functions must return one of these types:
