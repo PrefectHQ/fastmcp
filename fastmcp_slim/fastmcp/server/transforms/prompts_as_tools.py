@@ -84,12 +84,15 @@ class PromptsAsTools(Transform):
     async def get_tool(
         self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
     ) -> Tool | None:
-        """Get a tool by name, including generated prompt tools."""
+        """Get a tool by name, preferring user tools over generated adapters."""
+        tool = await call_next(name, version=version)
+        if tool is not None:
+            return tool
         if name == "list_prompts":
             return self._make_list_prompts_tool()
         if name == "get_prompt":
             return self._make_get_prompt_tool()
-        return await call_next(name, version=version)
+        return None
 
     def _make_list_prompts_tool(self) -> Tool:
         """Create the list_prompts tool."""
