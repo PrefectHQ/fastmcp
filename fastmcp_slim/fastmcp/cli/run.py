@@ -240,7 +240,15 @@ async def run_command(
 
     # handle the SDK's own high-level MCPServer (not a fastmcp.FastMCP)
     if isinstance(server, SDKServer):
-        await run_v1_server_async(server, host=host, port=port, transport=transport)
+        await run_v1_server_async(
+            server,
+            host=host,
+            port=port,
+            path=path,
+            stateless=stateless,
+            log_level=log_level,
+            transport=transport,
+        )
         return
 
     kwargs: dict[str, Any] = {}
@@ -318,6 +326,9 @@ async def run_v1_server_async(
     host: str | None = None,
     port: int | None = None,
     transport: TransportType | None = None,
+    path: str | None = None,
+    stateless: bool = False,
+    log_level: LogLevelType | None = None,
 ) -> None:
     """Run a FastMCP 1.x server using async methods.
 
@@ -326,6 +337,13 @@ async def run_v1_server_async(
         host: Host to bind to
         port: Port to bind to
         transport: Transport protocol to use
+        path: Route path for the HTTP endpoint (Streamable HTTP or SSE)
+        stateless: Whether to run Streamable HTTP without sessions. The SDK's
+            SSE transport has no stateless mode, so it is ignored for SSE.
+        log_level: Log level to apply to the server settings. ``MCPServer`` only
+            accepts ``log_level`` at construction time, but its HTTP runners read
+            ``settings.log_level`` (for uvicorn), so the setting is updated before
+            starting. The stdio runner does not consult it.
     """
     # In v1 (MCPServer), host/port are no longer stored on `settings`; they are
     # passed directly to the transport runners as keyword arguments.
@@ -334,13 +352,23 @@ async def run_v1_server_async(
         bind_kwargs["host"] = host
     if port is not None:
         bind_kwargs["port"] = port
+    if log_level is not None:
+        # MCPServer has no run-time `log_level` kwarg. Its HTTP runners pass
+        # `settings.log_level` to uvicorn, so update the setting the SDK reads.
+        server.settings.log_level = log_level
 
     match transport:
         case "stdio":
             await server.run_stdio_async()
         case "http" | "streamable-http" | None:
+            if path is not None:
+                bind_kwargs["streamable_http_path"] = path
+            if stateless:
+                bind_kwargs["stateless_http"] = True
             await server.run_streamable_http_async(**bind_kwargs)
         case "sse":
+            if path is not None:
+                bind_kwargs["sse_path"] = path
             await server.run_sse_async(**bind_kwargs)
 
 
