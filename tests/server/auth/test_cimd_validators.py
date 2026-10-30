@@ -6,6 +6,7 @@ import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from mcp.shared.auth import InvalidScopeError
 from pydantic import AnyHttpUrl
 
 from fastmcp.server.auth.cimd import (
@@ -498,6 +499,21 @@ class TestCIMDClientManager:
         assert not disabled_manager.is_cimd_client_id("https://example.com/client.json")
         assert not disabled_manager.is_cimd_client_id("regular-client-id")
 
+    def test_positional_constructor_keeps_redirect_patterns_binding(self):
+        """The pre-existing positional form must keep binding as before.
+
+        `CIMDClientManager(True, "read", patterns)` historically bound
+        `patterns` to allowed_redirect_uri_patterns. `valid_scopes` is
+        keyword-only so adding it cannot silently steal that argument.
+        """
+        patterns = ["http://localhost:*", "https://app.example.com/*"]
+        manager = CIMDClientManager(True, "read", patterns)
+
+        assert manager.enabled is True
+        assert manager.default_scope == "read"
+        assert manager.allowed_redirect_uri_patterns == patterns
+        assert manager.valid_scopes is None
+
     async def test_get_client_success(self, manager, httpx_mock, mock_dns):
         """Test successful CIMD client creation."""
         url = "https://example.com/client.json"
@@ -596,6 +612,116 @@ class TestCIMDClientManagerGetClientOptions:
         client = await manager.get_client(url)
         assert client is not None
         assert client.scope == "custom-scope"
+
+    async def test_doc_scope_outside_valid_scopes_is_not_granted(
+        self, httpx_mock, mock_dns
+    ):
+        """A document-declared scope outside the server's allowlist is unusable."""
+        url = "https://example.com/client.json"
+        doc_data = {
+            "client_id": url,
+            "client_name": "Test App",
+            "redirect_uris": ["http://localhost:3000/callback"],
+            "token_endpoint_auth_method": "none",
+            "scope": "admin",
+        }
+        httpx_mock.add_response(
+            json=doc_data,
+            headers={"content-length": "200"},
+        )
+
+        manager = CIMDClientManager(
+            enable_cimd=True,
+            default_scope="read",
+            valid_scopes=["read"],
+        )
+        client = await manager.get_client(url)
+        assert client is not None
+        # The SDK model reads a placeholder "" as omitted, leaving no allowed scope.
+        assert client.scope is None
+        with pytest.raises(InvalidScopeError):
+            client.validate_scope("admin")
+
+    async def test_doc_scope_is_intersected_with_valid_scopes(
+        self, httpx_mock, mock_dns
+    ):
+        """Only the allowlisted portion of a document scope is granted."""
+        url = "https://example.com/client.json"
+        doc_data = {
+            "client_id": url,
+            "client_name": "Test App",
+            "redirect_uris": ["http://localhost:3000/callback"],
+            "token_endpoint_auth_method": "none",
+            "scope": "read admin",
+        }
+        httpx_mock.add_response(
+            json=doc_data,
+            headers={"content-length": "200"},
+        )
+
+        manager = CIMDClientManager(
+            enable_cimd=True,
+            default_scope="read",
+            valid_scopes=["read", "write"],
+        )
+        client = await manager.get_client(url)
+        assert client is not None
+        assert client.scope == "read"
+        assert client.validate_scope("read") == ["read"]
+        with pytest.raises(InvalidScopeError):
+            client.validate_scope("admin")
+
+    async def test_doc_scope_within_valid_scopes_is_preserved(
+        self, httpx_mock, mock_dns
+    ):
+        """A document scope that is fully allowlisted keeps working."""
+        url = "https://example.com/client.json"
+        doc_data = {
+            "client_id": url,
+            "client_name": "Test App",
+            "redirect_uris": ["http://localhost:3000/callback"],
+            "token_endpoint_auth_method": "none",
+            "scope": "read",
+        }
+        httpx_mock.add_response(
+            json=doc_data,
+            headers={"content-length": "200"},
+        )
+
+        manager = CIMDClientManager(
+            enable_cimd=True,
+            default_scope="read",
+            valid_scopes=["read", "write"],
+        )
+        client = await manager.get_client(url)
+        assert client is not None
+        assert client.scope == "read"
+        assert client.validate_scope("read") == ["read"]
+
+    async def test_default_scope_used_when_doc_omits_scope_with_valid_scopes(
+        self, httpx_mock, mock_dns
+    ):
+        """When the document omits scope, the manager's default is unchanged."""
+        url = "https://example.com/client.json"
+        doc_data = {
+            "client_id": url,
+            "client_name": "Test App",
+            "redirect_uris": ["http://localhost:3000/callback"],
+            "token_endpoint_auth_method": "none",
+        }
+        httpx_mock.add_response(
+            json=doc_data,
+            headers={"content-length": "200"},
+        )
+
+        manager = CIMDClientManager(
+            enable_cimd=True,
+            default_scope="read write",
+            valid_scopes=["read", "write"],
+        )
+        client = await manager.get_client(url)
+        assert client is not None
+        assert client.scope == "read write"
 
     async def test_allowed_redirect_uri_patterns_stored_on_client(
         self, httpx_mock, mock_dns

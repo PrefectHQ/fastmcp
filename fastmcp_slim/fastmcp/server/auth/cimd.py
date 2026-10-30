@@ -737,6 +737,8 @@ class CIMDClientManager:
         enable_cimd: bool = True,
         default_scope: str = "",
         allowed_redirect_uri_patterns: list[str] | None = None,
+        *,
+        valid_scopes: list[str] | None = None,
     ):
         """Initialize CIMD client manager.
 
@@ -744,14 +746,32 @@ class CIMDClientManager:
             enable_cimd: Whether CIMD support is enabled
             default_scope: Default scope for CIMD clients if not specified in document
             allowed_redirect_uri_patterns: Allowed redirect URI patterns (proxy's config)
+            valid_scopes: Scopes the server allows clients to request. When set,
+                document-declared scopes are intersected with this allowlist.
+                Keyword-only so the existing positional signature is unchanged.
         """
         self.enabled = enable_cimd
         self.default_scope = default_scope
+        self.valid_scopes = valid_scopes
         self.allowed_redirect_uri_patterns = allowed_redirect_uri_patterns
 
         self._fetcher = CIMDFetcher()
         self._assertion_validator = CIMDAssertionValidator()
         self.logger = get_logger(__name__)
+
+    def restrict_scope(self, scope: str | None) -> str | None:
+        """Intersect a scope string with the server's valid_scopes allowlist.
+
+        CIMD documents are client-controlled, so a declared scope must never
+        widen the server's policy. Returns None when no requested scope
+        survives the intersection. When valid_scopes is unset (direct manager
+        use), the input is returned unchanged.
+        """
+        if scope is None or self.valid_scopes is None:
+            return scope
+        allowed = set(self.valid_scopes)
+        filtered = " ".join(s for s in scope.split(" ") if s and s in allowed)
+        return filtered or None
 
     def is_cimd_client_id(self, client_id: str) -> bool:
         """Check if client_id is a CIMD URL.
@@ -790,6 +810,16 @@ class CIMDClientManager:
         from fastmcp.server.auth.oauth_proxy.models import ProxyDCRClient
 
         # Create synthetic client from CIMD document.
+        # The document is client-controlled, so its declared scope must not
+        # widen the server's allowlist: only grant scopes that are also in
+        # valid_scopes. A deliberately out-of-policy scope then fails the SDK
+        # scope gate instead of being forwarded upstream. When the document
+        # omits scope, fall back to the manager's default unchanged.
+        if cimd_doc.scope:
+            scope = self.restrict_scope(cimd_doc.scope)
+        else:
+            scope = self.default_scope
+
         # Keep CIMD redirect_uris as strings on the document itself so wildcard
         # patterns like http://localhost:*/callback remain valid.
         redirect_uris = None
@@ -798,7 +828,7 @@ class CIMDClientManager:
             client_secret=None,
             redirect_uris=redirect_uris,
             grant_types=cimd_doc.grant_types,
-            scope=cimd_doc.scope or self.default_scope,
+            scope=scope,
             token_endpoint_auth_method=cimd_doc.token_endpoint_auth_method,
             allowed_redirect_uri_patterns=self.allowed_redirect_uri_patterns,
             client_name=cimd_doc.client_name,
