@@ -202,6 +202,12 @@ mcp = FastMCP(name="My Server", auth=auth)
   - Empty list `[]`: No redirect URIs allowed
   - Custom list: Only matching patterns allowed
 
+  Query matching: a pattern that carries a query, or that has no wildcard
+  at all, only matches a redirect URI with exactly the same query
+  (compared byte-for-byte); a wildcard pattern with no query of its own
+  accepts any query. The same rule applies to CIMD clients, whose
+  redirect URIs are matched with the same patterns.
+
   These patterns apply to MCP client loopback redirects. Configure the upstream
   OAuth app redirect URI separately with `redirect_path`.
 </ParamField>
