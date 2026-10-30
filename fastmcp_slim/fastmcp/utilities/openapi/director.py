@@ -8,6 +8,8 @@ from typing import Any, ClassVar
 from urllib.parse import quote, unquote
 
 import httpx2
+from jsonschema import Draft202012Validator
+from jsonschema.protocols import Validator
 from jsonschema_path import SchemaPath
 
 from fastmcp.utilities.logging import get_logger
@@ -258,11 +260,10 @@ class RequestDirector:
         body_props = {}
 
         route, parameter_map = _prepare_parameter_map(route)
+        null_validator: Validator | None = None
+        null_properties: dict[str, Any] = {}
 
         for arg_name, value in flat_args.items():
-            if value is None:
-                continue  # Skip None values for optional parameters
-
             if arg_name not in parameter_map:
                 logger.warning(
                     f"Argument '{arg_name}' not found in parameter map for {route.operation_id}"
@@ -272,6 +273,28 @@ class RequestDirector:
             mapping = parameter_map[arg_name]
             location = mapping["location"]
             openapi_name = mapping["openapi_name"]
+
+            if value is None:
+                # Only JSON body properties have a null representation. Consult
+                # the normalized input schema, including its reference definitions,
+                # rather than interpreting raw OpenAPI nullability a second time.
+                if location != "body" or not route.request_body:
+                    continue
+                content_type = next(iter(route.request_body.content_schema), "")
+                media_type = content_type.split(";")[0].strip().lower()
+                if media_type != "application/json" and not media_type.endswith(
+                    "+json"
+                ):
+                    continue
+                if null_validator is None:
+                    schema = route.flat_param_schema
+                    if not schema:
+                        schema, _ = _combine_schemas_and_map_params(route)
+                    null_validator = Draft202012Validator(schema)
+                    null_properties = schema.get("properties", {})
+                property_schema = null_properties.get(arg_name, False)
+                if not null_validator.evolve(schema=property_schema).is_valid(None):
+                    continue
 
             if location == "path":
                 path_params[openapi_name] = value
