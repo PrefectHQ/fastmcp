@@ -10,11 +10,66 @@ from __future__ import annotations
 
 import inspect
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 _PARSERS = ("google", "numpy", "sphinx")
+
+# Griffe treats any unindented ``word:`` line as a Google admonition. Only
+# established headings should end a tool's free-form description: a line such
+# as ``if enabled:`` may be part of the instructions sent to the model.
+_GOOGLE_HEADINGS = frozenset(
+    {
+        "args",
+        "arguments",
+        "params",
+        "parameters",
+        "keyword args",
+        "keyword arguments",
+        "other args",
+        "other arguments",
+        "other params",
+        "other parameters",
+        "type args",
+        "type arguments",
+        "type params",
+        "type parameters",
+        "raises",
+        "exceptions",
+        "returns",
+        "yields",
+        "receives",
+        "examples",
+        "example",
+        "attributes",
+        "functions",
+        "methods",
+        "classes",
+        "type aliases",
+        "modules",
+        "warns",
+        "warnings",
+        "note",
+        "notes",
+        "tip",
+        "todo",
+        "important",
+    }
+)
+_HEADING = re.compile(r"^(?P<name>[\w][\w -]*):(?:\s+.*)?$")
+
+
+def _description_before_known_heading(doc: str) -> str:
+    """Keep unrecognized colon headings in prose before a structured section."""
+    lines = doc.splitlines()
+    for index, line in enumerate(lines):
+        match = _HEADING.fullmatch(line)
+        if match and match.group("name").lower() in _GOOGLE_HEADINGS:
+            return "\n".join(lines[:index]).rstrip()
+    return doc
+
 
 logger = logging.getLogger("griffe")
 # Griffe warns about missing type annotations in docstrings, which is noisy
@@ -59,6 +114,7 @@ def parse_docstring(fn: Callable[..., Any]) -> ParsedDocstring:
         description: str | None = None
         parameters: dict[str, str] = {}
         found_structured_section = False
+        has_unknown_admonition = False
 
         for section in sections:
             if section.kind == DocstringSectionKind.text and description is None:
@@ -67,10 +123,17 @@ def parse_docstring(fn: Callable[..., Any]) -> ParsedDocstring:
                 for param in section.value:
                     parameters[param.name] = param.description
                 found_structured_section = True
+            elif section.kind == DocstringSectionKind.admonition:
+                if section.value.kind not in _GOOGLE_HEADINGS:
+                    has_unknown_admonition = True
+                else:
+                    found_structured_section = True
             elif section.kind != DocstringSectionKind.text:
                 found_structured_section = True
 
         if parameters or found_structured_section:
+            if parser == "google" and has_unknown_admonition:
+                description = _description_before_known_heading(doc)
             return ParsedDocstring(description=description, parameters=parameters)
 
     # No parser recognized any structure — return the full docstring unchanged.
