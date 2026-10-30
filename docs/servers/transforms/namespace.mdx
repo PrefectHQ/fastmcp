@@ -11,7 +11,7 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 The `Namespace` transform prefixes all component names, preventing conflicts when composing multiple servers.
 
-Tools and prompts receive an underscore-separated prefix. Resources and templates receive a path-segment prefix in their URIs.
+Tools and prompts receive an underscore-separated prefix. Resources and templates with `scheme://` URIs receive a path-segment prefix. URIs without `://`, such as `urn:example:config`, remain unchanged for both listing and reading. They can collide across namespaces; equal identifiers follow the normal [provider resolution order](/servers/composition#conflict-resolution).
 
 | Component | Original | With `Namespace("api")` |
 |-----------|----------|-------------------------|
