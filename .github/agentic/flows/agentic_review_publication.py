@@ -131,6 +131,8 @@ def post_review(
         raise ValueError("Multiple reviews exist for this revision")
     if existing:
         review = existing[0]
+        if review.get("body") != body:
+            raise ValueError("A different review already exists for this revision")
     else:
         guard()
         current()
