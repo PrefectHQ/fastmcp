@@ -26,6 +26,7 @@ from fastmcp.client.transports.base import (
     ClientTransport,
     SessionKwargs,
     TransportOptions,
+    _mark_verify_factory,
 )
 from fastmcp.utilities.timeout import normalize_timeout_to_timedelta
 
@@ -126,7 +127,7 @@ class SSETransport(ClientTransport):
                 kwargs["auth"] = auth
             return httpx2.AsyncClient(**kwargs)
 
-        return cast(McpHttpClientFactory, factory)
+        return _mark_verify_factory(cast(McpHttpClientFactory, factory))
 
     @contextlib.asynccontextmanager
     async def connect_session(

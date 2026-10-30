@@ -109,7 +109,7 @@ from .transports import (
     StreamableHttpTransport,
     infer_transport,
 )
-from .transports.base import TransportOptions
+from .transports.base import TransportOptions, _is_verify_replaceable_factory
 
 __all__ = [
     "Client",
@@ -478,12 +478,16 @@ class Client(
             if isinstance(self.transport, StreamableHttpTransport | SSETransport):
                 self.transport.verify = verify
                 # Re-sync existing OAuth auth with the new verify setting,
-                # but only if the transport doesn't have a custom factory
-                # (which takes precedence and was already applied to OAuth).
+                # but only if neither the transport nor the auth provider has
+                # a custom factory (which takes precedence and was already
+                # applied to OAuth).
                 if (
                     isinstance(self.transport.auth, OAuth)
                     and auth is None
                     and self.transport.httpx_client_factory is None
+                    and _is_verify_replaceable_factory(
+                        self.transport.auth.httpx_client_factory
+                    )
                 ):
                     verify_factory = self.transport._make_verify_factory()
                     if verify_factory is not None:

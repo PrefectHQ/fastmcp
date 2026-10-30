@@ -15,10 +15,37 @@ from mcp.client.session import (
     MessageHandlerFnT,
     SamplingFnT,
 )
+from mcp.shared._httpx_utils import McpHttpClientFactory
 from typing_extensions import TypedDict, Unpack
 
 # TypeVar for preserving specific ClientTransport subclass types
 ClientTransportT = TypeVar("ClientTransportT", bound="ClientTransport")
+
+#: Attribute set on factories generated from a transport's ``verify`` setting.
+#: A non-default factory without this marker was supplied by the caller (for
+#: proxies, mTLS, custom headers, ...) and takes precedence over ``verify``.
+#: The value is exactly ``True``; dynamic attribute lookup (proxies, mocks)
+#: must not be mistaken for the marker.
+_VERIFY_FACTORY_MARKER = "_fastmcp_verify_factory"
+
+
+def _mark_verify_factory(factory: McpHttpClientFactory) -> McpHttpClientFactory:
+    """Tag a factory generated from ``verify`` so it can be told apart from a
+    caller-supplied factory."""
+    setattr(factory, _VERIFY_FACTORY_MARKER, True)
+    return factory
+
+
+def _is_verify_replaceable_factory(factory: object) -> bool:
+    """Whether a Client-level ``verify`` may replace this OAuth factory.
+
+    Only the bare ``httpx2.AsyncClient`` default and factories generated from
+    a transport's own ``verify`` setting are replaceable. A caller-supplied
+    factory must be preserved.
+    """
+    if factory is httpx2.AsyncClient:
+        return True
+    return getattr(factory, _VERIFY_FACTORY_MARKER, False) is True
 
 
 class ClientSessionKwargs(TypedDict, total=False):
