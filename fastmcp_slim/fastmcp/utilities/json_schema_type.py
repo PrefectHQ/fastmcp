@@ -10,7 +10,7 @@ for validation with Pydantic. It supports:
 - String constraints (minLength, maxLength, pattern)
 - Array constraints (minItems, maxItems, uniqueItems)
 - Object properties with defaults
-- References and recursive schemas
+- References and recursive schemas (including sibling constraints on scalar references)
 - Enums and constants
 - Union types
 
@@ -850,7 +850,65 @@ def _convert_schema(
             resolved_refs[ref] = _schema_to_type(
                 _resolve_ref(ref, schemas), schemas, resolving_refs | {ref}
             )
-        return resolved_refs[ref]
+        ref_type = resolved_refs[ref]
+        # Draft 4-7 treat a $ref object as a reference only. In newer drafts,
+        # constraints next to a reference also apply to that use of the type.
+        if (
+            schemas.get("$schema", "")
+            .rstrip("#")
+            .endswith(("/draft-04/schema", "/draft-06/schema", "/draft-07/schema"))
+        ):
+            return ref_type
+        siblings = {
+            k: v
+            for k, v in schema.items()
+            if k
+            in (
+                "type",
+                "format",
+                "const",
+                "enum",
+                "minLength",
+                "maxLength",
+                "pattern",
+                "minimum",
+                "maximum",
+                "exclusiveMinimum",
+                "exclusiveMaximum",
+                "multipleOf",
+            )
+        }
+        if not siblings:
+            return ref_type
+        resolved = _resolve_ref(ref, schemas)
+        seen = {ref}
+        while isinstance(resolved, Mapping) and "$ref" in resolved:
+            next_ref = resolved["$ref"]
+            if next_ref in seen:
+                return ref_type
+            seen.add(next_ref)
+            resolved = _resolve_ref(next_ref, schemas)
+        if not isinstance(resolved, Mapping) or resolved.get("type") not in (
+            "string",
+            "integer",
+            "number",
+            "boolean",
+            "null",
+        ):
+            return ref_type
+        sibling_type = _schema_to_type(
+            {"type": resolved["type"], **siblings}, schemas, resolving_refs
+        )
+        sibling_adapter = TypeAdapter(cast(Any, sibling_type))
+
+        def validate_siblings(value: Any) -> Any:
+            # Validate the original input, before formats turn strings into
+            # dates/URLs. Keep both validators intact: merging their metadata
+            # could replace a stricter constraint on the referenced type.
+            sibling_adapter.validate_python(value)
+            return value
+
+        return cast(type, Annotated[ref_type, BeforeValidator(validate_siblings)])
 
     if "const" in schema:
         return _create_enum(f"Const_{len(_classes)}", [schema["const"]])
