@@ -8,6 +8,7 @@ from prefect.testing.utilities import prefect_test_harness
 
 from flows.agentic_existing_review import (
     start_verification,
+    unadmitted_selection,
     verification_result,
     verification_specs,
 )
@@ -72,8 +73,38 @@ def test_verification_selects_candidates_without_executing_all_history(
     assert [s.pr_number for s in verification_specs(group, item, {})] == selected
     assert len(item["evidence"]["prs"]) == 4
     item["assessment"]["verification_prs"] = [9999]
-    with pytest.raises(ValueError, match="evidence is missing"):
-        verification_specs(group, item, {})
+    assert verification_specs(group, item, {}) == []
+    assert unadmitted_selection(item) == [9999]
+
+
+def test_selection_outside_the_route_is_recorded_not_executed(evidence):
+    group = Group(
+        name="history",
+        rationale="Review admitted and unadmitted work",
+        branch="main",
+        base_sha="a" * 40,
+        items=[{"issue_number": 5474, "mode": "review"}],
+    )
+    prs = [
+        {
+            "number": n,
+            "state": "open",
+            "merged": False,
+            "base_ref": "main",
+            "head_sha": "b" * 40,
+        }
+        for n in [5230, 5487]
+    ]
+    item = {
+        "evidence": {**evidence, "stacks": [], "prs": prs},
+        "route": {"pull_requests": [{"number": 5487}]},
+        "assessment": {"verification_prs": [5230, 5487]},
+    }
+    assert [s.pr_number for s in verification_specs(group, item, {})] == [5487]
+    assert unadmitted_selection(item) == [5230]
+    item["route"]["pull_requests"] = []
+    assert verification_specs(group, item, {}) == []
+    assert unadmitted_selection(item) == [5230, 5487]
 
 
 def test_verification_handoff_binds_real_run_deployment_and_inputs():
