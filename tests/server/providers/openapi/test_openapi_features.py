@@ -1262,6 +1262,47 @@ class TestValidateOutput:
             assert tool.output_schema is not None
             assert tool.output_schema.get("x-fastmcp-wrap-result") is True
             assert tool.output_schema.get("additionalProperties") is True
+            # The permissive schema must keep the wrapper shape: the client
+            # unwraps `result` and validates it against properties.result.
+            assert tool.output_schema.get("properties") == {"result": {}}
+
+    async def test_validate_output_false_wrapped_array_hydrates_data(
+        self, spec_with_output_schema
+    ):
+        """validate_output=False still hydrates result.data for wrapped non-object responses.
+
+        Regression test for https://github.com/PrefectHQ/fastmcp/issues/5781:
+        the permissive schema kept the wrap-result flag but dropped the
+        properties.result wrapper shape, so the client failed to validate the
+        unwrapped value and returned data=None.
+        """
+        mock_client = Mock(spec=httpx2.AsyncClient)
+        mock_client.base_url = "https://api.example.com"
+        mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
+
+        # Backend returns an array conforming to the spec
+        mock_response = Mock(spec=Response)
+        mock_response.status_code = 200
+        mock_response.json.return_value = [1, 2, 3]
+        mock_response.raise_for_status = Mock()
+        mock_client.send = AsyncMock(return_value=mock_response)
+
+        provider = OpenAPIProvider(
+            openapi_spec=spec_with_output_schema,
+            client=mock_client,
+            validate_output=False,
+        )
+        mcp = FastMCP("Test")
+        mcp.add_provider(provider)
+
+        async with Client(mcp) as mcp_client:
+            result = await mcp_client.call_tool("list_items", {})
+            assert result is not None
+            assert result.structured_content is not None
+            assert result.structured_content["result"] == [1, 2, 3]
+            # The unwrapped value must survive client-side parsing
+            assert result.data == [1, 2, 3]
 
     async def test_validate_output_false_allows_nonconforming_response(
         self, spec_with_output_schema
