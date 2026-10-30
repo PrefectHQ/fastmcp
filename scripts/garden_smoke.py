@@ -115,8 +115,13 @@ async def check_http(server_file: Path) -> str:
                 break
             except OSError:
                 if process.poll() is not None or time.monotonic() > deadline:
-                    stderr = process.stderr.read().decode() if process.stderr else ""
-                    raise RuntimeError(f"server did not start: {stderr[-500:]}")
+                    # Stop the child first: reading stderr from a live
+                    # process blocks until it exits.
+                    process.kill()
+                    _, stderr = process.communicate(timeout=10)
+                    raise RuntimeError(
+                        f"server did not start: {stderr.decode()[-500:]}"
+                    )
                 await asyncio.sleep(0.1)
         return await roundtrip(Client(f"http://127.0.0.1:{port}/mcp"))
     finally:

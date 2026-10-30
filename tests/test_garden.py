@@ -82,3 +82,11 @@ path = "fastmcp_slim/fastmcp/server/server.py"
 max_lines = 2410
 """
     assert garden.loq_caps(text) == {"fastmcp_slim/fastmcp/server/server.py": 2410}
+
+
+def test_dependencies_include_versioning_hook_declarations(garden):
+    deps = garden.dependencies("HEAD")
+    # fastmcp-tasks declares its requirements only through the hook.
+    assert any(item.startswith("pydocket") for item in deps["fastmcp_tasks"])
+    # fastmcp-slim's extras are hook-declared too.
+    assert any(group.startswith("fastmcp_slim[") for group in deps)

@@ -178,14 +178,26 @@ def api_breaks(base: str) -> list[dict]:
     ]
 
 
+PACKAGES = ["fastmcp_slim", "fastmcp_tasks", "fastmcp_remote"]
+
+
 def dependencies(ref: str) -> dict[str, list[str]]:
+    """Each package's requirements, static or declared through the versioning hook."""
     deps: dict[str, list[str]] = {}
-    for path in ["fastmcp_slim/pyproject.toml", "fastmcp_tasks/pyproject.toml"]:
-        project = tomllib.loads(sh("git", "show", f"{ref}:{path}"))["project"]
-        deps[f"{path.split('/')[0]}"] = sorted(project.get("dependencies", []))
-        for extra, items in project.get("optional-dependencies", {}).items():
-            deps[f"{path.split('/')[0]}[{extra}]"] = sorted(items)
-    return deps
+    for package in PACKAGES:
+        config = tomllib.loads(sh("git", "show", f"{ref}:{package}/pyproject.toml"))
+        hook = (
+            config.get("tool", {})
+            .get("hatch", {})
+            .get("metadata", {})
+            .get("hooks", {})
+            .get("uv-dynamic-versioning", {})
+        )
+        for source in (config["project"], hook):
+            deps.setdefault(package, []).extend(source.get("dependencies", []))
+            for extra, items in source.get("optional-dependencies", {}).items():
+                deps.setdefault(f"{package}[{extra}]", []).extend(items)
+    return {group: sorted(items) for group, items in deps.items()}
 
 
 def dependency_changes(base: str) -> list[dict]:
