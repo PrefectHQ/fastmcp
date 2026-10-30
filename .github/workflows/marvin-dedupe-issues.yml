@@ -17,7 +17,6 @@ jobs:
     permissions:
       contents: read
       issues: write
-      id-token: write
 
     # Pinned Claude Code; see the matching note in marvin-label-triage.yml.
     env:
@@ -27,18 +26,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Generate Marvin App token
+      - name: Generate read-only Marvin App token
         id: marvin-token
         uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.MARVIN_APP_ID }}
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
-          # Match the job's `permissions:` block above. Unscoped, the token
-          # inherits the App installation's full set — which includes
-          # contents: write and actions: write, neither of which this job
-          # declares and both of which end up in the model's shell as GH_TOKEN.
+          # This token is the model's GH_TOKEN, so it only reads. Unscoped, it
+          # would inherit the App installation's full set, including
+          # contents: write and actions: write. The comment and label are
+          # written after the model exits, with a separate token.
           permission-contents: read
-          permission-issues: write
+          permission-issues: read
 
       - name: Set dedupe prompt
         id: dedupe-prompt
@@ -52,7 +51,7 @@ jobs:
 
           # Steps
 
-          1. Check if the GitHub issue (a) is closed, (b) does not need to be deduped (eg. because it is broad product feedback without a specific solution, or positive feedback), or (c) already has a duplicates comment that you made earlier. If so, do not proceed.
+          1. Check if the GitHub issue (a) is closed, (b) does not need to be deduped (eg. because it is broad product feedback without a specific solution, or positive feedback), or (c) already has a duplicates comment that you made earlier. If so, return an empty `duplicates` list.
 
           2. View the GitHub issue and produce a summary of the issue.
 
@@ -68,33 +67,17 @@ jobs:
              Candidates found by only one search agent deserve extra scrutiny — a single keyword match is often a false positive.
 
              When in doubt, do not flag. A missed duplicate is harmless; a false positive wastes the reporter's time.
-             If there are no duplicates remaining, do not proceed — just exit.
+             If there are no duplicates remaining, return an empty `duplicates` list.
 
-          5. **Quality gate**: Before commenting, re-read each candidate as a skeptical reviewer. For each one, ask: "Would a maintainer who knows this codebase agree this is a duplicate, or would they dismiss it?" If you'd need to hedge with "might" or "possibly," drop it.
+          5. **Quality gate**: Before answering, re-read each candidate as a skeptical reviewer. For each one, ask: "Would a maintainer who knows this codebase agree this is a duplicate, or would they dismiss it?" If you'd need to hedge with "might" or "possibly," drop it.
 
-          6. Comment back on the issue with your findings (or exit silently if none remain). Do NOT add any labels — labeling is handled by a later workflow step.
+          6. Return the numbers of the remaining duplicates, most likely first, in `duplicates`. You have no tool for commenting or labeling. A later workflow step posts the comment and applies the label.
 
           # Notes for your agents
           - Use `gh` to interact with GitHub, rather than web fetch
           - Do not use other tools beyond `gh` and Task (no MCP servers, file edit, etc.)
           - Never include this issue as a duplicate of itself
           - When searching, read the FULL body of candidate issues — titles alone are not enough to judge duplication
-
-          For your comment, follow this format precisely (example with 3 suspected duplicates):
-
-          ---
-          Found 3 possible duplicate issues:
-
-          1. #123: Issue title here
-          2. #456: Another issue title
-          3. #789: Third issue title
-
-          This issue will be automatically closed as a duplicate in 3 days.
-
-          - If your issue is a duplicate, please close it and 👍 the existing issue instead
-          - To prevent auto-closure, add a comment or 👎 this comment
-
-          ---
           PROMPT_END
           EOF
 
@@ -109,6 +92,7 @@ jobs:
           "$HOME/.local/bin/claude" --version
 
       - name: Run Marvin dedupe command
+        id: marvin
         uses: anthropics/claude-code-action@v1
         with:
           path_to_claude_code_executable: ${{ steps.pin-claude.outputs.path }}
@@ -117,12 +101,12 @@ jobs:
           prompt: ${{ steps.dedupe-prompt.outputs.PROMPT }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_FOR_CI }}
           allowed_non_write_users: "*"
-          # No `Bash(gh api:*)`: it reaches every endpoint the token can, which
-          # is the reason marvin-label-triage routes its one write through
-          # .github/scripts/triage-label.sh instead. Dedupe searches, reads and
-          # comments — the four verbs below cover that.
+          # No `Bash(gh api:*)`: it reaches every endpoint the token can. Dedupe
+          # searches and reads with the three verbs below, then returns issue
+          # numbers through --json-schema. It has no tool that writes.
           claude_args: |
-            --allowedTools "Bash(gh issue view:*)","Bash(gh search:*)","Bash(gh issue list:*)","Bash(gh issue comment:*)",Task
+            --allowedTools "Bash(gh issue view:*)","Bash(gh search:*)","Bash(gh issue list:*)",Task
+            --json-schema '{"type":"object","properties":{"duplicates":{"type":"array","items":{"type":"integer"},"maxItems":3}},"required":["duplicates"],"additionalProperties":false}'
           settings: |
             {
               "model": "claude-sonnet-5",
@@ -131,23 +115,91 @@ jobs:
               }
             }
 
-      - name: Add potential-duplicate label if bot commented in this run
+      - name: Generate Marvin App token for writing
+        id: marvin-write-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.MARVIN_APP_ID }}
+          private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
+          permission-issues: write
+
+      # The comment and label always go to this issue, and the comment always
+      # has this format. The model only chooses which issue numbers appear.
+      - name: Post duplicate comment and label
         env:
-          GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
+          GH_TOKEN: ${{ steps.marvin-write-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number || inputs.issue_number }}
+          RESULT: ${{ steps.marvin.outputs.structured_output }}
         run: |
-          ISSUE=${{ github.event.issue.number || inputs.issue_number }}
-          # Only match bot comments created in the last 10 minutes (this run)
-          CUTOFF=$(date -u -d '10 minutes ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
-            || date -u -v-10M '+%Y-%m-%dT%H:%M:%SZ')
-          HAS_RECENT=$(gh api "repos/${{ github.repository }}/issues/${ISSUE}/comments?sort=created&direction=desc&per_page=10" \
-            --jq "[.[] | select(
-              .user.type == \"Bot\" and
-              (.body | test(\"possible duplicate issues\"; \"i\")) and
-              .created_at >= \"${CUTOFF}\"
-            )] | length")
-          if [ "$HAS_RECENT" -gt 0 ]; then
-            gh issue edit "$ISSUE" --add-label "potential-duplicate" -R "${{ github.repository }}"
-            echo "Added potential-duplicate label to #${ISSUE}"
-          else
-            echo "No recent duplicate comment found, skipping label"
+          if [[ ! "$ISSUE" =~ ^[0-9]+$ ]]; then
+            echo "::error::Issue number must be numeric, got: $ISSUE"
+            exit 1
           fi
+          if [[ -z "$RESULT" ]]; then
+            echo "Marvin returned no structured output; nothing to post."
+            exit 0
+          fi
+
+          # Keep positive integers other than this issue, in the model's
+          # order, without repeats, and at most 3.
+          numbers=$(jq -r --argjson self "$ISSUE" '
+            [(.duplicates // [])[]
+              | select(type == "number" and . == floor and . > 0 and . != $self)]
+            | reduce .[] as $n ([]; if any(.[]; . == $n) then . else . + [$n] end)
+            | .[:3][]
+          ' <<<"$RESULT")
+          if [[ -z "$numbers" ]]; then
+            echo "No duplicates to report."
+            exit 0
+          fi
+
+          state=$(gh api "repos/$REPO/issues/$ISSUE" --jq .state)
+          if [[ "$state" != "open" ]]; then
+            echo "Issue #$ISSUE is $state; not commenting."
+            exit 0
+          fi
+          bot_comments=$(gh api --paginate "repos/$REPO/issues/$ISSUE/comments" \
+            --jq '.[] | select(.user.type == "Bot") | .body')
+          if grep -qi "possible duplicate issue" <<<"$bot_comments"; then
+            echo "Issue #$ISSUE already has a duplicate comment; not commenting again."
+            exit 0
+          fi
+
+          # Pull requests and numbers that do not exist are dropped. Titles
+          # come from the API, with @-mentions broken so they notify no one.
+          lines=()
+          while read -r n; do
+            title=$(gh api "repos/$REPO/issues/$n" \
+              --jq 'select(has("pull_request") | not) | .title | gsub("@"; "@​")') || continue
+            if [[ -n "$title" ]]; then
+              lines+=("$(( ${#lines[@]} + 1 )). #$n: $title")
+            fi
+          done <<<"$numbers"
+
+          count=${#lines[@]}
+          if [[ "$count" -eq 0 ]]; then
+            echo "None of the returned numbers is an issue in $REPO; not commenting."
+            exit 0
+          fi
+          noun="issues"
+          if [[ "$count" -eq 1 ]]; then
+            noun="issue"
+          fi
+
+          body="$RUNNER_TEMP/dedupe-comment.md"
+          {
+            echo "Found $count possible duplicate $noun:"
+            echo
+            printf '%s\n' "${lines[@]}"
+            echo
+            echo "This issue will be automatically closed as a duplicate in 3 days."
+            echo
+            echo "- If your issue is a duplicate, please close it and 👍 the existing issue instead"
+            echo "- To prevent auto-closure, add a comment or 👎 this comment"
+          } > "$body"
+          # Label first. A rerun skips an issue that already has the comment,
+          # so a comment left without the label would never be auto-closed.
+          gh issue edit "$ISSUE" -R "$REPO" --add-label "potential-duplicate"
+          gh issue comment "$ISSUE" -R "$REPO" --body-file "$body"
+          echo "Posted $count possible duplicate(s) and added potential-duplicate to #$ISSUE"

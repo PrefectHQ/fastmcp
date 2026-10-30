@@ -47,7 +47,7 @@ while IFS= read -r comment; do
   pages "repos/$repo/issues/comments/$comment/reactions" | jq --argjson comment "$comment" '[.[]|{comment_id:$comment,content,user:(.user|{id,login,type})}]' > "$scratch/reaction-page.json"
   jq -s '.[0]+.[1]' "$scratch/reactions.json" "$scratch/reaction-page.json" > "$scratch/next.json"
   mv "$scratch/next.json" "$scratch/reactions.json"
-done < <(jq -r '.[]|select(.user.type=="Bot" and (.body|ascii_downcase|contains("possible duplicate issues")))|.id' "$scratch/comments.json")
+done < <(jq -r '.[]|select(.user.type=="Bot" and (.body|ascii_downcase|contains("possible duplicate issue")))|.id' "$scratch/comments.json")
 jq -rn --slurpfile issue "$scratch/issue.json" --arg number "$issue" '
   "repo:PrefectHQ/fastmcp is:pr " + $number + " in:body",
   ($issue[0].title | gsub("\\[Bug\\]|\\[bug\\]";"") |

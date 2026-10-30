@@ -153,12 +153,18 @@ def test_hold_survives_title_body_labels_and_draft_metadata(pr):
 
 
 @pytest.mark.parametrize(
+    "marking",
+    ["Found 2 possible duplicate issues:", "Found 1 possible duplicate issue:"],
+)
+@pytest.mark.parametrize(
     "activity", ["comment", "reaction", "reopened", "previous_closure"]
 )
-def test_duplicate_human_intervention_cannot_repeat_pruning(evidence, activity):
+def test_duplicate_human_intervention_cannot_repeat_pruning(
+    evidence, activity, marking
+):
     evidence["issue"]["labels"] = ["potential-duplicate", "invalid"]
     evidence["comments"] = [
-        comment(1, "2026-10-15T00:00:00Z", "Possible duplicate issues", "marvin", "Bot")
+        comment(1, "2026-10-15T00:00:00Z", marking, "marvin", "Bot")
     ]
     if activity == "comment":
         evidence["comments"].append(
