@@ -1,5 +1,6 @@
 """Tests for WorkOS OAuth provider."""
 
+import time
 from urllib.parse import urlparse
 
 import pytest
@@ -9,6 +10,7 @@ from starlette.testclient import TestClient
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
+from fastmcp.server.auth.oauth_proxy.models import JTIMapping, UpstreamTokenSet
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.auth.providers.workos import (
     AuthKitProvider,
@@ -405,3 +407,146 @@ class TestWorkOSTokenVerifierScopes:
 
         assert result is not None
         assert result.scopes == ["openid", "profile", "read:secrets"]
+
+
+_USERINFO_URL = "https://test.authkit.app/oauth2/userinfo"
+
+# The userinfo response documented by WorkOS carries identity claims only: it
+# never reports the scopes the token was granted.
+_USERINFO = {
+    "sub": "user_123",
+    "name": "Leroy Jenkins",
+    "given_name": "Leroy",
+    "family_name": "Jenkins",
+    "email": "leroy.jenkins@example.com",
+    "email_verified": True,
+}
+
+_REQUIRED_SCOPES = ["openid", "profile", "email"]
+
+
+class TestWorkOSProviderRequiredScopes:
+    """`required_scopes` must hold for tokens whose userinfo has no scope field."""
+
+    @pytest.fixture
+    def provider(self, memory_storage: MemoryStore) -> WorkOSProvider:
+        provider = WorkOSProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            authkit_domain="https://test.authkit.app",
+            base_url="https://myserver.com",
+            required_scopes=_REQUIRED_SCOPES,
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+        provider.set_mcp_path("/mcp")
+        return provider
+
+    async def _issue_access_token(self, provider: WorkOSProvider, *, scope: str) -> str:
+        """Issue a FastMCP token backed by an upstream grant of `scope`."""
+        await provider._upstream_token_store.put(
+            key="upstream-token-id",
+            value=UpstreamTokenSet(
+                upstream_token_id="upstream-token-id",
+                access_token="upstream-access-token",
+                refresh_token=None,
+                refresh_token_expires_at=None,
+                expires_at=time.time() + 3600,
+                token_type="Bearer",
+                scope=scope,
+                client_id="test_client",
+                created_at=time.time(),
+            ),
+            ttl=3600,
+        )
+        await provider._jti_mapping_store.put(
+            key="access-jti",
+            value=JTIMapping(
+                jti="access-jti",
+                upstream_token_id="upstream-token-id",
+                created_at=time.time(),
+            ),
+            ttl=3600,
+        )
+        return provider.jwt_issuer.issue_access_token(
+            client_id="test_client",
+            scopes=scope.split(),
+            jti="access-jti",
+            expires_in=3600,
+        )
+
+    def test_required_scopes_are_enforced_by_the_provider(
+        self, provider: WorkOSProvider
+    ):
+        assert provider.required_scopes == _REQUIRED_SCOPES
+        assert provider._token_validator.required_scopes == []
+        assert provider._uses_alternate_verification() is True
+
+    def test_required_scopes_default_to_empty(self, memory_storage: MemoryStore):
+        provider = WorkOSProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            authkit_domain="https://test.authkit.app",
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert provider.required_scopes == []
+        assert provider._token_validator.required_scopes == []
+
+    def test_advertised_scopes_follow_required_scopes(self, provider: WorkOSProvider):
+        reg_options = provider.client_registration_options
+        assert reg_options is not None
+        assert reg_options.valid_scopes == _REQUIRED_SCOPES
+        assert reg_options.default_scopes == _REQUIRED_SCOPES
+
+    async def test_load_access_token_uses_upstream_granted_scopes(
+        self, provider: WorkOSProvider, httpx_mock: HTTPXMock
+    ):
+        httpx_mock.add_response(url=_USERINFO_URL, json=_USERINFO)
+        token = await self._issue_access_token(provider, scope="openid profile email")
+
+        result = await provider.load_access_token(token)
+
+        assert result is not None
+        assert result.scopes == ["openid", "profile", "email"]
+
+    @pytest.mark.parametrize(
+        ("granted_scope", "expected_status"),
+        [
+            ("openid profile email", 200),
+            ("openid profile", 403),
+        ],
+    )
+    async def test_http_app_enforces_required_scopes_on_granted_scopes(
+        self,
+        provider: WorkOSProvider,
+        httpx_mock: HTTPXMock,
+        granted_scope: str,
+        expected_status: int,
+    ):
+        httpx_mock.add_response(url=_USERINFO_URL, json=_USERINFO)
+        app = FastMCP("test", auth=provider).http_app(path="/mcp")
+        token = await self._issue_access_token(provider, scope=granted_scope)
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/mcp",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/json, text/event-stream",
+                },
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": "test", "version": "1.0"},
+                    },
+                },
+            )
+
+        assert response.status_code == expected_status
