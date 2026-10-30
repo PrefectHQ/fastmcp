@@ -35,12 +35,13 @@ class TestOpenAPIPerformance:
         rather a canary to ensure we don't regress significantly.
         """
 
-        # Download the full GitHub API schema (typically ~10MB). Anonymous
+        # Download the full GitHub API schema (typically ~10MB), pinned so the
+        # timing measures our parser rather than upstream growth. Anonymous
         # downloads from raw.githubusercontent.com get rate limited in CI, so
         # authenticate when CI provides a token.
         token = os.environ.get("FASTMCP_GITHUB_TOKEN")
         response = httpx2.get(
-            "https://raw.githubusercontent.com/github/rest-api-description/refs/heads/main/descriptions-next/ghes-3.17/ghes-3.17.json",
+            "https://raw.githubusercontent.com/github/rest-api-description/524bcb0799ab2b14c239d68e8e1e7f4508a631f9/descriptions-next/ghes-3.17/ghes-3.17.json",
             headers={"Authorization": f"Bearer {token}"} if token else None,
             timeout=30.0,  # Allow time for download
         )
