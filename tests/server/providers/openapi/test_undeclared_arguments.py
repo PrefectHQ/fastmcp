@@ -202,14 +202,36 @@ async def test_configured_headers_keep_their_values(
 ) -> None:
     ok = {"200": {"description": "OK"}}
     item_id = {"name": "item_id", "in": "path", "required": True, "schema": {}}
+    trace_header = {
+        "name": "X-Trace-Id",
+        "in": "header",
+        "required": False,
+        "schema": {},
+    }
     spec = {
         "openapi": "3.1.0",
         "info": {"title": "Test API", "version": "1.0"},
         "paths": {
-            "/actions": {"post": {"operationId": "act", "responses": ok}},
-            "/status": {"get": {"operationId": "status", "responses": ok}},
+            "/actions": {
+                "post": {
+                    "operationId": "act",
+                    "parameters": [trace_header],
+                    "responses": ok,
+                }
+            },
+            "/status": {
+                "get": {
+                    "operationId": "status",
+                    "parameters": [trace_header],
+                    "responses": ok,
+                }
+            },
             "/items/{item_id}": {
-                "get": {"operationId": "item", "parameters": [item_id], "responses": ok}
+                "get": {
+                    "operationId": "item",
+                    "parameters": [item_id, trace_header],
+                    "responses": ok,
+                }
             },
         },
     }
@@ -225,7 +247,12 @@ async def test_configured_headers_keep_their_values(
         )
         async with run_server_async(server) as url:
             transport = StreamableHttpTransport(
-                url, headers={"X-Api-Key": "client-key", "X-Client-Tag": "forwarded"}
+                url,
+                headers={
+                    "X-Api-Key": "client-key",
+                    "X-Client-Tag": "forwarded",
+                    "X-Trace-Id": "trace-123",
+                },
             )
             async with Client(transport) as client:
                 if component == "tool":
@@ -237,7 +264,13 @@ async def test_configured_headers_keep_their_values(
 
     [request] = requests
     _assert_sent_as_configured(request)
-    assert request.headers["X-Client-Tag"] == "forwarded"
+    # Headers the operation declares as parameters still forward from the
+    # inbound MCP request when the tool call doesn't supply a value.
+    assert request.headers["X-Trace-Id"] == "trace-123"
+    # Undeclared headers no longer cross from the MCP ingress to the
+    # wrapped API by default (regression test for the custom-credential
+    # header leak, e.g. x-api-key-style gateway credentials).
+    assert "X-Client-Tag" not in request.headers
 
 
 def test_manual_route_uses_canonical_parameter_names() -> None:
