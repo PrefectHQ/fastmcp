@@ -142,7 +142,7 @@ wrap(cls, server: Any, template: ResourceTemplate) -> FastMCPProviderResourceTem
 Wrap a ResourceTemplate to create FastMCPProviderResources.
 
 
-#### `create_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L316" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `create_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L317" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_resource(self, uri: str, params: dict[str, Any]) -> Resource
@@ -155,13 +155,13 @@ We use `_original_uri_template` with `params` to construct the internal
 URI that the nested server understands.
 
 
-#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L358" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L359" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_span_attributes(self) -> dict[str, Any]
 ```
 
-### `FastMCPProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L370" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FastMCPProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L371" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Provider that wraps a FastMCP server.
@@ -177,7 +177,7 @@ This ensures middleware runs when components are executed.
 
 **Methods:**
 
-#### `required_extensions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L417" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `required_extensions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L418" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 required_extensions(self) -> Sequence[ServerExtension]
@@ -186,7 +186,7 @@ required_extensions(self) -> Sequence[ServerExtension]
 Expose the mounted server's bundled and auto-registerable extensions.
 
 
-#### `get_app_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L456" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_app_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L462" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_app_tool(self, app_name: str, tool_name: str) -> Tool | None
@@ -195,7 +195,7 @@ get_app_tool(self, app_name: str, tool_name: str) -> Tool | None
 Delegate to nested server's get_app_tool, wrapping for middleware.
 
 
-#### `get_tasks` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L572" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tasks` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L593" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tasks(self) -> Sequence[FastMCPComponent]
@@ -209,10 +209,10 @@ server's transforms applied, then applies this provider's transforms
 for correct registration keys.
 
 
-#### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L594" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L615" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-lifespan(self) -> AsyncIterator[None]
+lifespan(self) -> AsyncGenerator[None, None]
 ```
 
 Start the mounted server's lifespan.

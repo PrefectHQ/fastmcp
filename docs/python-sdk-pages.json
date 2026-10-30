@@ -86,6 +86,7 @@
           "python-sdk/fastmcp-client-mixins-__init__",
           "python-sdk/fastmcp-client-mixins-prompts",
           "python-sdk/fastmcp-client-mixins-resources",
+          "python-sdk/fastmcp-client-mixins-skills",
           "python-sdk/fastmcp-client-mixins-tools"
         ]
       },
@@ -320,6 +321,17 @@
           "python-sdk/fastmcp-server-transforms-visibility"
         ]
       }
+    ]
+  },
+  {
+    "group": "fastmcp.skills",
+    "pages": [
+      "python-sdk/fastmcp-skills-__init__",
+      "python-sdk/fastmcp-skills-client",
+      "python-sdk/fastmcp-skills-extension",
+      "python-sdk/fastmcp-skills-models",
+      "python-sdk/fastmcp-skills-provider",
+      "python-sdk/fastmcp-skills-skill"
     ]
   },
   {

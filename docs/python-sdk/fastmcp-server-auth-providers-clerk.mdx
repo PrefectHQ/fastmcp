@@ -36,7 +36,7 @@ Example:
 
 ## Classes
 
-### `ClerkTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/clerk.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ClerkTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/clerk.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Token verifier for Clerk OAuth tokens.
@@ -55,7 +55,7 @@ assume scopes when introspection is unavailable.
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/clerk.py#L94" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/clerk.py#L104" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -73,7 +73,7 @@ When ``required_scopes`` are configured, introspection must confirm
 them; tokens are rejected if scope information is unavailable.
 
 
-### `ClerkProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/clerk.py#L241" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ClerkProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/clerk.py#L251" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Complete Clerk OAuth provider for FastMCP.

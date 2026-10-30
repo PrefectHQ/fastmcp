@@ -10,7 +10,7 @@ FastMCP CLI tools using Cyclopts.
 
 ## Functions
 
-### `with_argv` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/cli.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `with_argv` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/cli.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 with_argv(args: list[str] | None)
@@ -27,7 +27,7 @@ Args are provided without the script name, so we preserve sys.argv[0]
 and replace the rest.
 
 
-### `version` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/cli.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `version` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/cli.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 version()
@@ -37,7 +37,7 @@ version()
 Display version information and platform details.
 
 
-### `inspector` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/cli.py#L145" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `inspector` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/cli.py#L146" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 inspector(server_spec: str | None = None) -> None
@@ -50,7 +50,7 @@ Run an MCP server with the MCP Inspector for development.
 - `server_spec`: Python file to run, optionally with \:object suffix, or None to auto-detect fastmcp.json
 
 
-### `apps` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/cli.py#L340" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `apps` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/cli.py#L338" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 apps(server_spec: str) -> None
@@ -66,7 +66,7 @@ the browser automatically.
 Requires fastmcp[apps] to be installed (prefab-ui).
 
 
-### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/cli.py#L410" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/cli.py#L408" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(server_spec: str | None = None, *server_args: str) -> None
@@ -91,7 +91,7 @@ fastmcp run server.py -- --config config.json --debug
 - `server_spec`: Python file, object specification (file\:obj), config file, URL, or None to auto-detect
 
 
-### `inspect` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/cli.py#L795" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `inspect` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/cli.py#L793" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 inspect(server_spec: str | None = None) -> None

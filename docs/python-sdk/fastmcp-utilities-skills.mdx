@@ -10,17 +10,19 @@ Client utilities for discovering and downloading skills from MCP servers.
 
 ## Functions
 
-### `list_skills` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/skills.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `list_skill_summaries` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/skills.py#L48" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-list_skills(client: Client) -> list[SkillSummary]
+list_skill_summaries(client: Client) -> list[SkillSummary]
 ```
 
 
-List all available skills from an MCP server.
+List the skills a server publishes as resources.
 
 Discovers skills by finding resources with URIs matching the
-`skill://{name}/SKILL.md` pattern.
+`skill://{name}/SKILL.md` pattern, so it works with any server that
+serves skills as resources. For the Skills extension's `skills/list`,
+use `Client.list_skills()` with `SkillsClientExtension` instead.
 
 **Args:**
 - `client`: Connected FastMCP client
@@ -29,7 +31,20 @@ Discovers skills by finding resources with URIs matching the
 - List of SkillSummary objects with name, description, and URI
 
 
-### `get_skill_manifest` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/skills.py#L87" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `list_skills` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/skills.py#L94" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_skills(client: Client) -> list[SkillSummary]
+```
+
+
+Deprecated alias for `list_skill_summaries`.
+
+The name collided with `Client.list_skills()`, which sends the Skills
+extension's `skills/list` request and returns different results.
+
+
+### `get_skill_manifest` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/skills.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_skill_manifest(client: Client, skill_name: str) -> SkillManifest
@@ -49,33 +64,38 @@ Get the manifest for a specific skill.
 - `ValueError`: If manifest cannot be read or parsed
 
 
-### `download_skill` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/skills.py#L127" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `download_skill` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/skills.py#L150" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 download_skill(client: Client, skill_name: str, target_dir: str | Path) -> Path
 ```
 
 
-Download a skill and all its files to a local directory.
+Read a skill from the server and write it to a local directory.
 
-Creates a subdirectory named after the skill containing all files.
+Creates a subdirectory named after the skill containing all files. A
+skill served at a nested path, such as a mounted server's `ops/deploy`,
+is installed as `deploy`, since agents look for skill folders one level
+deep. Every file is checked against the server's manifest before it is
+written; see `Client.read_skill`.
 
 **Args:**
 - `client`: Connected FastMCP client
-- `skill_name`: Name of the skill to download
+- `skill_name`: Name or path of the skill to download
 - `target_dir`: Directory where skill folder will be created
-- `overwrite`: If True, overwrite existing skill directory. If False
+- `overwrite`: If True, replace an existing skill directory. If False
 (default), raise FileExistsError if directory exists.
 
 **Returns:**
 - Path to the downloaded skill directory
 
 **Raises:**
-- `ValueError`: If skill cannot be found or downloaded
+- `ValueError`: If the skill cannot be found, fails verification, or is
+not a valid skill
 - `FileExistsError`: If skill directory exists and overwrite=False
 
 
-### `sync_skills` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/skills.py#L218" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `sync_skills` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/skills.py#L214" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 sync_skills(client: Client, target_dir: str | Path) -> list[Path]
@@ -83,6 +103,10 @@ sync_skills(client: Client, target_dir: str | Path) -> list[Path]
 
 
 Download all available skills from a server.
+
+Each skill is installed in a folder named after it. When two skills share
+a name, such as `ops/deploy` and `web/deploy`, only the first is
+installed.
 
 **Args:**
 - `client`: Connected FastMCP client
@@ -95,19 +119,19 @@ Download all available skills from a server.
 
 ## Classes
 
-### `SkillSummary` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/skills.py#L18" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SkillSummary` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/skills.py#L23" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Summary information about a skill available on a server.
 
 
-### `SkillFile` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/skills.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SkillFile` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/skills.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Information about a file within a skill.
 
 
-### `SkillManifest` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/skills.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SkillManifest` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/skills.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Full manifest of a skill including all files.
