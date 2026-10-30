@@ -219,7 +219,8 @@ from other commenters and preserve the reporter's first claim. Existing-work lan
 existing_review with concrete findings
 and links, never reproduce for a competing patch. Select at most three relevant unmerged
 contributions in verification_prs for execution, prioritizing the reporter's current proposal
-and explaining the selection in reason. Reading historical PRs does not select them for
+and explaining the selection in reason. Select only from context.route.pull_requests; name a
+relevant contribution outside that list in reason instead of selecting it. Reading historical PRs does not select them for
 execution. Closed assignment-gated proposals remain eligible. Use an empty selection only
 when no execution is warranted and explain the remaining maintainer decision.
 Check unfamiliar contributors using the
