@@ -170,3 +170,23 @@ def test_hook_blocks_mcp_branch_creation():
         "tool_input": {"owner": "prefecthq", "repo": "fastmcp", "branch": "claude/foo"},
     }
     assert run_hook(payload).returncode == 2
+
+
+def test_hook_reads_codex_cmd_field():
+    payload = {
+        "tool_name": "exec_command",
+        "tool_input": {
+            "cmd": "gh issue comment 1 -R PrefectHQ/fastmcp --body 'Want: merge'"
+        },
+    }
+    assert run_hook(payload).returncode == 2
+
+
+def test_hook_finds_api_endpoint_after_options():
+    command = (
+        "gh api -X POST repos/PrefectHQ/fastmcp/issues/1/comments -f 'body=Want: merge'"
+    )
+    assert (
+        run_hook({"tool_name": "Bash", "tool_input": {"command": command}}).returncode
+        == 2
+    )

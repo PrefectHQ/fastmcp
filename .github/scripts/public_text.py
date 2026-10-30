@@ -136,6 +136,39 @@ def option(args: list[str], *names: str) -> str | None:
     return None
 
 
+GH_API_VALUE_OPTIONS = {
+    "-X",
+    "--method",
+    "-H",
+    "--header",
+    "-f",
+    "--raw-field",
+    "-F",
+    "--field",
+    "--input",
+    "-q",
+    "--jq",
+    "-t",
+    "--template",
+    "-p",
+    "--preview",
+    "--hostname",
+    "--cache",
+}
+
+
+def api_endpoint(args: list[str]) -> str:
+    skip = False
+    for arg in args:
+        if skip:
+            skip = False
+        elif arg in GH_API_VALUE_OPTIONS:
+            skip = True
+        elif not arg.startswith("-"):
+            return arg
+    return ""
+
+
 def read_body(value: str | None, command: str, cwd: str | None) -> str | None:
     if value is None:
         return None
@@ -199,7 +232,7 @@ def check_gh(sub: list[str], command: str, cwd: str | None) -> list[str]:
     elif head in {"pr create", "pr edit", "issue create", "issue edit"}:
         kind = "body"
     elif sub[0] == "api":
-        endpoint = next((a for a in sub[1:] if not a.startswith("-")), "")
+        endpoint = api_endpoint(sub[1:])
         named = re.search(r"repos/([^/]+/[^/]+)", endpoint)
         if named and "{owner}" not in endpoint:
             repo = named.group(1).lower()
@@ -288,7 +321,7 @@ def check_payload(payload: dict) -> list[str]:
     cwd = payload.get("cwd") or os.getcwd()
     if isinstance(args, str):
         args = {"command": args}
-    command = args.get("command")
+    command = args.get("command") or args.get("cmd")
     if isinstance(command, list):
         command = (
             command[-1]
