@@ -67,6 +67,11 @@ def no_return_tool_result_factory(arg1: str) -> CallToolRequestResult:
     )
 
 
+async def sum_tool(a: int, b: int) -> dict[str, int]:
+    """A tool that returns structured output."""
+    return {"sum": a + b}
+
+
 @pytest.fixture
 def live_server_with_tool() -> FastMCP:
     """Fixture to create a FastMCP server instance with the echo_tool registered."""
@@ -74,6 +79,7 @@ def live_server_with_tool() -> FastMCP:
     server.add_tool(Tool.from_function(echo_tool))
     server.add_tool(Tool.from_function(error_tool))
     server.add_tool(Tool.from_function(no_return_tool))
+    server.add_tool(Tool.from_function(sum_tool))
     return server
 
 
@@ -101,6 +107,7 @@ async def test_call_tool_bulk_single_success(bulk_caller_live: BulkToolCaller):
         [
             CallToolRequestResult(
                 content=[TextContent(type="text", text="value1")],
+                structured_content={"result": "value1"},
                 tool="echo_tool",
                 arguments={"arg1": "value1"},
             )
@@ -118,11 +125,13 @@ async def test_call_tool_bulk_multiple_success(bulk_caller_live: BulkToolCaller)
         [
             CallToolRequestResult(
                 content=[TextContent(type="text", text="value1")],
+                structured_content={"result": "value1"},
                 tool="echo_tool",
                 arguments={"arg1": "value1"},
             ),
             CallToolRequestResult(
                 content=[TextContent(type="text", text="value2")],
+                structured_content={"result": "value2"},
                 tool="echo_tool",
                 arguments={"arg1": "value2"},
             ),
@@ -180,6 +189,7 @@ async def test_call_tool_bulk_error_continues(bulk_caller_live: BulkToolCaller):
             ),
             CallToolRequestResult(
                 content=[TextContent(type="text", text="success_value")],
+                structured_content={"result": "success_value"},
                 tool="echo_tool",
                 arguments={"arg1": "success_value"},
             ),
@@ -197,6 +207,7 @@ async def test_call_tools_bulk_single_success(bulk_caller_live: BulkToolCaller):
         [
             CallToolRequestResult(
                 content=[TextContent(type="text", text="value1")],
+                structured_content={"result": "value1"},
                 tool="echo_tool",
                 arguments={"arg1": "value1"},
             )
@@ -219,6 +230,7 @@ async def test_call_tools_bulk_multiple_success(bulk_caller_live: BulkToolCaller
         [
             CallToolRequestResult(
                 content=[TextContent(type="text", text="echo_value")],
+                structured_content={"result": "echo_value"},
                 tool="echo_tool",
                 arguments={"arg1": "echo_value"},
             ),
@@ -281,6 +293,7 @@ async def test_call_tools_bulk_error_continues(bulk_caller_live: BulkToolCaller)
             ),
             CallToolRequestResult(
                 content=[TextContent(type="text", text="success_value")],
+                structured_content={"result": "success_value"},
                 tool="echo_tool",
                 arguments={"arg1": "success_value"},
             ),
@@ -315,6 +328,7 @@ async def test_call_tools_bulk_blocks_self_invocation(bulk_caller_live: BulkTool
             ),
             CallToolRequestResult(
                 content=[TextContent(type="text", text="success_value")],
+                structured_content={"result": "success_value"},
                 tool="echo_tool",
                 arguments={"arg1": "success_value"},
             ),
@@ -347,6 +361,42 @@ async def test_call_tool_bulk_blocks_self_invocation(bulk_caller_live: BulkToolC
             )
         ]
     )
+
+
+@pytest.mark.parametrize(
+    ("bulk_tool", "bulk_arguments"),
+    [
+        (
+            "call_tool_bulk",
+            {
+                "tool": "sum_tool",
+                "tool_arguments": [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
+            },
+        ),
+        (
+            "call_tools_bulk",
+            {
+                "tool_calls": [
+                    {"tool": "sum_tool", "arguments": {"a": 1, "b": 2}},
+                    {"tool": "sum_tool", "arguments": {"a": 3, "b": 4}},
+                ]
+            },
+        ),
+    ],
+)
+@pytest.mark.usefixtures("bulk_caller_live")
+async def test_bulk_results_preserve_structured_content(
+    live_server_with_tool: FastMCP,
+    bulk_tool: str,
+    bulk_arguments: dict[str, Any],
+):
+    async with Client(live_server_with_tool) as client:
+        result = await client.call_tool_mcp(bulk_tool, bulk_arguments)
+
+    assert result.structured_content is not None
+    assert [
+        entry["structured_content"] for entry in result.structured_content["result"]
+    ] == [{"sum": 3}, {"sum": 7}]
 
 
 async def test_register_tools_applies_prefix_and_separator():
