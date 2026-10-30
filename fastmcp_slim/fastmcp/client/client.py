@@ -54,7 +54,11 @@ from mcp.client.session import (
     MessageHandlerFnT,
 )
 from mcp_types.methods import validate_server_result
-from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS, MODERN_PROTOCOL_VERSIONS
+from mcp_types.version import (
+    HANDSHAKE_PROTOCOL_VERSIONS,
+    LATEST_HANDSHAKE_VERSION,
+    MODERN_PROTOCOL_VERSIONS,
+)
 from pydantic import AnyUrl, ValidationError
 
 import fastmcp as fastmcp
@@ -86,7 +90,9 @@ from fastmcp.client.sampling import (
     SamplingHandler,
     create_sampling_callback,
 )
+from fastmcp.client.telemetry import client_span
 from fastmcp.mcp_config import MCPConfig
+from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.exceptions import get_catch_handlers
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.timeout import normalize_timeout_to_seconds
@@ -888,9 +894,22 @@ class Client(
         try:
             with anyio.fail_after(timeout):
                 if effective_mode == "legacy":
-                    self._session_state.initialize_result = (
-                        await self.session.initialize()
-                    )
+                    with client_span(
+                        "initialize",
+                        "initialize",
+                        "",
+                        session_id=self.transport.get_session_id(),
+                    ):
+                        propagated_meta = inject_trace_context()
+                        if propagated_meta is None:
+                            initialize_result = await self.session.initialize()
+                        else:
+                            initialize_result = (
+                                await self._initialize_session_with_meta(
+                                    propagated_meta
+                                )
+                            )
+                    self._session_state.initialize_result = initialize_result
                 elif effective_mode == "auto":
                     async with _conformant_discover_only(self.session):
                         await negotiate_auto(self.session)
@@ -905,6 +924,34 @@ class Client(
                     )
         except TimeoutError as e:
             raise RuntimeError("Failed to initialize server session") from e
+
+    async def _initialize_session_with_meta(
+        self,
+        meta: dict[str, Any],
+    ) -> mcp_types.InitializeResult:
+        """Run the legacy handshake while carrying MCP request ``_meta``."""
+        session = self.session
+        result = await session.send_request(
+            mcp_types.InitializeRequest(
+                params=mcp_types.InitializeRequestParams(
+                    meta=cast("mcp_types.RequestParamsMeta | None", meta),
+                    protocol_version=LATEST_HANDSHAKE_VERSION,
+                    capabilities=session._build_capabilities(LATEST_HANDSHAKE_VERSION),
+                    client_info=session._client_info,
+                )
+            ),
+            mcp_types.InitializeResult,
+        )
+
+        if result.protocol_version not in HANDSHAKE_PROTOCOL_VERSIONS:
+            raise RuntimeError(
+                "Unsupported protocol version from the server: "
+                f"{result.protocol_version}"
+            )
+
+        session.adopt(result)
+        await session.send_notification(mcp_types.InitializedNotification())
+        return result
 
     async def initialize(
         self,

@@ -61,9 +61,13 @@ class ClientToolsMixin:
         ):
             logger.debug(f"[{self.name}] called list_tools")
 
+            propagated_meta = inject_trace_context()
             params = (
-                mcp_types.PaginatedRequestParams(cursor=cursor)
-                if cursor is not None
+                mcp_types.PaginatedRequestParams(
+                    cursor=cursor,
+                    meta=cast("mcp_types.RequestParamsMeta | None", propagated_meta),
+                )
+                if cursor is not None or propagated_meta is not None
                 else None
             )
 
