@@ -762,9 +762,59 @@ def _combine_schemas_and_map_params(
             result["$defs"] = schema_defs
 
     if route.openapi_version and route.openapi_version.startswith("3"):
-        result = convert_openapi_schema_to_json_schema(result, route.openapi_version)
+        result = _convert_input_schema(result, set(body_props), route.openapi_version)
 
     return result, parameter_map
+
+
+def _convert_input_schema(
+    schema: dict[str, Any], body_property_names: set[str], openapi_version: str
+) -> dict[str, Any]:
+    """Convert a combined tool input schema to JSON Schema.
+
+    readOnly properties are removed: the server sets them, so a request does
+    not send them, and OpenAPI applies their ``required`` entries to responses
+    only. readOnly describes a property of an object, so at the top level only
+    the request body properties flattened into arguments (``body_property_names``)
+    can be removed. Parameters and a whole-body argument stay arguments even
+    when their own schema is marked readOnly; the objects inside them, and the
+    component schemas in ``$defs``, lose their readOnly properties.
+    """
+    properties = schema["properties"]
+    definitions = schema.get("$defs")
+
+    def convert(sub_schema: Any) -> Any:
+        return convert_openapi_schema_to_json_schema(
+            sub_schema, openapi_version, remove_read_only=True, definitions=definitions
+        )
+
+    body = convert(
+        {
+            "properties": {
+                k: v for k, v in properties.items() if k in body_property_names
+            },
+            "required": [n for n in schema["required"] if n in body_property_names],
+        }
+    )
+    converted = {
+        name: body["properties"][name]
+        if name in body_property_names
+        else convert(prop_schema)
+        for name, prop_schema in properties.items()
+        if name not in body_property_names or name in body["properties"]
+    }
+    result: dict[str, Any] = {
+        "type": "object",
+        "properties": converted,
+        "required": [
+            name
+            for name in schema["required"]
+            if name not in body_property_names or name in body.get("required", [])
+        ],
+    }
+    if definitions is not None:
+        result["$defs"] = {name: convert(d) for name, d in definitions.items()}
+    return result
 
 
 def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
