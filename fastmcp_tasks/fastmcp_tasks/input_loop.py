@@ -140,7 +140,16 @@ def reentrant_task_fn(
     @functools.wraps(fn)
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
-            result = await fn(*args, **kwargs)
+            pending = fn(*args, **kwargs)
+            # A tool body may be an async generator: calling it returns the
+            # generator itself, not an awaitable, so awaiting it raises.
+            # The synchronous `tools/call` path consumes these through
+            # FunctionTool._materialize_generator, so the task path has to
+            # consume them the same way or the two paths disagree.
+            if inspect.isasyncgen(pending):
+                result = [item async for item in pending]
+            else:
+                result = await pending
         except FastMCPError as exc:
             return _error_result(tool_name, exc)
         except MCPError:
