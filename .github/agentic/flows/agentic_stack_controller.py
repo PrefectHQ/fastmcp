@@ -42,7 +42,7 @@ from flows.agentic_stack_runtime import (
 )
 from flows.agentic_stack_usage import usage_report
 from flows.agentic_triage_records import Admission
-from flows.agentic_triage_review import apply_disposition
+from flows.agentic_triage_review import apply_disposition, requires_review
 from flows.agentic_validate_patch import fetch_source
 
 
@@ -411,11 +411,7 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                         proof = validate_reproduction_patch(result)
                         record(owner, proof_key, proof)
                     result = {**result, "regression_validation": proof}
-                if "triage_review" in runtime.plans and destination in {
-                    "evidence",
-                    "existing_review",
-                    "pruning",
-                }:
+                if requires_review(destination):
                     if final_evidence != evidence:
                         review_item = {**item, "evidence": final_evidence}
                         projected = assessment_context(review_item)

@@ -146,6 +146,8 @@ class Runtime(BaseModel):
             value is None for value in native
         ):
             raise ValueError("Native triage requires its plan and both deployments")
+        if self.triage_plan is not None and "triage_review" not in self.plans:
+            raise ValueError("Native triage requires adversarial triage review")
         return self
 
 

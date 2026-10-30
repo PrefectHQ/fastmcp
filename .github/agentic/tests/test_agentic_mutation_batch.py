@@ -211,6 +211,35 @@ def test_closure_uses_real_read_only_identity_check_and_complete_scope(
     )
 
 
+def test_maintainer_confirmation_can_become_a_reviewed_closure_candidate(
+    snapshot, github_server
+):
+    read, responses, _ = github_server
+    snapshot["prs"] = []
+    responses["/repos/PrefectHQ/fastmcp/pulls/99"] = {
+        "number": 99,
+        "html_url": "https://github.com/PrefectHQ/fastmcp/pull/99",
+        "state": "closed",
+        "merged": True,
+        "body": f"Fixes #{snapshot['issue']['number']}",
+        "updated_at": "2026-10-28T00:00:00Z",
+    }
+    output = review(
+        snapshot,
+        "close_completed",
+        merged_pr=99,
+        public_comment="Resolved by https://github.com/PrefectHQ/fastmcp/pull/99; the complete report is covered.",
+    )
+    outcome = {"issue_number": snapshot["issue"]["number"], "decision": "maintainer"}
+    destination, result = apply_disposition(
+        "decisions", outcome, output, "independent-run", snapshot, read
+    )
+    assert destination == "pruning"
+    assert result["mutation_recommendations"][0]["status"] == "proposed"
+    with pytest.raises(ValueError, match="concrete retained closure"):
+        apply_disposition("unchanged", outcome, output, "run", snapshot, read)
+
+
 def test_partial_fix_and_missing_canonical_do_not_become_closure_permission(
     snapshot, github_server
 ):

@@ -167,6 +167,9 @@ not be a generic request to investigate or review. Findings must be consequentia
 Return propose_closure only for an existing closure candidate or merged-contribution outcome,
 with a specific typed close_duplicate, close_completed or close_settled recommendation.
 Challenge partial fixes and reverts: a merged reference alone does not establish resolution.
+Every non-operational outcome reaches you, including maintainer questions and skips without
+executed checks. Challenge whether a maintainer question is real and necessary, whether an
+evidence request is fair and precise, and whether leaving the issue unchanged is justified.
 Use recommendations for exact proposed assignments, localized PR finishing, PR review, duplicate PR consolidation or issue
 closures. Copy context.retained_intake_sha256 into each evidence_sha256; PR actions and
 assignments copy the selected PR's full head_sha/base_sha. Name the issue target for assignment

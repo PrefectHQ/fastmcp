@@ -5,6 +5,10 @@ from collections.abc import Callable
 from flows.agentic_mutation_batch import qualify_recommendations
 
 
+def requires_review(destination: str) -> bool:
+    return destination != "operational"
+
+
 def apply_disposition(
     destination: str,
     outcome: dict,
@@ -21,7 +25,7 @@ def apply_disposition(
             "A contribution recommendation requires existing contribution evidence"
         )
     if decision == "propose_closure" and (
-        destination not in {"pruning", "existing_review"}
+        destination not in {"pruning", "existing_review", "decisions"}
         or not any(
             item["action"] in {"close_duplicate", "close_completed", "close_settled"}
             for item in review.get("recommendations", [])
