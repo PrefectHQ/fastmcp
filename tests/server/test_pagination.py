@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from itertools import count, cycle, repeat
 from unittest.mock import call, patch
 
 import mcp_types
@@ -137,9 +139,12 @@ class TestMalformedCursorParams:
         with pytest.raises(ValueError, match="Invalid cursor"):
             paginate_sequence([0, 1, 2], self._cursor(offset), page_size=2)
 
-    async def test_list_tools_reports_invalid_params(self) -> None:
+    @pytest.mark.parametrize("page_size", [None, 1])
+    async def test_list_tools_reports_invalid_params(
+        self, page_size: int | None
+    ) -> None:
         """The caller maps the ValueError to INVALID_PARAMS, so the client sees that."""
-        server = FastMCP(list_page_size=1)
+        server = FastMCP(list_page_size=page_size)
 
         @server.tool(name="one")
         def one() -> int:
@@ -327,9 +332,21 @@ class TestServerPagination:
             assert len(result3.tools) == 5
             assert result3.next_cursor is None
 
-    async def test_invalid_cursor_returns_error(self) -> None:
+    @pytest.mark.parametrize("page_size", [None, 10])
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "list_tools_mcp",
+            "list_resources_mcp",
+            "list_resource_templates_mcp",
+            "list_prompts_mcp",
+        ],
+    )
+    async def test_invalid_cursor_returns_error(
+        self, page_size: int | None, method: str
+    ) -> None:
         """Server should return MCP error for invalid cursor."""
-        server = FastMCP(list_page_size=10)
+        server = FastMCP(list_page_size=page_size)
 
         @server.tool
         def my_tool() -> str:
@@ -337,10 +354,11 @@ class TestServerPagination:
 
         async with Client(server) as client:
             with pytest.raises(MCPError) as exc:
-                await client.list_tools_mcp(cursor="invalid!")
+                await getattr(client, method)(cursor="invalid!")
             assert exc.value.error.code == -32602
 
-    async def test_no_pagination_when_disabled(self) -> None:
+    @pytest.mark.parametrize("cursor", [None, "", CursorState(offset=1).encode()])
+    async def test_no_pagination_when_disabled(self, cursor: str | None) -> None:
         """Without list_page_size, all items returned at once."""
         server = FastMCP()  # No pagination
 
@@ -351,7 +369,7 @@ class TestServerPagination:
                 return "ok"
 
         async with Client(server) as client:
-            result = await client.list_tools_mcp()
+            result = await client.list_tools_mcp(cursor=cursor)
             assert len(result.tools) == 25
             assert result.next_cursor is None
 
@@ -395,256 +413,191 @@ class TestPageSizeValidation:
             FastMCP(list_page_size=-1)
 
 
+class RepeatingPageServer(FastMCP):
+    """Return the first page with a test-controlled opaque cursor scheme."""
+
+    def __init__(self, cursors: Iterator[str]) -> None:
+        super().__init__()
+        self.cursors = cursors
+        self.received_cursors: list[str | None] = []
+
+    def _next_cursor(self, params: mcp_types.PaginatedRequestParams | None) -> str:
+        self.received_cursors.append(params.cursor if params is not None else None)
+        return next(self.cursors)
+
+    async def _on_list_tools(
+        self, ctx: ServerRequestContext, params: mcp_types.PaginatedRequestParams | None
+    ) -> mcp_types.ListToolsResult:
+        result = await super()._on_list_tools(ctx, None)
+        result.next_cursor = self._next_cursor(params)
+        return result
+
+    async def _on_list_resources(
+        self, ctx: ServerRequestContext, params: mcp_types.PaginatedRequestParams | None
+    ) -> mcp_types.ListResourcesResult:
+        result = await super()._on_list_resources(ctx, None)
+        result.next_cursor = self._next_cursor(params)
+        return result
+
+    async def _on_list_resource_templates(
+        self, ctx: ServerRequestContext, params: mcp_types.PaginatedRequestParams | None
+    ) -> mcp_types.ListResourceTemplatesResult:
+        result = await super()._on_list_resource_templates(ctx, None)
+        result.next_cursor = self._next_cursor(params)
+        return result
+
+    async def _on_list_prompts(
+        self, ctx: ServerRequestContext, params: mcp_types.PaginatedRequestParams | None
+    ) -> mcp_types.ListPromptsResult:
+        result = await super()._on_list_prompts(ctx, None)
+        result.next_cursor = self._next_cursor(params)
+        return result
+
+
 class TestPaginationCycleDetection:
     """Tests that auto-pagination terminates when the server returns cycling cursors."""
 
     @pytest.mark.parametrize("next_cursor", ["stuck", ""])
     async def test_tools_constant_cursor_terminates(self, next_cursor: str) -> None:
         """list_tools should stop if the server always returns the same cursor."""
-        server = FastMCP()
+        server = RepeatingPageServer(repeat(next_cursor))
 
         @server.tool
         def my_tool() -> str:
             return "ok"
 
         async with Client(server) as client:
-            original = client.list_tools_mcp
-
-            async def returning_constant_cursor(
-                *,
-                cursor: str | None = None,
-                cache_mode: str = "use",
-            ) -> mcp_types.ListToolsResult:
-                result = await original(cursor=cursor)
-                result.next_cursor = next_cursor
-                return result
-
-            with patch.object(
-                client, "list_tools_mcp", side_effect=returning_constant_cursor
-            ):
-                tools = await client.list_tools()
+            tools = await client.list_tools()
 
             # Should get tools from first page + one duplicate (the retry before
             # detecting the cycle), then stop.
             assert len(tools) == 2
             assert all(t.name == "my_tool" for t in tools)
+        assert server.received_cursors == [None, next_cursor]
 
     @pytest.mark.parametrize("next_cursor", ["stuck", ""])
     async def test_prompts_constant_cursor_terminates(self, next_cursor: str) -> None:
         """list_prompts should stop if the server always returns the same cursor."""
-        server = FastMCP()
+        server = RepeatingPageServer(repeat(next_cursor))
 
         @server.prompt
         def my_prompt() -> str:
             return "text"
 
         async with Client(server) as client:
-            original = client.list_prompts_mcp
+            prompts = await client.list_prompts()
 
-            async def returning_constant_cursor(
-                *,
-                cursor: str | None = None,
-                cache_mode: str = "use",
-            ) -> mcp_types.ListPromptsResult:
-                result = await original(cursor=cursor)
-                result.next_cursor = next_cursor
-                return result
-
-            with patch.object(
-                client, "list_prompts_mcp", side_effect=returning_constant_cursor
-            ):
-                prompts = await client.list_prompts()
-
-            assert len(prompts) == 2
-            assert all(p.name == "my_prompt" for p in prompts)
+        assert len(prompts) == 2
+        assert all(p.name == "my_prompt" for p in prompts)
+        assert server.received_cursors == [None, next_cursor]
 
     @pytest.mark.parametrize("next_cursor", ["stuck", ""])
     async def test_resources_constant_cursor_terminates(self, next_cursor: str) -> None:
         """list_resources should stop if the server always returns the same cursor."""
-        server = FastMCP()
+        server = RepeatingPageServer(repeat(next_cursor))
 
         @server.resource("test://r")
         def my_resource() -> str:
             return "data"
 
         async with Client(server) as client:
-            original = client.list_resources_mcp
+            resources = await client.list_resources()
 
-            async def returning_constant_cursor(
-                *,
-                cursor: str | None = None,
-                cache_mode: str = "use",
-            ) -> mcp_types.ListResourcesResult:
-                result = await original(cursor=cursor)
-                result.next_cursor = next_cursor
-                return result
-
-            with patch.object(
-                client, "list_resources_mcp", side_effect=returning_constant_cursor
-            ):
-                resources = await client.list_resources()
-
-            assert len(resources) == 2
-            assert all(r.name == "my_resource" for r in resources)
+        assert len(resources) == 2
+        assert all(r.name == "my_resource" for r in resources)
+        assert server.received_cursors == [None, next_cursor]
 
     @pytest.mark.parametrize("next_cursor", ["stuck", ""])
     async def test_resource_templates_constant_cursor_terminates(
         self, next_cursor: str
     ) -> None:
         """list_resource_templates should stop if the server always returns the same cursor."""
-        server = FastMCP()
+        server = RepeatingPageServer(repeat(next_cursor))
 
         @server.resource("test://items/{item_id}")
         def my_template(item_id: str) -> str:
             return item_id
 
         async with Client(server) as client:
-            original = client.list_resource_templates_mcp
+            templates = await client.list_resource_templates()
 
-            async def returning_constant_cursor(
-                *,
-                cursor: str | None = None,
-                cache_mode: str = "use",
-            ) -> mcp_types.ListResourceTemplatesResult:
-                result = await original(cursor=cursor)
-                result.next_cursor = next_cursor
-                return result
-
-            with patch.object(
-                client,
-                "list_resource_templates_mcp",
-                side_effect=returning_constant_cursor,
-            ):
-                templates = await client.list_resource_templates()
-
-            assert len(templates) == 2
+        assert len(templates) == 2
+        assert server.received_cursors == [None, next_cursor]
 
     async def test_cycling_cursors_terminates(self) -> None:
         """list_tools should stop if the server cycles through a set of cursors."""
-        server = FastMCP()
+        server = RepeatingPageServer(cycle(["A", "B", "C"]))
 
         @server.tool
         def my_tool() -> str:
             return "ok"
 
         async with Client(server) as client:
-            call_count = 0
-            original = client.list_tools_mcp
+            tools = await client.list_tools()
 
-            async def returning_cycling_cursor(
-                *,
-                cursor: str | None = None,
-                cache_mode: str = "use",
-            ) -> mcp_types.ListToolsResult:
-                nonlocal call_count
-                result = await original(cursor=cursor)
-                # Cycle through A -> B -> C -> A
-                cursors = ["A", "B", "C"]
-                result.next_cursor = cursors[call_count % 3]
-                call_count += 1
-                return result
-
-            with patch.object(
-                client, "list_tools_mcp", side_effect=returning_cycling_cursor
-            ):
-                tools = await client.list_tools()
-
-            # A, B, C seen, then A is a duplicate → 4 calls total
-            assert call_count == 4
-            assert len(tools) == 4
+        # A, B, C seen, then A is a duplicate → 4 calls total
+        assert server.received_cursors == [None, "A", "B", "C"]
+        assert len(tools) == 4
 
     async def test_tools_raises_on_auto_pagination_limit(self) -> None:
         """list_tools should raise RuntimeError after exceeding max_pages."""
-        server = FastMCP()
+        server = RepeatingPageServer(f"cursor-{i}" for i in count(1))
 
         @server.tool
         def my_tool() -> str:
             return "ok"
 
         async with Client(server) as client:
-            original = client.list_tools_mcp
-            call_count = 0
-
-            async def returning_unique_cursor(
-                *,
-                cursor: str | None = None,
-                cache_mode: str = "use",
-            ) -> mcp_types.ListToolsResult:
-                nonlocal call_count
-                result = await original(cursor=cursor)
-                call_count += 1
-                result.next_cursor = f"cursor-{call_count}"
-                return result
-
-            with (
-                patch.object(
-                    client, "list_tools_mcp", side_effect=returning_unique_cursor
-                ),
-                pytest.raises(RuntimeError, match="auto-pagination limit"),
-            ):
+            with pytest.raises(RuntimeError, match="auto-pagination limit"):
                 await client.list_tools(max_pages=5)
+
+        assert server.received_cursors == [
+            None,
+            "cursor-1",
+            "cursor-2",
+            "cursor-3",
+            "cursor-4",
+        ]
 
     async def test_resources_raises_on_auto_pagination_limit(self) -> None:
         """list_resources should raise RuntimeError after exceeding max_pages."""
-        server = FastMCP()
+        server = RepeatingPageServer(f"cursor-{i}" for i in count(1))
 
         @server.resource("test://r")
         def my_resource() -> str:
             return "data"
 
         async with Client(server) as client:
-            original = client.list_resources_mcp
-            call_count = 0
-
-            async def returning_unique_cursor(
-                *,
-                cursor: str | None = None,
-                cache_mode: str = "use",
-            ) -> mcp_types.ListResourcesResult:
-                nonlocal call_count
-                result = await original(cursor=cursor)
-                call_count += 1
-                result.next_cursor = f"cursor-{call_count}"
-                return result
-
-            with (
-                patch.object(
-                    client, "list_resources_mcp", side_effect=returning_unique_cursor
-                ),
-                pytest.raises(RuntimeError, match="auto-pagination limit"),
-            ):
+            with pytest.raises(RuntimeError, match="auto-pagination limit"):
                 await client.list_resources(max_pages=5)
+
+        assert server.received_cursors == [
+            None,
+            "cursor-1",
+            "cursor-2",
+            "cursor-3",
+            "cursor-4",
+        ]
 
     async def test_prompts_raises_on_auto_pagination_limit(self) -> None:
         """list_prompts should raise RuntimeError after exceeding max_pages."""
-        server = FastMCP()
+        server = RepeatingPageServer(f"cursor-{i}" for i in count(1))
 
         @server.prompt
         def my_prompt() -> str:
             return "text"
 
         async with Client(server) as client:
-            original = client.list_prompts_mcp
-            call_count = 0
-
-            async def returning_unique_cursor(
-                *,
-                cursor: str | None = None,
-                cache_mode: str = "use",
-            ) -> mcp_types.ListPromptsResult:
-                nonlocal call_count
-                result = await original(cursor=cursor)
-                call_count += 1
-                result.next_cursor = f"cursor-{call_count}"
-                return result
-
-            with (
-                patch.object(
-                    client, "list_prompts_mcp", side_effect=returning_unique_cursor
-                ),
-                pytest.raises(RuntimeError, match="auto-pagination limit"),
-            ):
+            with pytest.raises(RuntimeError, match="auto-pagination limit"):
                 await client.list_prompts(max_pages=5)
+
+        assert server.received_cursors == [
+            None,
+            "cursor-1",
+            "cursor-2",
+            "cursor-3",
+            "cursor-4",
+        ]
 
     async def test_normal_pagination_unaffected(self) -> None:
         """Cycle detection should not interfere with normal pagination."""
