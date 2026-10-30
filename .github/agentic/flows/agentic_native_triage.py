@@ -129,7 +129,7 @@ def run_native_stage(
 
 def run_native_triage(
     owner: UUID, admission: Admission
-) -> tuple[str, dict, list[dict]]:
+) -> tuple[str, dict, list[dict], dict]:
     calls = []
     number = admission.requested.issue_number
     for attempt in range(3):
@@ -191,9 +191,10 @@ def run_native_triage(
                 },
             }
         )
+    evidence = admission.item["evidence"]
     record(
         owner,
         f"{admission.batch.id}-issue-{number}-review-evidence",
-        admission.item["evidence"],
+        evidence,
     )
-    return destination, result, calls
+    return destination, result, calls, evidence

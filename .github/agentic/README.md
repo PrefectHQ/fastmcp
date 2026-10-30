@@ -46,12 +46,30 @@ the original parent and finalizer runs and rechecks current GitHub evidence befo
 settling the intake. Failed or stale results are not reused. The current execution
 engine cannot skip a root agent by omitting an optional plan input, so partial
 assessment reuse is not used in the connected plan. Transient verification retries
-remain within the same assessment run. The older fix-stack path retains its
-individual role cache while it is migrated separately.
+remain within the same assessment run. Preparation and independent review retain their individual role caches. Fix batches
+use the same connected assessment and reproduction as review and MRE batches; the
+standalone assessment and reproduction plans are no longer dispatched by the controller.
 
-The first milestone is complete triage: collect evidence, assess it, execute the
-appropriate verification, and return an actionable review queue. Fix stacks are a
-later capability. Classification alone does not satisfy this milestone.
+An optional independent triage reviewer challenges the retained reproduction or
+verified contribution, using the exact source and executed checks. Its disposition
+and concrete next action lead each review item. The configured experiment uses
+GPT-6.1 Sol for this review while retaining Luna for assessment and reproduction.
+Serialized regression patches must materialize as tests on their stated baseline
+before a reproduced result can advance. Agent claims alone do not establish that
+those saved bytes are reusable. Review recommendations do not grant write permission.
+
+Contribution-review freshness follows code revisions, contribution state, holds and
+substantive discussion. CI progress and PR activity timestamps do not invalidate a
+review; exact acknowledged reviewer receipts are excluded from its own discussion
+comparison. Draft-fix publication keeps its stricter evidence comparison. Posted
+reviews remain visible and counted when later evidence becomes stale, including
+reviews delivered on generated drafts. Native triage retains its evidence durably
+and returns that exact evidence to independent review without an immediate lookup.
+
+The draft-fix pilot accepts a manually selected issue in `fix` mode. Only a
+connected reproduction of a supported defect can reach preparation, full validation,
+independent review and deterministic draft publication. A review queue alone does
+not establish that this write path produced an accepted fix.
 
 A manually selected batch contains at most six issues in two coherent groups.
 `gh` collects existing labels, full issue discussion, all-state related PRs,
@@ -87,12 +105,14 @@ two-hour window. Haiku is configured as a comparison candidate, not an automatic
 fallback. Missing telemetry remains unknown; these are execution bounds, not a
 hard token or dollar cap.
 
-Qualified patches become two- or three-layer draft GitHub Stacks. Each layer is
+One qualified patch becomes an independent draft PR. Two or three coherent patches
+become a draft GitHub Stack through the same validation, review and publication path. Each layer is
 validated on its actual parent with the full FastMCP suite and static checks.
 Immutable Prefect artifacts retain the exact commits, patches, credit and review.
 Publication rechecks ownership, issue history, holds and branch heads; uncertain
-writes reconcile with existing GitHub objects. A single useful patch is retained
-without manufacturing a second layer. Other results are grouped as existing-work
+writes reconcile with existing GitHub objects. Validation retains per-layer commands, exit codes, elapsed time and bounded output.
+Stack validation uses the same unprivileged process boundary as contribution
+verification before fetching, installing or executing candidate repository code. Other results are grouped as existing-work
 reviews, evidence, pruning proposals, maintainer decisions or operational failures.
 
 Fork PRs are reviewed in place. Adoption and supersession require a maintainer's
@@ -161,7 +181,19 @@ finalized decision snapshot is saved before receipts and presentation artifacts,
 so retrying an interrupted commit completes the same snapshot; a later intake
 recovery revalidates the child evidence before making a new snapshot.
 
-The deployment is serial and has no schedule. Intake uses `mre` mode: existing
+Intake has no schedule. Independent event targets have separate checkpoints;
+rolling backlog checkpoints remain scoped to their queue and release branch.
+Prefect leases serialize overlapping queue updates and issue work across intake,
+PR events and manual fix batches. Issue ownership is recorded before work starts.
+A takeover stops the prior controller and its proven children, waits for terminal
+acknowledgement and shared verification, then records its new ownership. The
+active-controller budget is separate from issue ownership, so waiting for another
+owner does not occupy an execution slot. Lease renewal failure stops the worker.
+This bounds controllers, not all child compute: orphan children may temporarily
+outlive a failed controller. Same-issue takeover drains those children before
+starting replacement work.
+
+Intake uses `mre` mode: existing
 contributions go to verification, new work can reach reproduction, and fix-stack
 publication is unavailable through this entrypoint. Public GitHub mutations and
 bot-owned label behavior remain unchanged. Independent probes for arbitrary
@@ -209,6 +241,12 @@ bash scripts/agentic_stack.sh intake config.json runtime.json \
 Reuse the operation ID if the launch response is uncertain. Inspect the intake's
 coverage and review queue artifacts and its linked controller's results. This
 command does not enable recurring runs.
+
+GitHub Actions owns labels, duplicate marking and closure cooldowns. Prefect owns
+bounded contract assessment, executable reproduction/contribution verification,
+and the explicitly selected draft-fix pilot. Existing GitHub investigation comments
+are supplied as evidence; Prefect verifies claims needed for a patch and does not
+publish a second investigation comment or close an issue.
 
 ## Local verification
 
@@ -261,8 +299,9 @@ published role flow/version IDs, validator deployment ID, contribution verificat
 deployment ID (`verification_id`) and controller source SHA. Once the named batch
 is configured for connected triage, also supply `triage_plan` (flow and version),
 `triage_verify_id`, and `triage_finalize_id`; all three must be supplied together.
-The connected plan handles `mre` and `review` items. The existing bounded stack
-controller continues to handle explicit `fix` batches. Once the named batch
+The connected plan handles assessment and verification/reproduction for `mre`,
+`review` and `fix` items. The bounded controller continues a successful `fix`
+reproduction through preparation, validation, independent review and publication. Once the named batch
 and its external effects are approved:
 
 ```sh
@@ -276,3 +315,102 @@ readback, cancellation and observed token usage on a bounded batch. Cancellation
 stops further publication; an already-started child can run to its own limit.
 Public comments, closures, assignments, ready transitions, merges and recurring
 schedules are outside this initial automation's authority.
+
+### Delivering reviews and draft fixes
+
+Runtime `prepare_fixes: true` admits automatic issues in fix mode. A reproduced,
+independently recommended unclaimed issue proceeds through the existing preparation,
+credential-isolated validation, independent patch review and draft publication path.
+The triage review's `prepare_fix` disposition carries its implementation controls
+into preparation; unresolved reproduction or product decisions must use
+`repair_evidence` or `maintainer`. Draft publication still requires final patch
+approval without findings, fresh ownership and contribution checks, and reporter credit.
+
+Public reviews are separate from retained investigation records. Existing-contribution
+reviewers return a PR-bound `public_reviews` entry with a short finding, requested
+change and check evidence (at most 120 words). Missing or invalid public feedback
+stops delivery; internal `reason`, `findings` and `next_action` are never a fallback.
+Generated-draft reviews summarize successful validation without publishing the
+reviewer's internal report or command transcripts. Full evidence remains in the
+original Prefect artifacts; revision markers bind the public review to that evidence.
+
+Runtime `publish_reviews: true` posts independent existing-contribution and generated-patch reviews as
+GitHub `COMMENT` reviews at the exact verified head. Configure `reviewer_app` with
+`app_id`, `slug` and `private_key_block`. The current reviewer is GitHub App
+`fastmcp-triage-reviewer` (5514681), owned by zzstoatzz and installed only on FastMCP.
+Its signing key lives in the Prefect Secret `fastmcp-triage-reviewer-private-key`;
+it is loaded only by trusted delivery code. Agent nodes and verification subprocesses
+receive no App credential. Each delivery mints a short-lived repository-scoped token
+with PR write and contents/issues/checks/statuses read permissions, then revokes it.
+Draft authorship continues through the separate existing publishing credential.
+
+PR claims serialize delivery across issues. A retained revision marker reconciles
+retries and lost responses without reposting. External drafts, explicit holds, changed heads,
+new discussion and self-authored PRs block posting. The review records executed
+checks, findings and next actions; it neither approves nor merges. Exact acknowledged
+App reviews are excluded from subsequent freshness comparisons, while new human
+or other bot evidence still invalidates an old result. Posted review URLs are retained
+alongside the original Cloud review evidence.
+
+After draft publication, the same delivery client posts the retained independent
+patch review and validator commands on each exact generated head. Only drafts whose
+author, body, branch, base and head match the validated publication qualify for this
+path. They remain drafts. Publication is recorded before a separate delivery task,
+which retries transient failures and reconciles lost POST responses. New PR comments,
+inline comments or reviews stop delivery; only the exact acknowledged App review is
+ignored on retry. Exhausted delivery failures retain the published PR receipt and an
+operational failure rather than discarding the useful patch or claiming review delivery.
+
+
+### Reviewing mutation batches
+
+Each review queue also retains a `fastmcp-mutation-batch/1` JSON artifact under
+`<batch-id>-mutation-batch`. Read one with `agentic_stack.sh mutations <controller-run-id>`.
+The queue presents the exact proposed target, action, revisions, public comment or
+assignee, source runs, scope, norm evidence and remaining gates. Conflicting proposals
+for one target are blocked. No command in this path executes the proposals.
+
+The existing independent triage reviewer may propose assignment, localized PR finishing,
+PR review, duplicate PR consolidation, duplicate/completed issue closures or a closure backed by settled policy. Assignment
+requires explicit public-history and reporter-claim review; passing tests alone cannot
+qualify a contributor. Closure candidates now receive that same independent review.
+A merged reference alone cannot establish that the whole report is fixed: current-fix,
+revert and scope checks remain explicit. Missing canonical or merged-fix identities,
+negative norm checks, existing owners, security restrictions and holds block proposals.
+Duplicate automation and human interventions retain their existing authority.
+
+PR review/finishing proposals retain static checks, current CI, contributor credit and
+batch composition as separate gates before merge. Older retained verification outputs
+project to concrete per-PR review or regression-repair steps; their prose is never parsed
+into assignments or closures. Every proposal requires approval and a fresh claimed
+execution against its recorded evidence and referenced resolution snapshots.
+
+The retained-intake digest identifies the immutable original snapshot; its normalized
+`evidence_revision` supports freshness comparisons without collection-time churn.
+Acknowledged App review receipts are carried so only those exact own reviews can be
+excluded. Resolution fingerprints omit unrelated repository counters. The expanded
+Markdown view uses `<batch-id>-mutation-review-queue`, preserving older queue artifacts.
+
+PR consolidation uses explicit `close_pr` proposals with a named `canonical_pr` and
+both target and canonical revisions. The independent reviewer must compare coverage,
+read prior closed-PR discussions and preserve earlier maintainer canonical choices;
+matching titles or a newer pair of open PRs are not selection evidence. Both heads need
+retained verification. An open canonical PR is allowed; no PR is closed automatically.
+
+Assignment proposals always retain a live `platform_assignment_eligibility` gate.
+The executing maintainer must check repository assignee eligibility (HTTP 204), then
+read back issue assignees: `gh issue edit` can exit successfully while ignoring an
+ineligible nonparticipant. Public-history qualification and reporter ownership do not
+establish platform eligibility. No automatic gate bypass or claim comment is introduced.
+
+Closed unmerged canonical PRs retain a reopen/coordination gate; administrative closure
+is not a rejection. Bulk proposals block canonical closure chains/cycles and assigning
+a contribution that the same batch proposes closing. Resolve the surviving canonical
+before approval rather than applying individually plausible actions together.
+
+Evidence collection follows at most three one-hop, same-repository canonical or
+superseding PR hints from repository-associated human discussion. It verifies each
+number is a PR, retains full discussion and source-comment provenance, and rechecks
+source and canonical revisions after enrichment. Hints are discovery evidence,
+never selection authority. Foreign references, ordinary contributor comments and
+bot comments do not expand discovery; existing candidate and byte bounds remain.

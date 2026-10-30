@@ -8,13 +8,29 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from flows.agentic_pr_verification import VerificationSpec
 
 
+class Request(Protocol):
+    def model_dump(self, *, mode: str) -> dict: ...
+
+    def model_dump_json(self) -> str: ...
+
+
 def isolated_verification(spec: VerificationSpec, directory: Path) -> dict:
+    return isolated_process(spec, directory, "flows.agentic_pr_verification", 2850)
+
+
+def isolated_process(
+    spec: Request,
+    directory: Path,
+    module: str,
+    timeout: int,
+    tool_paths: tuple[Path, ...] = (),
+) -> dict:
     if sys.platform != "linux" or os.geteuid() != 0:
         raise RuntimeError("Managed verification requires Linux with a root supervisor")
     setpriv = shutil.which("setpriv")
@@ -41,7 +57,9 @@ def isolated_verification(spec: VerificationSpec, directory: Path) -> dict:
     scratch.mkdir(mode=0o700)
     os.chown(scratch, 65534, 65534)
     environment = {
-        "PATH": f"{binaries}:/usr/local/bin:/usr/bin:/bin",
+        "PATH": os.pathsep.join(
+            [str(binaries), *map(str, tool_paths), "/usr/local/bin", "/usr/bin", "/bin"]
+        ),
         "HOME": str(scratch),
         "TMPDIR": str(scratch),
         "PYTHONPATH": str(trusted),
@@ -60,7 +78,7 @@ def isolated_verification(spec: VerificationSpec, directory: Path) -> dict:
         "--ambient-caps=-all",
         sys.executable,
         "-m",
-        "flows.agentic_pr_verification",
+        module,
         str(request),
     ]
     with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
@@ -74,7 +92,7 @@ def isolated_verification(spec: VerificationSpec, directory: Path) -> dict:
             start_new_session=True,
         )
         try:
-            process.wait(timeout=2850)
+            process.wait(timeout=timeout)
         finally:
             try:
                 os.killpg(process.pid, signal.SIGKILL)

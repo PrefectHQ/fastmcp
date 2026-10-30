@@ -6,14 +6,16 @@ from copy import deepcopy
 
 import httpx
 
-from flows.agentic_stack_policy import publication_revision
+from flows.agentic_review_publication import before_delivery
+from flows.agentic_stack_policy import publication_revision, review_revision
 
 
-def change_kind(original: dict, current: dict) -> str:
-    if publication_revision(original) == publication_revision(current):
+def change_kind(original: dict, current: dict, *, for_review: bool = True) -> str:
+    revision = review_revision if for_review else publication_revision
+    if revision(original) == revision(current):
         return "unchanged"
     pinned = {**current, "base_sha": original["base_sha"]}
-    if publication_revision(original) == publication_revision(pinned):
+    if revision(original) == revision(pinned):
         return "baseline_changed"
     return "stale"
 
@@ -43,7 +45,20 @@ def revalidate(
             if original is not None:
                 if not isinstance(current, dict):
                     raise ValueError("Invalid fresh evidence")
-                status = change_kind(original, current)
+                receipts = [
+                    receipt
+                    for _, item in outcomes
+                    for receipt in item.get("published_reviews", [])
+                ]
+                for reviewer in {r["reviewer_login"] for r in receipts}:
+                    own = [r for r in receipts if r["reviewer_login"] == reviewer]
+                    original = before_delivery(original, own, reviewer)
+                    current = before_delivery(current, own, reviewer)
+                status = change_kind(
+                    original,
+                    current,
+                    for_review=all(name != "stacks" for name, _ in outcomes),
+                )
                 if status == "unchanged":
                     continue
                 if status == "baseline_changed":

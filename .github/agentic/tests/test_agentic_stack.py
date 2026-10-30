@@ -202,3 +202,23 @@ def test_generated_docs_are_not_editable_by_a_stack(repository):
     command(repo, "git", "reset", "--hard", "HEAD")
     with pytest.raises(ValueError, match="maintained FastMCP"):
         apply_patch(repo, patch)
+
+
+def test_single_validated_fix_roundtrips_with_executed_checks(repository, tmp_path):
+    from flows.agentic_validate_patch import run_command
+
+    repo, spec = repository
+    spec = StackSpec.model_validate({**spec.model_dump(), "layers": spec.layers[:1]})
+
+    def check(directory, paths):
+        return [run_command([sys.executable, "tests/probe.py"], directory)]
+
+    artifact = assemble_stack(repo, spec, check)
+    checks = artifact["layers"][0]["checks"]
+    assert checks[0]["exit_code"] == 0
+    assert checks[0]["command"] == [sys.executable, "tests/probe.py"]
+    assert checks[0]["elapsed_seconds"] >= 0
+    destination = clone_base(tmp_path, repo, spec)
+    assert restore_stack(destination, artifact) == spec
+    assert (destination / "tests/first.txt").is_file()
+    assert not (destination / "tests/second.txt").exists()
