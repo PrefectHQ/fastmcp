@@ -3,6 +3,7 @@
 import pytest
 from fastmcp_tasks.settings import DocketSettings
 from fastmcp_tasks.worker_cli import (
+    _redact_password,
     check_distributed_backend,
     resolve_docket_settings,
     tasks_app,
@@ -57,6 +58,54 @@ class TestWorkerCommand:
         assert callable(command)
         assert command.__name__ == "worker"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         assert bound.arguments["server_spec"] == "server.py"
+
+
+class TestRedactPassword:
+    """The worker prints the backend URL without exposing its password."""
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            (
+                "redis://default:S3cretPass@localhost:6390/0",
+                "redis://default:***@localhost:6390/0",
+            ),
+            (
+                "redis://user:p@ss@localhost:6379/1",
+                "redis://user:***@localhost:6379/1",
+            ),
+            (
+                "redis://:secret@localhost:6379/0",
+                "redis://:***@localhost:6379/0",
+            ),
+            (
+                "redis://localhost:6379/0?password=secret",
+                "redis://localhost:6379/0?password=***",
+            ),
+            (
+                "redis://localhost:6379/0?db=1&sentinel_password=secret",
+                "redis://localhost:6379/0?db=1&sentinel_password=***",
+            ),
+            (
+                "redis://localhost:6379/0?Password=secret",
+                "redis://localhost:6379/0?Password=***",
+            ),
+        ],
+    )
+    def test_masks_the_password(self, url: str, expected: str):
+        assert _redact_password(url) == expected
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "redis://localhost:6379/0",
+            "redis://user@localhost:6379/0",
+            "redis://localhost:6379/0?timeout=5",
+            "memory://",
+        ],
+    )
+    def test_leaves_urls_without_a_password_alone(self, url: str):
+        assert _redact_password(url) == url
 
 
 class TestTasksAppIntegration:
