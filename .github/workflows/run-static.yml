@@ -44,6 +44,6 @@ jobs:
         run: node --test .github/scripts/test-*.mjs
 
       - name: Run prek
-        uses: j178/prek-action@v3.0.1
+        uses: j178/prek-action@v3.0.2
         env:
           SKIP: no-commit-to-branch
