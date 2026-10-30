@@ -355,7 +355,9 @@ def _convert_normalized(schema: dict[str, Any], name: str | None) -> type:
     token = _conversion.set(_Conversion(root_hash=root_hash, root_size=root_size))
     try:
         # Always use the top-level schema for references
-        if schema.get("type") == "object":
+        if schema.get("type") == "object" or (
+            "type" not in schema and "properties" in schema
+        ):
             return _object_schema_to_type(schema, schemas=schema, name=name)
         elif name:
             raise ValueError(f"Can not apply name to non-object schema: {name}")
@@ -828,7 +830,7 @@ def _convert_schema(
         return object
 
     if "type" not in schema and "properties" in schema:
-        return _create_dataclass(schema, schema.get("title", "<unknown>"), schemas)
+        return _object_schema_to_type(schema, schemas, resolving_refs=resolving_refs)
 
     # Handle references first
     if "$ref" in schema:
@@ -1254,7 +1256,7 @@ def _merge_defaults(
         if (
             prop_name in result
             and isinstance(result[prop_name], dict)
-            and prop_schema.get("type") == "object"
+            and (prop_schema.get("type") == "object" or "properties" in prop_schema)
         ):
             # Get the appropriate default for this nested object
             nested_default = None
