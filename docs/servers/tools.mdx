@@ -550,6 +550,24 @@ def get_user_data(user_id: str) -> dict:
 
 When your tool returns a primitive type (int, str, bool) or a collection (list, set), FastMCP needs a return type annotation to generate structured content. The annotation tells FastMCP how to validate and serialize the result. The annotation has to say something about the items: a bare `list`, `tuple`, or `Sequence` (or `list[Any]`) describes nothing, so FastMCP infers no output schema for it, the same as for `Any`. Use `list[int]`, `list[dict]`, and so on when you want structured output for a collection.
 
+The default JSON text conversion raises `ToolError` for non-finite floats (`NaN`, `Infinity`, and `-Infinity`), including values nested in collections. Return `None` when a missing numeric value should become JSON `null`, or serialize it explicitly with `ToolResult` when you want a textual representation. Pydantic models keep their own serialization policies and custom serializers.
+
+Non-finite float dictionary keys become the JSON strings `"nan"`, `"inf"`, and `"-inf"`. Earlier default text conversion encoded all three as `"None"`, producing duplicate keys when several occurred together. JSON parsers that keep the last value for duplicate keys now retain more entries, so this can change the parsed mapping's size as well as its key names. Decimal values keep their existing string encoding.
+
+If you need the previous key spelling, normalize non-finite float keys before returning the result:
+
+```python
+import math
+
+raw = {math.nan: 1, math.inf: 2, "count": 3}
+result = {
+    "None" if isinstance(key, float) and not math.isfinite(key) else key: value
+    for key, value in raw.items()
+}
+```
+
+Here `result` is `{"None": 2, "count": 3}`: normalization reproduces the old key collision, and the later value `2` replaces `1`. Without normalization, default text conversion preserves both non-finite entries as `"nan"` and `"inf"`.
+
 Without a type annotation, the tool only produces `content`:
 
 <CodeGroup>
