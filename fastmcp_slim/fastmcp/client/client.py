@@ -827,7 +827,10 @@ class Client(
             # both `Client.mode` and an MCPConfig's server set may change before
             # the client connects. Preserve options contributed by other layers.
             transport_options = replace(
-                transport_options or TransportOptions(), backend_mode=self.mode
+                transport_options or TransportOptions(),
+                backend_mode=self.mode,
+                # 0 (not None) so a disabled timeout is not replaced by the global setting
+                backend_init_timeout=self._init_timeout or 0,
             )
 
         # Only passed when this client actually wants non-default settings, so an
