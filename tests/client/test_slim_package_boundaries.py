@@ -122,3 +122,36 @@ def test_bare_slim_import_needs_only_mcp_types() -> None:
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip().endswith("OK")
+
+
+@pytest.mark.subprocess_heavy
+def test_client_import_does_not_require_uvicorn() -> None:
+    """uvicorn is a server dependency; the client only runs it for the OAuth callback."""
+    script = textwrap.dedent(
+        """
+        import sys
+
+        class _UvicornBlocker:
+            def find_spec(self, fullname, path=None, target=None):
+                if fullname == "uvicorn" or fullname.startswith("uvicorn."):
+                    raise ImportError("uvicorn is blocked for this test")
+                return None
+
+        sys.meta_path.insert(0, _UvicornBlocker())
+
+        from fastmcp import Client
+        from fastmcp.client.auth import OAuth
+
+        client = Client("http://localhost:8000/mcp", auth=OAuth())
+        assert client is not None
+        assert "uvicorn" not in sys.modules
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr

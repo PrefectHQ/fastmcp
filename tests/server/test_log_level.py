@@ -37,9 +37,7 @@ class TestLogLevelParameter:
         server = FastMCP("TestServer")
 
         # Mock uvicorn to avoid actual server start
-        with patch(
-            "fastmcp.server.mixins.transport.uvicorn.Server"
-        ) as mock_server_class:
+        with patch("uvicorn.Server") as mock_server_class:
             mock_instance = mock_server_class.return_value
             mock_instance.serve = AsyncMock()
 
@@ -56,9 +54,7 @@ class TestLogLevelParameter:
         server = FastMCP("TestServer")
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            with patch(
-                "fastmcp.server.mixins.transport.uvicorn.Server"
-            ) as mock_server_class:
+            with patch("uvicorn.Server") as mock_server_class:
                 mock_instance = mock_server_class.return_value
                 mock_instance.serve = AsyncMock()
 
