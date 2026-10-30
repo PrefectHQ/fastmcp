@@ -127,6 +127,69 @@ class TestCoerceValue:
     def test_ambiguous_union_stays_string(self, schema):
         assert coerce_value("42", schema) == "42"
 
+    @pytest.mark.parametrize(
+        ("raw", "schema", "expected"),
+        [
+            # null literal maps to None when schema allows null
+            ("null", {"anyOf": [{"type": "integer"}, {"type": "null"}]}, None),
+            ("null", {"anyOf": [{"type": "array"}, {"type": "null"}]}, None),
+            ("null", {"type": ["integer", "null"]}, None),
+            ("null", {"anyOf": [{"type": "null"}]}, None),
+        ],
+    )
+    def test_null_literal_returns_none_when_nullable(self, raw, schema, expected):
+        """``null`` maps to ``None`` when the schema allows it."""
+        assert coerce_value(raw, schema) is None
+
+    def test_null_literal_stays_string_when_not_nullable(self):
+        """``null`` stays as a string when the schema does not allow null."""
+        assert coerce_value("null", {"type": "string"}) == "null"
+
+    @pytest.mark.parametrize(
+        ("raw", "schema", "expected"),
+        [
+            # int | list[int]: JSON array is parsed, not passed as string
+            ("[1, 2]", {"anyOf": [{"type": "integer"}, {"type": "array"}]}, [1, 2]),
+            # discriminated union (object branches only): JSON object is parsed
+            (
+                '{"kind": "dog"}',
+                {"anyOf": [{"type": "object"}, {"type": "integer"}]},
+                {"kind": "dog"},
+            ),
+            # int | list[int] | None: JSON array is parsed
+            (
+                "[3, 4]",
+                {
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"type": "array"},
+                        {"type": "null"},
+                    ]
+                },
+                [3, 4],
+            ),
+            # plain integer in a non-string union: only arrays/objects are
+            # JSON-parsed, so the scalar falls back to the raw string
+            ("42", {"anyOf": [{"type": "integer"}, {"type": "array"}]}, "42"),
+        ],
+    )
+    def test_non_string_union_parses_json(self, raw, schema, expected):
+        """Unions with no string branch parse arrays/objects as JSON."""
+        result = coerce_value(raw, schema)
+        assert result == expected
+
+    def test_non_string_union_null_not_accepted_when_not_nullable(self):
+        """``null`` in a non-nullable union must not silently return None."""
+        schema = {"anyOf": [{"type": "integer"}, {"type": "array"}]}
+        result = coerce_value("null", schema)
+        assert result is not None
+
+    def test_non_string_union_falls_back_to_string_on_invalid_json(self):
+        """When JSON parsing fails for a non-string union, the raw string is returned."""
+        schema = {"anyOf": [{"type": "integer"}, {"type": "array"}]}
+        result = coerce_value("hello", schema)
+        assert result == "hello"
+
 
 # ---------------------------------------------------------------------------
 # parse_tool_arguments
@@ -672,6 +735,16 @@ def _build_test_server() -> FastMCP:
         """Sum an optional list of numbers."""
         return sum(values or [])
 
+    @server.tool
+    def union_sum(v: int | list[int]) -> int:
+        """Accept an int or a list of ints."""
+        return v if isinstance(v, int) else sum(v)
+
+    @server.tool
+    def maybe(n: int | None = 5) -> str:
+        """Return repr of an optional int."""
+        return repr(n)
+
     @server.resource("test://greeting")
     def greeting_resource() -> str:
         """A static greeting resource."""
@@ -804,6 +877,42 @@ class TestCallCommandCLI:
     async def test_call_missing_target(self):
         with pytest.raises(SystemExit):
             await call_command("fake://server", "")
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_call_union_no_string_branch_list(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        """JSON list is parsed and passed correctly for int|list[int] params."""
+        await call_command(
+            "fake://server", "union_sum", "v=[1, 2]", json_output=True
+        )
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == {"result": 3}
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_call_union_no_string_branch_scalar(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        """Plain integer is passed correctly for int|list[int] params."""
+        await call_command(
+            "fake://server", "union_sum", "v=7", json_output=True
+        )
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == {"result": 7}
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_call_nullable_non_string_null(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        """``null`` is passed as None for int|None params."""
+        await call_command(
+            "fake://server", "maybe", "n=null", json_output=True
+        )
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == {"result": "None"}
 
 
 # ---------------------------------------------------------------------------
