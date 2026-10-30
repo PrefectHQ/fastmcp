@@ -579,14 +579,20 @@ def _combine_schemas_and_map_params(
 
         # A kept $ref is paired with its siblings through allOf: resolving a
         # $ref that has siblings lets the siblings overwrite the target's keywords.
+        # The allOf is built from a copy: with convert_refs=False body_schema is
+        # the route's stored schema, and the director reads its $ref at call time
+        # to send the whole body.
         if not ref_is_object:
-            ref = body_schema.pop("$ref")
-            if not body_schema.get("properties"):
-                body_schema.pop("properties", None)
+            ref = body_schema["$ref"]
+            siblings = {
+                keyword: value
+                for keyword, value in body_schema.items()
+                if keyword != "$ref"
+            }
+            if not siblings.get("properties"):
+                siblings.pop("properties", None)
             body_schema = (
-                {"allOf": [{"$ref": ref}, body_schema]}
-                if body_schema
-                else {"$ref": ref}
+                {"allOf": [{"$ref": ref}, siblings]} if siblings else {"$ref": ref}
             )
 
         # Merge discriminated subtype fields in as optional. The discriminator
