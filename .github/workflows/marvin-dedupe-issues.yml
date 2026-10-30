@@ -198,6 +198,8 @@ jobs:
             echo "- If your issue is a duplicate, please close it and 👍 the existing issue instead"
             echo "- To prevent auto-closure, add a comment or 👎 this comment"
           } > "$body"
-          gh issue comment "$ISSUE" -R "$REPO" --body-file "$body"
+          # Label first. A rerun skips an issue that already has the comment,
+          # so a comment left without the label would never be auto-closed.
           gh issue edit "$ISSUE" -R "$REPO" --add-label "potential-duplicate"
+          gh issue comment "$ISSUE" -R "$REPO" --body-file "$body"
           echo "Posted $count possible duplicate(s) and added potential-duplicate to #$ISSUE"
