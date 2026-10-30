@@ -306,9 +306,9 @@ class TestToolFunctionSource:
         source = _tool_function_source(tool)
         # Should use str type for complex object
         assert "metadata: Annotated[str | None" in source
-        # Should include JSON schema in help (with escaped quotes)
+        # Should include JSON schema in help
         assert "JSON Schema:" in source
-        assert '\\"type\\": \\"object\\"' in source
+        assert '"type": "object"' in source
         # Should have JSON parsing with isinstance check
         assert (
             "metadata = json.loads(metadata) if isinstance(metadata, str) else metadata"
