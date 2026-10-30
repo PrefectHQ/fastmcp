@@ -1,7 +1,7 @@
 name: Garden
 
-# Daily gardening report: smoke-tests what's on PyPI and what's on main, and
-# summarizes what changed since the last release. See scripts/garden.py.
+# Daily gardening report: smoke-tests what's on PyPI and summarizes what
+# changed since the last release. See scripts/garden.py.
 # Manual for now; a schedule comes after a few runs show the signal is useful.
 
 env:
@@ -41,16 +41,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Build wheels from this checkout
-        run: |
-          for package in . fastmcp_slim fastmcp_tasks fastmcp_remote; do
-            uv build --quiet --wheel --out-dir "$RUNNER_TEMP/wheels" "$package"
-          done
-
       - name: Build report
         env:
           GH_TOKEN: ${{ github.token }}
-        run: uv run scripts/garden.py "$RUNNER_TEMP/garden" --main-wheels "$RUNNER_TEMP/wheels"
+        run: uv run scripts/garden.py "$RUNNER_TEMP/garden"
 
       - name: Show report
         run: cat "$RUNNER_TEMP/garden/GARDEN.md" >> "$GITHUB_STEP_SUMMARY"

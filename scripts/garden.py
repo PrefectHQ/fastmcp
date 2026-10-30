@@ -9,9 +9,10 @@ Writes `garden-report.json` (schema `fastmcp-garden/1`) and `GARDEN.md` into
 the output directory. Each section is independent and records its own
 errors, so one broken check never hides the others.
 
-- published: install the latest stable and latest prerelease from PyPI, plus
-  wheels built from this checkout when `--main-wheels` points at them, each
+- published: install the latest stable and latest prerelease from PyPI, each
   in an isolated environment, and run `scripts/garden_smoke.py` there.
+  Wheels built from main are already covered by the package install smoke
+  in run-tests.yml and by run-downstream-smoke.yml.
 - unreleased: main against the latest tag and the latest stable tag. Public
   API breaks (griffe), dependency changes, files that grew, raised `loq`
   caps, and new skips, xfails, type ignores and TODOs.
@@ -131,7 +132,7 @@ def smoke(label: str, requirements: list[str]) -> dict:
     return entry
 
 
-def published(main_wheels: Path | None) -> dict:
+def published() -> dict:
     stable, prerelease = pypi_versions("fastmcp")
     targets = [("stable", stable)] + (
         [("prerelease", prerelease)] if prerelease else []
@@ -143,9 +144,6 @@ def published(main_wheels: Path | None) -> dict:
         )
         for label, version in targets
     ]
-    if main_wheels:
-        wheels = sorted(str(path) for path in main_wheels.glob("*.whl"))
-        results.append(smoke("main (built)", wheels))
     return {"stable": stable, "prerelease": prerelease, "targets": results}
 
 
@@ -407,7 +405,6 @@ def markdown(report: dict) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("out", type=Path)
-    parser.add_argument("--main-wheels", type=Path)
     parser.add_argument("--skip-published", action="store_true")
     parser.add_argument("--skip-ci", action="store_true")
     args = parser.parse_args()
@@ -418,7 +415,7 @@ def main() -> None:
         "head": sh("git", "rev-parse", "HEAD").strip(),
         "published": {"skipped": True}
         if args.skip_published
-        else section("published", lambda: published(args.main_wheels)),
+        else section("published", published),
         "unreleased": section("unreleased", unreleased),
         "ci": {"skipped": True} if args.skip_ci else section("ci", ci),
     }
