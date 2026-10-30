@@ -700,6 +700,8 @@ def search(category: str, tags: list[str] | None = None) -> dict:
 
 A single value still arrives as a one-element list, so the parameter's type is stable. Declaring a parameter that can *only* be a list without the `*` raises an error when the template is created. A parameter that also accepts a scalar (`str | list[str] | None`) is left alone — it still works as a plain `{?param}`.
 
+A URI fragment (`#section`) is not part of the resource identity. FastMCP drops it before matching, so `data://42?format=json#top` yields `id="42"` and `format="json"`. A template that contains a literal `#` is matched against the full URI, fragment included.
+
 **Query parameters vs. hidden defaults:**
 
 Query parameters expose optional configuration to clients. To hide optional parameters from clients entirely (always use defaults), simply omit them from the URI template:

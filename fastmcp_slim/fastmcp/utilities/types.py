@@ -143,9 +143,9 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
 
                 if inspect.ismethod(cls):
                     new_method = types.MethodType(new_func, cls.__self__)
-                    return TypeAdapter(new_method)
+                    return TypeAdapter(new_method)  # ty:ignore[invalid-type-form]
                 else:
-                    return TypeAdapter(new_func)
+                    return TypeAdapter(new_func)  # ty:ignore[invalid-type-form]
 
     return TypeAdapter(cls)
 
@@ -372,6 +372,11 @@ class Audio:
             "ogg": "audio/ogg",
             "m4a": "audio/mp4",
             "flac": "audio/flac",
+            "opus": "audio/ogg",
+            "aac": "audio/aac",
+            "webm": "audio/webm",
+            "aiff": "audio/aiff",
+            "aif": "audio/aiff",
         }
 
         if self._format:
@@ -463,15 +468,20 @@ class File:
                 uri_str = self.path.resolve().as_uri()
         elif self.data is not None:
             raw_data = self.data
+            # The URI extension follows the requested format, not the MIME
+            # subtype (format="txt" is text/plain but should stay .txt).
+            extension = (
+                f".{self._format.lower()}"
+                if self._format
+                else f".{self._mime_type.split('/')[1]}"
+            )
             if self._name:
-                extension = (
-                    ""
-                    if Path(self._name).suffix
-                    else f".{self._mime_type.split('/')[1]}"
-                )
-                uri_str = f"file:///{quote(self._name + extension)}"
+                if Path(self._name).suffix:
+                    uri_str = f"file:///{quote(self._name)}"
+                else:
+                    uri_str = f"file:///{quote(self._name + extension)}"
             else:
-                uri_str = f"file:///resource.{self._mime_type.split('/')[1]}"
+                uri_str = f"file:///resource{extension}"
         else:
             raise ValueError("No resource data available")
 

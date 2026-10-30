@@ -23,7 +23,7 @@ import secrets
 import time
 from base64 import urlsafe_b64encode
 from collections import OrderedDict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import Any, Literal
@@ -379,7 +379,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 Disable only if upstream provider doesn't support PKCE.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
-                Defaults to "client_secret_basic".
+                Defaults to "client_secret_basic" when a client secret is configured
+                and to "none" (public client, no secret sent) otherwise.
             extra_authorize_params: Additional parameters to forward to the upstream authorization endpoint.
                 Useful for provider-specific parameters like Auth0's "audience".
                 Example: {"audience": "https://api.example.com"}
@@ -846,7 +847,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         )
 
     @asynccontextmanager
-    async def _upstream_oauth_client(self) -> AsyncIterator[AsyncOAuth2Client]:
+    async def _upstream_oauth_client(self) -> AsyncGenerator[AsyncOAuth2Client, None]:
         oauth_client = self._create_upstream_oauth_client()
         try:
             yield oauth_client
@@ -1653,8 +1654,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     def _prepare_scopes_for_token_exchange(self, scopes: list[str]) -> list[str]:
         """Prepare scopes for initial token exchange (auth code -> tokens).
 
-        Override this method to provide scopes during the authorization
-        code exchange. Some providers (like Azure) require scopes to be sent.
+        The default omits the `scope` parameter from the upstream code
+        exchange, because the scopes were already negotiated at the
+        authorization endpoint and some OIDC providers reject them on the
+        token request. Override this method to send scopes during the
+        exchange; providers that require them (like Azure) do so.
 
         Args:
             scopes: Scopes from the authorization request
@@ -1662,7 +1666,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         Returns:
             List of scopes to send, or empty list to omit scope parameter
         """
-        return scopes
+        return []
 
     def _translate_scopes_from_idp(self, scopes: list[str]) -> list[str]:
         """Translate IdP-returned scopes into the client-facing form.

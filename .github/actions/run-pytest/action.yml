@@ -10,6 +10,15 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Install Redis for credential rotation integration tests
+      if: inputs.test-type == 'integration' && runner.os == 'Linux'
+      shell: bash
+      run: |
+        if ! command -v redis-server >/dev/null; then
+          sudo apt-get update
+          sudo apt-get install -y redis-server
+        fi
+
     - name: Run pytest
       shell: bash
       run: |

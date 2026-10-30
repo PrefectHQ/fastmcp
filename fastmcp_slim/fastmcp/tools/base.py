@@ -30,6 +30,7 @@ from pydantic import (
 )
 from pydantic.json_schema import SkipJsonSchema
 
+from fastmcp.exceptions import ToolError
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
@@ -410,7 +411,18 @@ class Tool(FastMCPComponent):
 
         try:
             structured = _serialize_to_jsonable(raw_value, self.return_type)
-        except (pydantic_core.PydanticSerializationError, UnicodeDecodeError):
+        except (pydantic_core.PydanticSerializationError, UnicodeDecodeError) as e:
+            if self.output_schema is not None:
+                # The declared output schema obligates structured content
+                # (the MCP SDK's client-side validation rejects the result
+                # without it), so a silent content-only fallback would report
+                # success while breaking that contract.
+                raise ToolError(
+                    f"Could not serialize the return value of tool {self.name!r} "
+                    f"for its output schema: {e}. If this is unexpected, set the "
+                    "tool's output_schema to None to disable automatic "
+                    "serialization."
+                ) from e
             return ToolResult(content=content)
 
         if not is_content_result:
@@ -538,7 +550,7 @@ def _get_tool_resolver(app_name: str | None = None) -> Callable[..., str] | None
 def _prefab_to_json(app: Any, fastmcp_app_name: str | None = None) -> dict[str, Any]:
     """Serialize a PrefabApp, addressing its peer-tool references by identity.
 
-    The resolver writes each reference as ``<hash>_<local_name>``, and the
+    The resolver writes each reference as ``__<hash>_<local_name>``, and the
     identity behind it is recorded in the payload's meta so that servers
     can re-address the reference on the way out without losing track of
     what it points at.

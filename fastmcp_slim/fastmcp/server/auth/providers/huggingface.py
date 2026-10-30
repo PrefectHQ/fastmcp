@@ -13,6 +13,7 @@ from pydantic import AnyHttpUrl
 
 from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.auth import AccessToken
+from fastmcp.server.auth.identity_assertion import IdentityAssertion
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
@@ -200,6 +201,7 @@ class HuggingFaceProvider(OAuthProxy):
         extra_token_params: dict[str, str] | None = None,
         http_client: httpx2.AsyncClient | None = None,
         enable_cimd: bool = True,
+        identity_assertion: IdentityAssertion | None = None,
     ):
         """Initialize Hugging Face OAuth provider.
 
@@ -217,6 +219,8 @@ class HuggingFaceProvider(OAuthProxy):
             valid_scopes: Scopes clients may request. Defaults to required scopes.
             extra_authorize_params: Extra authorization parameters, such as
                 ``{"orgIds": "your-org-id"}`` for organization grants.
+            identity_assertion: Optional SEP-990 ID-JAG configuration for
+                identity-bound token exchange. Disabled by default.
         """
         required_scopes_final = (
             parse_scopes(required_scopes)
@@ -263,6 +267,7 @@ class HuggingFaceProvider(OAuthProxy):
             else "none",
             valid_scopes=valid_scopes_final,
             enable_cimd=enable_cimd,
+            identity_assertion=identity_assertion,
         )
 
         logger.debug(

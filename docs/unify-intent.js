@@ -9,7 +9,8 @@
       path.includes("/clients/auth/") ||
       path.includes("/deployment/running-server") ||
       path.includes("/deployment/http") ||
-      path.includes("/deployment/prefect-horizon")
+      path.includes("/deployment/prefect-horizon") ||
+      path.includes("/deployment/fastmcp-gateway")
     );
   }
 

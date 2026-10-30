@@ -82,15 +82,17 @@ FastMCP has three pillars:
 
 Ready to build? Start with the [installation guide](https://gofastmcp.com/getting-started/installation) or jump straight to the [quickstart](https://gofastmcp.com/getting-started/quickstart).
 
-## Scale MCP with Horizon
+<a id="scale-mcp-with-horizon"></a>
 
-FastMCP handles the MCP application layer. **[Prefect Horizon](https://www.prefect.io/horizon?utm_source=github&utm_medium=readme&utm_campaign=readme_horizon&utm_content=readme_body)** is the enterprise MCP gateway for scaling servers and tools across teams, with centralized governance over how they are deployed, discovered, secured, and used.
+## Scale MCP with FastMCP Gateway
 
-FastMCP and Horizon are built by the same team at [Prefect](https://www.prefect.io/).
+FastMCP handles the MCP application layer. **[FastMCP Gateway](https://www.prefect.io/horizon?utm_source=github&utm_medium=readme&utm_campaign=readme_horizon&utm_content=readme_body)** is the enterprise MCP gateway for scaling servers and tools across teams, with centralized governance over how they are deployed, discovered, secured, and used.
+
+FastMCP and FastMCP Gateway are built by the same team at [Prefect](https://www.prefect.io/).
 
 Deploy FastMCP servers from GitHub with branch previews and instant rollback. Create a private registry of every MCP your company uses. Secure access with SSO and tool-level RBAC. Get audit logs, observability, and governance across your MCP stack. Remix approved tools into purpose-built endpoints for teams and agents.
 
-Start with FastMCP. [Scale with Horizon →](https://www.prefect.io/horizon?utm_source=github&utm_medium=readme&utm_campaign=readme_horizon&utm_content=readme_cta)
+Start with FastMCP. [Scale with FastMCP Gateway →](https://www.prefect.io/horizon?utm_source=github&utm_medium=readme&utm_campaign=readme_horizon&utm_content=readme_cta)
 
 ## Installation
 
@@ -116,6 +118,8 @@ Documentation is also available in [llms.txt format](https://llmstxt.org/), whic
 
 - [`llms.txt`](https://gofastmcp.com/llms.txt) is essentially a sitemap, listing all the pages in the documentation.
 - [`llms-full.txt`](https://gofastmcp.com/llms-full.txt) contains the entire documentation. Note this may exceed the context window of your LLM.
+
+Give your coding agent [`llms.txt`](https://gofastmcp.com/llms.txt) as its starting point. See [Coding Agents](https://gofastmcp.com/getting-started/ai-assisted-development) for version-matched documentation and the optional server authoring skill.
 
 **Community:** Join our [Discord server](https://discord.gg/uu8dJCgttd) to connect with other FastMCP developers and share what you're building.
 

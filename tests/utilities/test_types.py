@@ -6,6 +6,7 @@ import pytest
 from mcp_types import BlobResourceContents, TextResourceContents
 from pydantic import Field
 
+from fastmcp import Client, FastMCP
 from fastmcp.utilities.types import (
     Audio,
     File,
@@ -348,6 +349,46 @@ class TestAudio:
             audio = Audio(path=path)
             assert audio._mime_type == mime
 
+    @pytest.mark.parametrize(
+        "extension,mime_type",
+        [
+            ("opus", "audio/ogg"),
+            ("aac", "audio/aac"),
+            ("webm", "audio/webm"),
+            ("aiff", "audio/aiff"),
+            ("aif", "audio/aiff"),
+        ],
+    )
+    @pytest.mark.parametrize("uppercase", [False, True])
+    async def test_path_and_format_agree_on_mime_type(
+        self, tmp_path, extension, mime_type, uppercase
+    ):
+        """A file extension maps to the same MIME type as the matching format."""
+        if uppercase:
+            extension = extension.upper()
+        path = tmp_path / f"test.{extension}"
+        path.write_bytes(b"fake audio data")
+
+        from_path = Audio(path=path)
+        from_format = Audio(data=b"test", format=extension)
+
+        assert from_path._mime_type == mime_type
+        assert from_format._mime_type == mime_type
+        assert from_path.to_audio_content().mime_type == mime_type
+
+        server = FastMCP()
+
+        @server.tool
+        def audio() -> Audio:
+            return from_path
+
+        async with Client(server) as client:
+            result = await client.call_tool("audio")
+
+        assert result.content[0].type == "audio"
+        assert result.content[0].mime_type == mime_type
+        assert base64.b64decode(result.content[0].data) == path.read_bytes()
+
     def test_to_audio_content(self, tmp_path, monkeypatch):
         """Test conversion to AudioContent."""
         # Test with path
@@ -533,6 +574,22 @@ class TestFile:
 
         assert resource.resource.mime_type == "application/pdf"
         assert str(resource.resource.uri) == "file:///report.pdf"
+
+    @pytest.mark.parametrize(
+        ("kwargs", "expected_uri"),
+        [
+            (dict(format="txt"), "file:///resource.txt"),
+            (dict(format="md"), "file:///resource.md"),
+            (dict(format="md", name="README"), "file:///README.md"),
+            (dict(format="TXT"), "file:///resource.txt"),
+        ],
+    )
+    def test_to_resource_content_extension_follows_format(self, kwargs, expected_uri):
+        """The URI extension comes from `format`, not the MIME subtype."""
+        file = File(data=b"hello", **kwargs)
+        resource = file.to_resource_content()
+
+        assert str(resource.resource.uri) == expected_uri
 
     @pytest.mark.parametrize(
         ("name", "expected_uri"),

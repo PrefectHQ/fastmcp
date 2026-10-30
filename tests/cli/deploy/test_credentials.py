@@ -271,7 +271,12 @@ def test_windows_acl_replaces_the_existing_access_list(
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows ACL inspection")
-def test_windows_credential_state_allows_only_the_current_user(tmp_path: Path) -> None:
+# Several cold PowerShell launches; under a contended runner they can outlast
+# the default timeout, which on Windows kills the xdist worker.
+@pytest.mark.timeout(60)
+def test_windows_credential_state_allows_only_the_current_user(
+    tmp_path: Path, real_windows_acl: None
+) -> None:
     state_directory = tmp_path / "cli"
     store = CredentialStore(state_directory)
     store.save("fmcp_secret")
