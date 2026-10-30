@@ -115,7 +115,7 @@ class FileSystemProvider(LocalProvider):
         if not self._root.exists():
             logger.warning("FileSystemProvider root does not exist: %s", self._root)
 
-        result = discover_and_import(self._root)
+        result = discover_and_import(self._root, reload=self._reload)
         self._failed_files = dict(result.failed_files)
 
         # Log warnings for failed files (only once per file version)
