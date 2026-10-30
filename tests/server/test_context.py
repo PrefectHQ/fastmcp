@@ -82,6 +82,100 @@ class TestSessionId:
         finally:
             fastmcp_request_ctx.reset(token)
 
+    def test_session_id_raises_when_request_context_has_no_session(self, context):
+        """A bound request context can carry a None session (the detached
+        context used for introspection outside a live request). session_id must
+        raise RuntimeError per its contract, not AttributeError. (#5902)"""
+        from fastmcp.server.dependencies import (
+            FastMCPRequestContext,
+            fastmcp_request_ctx,
+        )
+
+        token = fastmcp_request_ctx.set(
+            FastMCPRequestContext(
+                session=None,  # type: ignore[arg-type]
+                request_id="0",
+                meta=None,
+                request=None,
+                protocol_version="2025-06-18",
+                close_sse_stream=None,
+                lifespan_context=MagicMock(),
+                _srctx=MagicMock(meta=None),
+            )
+        )
+
+        try:
+            with pytest.raises(RuntimeError, match="no session exists"):
+                context.session_id
+        finally:
+            fastmcp_request_ctx.reset(token)
+
+    def test_session_id_falls_back_to_stored_session(self):
+        """When the bound request context has no session, session_id falls back
+        to the session stored on the Context (as during on_initialize)."""
+        server = FastMCP()
+        mock_session = MagicMock(wraps={})
+
+        from fastmcp.server.dependencies import (
+            FastMCPRequestContext,
+            fastmcp_request_ctx,
+        )
+
+        token = fastmcp_request_ctx.set(
+            FastMCPRequestContext(
+                session=None,  # type: ignore[arg-type]
+                request_id="0",
+                meta=None,
+                request=None,
+                protocol_version="2025-06-18",
+                close_sse_stream=None,
+                lifespan_context=MagicMock(),
+                _srctx=MagicMock(meta=None),
+            )
+        )
+
+        try:
+            context = Context(fastmcp=server, session=mock_session)
+            session_id = context.session_id
+            assert isinstance(session_id, str)
+            assert mock_session._fastmcp_state_prefix == session_id
+        finally:
+            fastmcp_request_ctx.reset(token)
+
+
+class TestDetachedIntrospection:
+    """ctx.list_resources/list_prompts inside `await mcp.call_tool(...)` run
+    without a client session. The detached request context built for
+    introspection carries session=None; listing must still work. (#5902)"""
+
+    async def test_list_resources_without_client_session(self):
+        mcp = FastMCP("demo")
+
+        @mcp.resource("docs://readme")
+        def readme() -> str:
+            return "readme"
+
+        @mcp.tool
+        async def catalog(ctx: Context) -> list[str]:
+            return [str(r.uri) for r in await ctx.list_resources()]
+
+        result = await mcp.call_tool("catalog", {})
+        assert result.structured_content == {"result": ["docs://readme"]}
+
+    async def test_list_prompts_without_client_session(self):
+        mcp = FastMCP("demo")
+
+        @mcp.prompt
+        def greet(name: str) -> str:
+            return f"hi {name}"
+
+        @mcp.tool
+        async def catalog(ctx: Context) -> list[str]:
+            return [p.name for p in await ctx.list_prompts()]
+
+        result = await mcp.call_tool("catalog", {})
+        assert result.structured_content == {"result": ["greet"]}
+
 
 class TestContextState:
     """Test suite for Context state functionality."""
