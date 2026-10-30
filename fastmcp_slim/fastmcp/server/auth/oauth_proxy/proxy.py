@@ -779,9 +779,63 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         URL (e.g., http://localhost:8000/mcp) to ensure tokens are bound to
         this specific MCP endpoint.
 
+        When mounting this server behind an outer path prefix (e.g., via
+        ``starlette.routing.Mount``), include the full prefix in ``base_url``
+        rather than passing different ``mcp_path`` values to different calls.
+        For example, if the server is mounted at ``/staffing`` and the MCP
+        endpoint is at ``/mcp``, use ``base_url="https://host/staffing"`` and
+        ``mcp_path="/mcp"`` throughout. Calling this method with two different
+        paths (e.g., ``/mcp`` from ``http_app`` and ``/staffing/mcp`` from
+        ``get_well_known_routes``) raises a ``ValueError`` to prevent a silent
+        mismatch between the published protected-resource metadata and the URL
+        the token endpoint validates against.
+
         Args:
             mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
+
+        Raises:
+            ValueError: If the computed resource URL would differ from the one
+                already established by a prior call, signalling a path mismatch
+                that would make token validation fail for clients following the
+                RFC 9728 protected-resource metadata.
         """
+        # Normalize trailing slash so "/mcp" and "/mcp/" are treated identically.
+        # _get_resource_url builds the URL by stripping the leading slash from the
+        # suffix, but a trailing slash on the path would survive and produce a
+        # different AnyHttpUrl string, causing a false-positive conflict error.
+        if mcp_path:
+            mcp_path = mcp_path.rstrip("/") or "/"
+
+        new_resource_url = self._get_resource_url(mcp_path)
+
+        # Guard against silent inconsistency: if the resource URL is already
+        # configured (e.g., by a preceding http_app() call) and a subsequent
+        # get_well_known_routes() call would change it to a different URL, the
+        # protected-resource metadata and the token endpoint would validate
+        # against different URLs. Fail fast with a clear message instead.
+        #
+        # This guard lives on OAuthProxy rather than the AuthProvider base class
+        # because only OAuthProxy binds a JWT issuer/audience to the resource URL
+        # at set_mcp_path() time. A silent overwrite on the base class is harmless
+        # for RemoteAuthProvider and plain OAuthProvider (they do not embed the
+        # audience in a signing key that is fixed at initialization); for OAuthProxy
+        # it would cause issued JWTs to carry the wrong audience and fail validation.
+        if (
+            self._resource_url is not None
+            and new_resource_url is not None
+            and str(self._resource_url) != str(new_resource_url)
+        ):
+            raise ValueError(
+                f"Resource URL conflict: already configured as {self._resource_url!s} "
+                f"but the new mcp_path {mcp_path!r} would change it to "
+                f"{new_resource_url!s}. "
+                f"When mounting behind an outer path prefix, include the full "
+                f"prefix in base_url (e.g. base_url='https://host/staffing') "
+                f"and use the inner path (e.g. mcp_path='/mcp') consistently "
+                f"for both http_app() and get_well_known_routes(). "
+                f"See https://gofastmcp.com/deployment/http#mounting-authenticated-servers"
+            )
+
         super().set_mcp_path(mcp_path)
 
         # Create JWT issuer with correct audience based on actual MCP path

@@ -480,3 +480,71 @@ class TestOAuthMounting:
             metadata = response.json()
             assert "authorization_endpoint" in metadata
             assert "token_endpoint" in metadata
+
+    def test_oauth_proxy_path_conflict_raises_error(self, test_tokens):
+        """Test that OAuthProxy raises ValueError when set_mcp_path is called with
+        a path that would change an already-configured resource URL.
+
+        This guards against the silent inconsistency described in issue #6008
+        where get_well_known_routes is called with the full outer-mount path while
+        http_app is called with the inner path only, causing the protected-resource
+        metadata and the token endpoint to validate against different URLs.
+
+        The correct pattern is to include the outer mount prefix in base_url and
+        use the inner mcp_path consistently:
+            proxy = OAuthProxy(base_url="https://host/staffing", ...)
+            mcp_app = mcp.http_app(path="/mcp")           # mcp_path="/mcp"
+            well_known = proxy.get_well_known_routes(mcp_path="/mcp")  # same path
+        """
+        token_verifier = StaticTokenVerifier(tokens=test_tokens)
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://upstream.example.com/authorize",
+            upstream_token_endpoint="https://upstream.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=token_verifier,
+            base_url="https://mcp.example.com",  # No outer prefix
+            client_storage=MemoryStore(),
+        )
+
+        mcp = FastMCP("staffing", auth=proxy)
+        # First call: http_app with inner path configures resource URL to .../mcp
+        _ = mcp.http_app(path="/mcp")
+
+        # Second call: get_well_known_routes with a different (full outer) path
+        # would silently change _resource_url, creating a mismatch. The fix
+        # raises ValueError to make the problem explicit.
+        with pytest.raises(ValueError, match="Resource URL conflict"):
+            proxy.get_well_known_routes(mcp_path="/staffing/mcp")
+
+    def test_oauth_proxy_repeated_same_path_is_idempotent(self, test_tokens):
+        """Test that calling set_mcp_path with the same path twice is allowed.
+
+        The canonical mounting pattern calls get_routes (via http_app) and
+        get_well_known_routes with the same mcp_path; both must succeed.
+        """
+        token_verifier = StaticTokenVerifier(tokens=test_tokens)
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://upstream.example.com/authorize",
+            upstream_token_endpoint="https://upstream.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=token_verifier,
+            base_url="https://api.example.com/staffing",  # Includes mount prefix
+            client_storage=MemoryStore(),
+        )
+
+        mcp = FastMCP("staffing", auth=proxy)
+        # Both calls use the same inner mcp_path: no conflict.
+        _ = mcp.http_app(path="/mcp")
+        well_known = proxy.get_well_known_routes(mcp_path="/mcp")
+
+        protected_routes = [
+            r for r in well_known if "oauth-protected-resource" in r.path
+        ]
+        assert len(protected_routes) == 1
+        # Resource URL includes the full path: base_url + mcp_path
+        assert (
+            protected_routes[0].path
+            == "/.well-known/oauth-protected-resource/staffing/mcp"
+        )
