@@ -9,10 +9,10 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from fastmcp import Client, FastMCP
-from fastmcp.tools import Tool
+from fastmcp.tools import Tool, ToolResult
 
 
 class Reading(BaseModel):
@@ -21,6 +21,48 @@ class Reading(BaseModel):
     at: time
     dur: timedelta
     ident: UUID
+
+
+class Counters(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    __pydantic_extra__: dict[str, int] = Field(init=False)  # ty:ignore[invalid-mutable-override]
+    name: str
+
+
+class CounterCollection(BaseModel):
+    counters: list[Counters]
+
+
+@pytest.mark.parametrize("shape", ["model", "list", "nested"])
+async def test_typed_extra_fields_survive_tool_result_hydration(shape: str) -> None:
+    mcp = FastMCP()
+    counters = Counters(name="cache", hits=12, misses=3)
+
+    @mcp.tool
+    def model_result() -> Counters:
+        return counters
+
+    @mcp.tool
+    def list_result() -> list[Counters]:
+        return [counters]
+
+    @mcp.tool
+    def nested_result() -> CounterCollection:
+        return CounterCollection(counters=[counters])
+
+    async with Client(mcp) as client:
+        result = await client.call_tool(f"{shape}_result")
+
+    data = result.data
+    if shape == "list":
+        data = data[0]
+    elif shape == "nested":
+        data = data.counters[0]
+
+    assert data.name == "cache"
+    assert data.hits == 12
+    assert type(data.hits) is int
+    assert data.misses == 3
 
 
 class Item(BaseModel):
@@ -34,6 +76,57 @@ class TreeNode(BaseModel):
 
 
 class TestStructuredResultHydration:
+    @pytest.mark.parametrize("title", ["Node", "Order Item (v2)"])
+    async def test_typed_extras_survive_titled_recursive_results(self, title: str):
+        mcp = FastMCP()
+        schema = {
+            "type": "object",
+            "title": title,
+            "properties": {
+                "day": {"type": "string", "format": "date"},
+                "children": {"type": "array", "items": {"$ref": "#"}},
+            },
+            "required": ["day"],
+            "additionalProperties": {"type": "integer"},
+        }
+        payload = {
+            "day": "2026-10-17",
+            "hits": 12,
+            "children": [{"day": "2026-10-18", "misses": 3}],
+        }
+
+        @mcp.tool(output_schema=schema)
+        def recursive_counters() -> ToolResult:
+            return ToolResult(content=[], structured_content=payload)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("recursive_counters")
+
+        assert result.structured_content == payload
+        assert result.data.day == date(2026, 10, 17)
+        assert result.data.hits == 12
+        assert type(result.data.hits) is int
+        child = result.data.children[0]
+        assert isinstance(child, type(result.data))
+        assert child.day == date(2026, 10, 18)
+        assert child.misses == 3
+        assert type(child.misses) is int
+
+    async def test_invalid_typed_extra_is_rejected_before_hydration(self):
+        mcp = FastMCP()
+        payload = {"name": "cache", "hits": "many"}
+
+        @mcp.tool(output_schema=Counters.model_json_schema())
+        def invalid_counters() -> ToolResult:
+            return ToolResult(content=[], structured_content=payload)
+
+        async with Client(mcp) as client:
+            with pytest.raises(
+                RuntimeError,
+                match="Invalid structured content returned by tool invalid_counters",
+            ):
+                await client.call_tool("invalid_counters")
+
     @pytest.mark.parametrize(
         ("field_schema", "value", "expected"),
         [
