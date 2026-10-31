@@ -10,9 +10,18 @@ through the browser flow on every request. Single-server configs shared one
 
 from typing import Any
 
+import pytest
+
+import fastmcp.client.auth.oauth as oauth_module
 from fastmcp.client.auth.oauth import OAuth
+from fastmcp.client.group import ClientGroup
 from fastmcp.client.transports import ClientTransport, StreamableHttpTransport
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes, RemoteMCPServer
+from fastmcp.server.auth.auth import ClientRegistrationOptions
+from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
+from fastmcp.server.server import FastMCP
+from fastmcp.utilities.http import find_available_port
+from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
 
 
 def _oauth_config() -> MCPConfig:
@@ -91,3 +100,70 @@ def test_bearer_auth_strings_still_resolve_per_transport():
     assert first is not None
     assert second is not None
     assert first is not second
+
+
+class _CountingOAuthProvider(InMemoryOAuthProvider):
+    """An in-memory provider that counts completed code exchanges.
+
+    One exchange is one trip through the browser flow, so the counter is the
+    number of times a user would have been asked to authorise.
+    """
+
+    def __init__(self, base_url: str):
+        super().__init__(
+            base_url=base_url,
+            client_registration_options=ClientRegistrationOptions(
+                enabled=True, valid_scopes=["read", "write"]
+            ),
+        )
+        self.authorizations = 0
+
+    async def exchange_authorization_code(self, client, authorization_code):
+        self.authorizations += 1
+        return await super().exchange_authorization_code(client, authorization_code)
+
+
+@pytest.fixture(params=["http", "sse"])
+async def oauth_backend(request: pytest.FixtureRequest):
+    """A real OAuth-protected server on a real port, spoken to over `request.param`."""
+    transport = request.param
+    port = find_available_port()
+    provider = _CountingOAuthProvider(f"http://127.0.0.1:{port}")
+    server = FastMCP("OAuthBackend", auth=provider)
+
+    @server.tool
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    async with run_server_async(server, port=port, transport=transport) as url:
+        yield url, provider, transport
+
+
+async def test_one_authorization_per_configured_server(oauth_backend, monkeypatch):
+    """Two proxy rebuilds must not send the user through the flow twice.
+
+    This is the behaviour the fix exists for: `auth="oauth"` is resolved inside
+    the transport, so a proxy that rebuilds transports per request used to mint
+    a new `OAuth` with an empty token store and re-authorise every time. The
+    exchange count is the evidence — the token-store tests above only show the
+    two transports share an object.
+    """
+    url, provider, transport = oauth_backend
+    # `auth="oauth"` builds the client internally; make that build headless so
+    # the flow is real and only the browser hop is replaced.
+    monkeypatch.setattr(oauth_module, "OAuth", HeadlessOAuth)
+
+    config = MCPConfig.from_dict(
+        {
+            "mcpServers": {
+                "secure": {"url": url, "auth": "oauth", "transport": transport},
+            }
+        }
+    )
+
+    for _ in range(2):
+        async with ClientGroup.from_config(config) as group:
+            tools = await group.list_tools()
+            assert [tool.name for tool in tools] == ["secure_add"]
+
+    assert provider.authorizations == 1
