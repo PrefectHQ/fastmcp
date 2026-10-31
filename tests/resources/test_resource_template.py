@@ -14,6 +14,7 @@ from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.resources.template import (
     build_regex,
     expand_uri_template,
+    forward_uri,
     match_uri_template,
 )
 from fastmcp.resources.types import BinaryResource, TextResource
@@ -810,19 +811,21 @@ class TestContextHandling:
 class TestMalformedURITemplates:
     """Test that malformed URI templates from remote servers don't crash."""
 
-    @pytest.mark.parametrize(
-        "template",
-        [
-            "test://{1leading}/path",
-            "test://{123}/path",
-        ],
-        ids=[
-            "leading_digit",
-            "all_digits",
-        ],
-    )
-    def test_build_regex_returns_none_for_invalid_group_names(self, template: str):
-        assert build_regex(template) is None
+    def test_build_regex_sanitizes_leading_digit_group_names(self):
+        """A leading digit is not a valid regex group name, so it is prefixed
+        with an underscore instead of disabling the whole template (#6150)."""
+        regex = build_regex("test://{1leading}/path")
+        assert regex is not None
+        match = regex.match("test://alice/path")
+        assert match is not None
+        assert match.group("_1leading") == "alice"
+
+    def test_build_regex_handles_all_digit_names(self):
+        regex = build_regex("test://{123}/path")
+        assert regex is not None
+        match = regex.match("test://alice/path")
+        assert match is not None
+        assert match.group("_123") == "alice"
 
     def test_build_regex_normalizes_hyphens(self):
         """Hyphens in param names produce valid regex with underscored groups."""
@@ -984,17 +987,22 @@ class TestMalformedURITemplates:
         "template",
         [
             "test://{a}/{a}/path",
-            "test://{1leading}/path",
         ],
         ids=[
             "duplicate_groups",
-            "leading_digit",
         ],
     )
     def test_match_uri_template_returns_none_for_malformed_templates(
         self, template: str
     ):
         assert match_uri_template("test://anything/path", template) is None
+
+    def test_match_uri_template_sanitizes_leading_digit_names(self):
+        """`{1leading}` used to disable the whole template; it now matches
+        under the sanitized group name (#6150)."""
+        assert match_uri_template("test://alice/path", "test://{1leading}/path") == {
+            "_1leading": "alice"
+        }
 
     def test_match_uri_template_normalizes_hyphens(self):
         """Hyphenated params match and return underscored keys."""
@@ -1819,3 +1827,75 @@ class TestTemplateComponentMetaPropagation:
             component_meta,
             {**component_meta, "own": 1},
         ]
+
+
+class TestNonIdentifierTemplateVariableNames:
+    """Template variable names that are not Python identifiers still match.
+
+    OpenAPI path templates legally use names like `{$top}`, `x.y` or `1id`;
+    the matcher must sanitize them into valid regex group names instead of
+    giving up on the whole template (#6150). Consumers map sanitized keys
+    back onto route parameters through `template_param_key`.
+    """
+
+    @pytest.mark.parametrize(
+        ("uri_template", "uri", "expected"),
+        [
+            ("resource://dollar/{$top}", "resource://dollar/x", {"_top": "x"}),
+            ("resource://dot/{x.y}", "resource://dot/x", {"x_y": "x"}),
+            ("resource://digit/{1id}", "resource://digit/x", {"_1id": "x"}),
+            ("resource://users/{user-id}", "resource://users/7", {"user_id": "7"}),
+            ("resource://plain/{top}", "resource://plain/x", {"top": "x"}),
+        ],
+    )
+    def test_matches_non_identifier_names(self, uri_template, uri, expected):
+        assert match_uri_template(uri, uri_template) == expected
+
+    def test_build_regex_compiles_non_identifier_group_names(self):
+        regex = build_regex("resource://dollar/{$top}")
+        assert regex is not None
+        match = regex.match("resource://dollar/x")
+        assert match is not None
+        assert match.group("_top") == "x"
+
+    def test_wildcard_with_non_identifier_name(self):
+        assert match_uri_template(
+            "resource://dollar/a/b", "resource://dollar/{$top*}"
+        ) == {"_top": "a/b"}
+
+
+class TestExpandNonIdentifierNames:
+    """Forwarding (mount/proxy) expands placeholders from sanitized param
+    keys: params come back from match_uri_template keyed by
+    template_param_key, so {$top} must resolve from `_top` instead of being
+    forwarded literally (#6150, triage-reviewer follow-up)."""
+
+    @pytest.mark.parametrize(
+        "template, params, expected",
+        [
+            ("resource://dollar/{$top}", {"_top": "alice"}, "resource://dollar/alice"),
+            ("resource://dot/{x.y}", {"x_y": "alice"}, "resource://dot/alice"),
+            ("resource://digit/{1id}", {"_1id": "alice"}, "resource://digit/alice"),
+            # Controls: plain and hyphenated names behave as before.
+            ("resource://plain/{top}", {"top": "alice"}, "resource://plain/alice"),
+            (
+                "resource://users/{user-id}",
+                {"user_id": "7"},
+                "resource://users/7",
+            ),
+        ],
+    )
+    def test_expand_resolves_sanitized_keys(
+        self, template: str, params: dict[str, str], expected: str
+    ):
+        assert expand_uri_template(template, params) == expected
+
+    def test_forward_uri_resolves_sanitized_keys(self):
+        result = forward_uri(
+            "resource://dollar/{$top}", {"_top": "alice"}, "resource://dollar/alice?q=1"
+        )
+        assert result == "resource://dollar/alice?q=1"
+
+    def test_forward_uri_keeps_literal_when_unresolved(self):
+        result = forward_uri("resource://dollar/{$top}", {}, "resource://dollar/x")
+        assert result == "resource://dollar/{$top}"

@@ -160,6 +160,21 @@ def _literal_pattern(text: str) -> str:
     return "".join(pattern)
 
 
+def template_param_key(name: str) -> str:
+    """Normalize a template variable name into the key used for matched params.
+
+    Regex group names must be valid Python identifiers, so every character a
+    legal template variable may carry that an identifier cannot (`$`, `.`, a
+    leading digit, ...) becomes `_`. Hyphens already normalized this way.
+    Consumers that map matched params back onto route parameters (OpenAPI
+    resource templates) use the same function for the lookup.
+    """
+    key = re.sub(r"\W", "_", name)
+    if not key or key[0].isdigit():
+        key = f"_{key}"
+    return key
+
+
 @functools.lru_cache(maxsize=4096)
 def build_regex(template: str) -> re.Pattern[str] | None:
     """Build regex pattern for URI template, handling RFC 6570 syntax.
@@ -169,11 +184,12 @@ def build_regex(template: str) -> re.Pattern[str] | None:
     - `{var*}` - wildcard path parameter (captures multiple segments)
     - `{?var1,var2}` - query parameters (ignored in path matching)
 
-    Hyphens in parameter names are normalized to underscores in regex group
-    names so that matched groups are valid Python identifiers.
+    Parameter names are normalized to valid Python identifiers through
+    `template_param_key` so matched groups are usable and OpenAPI names
+    like `{$top}` or `1id` still match instead of disabling the template.
 
-    Returns None if the template produces an invalid regex (e.g. parameter
-    names with leading digits or duplicates from a remote server).
+    Returns None if the template produces an invalid regex (e.g. two
+    parameter names that normalize to the same group).
     """
     # Remove query parameter syntax for path matching
     template_without_query = re.sub(r"\{\?[^}]+\}", "", template)
@@ -185,11 +201,9 @@ def build_regex(template: str) -> re.Pattern[str] | None:
             name = part[1:-1]
             if name.endswith("*"):
                 name = name[:-1]
-                group = name.replace("-", "_")
-                pattern += f"(?P<{group}>.+)"
+                pattern += f"(?P<{template_param_key(name)}>.+)"
             else:
-                group = name.replace("-", "_")
-                pattern += f"(?P<{group}>[^/]+)"
+                pattern += f"(?P<{template_param_key(name)}>[^/]+)"
         else:
             pattern += _literal_pattern(part)
     try:
@@ -293,19 +307,23 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
     # single segment ([^/]+), so reserved characters including "/" are encoded;
     # wildcard {name*} placeholders may span segments, so "/" is preserved.
     #
-    # Params use underscored keys (e.g. user_id) but templates may use
-    # hyphens (e.g. {user-id}), so try both forms.
-    for key, value in params.items():
-        value_str = str(value)
-        simple = quote(value_str, safe="")
-        wildcard = quote(value_str, safe="/")
-        forms = [key]
-        hyphenated = key.replace("_", "-")
-        if hyphenated != key:
-            forms.append(hyphenated)
-        for form in forms:
-            result = result.replace(f"{{{form}}}", simple)
-            result = result.replace(f"{{{form}*}}", wildcard)
+    # Params are keyed the way match_uri_template returns them — sanitized
+    # through template_param_key — but templates may spell the variable with
+    # hyphens or characters an identifier cannot carry (e.g. {$top}), so each
+    # placeholder resolves against the exact name, the hyphenated form, and
+    # the sanitized form, in that order. A placeholder with no matching param
+    # stays literal.
+    def substitute(match: re.Match[str]) -> str:
+        token = match.group(1)
+        wildcard = token.endswith("*")
+        name = token[:-1] if wildcard else token
+        for candidate in (name, name.replace("-", "_"), template_param_key(name)):
+            if candidate in params:
+                value_str = str(params[candidate])
+                return quote(value_str, safe="/" if wildcard else "")
+        return match.group(0)
+
+    result = re.sub(r"\{([^?}][^}]*)\}", substitute, result)
 
     # Expand {?param1,param2,...} query parameter blocks
     def _expand_query_block(match: re.Match[str]) -> str:
@@ -320,10 +338,13 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
             exploded = name.endswith("*")
             name = name.removesuffix("*")
             underscored = name.replace("-", "_")
+            sanitized = template_param_key(name)
             if name in params:
                 value = params[name]
             elif underscored in params:
                 value = params[underscored]
+            elif sanitized in params:
+                value = params[sanitized]
             else:
                 continue
             if exploded and isinstance(value, (list, tuple)):
