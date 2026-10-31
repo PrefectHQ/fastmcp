@@ -137,8 +137,20 @@ Record a monotonic start time, bound shell commands, and return by 140 seconds o
 Keep tool output focused. Return explicit unavailable evidence rather than guessing.
 """
 OBJECTIVES = {
-    "triage_review": """Adversarially review this issue's retained triage outcome and return an actionable
-disposition, not another investigation summary.
+    "triage_review": """Adversarially review this issue's retained triage outcome using the
+adversarial-review skill in instructions.files; it holds the review standards. Return an
+actionable disposition, not another investigation summary. context.outcome contains executed
+reproduction or contribution checks; context.evidence contains current contribution history.
+Report actual commands and results in reason. Never claim checks you did not execute.
+Return prepare_fix only for a worthwhile reproduced supported bug without competing work or
+unresolved consequential findings. Return review_existing for a supplied contribution and name
+the exact PR and revision in next_action. Return repair_evidence for invalid/incomplete evidence,
+maintainer only for a concrete unresolved product choice, or skip with a reason. Return
+propose_closure only for an existing closure candidate or merged-contribution outcome, with a
+specific typed close_duplicate, close_completed or close_settled recommendation. Use
+review_existing disposition for close_pr proposals; propose_closure is for issue closure only.
+next_action must identify the target and concrete next step, with any blocking finding; it must
+not be a generic request to investigate or review.
 For review_existing, supply public_reviews with exactly one entry per verified PR, bound by
 pr_number. Write a concise contributor-facing summary of the actual finding and impact,
 the requested localized change (empty if none), and a short statement of checks/results.
@@ -146,68 +158,27 @@ Use at most 120 words total per entry. Explain each finding once. Never copy int
 or next_action into public_reviews. Do not include command transcripts, setup history,
 Want/Next action prefixes, UUIDs, full SHAs, assignment/eligibility or CI gate administration,
 HTML, code fences, or generic maintainer instructions. Keep all detailed evidence in reason;
-it remains private. Public feedback may include short inline code necessary to explain a bug. context.outcome contains executed reproduction
-or contribution checks; context.evidence contains current contribution history. Challenge the
-claimed contract, prove the observed failure is the reported bug rather than setup, and check
-controls and supported neighboring behavior. Inspect the pinned source and relevant docs.
-For reproduced bugs, apply the exact regression_patch in your clean checkout and run the
-focused regression and a neighboring control within budget. Report actual commands and results
-in reason. Never claim checks you did not execute. Machine patch validation is supplied separately;
-its passing status proves materialization, not the test's correctness.
-For existing contributions, evaluate the exact verified head, regressions and bot discussion;
-recommend the next specific review or repair rather than creating a competing fix. Do not
-substitute an old review or a closed gate-rejected PR for current implementation evidence.
-Return prepare_fix only for a worthwhile reproduced supported bug without competing work or
-unresolved consequential findings. Return review_existing for a supplied contribution and name
-the exact PR and revision in next_action. Return repair_evidence for invalid/incomplete evidence,
-maintainer only for a concrete unresolved product choice, or skip with a reason. An environment
-failure is operational work, never a request that a maintainer reproduce the bug for you.
-next_action must identify the target and concrete next step, with any blocking finding; it must
-not be a generic request to investigate or review. Findings must be consequential and reachable.
-Return propose_closure only for an existing closure candidate or merged-contribution outcome,
-with a specific typed close_duplicate, close_completed or close_settled recommendation.
-Challenge partial fixes and reverts: a merged reference alone does not establish resolution.
-Every non-operational outcome reaches you, including maintainer questions and skips without
-executed checks. Challenge whether a maintainer question is real and necessary, whether an
-evidence request is fair and precise, and whether leaving the issue unchanged is justified.
-Use recommendations for exact proposed assignments, localized PR finishing, PR review, duplicate PR consolidation or issue
-closures. Copy context.retained_intake_sha256 into each evidence_sha256; PR actions and
-assignments copy the selected PR's full head_sha/base_sha. Name the issue target for assignment
-or closure and the PR target for PR actions. Every proposal states scope_notes, concrete
-next_step, reason and norm_evidence with source URLs and what was actually checked.
-Return at most three proposals for this issue, prioritizing useful concrete mutations.
-Keep each norm summary to one short factual sentence and cite at most three relevant URLs;
-do not repeat the investigation or create a separate proposal for each remaining gate.
+it remains private. Public feedback may include short inline code necessary to explain a bug.
+Use recommendations for exact proposed assignments, localized PR finishing, PR review, duplicate
+PR consolidation or issue closures. Copy context.retained_intake_sha256 into each
+evidence_sha256; PR actions and assignments copy the selected PR's full head_sha/base_sha. Name
+the issue target for assignment or closure and the PR target for PR actions. Every proposal
+states scope_notes, concrete next_step, reason and norm_evidence with source URLs and what was
+actually checked. Return at most three proposals for this issue, prioritizing useful concrete
+mutations. Keep each norm summary to one short factual sentence and cite at most three relevant
+URLs; do not repeat the investigation or create a separate proposal for each remaining gate.
 Set each norm_evidence.satisfied only when that check passed; missing or negative evidence
-remains an explicit gate, not a positive qualification.
-Assignment proposals name related_pr and its actual author as assignee, establishing worthwhile
-scope, supported contract, reporter first claim, prior discussion/bot feedback and brief public
-history per review-issue. Sparse profiles and AI assistance alone are not rejection grounds.
-Closure proposals include an exact public_comment, scope notes covering the whole report,
-and canonical_issue, merged_pr or policy_url. Link that reference in the public_comment.
-Verify duplicate equivalence or that the merged
-fix is current and not reverted; distinguish fixed on main from released. Existing duplicate
-automation retains its cooldown/closure ownership; human interventions need maintainer resolution.
-For competing PRs, propose close_pr only with canonical_pr and its exact canonical_head_sha
-(and canonical_base_sha when supplied), target PR head_sha/base_sha, a concrete public_comment
-and scope/coverage comparison. Read prior closed PR discussion and cite earlier maintainer
-canonical choices; an established choice outranks which competing pair is newest. Respect the
-reporter's first claim and existing contributor credit. norm_evidence must address
-maintainer_direction and coverage_parity, not just matching titles or duplicate labels.
-The deterministic qualifier requires retained verification at both exact heads; missing
-canonical verification is a concrete check to request, never evidence of equivalence.
-An open canonical PR is expected and does not block consolidation; closing its issue while
-active contributions remain still requires coordination. Use review_existing disposition
-for close_pr proposals; propose_closure is for issue closure only.
-Never infer readiness from passing focused tests: current CI, static checks, contributor credit
-and batch composition remain separate merge gates. Do not propose merges or automatic writes.
-Assignment eligibility is a separate live platform preflight: a successful gh issue edit
-can silently ignore an ineligible nonparticipant. Verify repository assignee eligibility and
-read back assignees after any approved assignment; sparse history is not platform eligibility.
-Do not ask contributors to post claim comments or invent automatic gate bypasses.
-Missing identity or evidence must remain explicit; deterministic code will block incomplete
-recommendations. No extra model stage runs for these proposals.
-You do not authorize publication, closure, assignment, merge or any GitHub write.""",
+remains an explicit gate, not a positive qualification. Assignment proposals name related_pr
+and its actual author as assignee. Closure proposals include an exact public_comment, scope
+notes covering the whole report, and canonical_issue, merged_pr or policy_url, linked in the
+public_comment. close_pr requires canonical_pr and its exact canonical_head_sha (and
+canonical_base_sha when supplied), target PR head_sha/base_sha, a concrete public_comment and a
+scope/coverage comparison; its norm_evidence must address maintainer_direction and
+coverage_parity. The deterministic qualifier requires retained verification at both exact
+heads; missing canonical verification is a concrete check to request, never evidence of
+equivalence. Deterministic code blocks incomplete recommendations, and no extra model stage
+runs for them. Do not propose merges or automatic writes. You do not authorize publication,
+closure, assignment, merge or any GitHub write.""",
     "assess": """Assess context.evidence in its deterministic context.route. Establish user impact,
 supported release line, intended behavior from docs/history and maintainer decisions, and
 whether the work justifies ongoing maintenance. Inspect relevant history before claiming

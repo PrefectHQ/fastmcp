@@ -5,6 +5,7 @@
     "existing": [".agents/skills/review-issue/SKILL.md", ".agents/skills/review-pr/SKILL.md"],
     "reproduce": [".agents/skills/python-tests/SKILL.md", "docs/development/tests.mdx"],
     "prepare": [".agents/skills/fix-issue/SKILL.md", ".agents/skills/python-tests/SKILL.md", ".agents/skills/docs/SKILL.md", "docs/development/tests.mdx"],
-    "review": [".agents/skills/review-pr/SKILL.md", ".agents/skills/python-tests/SKILL.md", ".agents/skills/docs/SKILL.md", "docs/development/tests.mdx"]
+    "review": [".agents/skills/review-pr/SKILL.md", ".agents/skills/python-tests/SKILL.md", ".agents/skills/docs/SKILL.md", "docs/development/tests.mdx"],
+    "triage_review": [".agents/skills/adversarial-review/SKILL.md", ".agents/skills/review-issue/SKILL.md", ".agents/skills/review-pr/SKILL.md", ".agents/skills/python-tests/SKILL.md", "docs/development/tests.mdx"]
   }
 }

@@ -56,6 +56,9 @@ evidence requests, closure candidates, maintainer questions and skips. It uses t
 source and executed checks. Its disposition and concrete next action lead each review
 item. Native triage refuses a runtime without it. GPT-6.1 Sol runs this review and the
 fix-stack review while Luna retains assessment, reproduction and preparation.
+Its review standards live in `.agents/skills/adversarial-review/SKILL.md`, which each run
+loads from the pinned base revision. Editing that file on `main` changes the standards for the
+next run without republishing a plan. The role prompt keeps only output and authority rules.
 Serialized regression patches must materialize as tests on their stated baseline
 before a reproduced result can advance. Agent claims alone do not establish that
 those saved bytes are reusable. Review recommendations do not grant write permission.
