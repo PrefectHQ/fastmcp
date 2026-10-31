@@ -35,7 +35,7 @@ llm = anthropic.AsyncAnthropic()
 async def summarize(text: str) -> str:
     """Summarize a document in two sentences."""
     response = await llm.messages.create(
-        model="claude-sonnet-4-5",
+        model="claude-sonnet-5-5",
         max_tokens=512,
         system="Summarize the user's text in exactly two sentences.",
         messages=[{"role": "user", "content": text}],
