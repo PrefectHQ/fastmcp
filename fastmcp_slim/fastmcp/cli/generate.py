@@ -293,17 +293,26 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
     lines.append(") -> None:")
     lines.append(f"    '''{description}'''")
 
-    # Add JSON parsing for complex parameters
-    if json_params:
-        lines.append("    # Parse JSON parameters")
-        for _prop_name, safe_name in json_params:
-            lines.append(
-                f"    {safe_name} = json.loads({safe_name}) if isinstance({safe_name}, str) else {safe_name}"
-            )
-        lines.append("")
-
     dict_items = ", ".join(call_args)
-    lines.append(f"    await _call_tool({tool.name!r}, {{{dict_items}}})")
+    if call_args:
+        arguments_name = "_arguments"
+        while arguments_name in seen_names:
+            arguments_name += "_"
+        lines.append(f"    {arguments_name} = {{{dict_items}}}")
+        lines.append("    # Omit missing options before decoding explicit JSON null.")
+        lines.append(
+            f"    {arguments_name} = {{k: v for k, v in {arguments_name}.items() "
+            f"if v is not None or k in {tuple(sorted(required))!r}}}"
+        )
+        for prop_name, _safe_name in json_params:
+            value = f"{arguments_name}[{prop_name!r}]"
+            lines.append(
+                f"    if {prop_name!r} in {arguments_name} and isinstance({value}, str):"
+            )
+            lines.append(f"        {value} = json.loads({value})")
+        lines.append(f"    await _call_tool({tool.name!r}, {arguments_name})")
+    else:
+        lines.append(f"    await _call_tool({tool.name!r}, {{}})")
     lines.append("")
 
     return "\n".join(lines)
@@ -407,10 +416,8 @@ def generate_cli_script(
 
 
         async def _call_tool(tool_name: str, arguments: dict) -> None:
-            # None represents an omitted optional argument; empty arrays are values.
-            filtered = {k: v for k, v in arguments.items() if v is not None}
             async with Client(CLIENT_SPEC) as client:
-                result = await client.call_tool(tool_name, filtered, raise_on_error=False)
+                result = await client.call_tool(tool_name, arguments, raise_on_error=False)
                 _print_tool_result(result)
                 if result.is_error:
                     sys.exit(1)""")

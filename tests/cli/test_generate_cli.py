@@ -160,7 +160,8 @@ class TestToolFunctionSource:
         assert "async def greet(" in source
         assert "name: Annotated[str" in source
         assert "= None" not in source
-        assert "_call_tool('greet', {'name': name})" in source
+        assert "_arguments = {'name': name}" in source
+        assert "_call_tool('greet', _arguments)" in source
 
     def test_optional_param(self):
         tool = mcp_types.Tool(
@@ -309,12 +310,9 @@ class TestToolFunctionSource:
         # Should include JSON schema in help (with escaped quotes)
         assert "JSON Schema:" in source
         assert '\\"type\\": \\"object\\"' in source
-        # Should have JSON parsing with isinstance check
-        assert (
-            "metadata = json.loads(metadata) if isinstance(metadata, str) else metadata"
-            in source
-        )
-        # Should use the decoded value in the call
+        # Should decode retained JSON values without changing the raw parameter.
+        assert "isinstance(_arguments['metadata'], str)" in source
+        assert "_arguments['metadata'] = json.loads(_arguments['metadata'])" in source
         assert "'metadata': metadata" in source
         compile(source, "<test>", "exec")
 
@@ -339,10 +337,7 @@ class TestToolFunctionSource:
         # Nested arrays need JSON parsing
         assert "batches: Annotated[str" in source
         assert "JSON Schema:" in source
-        assert (
-            "batches = json.loads(batches) if isinstance(batches, str) else batches"
-            in source
-        )
+        assert "_arguments['batches'] = json.loads(_arguments['batches'])" in source
         compile(source, "<test>", "exec")
 
     def test_complex_type_with_default(self):
@@ -363,7 +358,7 @@ class TestToolFunctionSource:
         # pydantic_core.to_json produces compact JSON
         assert '= \'{"timeout":30,"retry":true}\'' in source
         # Should parse safely even with default
-        assert "isinstance(options, str)" in source
+        assert "isinstance(_arguments['options'], str)" in source
         compile(source, "<test>", "exec")
 
     def test_name_collision_detection(self):
