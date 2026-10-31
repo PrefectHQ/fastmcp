@@ -197,3 +197,118 @@ class TestWrappedResultKeepsDefs:
             data = (await client.call_tool("example")).data
 
         assert data == "example"
+
+
+class TestUnionHydrationFidelity:
+    """``result.data`` is a convenience view of ``structured_content`` and must
+    not disagree with what the server sent. A pydantic union can coerce across
+    branches (0 → False) or drop keys, so hydration falls back to the payload
+    itself when the typed form would change it (#6136)."""
+
+    async def test_anyof_branch_coercion_keeps_server_value(self):
+        mcp = FastMCP()
+
+        # Only the first branch accepts {"a": 0}; the second requires a boolean.
+        schema = {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "anyOf": [
+                        {"type": "object", "properties": {"x": {}}},
+                        {"type": "object", "properties": {"a": {"type": "boolean"}}},
+                    ]
+                }
+            },
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"value": {"a": 0}}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"value": {"a": 0}}
+        assert result.data == {"value": {"a": 0}}
+
+    async def test_unambiguous_anyof_still_hydrates(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "anyOf": [
+                        {"type": "object", "properties": {"a": {"type": "boolean"}}},
+                        {"type": "object", "properties": {"n": {"type": "integer"}}},
+                    ]
+                }
+            },
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"value": {"n": 3}}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"value": {"n": 3}}
+        assert result.data.value.n == 3
+
+
+class TestHydrationGuardNoFalsePositives:
+    """The fidelity guard must not reject hydration the schema supports:
+    omitted optional fields (defaults serialize into the dump) and
+    equivalent date-time spellings (+00:00 vs Z) both keep their models."""
+
+    async def test_omitted_optional_field_still_hydrates(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "a": {"type": "integer"},
+                "note": {"type": "string"},
+            },
+            "required": ["a"],
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"a": 1}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"a": 1}
+        # Attribute access and typed values are preserved; the dump may
+        # carry the optional field's default without being a mismatch.
+        assert result.data.a == 1
+        assert result.data.note is None
+
+    async def test_utc_offset_datetime_still_hydrates(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {"ts": {"type": "string", "format": "date-time"}},
+            "required": ["ts"],
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"ts": "2024-06-01T12:00:00+00:00"}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"ts": "2024-06-01T12:00:00+00:00"}
+        # Same instant: pydantic serializes UTC as "Z"; the guard must treat
+        # the spellings as equivalent rather than discarding the model.
+        assert result.data.ts.year == 2024
+        assert result.data.ts.hour == 12

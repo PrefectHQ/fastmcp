@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import datetime
+import json
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 import mcp_types
@@ -9,8 +12,6 @@ from mcp.client.caching import CacheMode
 from opentelemetry.trace import Status, StatusCode
 
 if TYPE_CHECKING:
-    import datetime
-
     from fastmcp.client.client import CallToolResult, Client
 from fastmcp.client.progress import ProgressHandler
 from fastmcp.client.telemetry import client_span
@@ -23,6 +24,80 @@ from fastmcp.utilities.timeout import normalize_timeout_to_seconds
 logger = get_logger(__name__)
 
 AUTO_PAGINATION_MAX_PAGES = 250
+
+
+def _round_trips_to_payload(type_adapter: Any, typed: Any, original: Any) -> bool:
+    """Check that the typed hydration re-serializes to the server's payload.
+
+    Pydantic unions validate with smart mode, which may coerce across
+    branches (0 → False) or drop keys the model does not declare, so the
+    hydrated object can disagree with `structured_content`. Re-serializing
+    through the same adapter compares them in JSON terms, with two
+    hydration-legitimate asymmetries: fields the payload omitted may appear
+    in the dump (schema defaults serialize out), and date-time strings may
+    be spelled differently for the same instant (pydantic renders UTC as
+    ``Z`` while a payload may say ``+00:00``).
+    """
+    try:
+        rehydrated = json.loads(type_adapter.dump_json(typed))
+    except Exception:
+        # If the typed form cannot be re-serialized, fidelity is unknowable;
+        # keep the hydrated value rather than second-guessing a valid model.
+        return True
+    return _hydration_covers_payload(rehydrated, original)
+
+
+def _hydration_covers_payload(dumped: Any, original: Any) -> bool:
+    """Every value the server sent must survive hydration; extra keys in the
+    dump are defaults for fields the payload omitted and are allowed."""
+    if isinstance(original, bool) or isinstance(dumped, bool):
+        # JSON booleans are not numbers: 0 does not hydrate to False.
+        return (
+            isinstance(original, bool)
+            and isinstance(dumped, bool)
+            and (original == dumped)
+        )
+    if isinstance(original, Mapping) or isinstance(dumped, Mapping):
+        if not isinstance(original, Mapping) or not isinstance(dumped, Mapping):
+            return False
+        return all(
+            key in dumped and _hydration_covers_payload(dumped[key], value)
+            for key, value in original.items()
+        )
+    if isinstance(original, list) or isinstance(dumped, list):
+        if (
+            not isinstance(original, list)
+            or not isinstance(dumped, list)
+            or len(original) != len(dumped)
+        ):
+            return False
+        return all(
+            _hydration_covers_payload(d, o)
+            for o, d in zip(original, dumped, strict=True)
+        )
+    if original == dumped:
+        return True
+    # Same instant, different spelling: "+00:00" and "Z".
+    left = _parse_iso_instant(original)
+    right = _parse_iso_instant(dumped)
+    if left is not None and right is not None:
+        return left == right
+    return False
+
+
+def _parse_iso_instant(value: Any) -> Any:
+    if not isinstance(value, str) or len(value) < 8:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(value)
+    except ValueError:
+        pass
+    if value.endswith("Z"):
+        try:
+            return datetime.datetime.fromisoformat(value[:-1] + "+00:00")
+        except ValueError:
+            return None
+    return None
 
 
 class ClientToolsMixin:
@@ -430,7 +505,16 @@ async def _parse_call_tool_result(
                 if wrap_from_meta or output_schema.get("x-fastmcp-wrap-result"):
                     output_schema = _wrapped_result_schema(output_schema)
                 type_adapter = json_schema_to_type_adapter(output_schema)
-                data = type_adapter.validate_python(structured_content)
+                typed = type_adapter.validate_python(structured_content)
+                # `data` is a convenience view of `structured_content`, so it
+                # must not disagree with what the server sent: a pydantic
+                # union can coerce across branches (0 → False) or drop keys.
+                # When the typed form re-serializes differently, hand back
+                # the payload untouched.
+                if _round_trips_to_payload(type_adapter, typed, structured_content):
+                    data = typed
+                else:
+                    data = structured_content
             else:
                 data = structured_content
         except Exception as e:
