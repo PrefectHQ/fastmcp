@@ -307,7 +307,7 @@ class FunctionPrompt(Prompt):
                                     pydantic_core.ValidationError,
                                 ):
                                     converted_kwargs[param_name] = python_value
-                    except (ValueError, TypeError, pydantic_core.ValidationError) as e:
+                    except pydantic_core.ValidationError as e:
                         # An unconvertible argument is a client error. Not chained,
                         # because ErrorHandlingMiddleware classifies by __cause__.
                         raise ValidationError(
@@ -315,6 +315,13 @@ class FunctionPrompt(Prompt):
                             f"to expected type {param.annotation}. Error: {e}",
                             log_level=logging.WARNING,
                         ) from None
+                    except (ValueError, TypeError) as e:
+                        # Pydantic doesn't wrap these, so they signal a server-side
+                        # fault such as a broken validator, not bad input
+                        raise PromptError(
+                            f"Could not convert argument '{param_name}' with value '{param_value}' "
+                            f"to expected type {param.annotation}. Error: {e}"
+                        ) from e
             else:
                 # Parameter not in function signature, pass as-is
                 converted_kwargs[param_name] = param_value

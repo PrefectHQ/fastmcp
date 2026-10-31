@@ -3,8 +3,13 @@ from typing import Annotated, Any, Literal
 
 import pytest
 from mcp import MCPError
-from mcp_types import INVALID_PARAMS, EmbeddedResource, TextResourceContents
-from pydantic import Field
+from mcp_types import (
+    INTERNAL_ERROR,
+    INVALID_PARAMS,
+    EmbeddedResource,
+    TextResourceContents,
+)
+from pydantic import BeforeValidator, Field
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ValidationError
@@ -871,6 +876,22 @@ class TestUnconvertibleArguments:
 
         assert exc_info.value.error.code == INVALID_PARAMS
         assert exc_info.value.error.message.startswith("Could not convert argument")
+
+    async def test_get_prompt_validator_type_error_remains_internal(self):
+        def broken(value: str) -> int:
+            raise TypeError("validator bug")
+
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def summarize(count: Annotated[int, BeforeValidator(broken)]) -> str:
+            return str(count)
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError) as exc_info:
+                await client.get_prompt("summarize", {"count": "1"})
+
+        assert exc_info.value.error.code == INTERNAL_ERROR
 
 
 class TestPromptFieldDefaults:
