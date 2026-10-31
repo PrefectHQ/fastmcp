@@ -357,7 +357,7 @@ class TransformedTool(Tool):
                                 break
 
                 if not has_factory_default:
-                    arguments[param_name] = param_schema["default"]
+                    arguments[param_name] = deepcopy(param_schema["default"])
 
         token = _current_tool.set(self)
         try:
