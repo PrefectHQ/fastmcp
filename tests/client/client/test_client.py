@@ -281,7 +281,7 @@ async def test_server_deserialization_error():
     `_on_get_prompt` in fastmcp_slim/fastmcp/server/mixins/mcp_operations.py
     catches `FastMCPError` broadly and translates it into an `MCPError` via
     `to_mcp_error`, the same way `_on_call_tool` surfaces tool errors. The
-    `PromptError` raised during argument conversion reaches the client with
+    `ValidationError` raised during argument conversion reaches the client with
     its message intact on both protocol eras.
     """
 
