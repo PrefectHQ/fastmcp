@@ -454,3 +454,69 @@ class TestEnableDisable:
 
             with pytest.raises(ToolError):
                 await client.call_tool("new_add", {"x": 1, "y": 2})
+
+
+class SearchFilters(BaseModel):
+    limit: Annotated[int, Field(le=100)]
+
+
+def search(
+    q: str, n: Annotated[int, Field(le=10)] = 5, f: SearchFilters | None = None
+) -> str:
+    return q
+
+
+async def call_tool_error(tool: Tool, arguments: dict[str, Any]) -> str:
+    mcp = FastMCP()
+    mcp.add_tool(tool)
+    async with Client(mcp) as client:
+        result = await client.call_tool(tool.name, arguments, raise_on_error=False)
+    assert result.is_error
+    assert isinstance(result.content[0], TextContent)
+    return result.content[0].text
+
+
+class TestRenamedArgValidationErrors:
+    """Validation errors name the arguments the transformed tool exposes."""
+
+    @pytest.fixture
+    def find_tool(self) -> Tool:
+        return Tool.from_tool(
+            Tool.from_function(search),
+            name="find",
+            transform_args={
+                "q": ArgTransform(name="query"),
+                "n": ArgTransform(name="max_results"),
+                "f": ArgTransform(name="filters"),
+            },
+        )
+
+    @pytest.mark.parametrize(
+        ("arguments", "location"),
+        [
+            ({"query": "x", "max_results": 50}, "max_results"),
+            ({"query": "x", "filters": {"limit": 500}}, "filters.limit"),
+        ],
+    )
+    async def test_error_uses_renamed_arg(
+        self, find_tool: Tool, arguments: dict[str, Any], location: str
+    ):
+        error = await call_tool_error(find_tool, arguments)
+        assert error.splitlines()[1] == location
+
+    async def test_error_uses_outermost_name_when_chained(self, find_tool: Tool):
+        lookup_tool = Tool.from_tool(
+            find_tool,
+            name="lookup",
+            transform_args={"max_results": ArgTransform(name="limit")},
+        )
+        error = await call_tool_error(lookup_tool, {"query": "x", "limit": 50})
+        assert error.splitlines()[1] == "limit"
+
+    async def test_error_unchanged_without_renames(self):
+        search_tool = Tool.from_function(search)
+        find_tool = Tool.from_tool(search_tool, name="find")
+        arguments = {"q": "x", "n": 50}
+        assert await call_tool_error(find_tool, arguments) == await call_tool_error(
+            search_tool, arguments
+        )

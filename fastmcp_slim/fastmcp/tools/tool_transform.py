@@ -14,7 +14,10 @@ from pydantic import ValidationError as PydanticValidationError
 from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator
 from pydantic.json_schema import SkipJsonSchema
+from pydantic_core import InitErrorDetails, PydanticCustomError
+from typing_extensions import LiteralString
 
+from fastmcp.exceptions import ValidationError
 from fastmcp.tools.base import (
     InputRequiredToolResult,
     Tool,
@@ -38,6 +41,29 @@ from fastmcp.utilities.types import (
 )
 
 logger = get_logger(__name__)
+
+
+def _rename_error_locations(
+    exc: PydanticValidationError, old_to_new: dict[str, str]
+) -> PydanticValidationError:
+    """Rebuild a parent tool's validation error using the transformed argument names."""
+    line_errors: list[InitErrorDetails] = []
+    for error in exc.errors(include_url=False):
+        loc = error["loc"]
+        if loc and loc[0] in old_to_new:
+            loc = (old_to_new[loc[0]], *loc[1:])
+        # Custom errors: pydantic only rebuilds built-in error types by name.
+        line_errors.append(
+            {
+                "type": PydanticCustomError(
+                    cast(LiteralString, error["type"]),
+                    cast(LiteralString, error["msg"]),
+                ),
+                "loc": loc,
+                "input": error["input"],
+            }
+        )
+    return PydanticValidationError.from_exception_data(exc.title, line_errors)
 
 
 # Context variable to store current transformed tool
@@ -738,6 +764,8 @@ class TransformedTool(Tool):
             schema["$defs"] = parent_defs
             schema = compress_schema(schema)
 
+        renamed_args = {old: new for new, old in new_to_old.items() if old != new}
+
         # Create forwarding function that closes over everything it needs
         async def _forward(**kwargs: Any):
             # Validate arguments
@@ -772,7 +800,17 @@ class TransformedTool(Tool):
                     if callable(transform.default_factory):
                         parent_args[old_name] = transform.default_factory()
 
-            return await parent_tool.run(parent_args)
+            try:
+                return await parent_tool.run(parent_args)
+            except ValidationError as exc:
+                # Report the parent's errors under this tool's argument names.
+                cause = exc.__cause__
+                if not renamed_args or not isinstance(cause, PydanticValidationError):
+                    raise
+                renamed = _rename_error_locations(cause, renamed_args)
+                raise ValidationError(
+                    str(renamed), log_level=exc.log_level
+                ) from renamed
 
         return schema, _forward
 
