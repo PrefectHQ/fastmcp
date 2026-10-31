@@ -160,6 +160,21 @@ def _literal_pattern(text: str) -> str:
     return "".join(pattern)
 
 
+def template_param_key(name: str) -> str:
+    """Normalize a template variable name into the key used for matched params.
+
+    Regex group names must be valid Python identifiers, so every character a
+    legal template variable may carry that an identifier cannot (`$`, `.`, a
+    leading digit, ...) becomes `_`. Hyphens already normalized this way.
+    Consumers that map matched params back onto route parameters (OpenAPI
+    resource templates) use the same function for the lookup.
+    """
+    key = re.sub(r"\W", "_", name)
+    if not key or key[0].isdigit():
+        key = f"_{key}"
+    return key
+
+
 @functools.lru_cache(maxsize=4096)
 def build_regex(template: str) -> re.Pattern[str] | None:
     """Build regex pattern for URI template, handling RFC 6570 syntax.
@@ -169,11 +184,12 @@ def build_regex(template: str) -> re.Pattern[str] | None:
     - `{var*}` - wildcard path parameter (captures multiple segments)
     - `{?var1,var2}` - query parameters (ignored in path matching)
 
-    Hyphens in parameter names are normalized to underscores in regex group
-    names so that matched groups are valid Python identifiers.
+    Parameter names are normalized to valid Python identifiers through
+    `template_param_key` so matched groups are usable and OpenAPI names
+    like `{$top}` or `1id` still match instead of disabling the template.
 
-    Returns None if the template produces an invalid regex (e.g. parameter
-    names with leading digits or duplicates from a remote server).
+    Returns None if the template produces an invalid regex (e.g. two
+    parameter names that normalize to the same group).
     """
     # Remove query parameter syntax for path matching
     template_without_query = re.sub(r"\{\?[^}]+\}", "", template)
@@ -185,11 +201,9 @@ def build_regex(template: str) -> re.Pattern[str] | None:
             name = part[1:-1]
             if name.endswith("*"):
                 name = name[:-1]
-                group = name.replace("-", "_")
-                pattern += f"(?P<{group}>.+)"
+                pattern += f"(?P<{template_param_key(name)}>.+)"
             else:
-                group = name.replace("-", "_")
-                pattern += f"(?P<{group}>[^/]+)"
+                pattern += f"(?P<{template_param_key(name)}>[^/]+)"
         else:
             pattern += _literal_pattern(part)
     try:
