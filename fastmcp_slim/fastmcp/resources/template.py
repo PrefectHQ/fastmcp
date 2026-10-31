@@ -672,6 +672,24 @@ class FunctionResourceTemplate(ResourceTemplate):
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
+        description = description if description is not None else inspect.getdoc(fn)
+
+        # if the fn is a callable class, we need to get the __call__ method from here out
+        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
+            fn = fn.__call__
+        # if the fn is a staticmethod, we need to work with the underlying function
+        if isinstance(fn, staticmethod):
+            fn = fn.__func__
+
+        # Transform injected-by-type params (Context, UserSession) before
+        # validating, so they are not mistaken for URI parameters.
+        from fastmcp.server.dependencies import (
+            transform_context_annotations,
+            without_injected_parameters,
+        )
+
+        fn = transform_context_annotations(fn)
+
         # Reject functions with positional-only parameters or *args
         # (**kwargs is allowed because the URI will define the parameter names)
         sig = inspect.signature(fn)
@@ -716,11 +734,6 @@ class FunctionResourceTemplate(ResourceTemplate):
             raise ValueError("URI template must contain at least one parameter")
 
         # Use wrapper to get user-facing parameters (excludes injected params)
-        from fastmcp.server.dependencies import (
-            transform_context_annotations,
-            without_injected_parameters,
-        )
-
         wrapper_fn = without_injected_parameters(fn)
         user_sig = inspect.signature(wrapper_fn)
         func_params = set(user_sig.parameters.keys())
@@ -810,18 +823,6 @@ class FunctionResourceTemplate(ResourceTemplate):
                 raise ValueError(
                     f"URI parameters {all_uri_params} must be a subset of the function arguments: {func_params}"
                 )
-
-        description = description if description is not None else inspect.getdoc(fn)
-
-        # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
-            fn = fn.__call__
-        # if the fn is a staticmethod, we need to work with the underlying function
-        if isinstance(fn, staticmethod):
-            fn = fn.__func__
-
-        # Transform Context type annotations to Depends() for unified DI
-        fn = transform_context_annotations(fn)
 
         wrapper_fn = without_injected_parameters(fn)
         type_adapter = get_cached_typeadapter(wrapper_fn)
