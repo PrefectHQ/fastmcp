@@ -243,9 +243,15 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             help_text = f"{help_text}\\n{schema_help}" if help_text else schema_help
             json_params.append((prop_name, safe_name))
 
-        # Escape special characters in help text
+        # Escape special characters in help text. CR and CRLF become the
+        # escaped LF form: a raw carriage return inside the single-quoted
+        # help string is a SyntaxError in the generated script (#6074).
         help_escaped = (
-            help_text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+            help_text.replace("\r\n", "\n")
+            .replace("\r", "\n")
+            .replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", "\\n")
         )
 
         # Build parameter annotation
@@ -276,8 +282,16 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
     # Function name: sanitize to valid Python identifier
     fn_name = _to_python_identifier(tool.name)
 
-    # Docstring - use single-quoted docstrings to avoid triple-quote escaping issues
-    description = (tool.description or "").replace("\\", "\\\\").replace("'", "\\'")
+    # Docstring - use single-quoted docstrings to avoid triple-quote escaping
+    # issues. Normalize CR and CRLF to LF so no carriage return lands in the
+    # generated source (#6074); a real newline is valid inside the docstring.
+    description = (
+        (tool.description or "")
+        .replace("\r\n", "\n")
+        .replace("\r", "\n")
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
+    )
 
     lines = []
     lines.append("")
