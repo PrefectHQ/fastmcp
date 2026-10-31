@@ -979,3 +979,45 @@ class TestGenerateSkillContent:
         content = generate_skill_content("My Weather API", "cli.py", [])
         assert "# My Weather API CLI" in content
         assert 'name: "my-weather-api-cli"' in content
+
+
+class TestToolFunctionSourceNewlines:
+    """Descriptions with CR or CRLF line endings must still generate importable
+    source: a raw carriage return inside a single-quoted help string raises
+    ``SyntaxError: unterminated string literal`` (#6074)."""
+
+    @pytest.mark.parametrize(
+        "line_ending",
+        ["\r\n", "\r"],
+        ids=["crlf", "lone_cr"],
+    )
+    def test_newlines_in_param_description_compile(self, line_ending: str):
+        tool = mcp_types.Tool(
+            name="echo",
+            input_schema={
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": f"First line{line_ending}Second line",
+                    }
+                },
+                "required": ["message"],
+            },
+        )
+
+        source = _tool_function_source(tool)
+
+        ast.parse(source)  # generated script must be importable Python
+        assert "\r" not in source
+
+    def test_newlines_in_tool_description_compile(self):
+        tool = mcp_types.Tool(
+            name="echo",
+            description="First line\r\nSecond line\rand a third",
+            input_schema={"properties": {}},
+        )
+
+        source = _tool_function_source(tool)
+
+        ast.parse(source)
+        assert "\r" not in source

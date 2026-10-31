@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any, cast
 
 import mcp_types
@@ -16,13 +17,34 @@ from fastmcp.client.progress import ProgressHandler
 from fastmcp.client.telemetry import client_span
 from fastmcp.exceptions import ToolError
 from fastmcp.telemetry import inject_trace_context
-from fastmcp.utilities.json_schema_type import json_schema_to_type_adapter
+from fastmcp.utilities.json_schema_type import (
+    _json_values_equal,
+    json_schema_to_type_adapter,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.timeout import normalize_timeout_to_seconds
 
 logger = get_logger(__name__)
 
 AUTO_PAGINATION_MAX_PAGES = 250
+
+
+def _round_trips_to_payload(type_adapter: Any, typed: Any, original: Any) -> bool:
+    """Check that the typed hydration re-serializes to the server's payload.
+
+    Pydantic unions validate with smart mode, which may coerce across
+    branches (0 → False) or drop keys the model does not declare, so the
+    hydrated object can disagree with `structured_content`. Re-serializing
+    through the same adapter compares them in JSON terms — the same
+    value-identity rules `_json_values_equal` applies to enums.
+    """
+    try:
+        rehydrated = json.loads(type_adapter.dump_json(typed))
+    except Exception:
+        # If the typed form cannot be re-serialized, fidelity is unknowable;
+        # keep the hydrated value rather than second-guessing a valid model.
+        return True
+    return _json_values_equal(rehydrated, original)
 
 
 class ClientToolsMixin:
@@ -430,7 +452,16 @@ async def _parse_call_tool_result(
                 if wrap_from_meta or output_schema.get("x-fastmcp-wrap-result"):
                     output_schema = _wrapped_result_schema(output_schema)
                 type_adapter = json_schema_to_type_adapter(output_schema)
-                data = type_adapter.validate_python(structured_content)
+                typed = type_adapter.validate_python(structured_content)
+                # `data` is a convenience view of `structured_content`, so it
+                # must not disagree with what the server sent: a pydantic
+                # union can coerce across branches (0 → False) or drop keys.
+                # When the typed form re-serializes differently, hand back
+                # the payload untouched.
+                if _round_trips_to_payload(type_adapter, typed, structured_content):
+                    data = typed
+                else:
+                    data = structured_content
             else:
                 data = structured_content
         except Exception as e:
