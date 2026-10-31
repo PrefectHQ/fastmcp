@@ -27,7 +27,7 @@ Every outcome except operational failures reaches you: reproductions, contributi
 - Passing focused tests is not readiness. Current CI, static checks, contributor credit, and batch composition remain separate gates.
 - Missing identity or evidence stays an explicit gap. Don't paper over it, and don't invent gate bypasses or ask contributors to post claim comments.
 
-## Maintainer standards (draft, pending maintainer sign-off)
+## Maintainer standards
 
 These come from maintainer reviews in this repository ("fm") and in PrefectHQ/prefect ("pf"). Each finding names the standard it rests on.
 
