@@ -43,6 +43,24 @@ def _is_simple_type(schema: dict[str, Any]) -> bool:
     return schema_type in _SIMPLE_TYPES
 
 
+def _schema_allows_null(schema: dict[str, Any]) -> bool:
+    """Check whether a JSON Schema permits an explicit ``null`` value."""
+    schema_type = schema.get("type")
+    if schema_type == "null":
+        return True
+    if isinstance(schema_type, list) and "null" in schema_type:
+        return True
+    for key in ("anyOf", "oneOf"):
+        variants = schema.get(key)
+        if isinstance(variants, list) and any(
+            _schema_allows_null(variant)
+            for variant in variants
+            if isinstance(variant, dict)
+        ):
+            return True
+    return False
+
+
 def _is_simple_array(schema: dict[str, Any]) -> tuple[bool, str | None]:
     """Check if schema is an array of simple types.
 
@@ -217,6 +235,7 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
     param_lines: list[str] = []
     call_args: list[str] = []
     json_params: list[tuple[str, str]] = []  # (prop_name, safe_name)
+    nullable_json_params: list[str] = []
     seen_names: dict[str, str] = {}  # safe_name -> original prop_name
 
     for prop_name, prop_schema in properties.items():
@@ -224,7 +243,7 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
         help_text = prop_schema.get("description", "")
         is_required = prop_name in required
         safe_name = _to_python_identifier(prop_name)
-        if safe_name in {"_call_tool", "isinstance", "json", "str"}:
+        if safe_name in {"_call_tool", "_ExplicitNull", "isinstance", "json", "str"}:
             # The command body refers to these names, so a parameter must not
             # shadow them. Cyclopts drops the trailing underscore from the flag.
             safe_name = f"{safe_name}_"
@@ -242,6 +261,8 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             schema_help = _format_schema_for_help(prop_schema)
             help_text = f"{help_text}\\n{schema_help}" if help_text else schema_help
             json_params.append((prop_name, safe_name))
+            if _schema_allows_null(prop_schema):
+                nullable_json_params.append(safe_name)
 
         # Escape special characters in help text
         help_escaped = (
@@ -300,6 +321,13 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             lines.append(
                 f"    {safe_name} = json.loads({safe_name}) if isinstance({safe_name}, str) else {safe_name}"
             )
+        lines.append("")
+
+    if nullable_json_params:
+        lines.append("    # Preserve explicit nulls for nullable JSON parameters")
+        for safe_name in nullable_json_params:
+            lines.append(f"    if {safe_name} is None:")
+            lines.append(f"        {safe_name} = _ExplicitNull()")
         lines.append("")
 
     dict_items = ", ".join(call_args)
@@ -382,6 +410,11 @@ def generate_cli_script(
         # ---------------------------------------------------------------------------
 
 
+        # Marker for an explicit JSON null that must reach the server.
+        class _ExplicitNull:
+            pass
+
+
         def _print_tool_result(result):
             if result.is_error:
                 for block in result.content:
@@ -407,8 +440,13 @@ def generate_cli_script(
 
 
         async def _call_tool(tool_name: str, arguments: dict) -> None:
-            # None represents an omitted optional argument; empty arrays are values.
-            filtered = {k: v for k, v in arguments.items() if v is not None}
+            # None represents an omitted optional argument; explicit nulls and
+            # empty arrays are values that must be forwarded to the server.
+            filtered = {
+                k: (None if isinstance(v, _ExplicitNull) else v)
+                for k, v in arguments.items()
+                if v is not None
+            }
             async with Client(CLIENT_SPEC) as client:
                 result = await client.call_tool(tool_name, filtered, raise_on_error=False)
                 _print_tool_result(result)
