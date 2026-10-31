@@ -24,6 +24,7 @@ from openapi_pydantic.v3.v3_0 import Response as Response_30
 from openapi_pydantic.v3.v3_0 import Schema as Schema_30
 from pydantic import BaseModel, ValidationError
 
+from fastmcp.utilities.json_schema import ref_target_name
 from fastmcp.utilities.logging import get_logger
 
 from .models import (
@@ -618,10 +619,14 @@ class OpenAPIParser(
             if isinstance(obj, dict):
                 if "$ref" in obj and isinstance(obj["$ref"], str):
                     ref = obj["$ref"]
-                    # Handle both converted and unconverted refs
-                    if ref.startswith(("#/$defs/", "#/components/schemas/")):
-                        schema_name = ref.split("/")[-1]
-                    else:
+                    # Handle both converted and unconverted refs. Decode the
+                    # pointer name: schemas are keyed by their decoded names,
+                    # and escaped or percent-encoded references carry the raw
+                    # encoding in the pointer text.
+                    schema_name = ref_target_name(
+                        ref, roots=(("$defs",), ("components", "schemas"))
+                    )
+                    if schema_name is None:
                         return
 
                     # Add this schema and recursively find its dependencies

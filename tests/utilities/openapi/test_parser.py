@@ -585,3 +585,60 @@ class TestBodilessSuccessResponses:
         assert route.responses["202"].content_schema == {}
         assert route.responses["204"].description == "No content"
         assert route.responses["204"].content_schema == {}
+
+
+class TestEscapedSchemaNameReferences:
+    """Component schema names with RFC 6901 escapes or spaces must resolve.
+
+    A schema named ``a/b`` is referenced as ``a~1b`` and one named
+    ``Alias One`` as ``Alias%20One``; reading the raw pointer text misses
+    both, so the schema is never collected and its references dangle.
+    """
+
+    def test_escaped_and_spaced_schema_names_survive_parsing(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Escaped names", "version": "1.0.0"},
+            "paths": {
+                "/things": {
+                    "post": {
+                        "operationId": "create_thing",
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "slashed": {
+                                                "$ref": "#/components/schemas/a~1b"
+                                            },
+                                            "spaced": {
+                                                "$ref": "#/components/schemas/Alias%20One"
+                                            },
+                                        },
+                                    }
+                                }
+                            }
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "a/b": {"type": "integer"},
+                    "Alias One": {"type": "string"},
+                }
+            },
+        }
+
+        (route,) = parse_openapi_to_http_routes(spec)
+
+        # Both referenced schemas are collected under their decoded names.
+        assert set(route.request_schemas) == {"a/b", "Alias One"}
+
+        schema, _ = _combine_schemas_and_map_params(route)
+        assert schema["$defs"]["a/b"] == {"type": "integer"}
+        assert schema["$defs"]["Alias One"] == {"type": "string"}
+        assert schema["properties"]["slashed"] == {"$ref": "#/$defs/a~1b"}
+        assert schema["properties"]["spaced"] == {"$ref": "#/$defs/Alias%20One"}
