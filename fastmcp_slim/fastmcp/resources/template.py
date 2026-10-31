@@ -307,19 +307,23 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
     # single segment ([^/]+), so reserved characters including "/" are encoded;
     # wildcard {name*} placeholders may span segments, so "/" is preserved.
     #
-    # Params use underscored keys (e.g. user_id) but templates may use
-    # hyphens (e.g. {user-id}), so try both forms.
-    for key, value in params.items():
-        value_str = str(value)
-        simple = quote(value_str, safe="")
-        wildcard = quote(value_str, safe="/")
-        forms = [key]
-        hyphenated = key.replace("_", "-")
-        if hyphenated != key:
-            forms.append(hyphenated)
-        for form in forms:
-            result = result.replace(f"{{{form}}}", simple)
-            result = result.replace(f"{{{form}*}}", wildcard)
+    # Params are keyed the way match_uri_template returns them — sanitized
+    # through template_param_key — but templates may spell the variable with
+    # hyphens or characters an identifier cannot carry (e.g. {$top}), so each
+    # placeholder resolves against the exact name, the hyphenated form, and
+    # the sanitized form, in that order. A placeholder with no matching param
+    # stays literal.
+    def substitute(match: re.Match[str]) -> str:
+        token = match.group(1)
+        wildcard = token.endswith("*")
+        name = token[:-1] if wildcard else token
+        for candidate in (name, name.replace("-", "_"), template_param_key(name)):
+            if candidate in params:
+                value_str = str(params[candidate])
+                return quote(value_str, safe="/" if wildcard else "")
+        return match.group(0)
+
+    result = re.sub(r"\{([^?}][^}]*)\}", substitute, result)
 
     # Expand {?param1,param2,...} query parameter blocks
     def _expand_query_block(match: re.Match[str]) -> str:
@@ -334,10 +338,13 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
             exploded = name.endswith("*")
             name = name.removesuffix("*")
             underscored = name.replace("-", "_")
+            sanitized = template_param_key(name)
             if name in params:
                 value = params[name]
             elif underscored in params:
                 value = params[underscored]
+            elif sanitized in params:
+                value = params[sanitized]
             else:
                 continue
             if exploded and isinstance(value, (list, tuple)):

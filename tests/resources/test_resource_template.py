@@ -14,6 +14,7 @@ from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.resources.template import (
     build_regex,
     expand_uri_template,
+    forward_uri,
     match_uri_template,
 )
 from fastmcp.resources.types import BinaryResource, TextResource
@@ -1861,3 +1862,40 @@ class TestNonIdentifierTemplateVariableNames:
         assert match_uri_template(
             "resource://dollar/a/b", "resource://dollar/{$top*}"
         ) == {"_top": "a/b"}
+
+
+class TestExpandNonIdentifierNames:
+    """Forwarding (mount/proxy) expands placeholders from sanitized param
+    keys: params come back from match_uri_template keyed by
+    template_param_key, so {$top} must resolve from `_top` instead of being
+    forwarded literally (#6150, triage-reviewer follow-up)."""
+
+    @pytest.mark.parametrize(
+        "template, params, expected",
+        [
+            ("resource://dollar/{$top}", {"_top": "alice"}, "resource://dollar/alice"),
+            ("resource://dot/{x.y}", {"x_y": "alice"}, "resource://dot/alice"),
+            ("resource://digit/{1id}", {"_1id": "alice"}, "resource://digit/alice"),
+            # Controls: plain and hyphenated names behave as before.
+            ("resource://plain/{top}", {"top": "alice"}, "resource://plain/alice"),
+            (
+                "resource://users/{user-id}",
+                {"user_id": "7"},
+                "resource://users/7",
+            ),
+        ],
+    )
+    def test_expand_resolves_sanitized_keys(
+        self, template: str, params: dict[str, str], expected: str
+    ):
+        assert expand_uri_template(template, params) == expected
+
+    def test_forward_uri_resolves_sanitized_keys(self):
+        result = forward_uri(
+            "resource://dollar/{$top}", {"_top": "alice"}, "resource://dollar/alice?q=1"
+        )
+        assert result == "resource://dollar/alice?q=1"
+
+    def test_forward_uri_keeps_literal_when_unresolved(self):
+        result = forward_uri("resource://dollar/{$top}", {}, "resource://dollar/x")
+        assert result == "resource://dollar/{$top}"
