@@ -418,7 +418,7 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                         item_bundles = skills(final_evidence["base_sha"])
                     review, review_run = ask(
                         "triage_review",
-                        item_bundles["review_instructions"],
+                        item_bundles["triage_review_instructions"],
                         {**projected, "outcome": result},
                         f"issue-{number}-triage-review",
                     )
