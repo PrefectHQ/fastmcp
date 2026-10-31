@@ -257,3 +257,58 @@ class TestUnionHydrationFidelity:
 
         assert result.structured_content == {"value": {"n": 3}}
         assert result.data.value.n == 3
+
+
+class TestHydrationGuardNoFalsePositives:
+    """The fidelity guard must not reject hydration the schema supports:
+    omitted optional fields (defaults serialize into the dump) and
+    equivalent date-time spellings (+00:00 vs Z) both keep their models."""
+
+    async def test_omitted_optional_field_still_hydrates(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "a": {"type": "integer"},
+                "note": {"type": "string"},
+            },
+            "required": ["a"],
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"a": 1}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"a": 1}
+        # Attribute access and typed values are preserved; the dump may
+        # carry the optional field's default without being a mismatch.
+        assert result.data.a == 1
+        assert result.data.note is None
+
+    async def test_utc_offset_datetime_still_hydrates(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {"ts": {"type": "string", "format": "date-time"}},
+            "required": ["ts"],
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"ts": "2024-06-01T12:00:00+00:00"}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"ts": "2024-06-01T12:00:00+00:00"}
+        # Same instant: pydantic serializes UTC as "Z"; the guard must treat
+        # the spellings as equivalent rather than discarding the model.
+        assert result.data.ts.year == 2024
+        assert result.data.ts.hour == 12
