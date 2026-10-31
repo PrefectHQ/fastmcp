@@ -105,6 +105,51 @@ class TestToolFromFunctionOutputSchema:
         tool = Tool.from_function(func)
         assert tool.output_schema is None
 
+    async def test_none_return_annotation_under_pep563(self):
+        """``-> None`` must not generate an outputSchema under PEP 563.
+
+        With ``from __future__ import annotations`` the return annotation is
+        stored as the string ``"None"``; ``get_type_hints`` resolves that to
+        the ``NoneType`` *class* (``type(None)``), not the ``None`` singleton.
+        The exclusion guard in ``function_parsing.from_function`` must match
+        both forms, otherwise the tool ends up advertising
+        ``{"type": "object", "properties": {"result": {"type": "null"}}}`` and
+        wrapping structured content as ``{"result": null}``.
+        """
+
+        def func() -> None:
+            pass
+
+        # Simulate PEP 563: annotations are stored as strings.
+        func.__annotations__["return"] = "None"
+
+        tool = Tool.from_function(func)
+        assert tool.output_schema is None
+
+        result = await tool.run({})
+        assert result.structured_content is None
+        assert result.content == []
+
+    async def test_none_return_annotation_under_pep563_via_client(self):
+        """End-to-end: a ``-> None`` tool must not advertise outputSchema over the wire."""
+        mcp = FastMCP("pep563-none")
+
+        # Build the tool with a string annotation to simulate PEP 563.
+        def do_nothing() -> None:
+            return None
+
+        do_nothing.__annotations__["return"] = "None"
+        mcp.add_tool(do_nothing)
+
+        async with Client(mcp) as c:
+            tools = await c.list_tools()
+            by_name = {t.name: t for t in tools}
+            assert by_name["do_nothing"].outputSchema is None
+
+            result = await c.call_tool("do_nothing", {})
+            assert result.structured_content is None
+            assert result.content == []
+
     async def test_any_return_annotation(self):
         from typing import Any
 

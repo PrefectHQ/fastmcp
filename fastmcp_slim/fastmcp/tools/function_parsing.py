@@ -437,7 +437,11 @@ class ParsedFunction:
         # to the wire without touching the output schema.
         output_type = _strip_input_required(output_type)
 
-        if output_type not in (inspect._empty, None, Any, ...):
+        # ``-> None`` must not produce an outputSchema. Under PEP 563
+        # (``from __future__ import annotations``) ``get_type_hints`` resolves
+        # the string "None" to the ``NoneType`` *class* (``type(None)``), not
+        # the ``None`` singleton, so both forms must be excluded.
+        if output_type not in (inspect._empty, None, type(None), Any, ...):
             # bytes can't be represented as structured JSON output — skip schema
             if _contains_bytes_type(output_type):
                 output_type = _UnserializableType
