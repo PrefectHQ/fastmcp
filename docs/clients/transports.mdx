@@ -110,6 +110,19 @@ For complete isolation between connections, disable session persistence:
 transport = StdioTransport(command="python", args=["server.py"], keep_alive=False)
 ```
 
+<VersionBadge version="4.2.0" />
+
+When the client infers a stdio transport from a script path, there is no transport to configure, so pass `keep_alive` to the `Client` instead. It sets the option on the transport, overriding any value the transport was created with:
+
+```python
+from pathlib import Path
+from fastmcp import Client
+
+client = Client(Path("server.py"), keep_alive=False)
+```
+
+Only stdio transports keep a subprocess alive, so passing `keep_alive` with an HTTP, SSE, in-memory, or MCP config transport raises a `ValueError`. In an [MCP config](/integrations/mcp-json-configuration), set `keep_alive` on each stdio server entry instead.
+
 ## HTTP Transport
 
 <VersionBadge version="2.3.0" />

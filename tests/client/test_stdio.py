@@ -417,6 +417,24 @@ class TestKeepAlive:
 
         assert pid1 != pid2
 
+    async def test_client_keep_alive_false_applies_to_inferred_transport(
+        self, stdio_script
+    ):
+        client = Client(stdio_script, keep_alive=False)
+        assert isinstance(client.transport, PythonStdioTransport)
+
+        async with client:
+            result1 = await client.call_tool("pid")
+            pid1: int = result1.data
+
+        await wait_for_process_exit(pid1)
+
+        async with client:
+            result2 = await client.call_tool("pid")
+            pid2: int = result2.data
+
+        assert pid1 != pid2
+
     async def test_keep_alive_starts_new_session_if_manually_closed(self, stdio_script):
         client = Client(transport=PythonStdioTransport(script_path=stdio_script))
         assert client.transport.keep_alive is True
