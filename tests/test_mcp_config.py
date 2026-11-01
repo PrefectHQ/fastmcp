@@ -1533,3 +1533,31 @@ async def test_script(tmp_path: Path) -> AsyncGenerator[Path, Any]:
         yield Path(f.name)
 
     pass
+
+
+@requires_subprocess
+@pytest.mark.flaky(retries=3)
+async def test_multi_server_config_empty_include_tags_hides_every_tool(tmp_path: Path):
+    """An explicit include_tags: [] hides every tool of that server."""
+    script = inspect.cleandoc("""
+        from fastmcp import FastMCP
+        mcp = FastMCP()
+        @mcp.tool(tags={"public"})
+        def public_tool() -> str:
+            return "public"
+        @mcp.tool(tags={"private"})
+        def private_tool() -> str:
+            return "private"
+        if __name__ == "__main__":
+            mcp.run()
+    """)
+    path = tmp_path / "tagged.py"
+    path.write_text(script)
+    config = {"mcpServers": {
+        "restricted": {"command": sys.executable, "args": [str(path)], "include_tags": []},
+        "open": {"command": sys.executable, "args": [str(path)]},
+    }}
+    async with Client(config) as client:
+        names = {tool.name for tool in await client.list_tools()}
+    assert not any(n.startswith("restricted") for n in names)
+    assert {"open_public_tool", "open_private_tool"} <= names
