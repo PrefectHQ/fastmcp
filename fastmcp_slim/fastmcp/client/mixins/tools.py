@@ -192,10 +192,6 @@ class ClientToolsMixin:
             )
 
             read_timeout_seconds = normalize_timeout_to_seconds(timeout)
-            if read_timeout_seconds is None:
-                # Send this client's own timeout: a kept-alive stdio session can
-                # be shared with a client whose session default differs.
-                read_timeout_seconds = self._session_kwargs.get("read_timeout_seconds")
             progress_callback = progress_handler or self._progress_handler
 
             # Only opt into claimed results (SEP-2133) when this client registered

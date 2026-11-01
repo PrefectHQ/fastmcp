@@ -110,10 +110,10 @@ class StdioTransport(ClientTransport):
             # to a client that wants different ones would silently give it the
             # first client's behavior. Rebuild it when it's idle; refuse when
             # another client is using it, since tearing it down would break them.
-            # A different request timeout alone does not refuse: clients send
-            # their own timeout with each tool call, so they can share the
-            # session. Compare the timeout value, not callback identity: proxy
-            # clients rebind forwarding callbacks for each request.
+            # A different request timeout alone does not refuse: the client
+            # shares the live session and its default timeout, as before the
+            # timeout was compared. Compare the timeout value, not callback
+            # identity: proxy clients rebind forwarding callbacks per request.
             options_differ = self._session_options != options
             timeout_differs = self._session_read_timeout != session_kwargs.get(
                 "read_timeout_seconds"
@@ -128,6 +128,14 @@ class StdioTransport(ClientTransport):
                     )
                 if not self._active_sessions:
                     await self.disconnect()
+                else:
+                    logger.warning(
+                        "Sharing a live stdio session whose request timeout is "
+                        f"{self._session_read_timeout}s; this client's timeout "
+                        f"({session_kwargs.get('read_timeout_seconds')}s) applies "
+                        "only to calls that pass their own timeout. Give each "
+                        "client its own transport to keep separate defaults."
+                    )
 
             # If the connect task completed or the session's streams are dead,
             # the subprocess has exited. Tear down so we can start fresh.

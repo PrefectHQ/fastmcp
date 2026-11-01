@@ -100,8 +100,9 @@ async def efficient_multiple_operations():
 A kept-alive session is reused when the transport options and request timeout
 match. Connecting with a different `Client(timeout=...)` restarts an idle
 subprocess. If another client is still connected, the new client shares its
-session, and its tool calls use its own timeout. Per-call `timeout` overrides
-do not restart the session.
+session and that session's timeout, and FastMCP logs a warning; use separate
+transports when concurrent clients need different defaults. Per-call `timeout`
+overrides do not restart the session.
 
 For complete isolation between connections, disable session persistence:
 
