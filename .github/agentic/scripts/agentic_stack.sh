@@ -139,7 +139,7 @@ case "${1:-}" in
     jq -n --slurpfile deployments "$scratch/deployments.json" --rawfile body workflows/events/failure-notification.txt.j2 --arg notify "$notify" '
       ([$deployments[0][].id | "prefect.deployment." + .]) as $scope |
       {name:"fastmcp-triage-failure-alert",
-       description:"Notify once per failed or degraded intake; child failures are retained in the intake review queue",
+       description:"Notify once per failed or degraded intake; child failures are retained in the controller review bins",
        enabled:true,
        trigger:{type:"event",posture:"Reactive",threshold:1,within:0,
          expect:["prefect.flow-run.Failed","prefect.flow-run.Crashed","prefect.flow-run.TimedOut","prefect.flow-run.Degraded"],

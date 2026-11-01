@@ -21,16 +21,11 @@ from prefect.client.schemas.sorting import ArtifactSort
 from prefect.context import FlowRunContext
 from prefect.states import Completed
 
+from flows.agentic_artifacts import plain, published_reviews, retain_markdown
 from flows.agentic_backlog import Intake, due, inventory, settle
 from flows.agentic_claims import claim_work
 from flows.agentic_freshness import revalidate
 from flows.agentic_intake import evidence_revision, upgrade_policy_outcomes
-from flows.agentic_review_queue import (
-    plain,
-    published_reviews,
-    retain_markdown,
-    retain_review_queue,
-)
 from flows.agentic_stack_policy import Batch
 from flows.agentic_stack_runtime import (
     Runtime,
@@ -357,8 +352,6 @@ def finish(
 
 
 def commit(owner: UUID, scope: str, state: dict) -> dict:
-    if state["review"] is not None:
-        retain_review_queue(owner, state["review"])
     for receipt in state["receipts"]:
         retain(owner, f"{scope}-issue-{receipt['issue_number']}", receipt)
     lines = ["# FastMCP intake coverage", "", "| Measure | Observed |", "| --- | --- |"]
@@ -378,7 +371,7 @@ def commit(owner: UUID, scope: str, state: dict) -> dict:
         lines.extend(
             [
                 "",
-                f"Controller run: `{state['controller_run_id']}`. Its review queue contains revision-bound evidence and observed usage.",
+                f"Controller run: `{state['controller_run_id']}`. Its `-review-bins` artifact holds the revision-bound results.",
             ]
         )
     retain_markdown(owner, scope + "-coverage", "\n".join(lines) + "\n")
