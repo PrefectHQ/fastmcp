@@ -23,7 +23,6 @@ from flows.agentic_intake import policy_outcome, route_intake
 from flows.agentic_native_triage import run_native_triage
 from flows.agentic_reproduction_evidence import validate_reproduction_patch
 from flows.agentic_review_delivery import deliver_reviews
-from flows.agentic_review_queue import retain_review_queue
 from flows.agentic_stack import StackLayer, StackSpec, digest, read_stack_artifact
 from flows.agentic_stack_policy import Batch, Group, publication_revision
 from flows.agentic_stack_publication import GitHub, reconcile_stack
@@ -280,7 +279,6 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
     )
     previous_result = saved(owner, f"{batch.id}-review-bins")
     if previous_result is not None:
-        retain_review_queue(owner, previous_result)
         return previous_result
     actor = identities()
     bins: dict[str, list] = {
@@ -663,7 +661,6 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
             originals[number] = intake["evidence"]
     result = revalidate(result, originals, branches, collect)
     record(owner, f"{batch.id}-review-bins", result)
-    retain_review_queue(owner, result)
     return result
 
 

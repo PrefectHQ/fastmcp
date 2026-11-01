@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import pytest
 
-from flows.agentic_review_queue import published_reviews, review_markdown
+from flows.agentic_artifacts import plain, published_reviews
 
 
 def test_posted_review_remains_visible_after_final_freshness_stop():
@@ -38,10 +38,6 @@ def test_posted_review_remains_visible_after_final_freshness_stop():
         },
     }
     assert len(published_reviews(result)) == 1
-    rendered = review_markdown(result)
-    assert rendered.count(receipt["review_url"]) == 1
-    assert "Evidence changed. Refresh before acting." in rendered
-    assert "Publication is a recorded side effect" in rendered
     changed = deepcopy(result)
     changed["bins"]["existing_review"][0]["published_reviews"][0]["head_sha"] = "b" * 40
     with pytest.raises(ValueError, match="Conflicting retained"):
@@ -64,4 +60,11 @@ def test_generated_draft_review_is_counted_with_existing_contribution_reviews():
         },
     }
     assert published_reviews(result) == [receipt]
-    assert review_markdown(result).count(receipt["review_url"]) == 1
+
+
+def test_model_text_cannot_create_links_or_override_markdown_formatting():
+    assert (
+        plain("[open account settings](https://attacker.example)")
+        == r"\[open account settings\]\(https://attacker\.example\)"
+    )
+    assert plain(None) == "unknown"
