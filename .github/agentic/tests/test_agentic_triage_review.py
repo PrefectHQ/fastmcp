@@ -92,3 +92,19 @@ def test_public_facing_reviewers_run_on_sol():
             json.loads((directory / f"fastmcp-stack-{role}.plan.json").read_text())
             == plans[role]
         )
+
+
+def test_adversarial_standards_live_in_an_editable_repository_skill():
+    root = Path(__file__).resolve().parents[1]
+    manifest = json.loads((root / "workflows/stack-skills.json").read_text())
+    skill = ".agents/skills/adversarial-review/SKILL.md"
+    assert skill in manifest["roles"]["triage_review"]
+    assert (
+        (root.parents[1] / skill)
+        .read_text()
+        .startswith("---\nname: adversarial-review\n")
+    )
+    objective = build_plans(root / "workflows")["triage_review"]["nodes"][
+        "triage_review"
+    ]["objective"]
+    assert "adversarial-review skill in instructions.files" in objective

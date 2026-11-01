@@ -67,7 +67,7 @@ def test_loads_exact_pinned_content_and_stage_specific_skills(repository, tmp_pa
             "m",
             str(MANIFEST),
             """all(.[]; .base_sha == $base and .repository == "PrefectHQ/fastmcp") and
-            (keys == ["assess_instructions", "existing_instructions", "prepare_instructions", "reproduce_instructions", "review_instructions"]) and
+            (keys == ["assess_instructions", "existing_instructions", "prepare_instructions", "reproduce_instructions", "review_instructions", "triage_review_instructions"]) and
             ([to_entries[] | .key as $key |
               (.value.files | keys) == ([$m[0].common[],
                 $m[0].roles[($key | rtrimstr("_instructions"))][]] | unique)] | all)""",
@@ -76,7 +76,14 @@ def test_loads_exact_pinned_content_and_stage_specific_skills(repository, tmp_pa
         check=True,
         capture_output=True,
     )
-    for role in ("assess", "existing", "prepare", "reproduce", "review"):
+    for role in (
+        "assess",
+        "existing",
+        "prepare",
+        "reproduce",
+        "review",
+        "triage_review",
+    ):
         paths = subprocess.check_output(
             ["jq", "-r", f".{role}_instructions.files | keys[]", str(bundle)], text=True
         ).splitlines()
