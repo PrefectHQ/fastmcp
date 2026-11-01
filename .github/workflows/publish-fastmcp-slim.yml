@@ -13,6 +13,9 @@ jobs:
   pypi-publish:
     name: Upload fastmcp-slim to PyPI
     runs-on: ubuntu-latest
+    # The only publish gate: tasks, remote and fastmcp refuse to publish
+    # unless a matching fastmcp-slim is already on PyPI.
+    environment: pypi
 
     steps:
       - name: Checkout
