@@ -125,7 +125,8 @@ class GitHubTokenVerifier(TokenVerifier):
                         response.text[:200],
                     )
                     raise TokenVerificationError(
-                        f"GitHub token verification unavailable: HTTP {response.status_code}"
+                        "GitHub token verification unavailable: "
+                        f"HTTP {response.status_code}"
                     )
 
                 try:

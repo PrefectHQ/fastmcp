@@ -171,7 +171,7 @@ async def test_scope_server_failure_does_not_grant_required_user_scope_and_recov
     assert client.get.call_count == 4
 
 
-async def test_scope_transport_failure_does_not_grant_required_user_scope_and_recovers():
+async def test_scope_transport_failure_does_not_grant_user_scope_and_recovers():
     client = AsyncMock()
     client.get.side_effect = [
         _github_user_response(),
