@@ -85,10 +85,9 @@ def test_operational_failures_are_not_triage_decisions():
 def test_native_triage_cannot_run_without_adversarial_review():
     plans = {
         role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-        for role in ("assess", "reproduce", "prepare", "review")
+        for role in ("assess", "reproduce")
     }
     native = {
-        "validator_id": uuid4(),
         "source_sha": "b" * 40,
         "triage_plan": AgentPlan(flow_id=uuid4(), version_id=uuid4()),
         "triage_verify_id": uuid4(),
@@ -103,7 +102,7 @@ def test_native_triage_cannot_run_without_adversarial_review():
 def test_public_facing_reviewers_run_on_sol():
     directory = Path(__file__).resolve().parents[1] / "workflows"
     plans = build_plans(directory)
-    for role in ("triage_review", "review"):
+    for role in ("triage_review",):
         assert plans[role]["nodes"][role]["model"]["id"] == "gpt-6.1-sol"
         assert (
             json.loads((directory / f"fastmcp-stack-{role}.plan.json").read_text())

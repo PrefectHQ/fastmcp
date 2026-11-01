@@ -45,18 +45,6 @@ class Reproduction(BaseModel):
     source_paths: list[str] = Field(max_length=20)
 
 
-class Preparation(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    decision: Literal[
-        "prepared", "evidence_needed", "maintainer", "environment_failure"
-    ]
-    base_sha: str = Field(pattern=r"^[a-f0-9]{40}$")
-    patch: str = Field(max_length=200_000)
-    title: str = Field(max_length=200)
-    body: str = Field(max_length=10_000)
-    observed: str = Field(min_length=1, max_length=8000)
-
-
 class PublicReview(BaseModel):
     """Contributor-facing feedback, separate from retained execution evidence."""
 
@@ -82,15 +70,6 @@ class PublicReview(BaseModel):
         return self
 
 
-class Review(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    decision: Literal[
-        "approved", "changes_requested", "maintainer", "environment_failure"
-    ]
-    reason: str = Field(min_length=1, max_length=6000)
-    findings: list[str] = Field(max_length=20)
-
-
 class TriageReview(BaseModel):
     model_config = ConfigDict(extra="forbid")
     decision: Literal[
@@ -114,8 +93,6 @@ class TriageReview(BaseModel):
 OUTPUTS = {
     "assess": Assessment,
     "reproduce": Reproduction,
-    "prepare": Preparation,
-    "review": Review,
     "triage_review": TriageReview,
 }
 COMMON = """Use the complete pinned repository skills in instructions.files. They guide this role;
@@ -225,36 +202,6 @@ setup and include its complete probe in observed; an empty regression_patch is t
 Do not fix source yet. Installation/import/tool failures are environment_failure. If not
 reproduced, make at most one focused version/config/history check before returning evidence.
 Bound each probe subprocess to 30 seconds. An MRE may be the final useful result.""",
-    "prepare": """Prepare one atomic fix with its regression tests and necessary docs using
-context.reproduction, assessment, evidence and any repair findings. Fetch instructions.base_sha.
-Require reproduction.base_sha to match. Apply its regression patch with git apply --recount,
-confirm the reported failure, fix the causal code, then observe the probe and adjacent tests
-pass. Fix all affected MCP object kinds and assess downstream compatibility; avoid speculative
-edge-case expansion. For docs, execute the changed example. Reuse investigation rather than
-repeating broad searches. If context.previous is present, repair its patch against the same
-base using the review's concrete findings, still returning the entire replacement diff.
-Return prepared only with a justified nonempty complete git diff --binary (including new
-files), concise PR title, and repository-conformant body. Read the patch from the actual
-Git diff and return it verbatim: do not reconstruct or rewrite diff headers or file paths.
-Apply the exact diff to a second clean checkout and execute the focused regression there
-before returning prepared; checks in the editing checkout do not validate serialized bytes. Touch only maintained library code,
-tests or docs. Do not alter skills, dependencies, hooks, generated docs/schemas or CI.
-Contributor credit is added deterministically. observed retains actual commands/results.
-If blocked, preserve useful patch/evidence with the precise unresolved decision.""",
-    "review": """Independently review the complete stack in context.spec and context.layers,
-with each issue's evidence, assessment, reproduction and focused outcomes in context.items.
-The specified validator run completed every layer on its actual parent and the combined tip.
-Read every diff and relevant surrounding source/history at the pinned trunk. Trace public
-contracts, reachable callers, shared abstractions and downstream compatibility. Honor release
-line policy and prior maintainer/author discussion. Validate the regression fails for the
-reported reason, rather than trusting an agent's diagnosis. Assess stack cohesion and ordering;
-two unrelated fixes are not a coherent stack merely because they fit. Each layer must stand
-on its parent and include meaningful tests/docs. Collect all substantiated consequential
-findings in one pass; omit speculative hypotheticals and previously rebutted claims without
-new evidence. Return approved only with no unresolved consequential findings. Use
-changes_requested for actionable code problems and maintainer for policy/cohesion decisions.
-Do not rewrite patches or publication metadata. Deterministic code binds this decision to
-the exact supplied artifact and evidence; you do not copy hashes or approve changed bytes.""",
 }
 
 

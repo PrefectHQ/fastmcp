@@ -6,13 +6,13 @@ from uuid import UUID
 from prefect.client.orchestration import get_client
 
 from flows.agentic_baseline import refresh_context
+from flows.agentic_github import GitHub
 from flows.agentic_native_cache import (
     find_native_result,
     retain_native_result,
     verified_outcome,
 )
 from flows.agentic_stack import digest
-from flows.agentic_stack_publication import GitHub
 from flows.agentic_stack_runtime import (
     api,
     owner_alive,
