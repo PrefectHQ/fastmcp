@@ -13,14 +13,6 @@
       "id": "gpt-6-luna",
       "effort": "medium"
     },
-    "prepare": {
-      "id": "gpt-6-luna",
-      "effort": "medium"
-    },
-    "review": {
-      "id": "gpt-6.1-sol",
-      "effort": "medium"
-    },
     "triage_review": {
       "id": "gpt-6.1-sol",
       "effort": "medium"

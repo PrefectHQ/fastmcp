@@ -120,13 +120,11 @@ class AgentPlan(BaseModel):
 class Runtime(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     plans: dict[str, AgentPlan]
-    validator_id: UUID
     verification_id: UUID | None = None
     triage_plan: AgentPlan | None = None
     triage_verify_id: UUID | None = None
     triage_finalize_id: UUID | None = None
     source_sha: str = Field(pattern=r"^[a-f0-9]{40}$")
-    prepare_fixes: bool = False
     publish_reviews: bool = False
     reviewer_app: ReviewApp | None = None
 
@@ -135,9 +133,7 @@ class Runtime(BaseModel):
         required = set(OUTPUTS) - {"triage_review"}
         if not required <= set(self.plans) <= set(OUTPUTS):
             raise ValueError("Expected every stack agent role")
-        if (
-            self.prepare_fixes or self.publish_reviews
-        ) and "triage_review" not in self.plans:
+        if self.publish_reviews and "triage_review" not in self.plans:
             raise ValueError("Automatic publication requires independent triage review")
         if self.publish_reviews and self.reviewer_app is None:
             raise ValueError("Review publication requires a separate GitHub App")

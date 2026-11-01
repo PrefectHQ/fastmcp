@@ -20,7 +20,7 @@ case "${1:-}" in
   validate)
     scratch=$(mktemp -d)
     trap 'rm -rf "$scratch"' EXIT
-    for role in assess reproduce prepare review triage_review; do
+    for role in assess reproduce triage_review; do
       jq '{plan: .}' "workflows/fastmcp-stack-$role.plan.json" > "$scratch/$role.json"
       api POST /execution-plans/validate --data "@$scratch/$role.json" | jq -e '.valid == true'
     done
@@ -36,7 +36,7 @@ case "${1:-}" in
     }
     FASTMCP_AGENTIC_REF=$revision uv run --locked prefect --no-prompt deploy \
       --prefect-file prefect.yaml \
-      --name cloud-stack-batch --name cloud-stack-validation --name cloud-contribution-verification --name cloud-triage-intake \
+      --name cloud-stack-batch --name cloud-contribution-verification --name cloud-triage-intake \
       --name cloud-triage-verify --name cloud-triage-finalize
     ;;
   intake)

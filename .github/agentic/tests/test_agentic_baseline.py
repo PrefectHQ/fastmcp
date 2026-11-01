@@ -195,9 +195,8 @@ def test_durable_refresh_resumes_and_never_exceeds_two_assessments(
     runtime = Runtime(
         plans={
             role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-            for role in ("assess", "reproduce", "prepare", "review")
+            for role in ("assess", "reproduce")
         },
-        validator_id=uuid4(),
         source_sha="f" * 40,
     )
 

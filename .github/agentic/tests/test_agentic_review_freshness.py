@@ -3,9 +3,9 @@ from copy import deepcopy
 import pytest
 
 from flows.agentic_freshness import change_kind, revalidate
+from flows.agentic_github import GitHub
 from flows.agentic_review_publication import before_delivery, post_review
 from flows.agentic_stack_policy import publication_revision, review_revision
-from flows.agentic_stack_publication import GitHub
 from tests.test_agentic_review_publication import BASE, BOT, HEAD, body
 
 

@@ -6,9 +6,9 @@ import re
 from collections.abc import Callable
 from copy import deepcopy
 
+from flows.agentic_github import REPOSITORY, GitHub
 from flows.agentic_intake import HOLD
 from flows.agentic_stack_plans import PublicReview
-from flows.agentic_stack_publication import REPOSITORY, GitHub
 
 
 def before_delivery(evidence: dict, receipts: list[dict], reviewer: str) -> dict:
