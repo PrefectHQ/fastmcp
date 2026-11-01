@@ -48,6 +48,8 @@ jobs:
           permission-issues: write
           permission-pull-requests: write
           permission-actions: read
+          permission-checks: read
+          permission-statuses: read
 
       - name: React to comment with eyes
         env:
