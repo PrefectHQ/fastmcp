@@ -7,6 +7,7 @@ import hashlib
 import secrets
 import ssl
 import uuid
+import weakref
 from collections.abc import (
     AsyncGenerator,
     Callable,
@@ -594,9 +595,11 @@ class Client(
         # Context-manager holds belong to the task that entered them. Keeping
         # the session task lets an exit from an older connection avoid
         # decrementing the reference count of a connection opened afterward.
-        self._context_session_tasks: dict[
+        # Weak keys drop the holds of a task that never exits its context,
+        # such as one released by close() or exited from another task.
+        self._context_session_tasks: weakref.WeakKeyDictionary[
             asyncio.Task[Any], list[asyncio.Task[Any]]
-        ] = {}
+        ] = weakref.WeakKeyDictionary()
 
         # Session context management - see class docstring for detailed explanation
         self._session_state = ClientSessionState()
@@ -789,7 +792,7 @@ class Client(
         # share lifecycle state with the original instance.
         new_client._session_state = ClientSessionState()
         new_client._transport_options = self._transport_options
-        new_client._context_session_tasks = {}
+        new_client._context_session_tasks = weakref.WeakKeyDictionary()
 
         # Give the clone its own response cache so cached entries are not shared
         # across independent sessions, and rebuild the negotiated_version closure
