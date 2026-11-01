@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from unittest.mock import patch
 
 import pytest
@@ -10,7 +11,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace import Span, SpanKind, StatusCode
 
 import fastmcp
-from fastmcp import Client, FastMCP
+from fastmcp import Client, Context, FastMCP
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
@@ -769,3 +770,198 @@ class TestProtocolVersionAttribute:
         version = seam_span.attributes.get("mcp.protocol.version")
         assert isinstance(version, str)
         assert version
+
+
+class TestNestedCallToolSpans:
+    """A tool that calls ctx.fastmcp.call_tool() must produce a span for each call.
+
+    Before the fix, the outer tool's seam span remained the active seam span
+    inside the tool body, so the nested call_tool's server_span enriched the
+    outer span instead of opening a new child span. The outer span ended up
+    named after the inner tool and the outer tool had no span at all.
+
+    Issue: https://github.com/jlowin/fastmcp/issues/6009
+    """
+
+    async def test_nested_call_tool_emits_both_spans(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """Outer tool calling ctx.fastmcp.call_tool() produces two SERVER spans."""
+        mcp = FastMCP("test-server")
+
+        @mcp.tool
+        def boom() -> str:
+            raise ToolError("boom")
+
+        @mcp.tool
+        async def outer(ctx: Context) -> str:
+            with suppress(ToolError):
+                await ctx.fastmcp.call_tool("boom", {})
+            return "done"
+
+        async with Client(mcp) as client:
+            await client.call_tool("outer", {})
+
+        spans = trace_exporter.get_finished_spans()
+        tool_call_server_spans = [
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER
+            and s.attributes is not None
+            and s.attributes.get("mcp.method.name") == "tools/call"
+        ]
+
+        span_names = {s.name for s in tool_call_server_spans}
+        assert "tools/call outer" in span_names, (
+            f"Missing 'tools/call outer' span; found: {span_names}"
+        )
+        assert "tools/call boom" in span_names, (
+            f"Missing 'tools/call boom' span; found: {span_names}"
+        )
+        assert len(tool_call_server_spans) == 2
+
+    async def test_outer_span_status_unset_inner_span_status_error(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """Outer span is UNSET (success); inner boom span is ERROR."""
+        mcp = FastMCP("test-server")
+
+        @mcp.tool
+        def boom() -> str:
+            raise ToolError("boom")
+
+        @mcp.tool
+        async def outer(ctx: Context) -> str:
+            with suppress(ToolError):
+                await ctx.fastmcp.call_tool("boom", {})
+            return "done"
+
+        async with Client(mcp) as client:
+            await client.call_tool("outer", {})
+
+        spans = trace_exporter.get_finished_spans()
+        tool_call_server_spans = {
+            s.name: s
+            for s in spans
+            if s.kind == SpanKind.SERVER
+            and s.attributes is not None
+            and s.attributes.get("mcp.method.name") == "tools/call"
+        }
+
+        outer_span = tool_call_server_spans.get("tools/call outer")
+        boom_span = tool_call_server_spans.get("tools/call boom")
+        assert outer_span is not None
+        assert boom_span is not None
+
+        assert outer_span.status.status_code == StatusCode.UNSET
+        assert boom_span.status.status_code == StatusCode.ERROR
+
+    async def test_nested_call_tool_span_is_child_of_outer(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """The inner tool's span must be a descendant of the outer tool's span."""
+        mcp = FastMCP("test-server")
+
+        @mcp.tool
+        def inner() -> str:
+            return "inner result"
+
+        @mcp.tool
+        async def outer(ctx: Context) -> str:
+            await ctx.fastmcp.call_tool("inner", {})
+            return "outer result"
+
+        async with Client(mcp) as client:
+            await client.call_tool("outer", {})
+
+        spans = trace_exporter.get_finished_spans()
+        tool_call_server_spans = {
+            s.name: s
+            for s in spans
+            if s.kind == SpanKind.SERVER
+            and s.attributes is not None
+            and s.attributes.get("mcp.method.name") == "tools/call"
+        }
+
+        outer_span = tool_call_server_spans.get("tools/call outer")
+        inner_span = tool_call_server_spans.get("tools/call inner")
+        assert outer_span is not None
+        assert inner_span is not None
+
+        assert outer_span.context is not None
+        assert inner_span.context is not None
+        # All spans share a trace
+        assert outer_span.context.trace_id == inner_span.context.trace_id
+        # The inner span descends from the outer span
+        assert inner_span.parent is not None
+        assert inner_span.parent.span_id == outer_span.context.span_id
+
+        # Each span carries component attributes for its own tool, not the
+        # other's. Before the fix the seam span was mutated in-place so the
+        # outer span ended up with the inner tool's component attrs.
+        assert outer_span.attributes is not None
+        assert inner_span.attributes is not None
+        assert outer_span.attributes.get("fastmcp.component.key") == "tool:outer@"
+        assert outer_span.attributes.get("gen_ai.tool.name") == "outer"
+        assert inner_span.attributes.get("fastmcp.component.key") == "tool:inner@"
+        assert inner_span.attributes.get("gen_ai.tool.name") == "inner"
+
+    async def test_nested_call_tool_ignores_inbound_meta_traceparent(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """Inner span must be a child of the outer span even when the outer
+        request carries an inbound _meta traceparent (W3C distributed trace).
+
+        Regression guard: extract_trace_context already skips the _meta
+        traceparent when a valid span is active (so a live outer span wins over
+        the request's remote-caller context). If that guard were removed, the
+        non-seam server_span path would re-read _meta on the nested call and
+        parent the inner span to the remote caller, turning nested spans into
+        siblings.
+        """
+        mcp = FastMCP("test-server")
+
+        @mcp.tool
+        def inner() -> str:
+            return "inner result"
+
+        @mcp.tool
+        async def outer(ctx: Context) -> str:
+            await ctx.fastmcp.call_tool("inner", {})
+            return "outer result"
+
+        # Call via a Client so the client-telemetry layer injects a real
+        # traceparent into _meta, mirroring the distributed-trace case where
+        # an upstream caller's trace context arrives on the request.
+        async with Client(mcp) as client:
+            await client.call_tool("outer", {})
+
+        spans = trace_exporter.get_finished_spans()
+        tool_call_server_spans = {
+            s.name: s
+            for s in spans
+            if s.kind == SpanKind.SERVER
+            and s.attributes is not None
+            and s.attributes.get("mcp.method.name") == "tools/call"
+        }
+
+        outer_span = tool_call_server_spans.get("tools/call outer")
+        inner_span = tool_call_server_spans.get("tools/call inner")
+        assert outer_span is not None
+        assert inner_span is not None
+
+        assert outer_span.context is not None
+        assert inner_span.context is not None
+
+        # The inner span must be a child of the outer span, not a sibling
+        # parented directly to the inbound traceparent span. Without the
+        # extract_trace_context guard (is_valid check), this would fail
+        # because _get_parent_trace_context() would re-read _meta and return
+        # the client send span as the parent.
+        assert inner_span.parent is not None
+        assert inner_span.parent.span_id == outer_span.context.span_id
+
+        # The outer span's parent is the client send span (from _meta), not
+        # the inner span -- confirm the hierarchy is outer -> inner, not flat.
+        assert outer_span.parent is not None
+        assert outer_span.parent.span_id != inner_span.context.span_id

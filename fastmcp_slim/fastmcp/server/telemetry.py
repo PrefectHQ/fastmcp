@@ -274,11 +274,17 @@ def server_span(
         # Enrich the already-active seam span rather than opening a second one.
         seam.update_name(name)
         seam.set_attributes(attrs)
+        # Clear the seam marker so any nested server_span calls (e.g. a tool
+        # calling ctx.fastmcp.call_tool() internally) open a new child span
+        # rather than re-enriching this one.
+        token = _active_seam_span.set(None)
         try:
             yield seam
         except Exception as e:
             record_span_exception(seam, e)
             raise
+        finally:
+            _active_seam_span.reset(token)
         return
 
     tracer = get_tracer()
