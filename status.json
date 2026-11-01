@@ -1,7 +1,7 @@
 {
   "schema": "fastmcp-maintenance/1",
   "publisher": "fastmcp-actions",
-  "as_of": "2026-11-01T18:36:31Z",
+  "as_of": "2026-11-01T21:03:54Z",
   "automations": [
     {
       "id": "issue-link-gate",
@@ -14,7 +14,7 @@
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/require-issue-link.yml",
       "window": "7d",
       "counts": {
-        "passed": 119,
+        "passed": 122,
         "blocked": 85
       },
       "daily": [
@@ -56,7 +56,7 @@
         },
         {
           "day": "2026-11-01",
-          "succeeded": 16,
+          "succeeded": 19,
           "failed": 0,
           "blocked": 5
         }
@@ -73,7 +73,7 @@
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-label-triage.yml",
       "window": "7d",
       "counts": {
-        "succeeded": 173,
+        "succeeded": 176,
         "failed": 0
       },
       "daily": [
@@ -115,7 +115,7 @@
         },
         {
           "day": "2026-11-01",
-          "succeeded": 18,
+          "succeeded": 21,
           "failed": 0,
           "blocked": 0
         }
@@ -250,7 +250,7 @@
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-test-failure.yml",
       "window": "7d",
       "counts": {
-        "succeeded": 617,
+        "succeeded": 623,
         "failed": 5
       },
       "daily": [
@@ -292,7 +292,7 @@
         },
         {
           "day": "2026-11-01",
-          "succeeded": 38,
+          "succeeded": 44,
           "failed": 1,
           "blocked": 0
         }
@@ -304,12 +304,12 @@
       "what": "`/marvin` on an issue or PR asks the bot to act; `/tidy` hides resolved review threads",
       "cadence": "on a maintainer's comment",
       "runs_on": "github-actions",
-      "state": "idle",
-      "last_ok_day": null,
+      "state": "ok",
+      "last_ok_day": "2026-11-01",
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-comment-on-issue.yml",
       "window": "7d",
       "counts": {
-        "succeeded": 35,
+        "succeeded": 39,
         "failed": 62
       },
       "daily": [
@@ -351,7 +351,7 @@
         },
         {
           "day": "2026-11-01",
-          "succeeded": 0,
+          "succeeded": 4,
           "failed": 5,
           "blocked": 0
         }
@@ -423,11 +423,11 @@
       "cadence": "on each release",
       "runs_on": "github-actions",
       "state": "ok",
-      "last_ok_day": "2026-10-27",
+      "last_ok_day": "2026-11-01",
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/publish-fastmcp-slim.yml",
       "window": "7d",
       "counts": {
-        "succeeded": 8,
+        "succeeded": 12,
         "failed": 0
       },
       "daily": [
@@ -469,7 +469,7 @@
         },
         {
           "day": "2026-11-01",
-          "succeeded": 0,
+          "succeeded": 4,
           "failed": 0,
           "blocked": 0
         }
@@ -546,7 +546,7 @@
           "number": 5195,
           "title": "Fix TokenCache handling for expired access tokens",
           "url": "https://github.com/PrefectHQ/fastmcp/pull/5195",
-          "age_days": 40
+          "age_days": 41
         },
         {
           "number": 5235,
@@ -619,7 +619,7 @@
     "checks": [
       {
         "name": "Tests",
-        "state": "pending",
+        "state": "ok",
         "url": "https://github.com/PrefectHQ/fastmcp/actions/runs/41337307188"
       },
       {
@@ -629,7 +629,7 @@
       },
       {
         "name": "CodeQL",
-        "state": "pending",
+        "state": "ok",
         "url": "https://github.com/PrefectHQ/fastmcp/actions/runs/41337331844"
       }
     ]
@@ -648,7 +648,7 @@
   "attention": {
     "schema": "fastmcp-attention/1",
     "repo": "PrefectHQ/fastmcp",
-    "as_of": "2026-11-01T18:34:49.609127+00:00",
+    "as_of": "2026-11-01T21:02:08.702647+00:00",
     "profile": "public-issue-signals",
     "judge": "jev",
     "assessment_model": "jev:jev-latest",
