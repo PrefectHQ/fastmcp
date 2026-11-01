@@ -520,12 +520,12 @@ async def test_client_context_does_not_keep_entering_task_alive(fastmcp_server):
         del task
         await client.close()
 
-    gc.collect()
-    assert [ref() for ref in refs] == [None, None, None]
-
     async with client:
         result = await client.call_tool("greet", {"name": "World"})
     assert result.data == "Hello, World!"
+
+    gc.collect()
+    assert [ref() for ref in refs] == [None, None, None]
 
 
 @pytest.mark.parametrize("mode", ["auto", "legacy"])
