@@ -231,6 +231,25 @@ async def test_client_serializes_all_non_string_arguments():
         assert 'arg3: {"key":"value"}' in content  # JSON serialized dict
 
 
+async def test_client_omits_none_arguments():
+    """A None argument is left out, so the server uses the parameter default."""
+    server = FastMCP("TestServer")
+
+    @server.prompt
+    def greet(topic: str, audience: str | None = None) -> str:
+        return f"topic={topic!r} audience={audience!r}"
+
+    client = Client(transport=FastMCPTransport(server))
+
+    async with client:
+        omitted = await client.get_prompt("greet", {"topic": "x"})
+        with_none = await client.get_prompt("greet", {"topic": "x", "audience": None})
+
+        assert isinstance(with_none.messages[0].content, TextContent)
+        assert with_none.messages[0].content.text == "topic='x' audience=None"
+        assert with_none.messages[0].content == omitted.messages[0].content
+
+
 async def test_client_server_type_conversion_integration():
     """Test that client serialization works with server-side type conversion."""
     server = FastMCP("TestServer")

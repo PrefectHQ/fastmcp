@@ -152,6 +152,10 @@ class ClientPromptsMixin:
             if arguments:
                 serialized_arguments = {}
                 for key, value in arguments.items():
+                    if value is None:
+                        # MCP prompt arguments are strings, so None has no wire
+                        # form; omit it so the server falls back to the default
+                        continue
                     if isinstance(value, str):
                         serialized_arguments[key] = value
                     else:
