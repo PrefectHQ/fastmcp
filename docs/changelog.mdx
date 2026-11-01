@@ -9,7 +9,7 @@ tag: NEW
 
 **[v4.1.5: Back to the Fourture](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.5)**
 
-Twelve fixes backported from main onto the new `release/4.1` line: mounted resource templates keep their list-style query parameters, `FastMCPStdioTransport` forwards script arguments, OpenAPI tools report timeouts and concise upstream errors (and reject undeclared arguments under strict validation), a missing prompt argument returns invalid params, and JSON Schema `const`/`enum` compare by JSON equality, so `true` no longer passes for `1`. Thanks to our 11 contributors, including 6 first-time contributors.
+Twelve fixes backported from main onto the new `release/4.1` line: mounted resource templates keep their list-style query parameters, `FastMCPStdioTransport` forwards script arguments, OpenAPI tools report timeouts and concise upstream errors (and reject undeclared arguments under strict validation), a missing prompt argument returns invalid params, and JSON Schema `const`/`enum` compare by JSON equality, so `true` no longer passes for `1`. Thanks to our 12 contributors, including 7 first-time contributors.
 
 ### Security 🔒
 * fix: preserve _list_query_params in FastMCPProviderResourceTemplate.wrap by [@RS-ITACHI](https://github.com/RS-ITACHI) in [#6130](https://github.com/PrefectHQ/fastmcp/pull/6130)
@@ -17,7 +17,7 @@ Twelve fixes backported from main onto the new `release/4.1` line: mounted resou
 * fix: forward script arguments in FastMCPStdioTransport by [@KashifManzer](https://github.com/KashifManzer) and [@BlueX888](https://github.com/BlueX888) in [#6119](https://github.com/PrefectHQ/fastmcp/pull/6119)
 * Improve OpenAPI upstream error details by [@zzstoatzz](https://github.com/zzstoatzz) and [@mssaleh](https://github.com/mssaleh) in [#6141](https://github.com/PrefectHQ/fastmcp/pull/6141)
 * Compare JSON const and enum values by JSON equality by [@prassu017](https://github.com/prassu017) and [@alpaylan](https://github.com/alpaylan) in [#6126](https://github.com/PrefectHQ/fastmcp/pull/6126)
-* Return invalid params for prompts/get with a missing required argument by [@asasemahmed](https://github.com/asasemahmed) in [#6027](https://github.com/PrefectHQ/fastmcp/pull/6027)
+* Return invalid params for prompts/get with a missing required argument by [@asasemahmed](https://github.com/asasemahmed) and [@xubenqiang](https://github.com/xubenqiang) in [#6027](https://github.com/PrefectHQ/fastmcp/pull/6027)
 * fix(cli): prefer Claude Code project servers by [@mikamikasuki](https://github.com/mikamikasuki) in [#5522](https://github.com/PrefectHQ/fastmcp/pull/5522)
 * fix(cli): preserve JSON content block fields by [@mikamikasuki](https://github.com/mikamikasuki) in [#5530](https://github.com/PrefectHQ/fastmcp/pull/5530)
 * Keep schema definitions when hydrating a wrapped tool result by [@asasemahmed](https://github.com/asasemahmed) in [#5927](https://github.com/PrefectHQ/fastmcp/pull/5927)
@@ -34,6 +34,7 @@ Twelve fixes backported from main onto the new `release/4.1` line: mounted resou
 * @prassu017 made their first contribution in [#6126](https://github.com/PrefectHQ/fastmcp/pull/6126)
 * @alpaylan made their first contribution in [#6126](https://github.com/PrefectHQ/fastmcp/pull/6126)
 * @serhiizghama made their first contribution in [#5230](https://github.com/PrefectHQ/fastmcp/pull/5230)
+* @xubenqiang made their first contribution in [#6027](https://github.com/PrefectHQ/fastmcp/pull/6027)
 
 **Full Changelog**: [v4.1.4...v4.1.5](https://github.com/PrefectHQ/fastmcp/compare/v4.1.4...v4.1.5)
 
