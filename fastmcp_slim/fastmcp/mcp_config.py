@@ -147,14 +147,17 @@ class _TransformingMCPServerMixin(BaseModel):
         )
         wrapped_mcp_server = create_proxy(client, name=server_name)
 
-        if self.include_tags is not None:
-            wrapped_mcp_server.enable(tags=self.include_tags, only=True)
-        if self.exclude_tags is not None:
-            wrapped_mcp_server.disable(tags=self.exclude_tags)
+        # Add tool transforms FIRST - they may add/modify tags. Then add
+        # enabled filters - they filter based on tags. This mirrors the order
+        # used by the multi-server composite path.
         if self.tools:
             wrapped_mcp_server.add_transform(
                 ToolTransform(_coerce_tool_transform_configs(self.tools))
             )
+        if self.include_tags is not None:
+            wrapped_mcp_server.enable(tags=self.include_tags, only=True)
+        if self.exclude_tags is not None:
+            wrapped_mcp_server.disable(tags=self.exclude_tags)
 
         return wrapped_mcp_server, transport
 
