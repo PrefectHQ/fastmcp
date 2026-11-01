@@ -52,8 +52,11 @@ bash scripts/agentic_stack.sh register       # registers deployments from prefec
 ```
 
 Then publish any changed role plans with the Agentic Workflows tooling and update
-`source_sha` (and any new plan versions) in both triage automations. Redeploying
-cancels in-flight runs, so check for running intakes first.
+`source_sha` (and any new plan versions) in both triage automations right away.
+Flows refuse to run when their deployment version differs from the pinned
+`source_sha`, so between `register` and that update, new intakes and any in-flight
+run that starts a child fail. Check for running intakes first. If the alert template
+changed, re-run `agentic_stack.sh alerts`.
 
 ## Roll back
 
