@@ -390,3 +390,5 @@ async def my_task(
 ```
 
 With `CurrentDocket()`, you can schedule additional background tasks, chain work together, and coordinate complex workflows. See the [Docket documentation](https://docket.lol/) for the complete API, including retry policies, timeouts, and custom dependencies.
+
+If a task tool declares `retry: Retry = Retry(attempts=2)` (from `docket`), a raised tool error gives the worker a second attempt. If that attempt also raises, the client receives the usual tool error, with the server's error masking policy applied.
