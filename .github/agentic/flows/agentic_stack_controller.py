@@ -461,7 +461,11 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                             httpx.HTTPError,
                             OSError,
                         ) as error:
-                            delivery = {"status": "failed", "reason": str(error)[:1000]}
+                            delivery = {
+                                "status": "failed",
+                                "reason": str(error)[:1000],
+                                "posted": getattr(error, "posted", []),
+                            }
                             bins["operational"].append(
                                 {
                                     "issue_number": number,

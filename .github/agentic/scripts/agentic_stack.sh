@@ -18,8 +18,11 @@ upsert() {
 
 case "${1:-}" in
   validate)
+    scratch=$(mktemp -d)
+    trap 'rm -rf "$scratch"' EXIT
     for role in assess reproduce prepare review triage_review; do
-      api POST /execution-plans/validate --data "@workflows/fastmcp-stack-$role.plan.json" | jq -e '.valid == true'
+      jq '{plan: .}' "workflows/fastmcp-stack-$role.plan.json" > "$scratch/$role.json"
+      api POST /execution-plans/validate --data "@$scratch/$role.json" | jq -e '.valid == true'
     done
     ;;
   register)
