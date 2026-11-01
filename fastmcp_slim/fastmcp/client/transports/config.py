@@ -394,8 +394,10 @@ class MCPConfigTransport(ClientTransport):
             proxy.add_transform(
                 ToolTransform(_coerce_tool_transform_configs(tool_transforms))
             )
-        # Then add enabled filters - they filter based on tags
-        if include_tags:
+        # Then add enabled filters - they filter based on tags.
+        # An explicit empty set means "include nothing", which is different
+        # from the option being absent, so the check must be `is not None`.
+        if include_tags is not None:
             proxy.enable(tags=set(include_tags), only=True)
         if exclude_tags:
             proxy.disable(tags=set(exclude_tags))
