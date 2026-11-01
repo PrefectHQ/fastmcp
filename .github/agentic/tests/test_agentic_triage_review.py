@@ -54,6 +54,23 @@ def test_prepare_disposition_carries_scope_controls_to_preparation():
         )
 
 
+def test_closure_recommendation_stays_on_the_review_without_github_reads():
+    recommendation = {"action": "close_duplicate", "target": {"number": 2}}
+    review = {
+        "decision": "propose_closure",
+        "reason": "Duplicate of #2",
+        "next_action": "Close as a duplicate of #2",
+        "findings": [],
+        "recommendations": [recommendation],
+    }
+    category, result = apply_disposition(
+        "decisions", {"issue_number": 1}, review, "review-run"
+    )
+    assert category == "pruning"
+    assert result["adversarial_review"]["recommendations"] == [recommendation]
+    assert "mutation_recommendations" not in result
+
+
 @pytest.mark.parametrize(
     "destination", ["evidence", "existing_review", "pruning", "decisions", "unchanged"]
 )

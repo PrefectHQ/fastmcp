@@ -123,8 +123,7 @@ reviews, evidence, pruning proposals, maintainer decisions or operational failur
 Fork PRs are reviewed in place. Adoption and supersession require a maintainer's
 decision, with original authorship and issue credit preserved. Closed PRs are
 evidence: distinguish assignment-gate closure from explicit maintainer rejection
-or supersession. See [maintenance history](docs/fastmcp-maintenance-history.md) and
-[architecture decisions](docs/agentic-stack-architecture.md).
+or supersession.
 
 Existing-contribution assessments dispatch to `cloud-contribution-verification`.
 Assessment selects at most three candidates in `verification_prs`, independently
@@ -367,51 +366,13 @@ ignored on retry. Exhausted delivery failures retain the published PR receipt an
 operational failure rather than discarding the useful patch or claiming review delivery.
 
 
-### Reviewing mutation batches
+### Maintainer review queue
 
-Each review queue also retains a `fastmcp-mutation-batch/1` JSON artifact under
-`<batch-id>-mutation-batch`. Read one with `agentic_stack.sh mutations <controller-run-id>`.
-The queue presents the exact proposed target, action, revisions, public comment or
-assignee, source runs, scope, norm evidence and remaining gates. Conflicting proposals
-for one target are blocked. No command in this path executes the proposals.
-
-The existing independent triage reviewer may propose assignment, localized PR finishing,
-PR review, duplicate PR consolidation, duplicate/completed issue closures or a closure backed by settled policy. Assignment
-requires explicit public-history and reporter-claim review; passing tests alone cannot
-qualify a contributor. Closure candidates now receive that same independent review.
-A merged reference alone cannot establish that the whole report is fixed: current-fix,
-revert and scope checks remain explicit. Missing canonical or merged-fix identities,
-negative norm checks, existing owners, security restrictions and holds block proposals.
-Duplicate automation and human interventions retain their existing authority.
-
-PR review/finishing proposals retain static checks, current CI, contributor credit and
-batch composition as separate gates before merge. Older retained verification outputs
-project to concrete per-PR review or regression-repair steps; their prose is never parsed
-into assignments or closures. Every proposal requires approval and a fresh claimed
-execution against its recorded evidence and referenced resolution snapshots.
-
-The retained-intake digest identifies the immutable original snapshot; its normalized
-`evidence_revision` supports freshness comparisons without collection-time churn.
-Acknowledged App review receipts are carried so only those exact own reviews can be
-excluded. Resolution fingerprints omit unrelated repository counters. The expanded
-Markdown view uses `<batch-id>-mutation-review-queue`, preserving older queue artifacts.
-
-PR consolidation uses explicit `close_pr` proposals with a named `canonical_pr` and
-both target and canonical revisions. The independent reviewer must compare coverage,
-read prior closed-PR discussions and preserve earlier maintainer canonical choices;
-matching titles or a newer pair of open PRs are not selection evidence. Both heads need
-retained verification. An open canonical PR is allowed; no PR is closed automatically.
-
-Assignment proposals always retain a live `platform_assignment_eligibility` gate.
-The executing maintainer must check repository assignee eligibility (HTTP 204), then
-read back issue assignees: `gh issue edit` can exit successfully while ignoring an
-ineligible nonparticipant. Public-history qualification and reporter ownership do not
-establish platform eligibility. No automatic gate bypass or claim comment is introduced.
-
-Closed unmerged canonical PRs retain a reopen/coordination gate; administrative closure
-is not a rejection. Bulk proposals block canonical closure chains/cycles and assigning
-a contribution that the same batch proposes closing. Resolve the surviving canonical
-before approval rather than applying individually plausible actions together.
+Each controller retains its review bins as `<batch-id>-review-bins` (read one with
+`agentic_stack.sh results <controller-run-id>`) and a Markdown view as
+`<batch-id>-triage-queue`. The independent triage reviewer's disposition, including any
+assignment or closure it recommends, stays in each item's `adversarial_review`. Nothing
+in this path assigns, closes or merges; the maintainer acts on GitHub directly.
 
 Evidence collection follows at most three one-hop, same-repository canonical or
 superseding PR hints from repository-associated human discussion. It verifies each
