@@ -121,7 +121,13 @@ class RequestDirector:
         # Step 4: Prepare request data
         method: str = route.method.upper()
         params = query_params if query_params else None
-        headers = header_params if header_params else None
+        # httpx requires header values to be strings, so serialize them the
+        # same way cookie values are handled below.
+        headers: dict[str, Any] | None = (
+            self._serialize_header_params(route, header_params)
+            if header_params
+            else None
+        )
         json_body: dict[str, Any] | list[Any] | str | int | float | bool | None = None
         content: str | bytes | None = None
 
@@ -393,6 +399,58 @@ class RequestDirector:
                         )
                         continue
             serialized[key] = value
+        return serialized
+
+    def _serialize_header_params(
+        self,
+        route: HTTPRoute,
+        header_params: dict[str, Any],
+    ) -> dict[str, str]:
+        """
+        Serialize header parameter values to strings.
+
+        httpx requires header values to be strings, but an OpenAPI header
+        parameter may declare any primitive schema — an integer retry count
+        or a boolean flag, say — and the generated tool schema advertises
+        that type, so the raw JSON value arrives here. Scalars use the same
+        conversion as query and cookie values (true/false for booleans, not
+        True/False). Arrays and objects follow the OpenAPI "simple" style,
+        the default for header parameters: arrays join with commas either
+        way; objects serialize as key,value pairs, or as key=value pairs
+        with explode.
+        """
+        param_lookup: dict[str, ParameterInfo] = {
+            p.name: p for p in route.parameters if p.location == "header"
+        }
+
+        serialized: dict[str, str] = {}
+        for key, value in header_params.items():
+            if isinstance(value, dict):
+                if not value:
+                    continue
+                param_info = param_lookup.get(key)
+                explode = (
+                    param_info.explode
+                    if param_info is not None and param_info.explode is not None
+                    else False
+                )
+                if explode:
+                    serialized[key] = ",".join(
+                        f"{_query_scalar_to_str(k)}={_query_scalar_to_str(v)}"
+                        for k, v in value.items()
+                    )
+                else:
+                    parts: list[str] = []
+                    for k, v in value.items():
+                        parts.append(_query_scalar_to_str(k))
+                        parts.append(_query_scalar_to_str(v))
+                    serialized[key] = ",".join(parts)
+            elif isinstance(value, (list, tuple)):
+                if not value:
+                    continue
+                serialized[key] = ",".join(_query_scalar_to_str(v) for v in value)
+            else:
+                serialized[key] = _query_scalar_to_str(value)
         return serialized
 
     def _build_url(

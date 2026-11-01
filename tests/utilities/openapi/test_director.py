@@ -595,6 +595,110 @@ class TestContentTypeHandling:
         assert request.headers["content-type"] == "application/json-patch+json"
         assert request.headers["x-request-id"] == "abc-123"
 
+    def test_non_string_header_params_are_serialized(self, director):
+        """Integer/boolean/float header parameters become header strings.
+
+        The generated tool schema advertises the declared types, so a call
+        that follows it hands the director raw JSON values; httpx rejects
+        those as header values unless they are serialized first.
+        """
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="X-Count",
+                    location="header",
+                    required=True,
+                    schema={"type": "integer"},
+                ),
+                ParameterInfo(
+                    name="X-Flag",
+                    location="header",
+                    required=False,
+                    schema={"type": "boolean"},
+                ),
+                ParameterInfo(
+                    name="X-Ratio",
+                    location="header",
+                    required=False,
+                    schema={"type": "number"},
+                ),
+            ],
+            parameter_map={
+                "X-Count": {"location": "header", "openapi_name": "X-Count"},
+                "X-Flag": {"location": "header", "openapi_name": "X-Flag"},
+                "X-Ratio": {"location": "header", "openapi_name": "X-Ratio"},
+            },
+        )
+
+        request = director.build(
+            route,
+            {"X-Count": 3, "X-Flag": True, "X-Ratio": 1.5},
+            "https://example.com",
+        )
+        assert request.headers["x-count"] == "3"
+        assert request.headers["x-flag"] == "true"
+        assert request.headers["x-ratio"] == "1.5"
+
+    def test_array_header_param_is_comma_joined(self, director):
+        """Array header parameters serialize in the OpenAPI simple style."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="X-Tags",
+                    location="header",
+                    required=False,
+                    schema={"type": "array", "items": {"type": "string"}},
+                ),
+            ],
+            parameter_map={
+                "X-Tags": {"location": "header", "openapi_name": "X-Tags"},
+            },
+        )
+
+        request = director.build(route, {"X-Tags": ["a", "b"]}, "https://example.com")
+        assert request.headers["x-tags"] == "a,b"
+
+    def test_object_header_param_simple_style(self, director):
+        """Object header parameters serialize as key,value or key=value pairs."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="X-Filter",
+                    location="header",
+                    required=False,
+                    schema={"type": "object"},
+                ),
+                ParameterInfo(
+                    name="X-Range",
+                    location="header",
+                    required=False,
+                    schema={"type": "object"},
+                    explode=True,
+                ),
+            ],
+            parameter_map={
+                "X-Filter": {"location": "header", "openapi_name": "X-Filter"},
+                "X-Range": {"location": "header", "openapi_name": "X-Range"},
+            },
+        )
+
+        request = director.build(
+            route,
+            {"X-Filter": {"a": 1, "b": 2}, "X-Range": {"min": 1, "max": 9}},
+            "https://example.com",
+        )
+        assert request.headers["x-filter"] == "a,1,b,2"
+        assert request.headers["x-range"] == "min=1,max=9"
+
     def test_no_request_body_info_defaults_to_json(self, director):
         """When route has no request_body metadata, dict body uses application/json."""
         route = HTTPRoute(
