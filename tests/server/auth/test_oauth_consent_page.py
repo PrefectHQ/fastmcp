@@ -3,7 +3,7 @@
 import re
 import secrets
 import time
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -31,6 +31,16 @@ class _Verifier(TokenVerifier):
         return AccessToken(
             token=token, client_id="c", scopes=self.required_scopes, expires_at=None
         )
+
+
+@pytest.fixture
+def failed_token_exchange(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    exchange = AsyncMock(side_effect=ValueError("Invalid authorization code"))
+    monkeypatch.setattr(
+        "fastmcp.server.auth.oauth_proxy.proxy.AsyncOAuth2Client.fetch_token",
+        exchange,
+    )
+    return exchange
 
 
 @pytest.fixture
@@ -568,7 +578,9 @@ class TestConsentBindingCookie:
             set_cookie_header = r2.headers.get("set-cookie", "")
             assert "__Host-MCP_CONSENT_BINDING" in set_cookie_header
 
-    async def test_parallel_flows_do_not_interfere(self, oauth_proxy_https):
+    async def test_parallel_flows_do_not_interfere(
+        self, oauth_proxy_https, failed_token_exchange: AsyncMock
+    ):
         """Multiple concurrent consent flows in the same browser must not clobber each other.
 
         Uses two different clients so the second flow also shows a consent form
@@ -625,6 +637,9 @@ class TestConsentBindingCookie:
             # Should NOT be 403 — the binding for txn1 should still be in the cookie.
             # It will fail at token exchange (500) but not at consent verification.
             assert r_cb1.status_code != 403
+            assert r_cb1.status_code == 500
+            failed_token_exchange.assert_awaited_once()
+            assert failed_token_exchange.call_args.kwargs["code"] == "fake"
 
     async def test_idp_callback_rejects_missing_consent_cookie(self, oauth_proxy_https):
         """IdP callback must reject requests without the consent binding cookie.
@@ -693,7 +708,9 @@ class TestConsentBindingCookie:
             )
             assert r.status_code == 403
 
-    async def test_consent_disabled_skips_binding_check(self):
+    async def test_consent_disabled_skips_binding_check(
+        self, failed_token_exchange: AsyncMock
+    ):
         """When require_authorization_consent=False, the binding check is skipped."""
         proxy = OAuthProxy(
             upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
@@ -749,6 +766,8 @@ class TestConsentBindingCookie:
                 follow_redirects=False,
             )
             # Should NOT be 403 (consent binding rejection)
-            # It will be 500 because the fake code can't be exchanged with GitHub,
-            # but that's fine — we're verifying the consent check was skipped.
+            # The mocked token exchange fails after the consent check is skipped.
             assert r.status_code != 403
+            assert r.status_code == 500
+            failed_token_exchange.assert_awaited_once()
+            assert failed_token_exchange.call_args.kwargs["code"] == "fake-code"

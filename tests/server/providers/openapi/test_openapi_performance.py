@@ -16,9 +16,9 @@ from fastmcp import FastMCP
 class TestOpenAPIPerformance:
     """Performance tests for OpenAPI parsing with real-world large schemas."""
 
-    # 10 second maximum timeout for this test no matter what
+    # Allow the 30-second download plus the independently asserted 10-second parse.
     @pytest.mark.integration
-    @pytest.mark.timeout(10)
+    @pytest.mark.timeout(45)
     async def test_github_api_schema_performance(self):
         """
         Test that GitHub's full API schema parses quickly.
