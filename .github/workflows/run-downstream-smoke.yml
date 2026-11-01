@@ -296,7 +296,7 @@ jobs:
           uv venv --quiet venv
           VIRTUAL_ENV=$PWD/venv uv pip install --quiet \
             -e agno/libs/agnoctl -e "agno/libs/agno[os,mcp,pages,openai]" \
-            pytest pytest-asyncio pytest-mock \
+            pytest pytest-asyncio pytest-mock aiosqlite \
             "fastmcp @ file://$(ls $GITHUB_WORKSPACE/dist/fastmcp-4*.whl)" \
             "fastmcp-slim @ file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_slim-*.whl)"
           echo "$PWD/venv/bin" >> "$GITHUB_PATH"
