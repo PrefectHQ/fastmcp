@@ -70,7 +70,6 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
     bins: dict[str, list] = {
         name: []
         for name in (
-            "stacks",
             "existing_review",
             "evidence",
             "pruning",

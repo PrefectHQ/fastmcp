@@ -55,7 +55,7 @@ def test_generated_draft_review_is_counted_with_existing_contribution_reviews():
     result = {
         "batch_id": "generated-draft",
         "bins": {
-            "stacks": [{"review_delivery": {"posted": [receipt], "skipped": []}}],
+            "decisions": [{"review_delivery": {"posted": [receipt], "skipped": []}}],
             "existing_review": [{"published_reviews": [receipt]}],
         },
     }
