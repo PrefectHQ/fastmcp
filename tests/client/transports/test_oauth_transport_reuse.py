@@ -12,7 +12,6 @@ from typing import Any
 
 import pytest
 
-import fastmcp.client.auth.oauth as oauth_module
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.group import ClientGroup
 from fastmcp.client.transports import ClientTransport, StreamableHttpTransport
@@ -149,9 +148,14 @@ async def test_one_authorization_per_configured_server(oauth_backend, monkeypatc
     two transports share an object.
     """
     url, provider, transport = oauth_backend
-    # `auth="oauth"` builds the client internally; make that build headless so
-    # the flow is real and only the browser hop is replaced.
-    monkeypatch.setattr(oauth_module, "OAuth", HeadlessOAuth)
+    # `auth="oauth"` builds the client in two different places — the server
+    # config resolves it (this branch) and the transports resolve it on `main` —
+    # and the transports bind `OAuth` at import time, so replacing the module
+    # attribute only reaches one of them. Patch the browser boundary on the
+    # class itself: every construction path stays headless, the flow is still
+    # real, and only the browser hop is replaced.
+    monkeypatch.setattr(OAuth, "redirect_handler", HeadlessOAuth.redirect_handler)
+    monkeypatch.setattr(OAuth, "callback_handler", HeadlessOAuth.callback_handler)
 
     config = MCPConfig.from_dict(
         {
