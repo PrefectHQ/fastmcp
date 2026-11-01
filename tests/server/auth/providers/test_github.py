@@ -279,8 +279,8 @@ class TestGitHubTokenVerifierCaching:
             assert result2 is not None
             assert result2.claims["login"] == "testuser"
 
-    async def test_scope_failure_uses_verified_user_fallback_and_cache(self):
-        """A scope-endpoint outage preserves verified identity and fills the cache."""
+    async def test_scope_failure_keeps_identity_without_inventing_scopes(self):
+        """A scope-endpoint outage may verify identity, but must not invent scopes."""
         verifier = GitHubTokenVerifier(cache_ttl_seconds=300)
 
         mock_client = AsyncMock()
@@ -310,9 +310,9 @@ class TestGitHubTokenVerifierCaching:
             second = await verifier.verify_token("tok-1")
 
             assert first is not None
-            assert first.scopes == ["user"]
+            assert first.scopes == []
             assert second is not None
-            assert second.scopes == ["user"]
+            assert second.scopes == []
             assert second.client_id == first.client_id
             assert second is not first
             assert mock_client.get.call_count == 2

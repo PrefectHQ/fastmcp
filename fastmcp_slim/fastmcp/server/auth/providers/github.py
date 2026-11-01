@@ -139,11 +139,10 @@ class GitHubTokenVerifier(TokenVerifier):
                         "GitHub token verification returned an invalid user response"
                     ) from e
 
-                # Identity is already verified by /user. Scope discovery is
-                # supplementary: if GitHub's scope endpoint is temporarily
-                # unavailable, preserve the verified basic user capability and
-                # allow it to populate the cache. Stronger scopes are never
-                # invented from an outage.
+                # Identity is verified by /user, but that does not establish
+                # which OAuth scopes were granted. If scope discovery is
+                # temporarily unavailable, do not infer scopes; required scopes
+                # must wait for a successful check.
                 scope_discovery_unavailable = False
                 scope_discovery_error: str | None = None
                 try:
@@ -198,9 +197,6 @@ class GitHubTokenVerifier(TokenVerifier):
                     for scope in oauth_scopes_header.split(",")
                     if scope.strip()
                 ]
-                if scope_discovery_unavailable:
-                    token_scopes = ["user"]
-
                 # A successful 200 response without X-OAuth-Scopes still proves no
                 # grant beyond what GitHub reported; do not synthesize scopes there.
                 if self.required_scopes:

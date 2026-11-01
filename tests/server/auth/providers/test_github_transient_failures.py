@@ -144,35 +144,15 @@ async def test_scope_non_degradable_http_failure_raises_typed_error(status_code)
 
 
 @pytest.mark.parametrize("status_code", [500, 503])
-async def test_scope_server_failure_uses_verified_user_fallback_and_cache(status_code):
-    client = AsyncMock()
-    client.get.side_effect = [_github_user_response(), _response(status_code)]
-    verifier = GitHubTokenVerifier(
-        required_scopes=["user"],
-        cache_ttl_seconds=300,
-        http_client=client,
-    )
-
-    first = await verifier.verify_token("still-valid-token")
-    second = await verifier.verify_token("still-valid-token")
-
-    assert first is not None
-    assert first.scopes == ["user"]
-    assert second is not None
-    assert second.scopes == ["user"]
-    assert second.client_id == first.client_id
-    assert second is not first
-    assert client.get.call_count == 2
-
-
-async def test_scope_transport_failure_uses_verified_user_fallback_and_cache():
+async def test_scope_server_failure_does_not_grant_required_user_scope_and_recovers(
+    status_code,
+):
     client = AsyncMock()
     client.get.side_effect = [
         _github_user_response(),
-        httpx2.ConnectError(
-            "simulated scope transport failure",
-            request=httpx2.Request("GET", "https://api.github.com/user/repos"),
-        ),
+        _response(status_code),
+        _github_user_response(),
+        _response(200, headers={"x-oauth-scopes": "user"}),
     ]
     verifier = GitHubTokenVerifier(
         required_scopes=["user"],
@@ -180,16 +160,43 @@ async def test_scope_transport_failure_uses_verified_user_fallback_and_cache():
         http_client=client,
     )
 
-    first = await verifier.verify_token("still-valid-token")
-    second = await verifier.verify_token("still-valid-token")
+    with pytest.raises(TokenVerificationError, match="scope verification unavailable"):
+        await verifier.verify_token("still-valid-token")
 
-    assert first is not None
-    assert first.scopes == ["user"]
-    assert second is not None
-    assert second.scopes == ["user"]
-    assert second.client_id == first.client_id
-    assert second is not first
-    assert client.get.call_count == 2
+    assert len(verifier._cache._entries) == 0
+
+    recovered = await verifier.verify_token("still-valid-token")
+    assert recovered is not None
+    assert recovered.scopes == ["user"]
+    assert client.get.call_count == 4
+
+
+async def test_scope_transport_failure_does_not_grant_required_user_scope_and_recovers():
+    client = AsyncMock()
+    client.get.side_effect = [
+        _github_user_response(),
+        httpx2.ConnectError(
+            "simulated scope transport failure",
+            request=httpx2.Request("GET", "https://api.github.com/user/repos"),
+        ),
+        _github_user_response(),
+        _response(200, headers={"x-oauth-scopes": "user"}),
+    ]
+    verifier = GitHubTokenVerifier(
+        required_scopes=["user"],
+        cache_ttl_seconds=300,
+        http_client=client,
+    )
+
+    with pytest.raises(TokenVerificationError, match="scope verification unavailable"):
+        await verifier.verify_token("still-valid-token")
+
+    assert len(verifier._cache._entries) == 0
+
+    recovered = await verifier.verify_token("still-valid-token")
+    assert recovered is not None
+    assert recovered.scopes == ["user"]
+    assert client.get.call_count == 4
 
 
 async def test_scope_401_is_still_an_invalid_token():
