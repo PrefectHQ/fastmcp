@@ -304,6 +304,7 @@ def add_numbers(a: int, b: int) -> int:
 | Lists with string elements (`["1", "2"]` for `list[int]`) | ✅ Elements coerced | ❌ Validation error |
 | Pydantic model fields with type mismatches | ✅ Fields coerced | ❌ Validation error |
 | Invalid values (`"abc"` for `int`) | ❌ Validation error | ❌ Validation error |
+| Undeclared arguments to OpenAPI tools | ⚠️ Dropped with a warning | ❌ Validation error |
 
 <Note>
 **Note on Pydantic Models:** Even with `strict_input_validation=False`, Pydantic model parameters must be provided as JSON objects (dicts), not as stringified JSON. For example, `{"user": {"name": "Alice"}}` works, but `{"user": '{"name": "Alice"}'}` does not.

@@ -352,7 +352,10 @@ class PythonStdioTransport(StdioTransport):
 
 
 class FastMCPStdioTransport(StdioTransport):
-    """Transport for running FastMCP servers using the FastMCP CLI."""
+    """Transport for running FastMCP servers using the FastMCP CLI.
+
+    `args` are passed to the server script, not interpreted as FastMCP CLI options.
+    """
 
     def __init__(
         self,
@@ -369,13 +372,17 @@ class FastMCPStdioTransport(StdioTransport):
         if not str(script_path).endswith(".py"):
             raise ValueError(f"Not a Python script: {script_path}")
 
+        full_args = ["run", str(script_path)]
+        if args:
+            full_args.extend(["--", *args])
+
         # Same UTF-8 default as PythonStdioTransport: the `fastmcp` command
         # is a Python entry point with the same sanitized child environment.
         env = {"PYTHONUTF8": "1", **(env or {})}
 
         super().__init__(
             command="fastmcp",
-            args=["run", str(script_path)],
+            args=full_args,
             env=env,
             cwd=cwd,
             keep_alive=keep_alive,
