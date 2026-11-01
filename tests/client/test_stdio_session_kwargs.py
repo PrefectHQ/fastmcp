@@ -56,17 +56,25 @@ async def test_second_client_uses_its_own_timeout(
 
 
 @pytest.mark.timeout(20)
-@pytest.mark.parametrize("second_timeout", [1, None])
-async def test_different_client_settings_do_not_replace_an_active_session(
+@pytest.mark.parametrize(
+    "first_timeout, second_timeout", [(3, 1), (1, 3), (None, 1), (None, 5)]
+)
+async def test_nested_client_with_another_timeout_shares_the_active_session(
     sleepy_server: Path,
-    second_timeout: float | None,
+    first_timeout: float | None,
+    second_timeout: float,
 ) -> None:
     transport = PythonStdioTransport(sleepy_server)
     try:
-        async with Client(transport, timeout=3) as first:
-            with pytest.raises(RuntimeError, match="still using it"):
-                async with Client(transport, timeout=second_timeout):
-                    pass
+        async with Client(transport, timeout=first_timeout) as first:
+            async with Client(transport, timeout=second_timeout) as second:
+                assert second.session is first.session
+                if second_timeout == 1:
+                    with pytest.raises(MCPError, match="timed out"):
+                        await second.call_tool("sleep", {"seconds": 2})
+                else:
+                    result = await second.call_tool("sleep", {"seconds": 2})
+                    assert result.data == "done"
             result = await first.call_tool("sleep", {"seconds": 0})
             assert result.data == "done"
     finally:

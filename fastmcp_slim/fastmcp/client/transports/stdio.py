@@ -110,21 +110,24 @@ class StdioTransport(ClientTransport):
             # to a client that wants different ones would silently give it the
             # first client's behavior. Rebuild it when it's idle; refuse when
             # another client is using it, since tearing it down would break them.
-            # Compare the timeout value, not callback identity: proxy clients
-            # rebind forwarding callbacks for each request on the same transport.
-            if self._connect_task is not None and (
-                self._session_options != options
-                or self._session_read_timeout
-                != session_kwargs.get("read_timeout_seconds")
-            ):
-                if self._active_sessions:
+            # A different request timeout alone does not refuse: clients send
+            # their own timeout with each tool call, so they can share the
+            # session. Compare the timeout value, not callback identity: proxy
+            # clients rebind forwarding callbacks for each request.
+            options_differ = self._session_options != options
+            timeout_differs = self._session_read_timeout != session_kwargs.get(
+                "read_timeout_seconds"
+            )
+            if self._connect_task is not None and (options_differ or timeout_differs):
+                if self._active_sessions and options_differ:
                     raise RuntimeError(
                         "This stdio transport has a live session built for different "
                         "connection options and another client is still using it. "
                         "Sharing one transport across clients that need different "
                         "sessions is not supported; give each client its own transport."
                     )
-                await self.disconnect()
+                if not self._active_sessions:
+                    await self.disconnect()
 
             # If the connect task completed or the session's streams are dead,
             # the subprocess has exited. Tear down so we can start fresh.

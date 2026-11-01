@@ -99,10 +99,9 @@ async def efficient_multiple_operations():
 
 A kept-alive session is reused when the transport options and request timeout
 match. Connecting with a different `Client(timeout=...)` restarts an idle
-subprocess; if another connection still uses that session, the transport raises
-an error instead. Use separate transports when clients with different timeouts
-must stay connected concurrently. Per-call `timeout` overrides do not restart
-the session.
+subprocess. If another client is still connected, the new client shares its
+session, and its tool calls use its own timeout. Per-call `timeout` overrides
+do not restart the session.
 
 For complete isolation between connections, disable session persistence:
 
