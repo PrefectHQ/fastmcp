@@ -422,27 +422,11 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                         {**projected, "outcome": result},
                         f"issue-{number}-triage-review",
                     )
-                    mutation_reader = None
-                    if any(
-                        proposed["action"]
-                        in {"close_duplicate", "close_completed", "close_pr"}
-                        for proposed in review.get("recommendations", [])
-                    ):
-                        mutation_github = GitHub(secret_sync("fastmcp-triage-gh-token"))
-
-                        def mutation_reader(endpoint: str) -> dict | None:
-                            value = mutation_github.request(endpoint)
-                            if value is not None and not isinstance(value, dict):
-                                raise ValueError("Expected a closure evidence object")
-                            return value
-
                     destination, result = apply_disposition(
                         destination,
                         result,
                         review,
                         review_run,
-                        evidence=final_evidence,
-                        read=mutation_reader,
                     )
                     if runtime.publish_reviews and destination == "existing_review":
                         try:
@@ -663,18 +647,11 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
         "agent_runs": calls,
         "usage": usage,
     }
-    proposed_issues = {
-        item["issue_number"]
-        for values in bins.values()
-        for item in values
-        if item.get("mutation_recommendations")
-        and isinstance(item.get("issue_number"), int)
-    }
     branches = {
         item.issue_number: group.branch
         for group in batch.groups
         for item in group.items
-        if item.mode != "fix" or item.issue_number in proposed_issues
+        if item.mode != "fix"
     }
     originals = {}
     for number in branches:

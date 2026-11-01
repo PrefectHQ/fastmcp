@@ -328,7 +328,7 @@ def test_queue_recovers_same_controller_and_commits_only_saved_outcomes(
         for artifact in client.read_artifacts(
             flow_run_filter=FlowRunFilter(id={"any_": [replacement]})
         ):
-            if artifact.key.endswith(("-committed", "-coverage", "-review-queue")):
+            if artifact.key.endswith(("-committed", "-coverage", "-triage-queue")):
                 client.delete_artifact(artifact.id)
         before = len(requests)
         responses["/fresh/1"] = (503, {"message": "Unavailable after finalization"})
