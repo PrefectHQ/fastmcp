@@ -717,7 +717,7 @@ def search_items(q: str) -> str:
     return f"Results for {q}"
 ```
 
-Reading `search://items?q=shoes` calls `search_items("shoes")`. The value runs up to the next `&` and may be empty or contain `/`, so `search://items?q=` passes an empty string. An `&` that belongs to the value must be percent-encoded. Only the keys written in the template are accepted: `search://items?q=shoes&page=2` does not match, so add `&page={page}` to the template when the resource needs a second key. A literal query cannot be combined with a `{?param}` block in the same template.
+Reading `search://items?q=shoes` calls `search_items("shoes")`. The value runs up to the next `&` and may be empty or contain `/`, so `search://items?q=` passes an empty string. An `&` that belongs to the value must be percent-encoded. Only the keys written in the template are accepted: `search://items?q=shoes&page=2` does not match, so add `&page={page}` to the template when the resource needs a second key. Keys must appear in the order the template writes them. A literal query cannot be combined with a `{?param}` block in the same template.
 
 **Query parameters vs. hidden defaults:**
 

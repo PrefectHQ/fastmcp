@@ -1141,6 +1141,13 @@ class TestMalformedURITemplates:
         )
         assert result == {"q": "a/b", "page": "2"}
 
+    def test_literal_query_in_template_wildcard_stops_at_ampersand(self):
+        result = match_uri_template(
+            "search://items?q=abc&page=2",
+            "search://items?q={q*}",
+        )
+        assert result is None
+
     def test_query_param_with_blank_and_present_values(self):
         """Mix of blank and non-blank query values are both surfaced."""
         result = match_uri_template(

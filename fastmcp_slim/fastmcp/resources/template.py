@@ -192,13 +192,13 @@ def build_regex(template: str) -> re.Pattern[str] | None:
     for part in parts:
         if part.startswith("{") and part.endswith("}"):
             name = part[1:-1]
-            if name.endswith("*"):
+            if in_query:
+                group = name.removesuffix("*").replace("-", "_")
+                pattern += f"(?P<{group}>[^&]*)"
+            elif name.endswith("*"):
                 name = name[:-1]
                 group = name.replace("-", "_")
                 pattern += f"(?P<{group}>.+)"
-            elif in_query:
-                group = name.replace("-", "_")
-                pattern += f"(?P<{group}>[^&]*)"
             else:
                 group = name.replace("-", "_")
                 pattern += f"(?P<{group}>[^/]+)"
