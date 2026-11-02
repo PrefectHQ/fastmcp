@@ -4,8 +4,9 @@ from uuid import uuid4
 
 import pytest
 
-from flows.agentic_stack_plans import build_plans
+from flows.agentic_stack_plans import build_plans, tier_models
 from flows.agentic_stack_runtime import AgentPlan, Runtime
+from flows.agentic_triage_plan import build_triage_plan
 from flows.agentic_triage_review import apply_disposition, requires_review
 
 
@@ -209,3 +210,34 @@ def test_private_sweep_without_reviewer_skips_sol(monkeypatch):
     assert result["bins"]["existing_review"] == [
         {"issue_number": 7, "adversarial_review": None}
     ]
+
+
+def test_model_tier_swaps_named_roles_and_keeps_the_reviewer():
+    directory = Path(__file__).resolve().parents[1] / "workflows"
+    default = build_plans(directory)
+    haiku = build_plans(directory, "haiku")
+    assert haiku["assess"]["nodes"]["assess"]["model"]["id"] == "claude-haiku-5-5"
+    assert haiku["reproduce"]["nodes"]["reproduce"]["model"]["id"] == "claude-haiku-5-5"
+    assert haiku["triage_review"] == default["triage_review"]
+    assert (
+        haiku["assess"]["nodes"]["assess"]["model"]["connection_id"]
+        == default["assess"]["nodes"]["assess"]["model"]["connection_id"]
+    )
+
+
+def test_triage_plan_follows_the_tier():
+    models = json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "workflows/stack-models.json"
+        ).read_text()
+    )
+    plan = build_triage_plan(tier_models(models, "haiku"), uuid4(), uuid4())
+    agents = [n for n in plan["nodes"].values() if n["kind"] == "AgentNode"]
+    assert agents and all(n["model"]["id"] == "claude-haiku-5-5" for n in agents)
+    assert all("Luna" not in n["label"] for n in agents)
+    default = build_triage_plan(models, uuid4(), uuid4())
+    assert all(
+        n["model"]["id"] == "gpt-6-luna"
+        for n in default["nodes"].values()
+        if n["kind"] == "AgentNode"
+    )
