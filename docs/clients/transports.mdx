@@ -104,16 +104,18 @@ session and that session's timeout, and FastMCP logs a warning; use separate
 transports when concurrent clients need different defaults. Per-call `timeout`
 overrides do not restart the session.
 
-To stop the subprocess when the last connected client exits, disable session persistence:
+To stop the subprocess once no client is using it, disable session persistence:
 
 ```python
 transport = StdioTransport(command="python", args=["server.py"], keep_alive=False)
 ```
 
-Clients that share this transport and use compatible connection options share the
-subprocess while their sessions overlap. Exiting one client leaves the others usable;
-after the last session exits, a subsequent connection starts a new subprocess. Use a
-separate transport for each client when you need isolated subprocesses.
+A `keep_alive=False` transport is still shared. Clients connected to it at the same
+time use one subprocess, so one client exiting doesn't close it under the others. The
+subprocess stops when the last of them exits, and the next connection starts a new
+one. A proxy built with `create_proxy(transport)` relies on this, since it opens a
+fresh client on the transport for every request. Give each client its own transport
+when you need isolated subprocesses.
 
 ## HTTP Transport
 

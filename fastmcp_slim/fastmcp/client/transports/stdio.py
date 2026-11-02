@@ -50,7 +50,9 @@ class StdioTransport(ClientTransport):
             keep_alive: Whether to keep the subprocess alive between connections.
                        Defaults to True. When True, the subprocess remains active
                        after the connection context exits, allowing reuse in
-                       subsequent connections.
+                       subsequent connections. When False, clients connected at
+                       the same time still share one subprocess, and it stops
+                       when the last of them exits.
             log_file: Optional path or file-like object where subprocess stderr will
                    be written. Can be a Path or TextIO object. Defaults to sys.stderr
                    if not provided. When a Path is provided, the file will be created
@@ -359,7 +361,9 @@ class PythonStdioTransport(StdioTransport):
             keep_alive: Whether to keep the subprocess alive between connections.
                        Defaults to True. When True, the subprocess remains active
                        after the connection context exits, allowing reuse in
-                       subsequent connections.
+                       subsequent connections. When False, clients connected at
+                       the same time still share one subprocess, and it stops
+                       when the last of them exits.
             log_file: Optional path or file-like object where subprocess stderr will
                    be written. Can be a Path or TextIO object. Defaults to sys.stderr
                    if not provided. When a Path is provided, the file will be created
@@ -457,7 +461,9 @@ class NodeStdioTransport(StdioTransport):
             keep_alive: Whether to keep the subprocess alive between connections.
                        Defaults to True. When True, the subprocess remains active
                        after the connection context exits, allowing reuse in
-                       subsequent connections.
+                       subsequent connections. When False, clients connected at
+                       the same time still share one subprocess, and it stops
+                       when the last of them exits.
             log_file: Optional path or file-like object where subprocess stderr will
                    be written. Can be a Path or TextIO object. Defaults to sys.stderr
                    if not provided. When a Path is provided, the file will be created
@@ -590,7 +596,9 @@ class UvxStdioTransport(StdioTransport):
             keep_alive: Whether to keep the subprocess alive between connections.
                        Defaults to True. When True, the subprocess remains active
                        after the connection context exits, allowing reuse in
-                       subsequent connections.
+                       subsequent connections. When False, clients connected at
+                       the same time still share one subprocess, and it stops
+                       when the last of them exits.
         """
         # Basic validation
         if project_directory and not Path(project_directory).exists():
@@ -651,7 +659,9 @@ class NpxStdioTransport(StdioTransport):
             keep_alive: Whether to keep the subprocess alive between connections.
                        Defaults to True. When True, the subprocess remains active
                        after the connection context exits, allowing reuse in
-                       subsequent connections.
+                       subsequent connections. When False, clients connected at
+                       the same time still share one subprocess, and it stops
+                       when the last of them exits.
         """
         # verify npx is installed
         if shutil.which("npx") is None:

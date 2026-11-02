@@ -8,6 +8,7 @@ from mcp_types import TextContent
 from fastmcp import Client
 from fastmcp.client.transports import PythonStdioTransport
 from fastmcp.server import create_proxy
+from fastmcp.server.providers.proxy import ProxyClient
 from tests.client.test_stdio import (
     MINIMAL_STDIO_SERVER,
     gc_collect_harder,
@@ -53,8 +54,9 @@ async def test_cancelled_shared_client_and_gc(cancellation):
                     await ready.wait()
                     scope.cancel()
 
-                with anyio.CancelScope() as scope:
-                    trigger = asyncio.create_task(cancel_when_ready(scope))
+                scope = anyio.CancelScope()
+                trigger = asyncio.create_task(cancel_when_ready(scope))
+                with scope:
                     await abandoned_call()
                 await trigger
                 assert scope.cancelled_caught
@@ -194,4 +196,108 @@ async def test_collected_transport_context_releases_shared_hold():
             assert (await survivor.call_tool("pid")).data == pid
         await wait_for_process_exit(pid)
     finally:
+        await transport.close()
+
+
+@pytest.mark.parametrize("entry", ["connect_session", "client"])
+async def test_cancelled_scope_stops_shared_subprocess_after_last_exit(entry):
+    """Every session sharing the subprocess exits under one cancelled scope.
+
+    The last exit runs during cancellation, so it must stop the subprocess
+    without waiting on anything the cancellation can interrupt, and the next
+    connection must not be left behind a half-reset transport.
+    """
+    transport = PythonStdioTransport(MINIMAL_STDIO_SERVER, keep_alive=False)
+    pid: int | None = None
+    try:
+        with anyio.CancelScope() as scope:
+            if entry == "connect_session":
+                async with transport.connect_session() as first:
+                    async with transport.connect_session() as second:
+                        assert first is second
+                        result = await second.call_tool("pid", {})
+                        content = result.content[0]
+                        assert isinstance(content, TextContent)
+                        pid = int(content.text)
+                        scope.cancel()
+                        await anyio.sleep_forever()
+            else:
+                async with Client(transport) as first:
+                    async with Client(transport) as second:
+                        pid = (await second.call_tool("pid")).data
+                        assert (await first.call_tool("pid")).data == pid
+                        scope.cancel()
+                        await anyio.sleep_forever()
+        assert scope.cancelled_caught
+        await wait_for_process_exit(pid)
+
+        with anyio.fail_after(3):
+            async with Client(transport) as client:
+                assert (await client.call_tool("pid")).data != pid
+    finally:
+        await transport.close()
+
+
+async def test_proxy_request_leaves_concurrent_backend_session_running():
+    """`create_proxy` builds a fresh backend client per request on the shared
+    transport, so one request finishing must not stop the subprocess under
+    another request that is still connected."""
+    transport = PythonStdioTransport(MINIMAL_STDIO_SERVER, keep_alive=False)
+    proxy = create_proxy(transport)
+    try:
+        async with ProxyClient(transport) as in_flight:
+            pid = (await in_flight.call_tool("pid")).data
+            result = await proxy.call_tool("pid")
+            content = result.content[0]
+            assert isinstance(content, TextContent)
+            assert int(content.text) == pid
+            assert (await in_flight.call_tool("pid")).data == pid
+        await wait_for_process_exit(pid)
+    finally:
+        await transport.close()
+
+
+# The unshared case is the last session out, so its cleanup must await the
+# subprocess's exit inside a coroutine that is being closed and cannot await.
+# The stop is already signalled by then; the warning is the destroyed runner
+# reporting that it could not finish unwinding.
+@pytest.mark.filterwarnings(
+    "ignore:Exception ignored in.*Client._session_runner"
+    ":pytest.PytestUnraisableExceptionWarning"
+)
+@pytest.mark.parametrize("shared", [False, True])
+async def test_collected_abandoned_client_does_not_wedge_transport(shared):
+    """A Client entered, never exited, and then garbage-collected has its
+    pending session task destroyed, so its session cleanup runs in a closing
+    coroutine. That cleanup must not take the connect lock: a lock acquired
+    there is never released, so the subprocess outlives every other client and
+    every later Client, including `create_proxy` requests, hangs."""
+    transport = PythonStdioTransport(MINIMAL_STDIO_SERVER, keep_alive=False)
+    survivor = Client(transport)
+    try:
+        if shared:
+            await survivor.__aenter__()
+        abandoned = Client(transport)
+        await abandoned.__aenter__()
+        pid = (await abandoned.call_tool("pid")).data
+        del abandoned
+        gc_collect_harder()
+        await anyio.sleep(0.1)
+        gc_collect_harder()
+
+        if shared:
+            assert (await survivor.call_tool("pid")).data == pid
+            await survivor.__aexit__(None, None, None)
+        await wait_for_process_exit(pid)
+
+        with anyio.fail_after(3):
+            async with Client(transport) as client:
+                assert (await client.call_tool("pid")).data != pid
+            result = await create_proxy(transport).call_tool("pid")
+            content = result.content[0]
+            assert isinstance(content, TextContent)
+            await wait_for_process_exit(int(content.text))
+    finally:
+        if survivor.is_connected():
+            await survivor.__aexit__(None, None, None)
         await transport.close()
