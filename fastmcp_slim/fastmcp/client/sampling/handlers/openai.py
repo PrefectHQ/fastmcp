@@ -272,6 +272,11 @@ class OpenAISamplingHandler:
                         openai_messages.extend(tool_messages)
                     elif content_parts:
                         if message.role == "user":
+                            # Tool results mixed with follow-up content must be
+                            # emitted before the user message so they directly
+                            # follow the assistant tool_calls message, as the
+                            # OpenAI API requires.
+                            openai_messages.extend(tool_messages)
                             openai_messages.append(
                                 ChatCompletionUserMessageParam(
                                     role="user",
