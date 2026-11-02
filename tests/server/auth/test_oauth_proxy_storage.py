@@ -2,8 +2,6 @@
 
 import asyncio
 import tempfile
-import threading
-import time
 import warnings
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -14,12 +12,14 @@ from inline_snapshot import snapshot
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.filetree import FileTreeStore
 from key_value.aio.stores.memory import MemoryStore
+from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
 from fastmcp import settings
 from fastmcp.server.auth.auth import TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.oauth_proxy import proxy as proxy_module
 
 
 class TestOAuthProxyStorage:
@@ -257,6 +257,10 @@ class TestOAuthProxyDefaultStoreCull:
             jwt_signing_key="test-secret",
         )
 
+    async def _drain_cull(self, proxy: OAuthProxy) -> None:
+        if proxy._cull_task is not None:
+            await proxy._cull_task
+
     async def test_cull_reaps_expired_entries_only(self, jwt_verifier, isolated_home):
         proxy = self.create_proxy(jwt_verifier)
         store = proxy._default_file_store
@@ -268,7 +272,8 @@ class TestOAuthProxyDefaultStoreCull:
         await asyncio.sleep(0.2)
         assert len(_entry_files(isolated_home)) == 3
 
-        await proxy.cull_expired_oauth_state()
+        proxy._maybe_cull_expired_state()
+        await self._drain_cull(proxy)
 
         assert len(_entry_files(isolated_home)) == 2
         assert await store.get("expired", collection="c") is None
@@ -278,77 +283,64 @@ class TestOAuthProxyDefaultStoreCull:
     async def test_cull_is_noop_with_custom_storage(self, jwt_verifier, isolated_home):
         proxy = self.create_proxy(jwt_verifier, storage=MemoryStore())
         assert proxy._default_file_store is None
-        # Must not raise: FastMCP never culls stores it did not create.
-        await proxy.cull_expired_oauth_state()
+        proxy._maybe_cull_expired_state()
+        assert proxy._cull_task is None
 
-    async def test_startup_cull_reaps_previous_run_entries(
+    async def test_construction_does_not_cull(self, jwt_verifier, isolated_home):
+        proxy = self.create_proxy(jwt_verifier)
+        assert proxy._cull_task is None
+
+    async def test_cull_is_throttled_and_resumes_after_interval(
         self, jwt_verifier, isolated_home
     ):
-        # Simulate a previous run: entries written, then expired.
+        """A long-running server keeps culling, but at most once per interval."""
+        proxy = self.create_proxy(jwt_verifier)
+        store = proxy._default_file_store
+        assert store is not None
+
+        proxy._maybe_cull_expired_state()
+        await self._drain_cull(proxy)
+        first = proxy._cull_task
+
+        await store.put("stale", {"v": 1}, collection="c", ttl=0.05)
+        await asyncio.sleep(0.2)
+
+        # Within the interval: no new cull.
+        proxy._maybe_cull_expired_state()
+        assert proxy._cull_task is first
+        assert len(_entry_files(isolated_home)) == 1
+
+        # Once the interval has passed, the next access culls again.
+        assert proxy._last_cull_started is not None
+        proxy._last_cull_started -= proxy_module._STATE_CULL_INTERVAL_SECONDS
+        proxy._maybe_cull_expired_state()
+        assert proxy._cull_task is not first
+        await self._drain_cull(proxy)
+        assert _entry_files(isolated_home) == []
+
+    async def test_authorize_triggers_cull(self, jwt_verifier, isolated_home):
+        """The OAuth write path reaps state left behind by a previous run."""
         first = self.create_proxy(jwt_verifier)
         store = first._default_file_store
         assert store is not None
         await store.put("stale", {"v": 1}, collection="c", ttl=0.05)
         await asyncio.sleep(0.2)
-        assert len(_entry_files(isolated_home)) == 1
 
-        # A fresh proxy (same key -> same directory) culls at startup.
-        self.create_proxy(jwt_verifier)
-        pending = [
-            t
-            for t in asyncio.all_tasks()
-            if t.get_name() == "fastmcp-oauth-proxy-startup-cull"
-        ]
-        if pending:
-            await asyncio.gather(*pending)
+        proxy = self.create_proxy(jwt_verifier)
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        await proxy.register_client(client)
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+            state="s",
+            code_challenge="c" * 43,
+            scopes=["read"],
+        )
+        await proxy.authorize(client, params)
+        await self._drain_cull(proxy)
 
-        assert _entry_files(isolated_home) == []
-
-    def test_startup_cull_without_running_loop(self, jwt_verifier, isolated_home):
-        """The sync-construction path drives the cull inline on a private loop."""
-        created: list[OAuthProxy] = []
-
-        def build() -> None:
-            created.append(self.create_proxy(jwt_verifier))
-
-        thread = threading.Thread(target=build)
-        thread.start()
-        thread.join()
-        store = created[0]._default_file_store
-        assert store is not None
-
-        async def seed() -> None:
-            await store.put("stale", {"v": 1}, collection="c", ttl=0.05)
-
-        asyncio.run(seed())
-        # Let the entry expire, then construct a second proxy with no event
-        # loop running: the startup cull runs inline in the constructor.
-        time.sleep(0.2)
-        assert len(_entry_files(isolated_home)) == 1
-        thread = threading.Thread(target=build)
-        thread.start()
-        thread.join()
-
-        assert _entry_files(isolated_home) == []
-
-    def test_startup_cull_preserves_current_event_loop(
-        self, jwt_verifier, isolated_home
-    ):
-        """Constructing the proxy must not reset the thread's current event loop."""
-        observed: list[bool] = []
-
-        def build() -> None:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                self.create_proxy(jwt_verifier)
-                observed.append(asyncio.get_event_loop() is loop)
-            finally:
-                asyncio.set_event_loop(None)
-                loop.close()
-
-        thread = threading.Thread(target=build)
-        thread.start()
-        thread.join()
-
-        assert observed == [True]
+        assert await store.get("stale", collection="c") is None

@@ -817,27 +817,7 @@ Configure the following parameters together: provide a unique `jwt_signing_key` 
 
 #### Expired state cleanup
 
-The default file store accumulates expired entries on disk (authorization transaction state, auth codes, upstream tokens, and JTI mappings). FastMCP reaps them once when the proxy is constructed. Entries without a TTL (e.g. DCR client registrations) are left untouched, and a custom `client_storage` is never culled.
-
-For long-lived deployments that rarely restart, schedule your own culls with the public hook:
-
-```python
-import asyncio
-
-from fastmcp.server.auth import OAuthProxy
-
-auth = OAuthProxy(...)  # default file store
-
-
-async def cull_hourly():
-    while True:
-        await asyncio.sleep(3600)
-        await auth.cull_expired_oauth_state()
-
-
-# Start this in your server lifespan (or any scheduler you already run)
-# and cancel it when the server shuts down.
-```
+The default file store accumulates expired entries on disk (authorization transaction state, auth codes, upstream tokens, and JTI mappings). FastMCP reaps them in the background as the proxy handles OAuth traffic, at most once an hour, and the first flow after a restart clears whatever previous runs left behind. Entries without a TTL (e.g. DCR client registrations) are left untouched, and a custom `client_storage` is never culled: expiry there is the backend's job.
 
 ### Confused Deputy Attacks
 
