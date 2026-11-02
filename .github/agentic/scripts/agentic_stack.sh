@@ -20,7 +20,7 @@ case "${1:-}" in
   validate)
     scratch=$(mktemp -d)
     trap 'rm -rf "$scratch"' EXIT
-    for role in assess reproduce prepare review triage_review; do
+    for role in assess reproduce triage_review; do
       jq '{plan: .}' "workflows/fastmcp-stack-$role.plan.json" > "$scratch/$role.json"
       api POST /execution-plans/validate --data "@$scratch/$role.json" | jq -e '.valid == true'
     done
@@ -36,7 +36,7 @@ case "${1:-}" in
     }
     FASTMCP_AGENTIC_REF=$revision uv run --locked prefect --no-prompt deploy \
       --prefect-file prefect.yaml \
-      --name cloud-stack-batch --name cloud-stack-validation --name cloud-contribution-verification --name cloud-triage-intake \
+      --name cloud-stack-batch --name cloud-contribution-verification --name cloud-triage-intake \
       --name cloud-triage-verify --name cloud-triage-finalize
     ;;
   intake)
@@ -67,16 +67,14 @@ case "${1:-}" in
       > "$scratch/request.json"
     api POST "/deployments/$deployment/create_flow_run" --data "@$scratch/request.json"
     ;;
-  results|mutations)
+  results)
     run=${2:?controller run UUID required}
     [[ $run =~ ^[0-9a-f-]{36}$ ]] || exit 2
     scratch=$(mktemp -d)
     trap 'rm -rf "$scratch"' EXIT
     api GET "/flow_runs/$run" > "$scratch/run.json"
     jq '{id,state_type,state_name,parameters:{batch:.parameters.batch}}' "$scratch/run.json"
-    suffix=review-bins
-    if [[ $1 == mutations ]]; then suffix=mutation-batch; fi
-    key=$(jq -er --arg suffix "$suffix" '.parameters.batch.id + "-" + $suffix' "$scratch/run.json")
+    key=$(jq -er '.parameters.batch.id + "-review-bins"' "$scratch/run.json")
     jq -n --arg run "$run" --arg key "$key" \
       '{artifacts:{key:{any_:[$key]}},flow_runs:{id:{any_:[$run]}},limit:2}' > "$scratch/filter.json"
     api POST /artifacts/filter --data "@$scratch/filter.json" | jq -e 'if length==1 then .[0].data else error("Final review bins not available; inspect the run and retained stage artifacts") end'
@@ -141,7 +139,7 @@ case "${1:-}" in
     jq -n --slurpfile deployments "$scratch/deployments.json" --rawfile body workflows/events/failure-notification.txt.j2 --arg notify "$notify" '
       ([$deployments[0][].id | "prefect.deployment." + .]) as $scope |
       {name:"fastmcp-triage-failure-alert",
-       description:"Notify once per failed or degraded intake; child failures are retained in the intake review queue",
+       description:"Notify once per failed or degraded intake; child failures are retained in the controller review bins",
        enabled:true,
        trigger:{type:"event",posture:"Reactive",threshold:1,within:0,
          expect:["prefect.flow-run.Failed","prefect.flow-run.Crashed","prefect.flow-run.TimedOut","prefect.flow-run.Degraded"],
