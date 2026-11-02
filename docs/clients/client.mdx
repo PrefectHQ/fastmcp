@@ -181,6 +181,16 @@ async with client:
     tools = await client.list_tools()
 ```
 
+Every connection also tells the server who is calling. By default a FastMCP client identifies itself as `fastmcp` at the installed FastMCP version. Servers see this in their logs and middleware, so an application that wants to be recognized on its own should pass `client_info`:
+
+```python
+from mcp.types import Implementation
+from fastmcp import Client
+
+client_info = Implementation(name="my-agent", version="1.0.0")
+client = Client("https://example.com/mcp", client_info=client_info)
+```
+
 ## Protocol negotiation
 
 <VersionBadge version="4.0.0" />

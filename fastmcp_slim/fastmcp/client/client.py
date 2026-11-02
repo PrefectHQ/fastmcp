@@ -318,6 +318,8 @@ class Client(
         timeout: Optional timeout for requests (seconds or timedelta)
         init_timeout: Optional timeout for initial connection (seconds or timedelta).
             Set to 0 to disable. If None, uses the value in the FastMCP global settings.
+        client_info: The identity this client declares to servers. Defaults to
+            `fastmcp` and the installed FastMCP version.
         mode: Protocol-era negotiation at connect time. `"auto"` (the default) probes
             `server/discover` and negotiates the modern era, denylist-falling-back to the
             initialize handshake for any server that is not positive evidence of a modern
@@ -565,7 +567,8 @@ class Client(
             "log_level": "debug",
             "message_handler": effective_message_handler,
             "read_timeout_seconds": read_timeout_seconds,
-            "client_info": client_info,
+            "client_info": client_info
+            or mcp_types.Implementation(name="fastmcp", version=fastmcp.__version__),
             **self._build_extension_kwargs(),
         }
 
