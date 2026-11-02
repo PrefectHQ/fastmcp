@@ -1,9 +1,8 @@
 import Image from "next/image";
 import { ArrowRight } from "lucide-react";
-import { BrandIcon, ICONS } from "@/components/brand-icons";
 import { CodeBlock } from "@/components/code-block";
 import { Section, SectionHeading } from "@/components/section";
-import { GITHUB_TS, docs } from "@/lib/links";
+import { docs } from "@/lib/links";
 
 const PILLARS = [
   {
@@ -46,7 +45,7 @@ export function Pillars() {
     <Section bordered name="pillars">
       <SectionHeading
         title="Servers, clients and apps share one model"
-        lede="FastMCP owns the protocol machinery. Your code defines what the application does. The three pillars use the same decorators, the same types and the same auth, so what you learn on one carries to the others."
+        lede="FastMCP owns the protocol machinery. Your code defines what the application does. The three pillars share the same decorators, types and auth, in Python and in FastMCP for TypeScript from the same team, so what you learn on one carries to the others."
       />
       <div className="mt-14 grid gap-6 lg:grid-cols-3">
         {PILLARS.map((pillar) => (
@@ -80,14 +79,6 @@ export function Pillars() {
           </article>
         ))}
       </div>
-      <p className="mt-10 flex flex-wrap items-center gap-x-2 gap-y-1 text-body-s text-muted-foreground">
-        <BrandIcon icon={ICONS.typescript} className="h-4 w-4 text-white/60" />
-        Building in TypeScript?
-        <a href={GITHUB_TS} target="_blank" rel="noopener noreferrer" className="font-medium text-white underline-offset-4 hover:underline">
-          FastMCP for TypeScript
-        </a>
-        is the official counterpart from the same team, with the same servers, clients and apps.
-      </p>
     </Section>
   );
 }

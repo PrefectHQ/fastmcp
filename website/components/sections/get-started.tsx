@@ -1,6 +1,6 @@
 import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { Section, SectionHeading } from "@/components/section";
-import { docs, prefect } from "@/lib/links";
+import { GITHUB_TS, docs, prefect } from "@/lib/links";
 
 type Guide = { title: string; body: string; href: string; external?: boolean };
 
@@ -39,6 +39,12 @@ const LEARN: Guide[] = [
     title: "Use it from Claude Code, Cursor or ChatGPT",
     body: "Install a server into the client you work in, including the config it expects.",
     href: docs("integrations/claude-code"),
+  },
+  {
+    title: "The same framework in TypeScript",
+    body: "FastMCP for TypeScript, from the same team: servers, clients and apps with the same concepts, one npm install away.",
+    href: GITHUB_TS,
+    external: true,
   },
   {
     title: "Upgrading to FastMCP 4",

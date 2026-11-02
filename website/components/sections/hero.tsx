@@ -67,7 +67,7 @@ export function Hero({ stats }: { stats: ProjectStats }) {
             The framework for MCP
           </h1>
           <p className="mt-6 max-w-xl text-body-l leading-relaxed text-muted-foreground [text-wrap:pretty] md:text-[20px] md:leading-[1.5]">
-            Build MCP servers, clients and interactive apps in ordinary Python. FastMCP derives
+            Build MCP servers, clients and interactive apps in ordinary Python or TypeScript. FastMCP derives
             the schemas, validates every call and handles transport and auth, so your code stays
             about your application.
           </p>

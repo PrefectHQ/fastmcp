@@ -10,7 +10,6 @@ import {
   RELEASES,
   X_PROFILE,
   docs,
-  gatewaySignup,
   prefect,
 } from "@/lib/links";
 import { BrandIcon, ICONS } from "./brand-icons";
@@ -30,6 +29,7 @@ const COLUMNS: Array<{ title: string; links: FooterLink[] }> = [
       { label: "Upgrade guides", href: docs("getting-started/upgrading/from-fastmcp-3") },
       { label: "Agent setup", href: AGENTS_SETUP, external: true },
       { label: "llms.txt", href: "/llms.txt" },
+      { label: "FastMCP for TypeScript", href: GITHUB_TS, external: true },
     ],
   },
   {
@@ -45,15 +45,13 @@ const COLUMNS: Array<{ title: string; links: FooterLink[] }> = [
     ],
   },
   {
-    title: "Deploy",
+    title: "FastMCP Gateway",
     links: [
-      { label: "FastMCP Gateway", href: prefect("/fastmcp", "footer"), external: true },
-      { label: "Start free", href: gatewaySignup("footer"), external: true },
+      { label: "Overview", href: prefect("/fastmcp", "footer"), external: true },
       { label: "Deployment guide", href: docs("deployment/fastmcp-gateway") },
       { label: "MCP hosting", href: prefect("/fastmcp/hosting", "footer"), external: true },
       { label: "Private registry", href: prefect("/fastmcp/registry", "footer"), external: true },
       { label: "Remix servers", href: prefect("/fastmcp/remix", "footer"), external: true },
-      { label: "Pricing", href: prefect("/pricing", "footer"), external: true },
     ],
   },
   {
@@ -62,9 +60,7 @@ const COLUMNS: Array<{ title: string; links: FooterLink[] }> = [
       { label: "About Prefect", href: prefect("/company", "footer"), external: true },
       { label: "Prefect open source", href: prefect("/prefect/open-source", "footer"), external: true },
       { label: "Prefect blog", href: prefect("/blog", "footer"), external: true },
-      { label: "Careers", href: prefect("/careers", "footer"), external: true },
       { label: "Security", href: prefect("/security", "footer"), external: true },
-      { label: "Talk to an engineer", href: prefect("/contact-sales/fastmcp", "footer"), external: true },
     ],
   },
   {
@@ -146,12 +142,6 @@ export function Footer() {
         </div>
         <div className="mt-6 flex flex-col gap-2 text-[12px] text-white/40 sm:flex-row sm:justify-between">
           <p>© {new Date().getFullYear()} Prefect Technologies, Inc. FastMCP is Apache 2.0 licensed.</p>
-          <p>
-            TypeScript?{" "}
-            <a href={GITHUB_TS} target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:text-white hover:underline">
-              FastMCP for TypeScript
-            </a>
-          </p>
         </div>
       </div>
     </footer>
