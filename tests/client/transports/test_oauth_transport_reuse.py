@@ -12,10 +12,12 @@ from typing import Any
 
 import pytest
 
+from fastmcp import Client
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.group import ClientGroup
 from fastmcp.client.transports import ClientTransport, StreamableHttpTransport
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes, RemoteMCPServer
+from fastmcp.server import create_proxy
 from fastmcp.server.auth.auth import ClientRegistrationOptions
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
 from fastmcp.server.server import FastMCP
@@ -169,5 +171,53 @@ async def test_one_authorization_per_configured_server(oauth_backend, monkeypatc
         async with ClientGroup.from_config(config) as group:
             tools = await group.list_tools()
             assert [tool.name for tool in tools] == ["secure_add"]
+
+    assert provider.authorizations == 1
+
+
+@pytest.fixture
+async def plain_backend():
+    """A reachable no-auth server, so the proxy has a second configured leg."""
+    port = find_available_port()
+    server = FastMCP("PlainBackend")
+
+    @server.tool
+    def label() -> str:
+        return "plain"
+
+    async with run_server_async(server, port=port) as url:
+        yield url
+
+
+async def test_multi_server_proxy_authorizes_once(
+    oauth_backend, plain_backend, monkeypatch
+):
+    """The topology from the report: one plain and one OAuth server behind a proxy.
+
+    `create_proxy` with a multi-server `MCPConfig` mounts a router that builds a
+    backend client per request, which is the path that re-authorised on every
+    call. The one-server `ClientGroup` case above never reaches it, so this
+    walks the reported path end to end: repeated calls to the prefixed OAuth
+    tool across two proxy connections, one exchange in total.
+    """
+    url, provider, transport = oauth_backend
+    monkeypatch.setattr(OAuth, "redirect_handler", HeadlessOAuth.redirect_handler)
+    monkeypatch.setattr(OAuth, "callback_handler", HeadlessOAuth.callback_handler)
+
+    config = MCPConfig.from_dict(
+        {
+            "mcpServers": {
+                "plain": {"url": plain_backend},
+                "secure": {"url": url, "auth": "oauth", "transport": transport},
+            }
+        }
+    )
+    proxy = create_proxy(config)
+
+    for _ in range(2):
+        async with Client(proxy) as client:
+            for _ in range(2):
+                result = await client.call_tool("secure_add", {"a": 1, "b": 2})
+                assert result.data == 3
 
     assert provider.authorizations == 1
