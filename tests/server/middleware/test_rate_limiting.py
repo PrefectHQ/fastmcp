@@ -368,8 +368,8 @@ class TestRateLimitingMiddleware:
     ):
         current_time = 0.0
         monkeypatch.setattr(
-            "fastmcp.server.middleware.rate_limiting.time.time",
-            lambda: current_time,
+            "fastmcp.server.middleware.rate_limiting.time",
+            SimpleNamespace(monotonic=lambda: current_time),
         )
 
         def get_client_id(context):
@@ -408,8 +408,8 @@ class TestRateLimitingMiddleware:
     ):
         current_time = 0.0
         monkeypatch.setattr(
-            "fastmcp.server.middleware.rate_limiting.time.time",
-            lambda: current_time,
+            "fastmcp.server.middleware.rate_limiting.time",
+            SimpleNamespace(monotonic=lambda: current_time),
         )
         cache = _PerClientLimiterCache(object, idle_timeout=1)
         limiter = await cache.acquire("active")

@@ -54,7 +54,7 @@ class _PerClientLimiterCache(Generic[LimiterT]):
 
     async def acquire(self, client_id: str) -> LimiterT:
         async with self._lock:
-            now = time.time()
+            now = time.monotonic()
             self._prune_idle(now)
 
             limiter = self.limiters.get(client_id)
@@ -74,7 +74,7 @@ class _PerClientLimiterCache(Generic[LimiterT]):
         # prevents the corresponding limiter from being reclaimed.
         with anyio.CancelScope(shield=True):
             async with self._lock:
-                self._last_used[client_id] = time.time()
+                self._last_used[client_id] = time.monotonic()
                 self._last_used.move_to_end(client_id)
                 active = self._active_requests.get(client_id, 0)
                 if active <= 1:
