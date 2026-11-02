@@ -979,7 +979,10 @@ class FastMCP(
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext(
-                    message={},
+                    # Synthesized with only `method`: params stays None, so
+                    # pagination state (e.g. the client's nextCursor) is not
+                    # visible to list middleware hooks.
+                    message=mcp_types.ListResourcesRequest(method="resources/list"),
                     source="client",
                     type="request",
                     method="resources/list",
@@ -1128,7 +1131,12 @@ class FastMCP(
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext(
-                    message={},
+                    # Synthesized with only `method`: params stays None, so
+                    # pagination state (e.g. the client's nextCursor) is not
+                    # visible to list middleware hooks.
+                    message=mcp_types.ListResourceTemplatesRequest(
+                        method="resources/templates/list"
+                    ),
                     source="client",
                     type="request",
                     method="resources/templates/list",
@@ -1268,7 +1276,10 @@ class FastMCP(
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext(
-                    message={},
+                    # Synthesized with only `method`: params stays None, so
+                    # pagination state (e.g. the client's nextCursor) is not
+                    # visible to list middleware hooks.
+                    message=mcp_types.ListPromptsRequest(method="prompts/list"),
                     source="client",
                     type="request",
                     method="prompts/list",
