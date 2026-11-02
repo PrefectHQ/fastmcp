@@ -4,6 +4,7 @@ import re
 from collections import Counter
 from typing import Any
 
+from fastmcp.utilities.json_schema import ref_target_name
 from fastmcp.utilities.logging import get_logger
 
 from .json_schema_converter import convert_openapi_schema_to_json_schema
@@ -732,7 +733,12 @@ def _combine_schemas_and_map_params(
                     if "$ref" in value and isinstance(value["$ref"], str):
                         ref = value["$ref"]
                         if ref.startswith("#/$defs/"):
-                            used_refs.add(ref.split("/")[-1])
+                            # Decode the pointer name: escaped and
+                            # percent-encoded definitions are keyed by their
+                            # decoded names in $defs.
+                            def_name = ref_target_name(ref)
+                            if def_name is not None:
+                                used_refs.add(def_name)
                     for v in value.values():
                         find_refs_in_value(v)
                 elif isinstance(value, list):
