@@ -702,6 +702,23 @@ A single value still arrives as a one-element list, so the parameter's type is s
 
 A URI fragment (`#section`) is not part of the resource identity. FastMCP drops it before matching, so `data://42?format=json#top` yields `id="42"` and `format="json"`. A template that contains a literal `#` is matched against the full URI, fragment included.
 
+**Required query parameters:**
+
+A `{?param}` block is always optional. When a resource cannot be read without a query value, write the query into the template as literal text and put a regular placeholder where the value goes. The placeholder then behaves like a path parameter: it maps to a required function parameter, and a URI without that key does not match the template.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="SearchServer")
+
+@mcp.resource("search://items?q={q}")
+def search_items(q: str) -> str:
+    """Search items by a required query."""
+    return f"Results for {q}"
+```
+
+Reading `search://items?q=shoes` calls `search_items("shoes")`. The value runs up to the next `&` and may be empty or contain `/`, so `search://items?q=` passes an empty string. An `&` that belongs to the value must be percent-encoded. Only the keys written in the template are accepted: `search://items?q=shoes&page=2` does not match, so add `&page={page}` to the template when the resource needs a second key. A literal query cannot be combined with a `{?param}` block in the same template.
+
 **Query parameters vs. hidden defaults:**
 
 Query parameters expose optional configuration to clients. To hide optional parameters from clients entirely (always use defaults), simply omit them from the URI template:
