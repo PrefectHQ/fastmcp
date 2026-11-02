@@ -1,11 +1,45 @@
 import type { NextConfig } from "next";
 import { DOCS_ORIGIN } from "./lib/docs-proxy";
 
+// Every docs section that lived at the domain root before the homepage
+// existed, from docs/docs.json and the v2/v3 navigation files. Listed
+// explicitly rather than as a catch-all so a future page at the root is
+// never shadowed by a docs redirect.
+const DOCS_SECTIONS = [
+  "apps",
+  "changelog",
+  "cli",
+  "clients",
+  "community",
+  "deployment",
+  "development",
+  "getting-started",
+  "integrations",
+  "more",
+  "patterns",
+  "python-sdk",
+  "servers",
+  "tutorials",
+  "updates",
+  "v2",
+  "v3",
+];
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   typedRoutes: true,
   experimental: {
     optimizePackageImports: ["lucide-react"],
+  },
+  async redirects() {
+    // The docs moved from the root to /docs. 308 keeps the method and
+    // consolidates link equity on the new URLs; the exact section path and
+    // its children are separate rules so an empty `:path*` never produces a
+    // trailing slash.
+    return DOCS_SECTIONS.flatMap((section) => [
+      { source: `/${section}`, destination: `/docs/${section}`, permanent: true },
+      { source: `/${section}/:path*`, destination: `/docs/${section}/:path*`, permanent: true },
+    ]);
   },
   async rewrites() {
     return {
