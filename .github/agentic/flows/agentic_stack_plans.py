@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import re
 from pathlib import Path
@@ -205,8 +206,30 @@ Bound each probe subprocess to 30 seconds. An MRE may be the final useful result
 }
 
 
-def build_plans(directory: Path) -> dict[str, dict]:
-    models = json.loads((directory / "stack-models.json").read_text())
+def tier_models(models: dict, tier: str | None) -> dict:
+    """Resolve a named model tier from stack-models.json.
+
+    A tier replaces the connection and any roles it names; unnamed roles keep
+    the default model. Each tier is registered as its own plan flows, and a
+    batch picks a tier by passing those plans in its runtime.
+    """
+    if tier is None:
+        return models
+    override = models["tiers"][tier]
+    return {
+        "connection_id": override.get("connection_id", models["connection_id"]),
+        "roles": {**models["roles"], **override.get("roles", {})},
+    }
+
+
+def plan_suffix(tier: str | None) -> str:
+    return "" if tier is None else f".{tier}"
+
+
+def build_plans(directory: Path, tier: str | None = None) -> dict[str, dict]:
+    models = tier_models(
+        json.loads((directory / "stack-models.json").read_text()), tier
+    )
     result = {}
     for role, output in OUTPUTS.items():
         model_role = "triage" if role == "assess" else role
@@ -269,8 +292,10 @@ def build_plans(directory: Path) -> dict[str, dict]:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--tier", help="named tier from stack-models.json")
+    arguments = parser.parse_args()
     directory = Path(__file__).resolve().parents[1] / "workflows"
-    for role, plan in build_plans(directory).items():
-        (directory / f"fastmcp-stack-{role}.plan.json").write_text(
-            json.dumps(plan, indent=2) + "\n"
-        )
+    for role, plan in build_plans(directory, arguments.tier).items():
+        name = f"fastmcp-stack-{role}{plan_suffix(arguments.tier)}.plan.json"
+        (directory / name).write_text(json.dumps(plan, indent=2) + "\n")
