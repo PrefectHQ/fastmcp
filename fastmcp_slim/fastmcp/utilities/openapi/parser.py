@@ -530,9 +530,13 @@ class OpenAPIParser(
                                 if isinstance(ref_str, str) and ref_str.startswith(
                                     "#/components/schemas/"
                                 ):
-                                    top_level_schema_name = ref_str.removeprefix(
+                                    pointer = ref_str.removeprefix(
                                         "#/components/schemas/"
                                     )
+                                    # Only a whole component is a top-level
+                                    # schema; a pointer into one is not.
+                                    if "/" not in pointer:
+                                        top_level_schema_name = pointer
 
                             schema_dict = self._extract_schema_as_dict(media_schema)
                             # Add marker for top-level schema if it was a ref
