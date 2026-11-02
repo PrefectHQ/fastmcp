@@ -2,8 +2,15 @@
 
 import re
 from collections import Counter
+from collections.abc import Iterator
 from typing import Any
 
+from fastmcp.utilities.json_schema import (
+    _SUBSCHEMA_LIST_KEYS,
+    _SUBSCHEMA_MAP_KEYS,
+    _SUBSCHEMA_VALUE_KEYS,
+    _copy_schema,
+)
 from fastmcp.utilities.logging import get_logger
 
 from .json_schema_converter import (
@@ -890,11 +897,11 @@ def extract_output_schema_from_responses(
     """
     Extract output schema from OpenAPI responses for use as MCP tool output schema.
 
-    This function finds the first successful response (200, 201, 202, 204) with a
-    JSON-compatible content type and extracts its schema. If the schema is not an
-    object type, it wraps it to comply with MCP requirements. When any successful
-    response has no content, there is no output schema, since the operation may
-    answer without a body.
+    The primary success response keeps its existing schema. Distinct JSON
+    schemas from other declared successes form a union, since any of them can
+    be returned by the operation. Non-object results are wrapped to comply
+    with MCP requirements. If any successful response has no content, there
+    is no output schema, since the operation may answer without a body.
 
     Args:
         responses: Dictionary of ResponseInfo objects keyed by status code
@@ -935,6 +942,48 @@ def extract_output_schema_from_responses(
     if response_info is None or not response_info.content_schema:
         return None
 
+    primary_schema = _extract_response_output_schema(
+        response_info, schema_definitions, openapi_version
+    )
+    if primary_schema is None:
+        return None
+
+    output_schemas = [primary_schema]
+    for status_code, alternative in responses.items():
+        if alternative is response_info or not status_code.startswith("2"):
+            continue
+        # Other media types retain their existing handling. This union covers
+        # JSON successes, whose structured content is validated by MCP clients.
+        json_content = {
+            media_type: schema
+            for media_type, schema in alternative.content_schema.items()
+            if (normalized := media_type.split(";", 1)[0].strip().lower())
+            in {"application/json", "text/json"}
+            or normalized.endswith("+json")
+        }
+        if not json_content:
+            continue
+        schema = _extract_response_output_schema(
+            ResponseInfo(content_schema=json_content),
+            schema_definitions,
+            openapi_version,
+        )
+        if schema is None:
+            return None
+        if schema not in output_schemas:
+            output_schemas.append(schema)
+
+    if len(output_schemas) == 1:
+        return primary_schema
+    return _combine_response_output_schemas(output_schemas)
+
+
+def _extract_response_output_schema(
+    response_info: ResponseInfo,
+    schema_definitions: dict[str, Any] | None,
+    openapi_version: str | None,
+) -> dict[str, Any] | None:
+    """Convert one response using the established media-type and wrapping rules."""
     # Prefer application/json, then fall back to other JSON-compatible types
     json_compatible_types = [
         "application/json",
@@ -1038,6 +1087,87 @@ def extract_output_schema_from_responses(
         output_schema["$defs"] = {**processed_defs, **inline_defs}
 
     return output_schema
+
+
+def _combine_response_output_schemas(schemas: list[dict[str, Any]]) -> dict[str, Any]:
+    """Union response contracts without dropping validation or duplicating $defs."""
+    # Keep the primary response's wire format. When it is an object, only
+    # non-object alternatives use the runtime's existing "result" fallback.
+    wrap_result = bool(schemas[0].get("x-fastmcp-wrap-result"))
+    branches = []
+    definitions: dict[str, Any] = {}
+    conflicting_defs = False
+    for schema in schemas:
+        for name, definition in schema.get("$defs", {}).items():
+            if name in definitions and definitions[name] != definition:
+                conflicting_defs = True
+            definitions[name] = definition
+
+    # Usually all responses share the operation's component definitions. Inline
+    # $defs may instead use the same name for different schemas; those need
+    # separate roots so one successful response cannot overwrite another.
+    if conflicting_defs:
+        definitions = {}
+    for index, schema in enumerate(schemas):
+        if wrap_result and schema.get("x-fastmcp-wrap-result"):
+            branch = _copy_schema(schema["properties"]["result"])
+        else:
+            branch = _copy_schema(schema)
+            branch.pop("x-fastmcp-wrap-result", None)
+        if conflicting_defs:
+            branch["$defs"] = _copy_schema(schema.get("$defs", {}))
+        else:
+            branch.pop("$defs", None)
+
+        # A local pointer into a response's own properties must also keep that
+        # root after nesting under anyOf (shared #/$defs pointers can stay put).
+        local_refs = [
+            node
+            for node in _response_schema_nodes(branch)
+            if isinstance(ref := node.get("$ref"), str)
+            and ref.startswith("#/")
+            and (conflicting_defs or not ref.startswith("#/$defs/"))
+        ]
+        if local_refs:
+            name = f"Response{index}"
+            while name in definitions:
+                name = f"_{name}"
+            prefix = f"#/$defs/{name}"
+            for node in local_refs:
+                node["$ref"] = prefix + node["$ref"][1:]
+            definitions[name] = branch
+            branch = {"$ref": prefix}
+        branches.append(branch)
+
+    union: dict[str, Any] = {"anyOf": branches}
+    if wrap_result:
+        result: dict[str, Any] = {
+            "type": "object",
+            "properties": {"result": union},
+            "required": ["result"],
+            "x-fastmcp-wrap-result": True,
+        }
+    else:
+        result = {"type": "object", **union}
+    if definitions:
+        result["$defs"] = definitions
+    return result
+
+
+def _response_schema_nodes(schema: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    """Walk schema containers without interpreting literal example/default data."""
+    stack: list[Any] = [schema]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            yield node
+            for key, value in node.items():
+                if key in _SUBSCHEMA_MAP_KEYS and isinstance(value, dict):
+                    stack.extend(value.values())
+                elif key in _SUBSCHEMA_VALUE_KEYS or key in _SUBSCHEMA_LIST_KEYS:
+                    stack.append(value)
+        elif isinstance(node, list):
+            stack.extend(node)
 
 
 # Export public symbols

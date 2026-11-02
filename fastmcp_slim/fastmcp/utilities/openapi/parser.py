@@ -433,7 +433,7 @@ class OpenAPIParser(
     def _get_primary_success_response(
         self, operation_responses: dict[str, Any]
     ) -> tuple[str, Any] | None:
-        """Get the primary success response for an MCP tool. We only need one success response."""
+        """Get the primary success response for MIME inference and schema ordering."""
         if not operation_responses:
             return None
 
@@ -453,45 +453,21 @@ class OpenAPIParser(
         # If no success codes found, return None (tool will have no output schema)
         return None
 
-    def _extract_bodiless_success_responses(
-        self, operation_responses: dict[str, Any], primary_status_code: str
-    ) -> dict[str, ResponseInfo]:
-        """Extract the success responses, besides the primary one, that declare no body.
-
-        Such a response (e.g. a 204 next to a 201) means the operation may answer
-        without a body, so the tool cannot promise structured output.
-        """
-        bodiless_responses: dict[str, ResponseInfo] = {}
-        for status_code, resp_or_ref in operation_responses.items():
-            if status_code == primary_status_code or not str(status_code).startswith(
-                "2"
-            ):
-                continue
-            try:
-                response = self._resolve_ref(resp_or_ref)
-            except ValueError as e:
-                logger.debug(f"Skipping unresolved response {status_code}: {e}")
-                continue
-            if isinstance(response, self.response_cls) and not response.content:
-                bodiless_responses[str(status_code)] = ResponseInfo(
-                    description=response.description
-                )
-        return bodiless_responses
-
     def _extract_responses(
-        self, operation_responses: dict[str, Any] | None
+        self, operation_responses: dict[str, Any] | None, *, json_only: bool = False
     ) -> dict[str, ResponseInfo]:
         """Extract and resolve response information.
 
-        Only includes the primary success response for MCP tools, plus any other
-        success response that has no body.
+        Keeps the primary response and other JSON or bodiless successes,
+        without importing error schemas into the tool's output schema.
         """
         extracted_responses: dict[str, ResponseInfo] = {}
 
         if not operation_responses:
             return extracted_responses
 
-        # For MCP tools, we only need the primary success response
+        # Keep the primary response first for MIME inference and the established
+        # single-response output schema, then collect other declared successes.
         primary_response = self._get_primary_success_response(operation_responses)
         if not primary_response:
             logger.debug("No success responses found, tool will have no output schema")
@@ -516,6 +492,13 @@ class OpenAPIParser(
             # Extract content schemas
             if hasattr(response, "content") and response.content:
                 for media_type_str, media_type_obj in response.content.items():
+                    if json_only:
+                        media_type = media_type_str.split(";", 1)[0].strip().lower()
+                        if media_type not in {
+                            "application/json",
+                            "text/json",
+                        } and not media_type.endswith("+json"):
+                            continue
                     if (
                         media_type_obj
                         and hasattr(media_type_obj, "media_type_schema")
@@ -565,6 +548,9 @@ class OpenAPIParser(
                         # type inference can still use the declared content type.
                         resp_info.content_schema.setdefault(media_type_str, {})
 
+                if json_only and not resp_info.content_schema:
+                    return extracted_responses
+
             extracted_responses[str(status_code)] = resp_info
         except ValueError as e:
             # Re-raise ValueError for external reference errors
@@ -584,9 +570,13 @@ class OpenAPIParser(
                 exc_info=False,
             )
 
-        extracted_responses.update(
-            self._extract_bodiless_success_responses(operation_responses, status_code)
-        )
+        for other_status, other_response in operation_responses.items():
+            if other_status != status_code and str(other_status).startswith("2"):
+                extracted_responses.update(
+                    self._extract_responses(
+                        {other_status: other_response}, json_only=True
+                    )
+                )
         return extracted_responses
 
     def _extract_schema_dependencies(

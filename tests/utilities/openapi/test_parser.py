@@ -553,7 +553,7 @@ class TestParameterExamples:
 class TestBodilessSuccessResponses:
     """Test which success responses the parser keeps for an operation."""
 
-    def test_only_primary_and_bodiless_success_responses_are_extracted(self):
+    def test_json_and_bodiless_success_responses_are_extracted(self):
         json_content = {"application/json": {"schema": {"type": "object"}}}
         spec = {
             "openapi": "3.0.0",
@@ -567,6 +567,12 @@ class TestBodilessSuccessResponses:
                             "202": {"description": "Accepted"},
                             "204": {"$ref": "#/components/responses/NoContent"},
                             "206": {"description": "Partial", "content": json_content},
+                            "207": {
+                                "description": "Other media",
+                                "content": {
+                                    "application/pdf": {"schema": {"type": "string"}}
+                                },
+                            },
                             "404": {"description": "Not found"},
                             "default": {"description": "Error"},
                         },
@@ -578,7 +584,7 @@ class TestBodilessSuccessResponses:
 
         (route,) = parse_openapi_to_http_routes(spec)
 
-        assert list(route.responses) == ["201", "202", "204"]
+        assert list(route.responses) == ["201", "202", "204", "206"]
         assert route.responses["201"].content_schema == {
             "application/json": {"type": "object"}
         }

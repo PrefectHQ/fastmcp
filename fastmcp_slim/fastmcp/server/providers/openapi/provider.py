@@ -264,8 +264,19 @@ class OpenAPIProvider(Provider):
     ) -> None:
         """Create and register an OpenAPITool."""
         combined_schema = route.flat_param_schema
+        responses = route.responses
+        if not self._validate_output and responses:
+            # The parser keeps the primary response first. With validation
+            # disabled, retain its existing wrapping behavior (and the
+            # schema-free behavior of operations with a bodiless success).
+            primary_status = next(iter(responses))
+            responses = {
+                status: response
+                for status, response in responses.items()
+                if status == primary_status or not response.content_schema
+            }
         output_schema = extract_output_schema_from_responses(
-            route.responses,
+            responses,
             route.response_schemas,
             route.openapi_version,
         )

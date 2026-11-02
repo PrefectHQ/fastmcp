@@ -90,6 +90,12 @@ Use `timeout=None` on the HTTP client to disable timeouts, or an `httpx2.Timeout
 
 If you omit the `client` argument, FastMCP creates an HTTP client with a 30-second timeout using the first server URL in your OpenAPI specification.
 
+### Successful response schemas
+
+With output validation enabled (the default), generated tools accept the JSON schemas of all declared successful responses. For example, an operation can return a completed report with HTTP 200 or a job identifier with HTTP 202, even when those bodies have different fields. Error and `default` response schemas do not broaden the tool's output schema. An operation that also declares a bodiless success, such as HTTP 204, has no output schema because it may return without structured content.
+
+The primary response keeps its existing result format. If it is an object, object responses appear directly in `structured_content`; non-object alternatives use a `{"result": value}` wrapper, also present in `Client.call_tool(...).data`. If the primary response is non-object, all results use that wrapper and `.data` exposes the unwrapped value. Use dictionary access for object results with multiple response schemas; `.data` does not reconstruct them as a single response dataclass. Setting `validate_output=False` retains the primary response's existing behavior.
+
 ## Upstream HTTP errors
 
 When an OpenAPI request receives a non-success status, FastMCP reports the status and reason to the MCP caller. HTTP 429 retains the rate-limit message, "Rate limited by upstream API, please retry later". If your HTTP client returns a redirect response, the error includes its `Location` header. Redirect following is controlled by the HTTP client configuration.
