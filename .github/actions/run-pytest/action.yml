@@ -59,17 +59,21 @@ runs:
 
         # pytest-timeout has no signal-based method on Windows, so it falls back
         # to the thread method, which dumps stacks and os._exit()s the process.
-        # Under a contended runner that turns a single slow test into a dead
-        # xdist worker, failing whichever unrelated test that worker happened to
-        # be running. Give parallel Windows runs more headroom so ordinary
-        # scheduling jitter does not take a worker down.
-        if [ "$RUNNER_OS" == "Windows" ] && [ "$MAX_PROCS" != "0" ]; then
-          TIMEOUT=$((TIMEOUT * 4))
+        # On a stalled runner (a 5s mkdir, a slow cold PowerShell) that kills
+        # the pytest process or xdist worker and blames whatever test happened
+        # to be running, so every Windows flake looked like a different test.
+        # Windows runs without per-test hard kills: Linux still enforces the
+        # timeouts (and catches real hangs), faulthandler dumps stacks for a
+        # slow Windows test without killing it, and the job's timeout-minutes
+        # is the backstop for a genuine Windows-only hang.
+        TIMEOUT_FLAGS="--timeout=$TIMEOUT"
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          TIMEOUT_FLAGS="-p no:timeout -o faulthandler_timeout=60"
         fi
 
         uv run --no-sync pytest \
           --inline-snapshot=disable \
-          --timeout=$TIMEOUT \
+          $TIMEOUT_FLAGS \
           --durations=50 \
           -m "$MARKER" \
           $PARALLEL_FLAGS \
