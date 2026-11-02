@@ -49,6 +49,22 @@ The code is ready before the domain moves. In order:
 Until step 2 is done, docs links on a local build 404 because the Mintlify
 origin has no `/docs` base path yet. The page itself renders regardless.
 
+## Analytics
+
+The same Amplitude setup as prefect.io and the docs' `fastmcp-analytics.js`:
+the `@amplitude/analytics-browser` SDK reporting to the shared Prefect project,
+sent through the same-origin `/api/t` proxy (remote config through
+`/api/sr-cfg`) rather than Amplitude's hosts. `components/analytics.tsx`
+sends one `Page View: FastMCP Website` per route, `cta_clicked` for buttons
+carrying `data-analytics-*` attributes (the `analytics` prop on `ButtonLink`),
+`Docs Link Clicked` for links into `/docs`, and `Website Outbound Clicked` for
+links that leave the domain, each stamped with the enclosing
+`data-analytics-section`. Links to Prefect domains carry the Amplitude device
+id so the visitor stays one user across sites.
+
+Tracking is off in `next dev` (set `NEXT_PUBLIC_ANALYTICS_IN_DEV=1` to test)
+and for visitors sending Global Privacy Control or Do Not Track.
+
 ## Design
 
 The site uses Prefect's design system so it reads as a sibling of prefect.io:

@@ -52,7 +52,7 @@ const FEATURES = [
 
 export function Features() {
   return (
-    <Section>
+    <Section name="features">
       <SectionHeading
         title="Everything you need to build on MCP"
         lede="An effective MCP application needs more than a function registry. Models need accurate schemas, callers need validated results, clients need compatible transports and production servers need auth. FastMCP treats all of it as framework work."

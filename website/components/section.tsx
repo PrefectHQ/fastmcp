@@ -7,10 +7,12 @@ export function Section({
   className,
   children,
   bordered = false,
+  name,
   ...rest
-}: ComponentProps<"section"> & { bordered?: boolean }) {
+}: ComponentProps<"section"> & { bordered?: boolean; name: string }) {
   return (
     <section
+      data-analytics-section={name}
       className={cn("py-24 md:py-32", bordered && "border-t border-white/10", className)}
       {...rest}
     >

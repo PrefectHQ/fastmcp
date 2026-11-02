@@ -103,7 +103,7 @@ function GuideList({ guides }: { guides: Guide[] }) {
 
 export function GetStarted() {
   return (
-    <Section bordered id="get-started">
+    <Section bordered id="get-started" name="get-started">
       <SectionHeading
         title="Get started"
         lede="Pick the guide that matches where you are. Each one is a short page in the docs, with code you can paste."

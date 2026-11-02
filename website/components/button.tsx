@@ -22,6 +22,8 @@ type ButtonLinkProps = Omit<ComponentProps<"a">, "href"> & {
   size?: keyof typeof SIZES;
   /** Leaves gofastmcp.com: opens in a new tab and shows the arrow. */
   external?: boolean;
+  /** Names the click for Amplitude (cta_clicked), read by components/analytics.tsx. */
+  analytics?: { name: string; section: string };
   children: ReactNode;
 };
 
@@ -30,6 +32,7 @@ export function ButtonLink({
   variant = "primary",
   size = "default",
   external = false,
+  analytics,
   className,
   children,
   ...rest
@@ -38,6 +41,14 @@ export function ButtonLink({
     <a
       href={href}
       {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+      {...(analytics
+        ? {
+            "data-analytics-event": "cta_clicked",
+            "data-analytics-cta-name": analytics.name,
+            "data-analytics-page-section": analytics.section,
+            "data-analytics-cta-variant": variant,
+          }
+        : {})}
       className={cn(
         "inline-flex items-center justify-center gap-1.5 rounded-[4px] text-button whitespace-nowrap transition-colors focus-visible:outline-none",
         VARIANTS[variant],

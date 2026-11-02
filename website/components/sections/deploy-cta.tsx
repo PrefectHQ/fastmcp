@@ -4,7 +4,7 @@ import { docs, gatewaySignup, prefect } from "@/lib/links";
 
 export function DeployCta() {
   return (
-    <section className="relative overflow-hidden border-t border-white/10 py-28 md:py-36">
+    <section data-analytics-section="final-cta" className="relative overflow-hidden border-t border-white/10 py-28 md:py-36">
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute inset-x-0 bottom-0 h-[60%] bg-[radial-gradient(70%_80%_at_50%_100%,rgba(254,150,85,0.22)_0%,rgba(32,132,171,0.12)_45%,transparent_100%)]" />
         <div className="absolute inset-x-0 bottom-0 h-px bg-[linear-gradient(90deg,transparent,rgba(250,205,150,0.6)_30%,rgba(138,222,255,0.6)_70%,transparent)]" />
@@ -19,10 +19,20 @@ export function DeployCta() {
           access control and audit trail are there when a team needs them.
         </p>
         <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <ButtonLink href={gatewaySignup("final-cta")} size="lg" external>
+          <ButtonLink
+            href={gatewaySignup("final-cta")}
+            size="lg"
+            external
+            analytics={{ name: "final_cta_deploy_free", section: "final-cta" }}
+          >
             Deploy for free
           </ButtonLink>
-          <ButtonLink href={docs("deployment/fastmcp-gateway")} variant="secondary" size="lg">
+          <ButtonLink
+            href={docs("deployment/fastmcp-gateway")}
+            variant="secondary"
+            size="lg"
+            analytics={{ name: "final_cta_deployment_guide", section: "final-cta" }}
+          >
             Read the deployment guide
           </ButtonLink>
         </div>

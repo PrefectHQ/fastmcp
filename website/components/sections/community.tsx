@@ -41,7 +41,7 @@ export function Community({ stats }: { stats: ProjectStats }) {
   ];
 
   return (
-    <Section bordered>
+    <Section bordered name="community">
       <div className="grid gap-12 lg:grid-cols-[1fr_1fr] lg:gap-16">
         <div>
           <SectionHeading

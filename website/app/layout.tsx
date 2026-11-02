@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Mono } from "next/font/google";
 import type { ReactNode } from "react";
+import { Analytics } from "@/components/analytics";
 import { SITE_URL } from "@/lib/links";
 import "./globals.css";
 
@@ -59,6 +60,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           Skip to content
         </a>
         {children}
+        <Analytics />
       </body>
     </html>
   );

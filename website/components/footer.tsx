@@ -86,7 +86,7 @@ const SOCIAL = [
 
 export function Footer() {
   return (
-    <footer className="border-t border-white/10 bg-background">
+    <footer data-analytics-section="footer" className="border-t border-white/10 bg-background">
       <div className="mx-auto w-full max-w-7xl px-6 py-16 lg:px-8">
         <nav aria-label="Footer">
           <div className="grid grid-cols-2 gap-x-8 gap-y-12 md:grid-cols-3 lg:grid-cols-5">

@@ -43,7 +43,7 @@ def refunds() -> PrefabApp:
 
 export function Pillars() {
   return (
-    <Section bordered>
+    <Section bordered name="pillars">
       <SectionHeading
         title="Servers, clients and apps share one model"
         lede="FastMCP owns the protocol machinery. Your code defines what the application does. The three pillars use the same decorators, the same types and the same auth, so what you learn on one carries to the others."

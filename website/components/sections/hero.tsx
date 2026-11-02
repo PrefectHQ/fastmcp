@@ -45,7 +45,7 @@ function Stat({ icon, value, label, href }: { icon: ReactNode; value: string; la
 
 export function Hero({ stats }: { stats: ProjectStats }) {
   return (
-    <section className="relative overflow-hidden pt-[calc(var(--nav-h)+72px)] pb-20 md:pt-[calc(var(--nav-h)+104px)] md:pb-28">
+    <section data-analytics-section="hero" className="relative overflow-hidden pt-[calc(var(--nav-h)+72px)] pb-20 md:pt-[calc(var(--nav-h)+104px)] md:pb-28">
       {/* The watercolor "F" from the docs, the one place color is allowed to
           live on the page. It sits behind the code column and fades out
           toward the copy so the chrome stays monochrome. */}
@@ -73,10 +73,19 @@ export function Hero({ stats }: { stats: ProjectStats }) {
           </p>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <ButtonLink href={docs("getting-started/quickstart")} size="lg">
+            <ButtonLink
+              href={docs("getting-started/quickstart")}
+              size="lg"
+              analytics={{ name: "hero_get_started", section: "hero" }}
+            >
               Get started
             </ButtonLink>
-            <ButtonLink href={docs("getting-started/welcome")} variant="secondary" size="lg">
+            <ButtonLink
+              href={docs("getting-started/welcome")}
+              variant="secondary"
+              size="lg"
+              analytics={{ name: "hero_read_docs", section: "hero" }}
+            >
               Read the docs
             </ButtonLink>
           </div>

@@ -26,7 +26,7 @@ const STEPS = [
 
 export function Agents() {
   return (
-    <Section bordered className="relative overflow-hidden">
+    <Section bordered name="agents" className="relative overflow-hidden">
       <div className="grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-white/16 px-3 py-1 font-mono text-[12px] tracking-[1.5px] text-peach uppercase">
@@ -39,10 +39,18 @@ export function Agents() {
             lede="FastMCP's documentation is written for agents as much as for people. Point Claude Code, Cursor or any MCP-capable agent at it and the agent can scaffold, test and debug a server with version-matched guidance."
           />
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <ButtonLink href={AGENTS_SETUP} external>
+            <ButtonLink
+              href={AGENTS_SETUP}
+              external
+              analytics={{ name: "agents_setup_guide", section: "agents" }}
+            >
               Agent setup guide
             </ButtonLink>
-            <ButtonLink href={docs("getting-started/ai-assisted-development")} variant="secondary">
+            <ButtonLink
+              href={docs("getting-started/ai-assisted-development")}
+              variant="secondary"
+              analytics={{ name: "agents_ai_assisted_docs", section: "agents" }}
+            >
               AI-assisted development docs
             </ButtonLink>
           </div>

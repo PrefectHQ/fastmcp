@@ -16,7 +16,7 @@ const CLIENTS: Array<{ name: string; icon: SimpleIcon; href: string }> = [
 
 export function Clients() {
   return (
-    <section className="border-y border-white/10 bg-white/[0.02] py-10">
+    <section data-analytics-section="clients" className="border-y border-white/10 bg-white/[0.02] py-10">
       <div className="mx-auto w-full max-w-7xl px-6 lg:px-8">
         <p className="text-center text-body-s text-white/50">
           Works with the clients and SDKs you already use

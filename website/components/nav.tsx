@@ -32,7 +32,7 @@ export function Nav({ stars }: { stars: string }) {
   }, [open]);
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50">
+    <header data-analytics-section="nav" className="fixed inset-x-0 top-0 z-50">
       <div
         aria-hidden
         className="absolute inset-0 border-b border-white/10 bg-[#06000e]/55 backdrop-blur-[18px]"
@@ -87,10 +87,15 @@ export function Nav({ stars }: { stars: string }) {
             href={docs("getting-started/quickstart")}
             variant="secondary"
             className="hidden sm:inline-flex"
+            analytics={{ name: "nav_get_started", section: "nav" }}
           >
             Get started
           </ButtonLink>
-          <ButtonLink href={gatewaySignup("nav-deploy")} external>
+          <ButtonLink
+            href={gatewaySignup("nav-deploy")}
+            external
+            analytics={{ name: "nav_deploy", section: "nav" }}
+          >
             Deploy
           </ButtonLink>
           <button
@@ -143,6 +148,7 @@ export function Nav({ stars }: { stars: string }) {
                 href={docs("getting-started/quickstart")}
                 variant="secondary"
                 className="w-full"
+                analytics={{ name: "nav_get_started", section: "nav" }}
               >
                 Get started
               </ButtonLink>
