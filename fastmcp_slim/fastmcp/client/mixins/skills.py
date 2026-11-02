@@ -27,7 +27,7 @@ from fastmcp.skills.models import (
     SkillResource,
     _parse_resource_uri,
 )
-from fastmcp.skills.skill import Skill, _validate_relative_path
+from fastmcp.skills.skill import Skill, _validate_limits, _validate_relative_path
 from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.logging import get_logger
 
@@ -240,7 +240,8 @@ class ClientSkillsMixin:
         The manifest comes from `skills/get` when the Skills extension was
         negotiated, and otherwise from the `_manifest` resource that FastMCP
         skill providers serve next to the files. Every file must match the
-        size and SHA-256 digest the manifest promised.
+        size and SHA-256 digest the manifest promised. When an extension entry
+        is available, the parsed frontmatter must also match that entry.
 
         Args:
             uri: URI of the skill's `SKILL.md` resource.
@@ -258,7 +259,10 @@ class ClientSkillsMixin:
         _, authority, segments = _parse_resource_uri(uri)
         if not segments or segments[-1] != "SKILL.md":
             raise ValueError(f"read_skill takes a skill's SKILL.md URI, got {uri!r}")
-        manifest = await self._skill_manifest(uri, cache_mode)
+        manifest, entry = await self._skill_manifest(uri, cache_mode)
+        _validate_limits(
+            len(manifest), sum(record.size for record in manifest.values())
+        )
         for path in manifest:
             _validate_relative_path(path)
         files: dict[str, bytes] = {}
@@ -276,6 +280,10 @@ class ClientSkillsMixin:
                 )
             files[path] = content
         skill = Skill.from_files(files)
+        if entry is not None and json.dumps(
+            skill.frontmatter.root, sort_keys=True
+        ) != json.dumps(entry.frontmatter.root, sort_keys=True):
+            raise ValueError(f"Skill at {uri!r} does not match its entry's frontmatter")
         expected = segments[-2] if len(segments) > 1 else unquote(authority)
         if skill.name != expected:
             raise ValueError(
@@ -285,8 +293,8 @@ class ClientSkillsMixin:
 
     async def _skill_manifest(
         self: Client, uri: str, cache_mode: CacheMode
-    ) -> dict[str, SkillResource]:
-        """Relative path -> manifest record for every file in the skill.
+    ) -> tuple[dict[str, SkillResource], MCPSkill | None]:
+        """File records and the entry whose frontmatter must match the content.
 
         A skill the server serves as resources but does not advertise through
         the extension, such as one behind a proxy, still has a `_manifest`.
@@ -308,8 +316,8 @@ class ClientSkillsMixin:
                     if path in manifest:
                         raise ValueError(f"Duplicate skill file path: {path!r}")
                     manifest[path] = resource
-                return manifest
-        return await self._resource_mode_manifest(uri)
+                return manifest, entry
+        return await self._resource_mode_manifest(uri), None
 
     async def _resource_mode_manifest(
         self: Client, uri: str

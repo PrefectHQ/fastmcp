@@ -23,9 +23,16 @@ class Intake(BaseModel):
         return bool(self.issues or self.pull_requests)
 
     def scope(self) -> str:
+        identity = [
+            self.branch,
+            sorted(set(self.issues)),
+            sorted(set(self.pull_requests)),
+        ]
         if self.queue:
-            return "fastmcp-intake-" + self.queue
-        return "fastmcp-intake-" + digest([self.branch, sorted(set(self.issues))])[:24]
+            if self.scoped():
+                return f"fastmcp-intake-{self.queue}-{digest(identity)[:24]}"
+            return f"fastmcp-intake-{self.queue}-{digest([self.branch])[:12]}"
+        return "fastmcp-intake-" + digest(identity)[:24]
 
 
 REFERENCE = re.compile(

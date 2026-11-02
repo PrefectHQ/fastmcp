@@ -976,6 +976,11 @@ class Client(
         task = asyncio.current_task()
         if task is None:
             raise RuntimeError("Client context entered outside an asyncio task")
+        # A finished task can never run its own exit, so its holds are dead.
+        # They remain when a context is released by close() or exited from
+        # another task.
+        for done in [t for t in self._context_session_tasks if t.done()]:
+            del self._context_session_tasks[done]
         self._context_session_tasks.setdefault(task, []).append(session_task)
         return self
 

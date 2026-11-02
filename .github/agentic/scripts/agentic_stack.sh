@@ -18,8 +18,11 @@ upsert() {
 
 case "${1:-}" in
   validate)
-    for role in assess reproduce prepare review; do
-      api POST /execution-plans/validate --data "@workflows/fastmcp-stack-$role.plan.json" | jq -e '.valid == true'
+    scratch=$(mktemp -d)
+    trap 'rm -rf "$scratch"' EXIT
+    for role in assess reproduce triage_review; do
+      jq '{plan: .}' "workflows/fastmcp-stack-$role.plan.json" > "$scratch/$role.json"
+      api POST /execution-plans/validate --data "@$scratch/$role.json" | jq -e '.valid == true'
     done
     ;;
   register)
@@ -33,7 +36,7 @@ case "${1:-}" in
     }
     FASTMCP_AGENTIC_REF=$revision uv run --locked prefect --no-prompt deploy \
       --prefect-file prefect.yaml \
-      --name cloud-stack-batch --name cloud-stack-validation --name cloud-contribution-verification --name cloud-triage-intake \
+      --name cloud-stack-batch --name cloud-contribution-verification --name cloud-triage-intake \
       --name cloud-triage-verify --name cloud-triage-finalize
     ;;
   intake)
@@ -128,25 +131,23 @@ case "${1:-}" in
     [[ $notify =~ ^[0-9a-f-]{36}$ ]] || exit 2
     scratch=$(mktemp -d)
     trap 'rm -rf "$scratch"' EXIT
-    jq -n '{deployments:{name:{any_:["cloud-triage-intake","cloud-triage-verify","cloud-triage-finalize","cloud-stack-batch","cloud-stack-validation","cloud-contribution-verification"]}},limit:20}' > "$scratch/filter.json"
+    jq -n '{deployments:{name:{any_:["cloud-triage-intake"]}},limit:2}' > "$scratch/filter.json"
     api POST /deployments/filter --data "@$scratch/filter.json" > "$scratch/deployments.json"
-    jq -e 'length == 6' "$scratch/deployments.json" >/dev/null || {
-      echo 'Expected all six managed deployments' >&2; exit 1;
+    jq -e 'length == 1' "$scratch/deployments.json" >/dev/null || {
+      echo 'Expected exactly one intake deployment' >&2; exit 1;
     }
-    jq -n --slurpfile deployments "$scratch/deployments.json" --slurpfile runtime "$runtime" --arg notify "$notify" '
-      ([$deployments[0][].id | "prefect.deployment." + .]
-       + [($runtime[0].plans[], $runtime[0].triage_plan // empty).flow_id | "prefect.flow." + .]) as $scope |
+    jq -n --slurpfile deployments "$scratch/deployments.json" --rawfile body workflows/events/failure-notification.txt.j2 --arg notify "$notify" '
+      ([$deployments[0][].id | "prefect.deployment." + .]) as $scope |
       {name:"fastmcp-triage-failure-alert",
-       description:"Notify on every failed, crashed, timed-out or degraded agentic triage run",
+       description:"Notify once per failed or degraded intake; child failures are retained in the controller review bins",
        enabled:true,
        trigger:{type:"event",posture:"Reactive",threshold:1,within:0,
          expect:["prefect.flow-run.Failed","prefect.flow-run.Crashed","prefect.flow-run.TimedOut","prefect.flow-run.Degraded"],
          match:{"prefect.resource.id":"prefect.flow-run.*"},
-         match_related:{"prefect.resource.id":$scope},
+         match_related:{"prefect.resource.role":"deployment","prefect.resource.id":$scope},
          after:[],for_each:["prefect.resource.id"]},
        actions:[{type:"send-notification",block_document_id:$notify,
-         subject:"fastmcp triage {{ flow_run.state.name }}: {{ flow.name }}/{{ flow_run.name }}",
-         body:"{{ flow.name }}{% if deployment %} ({{ deployment.name }}){% endif %} run {{ flow_run.name }} entered {{ flow_run.state.name }}.\n\n{{ flow_run.state.message or \"No state message.\" }}\n\n{{ flow_run|ui_url }}"}],
+         subject:"",body:$body}],
        actions_on_trigger:[],actions_on_resolve:[]}' > "$scratch/automation-alert.json"
     echo "automation alert $(upsert automations "$scratch/automation-alert.json")"
     ;;

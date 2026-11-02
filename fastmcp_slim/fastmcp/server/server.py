@@ -1425,7 +1425,7 @@ class FastMCP(
         #   1. Display-name path — the name this server lists the tool
         #      under, resolved through `get_tool`.
         #   2. Hashed-name path — backend tools that opted into
-        #      app-callable visibility, addressed as `<hash>_<local_name>`
+        #      app-callable visibility, addressed as `__<hash>_<local_name>`
         #      and resolved through `get_tool_by_hash`. It applies the same
         #      transforms, visibility, and auth as the display-name path.
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:

@@ -8,6 +8,7 @@ from prefect.testing.utilities import prefect_test_harness
 
 from flows.agentic_existing_review import (
     start_verification,
+    unadmitted_selection,
     verification_result,
     verification_specs,
 )
@@ -31,14 +32,79 @@ def test_merged_history_is_not_verified_and_other_release_lines_are_not_substitu
     item = {
         "evidence": {**evidence, "stacks": [], "prs": [pr]},
         "route": {"pull_requests": [{"number": 2}]},
+        "assessment": {"verification_prs": [2]},
     }
     assert verification_specs(group, item, {}) == []
     pr["merged"] = False
     with pytest.raises(ValueError, match="different release line"):
         verification_specs(group, item, {})
     item["route"]["pull_requests"].append({"number": 3})
+    item["assessment"]["verification_prs"].append(3)
     with pytest.raises(ValueError, match="evidence is missing"):
         verification_specs(group, item, {})
+
+
+@pytest.mark.parametrize("selected", [[6106], [4872], []])
+def test_verification_selects_candidates_without_executing_all_history(
+    evidence, selected
+):
+    group = Group(
+        name="history",
+        rationale="Review historical and current work",
+        branch="main",
+        base_sha="a" * 40,
+        items=[{"issue_number": 4866, "mode": "mre"}],
+    )
+    prs = [
+        {
+            "number": n,
+            "state": "open" if n == 6106 else "closed",
+            "merged": False,
+            "base_ref": "main",
+            "head_sha": "b" * 40,
+        }
+        for n in [4872, 4874, 4876, 6106]
+    ]
+    item = {
+        "evidence": {**evidence, "stacks": [], "prs": prs},
+        "route": {"pull_requests": [{"number": p["number"]} for p in prs]},
+        "assessment": {"verification_prs": selected},
+    }
+    assert [s.pr_number for s in verification_specs(group, item, {})] == selected
+    assert len(item["evidence"]["prs"]) == 4
+    item["assessment"]["verification_prs"] = [9999]
+    assert verification_specs(group, item, {}) == []
+    assert unadmitted_selection(item) == [9999]
+
+
+def test_selection_outside_the_route_is_recorded_not_executed(evidence):
+    group = Group(
+        name="history",
+        rationale="Review admitted and unadmitted work",
+        branch="main",
+        base_sha="a" * 40,
+        items=[{"issue_number": 5474, "mode": "review"}],
+    )
+    prs = [
+        {
+            "number": n,
+            "state": "open",
+            "merged": False,
+            "base_ref": "main",
+            "head_sha": "b" * 40,
+        }
+        for n in [5230, 5487]
+    ]
+    item = {
+        "evidence": {**evidence, "stacks": [], "prs": prs},
+        "route": {"pull_requests": [{"number": 5487}]},
+        "assessment": {"verification_prs": [5230, 5487]},
+    }
+    assert [s.pr_number for s in verification_specs(group, item, {})] == [5487]
+    assert unadmitted_selection(item) == [5230]
+    item["route"]["pull_requests"] = []
+    assert verification_specs(group, item, {}) == []
+    assert unadmitted_selection(item) == [5230, 5487]
 
 
 def test_verification_handoff_binds_real_run_deployment_and_inputs():
@@ -58,9 +124,8 @@ def test_verification_handoff_binds_real_run_deployment_and_inputs():
         runtime = Runtime(
             plans={
                 role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-                for role in ("assess", "reproduce", "prepare", "review")
+                for role in ("assess", "reproduce")
             },
-            validator_id=uuid4(),
             verification_id=deployment_id,
             source_sha="d" * 40,
         )
@@ -125,9 +190,8 @@ def test_failed_verification_retry_is_idempotent_and_success_is_reused():
         runtime = Runtime(
             plans={
                 role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-                for role in ("assess", "reproduce", "prepare", "review")
+                for role in ("assess", "reproduce")
             },
-            validator_id=uuid4(),
             verification_id=deployment_id,
             source_sha="d" * 40,
         )

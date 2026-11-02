@@ -68,6 +68,7 @@ class StdioTransport(ClientTransport):
 
         self._session: ClientSession | None = None
         self._session_options: TransportOptions | None = None
+        self._session_read_timeout: float | None = None
         self._active_sessions = 0
         self._connect_lock = anyio.Lock()
         self._connect_task: asyncio.Task | None = None
@@ -109,15 +110,32 @@ class StdioTransport(ClientTransport):
             # to a client that wants different ones would silently give it the
             # first client's behavior. Rebuild it when it's idle; refuse when
             # another client is using it, since tearing it down would break them.
-            if self._connect_task is not None and self._session_options != options:
-                if self._active_sessions:
+            # A different request timeout alone does not refuse: the client
+            # shares the live session and its default timeout, as before the
+            # timeout was compared. Compare the timeout value, not callback
+            # identity: proxy clients rebind forwarding callbacks per request.
+            options_differ = self._session_options != options
+            timeout_differs = self._session_read_timeout != session_kwargs.get(
+                "read_timeout_seconds"
+            )
+            if self._connect_task is not None and (options_differ or timeout_differs):
+                if self._active_sessions and options_differ:
                     raise RuntimeError(
                         "This stdio transport has a live session built for different "
                         "connection options and another client is still using it. "
                         "Sharing one transport across clients that need different "
                         "sessions is not supported; give each client its own transport."
                     )
-                await self.disconnect()
+                if not self._active_sessions:
+                    await self.disconnect()
+                else:
+                    logger.warning(
+                        "Sharing a live stdio session whose request timeout is "
+                        f"{self._session_read_timeout}s; this client's timeout "
+                        f"({session_kwargs.get('read_timeout_seconds')}s) applies "
+                        "only to calls that pass their own timeout. Give each "
+                        "client its own transport to keep separate defaults."
+                    )
 
             # If the connect task completed or the session's streams are dead,
             # the subprocess has exited. Tear down so we can start fresh.
@@ -136,6 +154,7 @@ class StdioTransport(ClientTransport):
             # comparing against an unset value would read it as a mismatch and
             # tear down the connection being established.
             self._session_options = options
+            self._session_read_timeout = session_kwargs.get("read_timeout_seconds")
 
             # start the connection task
             self._connect_task = asyncio.create_task(
@@ -192,6 +211,7 @@ class StdioTransport(ClientTransport):
         self._connect_task = None
         self._session = None
         self._session_options = None
+        self._session_read_timeout = None
         self._stop_event = anyio.Event()
         self._ready_event = anyio.Event()
 
@@ -352,7 +372,10 @@ class PythonStdioTransport(StdioTransport):
 
 
 class FastMCPStdioTransport(StdioTransport):
-    """Transport for running FastMCP servers using the FastMCP CLI."""
+    """Transport for running FastMCP servers using the FastMCP CLI.
+
+    `args` are passed to the server script, not interpreted as FastMCP CLI options.
+    """
 
     def __init__(
         self,
@@ -369,13 +392,17 @@ class FastMCPStdioTransport(StdioTransport):
         if not str(script_path).endswith(".py"):
             raise ValueError(f"Not a Python script: {script_path}")
 
+        full_args = ["run", str(script_path)]
+        if args:
+            full_args.extend(["--", *args])
+
         # Same UTF-8 default as PythonStdioTransport: the `fastmcp` command
         # is a Python entry point with the same sanitized child environment.
         env = {"PYTHONUTF8": "1", **(env or {})}
 
         super().__init__(
             command="fastmcp",
-            args=["run", str(script_path)],
+            args=full_args,
             env=env,
             cwd=cwd,
             keep_alive=keep_alive,

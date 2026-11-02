@@ -16,8 +16,9 @@ from mcp_types import INTERNAL_ERROR
 from fastmcp import Client, ClientGroup, FastMCP
 from fastmcp.server.providers.skills import SkillProvider, SkillsDirectoryProvider
 from fastmcp.skills import Skill, SkillsClientExtension
+from fastmcp.skills._constants import MAX_SKILL_BYTES, MAX_SKILL_FILES
 from fastmcp.skills.extension import SkillsExtension
-from fastmcp.skills.models import MCPSkill
+from fastmcp.skills.models import MCPSkill, SkillFrontmatter, SkillResource
 from fastmcp.skills.provider import SkillCatalogProvider
 
 REVIEW = Skill(
@@ -38,6 +39,45 @@ async def test_read_skill_returns_an_equal_skill_through_the_extension():
         skill = await client.read_skill("skill://review/SKILL.md")
     assert skill == REVIEW
     assert skill.files["refs/logo.bin"] == b"\x00\xff\r\n"
+
+
+@pytest.mark.parametrize(
+    "advertised",
+    [
+        {"description": "Different instructions"},
+        {"custom": {"enabled": 1}},
+        {"custom": {"enabled": True, "extra": "claim"}},
+    ],
+)
+async def test_read_skill_reconciles_all_advertised_frontmatter(
+    advertised: dict[str, Any],
+):
+    original = Skill(
+        name="review",
+        description="Review changes",
+        instructions="# Review\n",
+        frontmatter={"custom": {"enabled": True}},
+    )
+    requests = 0
+
+    class Inconsistent(SkillCatalogProvider):
+        async def _get_skill_entry(
+            self, uri: str, context: ServerRequestContext[Any, Any]
+        ) -> MCPSkill | None:
+            nonlocal requests
+            requests += 1
+            entry = await super()._get_skill_entry(uri, context)
+            assert entry is not None
+            frontmatter = SkillFrontmatter.model_validate(
+                {**entry.frontmatter.root, **advertised}
+            )
+            return entry.model_copy(update={"frontmatter": frontmatter})
+
+    server = FastMCP("Skills", providers=[Inconsistent([original])])
+    async with skills_client(server) as client:
+        with pytest.raises(ValueError, match="frontmatter"):
+            await client.read_skill("skill://review/SKILL.md")
+    assert requests == 1
 
 
 async def test_read_skill_falls_back_to_the_manifest_resource():
@@ -257,6 +297,45 @@ async def test_read_skill_requires_a_connection():
     client = Client(FastMCP("Skills", providers=[SkillCatalogProvider([REVIEW])]))
     with pytest.raises(RuntimeError, match="not connected"):
         await client.read_skill("skill://review/SKILL.md")
+
+
+@pytest.mark.parametrize("limit", ["count", "size"])
+async def test_read_skill_rejects_oversized_entries_before_reading_files(limit: str):
+    original = Skill(name="review", description="Review", instructions="# Review\n")
+    reads = 0
+
+    class Oversized(SkillCatalogProvider):
+        async def _get_skill_entry(
+            self, uri: str, context: ServerRequestContext[Any, Any]
+        ) -> MCPSkill | None:
+            entry = original.to_mcp_skill()
+            assert isinstance(entry.resources, list)
+            records = entry.resources
+            if limit == "count":
+                records.extend(
+                    SkillResource(
+                        uri=f"skill://review/{index}.txt",
+                        digest=f"sha256:{hashlib.sha256(b'').hexdigest()}",
+                        size=0,
+                    )
+                    for index in range(MAX_SKILL_FILES)
+                )
+            else:
+                records[0] = records[0].model_copy(update={"size": MAX_SKILL_BYTES + 1})
+            return entry.model_copy(update={"resources": records})
+
+    server = FastMCP("Skills", providers=[Oversized([original])])
+
+    @server.resource("skill://review/SKILL.md")
+    def observed_file() -> bytes:
+        nonlocal reads
+        reads += 1
+        return original.files["SKILL.md"]
+
+    async with skills_client(server) as client:
+        with pytest.raises(ValueError, match="at most"):
+            await client.read_skill("skill://review/SKILL.md")
+    assert reads == 0
 
 
 async def test_a_read_skill_can_be_served_again():

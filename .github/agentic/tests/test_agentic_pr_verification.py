@@ -45,10 +45,16 @@ def test_real_base_head_execution_detects_fix_and_independent_regression(
         '[project]\nname="verification-fixture"\nversion="0.1"\nrequires-python=">=3.12"\ndependencies=["pytest>=8,<10", "pytest-xdist"]\n[tool.pytest.ini_options]\npythonpath=["."]\n'
     )
     (repo / "implementation.py").write_text("value = 1\nflag = True\n")
+    (repo / "tests/unrelated").mkdir(parents=True)
+    (repo / "tests/test_neighbor.py").write_text(
+        "def test_neighbor():\n    assert True\n"
+    )
+    (repo / "tests/unrelated/test_trap.py").write_text(
+        "def test_outside_verification_scope():\n    assert False\n"
+    )
     subprocess.run(["uv", "lock"], cwd=repo, check=True, capture_output=True)
     base = commit(repo, "Broken value")
     (repo / "implementation.py").write_text("value = 2\nflag = 1\n")
-    (repo / "tests").mkdir()
     (repo / "tests/test_value.py").write_text(
         "from implementation import value\ndef test_value():\n    assert value == 2\n"
     )
@@ -84,6 +90,7 @@ def test_real_base_head_execution_detects_fix_and_independent_regression(
             ],
         },
         "route": {"pull_requests": [{"number": 2}, {"number": 3}]},
+        "assessment": {"verification_prs": [2, 3]},
     }
     specs = verification_specs(
         group,
@@ -103,6 +110,10 @@ def test_real_base_head_execution_detects_fix_and_independent_regression(
     ).read_text() == "value = 0\nflag = True\n"
     assert result["base"]["status"] == "test_failure"
     assert result["head"]["status"] == "test_failure"
+    assert result["adjacent"]["status"] == "passed"
+    assert [case["id"] for case in result["adjacent"]["cases"]] == [
+        "tests.test_neighbor::test_neighbor"
+    ]
     assert result["comparison"]["fixed_tests"] == ["tests.test_value::test_value"]
     assert result["comparison"]["regressed_tests"] == [
         "tests.agentic_probes.test_flag::test_flag_type"
