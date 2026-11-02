@@ -1,10 +1,10 @@
 import Image from "next/image";
-import { Download, Server, Star } from "lucide-react";
+import { Download, Star, Tag } from "lucide-react";
 import type { ReactNode } from "react";
 import { CodeBlock } from "@/components/code-block";
 import { CopyCommand } from "@/components/copy-command";
 import { ButtonLink } from "@/components/button";
-import { GITHUB, PYPI, docs } from "@/lib/links";
+import { GITHUB, PYPI, RELEASES, docs } from "@/lib/links";
 import type { ProjectStats } from "@/lib/stats";
 import { formatCount } from "@/lib/stats";
 
@@ -94,7 +94,7 @@ export function Hero({ stats }: { stats: ProjectStats }) {
           <dl className="mt-10 flex flex-wrap gap-x-7 gap-y-3">
             <Stat icon={<Star className="h-4 w-4" />} value={formatCount(stats.stars)} label="GitHub stars" href={GITHUB} />
             <Stat icon={<Download className="h-4 w-4" />} value={formatCount(stats.monthlyDownloads)} label="downloads a month" href={PYPI} />
-            <Stat icon={<Server className="h-4 w-4" />} value="~70%" label="of MCP servers" />
+            <Stat icon={<Tag className="h-4 w-4" />} value={stats.latestRelease} label="latest release" href={RELEASES} />
           </dl>
         </div>
 

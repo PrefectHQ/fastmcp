@@ -14,7 +14,7 @@ const dmMono = DM_Mono({
 
 const TITLE = "FastMCP: The framework for MCP";
 const DESCRIPTION =
-  "Build MCP servers, clients and interactive apps in ordinary Python. FastMCP handles schemas, validation, transport and auth, and powers about 70% of MCP servers.";
+  "Build MCP servers, clients and interactive apps in ordinary Python or TypeScript. FastMCP handles schemas, validation, transport and auth, so your code stays about your application.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

@@ -38,10 +38,10 @@ export default async function HomePage() {
         <Hero stats={stats} />
         <Clients />
         <Features />
+        <Community stats={stats} />
         <Pillars />
         <Agents />
         <GetStarted />
-        <Community stats={stats} />
         <DeployCta />
       </main>
       <Footer />

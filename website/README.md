@@ -88,6 +88,8 @@ permissive CORS.
   downloads, the README's six-line server beside the run command.
 - **Clients strip**: the AI clients and SDKs with integration guides.
 - **Everything you need to build on MCP**: eight docs-linked capability cards.
+- **Built in the open**: live counters, community links, what's new in v4 and
+  three posts from the blog.
 - **Servers, clients and apps share one model**: the three pillars with a
   code excerpt each, plus the TypeScript counterpart.
 - **Build it with your coding agent**: llms.txt, the docs MCP server, the
@@ -95,8 +97,6 @@ permissive CORS.
   prefect.io.
 - **Get started**: a Learn lane (nine docs guides) and a Deploy lane that ends
   at FastMCP Gateway.
-- **Built in the open**: live counters, community links, what's new in v4 and
-  three posts from the blog.
 - **Closing CTA**: deploy on FastMCP Gateway, free for personal projects.
 - **Footer**: Resources, Community, Deploy, Prefect, Legal, then a bottom bar
   with the Prefect lockup and social icons.
