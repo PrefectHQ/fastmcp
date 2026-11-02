@@ -1,18 +1,23 @@
 """Client session and task error propagation tests."""
 
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
+import anyio
 import httpx2
 import pytest
 from mcp import ClientSession, MCPError
-from mcp_types import INTERNAL_ERROR, TextContent
+from mcp_types import CONNECTION_CLOSED, INTERNAL_ERROR, TextContent
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.client.transports import ClientTransport, PythonStdioTransport
+from fastmcp.client.transports import (
+    ClientTransport,
+    FastMCPTransport,
+    PythonStdioTransport,
+)
 from fastmcp.client.transports.base import TransportOptions
 
 
@@ -26,6 +31,109 @@ class _FailingTransport(ClientTransport):
     ) -> AsyncGenerator[ClientSession, None]:
         raise self._exception
         yield
+
+
+class _DroppingTransport(ClientTransport):
+    """An in-memory connection that can be lost the way an HTTP one is.
+
+    Setting `drop` fails a background task inside the transport, which cancels
+    the client's session the way a dead HTTP connection does. The transport then
+    holds its teardown open until `teardown` is set, and raises `failure`, like
+    the termination request an HTTP transport sends to a server that is gone.
+    """
+
+    def __init__(self, server: FastMCP) -> None:
+        self._inner = FastMCPTransport(server)
+        self.drop = anyio.Event()
+        self.teardown = anyio.Event()
+        self.failure = OSError("All connection attempts failed")
+
+    @asynccontextmanager
+    async def connect_session(
+        self, **session_kwargs: Any
+    ) -> AsyncGenerator[ClientSession, None]:
+        async def lose_connection() -> None:
+            await self.drop.wait()
+            raise OSError("server went away")
+
+        try:
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(lose_connection)
+                async with self._inner.connect_session(**session_kwargs) as session:
+                    yield session
+        finally:
+            await self.teardown.wait()
+            raise self.failure
+
+
+async def _raised(call: Callable[[], Awaitable[Any]]) -> BaseException | None:
+    try:
+        await call()
+    except Exception as exc:
+        return exc
+    return None
+
+
+class TestLostConnectionInsideContext:
+    """A call made after the connection drops reports the connection failure.
+
+    Regression tests for https://github.com/PrefectHQ/fastmcp/issues/6162, where
+    such a call raised "Client is not connected. Use the 'async with client:'
+    context manager first." although it ran inside `async with client`. Outcomes
+    are recorded inside the context and checked after it, because the context's
+    exit re-raises the transport failure and would mask an assertion error.
+    """
+
+    @staticmethod
+    def calls(client: Client) -> list[Callable[[], Awaitable[Any]]]:
+        return [
+            lambda: client.call_tool("greet", {"name": "World"}),
+            client.ping,
+            client.list_tools,
+        ]
+
+    async def test_call_while_transport_unwinds_reports_closed_connection(
+        self, fastmcp_server
+    ):
+        transport = _DroppingTransport(fastmcp_server)
+        client = Client(transport)
+        raised: list[BaseException | None] = []
+
+        with pytest.raises(OSError) as exit_info:
+            async with client:
+                transport.drop.set()
+                while client.is_connected():
+                    await asyncio.sleep(0)
+                raised.extend([await _raised(call) for call in self.calls(client)])
+                transport.teardown.set()
+
+        assert exit_info.value is transport.failure
+        assert len(raised) == 3
+        for exc in raised:
+            assert isinstance(exc, MCPError)
+            assert exc.error.code == CONNECTION_CLOSED
+
+        with pytest.raises(RuntimeError, match="Client is not connected"):
+            await client.ping()
+
+    async def test_call_after_session_task_fails_reports_its_error(
+        self, fastmcp_server
+    ):
+        transport = _DroppingTransport(fastmcp_server)
+        transport.teardown.set()
+        client = Client(transport)
+        raised: list[BaseException | None] = []
+
+        with pytest.raises(OSError) as exit_info:
+            async with client:
+                session_task = client._session_state.session_task
+                assert session_task is not None
+                transport.drop.set()
+                await asyncio.wait({session_task})
+                raised.extend([await _raised(call) for call in self.calls(client)])
+
+        assert exit_info.value is transport.failure
+        assert raised == [transport.failure] * 3
 
 
 class TestSessionTaskErrorPropagation:
