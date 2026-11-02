@@ -1846,6 +1846,8 @@ class TestNonIdentifierTemplateVariableNames:
             ("resource://digit/{1id}", "resource://digit/x", {"_1id": "x"}),
             ("resource://users/{user-id}", "resource://users/7", {"user_id": "7"}),
             ("resource://plain/{top}", "resource://plain/x", {"top": "x"}),
+            # `²` is a Unicode word char (\w) but not valid in an identifier.
+            ("resource://uni/{a²}", "resource://uni/x", {"a_": "x"}),
         ],
     )
     def test_matches_non_identifier_names(self, uri_template, uri, expected):
@@ -1876,6 +1878,7 @@ class TestExpandNonIdentifierNames:
             ("resource://dollar/{$top}", {"_top": "alice"}, "resource://dollar/alice"),
             ("resource://dot/{x.y}", {"x_y": "alice"}, "resource://dot/alice"),
             ("resource://digit/{1id}", {"_1id": "alice"}, "resource://digit/alice"),
+            ("resource://uni/{a²}", {"a_": "alice"}, "resource://uni/alice"),
             # Controls: plain and hyphenated names behave as before.
             ("resource://plain/{top}", {"top": "alice"}, "resource://plain/alice"),
             (

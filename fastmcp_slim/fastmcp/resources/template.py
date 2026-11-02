@@ -170,6 +170,10 @@ def template_param_key(name: str) -> str:
     resource templates) use the same function for the lookup.
     """
     key = re.sub(r"\W", "_", name)
+    if not key.isidentifier():
+        # \w also matches Unicode word characters that identifiers reject
+        # (e.g. `²`), so fall back to ASCII-only sanitization.
+        key = re.sub(r"[^a-zA-Z0-9_]", "_", key)
     if not key or key[0].isdigit():
         key = f"_{key}"
     return key
