@@ -9,7 +9,7 @@ from typing import Any
 import anyio
 from mcp import MCPError
 
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import NotFoundError, ValidationError
 
 from .middleware import CallNext, Middleware, MiddlewareContext
 
@@ -90,7 +90,7 @@ class ErrorHandlingMiddleware(Middleware):
         # Map common exceptions to appropriate MCP error codes
         error_type = type(error.__cause__) if error.__cause__ else type(error)
 
-        if error_type in (ValueError, TypeError):
+        if error_type in (ValueError, TypeError, ValidationError):
             return MCPError(code=-32602, message=f"Invalid params: {error!s}")
         elif error_type in (FileNotFoundError, KeyError, NotFoundError):
             # MCP spec defines -32002 specifically for resource not found

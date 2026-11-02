@@ -194,7 +194,7 @@ class LoggingMiddleware(BaseLoggingMiddleware):
         self.include_payloads: bool = include_payloads
         self.include_payload_length: bool = include_payload_length
         self.estimate_payload_tokens: bool = estimate_payload_tokens
-        self.max_payload_length: int = max_payload_length
+        self.max_payload_length: int | None = max_payload_length
         self.methods: list[str] | None = methods
         self.payload_serializer: Callable[[Any], str] | None = payload_serializer
         self.structured_logging: bool = False

@@ -497,7 +497,7 @@ class TestEdgeCases:
         Type = json_schema_to_type(schema)
         validator = TypeAdapter(Type)
         result = validator.validate_python({"name": "test"})
-        assert result.name == "test"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert result.name == "test"  # type: ignore[attr-defined]
 
     def test_recursive_defaults(self):
         schema = {
@@ -513,8 +513,8 @@ class TestEdgeCases:
         Type = json_schema_to_type(schema)
         validator = TypeAdapter(Type)
         result = validator.validate_python({})
-        assert result.node.value == "default"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-        assert result.node.next is None  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert result.node.value == "default"  # type: ignore[attr-defined]
+        assert result.node.next is None  # type: ignore[attr-defined]
 
     def test_recursive_ref_in_anyof_does_not_recurse_forever(self):
         schema = {
@@ -542,7 +542,7 @@ class TestEdgeCases:
             {"items": ["value", ["nested"], {"key": ["leaf"]}]}
         )
 
-        assert result.items == ["value", ["nested"], {"key": ["leaf"]}]  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert result.items == ["value", ["nested"], {"key": ["leaf"]}]  # type: ignore[attr-defined]
 
     def test_mixed_type_array(self):
         schema = {
@@ -653,9 +653,9 @@ class TestNameHandling:
         result = validator.validate_python(
             {"name": "parent", "child": {"name": "child", "child": None}}
         )
-        assert result.name == "parent"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-        assert result.child.name == "child"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-        assert result.child.child is None  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert result.name == "parent"  # type: ignore[attr-defined]
+        assert result.child.name == "child"  # type: ignore[attr-defined]
+        assert result.child.child is None  # type: ignore[attr-defined]
 
 
 class TestAdditionalProperties:
@@ -835,17 +835,17 @@ class TestAdditionalProperties:
         result = validator.validate_python(data)
 
         # Check top-level extra field (BaseModel)
-        assert result.top_level_extra == "preserved"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert result.top_level_extra == "preserved"  # type: ignore[attr-defined]
 
         # Check nested user extra field (BaseModel)
-        assert result.user.name == "Alice"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-        assert result.user.extra_user_field == "value"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert result.user.name == "Alice"  # type: ignore[attr-defined]
+        assert result.user.extra_user_field == "value"  # type: ignore[attr-defined]
 
         # Check nested settings - should be dataclass
-        assert result.settings.theme == "dark"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert result.settings.theme == "dark"  # type: ignore[attr-defined]
         # Note: When nested in BaseModel with extra='allow', Pydantic may preserve extra fields
         # even on dataclass children. The important thing is that settings is still a dataclass.
-        assert not issubclass(type(result.settings), BaseModel)  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert not issubclass(type(result.settings), BaseModel)  # type: ignore[attr-defined]
 
     def test_additional_properties_false_vs_missing(self):
         """Test difference between additionalProperties: false and missing additionalProperties"""
@@ -887,9 +887,9 @@ class TestAdditionalProperties:
 
         # Test with extra fields and defaults
         result = validator.validate_python({"extra": "field"})
-        assert result.name == "anonymous"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-        assert result.age == 0  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-        assert result.extra == "field"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert result.name == "anonymous"  # type: ignore[attr-defined]
+        assert result.age == 0  # type: ignore[attr-defined]
+        assert result.extra == "field"  # type: ignore[attr-defined]
 
     def test_additional_properties_type_consistency(self):
         """Test that the same schema always returns the same type"""
@@ -945,7 +945,7 @@ class TestFieldsWithDefaults:
         generated_type = json_schema_to_type(schema)
         validator = TypeAdapter(generated_type)
         result = validator.validate_python({})
-        assert result.flag is False  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert result.flag is False  # type: ignore[attr-defined]
 
     def test_field_with_default_accepts_explicit_value(self):
         """Test that fields with defaults accept explicit values."""
@@ -957,4 +957,4 @@ class TestFieldsWithDefaults:
         generated_type = json_schema_to_type(schema)
         validator = TypeAdapter(generated_type)
         result = validator.validate_python({"flag": True})
-        assert result.flag is True  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert result.flag is True  # type: ignore[attr-defined]

@@ -91,6 +91,14 @@ mcp = FastMCP("Multi-Issuer Server", auth=auth)
 
 Without a server, no OAuth routes or metadata are served. This is appropriate for internal systems where clients already know how to obtain tokens.
 
+## Challenge Scopes
+
+Clients use the `WWW-Authenticate` challenge to decide which scopes to request. When you omit `required_scopes` or pass `None`, `MultiAuth` delegates default challenge selection to its server, or to its sole verifier when no server is configured. This preserves custom `get_challenge_scopes(None)` hooks. With multiple verifiers and no server, it does not select or combine their defaults; no scope parameter is advertised unless you configure `required_scopes`.
+
+An explicit `required_scopes` list is passed to the delegated challenge hook and also sets the scopes required by `MultiAuth`'s HTTP middleware. An empty list removes that outer scope requirement. Each verifier still enforces its own token validation requirements, so `required_scopes=[]` does not make invalid or under-scoped tokens valid.
+
+When the server is a `RemoteAuthProvider`, its configured `challenge_scopes` applies when the effective scopes equal that provider's `required_scopes`, including an explicit list with the same values. A different explicit list is passed to the verifier's hook for translation. Without configured `challenge_scopes`, the verifier receives the supplied list, or `None` to select its default.
+
 ## Source Names
 
 Each source has a stable identity for sessions, background tasks, and continued requests. Use an ordered mapping to give verifiers explicit names; pass `server_source_id` to name the delegated auth server. These names follow the source across restarts and changes to verification order. MultiAuth qualifies the returned token's `client_id` with this source identity and the verified issuer and subject, when present. Its `original_client_id` field contains the identifier returned by the verifier; bearer token bytes, claims, subject, and scopes stay the same.

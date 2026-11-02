@@ -10,6 +10,7 @@ from typing import Annotated, Any, Literal, cast
 import mcp_types
 from mcp_types import ToolAnnotations
 from pydantic import ConfigDict
+from pydantic import ValidationError as PydanticValidationError
 from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator
 from pydantic.json_schema import SkipJsonSchema
@@ -20,6 +21,7 @@ from fastmcp.tools.base import (
     ToolResult,
 )
 from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
+from fastmcp.tools.function_tool import FunctionTool, _ToolBodyError, _wrap_body_errors
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -361,13 +363,18 @@ class TransformedTool(Tool):
         try:
             from fastmcp.server.dependencies import without_injected_parameters
 
-            fn = without_injected_parameters(self.fn)
-            if is_coroutine_function(fn):
-                result = await fn(**arguments)
-            else:
-                result = await call_sync_fn_in_threadpool(fn, **arguments)
-                if inspect.isawaitable(result):
-                    result = await result
+            body_fn = _wrap_body_errors(self.fn, materialize_generators=True)
+            fn = without_injected_parameters(body_fn)
+            try:
+                if is_coroutine_function(fn):
+                    result = await fn(**arguments)
+                else:
+                    result = await call_sync_fn_in_threadpool(fn, **arguments)
+                    if inspect.isawaitable(result):
+                        result = await result
+                result = await FunctionTool._materialize_generator(result)
+            except PydanticValidationError as exc:
+                raise _ToolBodyError(str(exc)) from exc
 
             # A multi-round-trip ask (SEP-2322) is not output data: it must
             # reach the wire handler intact, never reshaped by output_schema
@@ -617,6 +624,7 @@ class TransformedTool(Tool):
             version=final_version,
             title=final_title,
             description=final_description,
+            icons=tool.icons,
             parameters=final_schema,
             output_schema=final_output_schema,
             tags=tags or tool.tags,

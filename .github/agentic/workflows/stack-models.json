@@ -1,0 +1,25 @@
+{
+  "connection_id": "06ad84ea-0b25-7034-8000-caab9dbc44f6",
+  "roles": {
+    "match": {
+      "id": "gpt-6-luna",
+      "effort": "low"
+    },
+    "triage": {
+      "id": "gpt-6-luna",
+      "effort": "low"
+    },
+    "reproduce": {
+      "id": "gpt-6-luna",
+      "effort": "medium"
+    },
+    "triage_review": {
+      "id": "gpt-6.1-sol",
+      "effort": "medium"
+    }
+  },
+  "comparison": {
+    "id": "claude-haiku-5-5",
+    "effort": "medium"
+  }
+}

@@ -83,6 +83,8 @@ jobs:
             python-version: "3.13"
           - os: ubuntu-latest
             python-version: "3.14"
+          - os: ubuntu-latest
+            python-version: "3.15"
       fail-fast: false
     timeout-minutes: 10
 

@@ -30,6 +30,10 @@ from fastmcp.resources.security import (
     InheritSecurity,
     ResourceSecurity,
 )
+from fastmcp.utilities.async_utils import (
+    call_sync_fn_in_threadpool,
+    is_coroutine_function,
+)
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
@@ -214,7 +218,11 @@ def match_uri_template(
     `regex` is the template's compiled path pattern when the caller already
     holds it; otherwise it is built from `uri_template` through a bounded cache.
     """
-    # Split URI into path and query parts
+    # A fragment is not part of the resource identity, so drop it before
+    # splitting off the query. A template that spells out a literal `#` is
+    # matched against the full URI.
+    if "#" not in uri_template:
+        uri = uri.partition("#")[0]
     uri_path, _, query_string = uri.partition("?")
 
     # Match path parameters
@@ -629,10 +637,15 @@ class FunctionResourceTemplate(ResourceTemplate):
                     raise
 
         # self.fn is wrapped by without_injected_parameters which handles
-        # dependency resolution internally, so we call it directly
-        result = self.fn(**kwargs)
-        if inspect.isawaitable(result):
-            result = await result
+        # dependency resolution internally
+        if is_coroutine_function(self.fn):
+            result = await self.fn(**kwargs)
+        else:
+            # Run sync functions in threadpool to avoid blocking the event loop
+            result = await call_sync_fn_in_threadpool(self.fn, **kwargs)
+            # Handle sync wrappers that return awaitables (e.g., partial(async_fn))
+            if inspect.isawaitable(result):
+                result = await result
 
         return result
 
@@ -659,10 +672,17 @@ class FunctionResourceTemplate(ResourceTemplate):
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
-        # Reject functions with *args
+        # Reject functions with positional-only parameters or *args
         # (**kwargs is allowed because the URI will define the parameter names)
         sig = inspect.signature(fn)
         for param in sig.parameters.values():
+            if param.kind == inspect.Parameter.POSITIONAL_ONLY:
+                raise ValueError(
+                    "Functions with positional-only parameters are not "
+                    "supported as resource templates because URI template "
+                    "parameters are passed by name. Replace them with standard "
+                    "parameters that can be passed as keywords."
+                )
             if param.kind == inspect.Parameter.VAR_POSITIONAL:
                 raise ValueError(
                     "Functions with *args are not supported as resource templates"

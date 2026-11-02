@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 import inspect
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from types import MethodType
@@ -22,7 +23,7 @@ import pydantic_core
 from mcp_types import Icon
 from pydantic.json_schema import SkipJsonSchema
 
-from fastmcp.exceptions import FastMCPError, PromptError
+from fastmcp.exceptions import FastMCPError, PromptError, ValidationError
 from fastmcp.prompts.base import Prompt, PromptArgument, PromptResult
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
@@ -131,9 +132,17 @@ class FunctionPrompt(Prompt):
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
-        # Reject functions with *args or **kwargs
+        # Reject signatures that cannot be represented by MCP's named
+        # prompt arguments
         sig = inspect.signature(fn)
         for param in sig.parameters.values():
+            if param.kind == inspect.Parameter.POSITIONAL_ONLY:
+                raise ValueError(
+                    "Functions with positional-only parameters are not "
+                    "supported as prompts because MCP passes prompt arguments "
+                    "by name. Replace them with standard parameters that can be "
+                    "passed as keywords."
+                )
             if param.kind == inspect.Parameter.VAR_POSITIONAL:
                 raise ValueError("Functions with *args are not supported as prompts")
             if param.kind == inspect.Parameter.VAR_KEYWORD:
@@ -321,7 +330,10 @@ class FunctionPrompt(Prompt):
             provided = set(arguments or {})
             missing = required - provided
             if missing:
-                raise ValueError(f"Missing required arguments: {missing}")
+                raise ValidationError(
+                    f"Missing required arguments: {missing}",
+                    log_level=logging.WARNING,
+                )
 
         try:
             # Prepare arguments

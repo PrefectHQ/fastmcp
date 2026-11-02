@@ -187,9 +187,10 @@ mcp = FastMCP(name="My Server", auth=auth)
   tokens with the upstream provider. - `"client_secret_basic"`: Send credentials
   in Authorization header (most common) - `"client_secret_post"`: Send
   credentials in request body (required by some providers) - `"none"`: No
-  authentication (for public clients) - `None` (default): Uses authlib's default
-  (typically `"client_secret_basic"`) Set this if your provider requires a
-  specific authentication method and the default doesn't work.
+  authentication (for public clients) - `None` (default):
+  `"client_secret_basic"` when a client secret is configured, `"none"`
+  otherwise. Set this if your provider requires a specific authentication method
+  and the default doesn't work.
 </ParamField>
 
 <ParamField body="allowed_client_redirect_uris" type="list[str] | None">
@@ -701,6 +702,8 @@ To use `private_key_jwt`, the CIMD document must include either a `jwks_uri` (UR
 ```
 
 The OAuth proxy validates JWT assertions according to RFC 7523, checking the signature, issuer, audience, subject claims, and preventing replay attacks via JTI tracking.
+
+Assertions may be signed with an RSA or EC key using `RS256`, `RS384`, `RS512`, `PS256`, `PS384`, `PS512`, `ES256`, `ES384`, or `ES512`. Other algorithms, including symmetric ones such as `HS256`, are rejected.
 
 ### Security Considerations
 

@@ -29,6 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Check published skills match their sources
+        run: diff -ru skills docs/.mintlify/skills
+
       - name: Setup uv
         uses: ./.github/actions/setup-uv
         with:
@@ -41,6 +44,6 @@ jobs:
         run: node --test .github/scripts/test-*.mjs
 
       - name: Run prek
-        uses: j178/prek-action@v3.0.0
+        uses: j178/prek-action@v3.0.1
         env:
           SKIP: no-commit-to-branch

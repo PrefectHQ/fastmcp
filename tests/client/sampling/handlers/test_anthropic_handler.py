@@ -267,6 +267,34 @@ def test_message_to_result_with_tools():
     )
 
 
+@pytest.mark.parametrize(
+    ("anthropic_stop_reason", "expected"),
+    [
+        ("end_turn", "endTurn"),
+        ("stop_sequence", "stopSequence"),
+        ("max_tokens", "maxTokens"),
+        ("tool_use", "toolUse"),
+    ],
+)
+def test_message_to_result_with_tools_maps_stop_reason(
+    anthropic_stop_reason: Any, expected: str
+):
+    message = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        content=[TextBlock(type="text", text="done")],
+        model="claude-3-5-sonnet-20241022",
+        stop_reason=anthropic_stop_reason,
+        stop_sequence="END" if anthropic_stop_reason == "stop_sequence" else None,
+        usage=Usage(input_tokens=10, output_tokens=20),
+    )
+
+    result = AnthropicSamplingHandler._message_to_result_with_tools(message)
+
+    assert result.stop_reason == expected
+
+
 def test_convert_tool_choice_auto():
     result = AnthropicSamplingHandler._convert_tool_choice_to_anthropic(
         MagicMock(mode="auto")

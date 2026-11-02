@@ -6,7 +6,7 @@ import asyncio
 import logging
 import secrets
 from collections.abc import (
-    AsyncIterator,
+    AsyncGenerator,
     Callable,
     Sequence,
 )
@@ -170,7 +170,7 @@ def _version_request_meta(
         return None
 
     # RequestParamsMeta does not declare application-specific extension keys.
-    return cast(mcp_types.RequestParamsMeta, {"fastmcp": {"version": version_value}})
+    return {"fastmcp": {"version": version_value}}
 
 
 # The MCP SDK warns "Tool X not listed, no validation will be performed"
@@ -234,14 +234,16 @@ LifespanCallable = Callable[
 ]
 
 
-async def _tool_auth_allows(tool: Tool) -> bool:
-    """Whether the tool's own `auth` check admits the current request."""
+async def _component_auth_allows(
+    component: Tool | Resource | ResourceTemplate | Prompt,
+) -> bool:
+    """Whether the component's own `auth` check admits the current request."""
     skip_auth, token = _get_auth_context()
-    if skip_auth or tool.auth is None:
+    if skip_auth or component.auth is None:
         return True
-    ctx = AuthContext(token=token, component=tool)
+    ctx = AuthContext(token=token, component=component)
     try:
-        return await run_auth_checks(tool.auth, ctx)
+        return await run_auth_checks(component.auth, ctx)
     except AuthorizationError:
         return False
 
@@ -268,7 +270,9 @@ def _get_auth_context() -> tuple[bool, Any]:
 
 
 @asynccontextmanager
-async def default_lifespan(server: FastMCP[LifespanResultT]) -> AsyncIterator[Any]:
+async def default_lifespan(
+    server: FastMCP[LifespanResultT],
+) -> AsyncGenerator[Any, None]:
     """Default lifespan context manager that does nothing.
 
     Args:
@@ -288,7 +292,7 @@ def _lifespan_proxy(
     @asynccontextmanager
     async def wrap(
         low_level_server: LowLevelServer[LifespanResultT],
-    ) -> AsyncIterator[LifespanResultT]:
+    ) -> AsyncGenerator[LifespanResultT, None]:
         # Drive the FastMCP lifespan rather than merely reading it back. The
         # SDK enters this proxy exactly once per manager/server run (via
         # ``StreamableHTTPSessionManager.run`` → ``app.lifespan(app)`` or
@@ -682,13 +686,10 @@ class FastMCP(
         super().add_provider(provider, namespace=namespace)
 
     def _rewrite_prefab_uris(self, tools: list[Tool]) -> list[Tool]:
-        """Replace placeholder Prefab URIs with per-tool hashed ones.
+        """Replace placeholder Prefab URIs with shared renderer identities.
 
-        For each tool whose ``meta.ui.resourceUri`` is the placeholder,
-        reads the tool's stored hash from ``meta.fastmcp.tool_hash``
-        and rewrites the URI to the per-tool form. Also strips CSP from
-        tool meta (it belongs on the resource). Produces ``model_copy``
-        views — originals are untouched.
+        Matching renderer configurations share a URI. Resource-only fields
+        such as CSP are stripped from copies of tool metadata.
         """
         from fastmcp.server.providers.prefab_synthesis import (
             _is_prefab_tool,
@@ -869,7 +870,7 @@ class FastMCP(
                 claimed = {tool.name for tool in injected}
                 tools = [*injected, *(t for t in tools if t.name not in claimed)]
 
-                return [tool for tool in tools if await _tool_auth_allows(tool)]
+                return [tool for tool in tools if await _component_auth_allows(tool)]
 
     async def _get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -891,11 +892,11 @@ class FastMCP(
             return None
 
         # Component auth - return None if unauthorized (consistent with list filtering)
-        return tool if await _tool_auth_allows(tool) else None
+        return tool if await _component_auth_allows(tool) else None
 
     async def _check_hashed_target(self, tool: Tool) -> Tool | None:
         """Check auth on the found tool, as `_get_tool()` does for a name."""
-        return tool if await _tool_auth_allows(tool) else None
+        return tool if await _component_auth_allows(tool) else None
 
     async def get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -928,7 +929,7 @@ class FastMCP(
             else None
         )
         if injected is not None:
-            return injected if await _tool_auth_allows(injected) else None
+            return injected if await _component_auth_allows(injected) else None
 
         tool = await super().get_tool(name, version)
         if tool is None:
@@ -936,7 +937,9 @@ class FastMCP(
 
         # Apply session transforms to single item
         tools = await apply_session_transforms([tool])
-        if tools and is_enabled(tools[0]):
+        # Transforms can change what `auth` sees (a tag, for one), so the check made
+        # on the pre-transform component is not enough.
+        if tools and is_enabled(tools[0]) and await _component_auth_allows(tools[0]):
             return tools[0]
 
         # The highest version is disabled. If an explicit version was
@@ -955,7 +958,7 @@ class FastMCP(
         all_tools = list(await apply_session_transforms(all_tools))
         enabled = [t for t in all_tools if is_enabled(t)]
 
-        authorized = [t for t in enabled if await _tool_auth_allows(t)]
+        authorized = [t for t in enabled if await _component_auth_allows(t)]
 
         if not authorized:
             return None
@@ -993,14 +996,16 @@ class FastMCP(
                 resources = await apply_session_transforms(resources)
                 resources = [r for r in resources if is_enabled(r)]
 
-                # Append synthetic Prefab renderer resources — one per
-                # prefab tool, hashed by mount address. These don't live on
+                # Append synthetic Prefab resources shared by effective
+                # renderer configuration. These don't live on
                 # any provider's storage; they're computed on demand.
                 from fastmcp.server.providers.prefab_synthesis import (
                     synthesize_prefab_resources,
                 )
 
-                resources.extend(await synthesize_prefab_resources(self))
+                known_keys = {resource.key for resource in resources}
+                synthetic = await synthesize_prefab_resources(self)
+                resources.extend(r for r in synthetic if r.key not in known_keys)
 
                 skip_auth, token = _get_auth_context()
                 authorized: list[Resource] = []
@@ -1027,22 +1032,18 @@ class FastMCP(
             version: Version filter (None returns highest version).
 
         Returns:
-            The resource if found and authorized, None if not found or unauthorized.
+            The resource if found and authorized, None if not found.
+
+        Raises:
+            AuthorizationError: The resource exists but access is denied.
         """
         # Get resource from AggregateProvider (handles aggregation and namespacing)
         resource = await super()._get_resource(uri, version)
         if resource is None:
             return None
 
-        # Component auth - return None if unauthorized (consistent with list filtering)
-        skip_auth, token = _get_auth_context()
-        if not skip_auth and resource.auth is not None:
-            ctx = AuthContext(token=token, component=resource)
-            try:
-                if not await run_auth_checks(resource.auth, ctx):
-                    return None
-            except AuthorizationError:
-                return None
+        if not await _component_auth_allows(resource):
+            raise AuthorizationError(f"Access denied to resource: {uri!r}")
 
         return resource
 
@@ -1064,17 +1065,35 @@ class FastMCP(
         Returns:
             The resource if found and enabled, None otherwise.
         """
-        resource = await super().get_resource(uri, version)
+        resource, _ = await self._lookup_resource(uri, version)
+        return resource
+
+    async def _lookup_resource(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> tuple[Resource | None, bool]:
+        """Resolve a resource as `get_resource` does.
+
+        Also reports whether a concrete resource exists at `uri` at all, so
+        reads can tell a hidden resource apart from a missing one.
+        """
+        try:
+            resource = await super().get_resource(uri, version)
+        except AuthorizationError:
+            return None, True
         if resource is None:
-            return None
+            return None, False
 
         # Apply session transforms to single item
         resources = await apply_session_transforms([resource])
-        if resources and is_enabled(resources[0]):
-            return resources[0]
+        if (
+            resources
+            and is_enabled(resources[0])
+            and await _component_auth_allows(resources[0])
+        ):
+            return resources[0], True
 
         if version is not None:
-            return None
+            return None, True
 
         all_resources = [r for r in await super().list_resources() if str(r.uri) == uri]
         all_resources = list(await apply_session_transforms(all_resources))
@@ -1093,8 +1112,8 @@ class FastMCP(
             authorized.append(r)
 
         if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+            return None, True
+        return max(authorized, key=version_sort_key), True
 
     async def list_resource_templates(
         self, *, run_middleware: bool = True
@@ -1202,7 +1221,13 @@ class FastMCP(
 
         # Apply session transforms to single item
         templates = await apply_session_transforms([template])
-        if templates and is_enabled(templates[0]):
+        # Transforms can change what `auth` sees (a tag, for one), so the check made
+        # on the pre-transform component is not enough.
+        if (
+            templates
+            and is_enabled(templates[0])
+            and await _component_auth_allows(templates[0])
+        ):
             return templates[0]
 
         if version is not None:
@@ -1328,7 +1353,13 @@ class FastMCP(
 
         # Apply session transforms to single item
         prompts = await apply_session_transforms([prompt])
-        if prompts and is_enabled(prompts[0]):
+        # Transforms can change what `auth` sees (a tag, for one), so the check made
+        # on the pre-transform component is not enough.
+        if (
+            prompts
+            and is_enabled(prompts[0])
+            and await _component_auth_allows(prompts[0])
+        ):
             return prompts[0]
 
         if version is not None:
@@ -1394,7 +1425,7 @@ class FastMCP(
         #   1. Display-name path — the name this server lists the tool
         #      under, resolved through `get_tool`.
         #   2. Hashed-name path — backend tools that opted into
-        #      app-callable visibility, addressed as `<hash>_<local_name>`
+        #      app-callable visibility, addressed as `__<hash>_<local_name>`
         #      and resolved through `get_tool_by_hash`. It applies the same
         #      transforms, visibility, and auth as the display-name path.
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
@@ -1531,6 +1562,20 @@ class FastMCP(
                         raise ToolError(f"Error calling tool {name!r}") from e
                     raise ToolError(f"Error calling tool {name!r}: {e}") from e
 
+    async def _check_resource_access(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> None:
+        async with fastmcp.server.context.Context(fastmcp=self) as ctx:
+            context = MiddlewareContext(
+                message=mcp_types.ReadResourceRequestParams(
+                    uri=uri, _meta=_version_request_meta(version)
+                ),
+                method="resources/read",
+                fastmcp_context=ctx,
+            )
+            for middleware in self.middleware:
+                await middleware.check_resource_access(context)
+
     async def read_resource(
         self,
         uri: str,
@@ -1599,7 +1644,7 @@ class FastMCP(
                     return await synthesized._read()
 
                 # Try concrete resources first (transforms + auth via _get_resource)
-                resource = await self.get_resource(uri, version=version)
+                resource, exists = await self._lookup_resource(uri, version=version)
                 if resource is not None:
                     span.set_attributes(resource.get_span_attributes())
                     try:
@@ -1633,6 +1678,12 @@ class FastMCP(
                         raise ResourceError(
                             f"Error reading resource {uri!r}: {e}"
                         ) from e
+
+                # A hidden concrete resource shadows templates for its URI.
+                # Otherwise a matching template, such as a proxy's, would
+                # serve the resource that was hidden.
+                if exists:
+                    raise NotFoundError(f"Unknown resource: {uri!r}")
 
                 # Try templates (transforms + auth via get_resource_template)
                 template = await self.get_resource_template(uri, version=version)

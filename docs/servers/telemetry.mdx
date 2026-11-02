@@ -70,6 +70,54 @@ This works with any OTLP-compatible backend (Jaeger, Zipkin, Grafana Tempo, Data
   Learn more about the OpenTelemetry Python SDK, auto-instrumentation, and available exporters.
 </Card>
 
+## Logs
+
+Export Python log records alongside traces with OpenTelemetry's [logging instrumentation](https://opentelemetry.io/docs/zero-code/python/logs-example/). Install it in the same environment as your server:
+
+```bash
+pip install opentelemetry-distro opentelemetry-exporter-otlp opentelemetry-instrumentation-logging
+```
+
+Use Python's standard `logging` module in your tools. Save this example as `server.py`:
+
+```python
+import logging
+
+from fastmcp import FastMCP
+
+logging.getLogger().setLevel(logging.INFO)
+logger = logging.getLogger("inventory")
+mcp = FastMCP("Inventory")
+
+
+@mcp.tool
+def stock_count(sku: str) -> int:
+    """Return the available stock for a product."""
+    logger.info("Checking inventory", extra={"product_sku": sku})
+    return {"WIDGET": 12}.get(sku, 0)
+
+
+if __name__ == "__main__":
+    mcp.run(transport="http")
+```
+
+Records from your own loggers, such as `inventory` above, reach OpenTelemetry without further FastMCP configuration. To export FastMCP's own `fastmcp.*` records as well, set `FASTMCP_LOG_ENABLED=false` before starting the process. FastMCP's default console configuration stops its records from propagating to the root logger, where OpenTelemetry installs its handler; disabling that configuration lets them through, and also silences FastMCP's console output. Python logging levels still control which records are emitted.
+
+```bash
+export FASTMCP_LOG_ENABLED=false  # optional, exports fastmcp.* records
+export OTEL_SERVICE_NAME=inventory
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+export OTEL_LOGS_EXPORTER=otlp
+
+opentelemetry-instrument python server.py
+```
+
+The endpoint must accept OTLP logs as well as traces. On current OpenTelemetry Python releases, installing `opentelemetry-instrumentation-logging` enables log export automatically. See the [OpenTelemetry agent configuration](https://opentelemetry.io/docs/zero-code/python/configuration/#logging) for version-specific settings.
+
+When `stock_count` runs, its log record carries the active FastMCP tool span's trace and span IDs, letting you connect the message to the request. For local inspection without a collector, set `OTEL_LOGS_EXPORTER=console`, `OTEL_TRACES_EXPORTER=console`, and `OTEL_METRICS_EXPORTER=none`. The console exporter writes to stdout, so use it with HTTP servers as above; stdout belongs to the protocol when serving over STDIO.
+
+`ctx.info()` and related methods send [MCP log notifications](/servers/logging) to the client. Their server-side copies are logged at `DEBUG` on `fastmcp.server.context.to_client`; they do not become OpenTelemetry `INFO` records automatically. Use a Python logger when you want to emit a server-side record at its original severity.
+
 ## Tracing
 
 FastMCP creates spans for all MCP operations, providing end-to-end visibility into request handling.

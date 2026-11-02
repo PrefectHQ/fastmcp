@@ -255,7 +255,8 @@ def convert_raw_to_resource_result(
         raw_value: The value returned by the user's function.
         mime_type: The component's declared MIME type, forwarded to content items.
         meta: Component-level meta (e.g. `ui` metadata for MCP Apps CSP/permissions)
-            propagated to each content item.
+            propagated to each content item. For `list[ResourceContent]` returns
+            it is merged into every item, with item-level keys taking precedence.
     """
     if isinstance(raw_value, ResourceResult):
         return raw_value
@@ -276,18 +277,33 @@ def convert_raw_to_resource_result(
             [ResourceContent(raw_value, mime_type=mime_type, meta=meta)]
         )
 
-    # For JSON-native types (dict, list, tuple, int, float, bool, None),
-    # serialize and wrap in ResourceContent with the component's meta,
-    # matching the str/bytes path above so CSP/permissions propagate.
-    # Exclude list[ResourceContent] which should go through ResourceResult
-    # normalization below.
+    # A non-empty list of ResourceContent carries multiple content items.
+    # Attach the component's public meta to each item, with item-level keys
+    # taking precedence over component keys where an item sets its own value
+    # (item meta could otherwise be lost or shadow the component's). Items are
+    # copied so the caller's ResourceContent objects are not mutated.
+    # ResourceResult(raw_value) still validates the whole list, preserving the
+    # TypeError for non-ResourceContent members.
     if (
-        isinstance(raw_value, dict | list | tuple | int | float | bool)
-        or raw_value is None
-    ) and not (
         isinstance(raw_value, list)
         and raw_value
         and isinstance(raw_value[0], ResourceContent)
+    ):
+        result = ResourceResult(raw_value)
+        if meta is not None:
+            result.contents = [
+                item.model_copy(update={"meta": {**meta, **(item.meta or {})}})
+                for item in result.contents
+            ]
+        return result
+
+    # For JSON-native types (dict, list, tuple, int, float, bool, None),
+    # serialize and wrap in ResourceContent with the component's meta,
+    # matching the str/bytes path above so CSP/permissions propagate.
+    # An empty list is JSON-native and serializes to "[]" as before.
+    if (
+        isinstance(raw_value, dict | list | tuple | int | float | bool)
+        or raw_value is None
     ):
         return ResourceResult(
             [

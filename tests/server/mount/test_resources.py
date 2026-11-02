@@ -71,6 +71,31 @@ class TestResourcesAndTemplates:
         result = await main_app.read_resource("resource://sub/multi/abc")
         assert result.contents[0].content == "abc"
 
+    async def test_mount_with_hostless_uris(self):
+        """URIs with no `scheme://` are listed unprefixed, so they must stay readable."""
+        main_app = FastMCP("MainApp")
+        sub_app = FastMCP("SubApp")
+
+        @sub_app.resource("urn:example:config")
+        def config() -> str:
+            return "settings"
+
+        @sub_app.resource("urn:example:item/{item_id}")
+        def item(item_id: str) -> str:
+            return f"item {item_id}"
+
+        main_app.mount(sub_app, "api")
+
+        resources = await main_app.list_resources()
+        assert any(str(r.uri) == "urn:example:config" for r in resources)
+        templates = await main_app.list_resource_templates()
+        assert any(t.uri_template == "urn:example:item/{item_id}" for t in templates)
+
+        result = await main_app.read_resource("urn:example:config")
+        assert result.contents[0].content == "settings"
+        result = await main_app.read_resource("urn:example:item/7")
+        assert result.contents[0].content == "item 7"
+
     async def test_adding_resource_after_mounting(self):
         """Test adding a resource after mounting."""
         main_app = FastMCP("MainApp")

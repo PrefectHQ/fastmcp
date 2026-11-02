@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@v10.3.0
 
       - name: Read previous assessments
         run: |
@@ -96,8 +96,8 @@ jobs:
             git checkout -q --orphan status
           fi
           cp ../snapshot/status.json ../snapshot/STATUS.md ../snapshot/badge.json .
-          cp ../snapshot/index.html ../snapshot/style.css ../snapshot/app.js .
-          git add status.json STATUS.md badge.json index.html style.css app.js
+          cp ../snapshot/*.html ../snapshot/*.css ../snapshot/*.js .
+          git add status.json STATUS.md badge.json *.html *.css *.js
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               commit -q -m "status: $(jq -r .as_of status.json)"
