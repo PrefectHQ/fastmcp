@@ -124,9 +124,8 @@ def test_verification_handoff_binds_real_run_deployment_and_inputs():
         runtime = Runtime(
             plans={
                 role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-                for role in ("assess", "reproduce", "prepare", "review")
+                for role in ("assess", "reproduce")
             },
-            validator_id=uuid4(),
             verification_id=deployment_id,
             source_sha="d" * 40,
         )
@@ -191,9 +190,8 @@ def test_failed_verification_retry_is_idempotent_and_success_is_reused():
         runtime = Runtime(
             plans={
                 role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-                for role in ("assess", "reproduce", "prepare", "review")
+                for role in ("assess", "reproduce")
             },
-            validator_id=uuid4(),
             verification_id=deployment_id,
             source_sha="d" * 40,
         )

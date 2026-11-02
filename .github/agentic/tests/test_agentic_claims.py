@@ -179,9 +179,6 @@ with claim_issues(Batch.model_validate_json(sys.argv[1]),UUID(sys.argv[2])):
             "source_sha": "a" * 40,
             "plans": {},
             "triage_plan": {"flow_id": str(flow_id)},
-            "validator_id": str(
-                client.create_deployment(flow_id, "validator", version="a" * 40)
-            ),
             "verification_id": str(verification_id),
         }
         prior = client.create_flow_run(
