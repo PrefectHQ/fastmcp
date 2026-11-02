@@ -32,6 +32,20 @@ class TestNormalizeTimeoutToSeconds:
         with pytest.raises(TypeError, match="Invalid timeout type"):
             normalize_timeout_to_seconds(cast(Any, "1"))
 
+    def test_non_none_return_invariants(self):
+        res_int = normalize_timeout_to_seconds(5)
+        assert res_int is not None
+        assert res_int == 5.0
+        assert isinstance(res_int, float)
+        res_td = normalize_timeout_to_seconds(datetime.timedelta(seconds=12))
+        assert res_td is not None
+        assert res_td == 12.0
+        assert isinstance(res_td, float)
+        assert normalize_timeout_to_seconds(0) is None
+        assert normalize_timeout_to_seconds(None) is None
+        assert normalize_timeout_to_seconds(datetime.timedelta(seconds=0)) is None
+
+
 
 class TestNormalizeTimeoutToTimedelta:
     def test_none_stays_none(self):
