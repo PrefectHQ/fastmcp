@@ -329,3 +329,77 @@ async def test_explicit_type_override_replaces_bounds_and_keeps_renamed_default(
     assert validator.is_valid({})
     assert validator.is_valid({"value": 0})
     assert validator.is_valid({"value": None})
+
+
+async def _legacy_mode(mode: Literal["quick"]) -> ToolResult:
+    return await forward(mode="fast")
+
+
+async def _renamed_mode(mode: Literal["quick", "careful"]) -> ToolResult:
+    return await forward(mode="fast" if mode == "quick" else "slow")
+
+
+async def _widened_mode(mode: Literal["fast", "slow", "turbo"]) -> ToolResult:
+    return await forward(mode="fast" if mode == "turbo" else mode)
+
+
+@pytest.mark.parametrize(
+    ("transform_fn", "accepted", "rejected"),
+    [
+        (_legacy_mode, "quick", "fast"),
+        (_renamed_mode, "careful", "slow"),
+        (_widened_mode, "turbo", "medium"),
+    ],
+)
+async def test_literal_reannotation_advertises_transform_fn_values(
+    transform_fn: Any, accepted: str, rejected: str
+) -> None:
+    """A transform_fn Literal replaces the parent's value set instead of merging."""
+
+    def parent(mode: Literal["fast", "slow"]) -> str:
+        return mode
+
+    transformed = Tool.from_tool(Tool.from_function(parent), transform_fn=transform_fn)
+
+    async with Client(FastMCP(tools=[transformed])) as client:
+        assert (await client.call_tool("parent", {"mode": accepted})).data in (
+            "fast",
+            "slow",
+        )
+        advertised = (await client.list_tools())[0].input_schema
+
+    validator = jsonschema.Draft202012Validator(advertised)
+    assert validator.is_valid({"mode": accepted})
+    assert not validator.is_valid({"mode": rejected})
+
+
+def test_plain_reannotation_keeps_parent_literal_values() -> None:
+    def parent(mode: Literal["fast", "slow"]) -> str:
+        return mode
+
+    async def child(mode: str) -> ToolResult:
+        return await forward(mode=mode)
+
+    transformed = Tool.from_tool(Tool.from_function(parent), transform_fn=child)
+
+    assert transformed.parameters["properties"]["mode"]["enum"] == ["fast", "slow"]
+
+
+def test_explicit_type_override_keeps_parent_extension_keys() -> None:
+    def parent(
+        value: Annotated[
+            str, Field(description="d", json_schema_extra={"x-ui": "slider"})
+        ],
+    ) -> str:
+        return value
+
+    transformed = Tool.from_tool(
+        Tool.from_function(parent),
+        transform_args={"value": ArgTransform(type=int)},
+    )
+
+    assert transformed.parameters["properties"]["value"] == {
+        "description": "d",
+        "type": "integer",
+        "x-ui": "slider",
+    }

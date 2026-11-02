@@ -43,12 +43,17 @@ logger = get_logger(__name__)
 _PROPERTY_PRESERVE_KEYS = _METADATA_KEYS | frozenset({"default", "examples", "example"})
 
 
+def _is_preserved_property_key(key: str) -> bool:
+    # `x-` extension keys are annotations (UI and vendor hints), not validation.
+    return key in _PROPERTY_PRESERVE_KEYS or key.startswith("x-")
+
+
 def _strip_structural_schema_keys(schema: dict[str, Any]) -> dict[str, Any]:
-    return {k: v for k, v in schema.items() if k in _PROPERTY_PRESERVE_KEYS}
+    return {k: v for k, v in schema.items() if _is_preserved_property_key(k)}
 
 
 def _schema_has_structural_keys(schema: dict[str, Any]) -> bool:
-    return any(key not in _PROPERTY_PRESERVE_KEYS for key in schema)
+    return any(not _is_preserved_property_key(key) for key in schema)
 
 
 def _structural_kind(schema: dict[str, Any]) -> tuple[Any, ...]:
@@ -992,6 +997,8 @@ class TransformedTool(Tool):
             override_schema: Schema that takes precedence for overlapping properties
             structural_override_properties: Property names whose structural schema
                 comes from the override (e.g. ArgTransform(type=...) on the parent).
+            explicit_required_properties: Property names marked
+                ArgTransform(required=True), which never inherit a base default.
 
         Returns:
             Merged schema with override taking precedence
@@ -1012,7 +1019,7 @@ class TransformedTool(Tool):
                     structural = {
                         key: value
                         for key, value in param_schema.items()
-                        if key not in _PROPERTY_PRESERVE_KEYS
+                        if not _is_preserved_property_key(key)
                     }
                     preserved_override = _strip_structural_schema_keys(param_schema)
                     preserved_base = _strip_structural_schema_keys(base_param)
@@ -1032,6 +1039,14 @@ class TransformedTool(Tool):
                     param_schema = _strip_structural_schema_keys(param_schema)
                     base_param.update(param_schema)
                 else:
+                    if "enum" in base_param or "const" in base_param:
+                        # A Literal in the transform_fn signature declares its
+                        # own value set, which replaces the parent's.
+                        param_schema = {
+                            key: value
+                            for key, value in param_schema.items()
+                            if key not in ("enum", "const")
+                        }
                     base_param.update(param_schema)
                 merged_props[param_name] = base_param
             else:
