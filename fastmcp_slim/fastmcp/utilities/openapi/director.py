@@ -401,6 +401,19 @@ class RequestDirector:
         }
 
         serialized: dict[str, Any] = {}
+
+        def add(name: str, value: Any) -> None:
+            # Exploded form objects emit bare property names, which can match
+            # another parameter's name; keep every value so the key repeats.
+            if name not in serialized:
+                serialized[name] = value
+                return
+            existing = serialized[name]
+            serialized[name] = [
+                *(existing if isinstance(existing, list) else [existing]),
+                *(value if isinstance(value, list) else [value]),
+            ]
+
         for key, value in query_params.items():
             param_info = param_lookup.get(key)
             if param_info is not None:
@@ -422,7 +435,7 @@ class RequestDirector:
                             property_name = _query_scalar_to_str(k)
                             if param_info.style == "deepObject":
                                 property_name = f"{key}[{property_name}]"
-                            serialized[property_name] = _query_scalar_to_str(v)
+                            add(property_name, _query_scalar_to_str(v))
                     else:
                         delimiter = self._STYLE_DELIMITERS.get(style, ",")
                         # form,explode=false on objects: key,value pairs
@@ -431,18 +444,16 @@ class RequestDirector:
                         for k, v in value.items():
                             parts.append(_query_scalar_to_str(k))
                             parts.append(_query_scalar_to_str(v))
-                        serialized[key] = delimiter.join(parts)
+                        add(key, delimiter.join(parts))
                     continue
                 if not explode:
                     delimiter = self._STYLE_DELIMITERS.get(style, ",")
                     if isinstance(value, list):
                         if not value:
                             continue
-                        serialized[key] = delimiter.join(
-                            _query_scalar_to_str(v) for v in value
-                        )
+                        add(key, delimiter.join(_query_scalar_to_str(v) for v in value))
                         continue
-            serialized[key] = value
+            add(key, value)
         return serialized
 
     @staticmethod
