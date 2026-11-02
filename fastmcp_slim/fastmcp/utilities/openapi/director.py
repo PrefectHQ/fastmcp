@@ -127,6 +127,11 @@ class RequestDirector:
                 for p in route.parameters
                 if p.location == "path"
             },
+            path_style={
+                p.name: p.style
+                for p in route.parameters
+                if p.location == "path" and p.style
+            },
         )
 
         # Step 4: Prepare request data
@@ -496,29 +501,58 @@ class RequestDirector:
         # reconstitute after a server decodes the path.
         return quote(serialized, safe="").replace(".", "%2E")
 
-    def _simple_param_to_path_segment(
-        self, param_name: str, value: Any, explode: bool = False
+    def _path_param_to_segment(
+        self,
+        param_name: str,
+        value: Any,
+        explode: bool = False,
+        style: str = "simple",
     ) -> str:
-        """Serialize a path parameter per the OpenAPI "simple" style, encoding each
-        item separately so the style separators stay literal on the wire."""
+        """Serialize a path parameter per its OpenAPI style ("simple", "label",
+        or "matrix"), encoding each item separately so the style separators stay
+        literal on the wire."""
         if isinstance(value, dict):
-            parts = []
-            for k, v in value.items():
-                ek = self._encode_path_scalar(param_name, k)
-                ev = self._encode_path_scalar(param_name, v)
-                parts.append(f"{ek}={ev}" if explode else f"{ek},{ev}")
-            return ",".join(parts)
-        if isinstance(value, list | tuple):
+            pairs = [
+                (
+                    self._encode_path_scalar(param_name, k),
+                    self._encode_path_scalar(param_name, v),
+                )
+                for k, v in value.items()
+            ]
+            if explode:
+                items = [f"{k}={v}" for k, v in pairs]
+            else:
+                items = [",".join(pair) for pair in pairs]
+            # An exploded matrix object names each property, not the parameter.
+            if style == "matrix" and explode:
+                return "".join(f";{item}" for item in items)
+        elif isinstance(value, list | tuple):
             # Mirror the header side: flatten a nested list one level instead
             # of leaking its Python repr onto the wire.
-            parts = []
+            items = []
             for v in value:
                 if isinstance(v, list | tuple):
-                    parts.extend(self._encode_path_scalar(param_name, i) for i in v)
+                    items.extend(self._encode_path_scalar(param_name, i) for i in v)
                 else:
-                    parts.append(self._encode_path_scalar(param_name, v))
-            return ",".join(parts)
-        return self._encode_path_scalar(param_name, value)
+                    items.append(self._encode_path_scalar(param_name, v))
+        else:
+            items = [self._encode_path_scalar(param_name, value)]
+
+        if style == "label":
+            segment = "." + ("." if explode else ",").join(items)
+            # Empty items leave only the literal delimiters, e.g. "." or "..".
+            if segment in {".", ".."}:
+                raise ValueError(
+                    f"Path parameter '{param_name}' cannot serialize to a dot segment"
+                )
+            return segment
+        if style == "matrix":
+            name = quote(param_name, safe="")
+            if explode:
+                return "".join(f";{name}={item}" for item in items)
+            joined = ",".join(items)
+            return f";{name}={joined}" if joined else f";{name}"
+        return ",".join(items)
 
     def _build_url(
         self,
@@ -526,6 +560,7 @@ class RequestDirector:
         path_params: dict[str, Any],
         base_url: str,
         path_explode: dict[str, bool] | None = None,
+        path_style: dict[str, str] | None = None,
     ) -> str:
         """
         Build URL by substituting path parameters in the template.
@@ -536,6 +571,8 @@ class RequestDirector:
             base_url: Base URL to prepend
             path_explode: Per-parameter explode flags from the route's parameter
                 definitions; absent names default to the non-exploded form
+            path_style: Per-parameter styles from the route's parameter
+                definitions; absent names default to "simple"
 
         Returns:
             Complete URL with path parameters substituted
@@ -555,16 +592,20 @@ class RequestDirector:
         # Path parameters default to the OpenAPI "simple" style, so values are
         # serialized before substitution (e.g. true/false for booleans, "a,b"
         # for arrays) instead of leaking Python reprs into the URL. Each item
-        # is encoded separately and the style separators (",", "=") stay
-        # literal, so ids=["a", "b"] and ids=["a,b"] stay distinct on the
+        # is encoded separately and the style separators (",", "=", ".", ";")
+        # stay literal, so ids=["a", "b"] and ids=["a,b"] stay distinct on the
         # wire; dot-segment validation runs per serialized item.
         path_explode = path_explode or {}
+        path_style = path_style or {}
         url_path = path_template
         for param_name, param_value in path_params.items():
             placeholder = f"{{{param_name}}}"
             if placeholder in url_path:
-                safe_value = self._simple_param_to_path_segment(
-                    param_name, param_value, path_explode.get(param_name, False)
+                safe_value = self._path_param_to_segment(
+                    param_name,
+                    param_value,
+                    path_explode.get(param_name, False),
+                    path_style.get(param_name, "simple"),
                 )
                 url_path = url_path.replace(placeholder, safe_value)
 
