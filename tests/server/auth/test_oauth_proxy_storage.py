@@ -2,6 +2,8 @@
 
 import asyncio
 import tempfile
+import threading
+import time
 import warnings
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -303,9 +305,7 @@ class TestOAuthProxyDefaultStoreCull:
         assert _entry_files(isolated_home) == []
 
     def test_startup_cull_without_running_loop(self, jwt_verifier, isolated_home):
-        """The sync-construction path drives the cull inline via asyncio.run."""
-        import threading
-
+        """The sync-construction path drives the cull inline on a private loop."""
         created: list[OAuthProxy] = []
 
         def build() -> None:
@@ -323,8 +323,6 @@ class TestOAuthProxyDefaultStoreCull:
         asyncio.run(seed())
         # Let the entry expire, then construct a second proxy with no event
         # loop running: the startup cull runs inline in the constructor.
-        import time
-
         time.sleep(0.2)
         assert len(_entry_files(isolated_home)) == 1
         thread = threading.Thread(target=build)
@@ -332,3 +330,25 @@ class TestOAuthProxyDefaultStoreCull:
         thread.join()
 
         assert _entry_files(isolated_home) == []
+
+    def test_startup_cull_preserves_current_event_loop(
+        self, jwt_verifier, isolated_home
+    ):
+        """Constructing the proxy must not reset the thread's current event loop."""
+        observed: list[bool] = []
+
+        def build() -> None:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                self.create_proxy(jwt_verifier)
+                observed.append(asyncio.get_event_loop() is loop)
+            finally:
+                asyncio.set_event_loop(None)
+                loop.close()
+
+        thread = threading.Thread(target=build)
+        thread.start()
+        thread.join()
+
+        assert observed == [True]

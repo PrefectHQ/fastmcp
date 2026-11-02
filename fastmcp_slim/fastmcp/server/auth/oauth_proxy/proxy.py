@@ -631,6 +631,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # The store FastMCP created itself, if any. Expired entries are only ever
         # reaped from this store: a user-provided client_storage is never culled.
         self._default_file_store: FileTreeStore | None = default_file_store
+        self._startup_cull_task: asyncio.Task[None] | None = None
         self._client_storage: AsyncKeyValue = client_storage
 
         # Cache HTTPS check to avoid repeated logging
@@ -758,10 +759,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     def _cull_expired_state_at_startup(self) -> None:
         """Reap expired OAuth state files left behind by previous runs, once.
 
-        The proxy is constructed synchronously while ``FileTreeStore.cull()``
+        The proxy is constructed synchronously while `FileTreeStore.cull()`
         is async. When no event loop is running (the usual case: the proxy is
-        built during sync server setup) the cull is driven to completion
-        inline; otherwise it is scheduled on the running loop so construction
+        built during sync server setup) the cull is driven to completion on a
+        private event loop, so the caller's current event loop is left as it
+        was. Otherwise it is scheduled on the running loop so construction
         never blocks the caller. Failures are logged, never raised: a missed
         cull only means stale files linger until the next restart.
         """
@@ -771,25 +773,36 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             loop = None
 
         if loop is None:
+            # Not asyncio.run(): it would reset the thread's current event loop.
+            private_loop = asyncio.new_event_loop()
             try:
-                asyncio.run(self.cull_expired_oauth_state())
+                private_loop.run_until_complete(self.cull_expired_oauth_state())
             except Exception:
                 logger.warning(
                     "Failed to cull expired OAuth proxy state at startup",
                     exc_info=True,
                 )
+            finally:
+                try:
+                    private_loop.run_until_complete(private_loop.shutdown_asyncgens())
+                    private_loop.run_until_complete(
+                        private_loop.shutdown_default_executor()
+                    )
+                finally:
+                    private_loop.close()
         else:
-            task = loop.create_task(
+            # Keep a strong reference: the loop only holds tasks weakly.
+            self._startup_cull_task = loop.create_task(
                 self.cull_expired_oauth_state(),
                 name="fastmcp-oauth-proxy-startup-cull",
             )
-            task.add_done_callback(_log_startup_cull_failure)
+            self._startup_cull_task.add_done_callback(_log_startup_cull_failure)
 
     async def cull_expired_oauth_state(self) -> None:
         """Delete expired entries from the default on-disk OAuth state store.
 
-        This is a no-op when a custom ``client_storage`` was provided: FastMCP
-        only reaps the store it created itself. ``cull()`` only removes entries
+        This is a no-op when a custom `client_storage` was provided: FastMCP
+        only reaps the store it created itself. `cull()` only removes entries
         whose TTL has passed; entries without a TTL (e.g. DCR client
         registrations) are left untouched.
 
