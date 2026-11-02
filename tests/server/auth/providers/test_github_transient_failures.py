@@ -83,6 +83,13 @@ async def _store_proxy_access_token(
     )
 
 
+_RATE_LIMITED = [
+    (403, {"x-ratelimit-remaining": "0"}),
+    (403, {"retry-after": "60"}),
+    (429, {}),
+]
+
+
 async def test_github_401_is_still_an_invalid_token():
     client = AsyncMock()
     client.get.return_value = _response(401, "Bad credentials")
@@ -91,10 +98,10 @@ async def test_github_401_is_still_an_invalid_token():
     assert await verifier.verify_token("bad-token") is None
 
 
-@pytest.mark.parametrize("status_code", [403, 429, 500, 503])
-async def test_github_operational_http_failure_raises_typed_error(status_code):
+@pytest.mark.parametrize("status_code, headers", [*_RATE_LIMITED, (500, {}), (503, {})])
+async def test_github_operational_http_failure_raises_typed_error(status_code, headers):
     client = AsyncMock()
-    client.get.return_value = _response(status_code)
+    client.get.return_value = _response(status_code, headers=headers)
     verifier = GitHubTokenVerifier(http_client=client)
 
     with pytest.raises(TokenVerificationError, match=str(status_code)):
@@ -133,10 +140,23 @@ async def test_github_missing_user_id_raises_typed_error():
         await verifier.verify_token("still-valid-token")
 
 
-@pytest.mark.parametrize("status_code", [403, 429])
-async def test_scope_non_degradable_http_failure_raises_typed_error(status_code):
+@pytest.mark.parametrize("status_code", [403, 404])
+async def test_github_permanent_client_error_is_an_invalid_token(status_code):
+    """A forbidden or missing user is a final answer, so the client re-authenticates."""
     client = AsyncMock()
-    client.get.side_effect = [_github_user_response(), _response(status_code)]
+    client.get.return_value = _response(status_code)
+    verifier = GitHubTokenVerifier(http_client=client)
+
+    assert await verifier.verify_token("rejected-token") is None
+
+
+@pytest.mark.parametrize("status_code, headers", _RATE_LIMITED)
+async def test_scope_rate_limit_raises_typed_error(status_code, headers):
+    client = AsyncMock()
+    client.get.side_effect = [
+        _github_user_response(),
+        _response(status_code, headers=headers),
+    ]
     verifier = GitHubTokenVerifier(required_scopes=["user"], http_client=client)
 
     with pytest.raises(TokenVerificationError, match=str(status_code)):
@@ -210,12 +230,26 @@ async def test_scope_401_is_still_an_invalid_token():
     assert await verifier.verify_token("revoked-token") is None
 
 
-async def test_missing_scope_header_does_not_synthesize_user_scope():
+@pytest.mark.parametrize("status_code", [403, 404])
+async def test_scope_permanent_client_error_is_an_invalid_token(status_code):
+    client = AsyncMock()
+    client.get.side_effect = [_github_user_response(), _response(status_code)]
+    verifier = GitHubTokenVerifier(required_scopes=["user"], http_client=client)
+
+    assert await verifier.verify_token("rejected-token") is None
+
+
+async def test_github_app_token_without_scope_header_has_user_scope():
+    """GitHub App user tokens send no X-OAuth-Scopes; the default required scope still passes."""
     client = AsyncMock()
     client.get.side_effect = [_github_user_response(), _response(200, headers={})]
     verifier = GitHubTokenVerifier(required_scopes=["user"], http_client=client)
 
-    assert await verifier.verify_token("standalone-token") is None
+    result = await verifier.verify_token("github-app-user-token")
+
+    assert result is not None
+    assert result.scopes == ["user"]
+    assert result.subject == "12345"
 
 
 async def test_successful_scope_verification_is_cached():

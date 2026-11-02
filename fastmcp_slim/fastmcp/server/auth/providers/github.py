@@ -39,6 +39,25 @@ from fastmcp.utilities.token_cache import TokenCache
 logger = get_logger(__name__)
 
 
+def _is_transient(response: httpx2.Response) -> bool:
+    """Whether a GitHub API error response is temporary rather than a verdict on the token.
+
+    Server errors and rate limits are temporary. GitHub reports rate limits as
+    429, or as 403 with an exhausted ``x-ratelimit-remaining`` or a
+    ``retry-after`` header; any other 4xx is a final answer about the token.
+    """
+    status = response.status_code
+    if status >= 500 or status == 429:
+        return True
+    if status == 403:
+        headers = response.headers
+        return (
+            headers.get("x-ratelimit-remaining") == "0"
+            or headers.get("retry-after") is not None
+        )
+    return False
+
+
 class GitHubTokenVerifier(TokenVerifier):
     """Token verifier for GitHub OAuth tokens.
 
@@ -111,7 +130,7 @@ class GitHubTokenVerifier(TokenVerifier):
                     },
                 )
 
-                if response.status_code == 401:
+                if response.status_code != 200 and not _is_transient(response):
                     logger.debug(
                         "GitHub token verification failed: %d - %s",
                         response.status_code,
@@ -162,14 +181,6 @@ class GitHubTokenVerifier(TokenVerifier):
                     scope_discovery_error = "transport error"
                     oauth_scopes_header = ""
                 else:
-                    if scopes_response.status_code == 401:
-                        logger.debug(
-                            "GitHub scope verification rejected credentials: %d - %s",
-                            scopes_response.status_code,
-                            scopes_response.text[:200],
-                        )
-                        return None
-
                     if 500 <= scopes_response.status_code < 600:
                         logger.warning(
                             "GitHub scope verification unavailable: %d - %s",
@@ -179,7 +190,7 @@ class GitHubTokenVerifier(TokenVerifier):
                         scope_discovery_unavailable = True
                         scope_discovery_error = f"HTTP {scopes_response.status_code}"
                         oauth_scopes_header = ""
-                    elif scopes_response.status_code != 200:
+                    elif _is_transient(scopes_response):
                         logger.warning(
                             "GitHub scope verification unavailable: %d - %s",
                             scopes_response.status_code,
@@ -189,18 +200,28 @@ class GitHubTokenVerifier(TokenVerifier):
                             "GitHub scope verification unavailable: "
                             f"HTTP {scopes_response.status_code}"
                         )
+                    elif scopes_response.status_code != 200:
+                        logger.debug(
+                            "GitHub scope verification rejected credentials: %d - %s",
+                            scopes_response.status_code,
+                            scopes_response.text[:200],
+                        )
+                        return None
                     else:
                         oauth_scopes_header = scopes_response.headers.get(
                             "x-oauth-scopes", ""
                         )
+                        # GitHub App user tokens carry no X-OAuth-Scopes header.
+                        # A successful /user call already proves the "user"
+                        # grant those tokens act with.
+                        if not oauth_scopes_header.strip():
+                            oauth_scopes_header = "user"
 
                 token_scopes = [
                     scope.strip()
                     for scope in oauth_scopes_header.split(",")
                     if scope.strip()
                 ]
-                # A successful 200 response without X-OAuth-Scopes still proves no
-                # grant beyond what GitHub reported; do not synthesize scopes there.
                 if self.required_scopes:
                     token_scopes_set = set(token_scopes)
                     required_scopes_set = set(self.required_scopes)
