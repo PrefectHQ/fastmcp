@@ -8,7 +8,12 @@ from prefect import task
 from flows.agentic_claims import claim_work
 from flows.agentic_intake import held
 from flows.agentic_review_app import review_client
-from flows.agentic_review_publication import before_delivery, post_review, review_body
+from flows.agentic_review_publication import (
+    EvidenceChanged,
+    before_delivery,
+    post_review,
+    review_body,
+)
 from flows.agentic_stack import digest
 from flows.agentic_stack_policy import Batch, Group, review_revision
 from flows.agentic_stack_runtime import (
@@ -43,11 +48,14 @@ def deliver_reviews(
         raise ValueError("Review publication is not configured")
     number = outcome["issue_number"]
     independent = saved(owner, f"{batch.id}-issue-{number}-triage-review")
-    if (
-        independent is None
-        or independent["run_id"] != outcome["triage_review_run_id"]
-        or independent["result"] != outcome["adversarial_review"]
-    ):
+    if independent is None:
+        raise ValueError("Independent review record is not readable yet")
+    if independent["run_id"] != outcome["triage_review_run_id"]:
+        raise ValueError(
+            f"Review came from run {outcome['triage_review_run_id']}, "
+            f"but the retained independent review is run {independent['run_id']}"
+        )
+    if independent["result"] != outcome["adversarial_review"]:
         raise ValueError("Review differs from retained independent evidence")
     verified = outcome.get("verification", [])
     if len({v["pr_number"] for v in verified}) != len(verified):
@@ -86,7 +94,7 @@ def deliver_reviews(
                     or check["head_sha"] != pr["head_sha"]
                     or check["baseline_sha"] != evidence["base_sha"]
                 ):
-                    raise ValueError(
+                    raise EvidenceChanged(
                         "Contribution verification is unavailable or stale"
                     )
                 revision = digest([check["head_sha"], check["baseline_sha"], app.slug])[
@@ -116,7 +124,7 @@ def deliver_reviews(
                         ) != review_revision(
                             before_delivery(evidence, receipts, app.slug + "[bot]")
                         ):
-                            raise ValueError(
+                            raise EvidenceChanged(
                                 "Issue or contribution changed after review"
                             )
 
@@ -144,6 +152,8 @@ def deliver_reviews(
             httpx.HTTPError,
             OSError,
         ) as error:
+            if isinstance(error, EvidenceChanged):
+                raise EvidenceChanged(str(error), receipts) from error
             if not receipts:
                 raise
             # Keep reviews that are already public visible to the queue.
