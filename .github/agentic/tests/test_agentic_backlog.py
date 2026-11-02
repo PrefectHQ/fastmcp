@@ -87,7 +87,7 @@ def test_event_intake_resolves_pull_requests_to_referenced_open_issues(github_se
     read, responses, requests = github_server
     responses["/repos/PrefectHQ/fastmcp/pulls/7"] = {
         "number": 7,
-        "body": "Fixes #5 and https://github.com/PrefectHQ/fastmcp/issues/6; not other/repo#8",
+        "body": "Fixes #5 and https://github.com/PrefectHQ/fastmcp/issues/6; not other/repo#8 or ([#&#8203;8203](https://redirect.github.com/astral-sh/ruff/pull/8203))",
     }
     responses["/repos/PrefectHQ/fastmcp/issues/5"] = issue(5)
     responses["/repos/PrefectHQ/fastmcp/issues/6"] = issue(6, state="closed")
@@ -97,6 +97,7 @@ def test_event_intake_resolves_pull_requests_to_referenced_open_issues(github_se
     assert [row["issue_number"] for row in result["pending"]] == [5, 9]
     assert result["coverage"]["pull_requests"] == 1
     assert "/repos/PrefectHQ/fastmcp/issues/8" not in requests
+    assert "/repos/PrefectHQ/fastmcp/issues/8203" not in requests
     assert config.scope() != Intake(issues=[1], queue="events").scope()
     assert Intake(issues=[9]).scope() != config.scope()
 
