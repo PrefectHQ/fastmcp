@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from mcp import MCPError
 from mcp_types import TextContent
+from pydantic import BaseModel, model_validator
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -134,6 +135,25 @@ class TestErrorHandlingMiddleware:
         assert isinstance(result, MCPError)
         assert result.error.code == -32602
         assert "Invalid params: test error" in result.error.message
+
+    def test_transform_error_classifies_subclasses(self, mock_context):
+        """Subclasses of a mapped exception get that exception's code."""
+
+        class Unreadable(UnicodeDecodeError):
+            pass
+
+        middleware = ErrorHandlingMiddleware()
+        cases: list[tuple[Exception, int]] = [
+            (UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad"), -32602),
+            (Unreadable("utf-8", b"\xff", 0, 1, "bad"), -32602),
+            (IsADirectoryError("dir"), -32603),
+            (TimeoutError("slow"), -32000),
+        ]
+
+        for error, code in cases:
+            result = middleware._transform_error(error, mock_context)
+            assert isinstance(result, MCPError)
+            assert result.error.code == code, error
 
     def test_transform_error_not_found_for_resource_method(self):
         """Test that not-found errors use -32002 for resource methods."""
@@ -776,3 +796,36 @@ async def test_prompt_handler_failure_remains_internal(
             await client.get_prompt("summarize", {"topic": "valid"})
 
     assert exc_info.value.error.code == -32603
+
+
+class _Payload(BaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def reject(cls, value: object) -> object:
+        raise ValueError("invalid payload")
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [("concat", {"wrong": "x"}), ("submit", {"payload": {}})],
+)
+async def test_tool_argument_validation_maps_to_invalid_params(
+    mode: Literal["auto", "legacy"], tool: str, arguments: dict[str, object]
+) -> None:
+    server = FastMCP(middleware=[ErrorHandlingMiddleware()])
+
+    @server.tool
+    def concat(a: str, b: str) -> str:
+        return a + b
+
+    @server.tool
+    def submit(payload: _Payload) -> str:
+        return "ok"
+
+    async with Client(server, mode=mode) as client:
+        with pytest.raises(MCPError) as exc_info:
+            await client.call_tool(tool, arguments)
+
+    assert exc_info.value.error.code == -32602
+    assert exc_info.value.error.message.startswith("Invalid params:")
