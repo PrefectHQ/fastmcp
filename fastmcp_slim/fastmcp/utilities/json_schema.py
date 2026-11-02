@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Sequence
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import unquote
 
@@ -189,6 +190,41 @@ def _text_within_limit(schema: dict[str, Any]) -> bool:
     return True
 
 
+# Keys holding instance data, where a `$ref` key is literal, not a reference.
+_DATA_KEYS = frozenset({"default", "const", "examples", "enum"})
+
+
+@dataclass(slots=True)
+class _Literal:
+    """Opaque holder that keeps instance data out of `jsonref.replace_refs`."""
+
+    value: Any
+
+
+def _map_schema_data(obj: Any, data: Any) -> Any:
+    """Rebuild *obj*'s schema containers without remote refs, passing instance
+    data through *data*."""
+    if isinstance(obj, dict):
+        ref = obj.get("$ref")
+        drop_ref = isinstance(ref, str) and not ref.startswith("#")
+        result: dict[str, Any] = {}
+        for k, v in obj.items():
+            if k == "$ref" and drop_ref:
+                continue
+            if k in _SUBSCHEMA_MAP_KEYS and isinstance(v, dict):
+                # The keys here are user property/definition names, so one
+                # named like a data keyword still holds a sub-schema.
+                result[k] = {n: _map_schema_data(s, data) for n, s in v.items()}
+            elif k in _DATA_KEYS:
+                result[k] = data(v)
+            else:
+                result[k] = _map_schema_data(v, data)
+        return result
+    if isinstance(obj, list):
+        return [_map_schema_data(item, data) for item in obj]
+    return obj
+
+
 def _strip_remote_refs(obj: Any) -> Any:
     """Return a deep copy of *obj* with non-local ``$ref`` values removed.
 
@@ -196,17 +232,26 @@ def _strip_remote_refs(obj: Any) -> Any:
     (``http://``, ``https://``, ``file://``, or any other URI scheme) are
     stripped so that ``jsonref.replace_refs`` never attempts to fetch an
     external resource.  This prevents SSRF / LFI when proxying schemas
-    from untrusted servers.
+    from untrusted servers. Instance data such as ``default`` is copied as is.
     """
-    if isinstance(obj, dict):
-        ref = obj.get("$ref")
-        if isinstance(ref, str) and not ref.startswith("#"):
-            # Drop the remote $ref key; keep all other keys.
-            return {k: _strip_remote_refs(v) for k, v in obj.items() if k != "$ref"}
-        return {k: _strip_remote_refs(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_strip_remote_refs(item) for item in obj]
-    return obj
+    return _map_schema_data(obj, lambda v: _copy_schema({"value": v})["value"])
+
+
+def _unwrap_literals(obj: Any) -> None:
+    """Replace each `_Literal` in *obj* with its value, in place."""
+    stack: list[Any] = [obj]
+    seen: set[int] = set()
+    while stack:
+        node = stack.pop()
+        if id(node) in seen:
+            continue
+        seen.add(id(node))
+        pairs = list(node.items()) if isinstance(node, dict) else enumerate(node)
+        for key, value in pairs:
+            if isinstance(value, _Literal):
+                node[key] = value.value
+            elif isinstance(value, dict | list):
+                stack.append(value)
 
 
 def _strip_discriminator(obj: Any, *, copy_data: bool = False) -> Any:
@@ -226,8 +271,6 @@ def _strip_discriminator(obj: Any, *, copy_data: bool = False) -> Any:
         skip = "discriminator" in obj and ("anyOf" in obj or "oneOf" in obj)
         if skip:
             obj = require_discriminator_property(obj)
-        # Keys that hold instance data, not sub-schemas — don't recurse.
-        _DATA_KEYS = {"default", "const", "examples", "enum"}
         result: dict[str, Any] = {}
         for k, v in obj.items():
             if k == "discriminator" and skip:
@@ -350,12 +393,15 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
     """
     # Strip any remote $ref values before processing to prevent SSRF / LFI.
     schema = _strip_remote_refs(schema)
+    # Instance data is literal: hide it from jsonref so a `$ref` key inside a
+    # default or enum value is neither followed nor replaced.
+    wrapped = _map_schema_data(schema, _Literal)
 
     # Check before inlining anything. Circular references can't be inlined:
     # jsonref.replace_refs produces Python dicts with object-identity cycles
     # that Pydantic's model_dump rejects. Acyclic graphs can still expand far
     # beyond their own size, so oversized results are refused as well.
-    if not _within_inline_limits(schema, follow_refs=True):
+    if not _within_inline_limits(wrapped, follow_refs=True):
         return resolve_root_ref(schema)
 
     # Most schema operations do not dereference. Keep jsonref (and its requests
@@ -366,15 +412,15 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         # Use jsonref to resolve all $ref references
         # proxies=False returns plain dicts (not proxy objects)
         # lazy_load=False resolves immediately
-        dereferenced = replace_refs(schema, proxies=False, lazy_load=False)
+        dereferenced = replace_refs(wrapped, proxies=False, lazy_load=False)
 
         # Merge sibling keywords that were lost during dereferencing
         # Pydantic puts description, default, examples as siblings to $ref
-        needs_merge = _needs_ref_merge(schema)
-        if needs_merge:
-            dereferenced = _merge_ref_siblings(schema, dereferenced, schema)
+        if _needs_ref_merge(wrapped):
+            dereferenced = _merge_ref_siblings(wrapped, dereferenced, wrapped)
         # Type assertion: top-level schema is always a dict
         assert isinstance(dereferenced, dict)
+        _unwrap_literals(dereferenced)
 
         # Remove $defs since all references have been resolved
         if "$defs" in dereferenced:
@@ -391,10 +437,10 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         # is an OpenAPI extension; after inlining, the `anyOf` variants
         # already carry `const` on the discriminant field, making the
         # mapping redundant.
-        # Without the sibling pass, jsonref still shares referenced containers.
-        # This traversal copies schemas; also copy literal instance data to keep
+        # jsonref and the sibling pass share referenced instance data. This
+        # traversal copies schemas; also copy literal instance data to keep
         # each reference's defaults, consts, examples and enums independent.
-        dereferenced = _strip_discriminator(dereferenced, copy_data=not needs_merge)
+        dereferenced = _strip_discriminator(dereferenced, copy_data=True)
 
         if not _text_within_limit(dereferenced):
             return resolve_root_ref(schema)
