@@ -21,7 +21,7 @@ jobs:
       issues: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Read published history
         env:
           GH_TOKEN: ${{ github.token }}
@@ -31,7 +31,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python scripts/backlog_status.py --previous "$RUNNER_TEMP/previous-backlog.json" --output "$RUNNER_TEMP/backlog.json"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: backlog
           path: ${{ runner.temp }}/backlog.json
@@ -47,7 +47,7 @@ jobs:
       group: maintenance-status-publish
       cancel-in-progress: false
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: backlog
           path: snapshot
