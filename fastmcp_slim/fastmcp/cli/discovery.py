@@ -193,17 +193,26 @@ def _scan_claude_code(start_dir: Path) -> list[DiscoveredServer]:
             )
 
     # Project-scoped servers matching start_dir. Claude Code keys
-    # ``projects`` by a raw path string and on Windows often writes
-    # forward slashes (and a different drive-letter case) than
-    # ``Path.resolve()``, so compare resolved paths instead of strings.
+    # ``projects`` by a raw path string, and on Windows it writes forward
+    # slashes where ``Path.resolve()`` produces backslashes, so fall back to
+    # comparing paths when the exact key is missing. Only one entry is used so
+    # stale duplicate spellings of the same directory don't collide.
     resolved_dir = start_dir.resolve()
     projects = data.get("projects", {})
     if isinstance(projects, dict):
-        for project_path, project_data in projects.items():
-            if not isinstance(project_path, str) or not isinstance(project_data, dict):
-                continue
-            if not _is_same_project_dir(project_path, resolved_dir):
-                continue
+        project_data = projects.get(str(resolved_dir))
+        if project_data is None:
+            project_data = next(
+                (
+                    candidate
+                    for key, candidate in projects.items()
+                    if isinstance(key, str)
+                    and isinstance(candidate, dict)
+                    and _is_same_project_dir(key, resolved_dir)
+                ),
+                None,
+            )
+        if isinstance(project_data, dict):
             if project_servers := project_data.get("mcpServers"):
                 if isinstance(project_servers, dict):
                     project_results.extend(
@@ -227,7 +236,7 @@ def _is_same_project_dir(stored: str, resolved_start: Path) -> bool:
     """Return whether a Claude Code ``projects`` key names *resolved_start*."""
     try:
         return Path(stored).expanduser().resolve() == resolved_start
-    except OSError:
+    except (OSError, RuntimeError, ValueError):
         return False
 
 

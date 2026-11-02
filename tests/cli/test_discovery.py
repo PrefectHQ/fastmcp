@@ -341,6 +341,31 @@ class TestScanClaudeCode:
         assert len(servers) == 1
         assert servers[0].name == "api"
 
+    def test_duplicate_project_key_spellings_use_one_entry(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr("fastmcp.cli.discovery.Path.home", lambda: tmp_path)
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+        posix_dir = project_dir.resolve().as_posix()
+        config_path = tmp_path / ".claude.json"
+        _write_config(
+            config_path,
+            {
+                "projects": {
+                    f"{posix_dir}/": {
+                        "mcpServers": {"api": {"url": "http://localhost:8000/mcp"}}
+                    },
+                    posix_dir.replace("/my-project", "/./my-project"): {
+                        "mcpServers": {"api": {"url": "http://localhost:9000/mcp"}}
+                    },
+                }
+            },
+        )
+        servers = _scan_claude_code(project_dir)
+        assert len(servers) == 1
+        assert servers[0].name == "api"
+
     def test_global_and_project_combined(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
