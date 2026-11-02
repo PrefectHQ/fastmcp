@@ -116,12 +116,38 @@ class RequestDirector:
         query_params = self._serialize_query_params(route, query_params)
 
         # Step 3: Build base URL with path parameters
-        url = self._build_url(route.path, path_params, base_url)
+        url = self._build_url(
+            route.path,
+            path_params,
+            base_url,
+            path_explode={
+                p.name: bool(p.explode)
+                for p in route.parameters
+                if p.location == "path"
+            },
+        )
 
         # Step 4: Prepare request data
         method: str = route.method.upper()
         params = query_params if query_params else None
-        headers = header_params if header_params else None
+        # Header parameters always use the OpenAPI "simple" style; values must
+        # be strings or httpx rejects the request outright.
+        header_lookup: dict[str, ParameterInfo] = {
+            p.name: p for p in route.parameters if p.location == "header"
+        }
+        headers = (
+            {
+                k: self._simple_param_to_str(
+                    v,
+                    explode=bool(header_lookup[k].explode)
+                    if k in header_lookup
+                    else False,
+                )
+                for k, v in header_params.items()
+            }
+            if header_params
+            else None
+        )
         json_body: dict[str, Any] | list[Any] | str | int | float | bool | None = None
         content: str | bytes | None = None
 
@@ -192,7 +218,8 @@ class RequestDirector:
                 )
             ):
                 if (
-                    declared_content_type is not None
+                    raw_content_type is not None
+                    and declared_content_type is not None
                     and raw_content_type != "application/json"
                     and "json" in declared_content_type
                 ):
@@ -395,8 +422,87 @@ class RequestDirector:
             serialized[key] = value
         return serialized
 
+    @staticmethod
+    def _simple_param_to_str(value: Any, explode: bool = False) -> str:
+        """Serialize a value per the OpenAPI "simple" style (path and header parameters).
+
+        Arrays join with commas either way; explode only changes object
+        serialization from "k,v" pairs to "k=v" pairs.
+        """
+        if isinstance(value, dict):
+            parts: list[str] = []
+            for k, v in value.items():
+                if explode:
+                    parts.append(f"{_query_scalar_to_str(k)}={_query_scalar_to_str(v)}")
+                else:
+                    parts.append(_query_scalar_to_str(k))
+                    parts.append(_query_scalar_to_str(v))
+            return ",".join(parts)
+        if isinstance(value, list | tuple):
+            # The simple style defines primitive items only; flatten a nested
+            # list one level instead of leaking its Python repr.
+            parts = []
+            for v in value:
+                if isinstance(v, list | tuple):
+                    parts.extend(_query_scalar_to_str(i) for i in v)
+                else:
+                    parts.append(_query_scalar_to_str(v))
+            return ",".join(parts)
+        return _query_scalar_to_str(value)
+
+    def _encode_path_scalar(self, param_name: str, value: Any) -> str:
+        """Encode one scalar path item, rejecting dot segments at any encoding layer."""
+        serialized = _query_scalar_to_str(value)
+        decoded = serialized
+        for _ in range(_MAX_PATH_DECODINGS):
+            if any(
+                part in {".", ".."} for part in decoded.replace("\\", "/").split("/")
+            ):
+                raise ValueError(
+                    f"Path parameter '{param_name}' cannot contain dot segments"
+                )
+            expanded = unquote(decoded)
+            if expanded == decoded:
+                break
+            decoded = expanded
+        else:
+            raise ValueError(
+                f"Path parameter '{param_name}' has too many encoding layers"
+            )
+        # quote() leaves "." unencoded; replace it so a dot segment can never
+        # reconstitute after a server decodes the path.
+        return quote(serialized, safe="").replace(".", "%2E")
+
+    def _simple_param_to_path_segment(
+        self, param_name: str, value: Any, explode: bool = False
+    ) -> str:
+        """Serialize a path parameter per the OpenAPI "simple" style, encoding each
+        item separately so the style separators stay literal on the wire."""
+        if isinstance(value, dict):
+            parts = []
+            for k, v in value.items():
+                ek = self._encode_path_scalar(param_name, k)
+                ev = self._encode_path_scalar(param_name, v)
+                parts.append(f"{ek}={ev}" if explode else f"{ek},{ev}")
+            return ",".join(parts)
+        if isinstance(value, list | tuple):
+            # Mirror the header side: flatten a nested list one level instead
+            # of leaking its Python repr onto the wire.
+            parts = []
+            for v in value:
+                if isinstance(v, list | tuple):
+                    parts.extend(self._encode_path_scalar(param_name, i) for i in v)
+                else:
+                    parts.append(self._encode_path_scalar(param_name, v))
+            return ",".join(parts)
+        return self._encode_path_scalar(param_name, value)
+
     def _build_url(
-        self, path_template: str, path_params: dict[str, Any], base_url: str
+        self,
+        path_template: str,
+        path_params: dict[str, Any],
+        base_url: str,
+        path_explode: dict[str, bool] | None = None,
     ) -> str:
         """
         Build URL by substituting path parameters in the template.
@@ -405,6 +511,8 @@ class RequestDirector:
             path_template: OpenAPI path template (e.g., "/users/{id}")
             path_params: Path parameter values
             base_url: Base URL to prepend
+            path_explode: Per-parameter explode flags from the route's parameter
+                definitions; absent names default to the non-exploded form
 
         Returns:
             Complete URL with path parameters substituted
@@ -421,30 +529,20 @@ class RequestDirector:
             names = ", ".join(repr(name) for name in missing)
             raise ValueError(f"Missing required path parameters: {{{names}}}")
 
-        # Substitute path parameters with URL-encoding to prevent
-        # path traversal and SSRF via crafted parameter values
+        # Path parameters default to the OpenAPI "simple" style, so values are
+        # serialized before substitution (e.g. true/false for booleans, "a,b"
+        # for arrays) instead of leaking Python reprs into the URL. Each item
+        # is encoded separately and the style separators (",", "=") stay
+        # literal, so ids=["a", "b"] and ids=["a,b"] stay distinct on the
+        # wire; dot-segment validation runs per serialized item.
+        path_explode = path_explode or {}
         url_path = path_template
         for param_name, param_value in path_params.items():
             placeholder = f"{{{param_name}}}"
             if placeholder in url_path:
-                decoded = str(param_value)
-                for _ in range(_MAX_PATH_DECODINGS):
-                    if any(
-                        part in {".", ".."}
-                        for part in decoded.replace("\\", "/").split("/")
-                    ):
-                        raise ValueError(
-                            f"Path parameter '{param_name}' cannot contain dot segments"
-                        )
-                    expanded = unquote(decoded)
-                    if expanded == decoded:
-                        break
-                    decoded = expanded
-                else:
-                    raise ValueError(
-                        f"Path parameter '{param_name}' has too many encoding layers"
-                    )
-                safe_value = quote(str(param_value), safe="").replace(".", "%2E")
+                safe_value = self._simple_param_to_path_segment(
+                    param_name, param_value, path_explode.get(param_name, False)
+                )
                 url_path = url_path.replace(placeholder, safe_value)
 
         # Combine with base URL. Plain concatenation: urljoin would read a
