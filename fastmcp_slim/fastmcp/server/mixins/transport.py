@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import socket
 from collections.abc import Awaitable, Callable
+from contextlib import AsyncExitStack
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -349,9 +350,25 @@ class TransportMixin:
             config_kwargs["log_level"] = default_log_level_to_use
 
         with temporary_log_level(log_level):
-            async with self._lifespan_manager():
+            async with AsyncExitStack() as lifespan_stack:
+                await lifespan_stack.enter_async_context(self._lifespan_manager())
                 config = uvicorn.Config(app, host=host, port=port, **config_kwargs)
                 server = uvicorn.Server(config)
+
+                # Tear the lifespan down as part of Uvicorn's shutdown. After
+                # a signal-initiated shutdown, Uvicorn replays the signal
+                # before `serve()` returns, and SIGTERM's default action ends
+                # the process before this block could unwind. Wrapping the
+                # instance method keeps whatever `uvicorn.Server` resolves to.
+                uvicorn_shutdown = server.shutdown
+
+                async def shutdown(sockets: list[socket.socket] | None = None) -> None:
+                    try:
+                        await uvicorn_shutdown(sockets=sockets)
+                    finally:
+                        await lifespan_stack.aclose()
+
+                server.shutdown = shutdown  # ty: ignore[invalid-assignment]
                 path = getattr(app.state, "path", "").lstrip("/")
                 mode = " (stateless)" if stateless_http else ""
                 display_host = _format_host_for_url(host)
