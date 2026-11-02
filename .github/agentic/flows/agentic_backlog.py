@@ -35,8 +35,9 @@ class Intake(BaseModel):
         return "fastmcp-intake-" + digest(identity)[:24]
 
 
+# `&` excludes HTML character references such as Renovate's `&#8203;`.
 REFERENCE = re.compile(
-    r"(?:(?<![\w/])#|github\.com/PrefectHQ/fastmcp/issues/)([1-9][0-9]*)\b"
+    r"(?:(?<![\w/&])#|github\.com/PrefectHQ/fastmcp/issues/)([1-9][0-9]*)\b"
 )
 
 

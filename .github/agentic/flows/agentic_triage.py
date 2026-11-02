@@ -422,12 +422,29 @@ def triage_intake(
                 break
             time.sleep(5)
         result = finish(plan, current.id, config.scope(), run_id)
-        if result["review"] and result["review"]["bins"]["operational"]:
-            reasons = [
-                f"#{item.get('issue_number', '?')}: {item.get('reason') or item.get('status', 'needs operational attention')}"
-                for item in result["review"]["bins"]["operational"]
-            ]
+        reasons = attention(result["review"]) if result["review"] else []
+        if reasons:
             return Completed(
                 name="Degraded", data=result, message="; ".join(reasons)[:2000]
             )
         return result
+
+
+# Evidence that moved during the run is requeued by `settle`, and the GitHub
+# event for the change starts a fresh triage, so it is not worth an alert.
+REQUEUED = frozenset({"stale", "baseline_changed"})
+
+
+def attention(review: dict) -> list[str]:
+    reasons = []
+    for item in review["bins"]["operational"]:
+        if item.get("status") in REQUEUED:
+            continue
+        detail = str(item.get("detail") or "")[:300]
+        reason = item.get("reason") or detail or item.get("status")
+        if item.get("reason") and detail:
+            reason = f"{item['reason']}: {detail}"
+        reasons.append(
+            f"#{item.get('issue_number', '?')}: {reason or 'stopped without a recorded reason'}"
+        )
+    return reasons

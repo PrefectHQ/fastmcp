@@ -17,7 +17,15 @@ from flows.agentic_backlog import Intake, due, inventory, settle
 from flows.agentic_freshness import revalidate
 from flows.agentic_intake import evidence_revision, policy_outcome, route_intake
 from flows.agentic_stack_runtime import AgentPlan, Runtime, gh_api, record
-from flows.agentic_triage import admit, checkpoint, dispatch, finish, latest, retain
+from flows.agentic_triage import (
+    admit,
+    attention,
+    checkpoint,
+    dispatch,
+    finish,
+    latest,
+    retain,
+)
 
 
 def issue(number, **extra):
@@ -87,7 +95,7 @@ def test_event_intake_resolves_pull_requests_to_referenced_open_issues(github_se
     read, responses, requests = github_server
     responses["/repos/PrefectHQ/fastmcp/pulls/7"] = {
         "number": 7,
-        "body": "Fixes #5 and https://github.com/PrefectHQ/fastmcp/issues/6; not other/repo#8",
+        "body": "Fixes #5 and https://github.com/PrefectHQ/fastmcp/issues/6; not other/repo#8 or ([#&#8203;8203](https://redirect.github.com/astral-sh/ruff/pull/8203))",
     }
     responses["/repos/PrefectHQ/fastmcp/issues/5"] = issue(5)
     responses["/repos/PrefectHQ/fastmcp/issues/6"] = issue(6, state="closed")
@@ -97,6 +105,7 @@ def test_event_intake_resolves_pull_requests_to_referenced_open_issues(github_se
     assert [row["issue_number"] for row in result["pending"]] == [5, 9]
     assert result["coverage"]["pull_requests"] == 1
     assert "/repos/PrefectHQ/fastmcp/issues/8" not in requests
+    assert "/repos/PrefectHQ/fastmcp/issues/8203" not in requests
     assert config.scope() != Intake(issues=[1], queue="events").scope()
     assert Intake(issues=[9]).scope() != config.scope()
 
@@ -496,3 +505,29 @@ def test_different_manual_pr_request_does_not_resume_previous_pr(github_server):
             Intake(queue="events", branch="main").scope()
             != Intake(queue="events", branch="release/3.x").scope()
         )
+
+
+def test_only_unrequeued_operational_work_raises_an_alert():
+    review = {
+        "bins": {
+            "operational": [
+                {"issue_number": 1, "status": "stale", "reason": "Evidence changed"},
+                {"issue_number": 2, "status": "baseline_changed", "reason": "moved"},
+                {
+                    "issue_number": 3,
+                    "error": "ValueError",
+                    "detail": "7 PRs link this issue; review handles at most 6",
+                },
+                {
+                    "issue_number": 4,
+                    "reason": "Review delivery failed",
+                    "detail": "Independent review record is not readable yet",
+                },
+            ]
+        }
+    }
+    assert attention(review) == [
+        "#3: 7 PRs link this issue; review handles at most 6",
+        "#4: Review delivery failed: Independent review record is not readable yet",
+    ]
+    assert attention({"bins": {"operational": review["bins"]["operational"][:2]}}) == []

@@ -11,6 +11,14 @@ from flows.agentic_intake import HOLD
 from flows.agentic_stack_plans import PublicReview
 
 
+class EvidenceChanged(ValueError):
+    """The issue or PR moved after review; the new revision is triaged on its own."""
+
+    def __init__(self, reason: str, posted: list[dict] | None = None):
+        super().__init__(reason)
+        self.posted = posted or []
+
+
 def before_delivery(evidence: dict, receipts: list[dict], reviewer: str) -> dict:
     result = deepcopy(evidence)
     for receipt in receipts:
@@ -104,7 +112,7 @@ def post_review(
     def current() -> dict:
         pr = github.request(prefix)
         if not isinstance(pr, dict) or pr.get("head", {}).get("sha") != head:
-            raise ValueError("PR head changed after review")
+            raise EvidenceChanged("PR head changed after review")
         text = "\n".join(
             [pr["title"], pr.get("body") or "", *[x["name"] for x in pr["labels"]]]
         )
@@ -114,7 +122,7 @@ def post_review(
             or (pr["draft"] and not allow_draft)
             or HOLD.search(text)
         ):
-            raise ValueError("PR is closed, draft or explicitly held")
+            raise EvidenceChanged("PR is closed, draft or explicitly held")
         if pr["user"]["login"] == reviewer:
             raise ValueError("Reviewer must differ from PR author")
         return pr
