@@ -463,6 +463,108 @@ class TestScanGemini:
         servers = _scan_gemini(project_dir)
         assert len(servers) == 2
 
+    @pytest.mark.parametrize("name", ["weather", "gemini:weather"])
+    def test_project_overrides_user(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str
+    ):
+        home = tmp_path / "home"
+        project = home / "project"
+        monkeypatch.setattr("fastmcp.cli.discovery.Path.home", lambda: home)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+        user_path = home / ".gemini" / "settings.json"
+        project_path = project / ".gemini" / "settings.json"
+        _write_config(
+            user_path,
+            {
+                "mcpServers": {
+                    "weather": {"httpUrl": "https://user.example/mcp"},
+                    "user-only": {"command": "user-command"},
+                }
+            },
+        )
+        _write_config(
+            project_path,
+            {
+                "mcpServers": {
+                    "weather": {"httpUrl": "https://project.example/mcp"},
+                    "project-only": {"command": "project-command"},
+                }
+            },
+        )
+
+        servers = _scan_gemini(project)
+        assert len(servers) == 3
+        by_name = {server.name: server for server in servers}
+        assert set(by_name) == {"weather", "user-only", "project-only"}
+        assert by_name["weather"].config_path == project_path
+        assert by_name["user-only"].config_path == user_path
+        assert by_name["project-only"].config_path == project_path
+        transport = resolve_name(name, project)
+        assert isinstance(transport, StreamableHttpTransport)
+        assert transport.url == "https://project.example/mcp"
+
+    def test_project_replaces_entire_stdio_server(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr("fastmcp.cli.discovery.Path.home", lambda: tmp_path)
+        project = tmp_path / "project"
+        _write_config(
+            tmp_path / ".gemini" / "settings.json",
+            {
+                "mcpServers": {
+                    "weather": {
+                        "command": "user-command",
+                        "args": ["user-arg"],
+                        "env": {"USER_ONLY": "user-value"},
+                    },
+                }
+            },
+        )
+        project_path = project / ".gemini" / "settings.json"
+        _write_config(
+            project_path,
+            {
+                "mcpServers": {
+                    "weather": {"command": "project-command"},
+                }
+            },
+        )
+
+        servers = _scan_gemini(project)
+        assert len(servers) == 1
+        assert servers[0].config_path == project_path
+        assert isinstance(servers[0].config, StdioMCPServer)
+        assert servers[0].config.command == "project-command"
+        assert servers[0].config.args == []
+        assert servers[0].config.env == {}
+
+    @pytest.mark.parametrize(
+        "project_contents", ["{", '{"mcpServers": {"weather": {}}}']
+    )
+    def test_invalid_project_preserves_user_server(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, project_contents: str
+    ):
+        monkeypatch.setattr("fastmcp.cli.discovery.Path.home", lambda: tmp_path)
+        user_path = tmp_path / ".gemini" / "settings.json"
+        _write_config(
+            user_path,
+            {
+                "mcpServers": {
+                    "weather": {"command": "user-command"},
+                }
+            },
+        )
+        project = tmp_path / "project"
+        project_path = project / ".gemini" / "settings.json"
+        project_path.parent.mkdir(parents=True)
+        project_path.write_text(project_contents)
+
+        servers = _scan_gemini(project)
+        assert len(servers) == 1
+        assert servers[0].config_path == user_path
+        assert isinstance(servers[0].config, StdioMCPServer)
+        assert servers[0].config.command == "user-command"
+
     def test_http_url_normalized(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """Gemini uses ``httpUrl`` — verify it becomes ``url``."""
         monkeypatch.setattr("fastmcp.cli.discovery.Path.home", lambda: tmp_path)

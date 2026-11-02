@@ -250,18 +250,19 @@ def _scan_gemini(start_dir: Path) -> list[DiscoveredServer]:
     Checks both user-level ``~/.gemini/settings.json`` and project-level
     ``.gemini/settings.json``.
     """
-    results: list[DiscoveredServer] = []
-
-    # User-level
     user_path = Path.home() / ".gemini" / "settings.json"
-    results.extend(_parse_mcp_config(user_path, "gemini"))
+    user_results = _parse_mcp_config(user_path, "gemini")
 
-    # Project-level
     project_path = start_dir.resolve() / ".gemini" / "settings.json"
-    if project_path != user_path:
-        results.extend(_parse_mcp_config(project_path, "gemini"))
+    if project_path == user_path:
+        return user_results
 
-    return results
+    project_results = _parse_mcp_config(project_path, "gemini")
+    # Gemini's workspace settings override same-name user servers.
+    project_names = {server.name for server in project_results}
+    return [
+        server for server in user_results if server.name not in project_names
+    ] + project_results
 
 
 def _scan_goose() -> list[DiscoveredServer]:
