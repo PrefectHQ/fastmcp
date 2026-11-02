@@ -211,9 +211,15 @@ def test_failure_alert_shows_the_cause_and_one_run_link(automations):
             },
         },
     )
-    assert "triage degraded" in message
+    assert "triage skipped some issues" in message
     assert "#4866: contribution verification did not complete" in message
+    assert "retry on later runs" in message
     assert message.count("https://app.prefect.cloud/runs/run") == 1
+    failed = render_user_template_sync(
+        configs["fastmcp-triage-failure-alert"]["actions"][0]["body"],
+        {"flow_run": {"id": "run", "state": {"name": "Failed", "message": "boom"}}},
+    )
+    assert failed.startswith("❌ triage failed before finishing\nboom\n")
 
 
 def test_notification_announces_admitted_issues_only(automations):

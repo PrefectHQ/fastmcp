@@ -35,8 +35,9 @@ class Intake(BaseModel):
         return "fastmcp-intake-" + digest(identity)[:24]
 
 
+# `&` excludes HTML character references such as Renovate's `&#8203;`.
 REFERENCE = re.compile(
-    r"(?:(?<![\w/])#|github\.com/PrefectHQ/fastmcp/issues/)([1-9][0-9]*)\b"
+    r"(?:(?<![\w/&])#|github\.com/PrefectHQ/fastmcp/issues/)([1-9][0-9]*)\b"
 )
 
 
@@ -135,9 +136,6 @@ def settle(
         if name == "operational":
             continue
         for item in items:
-            if name == "stacks" and item.get("status") == "published":
-                seen.update(item.get("issue_numbers", []))
-                continue
             number = item.get("issue_number")
             if item.get("status") in {"stale", "baseline_changed"} or any(
                 check["status"] == "environment_failure"

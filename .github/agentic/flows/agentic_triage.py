@@ -21,16 +21,11 @@ from prefect.client.schemas.sorting import ArtifactSort
 from prefect.context import FlowRunContext
 from prefect.states import Completed
 
+from flows.agentic_artifacts import plain, published_reviews, retain_markdown
 from flows.agentic_backlog import Intake, due, inventory, settle
 from flows.agentic_claims import claim_work
 from flows.agentic_freshness import revalidate
 from flows.agentic_intake import evidence_revision, upgrade_policy_outcomes
-from flows.agentic_review_queue import (
-    plain,
-    published_reviews,
-    retain_markdown,
-    retain_review_queue,
-)
 from flows.agentic_stack_policy import Batch
 from flows.agentic_stack_runtime import (
     Runtime,
@@ -140,7 +135,7 @@ def admit(
         pending = admitted + [
             item for item in pending if item["issue_number"] not in targets
         ]
-    selected = pending[: 1 if runtime.prepare_fixes else config.max_items]
+    selected = pending[: config.max_items]
     batch = None
     if selected:
         base = read(f"repos/PrefectHQ/fastmcp/commits/{config.branch}")
@@ -160,7 +155,7 @@ def admit(
                         "items": [
                             {
                                 "issue_number": row["issue_number"],
-                                "mode": "fix" if runtime.prepare_fixes else "mre",
+                                "mode": "mre",
                             }
                             for row in selected
                         ],
@@ -357,8 +352,6 @@ def finish(
 
 
 def commit(owner: UUID, scope: str, state: dict) -> dict:
-    if state["review"] is not None:
-        retain_review_queue(owner, state["review"])
     for receipt in state["receipts"]:
         retain(owner, f"{scope}-issue-{receipt['issue_number']}", receipt)
     lines = ["# FastMCP intake coverage", "", "| Measure | Observed |", "| --- | --- |"]
@@ -378,7 +371,7 @@ def commit(owner: UUID, scope: str, state: dict) -> dict:
         lines.extend(
             [
                 "",
-                f"Controller run: `{state['controller_run_id']}`. Its review queue contains revision-bound evidence and observed usage.",
+                f"Controller run: `{state['controller_run_id']}`. Its `-review-bins` artifact holds the revision-bound results.",
             ]
         )
     retain_markdown(owner, scope + "-coverage", "\n".join(lines) + "\n")
@@ -429,12 +422,29 @@ def triage_intake(
                 break
             time.sleep(5)
         result = finish(plan, current.id, config.scope(), run_id)
-        if result["review"] and result["review"]["bins"]["operational"]:
-            reasons = [
-                f"#{item.get('issue_number', '?')}: {item.get('reason') or item.get('status', 'needs operational attention')}"
-                for item in result["review"]["bins"]["operational"]
-            ]
+        reasons = attention(result["review"]) if result["review"] else []
+        if reasons:
             return Completed(
                 name="Degraded", data=result, message="; ".join(reasons)[:2000]
             )
         return result
+
+
+# Evidence that moved during the run is requeued by `settle`, and the GitHub
+# event for the change starts a fresh triage, so it is not worth an alert.
+REQUEUED = frozenset({"stale", "baseline_changed"})
+
+
+def attention(review: dict) -> list[str]:
+    reasons = []
+    for item in review["bins"]["operational"]:
+        if item.get("status") in REQUEUED:
+            continue
+        detail = str(item.get("detail") or "")[:300]
+        reason = item.get("reason") or detail or item.get("status")
+        if item.get("reason") and detail:
+            reason = f"{item['reason']}: {detail}"
+        reasons.append(
+            f"#{item.get('issue_number', '?')}: {reason or 'stopped without a recorded reason'}"
+        )
+    return reasons

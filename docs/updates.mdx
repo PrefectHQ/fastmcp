@@ -5,6 +5,16 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 4.2.0a2" description="November 1, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.2.0a2: Skill Waters Run Deep"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0a2"
+cta="Read the release notes"
+>
+The second 4.2 alpha carries every fix from 4.1.5 plus the ones that only land on 4.2: Skills discovery through proxies pages its backends with a bound, pre-4.2 Prefab backend addresses rebind through 4.2 proxies, large tool catalogs expand their schemas faster, and kept-alive stdio transports respect each client's timeout. Before tagging, this build ran against pydantic-ai, langchain, agno, Microsoft Agent Framework, and the OpenAI Agents SDK. Skills support remains experimental; this prerelease is intended for integration testing. Behavior changes since a1: JSON Schema `const` and `enum` compare by JSON equality, so `true` no longer passes for `1`; `prompts/get` with a missing argument returns invalid params (`-32602`); OpenAPI upstream errors are cut to 1 KB with HTML bodies dropped, and strict input validation rejects undeclared OpenAPI arguments; a later client with a different timeout restarts an idle kept-alive stdio subprocess, while one nested inside a live client shares its session's timeout and logs a warning. Thanks to our 22 contributors, including 13 first-time contributors.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.2.0a1" description="October 27, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.2.0a1: Skill Issue"

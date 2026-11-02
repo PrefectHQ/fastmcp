@@ -18,15 +18,16 @@ from prefect.client.orchestration import get_client
 from prefect.testing.utilities import prefect_test_harness
 
 from flows import agentic_review_delivery as delivery
+from flows.agentic_github import GitHub
 from flows.agentic_review_app import ReviewApp, review_client
 from flows.agentic_review_publication import (
+    EvidenceChanged,
     before_delivery,
     format_review,
     post_review,
     review_body,
 )
 from flows.agentic_stack_policy import Batch
-from flows.agentic_stack_publication import GitHub
 from flows.agentic_stack_runtime import Runtime, record
 
 HEAD = "a" * 40
@@ -479,9 +480,8 @@ def test_history_only_review_retains_skip_without_loading_a_write_credential():
     runtime = Runtime(
         plans={
             role: {"flow_id": uuid4(), "version_id": uuid4()}
-            for role in ["assess", "reproduce", "prepare", "review", "triage_review"]
+            for role in ["assess", "reproduce", "triage_review"]
         },
-        validator_id=uuid4(),
         source_sha=BASE,
         publish_reviews=True,
         reviewer_app={
@@ -560,7 +560,16 @@ def test_existing_review_with_crlf_feedback_is_adopted(endpoint):
     assert receipt["status"] == "already_posted"
 
 
-def test_partial_delivery_failure_keeps_already_posted_receipts(monkeypatch):
+@pytest.mark.parametrize(
+    ("raised", "expected"),
+    [
+        (ValueError, delivery.PartialReviewDelivery),
+        (EvidenceChanged, EvidenceChanged),
+    ],
+)
+def test_partial_delivery_failure_keeps_already_posted_receipts(
+    monkeypatch, raised, expected
+):
     @flow
     def controller():
         return None
@@ -569,7 +578,7 @@ def test_partial_delivery_failure_keeps_already_posted_receipts(monkeypatch):
 
     def post(github, number, head, baseline, reviewer, body, guard):
         if posted:
-            raise ValueError("Issue or contribution changed after review")
+            raise raised("Issue or contribution changed after review")
         posted.append({"pr_number": number, "head_sha": head, "status": "posted"})
         return posted[-1]
 
@@ -597,9 +606,8 @@ def test_partial_delivery_failure_keeps_already_posted_receipts(monkeypatch):
     runtime = Runtime(
         plans={
             role: {"flow_id": uuid4(), "version_id": uuid4()}
-            for role in ["assess", "reproduce", "prepare", "review", "triage_review"]
+            for role in ["assess", "reproduce", "triage_review"]
         },
-        validator_id=uuid4(),
         source_sha=BASE,
         publish_reviews=True,
         reviewer_app={"app_id": 42, "slug": "reviewer", "private_key_block": "k"},
@@ -630,7 +638,7 @@ def test_partial_delivery_failure_keeps_already_posted_receipts(monkeypatch):
             "partial-issue-1-triage-review",
             {"run_id": "review-run", "result": review},
         )
-        with pytest.raises((ValueError, RuntimeError)) as failure:
+        with pytest.raises(expected) as failure:
             delivery.deliver_reviews.fn(
                 owner,
                 batch,
