@@ -540,7 +540,8 @@ class RequestDirector:
 
         if style == "label":
             segment = "." + ("." if explode else ",").join(items)
-            if segment == ".":
+            # Empty items leave only the literal delimiters, e.g. "." or "..".
+            if segment in {".", ".."}:
                 raise ValueError(
                     f"Path parameter '{param_name}' cannot serialize to a dot segment"
                 )

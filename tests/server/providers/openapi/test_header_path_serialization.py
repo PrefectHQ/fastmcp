@@ -319,12 +319,16 @@ async def test_path_styled_values_encode_their_delimiters(
     assert requests[0].url.raw_path == expected
 
 
-@pytest.mark.parametrize("value", ["", []])
-def test_path_label_rejects_a_bare_dot_segment(value: Any) -> None:
+@pytest.mark.parametrize(
+    "value,explode",
+    [("", False), ([], False), ([], True), (["", ""], True)],
+)
+def test_path_label_rejects_a_dot_segment(value: Any, explode: bool) -> None:
     with pytest.raises(ValueError, match="dot segment"):
         RequestDirector(SchemaPath.from_dict({}))._build_url(
             "/items/{id}/details",
             {"id": value},
             "https://api.example.com",
+            path_explode={"id": explode},
             path_style={"id": "label"},
         )
