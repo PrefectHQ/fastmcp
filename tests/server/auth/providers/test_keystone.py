@@ -89,7 +89,17 @@ def _handler_for(keystone: FakeKeystone) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             length = int(self.headers["Content-Length"])
-            keystone.auth_requests.append(json.loads(self.rfile.read(length)))
+            request = json.loads(self.rfile.read(length))
+            keystone.auth_requests.append(request)
+            auth = request["auth"]
+            if (
+                "scope" not in auth
+                and "application_credential" not in (auth["identity"]["methods"])
+            ):
+                # Real Keystone gives unscoped tokens no project or catalog.
+                body = user_token_body(project=None, roles=None)
+                self._send(201, body, {"X-Subject-Token": SERVICE_TOKEN})
+                return
             body = user_token_body(
                 catalog=[
                     {
@@ -182,6 +192,14 @@ class TestConfiguration:
         with pytest.raises(ValueError, match="provided together"):
             KeystoneTokenVerifier(auth_url="http://keystone/v3", username="user")
 
+    def test_rejects_unscoped_service_user(self):
+        with pytest.raises(ValueError, match="project_name is required"):
+            KeystoneTokenVerifier(
+                auth_url="http://keystone/v3",
+                username="user",
+                password="secret",
+            )
+
     def test_rejects_application_credential_without_secret(self):
         with pytest.raises(ValueError, match="provided together"):
             KeystoneTokenVerifier(
@@ -224,6 +242,7 @@ class TestVerifyToken:
             auth_url=f"{keystone.url}{suffix}",
             username="mcp-service",
             password="secret",
+            project_name="service",
         )
 
         assert await verifier.verify_token("user-token") is not None
@@ -336,6 +355,7 @@ class TestRejection:
             auth_url="http://127.0.0.1:1/v3",
             username="mcp-service",
             password="secret",
+            project_name="service",
             timeout_seconds=1,
         )
 

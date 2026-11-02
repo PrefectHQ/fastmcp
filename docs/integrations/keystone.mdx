@@ -28,7 +28,7 @@ pip install "fastmcp[keystone]"
 You also need:
 
 1. Your Keystone URL, such as `https://keystone.example.com:5000/v3`. The `/v3` suffix is optional.
-2. A service account that's allowed to validate other users' tokens. Keystone's default policy grants this to the `service` role, so a user with that role on your `service` project is the usual choice.
+2. A service account that's allowed to validate other users' tokens. Keystone's default policy grants this to the `service` role, so a user with that role on your `service` project is the usual choice. A username and password must come with `project_name`, because an unscoped token has no service catalog and can't validate tokens.
 
 ### FastMCP Configuration
 

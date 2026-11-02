@@ -59,9 +59,9 @@ class KeystoneTokenVerifier(TokenVerifier):
     header. The token's Keystone role names become its FastMCP scopes, so
     `required_scopes` and `require_scopes` operate on roles.
 
-    Authenticate the verifier with either a service user (`username` and
-    `password`) or an application credential (`application_credential_id` and
-    `application_credential_secret`).
+    Authenticate the verifier with either a service user (`username`,
+    `password`, and `project_name`) or an application credential
+    (`application_credential_id` and `application_credential_secret`).
 
     Keystone authenticates every user in a cloud, so a valid token alone only
     proves that its holder has an account there. On a shared cloud, set
@@ -103,7 +103,8 @@ class KeystoneTokenVerifier(TokenVerifier):
             username: Service user that validates tokens.
             password: Password for the service user.
             user_domain_name: Domain of the service user.
-            project_name: Project to scope the service user's token to.
+            project_name: Project to scope the service user's token to. Required
+                with `username` and `password`.
             project_domain_name: Domain of `project_name`.
             application_credential_id: Application credential to authenticate
                 with instead of a service user.
@@ -163,13 +164,20 @@ class KeystoneTokenVerifier(TokenVerifier):
         else:
             if username is None or password is None:
                 raise ValueError("username and password must be provided together.")
+            # An unscoped token has no service catalog to find Keystone's
+            # endpoint in and no roles to pass the token validation policy.
+            if project_name is None:
+                raise ValueError(
+                    "project_name is required with username and password, because "
+                    "an unscoped service token cannot validate tokens."
+                )
             auth = v3.Password(
                 auth_url=identity_url,
                 username=username,
                 password=_secret_value(password),
                 user_domain_name=user_domain_name,
                 project_name=project_name,
-                project_domain_name=project_domain_name if project_name else None,
+                project_domain_name=project_domain_name,
             )
 
         self._identity = adapter.Adapter(
