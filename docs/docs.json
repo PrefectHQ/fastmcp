@@ -59,8 +59,8 @@
     "drilldown": false
   },
   "logo": {
-    "dark": "/assets/brand/wordmark-white.png",
-    "light": "/assets/brand/wordmark.png"
+    "dark": "/assets/brand/fastmcp-logo-dark.svg",
+    "light": "/assets/brand/fastmcp-logo.svg"
   },
   "name": "FastMCP",
   "navbar": {
