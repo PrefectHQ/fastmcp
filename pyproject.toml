@@ -270,4 +270,6 @@ known-first-party = ["fastmcp", "fastmcp_remote"]
 
 [tool.codespell]
 ignore-words-list = "asend,shttp,te"
+# The website lockfile is full of third-party package names.
+skip = "website/bun.lock"
 ignore-regex = 'caf%C3%A9'

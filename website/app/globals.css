@@ -1,0 +1,208 @@
+@import "tailwindcss";
+
+/* Articulat CF is Prefect's licensed brand face. It is not checked into this
+   public repository; the files are served by prefect.io with permissive CORS,
+   so the site loads the same five weights the Prefect site ships. */
+@font-face {
+  font-family: "Articulat CF";
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url("https://www.prefect.io/fonts/ArticulatCF-Light.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Articulat CF";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("https://www.prefect.io/fonts/ArticulatCF-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Articulat CF";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("https://www.prefect.io/fonts/ArticulatCF-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Articulat CF";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("https://www.prefect.io/fonts/ArticulatCF-DemiBold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Articulat CF";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("https://www.prefect.io/fonts/ArticulatCF-Bold.woff2") format("woff2");
+}
+
+/* Brand Night palette and the website type ramp, copied from the Prefect
+   marketing site (styles/theme.css) so the two sites share one system:
+   night ground, card-night panels, white text on the 100/75/50 ladder and
+   white hairlines at 16%. The site renders dark only. */
+:root {
+  --nav-h: 77px;
+  --background: #06000e;
+  --foreground: #ffffff;
+  --card: #0f0818;
+  --card-foreground: #ffffff;
+  --primary: #ffffff;
+  --primary-foreground: #06000e;
+  --secondary: rgb(255 255 255 / 8%);
+  --muted: rgb(255 255 255 / 8%);
+  --muted-foreground: rgb(255 255 255 / 75%);
+  --accent: rgb(255 255 255 / 8%);
+  --border: rgb(255 255 255 / 16%);
+  --ring: rgb(255 255 255 / 60%);
+
+  --code-bg: #0d1117;
+  --code-text: #e6edf3;
+  --code-line-number: #6e7681;
+  --code-border: #30363d;
+
+  --horizon-dark: #06000e;
+  --horizon-blue-dark: #2084ab;
+  --horizon-blue-mid: #47b6e3;
+  --horizon-blue-light: #8adeff;
+  --horizon-tan: #facd96;
+  --horizon-orange: #feb255;
+  --horizon-orange-dark: #fe9655;
+  --horizon-pink: #ff4bbd;
+
+  color-scheme: dark;
+}
+
+@theme {
+  --breakpoint-md: 52.5rem;
+  --font-sans: "Articulat CF", system-ui, sans-serif;
+  --font-mono: var(--font-dm-mono), "DM Mono", ui-monospace, monospace;
+
+  --text-h1: 64px;
+  --text-h1--line-height: 72px;
+  --text-h1--letter-spacing: -1px;
+  --text-h1--font-weight: 600;
+  --text-h2: 56px;
+  --text-h2--line-height: 63px;
+  --text-h2--letter-spacing: -1px;
+  --text-h2--font-weight: 600;
+  --text-h3: 48px;
+  --text-h3--line-height: 56px;
+  --text-h3--letter-spacing: -1px;
+  --text-h3--font-weight: 600;
+  --text-h4: 40px;
+  --text-h4--line-height: 48px;
+  --text-h4--letter-spacing: -1px;
+  --text-h4--font-weight: 600;
+  --text-h5: 32px;
+  --text-h5--line-height: 40px;
+  --text-h5--letter-spacing: -1px;
+  --text-h5--font-weight: 600;
+  --text-h6: 24px;
+  --text-h6--line-height: 32px;
+  --text-h6--letter-spacing: 0px;
+  --text-h6--font-weight: 600;
+  --text-body-l: 18px;
+  --text-body-l--line-height: 28px;
+  --text-body-l--letter-spacing: 0.1px;
+  --text-body-r: 16px;
+  --text-body-r--line-height: 24px;
+  --text-body-r--letter-spacing: 0.1px;
+  --text-body-s: 14px;
+  --text-body-s--line-height: 20px;
+  --text-body-s--letter-spacing: 0.1px;
+  --text-nav: 14px;
+  --text-nav--line-height: 20px;
+  --text-nav--letter-spacing: 0.1px;
+  --text-nav--font-weight: 500;
+  --text-button: 14px;
+  --text-button--line-height: 20px;
+  --text-button--letter-spacing: 0.1px;
+  --text-button--font-weight: 600;
+  --text-eyebrow: 16px;
+  --text-eyebrow--line-height: 20px;
+  --text-eyebrow--letter-spacing: 2px;
+  --text-eyebrow--font-weight: 500;
+  --text-tag: 14px;
+  --text-tag--line-height: 18px;
+  --text-tag--letter-spacing: 2px;
+  --text-tag--font-weight: 500;
+
+  --color-night: #06000e;
+  --color-card-night: #0f0818;
+  --color-sand: #f4e7d8;
+  --color-sky-300: #8adeff;
+  --color-sky-400: #47b6e3;
+  --color-sky-500: #2084ab;
+  --color-deep-sea: #065d8e;
+  --color-peach: #facd96;
+  --color-sun: #fe9655;
+  --color-magenta: #ff4bbd;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-code-bg: var(--code-bg);
+  --color-code-text: var(--code-text);
+  --color-code-line-number: var(--code-line-number);
+  --color-code-border: var(--code-border);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    letter-spacing: 0.1px;
+  }
+  h1 {
+    @apply text-h1;
+  }
+  h2 {
+    @apply text-h2;
+  }
+  h3 {
+    @apply text-h3;
+  }
+  h4 {
+    @apply text-h4;
+  }
+  h5 {
+    @apply text-h5;
+  }
+  h6 {
+    @apply text-h6;
+  }
+  :focus-visible {
+    outline: 2px solid rgb(255 255 255 / 60%);
+    outline-offset: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
