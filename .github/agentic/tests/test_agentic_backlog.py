@@ -255,12 +255,9 @@ def test_queue_recovers_same_controller_and_commits_only_saved_outcomes(
                 for role in (
                     "assess",
                     "reproduce",
-                    "prepare",
-                    "review",
                     "triage_review",
                 )
             },
-            validator_id=uuid4(),
             source_sha="b" * 40,
         )
         owner = client.create_flow_run(controller_stub, state=Running()).id
@@ -328,7 +325,7 @@ def test_queue_recovers_same_controller_and_commits_only_saved_outcomes(
         for artifact in client.read_artifacts(
             flow_run_filter=FlowRunFilter(id={"any_": [replacement]})
         ):
-            if artifact.key.endswith(("-committed", "-coverage", "-review-queue")):
+            if artifact.key.endswith(("-committed", "-coverage")):
                 client.delete_artifact(artifact.id)
         before = len(requests)
         responses["/fresh/1"] = (503, {"message": "Unavailable after finalization"})
@@ -357,9 +354,8 @@ def test_event_queue_adds_new_issues_to_retained_pending(github_server):
         runtime = Runtime(
             plans={
                 role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-                for role in ("assess", "reproduce", "prepare", "review")
+                for role in ("assess", "reproduce")
             },
-            validator_id=uuid4(),
             source_sha="b" * 40,
         )
         previous = client.create_flow_run(controller_stub, state=Completed()).id
@@ -392,9 +388,8 @@ def test_event_target_preserves_a_separate_retained_backlog(github_server):
         runtime = Runtime(
             plans={
                 role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-                for role in ("assess", "reproduce", "prepare", "review")
+                for role in ("assess", "reproduce")
             },
-            validator_id=uuid4(),
             source_sha="b" * 40,
         )
         scope = Intake(queue="events").scope()
@@ -440,9 +435,8 @@ def test_finish_commits_policy_decisions_saved_by_an_older_controller(
         runtime = Runtime(
             plans={
                 role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-                for role in ("assess", "reproduce", "prepare", "review")
+                for role in ("assess", "reproduce")
             },
-            validator_id=uuid4(),
             source_sha="b" * 40,
         )
         owner = client.create_flow_run(controller_stub, state=Running()).id
@@ -485,9 +479,8 @@ def test_different_manual_pr_request_does_not_resume_previous_pr(github_server):
         runtime = Runtime(
             plans={
                 role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-                for role in ("assess", "reproduce", "prepare", "review")
+                for role in ("assess", "reproduce")
             },
-            validator_id=uuid4(),
             source_sha="b" * 40,
         )
         old = client.create_flow_run(controller_stub, state=Running())
@@ -503,35 +496,3 @@ def test_different_manual_pr_request_does_not_resume_previous_pr(github_server):
             Intake(queue="events", branch="main").scope()
             != Intake(queue="events", branch="release/3.x").scope()
         )
-
-
-def test_automatic_fixes_keep_unrelated_candidates_independently_publishable(
-    github_server,
-):
-    read, responses, _ = github_server
-    for number in (1, 2, 3):
-        responses[f"/repos/PrefectHQ/fastmcp/issues/{number}"] = issue(number)
-    responses["/repos/PrefectHQ/fastmcp/commits/main"] = {"sha": "a" * 40}
-    runtime = Runtime(
-        plans={
-            role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-            for role in ["assess", "reproduce", "prepare", "review", "triage_review"]
-        },
-        validator_id=uuid4(),
-        source_sha="b" * 40,
-        prepare_fixes=True,
-    )
-    with prefect_test_harness(), get_client(sync_client=True) as client:
-        owner = client.create_flow_run(controller_stub, state=Running()).id
-        plan = admit(
-            Intake(issues=[1, 2, 3], max_items=3), runtime, uuid4(), owner, read
-        )
-        assert plan["batch"]["groups"][0]["items"] == [
-            {"issue_number": 1, "mode": "fix", "verification_probes": {}}
-        ]
-        assert [row["issue_number"] for row in plan["pending"]] == [1, 2, 3]
-        other = client.create_flow_run(controller_stub, state=Running()).id
-        independent = admit(
-            Intake(issues=[2], queue="events"), runtime, uuid4(), other, read
-        )
-        assert independent["batch"]["groups"][0]["items"][0]["issue_number"] == 2
