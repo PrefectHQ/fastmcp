@@ -12,6 +12,7 @@ import pytest
 from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
+from fastmcp.client.mixins.tools import _hydration_covers_payload, _json_text_decodes_to
 from fastmcp.tools import Tool
 
 
@@ -312,3 +313,112 @@ class TestHydrationGuardNoFalsePositives:
         # the spellings as equivalent rather than discarding the model.
         assert result.data.ts.year == 2024
         assert result.data.ts.hour == 12
+
+
+class TestHydrationGuardIntentionalDecodes:
+    """Decodes the schema itself calls for must not look like corruption:
+    ``format: json`` hydrates JSON text into a value (pydantic Json), while a
+    timestamp with sub-microsecond precision cannot survive the round trip
+    and keeps the server's exact payload."""
+
+    async def test_format_json_field_still_hydrates(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {"payload": {"type": "string", "format": "json"}},
+            "required": ["payload"],
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"payload": '{"a": 1}'}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"payload": '{"a": 1}'}
+        # format: json is documented to decode: the typed value is the
+        # parsed object, not the raw text.
+        assert result.data.payload == {"a": 1}
+
+    async def test_format_json_scalar_and_bool_decode(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "count": {"type": "string", "format": "json"},
+                "flag": {"type": "string", "format": "json"},
+            },
+            "required": ["count", "flag"],
+        }
+
+        def get_value() -> dict[str, Any]:
+            # JSON booleans stay strict: the text "0" is a number, not False.
+            return {"count": "3", "flag": "true"}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"count": "3", "flag": "true"}
+        assert result.data.count == 3
+        assert result.data.flag is True
+
+    def test_decoded_boolean_comparison_is_type_strict(self):
+        # 0 == False in Python: JSON text that decodes to a number must
+        # never stand in for a boolean (the #6136 corruption shape).
+        assert _json_text_decodes_to("0", False) is False
+        assert _json_text_decodes_to("true", True) is True
+        assert _json_text_decodes_to('{"a": 1}', {"a": 1}) is True
+        assert _json_text_decodes_to("no json", {"a": 1}) is False
+        assert _hydration_covers_payload(False, "0") is False
+        assert _hydration_covers_payload(True, "true") is True
+
+    async def test_sub_microsecond_timestamp_keeps_server_string(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {"ts": {"type": "string", "format": "date-time"}},
+            "required": ["ts"],
+        }
+
+        def get_value() -> dict[str, Any]:
+            # Seven fractional digits: pydantic's datetime truncates to
+            # microseconds, so hydration would lose what the server sent.
+            return {"ts": "2024-06-01T12:00:00.1234567+00:00"}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"ts": "2024-06-01T12:00:00.1234567+00:00"}
+        # The lossy datetime is rejected; the payload survives verbatim.
+        assert result.data == {"ts": "2024-06-01T12:00:00.1234567+00:00"}
+
+    async def test_microsecond_timestamp_still_hydrates(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {"ts": {"type": "string", "format": "date-time"}},
+            "required": ["ts"],
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"ts": "2024-06-01T12:00:00.123456+00:00"}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"ts": "2024-06-01T12:00:00.123456+00:00"}
+        # Microsecond precision survives the round trip intact.
+        assert result.data.ts.year == 2024
+        assert result.data.ts.microsecond == 123456

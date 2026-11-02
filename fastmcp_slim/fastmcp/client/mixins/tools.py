@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
@@ -32,11 +33,12 @@ def _round_trips_to_payload(type_adapter: Any, typed: Any, original: Any) -> boo
     Pydantic unions validate with smart mode, which may coerce across
     branches (0 → False) or drop keys the model does not declare, so the
     hydrated object can disagree with `structured_content`. Re-serializing
-    through the same adapter compares them in JSON terms, with two
+    through the same adapter compares them in JSON terms, with three
     hydration-legitimate asymmetries: fields the payload omitted may appear
-    in the dump (schema defaults serialize out), and date-time strings may
+    in the dump (schema defaults serialize out), date-time strings may
     be spelled differently for the same instant (pydantic renders UTC as
-    ``Z`` while a payload may say ``+00:00``).
+    ``Z`` while a payload may say ``+00:00``), and ``format: json`` text
+    is compared as its decoded value (pydantic's ``Json`` type).
     """
     try:
         rehydrated = json.loads(type_adapter.dump_json(typed))
@@ -47,9 +49,31 @@ def _round_trips_to_payload(type_adapter: Any, typed: Any, original: Any) -> boo
     return _hydration_covers_payload(rehydrated, original)
 
 
+def _json_text_decodes_to(original: Any, dumped: Any) -> bool:
+    """True when `original` is JSON text whose decode equals `dumped`.
+
+    ``format: json`` properties hydrate through pydantic's ``Json`` type:
+    the server sends JSON text and the typed value is the decoded object,
+    so the dump re-emits the decoded form rather than the original string.
+    """
+    if not isinstance(original, str):
+        return False
+    try:
+        decoded = json.loads(original)
+    except (ValueError, RecursionError):
+        return False
+    if isinstance(decoded, bool) != isinstance(dumped, bool):
+        # 0 == False in Python; keep booleans strict.
+        return False
+    return decoded == dumped
+
+
 def _hydration_covers_payload(dumped: Any, original: Any) -> bool:
     """Every value the server sent must survive hydration; extra keys in the
     dump are defaults for fields the payload omitted and are allowed."""
+    if _json_text_decodes_to(original, dumped):
+        # Intentional decode: format: json hydrates JSON text into a value.
+        return True
     if isinstance(original, bool) or isinstance(dumped, bool):
         # JSON booleans are not numbers: 0 does not hydrate to False.
         return (
@@ -87,6 +111,10 @@ def _hydration_covers_payload(dumped: Any, original: Any) -> bool:
 
 def _parse_iso_instant(value: Any) -> Any:
     if not isinstance(value, str) or len(value) < 8:
+        return None
+    if re.search(r"\.\d{7,}", value):
+        # Sub-microsecond precision: parsing would truncate it, so an
+        # instant comparison could bless a lossy value.
         return None
     try:
         return datetime.datetime.fromisoformat(value)
