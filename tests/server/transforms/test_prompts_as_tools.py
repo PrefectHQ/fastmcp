@@ -6,7 +6,8 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.server.transforms import PromptsAsTools
+from fastmcp.server.transforms import PromptsAsTools, VersionFilter
+from fastmcp.server.transforms.search import RegexSearchTransform
 
 
 class TestPromptsAsToolsBasic:
@@ -74,6 +75,60 @@ class TestPromptsAsToolsBasic:
 
             result2 = await client.call_tool("get_prompt", {"name": "test_prompt"})
             assert result2.data == "user get_prompt: test_prompt"
+
+    async def test_versioned_user_tool_with_version_filter(self):
+        """Synthetic tools remain discoverable when versioned user tool is filtered out."""
+        mcp = FastMCP("Test")
+
+        @mcp.tool(version="2.0")
+        def get_prompt(name: str) -> str:
+            return f"user v2: {name}"
+
+        @mcp.prompt
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        mcp.add_transform(PromptsAsTools(mcp))
+        mcp.add_transform(VersionFilter(version_lt="2.0"))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "get_prompt" in tool_names
+
+            result = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(result.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
+
+    async def test_regex_search_transform_preceding_prompts_as_tools(self):
+        """When RegexSearchTransform precedes PromptsAsTools, synthetic tool is advertised and called."""
+        mcp = FastMCP("Test")
+
+        @mcp.tool
+        def get_prompt(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.prompt
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        mcp.add_transform(RegexSearchTransform())
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "get_prompt" in tool_names
+            assert "list_prompts" in tool_names
+
+            # Calling get_prompt directly calls the advertised synthetic tool
+            result = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(result.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
 
 
 class TestListPromptsTool:

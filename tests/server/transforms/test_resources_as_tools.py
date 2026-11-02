@@ -9,7 +9,8 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthContext
-from fastmcp.server.transforms import ResourcesAsTools
+from fastmcp.server.transforms import ResourcesAsTools, VersionFilter
+from fastmcp.server.transforms.search import RegexSearchTransform
 
 
 class TestResourcesAsToolsBasic:
@@ -77,6 +78,54 @@ class TestResourcesAsToolsBasic:
 
             result2 = await client.call_tool("read_resource", {"uri": "test://uri"})
             assert result2.data == "user read_resource: test://uri"
+
+    async def test_versioned_user_tool_with_version_filter(self):
+        """Synthetic tools remain discoverable when versioned user tool is filtered out."""
+        mcp = FastMCP("Test")
+
+        @mcp.tool(version="2.0")
+        def read_resource(uri: str) -> str:
+            return f"user v2: {uri}"
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "config data"
+
+        mcp.add_transform(ResourcesAsTools(mcp))
+        mcp.add_transform(VersionFilter(version_lt="2.0"))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "read_resource" in tool_names
+
+            result = await client.call_tool("read_resource", {"uri": "config://app"})
+            assert result.data == "config data"
+
+    async def test_regex_search_transform_preceding_resources_as_tools(self):
+        """When RegexSearchTransform precedes ResourcesAsTools, synthetic tool is advertised and called."""
+        mcp = FastMCP("Test")
+
+        @mcp.tool
+        def read_resource(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "config data"
+
+        mcp.add_transform(RegexSearchTransform())
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "read_resource" in tool_names
+            assert "list_resources" in tool_names
+
+            # Calling read_resource directly calls the advertised synthetic tool
+            result = await client.call_tool("read_resource", {"uri": "config://app"})
+            assert result.data == "config data"
 
 
 class TestListResourcesTool:

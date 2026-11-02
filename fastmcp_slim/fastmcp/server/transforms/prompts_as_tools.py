@@ -73,27 +73,60 @@ class PromptsAsTools(Transform):
     def __repr__(self) -> str:
         return f"PromptsAsTools({self._provider!r})"
 
+    def _is_hidden_by_upstream(self, name: str) -> bool:
+        """Check if a tool is hidden from list_tools by an upstream transform."""
+        from fastmcp.server.transforms.search.base import BaseSearchTransform
+
+        if not hasattr(self._provider, "transforms"):
+            return False
+
+        try:
+            idx = self._provider.transforms.index(self)
+        except ValueError:
+            return False
+
+        for transform in self._provider.transforms[:idx]:
+            if isinstance(transform, BaseSearchTransform):
+                if name not in transform._always_visible:
+                    return True
+        return False
+
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """Add prompt tools to the tool list."""
-        existing_names = {t.name for t in tools}
+        existing_keys = {t.key for t in tools}
         synthetic: list[Tool] = []
-        if "list_prompts" not in existing_names:
-            synthetic.append(self._make_list_prompts_tool())
-        if "get_prompt" not in existing_names:
-            synthetic.append(self._make_get_prompt_tool())
+        list_tool = self._make_list_prompts_tool()
+        if list_tool.key not in existing_keys:
+            synthetic.append(list_tool)
+        get_tool = self._make_get_prompt_tool()
+        if get_tool.key not in existing_keys:
+            synthetic.append(get_tool)
         return [*tools, *synthetic]
 
     async def get_tool(
         self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get a tool by name, including generated prompt tools."""
+        if name not in ("list_prompts", "get_prompt"):
+            return await call_next(name, version=version)
+
+        syn = (
+            self._make_list_prompts_tool()
+            if name == "list_prompts"
+            else self._make_get_prompt_tool()
+        )
+        syn_matches = version is None or version.matches(syn.version)
+
+        if syn_matches and self._is_hidden_by_upstream(name):
+            return syn
+
         existing = await call_next(name, version=version)
         if existing is not None:
             return existing
-        if name == "list_prompts":
-            return self._make_list_prompts_tool()
-        if name == "get_prompt":
-            return self._make_get_prompt_tool()
+
+        if syn_matches:
+            return syn
+
         return None
 
     def _make_list_prompts_tool(self) -> Tool:
