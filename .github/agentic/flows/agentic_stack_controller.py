@@ -18,6 +18,7 @@ from flows.agentic_intake import policy_outcome, route_intake
 from flows.agentic_native_triage import run_native_triage
 from flows.agentic_reproduction_evidence import validate_reproduction_patch
 from flows.agentic_review_delivery import deliver_reviews
+from flows.agentic_review_publication import EvidenceChanged
 from flows.agentic_stack import digest
 from flows.agentic_stack_policy import Batch
 from flows.agentic_stack_runtime import (
@@ -225,6 +226,14 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                                 result,
                                 final_evidence,
                             )
+                        except EvidenceChanged as error:
+                            # Freshness revalidation requeues the item, and the
+                            # GitHub event for the change starts its own triage.
+                            delivery = {
+                                "status": "superseded",
+                                "reason": str(error)[:1000],
+                                "posted": getattr(error, "posted", []),
+                            }
                         except (
                             ValueError,
                             RuntimeError,
