@@ -255,6 +255,56 @@ class TestPromptsAsToolsBasic:
             data = json.loads(result.data)
             assert "Hello, Alice!" in data["messages"][0]["content"]
 
+    async def test_mounted_child_search_hides_user_tool(self):
+        """When an unnamespaced mounted child defines get_prompt behind search transform, parent uses synthetic tool."""
+        parent = FastMCP("Parent")
+        child = FastMCP("Child")
+
+        @child.tool
+        def get_prompt(query: str) -> str:
+            return f"child: {query}"
+
+        child.add_transform(RegexSearchTransform())
+        parent.mount(child)
+
+        @parent.prompt
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        parent.add_transform(PromptsAsTools(parent))
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "get_prompt" in tool_names
+
+            result = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(result.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
+
+    async def test_code_mode_preceding_prompts_as_tools(self):
+        """When CodeMode precedes PromptsAsTools, hidden user tool does not prevent synthetic tool."""
+        from fastmcp.experimental.transforms.code_mode import CodeMode
+
+        mcp = FastMCP("Test")
+
+        @mcp.tool
+        def get_prompt(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.prompt
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        mcp.add_transform(CodeMode())
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        tool = await mcp.get_tool("get_prompt")
+        assert tool is not None
+        assert "name" in tool.parameters["properties"]
+
 
 class TestListPromptsTool:
     """Test the list_prompts tool."""

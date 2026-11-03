@@ -74,15 +74,21 @@ class PromptsAsTools(Transform):
         return f"PromptsAsTools({self._provider!r})"
 
     def _is_tool_hidden_by_search(self, tool: Tool) -> bool:
-        """Check if a specific tool is hidden by a BaseSearchTransform on its provider path."""
-        from fastmcp.server.transforms.search.base import BaseSearchTransform
+        """Check if a specific tool is hidden by a search or catalog transform on its provider path."""
+        from fastmcp.server.transforms.catalog import CatalogTransform
 
         name = tool.name
 
         def _transforms_hide(transforms: Sequence[Any]) -> bool:
             for t in transforms:
-                if isinstance(t, BaseSearchTransform):
-                    if name not in t._always_visible:
+                if isinstance(t, CatalogTransform):
+                    always_visible = getattr(t, "_always_visible", None)
+                    if always_visible is not None:
+                        if name not in always_visible:
+                            return True
+                    elif (
+                        type(t).transform_tools is not CatalogTransform.transform_tools
+                    ):
                         return True
             return False
 
@@ -102,24 +108,61 @@ class PromptsAsTools(Transform):
         ):
             return False
 
-        def _find_provider_hiding(provider: Any) -> bool | None:
+        def _find_provider_hiding(
+            provider: Any, visited: set[int] | None = None
+        ) -> bool | None:
+            if provider is None:
+                return None
+            if visited is None:
+                visited = set()
+            pid = id(provider)
+            if pid in visited:
+                return None
+            visited.add(pid)
+
             comps = getattr(provider, "_components", {})
-            has_tool = tool.key in comps or any(c is tool for c in comps.values())
+            orig_name = getattr(tool, "_original_name", None) or tool.name
+            has_tool = (
+                tool.key in comps
+                or any(c is tool for c in comps.values())
+                or getattr(tool, "_server", None) is provider
+                or any(
+                    getattr(c, "name", None) == orig_name
+                    and getattr(c, "version", None) == tool.version
+                    for c in comps.values()
+                )
+            )
 
             inner = getattr(provider, "_inner", None)
-            inner_hides = _find_provider_hiding(inner) if inner is not None else None
+            inner_hides = (
+                _find_provider_hiding(inner, visited) if inner is not None else None
+            )
+
+            mounted_server = getattr(provider, "server", None)
+            mounted_hides = (
+                _find_provider_hiding(mounted_server, visited)
+                if mounted_server is not None
+                else None
+            )
 
             child_hides = None
             for child in getattr(provider, "providers", []):
-                res = _find_provider_hiding(child)
+                res = _find_provider_hiding(child, visited)
                 if res is not None:
                     child_hides = res
                     break
 
-            if has_tool or inner_hides is not None or child_hides is not None:
+            if (
+                has_tool
+                or inner_hides is not None
+                or mounted_hides is not None
+                or child_hides is not None
+            ):
                 if _transforms_hide(getattr(provider, "transforms", [])):
                     return True
-                return bool(inner_hides is True or child_hides is True)
+                return bool(
+                    inner_hides is True or mounted_hides is True or child_hides is True
+                )
 
             return None
 
@@ -131,6 +174,12 @@ class PromptsAsTools(Transform):
         inner = getattr(self._provider, "_inner", None)
         if inner is not None:
             res = _find_provider_hiding(inner)
+            if res is not None:
+                return res
+
+        mounted = getattr(self._provider, "server", None)
+        if mounted is not None:
+            res = _find_provider_hiding(mounted)
             if res is not None:
                 return res
 

@@ -242,6 +242,53 @@ class TestResourcesAsToolsBasic:
             result = await client.call_tool("read_resource", {"uri": "config://app"})
             assert result.data == "config data"
 
+    async def test_mounted_child_search_hides_user_tool(self):
+        """When an unnamespaced mounted child defines read_resource behind search transform, parent uses synthetic tool."""
+        parent = FastMCP("Parent")
+        child = FastMCP("Child")
+
+        @child.tool
+        def read_resource(query: str) -> str:
+            return f"child: {query}"
+
+        child.add_transform(RegexSearchTransform())
+        parent.mount(child)
+
+        @parent.resource("config://app")
+        def app_config() -> str:
+            return "config data"
+
+        parent.add_transform(ResourcesAsTools(parent))
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "read_resource" in tool_names
+
+            result = await client.call_tool("read_resource", {"uri": "config://app"})
+            assert result.data == "config data"
+
+    async def test_code_mode_preceding_resources_as_tools(self):
+        """When CodeMode precedes ResourcesAsTools, hidden user tool does not prevent synthetic tool."""
+        from fastmcp.experimental.transforms.code_mode import CodeMode
+
+        mcp = FastMCP("Test")
+
+        @mcp.tool
+        def read_resource(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "config data"
+
+        mcp.add_transform(CodeMode())
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        tool = await mcp.get_tool("read_resource")
+        assert tool is not None
+        assert "uri" in tool.parameters["properties"]
+
 
 class TestListResourcesTool:
     """Test the list_resources tool."""
