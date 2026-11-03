@@ -250,7 +250,8 @@ async def _download_skill(
 
         # Write content
         if isinstance(content, mcp_types.TextResourceContents):
-            file_path.write_text(content.text, encoding="utf-8")
+            # newline="" writes the served text as is, without CRLF translation.
+            file_path.write_text(content.text, encoding="utf-8", newline="")
         elif isinstance(content, mcp_types.BlobResourceContents):
             file_path.write_bytes(base64.b64decode(content.blob))
         else:

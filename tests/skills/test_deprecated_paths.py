@@ -146,8 +146,10 @@ def test_vendor_presets_name_their_folder(
 
     codex, claude = record
     assert str(codex.message).startswith("`CodexSkillsProvider` is deprecated")
-    assert str(Path(tmp_path, ".codex", "skills").resolve()) in str(codex.message)
-    assert str(Path(tmp_path, ".claude", "skills").resolve()) in str(claude.message)
+    assert repr(str(Path(tmp_path, ".codex", "skills").resolve())) in str(codex.message)
+    assert repr(str(Path(tmp_path, ".claude", "skills").resolve())) in str(
+        claude.message
+    )
     assert codex.filename == claude.filename == __file__
 
 
