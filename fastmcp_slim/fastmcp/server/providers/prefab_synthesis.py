@@ -226,7 +226,10 @@ def _walk_prefab_tools(server: FastMCP) -> list[Tool]:
 
 async def _effective_prefab_tools(server: FastMCP) -> list[Tool]:
     """Use provider and session transforms before deriving resource identity."""
-    if not prefab_available():
+    try:
+        if not prefab_available():
+            return []
+    except ImportError:
         return []
 
     from fastmcp.server.providers.base import Provider

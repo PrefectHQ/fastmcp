@@ -1,6 +1,7 @@
 """Resource discovery without the optional Prefab renderer."""
 
 import sys
+from importlib.abc import MetaPathFinder
 from typing import Any
 
 import pytest
@@ -11,8 +12,10 @@ from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.utilities.prefab import prefab_available
 
 
+@pytest.mark.parametrize("blocked", [False, True], ids=["missing", "blocked"])
 async def test_resource_listing_without_prefab_skips_backend_tools(
     monkeypatch: pytest.MonkeyPatch,
+    blocked: bool,
 ) -> None:
     tool_list_calls = 0
 
@@ -34,8 +37,19 @@ async def test_resource_listing_without_prefab_skips_backend_tools(
     def status() -> str:
         return "ready"
 
+    class BlockPrefab(MetaPathFinder):
+        def find_spec(
+            self, fullname: str, path: Any = None, target: Any = None
+        ) -> None:
+            if fullname == "prefab_ui":
+                raise ModuleNotFoundError("Prefab is unavailable", name=fullname)
+
     with monkeypatch.context() as unavailable:
-        unavailable.setitem(sys.modules, "prefab_ui", None)
+        if blocked:
+            unavailable.delitem(sys.modules, "prefab_ui", raising=False)
+            unavailable.setattr(sys, "meta_path", [BlockPrefab(), *sys.meta_path])
+        else:
+            unavailable.setitem(sys.modules, "prefab_ui", None)
         prefab_available.cache_clear()
         try:
             async with Client(create_proxy(backend)) as client:
