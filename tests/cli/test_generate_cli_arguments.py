@@ -90,7 +90,7 @@ async def test_json_parameters_do_not_collide_with_argument_dictionary() -> None
         received.append((_arguments, _arguments_))
 
     namespace = await generated_cli(server)
-    await namespace["set_profile"](_arguments="null", _arguments_="keep")
+    await namespace["tool_set_profile"](_arguments="null", _arguments_="keep")
 
     assert received == [(None, "keep")]
 
