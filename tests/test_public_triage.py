@@ -2,7 +2,6 @@
 
 import importlib.util
 import json
-import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -443,29 +442,34 @@ def test_malformed_discussion_retains_metadata_and_stage(triage, monkeypatch):
     assert "secret-sentinel" not in json.dumps(report)
 
 
-def test_standalone_cli_generates_provenance_without_cloud_access(
-    tmp_path, monkeypatch
-):
-    bindir = tmp_path / "bin"
-    bindir.mkdir()
-    fake = bindir / "gh"
-    fake.write_text(
-        f"#!{sys.executable}\nimport json,sys\n"
-        "endpoint=sys.argv[2]\n"
-        "if 'per_page=1&' in endpoint: value=1\n"
-        f"elif '/issues?' in endpoint: value={item()!r}\n"
-        f"elif '/branches/' in endpoint: value={{'commit':{{'sha':{'b' * 40!r}}}}}\n"
-        "elif '--slurp' in sys.argv: value=[[]]\n"
-        f"else: value={pr()!r}\n"
-        "print(json.dumps(value))\n"
+def test_standalone_cli_generates_provenance_without_cloud_access(tmp_path):
+    # Intercept only the external gh boundary in the child interpreter. A fake
+    # shebang executable on PATH cannot run on Windows.
+    wrapper = tmp_path / "run_collector.py"
+    wrapper.write_text(
+        "import json, runpy, subprocess, sys\nfrom pathlib import Path\n"
+        "original_run = subprocess.run\n"
+        "def fake_run(command, *args, **kwargs):\n"
+        "    if command[0] != 'gh':\n"
+        "        return original_run(command, *args, **kwargs)\n"
+        "    endpoint = command[2]\n"
+        "    if 'per_page=1&' in endpoint: value = 1\n"
+        f"    elif '/issues?' in endpoint: value = {item()!r}\n"
+        f"    elif '/branches/' in endpoint: value = {{'commit': {{'sha': {'b' * 40!r}}}}}\n"
+        "    elif '--slurp' in command: value = [[]]\n"
+        f"    else: value = {pr()!r}\n"
+        "    return subprocess.CompletedProcess(command, 0, json.dumps(value), '')\n"
+        "subprocess.run = fake_run\n"
+        "sys.argv = sys.argv[1:]\n"
+        "sys.path.insert(0, str(Path(sys.argv[0]).parent))\n"
+        "runpy.run_path(sys.argv[0], run_name='__main__')\n"
     )
-    fake.chmod(0o755)
-    monkeypatch.setenv("PATH", str(bindir) + os.pathsep + os.environ.get("PATH", ""))
     output = tmp_path / "triage.json"
     root = Path(__file__).parents[1]
     subprocess.run(
         [
             sys.executable,
+            str(wrapper),
             str(root / "scripts/public_triage.py"),
             "--output",
             str(output),
