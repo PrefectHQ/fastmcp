@@ -121,7 +121,8 @@ verdict. A successful retry is not evidence that historical failures had the
 same cause.
 
 Backlog collection and publication do not depend on the optional triage job.
-Both publishers serialize writes to the existing status branch. The independent
+Both publishers and the maintenance publisher serialize writes to the existing
+status branch with `queue: max`, so one waiting publisher cannot displace another. The independent
 reads can observe different queue states; compare their collection timestamps
 rather than treating different totals as an inconsistency. A failed triage
 build leaves its previous snapshot to age visibly while the backlog can still

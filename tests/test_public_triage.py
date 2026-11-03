@@ -397,7 +397,21 @@ def test_optional_triage_failure_cannot_block_backlog_publication():
     assert jobs["publish"]["needs"] == "build"
     assert jobs["publish-triage"]["needs"] == "triage"
     assert "needs" not in jobs["build"] and "needs" not in jobs["triage"]
-    assert jobs["publish"]["concurrency"] == jobs["publish-triage"]["concurrency"]
+    maintenance = yaml.safe_load(
+        (
+            Path(__file__).parents[1] / ".github/workflows/maintenance-status.yml"
+        ).read_text()
+    )
+    for publisher in (
+        jobs["publish"],
+        jobs["publish-triage"],
+        maintenance["jobs"]["publish"],
+    ):
+        assert publisher["concurrency"] == {
+            "group": "maintenance-status-publish",
+            "cancel-in-progress": False,
+            "queue": "max",
+        }
     commands = "\n".join(step.get("run", "") for step in jobs["build"]["steps"])
     assert "--triage-output" not in commands and "public_triage.py" not in commands
     assert (
