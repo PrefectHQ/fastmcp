@@ -255,27 +255,7 @@ class SkillsDirectoryProvider(SkillCatalogProvider):
         return _locate(uri, self._static) is not None
 
     def _scan(self) -> dict[str, Skill]:
-        skills: dict[str, Skill] = {}
-        invalid: list[str] = []
-        for root in self._roots:
-            for path, folder in _skill_folders(root):
-                if path in skills:
-                    logger.debug("Skipping duplicate skill %r from %s", path, root)
-                    continue
-                if any(_nested(path, other) for other in skills):
-                    logger.warning("Skipping skill %r nested in another skill", path)
-                    continue
-                folder_name = path.rsplit("/", 1)[-1]
-                try:
-                    skill = Skill.from_directory(folder)
-                    if skill.name != folder_name:
-                        raise ValueError(
-                            f"folder name must match its SKILL.md name {skill.name!r}"
-                        )
-                except (OSError, ValueError) as exc:
-                    invalid.append(_invalid_folder(root / path, folder_name, exc))
-                    continue
-                skills[path] = skill
+        skills, invalid = _scan_skill_roots(self._roots)
         if invalid:
             raise ValueError(
                 f"{len(invalid)} skill folder(s) are not valid Agent Skills "
@@ -287,6 +267,36 @@ class SkillsDirectoryProvider(SkillCatalogProvider):
         return (
             f"{type(self).__name__}(roots={list(self._roots)!r}, reload={self._reload})"
         )
+
+
+def _scan_skill_roots(roots: Sequence[Path]) -> tuple[dict[str, Skill], list[str]]:
+    """Load every skill folder below `roots`.
+
+    Returns the valid skills by relative path, plus one line per invalid folder
+    saying what is wrong and how to fix it. The first root wins a duplicate path.
+    """
+    skills: dict[str, Skill] = {}
+    invalid: list[str] = []
+    for root in roots:
+        for path, folder in _skill_folders(root):
+            if path in skills:
+                logger.debug("Skipping duplicate skill %r from %s", path, root)
+                continue
+            if any(_nested(path, other) for other in skills):
+                logger.warning("Skipping skill %r nested in another skill", path)
+                continue
+            folder_name = path.rsplit("/", 1)[-1]
+            try:
+                skill = Skill.from_directory(folder)
+                if skill.name != folder_name:
+                    raise ValueError(
+                        f"folder name must match its SKILL.md name {skill.name!r}"
+                    )
+            except (OSError, ValueError) as exc:
+                invalid.append(_invalid_folder(root / path, folder_name, exc))
+                continue
+            skills[path] = skill
+    return skills, invalid
 
 
 def _invalid_folder(folder: Path, folder_name: str, exc: Exception) -> str:

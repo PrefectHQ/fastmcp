@@ -93,10 +93,6 @@ BACKGROUND TASKS
 - `task=` on a `@mcp.resource` or `@mcp.prompt` decorator (tools only now)
 - `client.call_tool(..., task=True)`, `read_resource(task=True)`, `get_prompt(task=True)`
 
-SKILLS IMPORTS THAT STILL WORK BUT WARN (the warning names the replacement)
-- anything from `fastmcp.server.providers.skills` (`SkillsDirectoryProvider`, `SkillProvider`, `ClaudeSkillsProvider` and the other vendor presets) → `fastmcp.skills.provider`; `main_file_name`, `supporting_files` and `experimental_skills` are ignored or rejected
-- `sync_skills` / `download_skill` from `fastmcp.utilities.skills` → `client.read_skill(uri)` then `skill.to_directory(path)`; `list_skill_summaries` and `get_skill_manifest` raise with their replacement
-
 ERRORS
 - `McpError(ErrorData(...))` positional construction. Catching and `err.error.code` are unchanged; only construction moved.
 
@@ -264,10 +260,7 @@ The proxy, OpenAPI, and app integrations moved to their permanent homes, and the
 | `OpenAISamplingHandler` from `fastmcp.experimental.sampling.handlers` | `fastmcp.client.sampling.handlers.openai` |
 | `AuthCheck` / `AuthContext` / `require_scopes` / `require_roles` / `restrict_tag` / `run_auth_checks` from `fastmcp.server.auth.authorization` | `fastmcp.server.auth` |
 | `run_auth_checks_with_shortfall` / `scope_requirements` from `fastmcp.server.auth.authorization` | `fastmcp.utilities.authorization` |
-| `SkillsProvider` / `SkillsDirectoryProvider` from `fastmcp.server.providers.skills` | `SkillsDirectoryProvider` from `fastmcp.skills.provider` |
-| `SkillProvider(path)` | `SkillCatalogProvider([Skill.from_directory(path)])` from `fastmcp.skills.provider` and `fastmcp.skills` |
-| `ClaudeSkillsProvider()` and the other vendor presets | `SkillsDirectoryProvider(Path.home() / ".claude" / "skills")` |
-| `sync_skills()` / `download_skill()` from `fastmcp.utilities.skills` | `client.read_skill(uri)` then `skill.to_directory(path)` ([example](/servers/skills#install-skills-into-a-local-agent)) |
+| `SkillsProvider` | `SkillsDirectoryProvider` from `fastmcp.skills.provider` |
 | `TaskConfig` from `fastmcp.server.tasks` | `fastmcp.utilities.tasks` |
 | `CurrentDocket` / `CurrentWorker` from `fastmcp.dependencies` | `fastmcp_tasks.dependencies` |
 | `fastmcp.server.sampling` (and `SamplingTool`) | removed with [server-side sampling](#protocol-version-support) |

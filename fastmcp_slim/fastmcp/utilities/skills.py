@@ -1,36 +1,138 @@
-"""Deprecated: download skills with `Client.read_skill` and `Skill.to_directory`.
+"""Deprecated client helpers for skills served as `skill://` resources.
 
-Every name here warns with the replacement and will be removed in FastMCP 5.
+Deprecated since 4.2 and removed in 4.3. Use the `Client` skills methods:
+`list_skills()`, `get_skill()`, and `read_skill()`, then `Skill.to_directory()`.
 """
 
 from __future__ import annotations
 
+import json
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import mcp_types
+
 from fastmcp._warnings import FastMCPDeprecationWarning
+from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
 
-_INSTALL = (
-    "Use `skill = await client.read_skill(uri)` then "
-    "`skill.to_directory(target_dir / skill.name, overwrite=...)`, where `uri` is "
-    "`skill://<name>/SKILL.md` or an entry's `.uri` from `await client.list_skills()` "
-    "(needs `Client(..., extensions=[SkillsClientExtension()])` from `fastmcp.skills`)."
-)
+logger = get_logger(__name__)
 
 
-def _warn(old: str, new: str) -> None:
-    import fastmcp
+@dataclass
+class SkillSummary:
+    """Summary information about a skill available on a server."""
 
-    if fastmcp.settings.deprecation_warnings:
-        warnings.warn(
-            f"`fastmcp.utilities.skills.{old}` is deprecated. {new}",
-            FastMCPDeprecationWarning,
-            stacklevel=3,
+    name: str
+    description: str
+    uri: str
+
+
+@dataclass
+class SkillFile:
+    """Information about a file within a skill."""
+
+    path: str
+    size: int
+    hash: str
+
+
+@dataclass
+class SkillManifest:
+    """Full manifest of a skill including all files."""
+
+    name: str
+    files: list[SkillFile]
+
+
+_REMOVAL = "and will be removed in FastMCP 4.3."
+
+
+def _deprecated(name: str, replacement: str) -> None:
+    warnings.warn(
+        f"`fastmcp.utilities.skills.{name}` is deprecated {_REMOVAL} {replacement}",
+        FastMCPDeprecationWarning,
+        stacklevel=3,
+    )
+
+
+async def _resource_skills(client: Client) -> list[SkillSummary]:
+    resources = await client.list_resources()
+    skills = []
+    for resource in resources:
+        uri = str(resource.uri)
+        # Match skill://{name}/SKILL.md pattern
+        if uri.startswith("skill://") and uri.endswith("/SKILL.md"):
+            name = uri[len("skill://") :].rsplit("/", 1)[0]
+            skills.append(
+                SkillSummary(name=name, description=resource.description or "", uri=uri)
+            )
+    return skills
+
+
+async def list_skills(client: Client) -> list[SkillSummary]:
+    """List the skills a server publishes as `skill://{name}/SKILL.md` resources.
+
+    Deprecated: use `Client.list_skills()`, which sends the Skills extension's
+    `skills/list` request.
+    """
+    _deprecated(
+        "list_skills",
+        "Use `await client.list_skills()` with "
+        "`Client(..., extensions=[SkillsClientExtension()])` from `fastmcp.skills`.",
+    )
+    return await _resource_skills(client)
+
+
+async def get_skill_manifest(client: Client, skill_name: str) -> SkillManifest:
+    """Get the manifest for a specific skill.
+
+    Args:
+        client: Connected FastMCP client
+        skill_name: Name of the skill
+
+    Returns:
+        SkillManifest with file listing
+
+    Raises:
+        ValueError: If manifest cannot be read or parsed
+
+    Deprecated: use `Client.get_skill()`, whose entry lists every file.
+    """
+    _deprecated(
+        "get_skill_manifest",
+        "Use `await client.get_skill('skill://<name>/SKILL.md')`; its "
+        "`resources` list every file with its digest and size.",
+    )
+    manifest_uri = f"skill://{skill_name}/_manifest"
+    result = await client.read_resource(manifest_uri)
+
+    if not result:
+        raise ValueError(f"Could not read manifest for skill: {skill_name}")
+
+    content = result[0]
+    if isinstance(content, mcp_types.TextResourceContents):
+        try:
+            manifest_data = json.loads(content.text)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid manifest JSON for skill: {skill_name}") from e
+    else:
+        raise ValueError(f"Unexpected manifest format for skill: {skill_name}")
+
+    try:
+        return SkillManifest(
+            name=manifest_data["skill"],
+            files=[
+                SkillFile(path=f["path"], size=f["size"], hash=f["hash"])
+                for f in manifest_data["files"]
+            ],
         )
+    except (KeyError, TypeError) as e:
+        raise ValueError(f"Invalid manifest format for skill: {skill_name}") from e
 
 
 async def download_skill(
@@ -40,57 +142,130 @@ async def download_skill(
     *,
     overwrite: bool = False,
 ) -> Path:
-    """Deprecated: read one skill and write it to `target_dir/<name>`."""
-    _warn("download_skill", _INSTALL)
+    """Read a skill from the server and write it to a local directory.
+
+    Creates a subdirectory named after the skill containing all files. A
+    skill served at a nested path, such as a mounted server's `ops/deploy`,
+    is installed as `deploy`, since agents look for skill folders one level
+    deep. Every file is checked against the server's manifest before it is
+    written; see `Client.read_skill`.
+
+    Args:
+        client: Connected FastMCP client
+        skill_name: Name or path of the skill to download
+        target_dir: Directory where skill folder will be created
+        overwrite: If True, replace an existing skill directory. If False
+            (default), raise FileExistsError if directory exists.
+
+    Returns:
+        Path to the downloaded skill directory
+
+    Raises:
+        ValueError: If the skill cannot be found, fails verification, or is
+            not a valid skill
+        FileExistsError: If skill directory exists and overwrite=False
+
+    Example:
+        ```python
+        from fastmcp import Client
+        from fastmcp.utilities.skills import download_skill
+
+        async with Client("http://skills-server/mcp") as client:
+            skill_path = await download_skill(
+                client,
+                "pdf-processing",
+                "~/.claude/skills"
+            )
+            print(f"Downloaded to: {skill_path}")
+        ```
+    """
+    _deprecated(
+        "download_skill",
+        "Use `(await client.read_skill('skill://<name>/SKILL.md'))"
+        ".to_directory(target_dir / '<name>')`.",
+    )
+    return await _download_skill(client, skill_name, target_dir, overwrite=overwrite)
+
+
+async def _download_skill(
+    client: Client, skill_name: str, target_dir: str | Path, *, overwrite: bool
+) -> Path:
+    target_dir = Path(target_dir).expanduser().resolve()
+    segments = skill_name.split("/")
+    skill_dir = (target_dir / segments[-1]).resolve()
+
+    # Security: reject relative segments and ensure skill_dir stays within target_dir
+    if any(segment in ("", ".", "..") for segment in segments) or (
+        not skill_dir.is_relative_to(target_dir)
+    ):
+        raise ValueError(f"Skill name {skill_name!r} would escape the target directory")
+
+    if skill_dir.exists() and not overwrite:
+        raise FileExistsError(
+            f"Skill directory already exists: {skill_dir}. "
+            "Use overwrite=True to replace."
+        )
+
     skill = await client.read_skill(f"skill://{skill_name}/SKILL.md")
-    target = Path(target_dir).expanduser() / skill.name
-    return skill.to_directory(target, overwrite=overwrite)
+    return skill.to_directory(skill_dir, overwrite=overwrite)
 
 
 async def sync_skills(
-    client: Client, target_dir: str | Path, *, overwrite: bool = False
+    client: Client,
+    target_dir: str | Path,
+    *,
+    overwrite: bool = False,
 ) -> list[Path]:
-    """Deprecated: read every listed skill and write each to `target_dir`."""
-    _warn("sync_skills", "Loop over `await client.list_skills()`. " + _INSTALL)
-    if client._skills_unavailable_reason() is None:
-        uris = [entry.uri for entry in await client.list_skills()]
-    else:
-        # A 4.1 server or a client without the extension: find skills as resources.
-        resources = await client.list_resources()
-        uris = [
-            str(resource.uri)
-            for resource in resources
-            if str(resource.uri).startswith("skill://")
-            and str(resource.uri).endswith("/SKILL.md")
-        ]
-    paths = []
-    for uri in uris:
-        skill = await client.read_skill(uri)
-        target = Path(target_dir).expanduser() / skill.name
-        if target.exists() and not overwrite:
+    """Download all available skills from a server.
+
+    Each skill is installed in a folder named after it. When two skills share
+    a name, such as `ops/deploy` and `web/deploy`, only the first is
+    installed.
+
+    Args:
+        client: Connected FastMCP client
+        target_dir: Directory where skill folders will be created
+        overwrite: If True, overwrite existing files
+
+    Returns:
+        List of paths to downloaded skill directories
+
+    Example:
+        ```python
+        from fastmcp import Client
+        from fastmcp.utilities.skills import sync_skills
+
+        async with Client("http://skills-server/mcp") as client:
+            paths = await sync_skills(client, "~/.claude/skills")
+            print(f"Downloaded {len(paths)} skills")
+        ```
+    """
+    _deprecated(
+        "sync_skills",
+        "Loop over `await client.list_skills()` and call "
+        "`(await client.read_skill(entry.uri)).to_directory(target_dir / name)`.",
+    )
+    skills = await _resource_skills(client)
+    downloaded = []
+    installed_names: set[str] = set()
+
+    for skill in skills:
+        folder_name = skill.name.rsplit("/", 1)[-1]
+        if folder_name in installed_names:
+            logger.warning(
+                "Skipping skill %r: a skill named %r was already installed",
+                skill.name,
+                folder_name,
+            )
             continue
-        paths.append(skill.to_directory(target, overwrite=overwrite))
-    return paths
+        installed_names.add(folder_name)
+        try:
+            path = await _download_skill(
+                client, skill.name, target_dir, overwrite=overwrite
+            )
+            downloaded.append(path)
+        except FileExistsError:
+            # Skip existing skills when not overwriting
+            continue
 
-
-_GONE = {
-    "list_skill_summaries": "Use `await client.list_skills()`; each entry has "
-    "`.uri` and `.frontmatter.name` / `.frontmatter.description`.",
-    "list_skills": "Use `await client.list_skills()`.",
-    "get_skill_manifest": "Use `await client.get_skill(uri)`; its `.resources` "
-    "list each file's URI, size and digest.",
-}
-
-
-def __getattr__(name: str) -> object:
-    # ImportError, not AttributeError, so `from ... import name` keeps the message.
-    if name in _GONE:
-        raise ImportError(
-            f"`fastmcp.utilities.skills.{name}` was removed. {_GONE[name]}"
-        )
-    if name in {"SkillSummary", "SkillFile", "SkillManifest"}:
-        raise ImportError(
-            f"`fastmcp.utilities.skills.{name}` was removed. Use `MCPSkill` "
-            "from `fastmcp.skills`."
-        )
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return downloaded
