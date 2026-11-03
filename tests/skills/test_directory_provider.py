@@ -150,3 +150,45 @@ async def test_reload_shows_edits_through_the_response_cache(tmp_path: Path):
     assert before.files["SKILL.md"].endswith(b"# Before\n")
     assert after.files["SKILL.md"].endswith(b"# After\n")
     assert uris == ["skill://deploy/SKILL.md", "skill://review/SKILL.md"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges")
+async def test_symlink_named_differently_from_its_skill_is_skipped(tmp_path: Path):
+    target = write_skill(tmp_path / "elsewhere" / "review")
+    root = tmp_path / "skills"
+    root.mkdir()
+    os.symlink(target, root / "renamed", target_is_directory=True)
+    write_skill(root / "deploy")
+
+    assert await listed(SkillsDirectoryProvider(root)) == ["skill://deploy/SKILL.md"]
+
+
+async def test_unreadable_folder_is_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    write_skill(tmp_path / "review")
+    locked = tmp_path / "lost+found"
+    locked.mkdir()
+    is_file = Path.is_file
+
+    def deny(path: Path) -> bool:
+        if path.parent == locked:
+            raise PermissionError(13, "Permission denied", str(path))
+        return is_file(path)
+
+    monkeypatch.setattr(Path, "is_file", deny)
+    provider = SkillsDirectoryProvider(tmp_path)
+    monkeypatch.undo()
+
+    assert await listed(provider) == ["skill://review/SKILL.md"]
+
+
+async def test_only_a_reloading_provider_claims_unknown_skill_uris(tmp_path: Path):
+    write_skill(tmp_path / "review")
+
+    fixed = SkillsDirectoryProvider(tmp_path)
+    assert fixed._owns_skill_resource("skill://review/SKILL.md")
+    assert not fixed._owns_skill_resource("skill://other/SKILL.md")
+    assert SkillsDirectoryProvider(tmp_path, reload=True)._owns_skill_resource(
+        "skill://other/SKILL.md"
+    )

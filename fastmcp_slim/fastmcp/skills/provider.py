@@ -244,6 +244,11 @@ class SkillsDirectoryProvider(SkillCatalogProvider):
             return await anyio.to_thread.run_sync(self._scan)
         return self._static
 
+    def _owns_skill_resource(self, uri: str) -> bool:
+        if self._reload:
+            return uri.startswith("skill://")
+        return _locate(uri, self._static) is not None
+
     def _scan(self) -> dict[str, Skill]:
         skills: dict[str, Skill] = {}
         for root in self._roots:
@@ -290,12 +295,18 @@ def _skill_folders(root: Path) -> list[tuple[str, Path]]:
             logger.warning("Skipping unreadable skills folder %s: %s", directory, exc)
             return
         for entry in entries:
-            if not entry.is_dir():
-                continue
             path = f"{prefix}{entry.name}"
-            if (entry / "SKILL.md").is_file():
-                found.append((path, entry.resolve()))
-            elif not entry.is_symlink():
+            try:
+                if not entry.is_dir():
+                    continue
+                if (entry / "SKILL.md").is_file():
+                    found.append((path, entry.resolve()))
+                    continue
+                descend = not entry.is_symlink()
+            except OSError as exc:
+                logger.warning("Skipping unreadable skills folder %s: %s", entry, exc)
+                continue
+            if descend:
                 visit(entry, f"{path}/")
 
     if root.is_dir():

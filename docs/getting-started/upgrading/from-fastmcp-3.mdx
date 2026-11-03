@@ -56,6 +56,8 @@ IMPORTS THAT NO LONGER RESOLVE
 - `fastmcp.server.auth.authorization`
 - `CurrentDocket` or `CurrentWorker` from `fastmcp.dependencies`
 - `SkillsProvider`
+- `fastmcp.server.providers.skills` (`SkillProvider`, `ClaudeSkillsProvider` and the other vendor presets; `SkillsDirectoryProvider` now imports from `fastmcp.skills.provider`)
+- `fastmcp.utilities.skills` (`sync_skills`, `download_skill`, `list_skill_summaries`, `get_skill_manifest`)
 - `CachableToolResult`, `CachablePromptResult`, and their siblings (the misspelling was corrected with no alias)
 - `PromptToolMiddleware`, `ResourceToolMiddleware`
 
@@ -260,7 +262,9 @@ The proxy, OpenAPI, and app integrations moved to their permanent homes, and the
 | `OpenAISamplingHandler` from `fastmcp.experimental.sampling.handlers` | `fastmcp.client.sampling.handlers.openai` |
 | `AuthCheck` / `AuthContext` / `require_scopes` / `require_roles` / `restrict_tag` / `run_auth_checks` from `fastmcp.server.auth.authorization` | `fastmcp.server.auth` |
 | `run_auth_checks_with_shortfall` / `scope_requirements` from `fastmcp.server.auth.authorization` | `fastmcp.utilities.authorization` |
-| `SkillsProvider` | `SkillsDirectoryProvider` from `fastmcp.skills.provider` |
+| `SkillsProvider` / `SkillsDirectoryProvider` from `fastmcp.server.providers.skills` | `SkillsDirectoryProvider` from `fastmcp.skills.provider` |
+| `SkillProvider(path)` / `ClaudeSkillsProvider()` and the other vendor presets | `SkillsDirectoryProvider(path)` / `SkillsDirectoryProvider(Path.home() / ".claude" / "skills")` |
+| `sync_skills()` / `download_skill()` from `fastmcp.utilities.skills` | `client.read_skill(uri)` then `skill.to_directory(path)` ([example](/servers/skills#install-skills-into-a-local-agent)) |
 | `TaskConfig` from `fastmcp.server.tasks` | `fastmcp.utilities.tasks` |
 | `CurrentDocket` / `CurrentWorker` from `fastmcp.dependencies` | `fastmcp_tasks.dependencies` |
 | `fastmcp.server.sampling` (and `SamplingTool`) | removed with [server-side sampling](#protocol-version-support) |
