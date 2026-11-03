@@ -75,7 +75,7 @@ python cli.py call-tool get_forecast --city London --days 3
 python cli.py call-tool tag_items --tags python --tags fastapi --tags mcp
 ```
 
-**Complex types** (objects, nested arrays, and unions that include them) accept JSON strings. The `--help` output shows the full schema so you know what structure to pass:
+**Complex types** (objects, nested arrays, and other unions such as `str | int`) accept JSON strings. The `--help` output shows the full schema so you know what structure to pass:
 
 ```bash
 python cli.py call-tool create_user \
@@ -83,7 +83,7 @@ python cli.py call-tool create_user \
   --metadata '{"role": "admin", "dept": "engineering"}'
 ```
 
-For JSON-encoded parameters whose schema permits `null`, pass `--parameter null` to send an explicit null value. Omitting an optional flag remains distinct and allows its default to apply.
+For JSON-encoded parameters whose schema permits `null`, and for `str | None`, `int | None`, and `float | None` flags, pass `--parameter null` to send an explicit null value. A `bool | None` parameter is a flag (`--loud` or `--no-loud`) and has no null form. Omitting an optional flag remains distinct and allows its default to apply.
 
 ## Agent Skill
 

@@ -43,25 +43,37 @@ def _is_simple_type(schema: dict[str, Any]) -> bool:
     return schema_type in _SIMPLE_TYPES
 
 
-def _collapse_simple_union(schema: dict[str, Any]) -> dict[str, Any]:
-    """Express an `anyOf` of simple types as the equivalent `type` list.
+# Flag annotations for `X | None` parameters. The token `null` sends an explicit
+# null, so integer and number flags accept it as well. A boolean stays a flag,
+# because cyclopts cannot combine a flag with a value.
+_OPTIONAL_SCALAR_ANNOTATIONS = {
+    "string": "str",
+    "integer": 'int | Literal["null"]',
+    "number": 'float | Literal["null"]',
+    "boolean": "bool",
+}
 
-    Pydantic describes `str | None` with `anyOf` branches rather than
-    `type: ["string", "null"]`. Both should produce the same command, so a
-    plain value is not parsed as JSON.
+
+def _optional_scalar_type(schema: dict[str, Any]) -> str | None:
+    """Return `X` when the schema is pydantic's `anyOf` form of `X | None`.
+
+    `X` must be a single string, integer, number or boolean type, so a
+    parameter such as `str | None` takes a plain value. Other unions, such as
+    `str | int`, still take JSON.
     """
     branches = schema.get("anyOf")
-    if "type" in schema or not isinstance(branches, list) or not branches:
-        return schema
-    if not all(
-        isinstance(branch, dict) and _is_simple_type(branch) for branch in branches
-    ):
-        return schema
-    types: list[str] = []
-    for branch in branches:
-        branch_type = branch["type"]
-        types.extend(branch_type if isinstance(branch_type, list) else [branch_type])
-    return {**schema, "type": list(dict.fromkeys(types))}
+    if "type" in schema or not isinstance(branches, list) or len(branches) != 2:
+        return None
+    types = [
+        branch.get("type") if isinstance(branch, dict) else None for branch in branches
+    ]
+    if types.count("null") != 1:
+        return None
+    types.remove("null")
+    scalar_type = types[0]
+    if isinstance(scalar_type, str) and scalar_type in _OPTIONAL_SCALAR_ANNOTATIONS:
+        return scalar_type
+    return None
 
 
 def _is_simple_array(schema: dict[str, Any]) -> tuple[bool, str | None]:
@@ -231,20 +243,24 @@ def _to_python_identifier(name: str) -> str:
 def _tool_function_source(tool: mcp_types.Tool) -> str:
     """Generate the source for a single ``@call_tool_app.command`` function."""
     schema = tool.input_schema
-    properties: dict[str, Any] = {
-        name: _collapse_simple_union(prop_schema)
-        for name, prop_schema in schema.get("properties", {}).items()
-    }
+    properties: dict[str, Any] = schema.get("properties", {})
     required = set(schema.get("required", []))
 
     # Build parameter lines and track which need JSON parsing
     param_lines: list[str] = []
     call_args: list[str] = []
     json_params: list[tuple[str, str]] = []  # (prop_name, safe_name)
+    null_params: list[str] = []  # `X | None` flags that take the token `null`
     seen_names: dict[str, str] = {}  # safe_name -> original prop_name
 
     for prop_name, prop_schema in properties.items():
-        py_type, needs_json = _schema_to_python_type(prop_schema)
+        scalar_type = _optional_scalar_type(prop_schema)
+        if scalar_type is None:
+            py_type, needs_json = _schema_to_python_type(prop_schema)
+        else:
+            py_type, needs_json = _OPTIONAL_SCALAR_ANNOTATIONS[scalar_type], False
+            if scalar_type != "boolean":
+                null_params.append(prop_name)
         help_text = prop_schema.get("description", "")
         is_required = prop_name in required
         safe_name = _to_python_identifier(prop_name)
@@ -292,10 +308,7 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
                     annotation = f'Annotated[{py_type}, cyclopts.Parameter(help="{help_escaped}")]'
                     param_lines.append(f"    {safe_name}: {annotation} = {default!r},")
             else:
-                optional_type = (
-                    py_type if "None" in py_type.split(" | ") else f"{py_type} | None"
-                )
-                annotation = f'Annotated[{optional_type}, cyclopts.Parameter(help="{help_escaped}")]'
+                annotation = f'Annotated[{py_type} | None, cyclopts.Parameter(help="{help_escaped}")]'
                 param_lines.append(f"    {safe_name}: {annotation} = None,")
 
         call_args.append(f"{prop_name!r}: {safe_name}")
@@ -337,6 +350,9 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
                 f"    if {prop_name!r} in {arguments_name} and isinstance({value}, str):"
             )
             lines.append(f"        {value} = json.loads({value})")
+        for prop_name in null_params:
+            lines.append(f"    if {arguments_name}.get({prop_name!r}) == 'null':")
+            lines.append(f"        {arguments_name}[{prop_name!r}] = None")
         lines.append(f"    await _call_tool({tool.name!r}, {arguments_name})")
     else:
         lines.append(f"    await _call_tool({tool.name!r}, {{}})")
@@ -381,7 +397,7 @@ def generate_cli_script(
     # --- Imports ---
     lines.append("import json")
     lines.append("import sys")
-    lines.append("from typing import Annotated")
+    lines.append("from typing import Annotated, Literal")
     lines.append("")
     lines.append("import cyclopts")
     lines.append("import mcp_types")
@@ -636,10 +652,13 @@ def _schema_type_label(prop_schema: dict[str, Any]) -> str:
 def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
     """Generate a SKILL.md section for a single tool."""
     schema = tool.input_schema
-    properties: dict[str, Any] = {
-        name: _collapse_simple_union(prop_schema)
-        for name, prop_schema in schema.get("properties", {}).items()
-    }
+    properties: dict[str, Any] = {}
+    for name, prop_schema in schema.get("properties", {}).items():
+        scalar_type = _optional_scalar_type(prop_schema)
+        if scalar_type is not None:
+            # Document `X | None` like the equivalent `type` list.
+            prop_schema = {**prop_schema, "type": [scalar_type, "null"]}
+        properties[name] = prop_schema
     required = set(schema.get("required", []))
 
     # Build example invocation flags
