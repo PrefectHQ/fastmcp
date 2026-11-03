@@ -584,6 +584,88 @@ class TestPromptsAsToolsBasic:
             res = await client.call_tool("get_prompt", {"name": "custom_arg"})
             assert res.data == "sub: custom_arg"
 
+    async def test_preceding_namespace_with_retaining_catalog_calls_user_tool(self):
+        """When a preceding Namespace and a retaining CatalogTransform precede PromptsAsTools,
+        the user tool is called using its query schema rather than falling back to synthetic tool."""
+        from collections.abc import Sequence
+
+        from fastmcp.server.transforms.catalog import CatalogTransform
+        from fastmcp.server.transforms.namespace import Namespace
+        from fastmcp.tools.base import Tool
+
+        class RetainingCatalog(CatalogTransform):
+            async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
+                return tools
+
+        server = FastMCP("Server")
+
+        @server.tool(name="prompt")
+        def user_prompt(query: str) -> str:
+            return f"user: {query}"
+
+        @server.prompt(name="greet")
+        def greet_prompt(name: str = "World") -> str:
+            return f"Hello, {name}!"
+
+        server.add_transform(Namespace("get"))
+        server.add_transform(RetainingCatalog())
+        server.add_transform(PromptsAsTools(server))
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "get_prompt" in tool_names
+
+            res = await client.call_tool("get_prompt", {"query": "test"})
+            assert res.data == "user: test"
+
+    async def test_mounted_child_with_middleware_filtering_tool_uses_synthetic_tool(
+        self,
+    ):
+        """When a mounted child has middleware filtering out a colliding tool, the parent's synthetic tool is used."""
+        from collections.abc import Sequence
+        from typing import Any
+
+        from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+        from fastmcp.tools.base import Tool
+
+        class FilterMiddleware(Middleware):
+            async def on_list_tools(
+                self,
+                context: MiddlewareContext[Any],
+                call_next: CallNext[Any, Sequence[Tool]],
+            ) -> Sequence[Tool]:
+                tools = await call_next(context)
+                return [t for t in tools if t.name != "get_prompt"]
+
+        child = FastMCP("Child")
+
+        @child.tool(name="get_prompt")
+        def child_prompt(query: str) -> str:
+            return f"child: {query}"
+
+        child.add_middleware(FilterMiddleware())
+
+        parent = FastMCP("Parent")
+        parent.mount(child)
+
+        @parent.prompt(name="greet")
+        def greet_prompt(name: str = "World") -> str:
+            return f"Hello, {name}!"
+
+        parent.add_transform(PromptsAsTools(parent))
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "get_prompt" in tool_names
+
+            res = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(res.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
+
 
 class TestListPromptsTool:
     """Test the list_prompts tool."""

@@ -104,125 +104,18 @@ class ResourcesAsTools(Transform):
         return is_enabled(session_tools[0])
 
     async def _is_tool_hidden_by_search(self, tool: Tool) -> bool:
-        """Check if a specific tool is hidden by a search or catalog transform on its provider path."""
+        """Check if a specific tool is hidden by search, catalog transforms, or child middleware."""
         from fastmcp.server.transforms.catalog import CatalogTransform
-        from fastmcp.server.transforms.namespace import Namespace
         from fastmcp.tools.base import Tool as ToolCls
 
-        async def _transforms_hide(
-            provider: Any,
-            transforms: Sequence[Any],
-            target_tool: Tool,
-            local_name: str,
-        ) -> bool:
-            candidate_tools: list[Tool] | None = None
-            list_fn = getattr(provider, "_list_tools", None)
-            if callable(list_fn):
-                with contextlib.suppress(Exception):
-                    raw = await list_fn()
-                    if isinstance(raw, Sequence):
-                        candidate_tools = list(raw)
+        top_transforms = getattr(self._provider, "transforms", [])
+        try:
+            idx = top_transforms.index(self)
+            preceding = top_transforms[:idx]
+        except ValueError:
+            preceding = top_transforms
 
-            current_tools = (
-                candidate_tools if candidate_tools is not None else [target_tool]
-            )
-
-            for t in transforms:
-                if isinstance(t, CatalogTransform):
-                    always_visible = getattr(t, "_always_visible", None)
-                    if always_visible is not None:
-                        if local_name not in always_visible:
-                            return True
-                        continue
-                    try:
-                        res = await t.transform_tools(current_tools)
-                        if not any(
-                            getattr(x, "name", None) == local_name
-                            and getattr(x, "version", None) == target_tool.version
-                            for x in res
-                        ):
-                            return True
-                        current_tools = list(res)
-                    except Exception:
-                        if type(t).__name__ == "CodeMode":
-                            return True
-            return False
-
-        async def _provider_owns_tool(
-            provider: Any, target_tool: Tool, local_name: str
-        ) -> bool:
-            if getattr(provider, "providers", None):
-                return False
-
-            orig_name = getattr(target_tool, "_original_name", None) or target_tool.name
-            allowed_names = {local_name, orig_name, target_tool.name}
-
-            if (
-                getattr(target_tool, "_server", None) is provider
-                or getattr(target_tool, "_provider", None) is provider
-            ):
-                return True
-
-            comps = getattr(provider, "_components", None)
-            if isinstance(comps, dict):
-                for c in comps.values():
-                    if isinstance(c, ToolCls) and (
-                        c is target_tool
-                        or c.key == target_tool.key
-                        or (
-                            c.name in allowed_names and c.version == target_tool.version
-                        )
-                    ):
-                        return True
-
-            tools_dict = getattr(provider, "_tools", None)
-            if isinstance(tools_dict, dict):
-                for t in tools_dict.values():
-                    if isinstance(t, ToolCls) and (
-                        t is target_tool
-                        or t.key == target_tool.key
-                        or (
-                            t.name in allowed_names and t.version == target_tool.version
-                        )
-                    ):
-                        return True
-
-            cache = getattr(provider, "_tools_cache", None)
-            if cache is not None:
-                items = getattr(cache, "items", None)
-                if isinstance(items, list):
-                    for t in items:
-                        if isinstance(t, ToolCls) and (
-                            t is target_tool
-                            or t.key == target_tool.key
-                            or (
-                                t.name in allowed_names
-                                and t.version == target_tool.version
-                            )
-                        ):
-                            return True
-
-            get_tool_fn = getattr(provider, "_get_tool", None)
-            if callable(get_tool_fn):
-                with contextlib.suppress(Exception):
-                    version_arg = (
-                        VersionSpec(eq=target_tool.version)
-                        if target_tool.version is not None
-                        else None
-                    )
-                    p_tool = await get_tool_fn(local_name, version=version_arg)
-                    if p_tool is not None and isinstance(p_tool, ToolCls):
-                        if (
-                            p_tool is target_tool
-                            or p_tool.key == target_tool.key
-                            or (
-                                p_tool.name in allowed_names
-                                and p_tool.version == target_tool.version
-                            )
-                        ):
-                            return True
-
-            return False
+        from fastmcp.server.transforms.namespace import Namespace
 
         def _reverse_name_through_provider(provider: Any, name: str) -> str:
             current = name
@@ -239,96 +132,217 @@ class ResourcesAsTools(Transform):
                         current = rev
             return current
 
-        top_transforms = getattr(self._provider, "transforms", [])
-        try:
-            idx = top_transforms.index(self)
-            preceding = top_transforms[:idx]
-        except ValueError:
-            preceding = top_transforms
+        async def _find_tool_provider(target_tool: Tool) -> Any:
+            server_attr = getattr(target_tool, "_server", None)
+            provider_attr = getattr(target_tool, "_provider", None)
 
-        if await _transforms_hide(self._provider, preceding, tool, tool.name):
-            return True
-
-        async def _find_provider_hiding(
-            provider: Any,
-            current_name: str,
-            visited: set[int] | None = None,
-        ) -> bool | None:
-            if provider is None:
+            def _find_by_identity(providers_list: Sequence[Any]) -> Any:
+                for p in providers_list:
+                    if server_attr is not None:
+                        if getattr(p, "server", None) is server_attr:
+                            return p
+                        inner = getattr(p, "_inner", None)
+                        if getattr(inner, "server", None) is server_attr:
+                            return p
+                    if provider_attr is not None and (
+                        p is provider_attr
+                        or getattr(p, "_inner", None) is provider_attr
+                    ):
+                        return p
+                    sub = getattr(p, "providers", [])
+                    found = _find_by_identity(sub)
+                    if found is not None:
+                        return found
                 return None
-            if visited is None:
-                visited = set()
-            pid = id(provider)
-            if pid in visited:
+
+            if server_attr is not None or provider_attr is not None:
+                by_id = _find_by_identity(getattr(self._provider, "providers", []))
+                if by_id is not None:
+                    return by_id
+
+            async def _search_providers(
+                providers_list: Sequence[Any], name: str
+            ) -> Any:
+                for p in providers_list:
+                    local_name = _reverse_name_through_provider(p, name)
+                    comps = getattr(p, "_components", None)
+                    if isinstance(comps, dict) and any(
+                        isinstance(c, ToolCls)
+                        and (
+                            c is target_tool
+                            or getattr(c, "key", None) == target_tool.key
+                            or (
+                                getattr(c, "name", None)
+                                in (local_name, target_tool.name)
+                                and getattr(c, "version", None) == target_tool.version
+                            )
+                        )
+                        for c in comps.values()
+                    ):
+                        return p
+
+                    tools_dict = getattr(p, "_tools", None)
+                    if isinstance(tools_dict, dict) and any(
+                        isinstance(t, ToolCls)
+                        and (
+                            t is target_tool
+                            or getattr(t, "key", None) == target_tool.key
+                            or (
+                                getattr(t, "name", None)
+                                in (local_name, target_tool.name)
+                                and getattr(t, "version", None) == target_tool.version
+                            )
+                        )
+                        for t in tools_dict.values()
+                    ):
+                        return p
+
+                    get_tool_fn = getattr(p, "_get_tool", None)
+                    if callable(get_tool_fn):
+                        with contextlib.suppress(Exception):
+                            version_arg = (
+                                VersionSpec(eq=target_tool.version)
+                                if target_tool.version is not None
+                                else None
+                            )
+                            p_tool = await get_tool_fn(local_name, version=version_arg)
+                            if p_tool is not None and (
+                                p_tool is target_tool
+                                or getattr(p_tool, "key", None) == target_tool.key
+                                or (
+                                    p_tool.name in (local_name, target_tool.name)
+                                    and p_tool.version == target_tool.version
+                                )
+                            ):
+                                return p
+
+                    sub = getattr(p, "providers", [])
+                    found = await _search_providers(sub, local_name)
+                    if found is not None:
+                        return found
                 return None
-            visited.add(pid)
 
-            has_tool = await _provider_owns_tool(provider, tool, current_name)
+            found = await _search_providers(
+                getattr(self._provider, "providers", []), target_tool.name
+            )
+            if found is not None:
+                return found
 
-            inner = getattr(provider, "_inner", None)
-            if inner is not None:
-                inner_name = _reverse_name_through_provider(provider, current_name)
-                inner_hides = await _find_provider_hiding(inner, inner_name, visited)
-            else:
-                inner_hides = None
-
-            mounted_server = getattr(provider, "server", None)
-            if mounted_server is not None:
-                mounted_name = _reverse_name_through_provider(provider, current_name)
-                mounted_hides = await _find_provider_hiding(
-                    mounted_server, mounted_name, visited
-                )
-            else:
-                mounted_hides = None
-
-            child_hides = None
-            for child in getattr(provider, "providers", []):
-                child_name = _reverse_name_through_provider(child, current_name)
-                res = await _find_provider_hiding(child, child_name, visited)
-                if res is not None:
-                    child_hides = res
-                    break
-
-            if (
-                has_tool
-                or inner_hides is not None
-                or mounted_hides is not None
-                or child_hides is not None
-            ):
-                if await _transforms_hide(
-                    provider,
-                    getattr(provider, "transforms", []),
-                    tool,
-                    current_name,
+            local_prov = getattr(self._provider, "local_provider", None)
+            if local_prov is not None:
+                comps = getattr(local_prov, "_components", None)
+                if isinstance(comps, dict) and any(
+                    isinstance(c, ToolCls)
+                    and (
+                        c is target_tool
+                        or getattr(c, "key", None) == target_tool.key
+                        or (
+                            getattr(c, "name", None) == target_tool.name
+                            and getattr(c, "version", None) == target_tool.version
+                        )
+                    )
+                    for c in comps.values()
                 ):
-                    return True
-                return bool(
-                    inner_hides is True or mounted_hides is True or child_hides is True
+                    return local_prov
+
+            return getattr(self._provider, "local_provider", None) or self._provider
+
+        owner = await _find_tool_provider(tool)
+        owner_server = getattr(owner, "server", None)
+
+        has_owner_catalog = bool(
+            owner
+            and any(
+                isinstance(t, CatalogTransform)
+                for t in getattr(owner, "transforms", [])
+            )
+        )
+        has_owner_server_transforms = bool(
+            owner_server and getattr(owner_server, "transforms", [])
+        )
+        has_owner_server_middleware = bool(
+            owner_server and getattr(owner_server, "middleware", None)
+        )
+        has_preceding_catalog = any(isinstance(t, CatalogTransform) for t in preceding)
+
+        if (
+            not has_owner_catalog
+            and not has_owner_server_transforms
+            and not has_owner_server_middleware
+            and not has_preceding_catalog
+        ):
+            # Fast path: No catalog transforms or child middleware can hide this tool.
+            # Avoids querying unrelated providers (e.g. ProxyProvider over network).
+            return False
+
+        # Load tool candidate sequence from the owning provider
+        current_tools: list[Tool]
+        if owner is not None and (
+            has_owner_catalog
+            or has_owner_server_transforms
+            or has_owner_server_middleware
+        ):
+            list_fn = getattr(owner, "_list_tools", None)
+            if callable(list_fn):
+                try:
+                    raw = await list_fn()
+                    current_tools = list(raw) if isinstance(raw, Sequence) else [tool]
+                except Exception:
+                    current_tools = [tool]
+            else:
+                current_tools = [tool]
+
+            for t in getattr(owner, "transforms", []):
+                try:
+                    current_tools = list(await t.list_tools(current_tools))
+                except Exception:
+                    if type(t).__name__ == "CodeMode":
+                        return True
+
+            if not any(
+                isinstance(x, ToolCls)
+                and (
+                    x is tool
+                    or x.key == tool.key
+                    or (x.name == tool.name and x.version == tool.version)
                 )
+                for x in current_tools
+            ):
+                return True
+        else:
+            local_prov = getattr(self._provider, "local_provider", None)
+            list_fn = getattr(local_prov, "_list_tools", None) if local_prov else None
+            if callable(list_fn):
+                try:
+                    raw = await list_fn()
+                    current_tools = list(raw) if isinstance(raw, Sequence) else [tool]
+                except Exception:
+                    current_tools = [tool]
+            else:
+                current_tools = [tool]
 
-            return None
+        # Evaluate preceding transforms on self._provider (e.g. Namespace, CatalogTransform)
+        for t in preceding:
+            always_visible = getattr(t, "_always_visible", None)
+            if always_visible is not None:
+                if tool.name not in always_visible:
+                    return True
+                continue
+            try:
+                current_tools = list(await t.list_tools(current_tools))
+            except Exception:
+                if type(t).__name__ == "CodeMode":
+                    return True
 
-        for child in getattr(self._provider, "providers", []):
-            child_name = _reverse_name_through_provider(child, tool.name)
-            res = await _find_provider_hiding(child, child_name)
-            if res is not None:
-                return res
-
-        inner = getattr(self._provider, "_inner", None)
-        if inner is not None:
-            inner_name = _reverse_name_through_provider(self._provider, tool.name)
-            res = await _find_provider_hiding(inner, inner_name)
-            if res is not None:
-                return res
-
-        mounted = getattr(self._provider, "server", None)
-        if mounted is not None:
-            mounted_name = _reverse_name_through_provider(self._provider, tool.name)
-            res = await _find_provider_hiding(mounted, mounted_name)
-            if res is not None:
-                return res
-
-        return False
+        return not any(
+            isinstance(x, ToolCls)
+            and (
+                x is tool
+                or x.key == tool.key
+                or (x.name == tool.name and x.version == tool.version)
+            )
+            for x in current_tools
+        )
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """Add resource tools to the tool list."""

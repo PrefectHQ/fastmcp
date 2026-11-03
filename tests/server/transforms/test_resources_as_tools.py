@@ -552,6 +552,85 @@ class TestResourcesAsToolsBasic:
             res = await client.call_tool("read_resource", {"uri": "custom_arg"})
             assert res.data == "sub: custom_arg"
 
+    async def test_preceding_namespace_with_retaining_catalog_calls_user_tool(self):
+        """When a preceding Namespace and a retaining CatalogTransform precede ResourcesAsTools,
+        the user tool is called using its query schema rather than falling back to synthetic tool."""
+        from collections.abc import Sequence
+
+        from fastmcp.server.transforms.catalog import CatalogTransform
+        from fastmcp.server.transforms.namespace import Namespace
+        from fastmcp.tools.base import Tool
+
+        class RetainingCatalog(CatalogTransform):
+            async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
+                return tools
+
+        server = FastMCP("Server")
+
+        @server.tool(name="resource")
+        def user_resource(query: str) -> str:
+            return f"user: {query}"
+
+        @server.resource("config://app")
+        def app_config() -> str:
+            return "app config"
+
+        server.add_transform(Namespace("read"))
+        server.add_transform(RetainingCatalog())
+        server.add_transform(ResourcesAsTools(server))
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "read_resource" in tool_names
+
+            res = await client.call_tool("read_resource", {"query": "test"})
+            assert res.data == "user: test"
+
+    async def test_mounted_child_with_middleware_filtering_tool_uses_synthetic_tool(
+        self,
+    ):
+        """When a mounted child has middleware filtering out a colliding tool, the parent's synthetic tool is used."""
+        from collections.abc import Sequence
+        from typing import Any
+
+        from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+        from fastmcp.tools.base import Tool
+
+        class FilterMiddleware(Middleware):
+            async def on_list_tools(
+                self,
+                context: MiddlewareContext[Any],
+                call_next: CallNext[Any, Sequence[Tool]],
+            ) -> Sequence[Tool]:
+                tools = await call_next(context)
+                return [t for t in tools if t.name != "read_resource"]
+
+        child = FastMCP("Child")
+
+        @child.tool(name="read_resource")
+        def child_resource(query: str) -> str:
+            return f"child: {query}"
+
+        child.add_middleware(FilterMiddleware())
+
+        parent = FastMCP("Parent")
+        parent.mount(child)
+
+        @parent.resource("config://app")
+        def app_config() -> str:
+            return "app config"
+
+        parent.add_transform(ResourcesAsTools(parent))
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "read_resource" in tool_names
+
+            res = await client.call_tool("read_resource", {"uri": "config://app"})
+            assert res.data == "app config"
+
 
 class TestListResourcesTool:
     """Test the list_resources tool."""
