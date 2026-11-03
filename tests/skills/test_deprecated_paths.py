@@ -87,8 +87,10 @@ async def test_experimental_skills_returns_the_replacement(tmp_path: Path):
     REVIEW.to_directory(tmp_path / "review")
     # The 4.1 experimental setup, verbatim from its docs.
     mcp = FastMCP("Skills")
-    with pytest.warns(FastMCPDeprecationWarning, match="experimental_skills"):
+    with pytest.warns(FastMCPDeprecationWarning, match="experimental_skills") as record:
         skills = OldDirectoryProvider(tmp_path, experimental_skills=True)
+    assert record[0].filename == __file__
+    assert f"SkillsDirectoryProvider([{str(tmp_path)!r}])" in str(record[0].message)
     mcp.add_provider(skills)
     mcp.add_extension(SkillsExtension(providers=[skills]))
 

@@ -214,14 +214,16 @@ def _experimental_replacement(
     if main_file_name != "SKILL.md":
         raise ValueError("experimental_skills requires main_file_name='SKILL.md'")
     paths = [roots] if isinstance(roots, (str, Path)) else list(roots)
+    shown = [str(path) for path in paths]
     reload_arg = ", reload=True" if reload else ""
     warnings.warn(
         "`experimental_skills=True` is deprecated and will be removed in "
         "FastMCP 4.3, and this call now returns the replacement provider. "
         "Replace it with `from fastmcp.skills.provider import "
-        f"SkillsDirectoryProvider` and `SkillsDirectoryProvider({paths!r}"
+        f"SkillsDirectoryProvider` and `SkillsDirectoryProvider({shown!r}"
         f"{reload_arg})`. Registering `SkillsExtension` is no longer needed.",
         FastMCPDeprecationWarning,
-        stacklevel=2,
+        # Frames: this function, `__new__`, then the caller.
+        stacklevel=3,
     )
     return AgentSkillsDirectoryProvider(paths, reload=reload)
