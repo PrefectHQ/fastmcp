@@ -172,7 +172,7 @@ class SkillProvider(Provider):
     """Provider that exposes a single skill folder as MCP resources.
 
     Deprecated since 4.2 and removed in 4.3: use
-    `SkillCatalogProvider([Skill.from_directory(path)])` from `fastmcp.skills`.
+    `SkillCatalogProvider([Skill.from_directory(path)])` from `fastmcp.skills.provider`.
 
     Each skill folder must contain a main file (default: SKILL.md) and may
     contain additional supporting files.

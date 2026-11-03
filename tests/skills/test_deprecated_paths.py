@@ -132,6 +132,9 @@ async def test_old_skill_provider_warns_with_the_fix_and_keeps_serving(
     (warning,) = record
     assert warning.filename == __file__
     assert "SkillCatalogProvider([Skill.from_directory(" in str(warning.message)
+    assert "from fastmcp.skills.provider import SkillCatalogProvider" in str(
+        warning.message
+    )
     assert "rename the folder to 'pdf-tools'" in str(warning.message)
     async with Client(FastMCP("Skills", providers=[provider])) as client:
         (content,) = await client.read_resource("skill://pdf_tools/SKILL.md")

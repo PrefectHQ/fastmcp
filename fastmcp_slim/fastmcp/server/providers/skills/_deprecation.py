@@ -65,7 +65,8 @@ def warn_skill_provider(skill_path: Path, main_file_name: str) -> None:
         invalid.append(_invalid_folder(skill_path, skill_path.name, exc))
     warnings.warn(
         "`SkillProvider` is deprecated and will be removed in FastMCP 4.3. Replace it "
-        "with `from fastmcp.skills import Skill, SkillCatalogProvider` and "
+        "with `from fastmcp.skills import Skill`, "
+        "`from fastmcp.skills.provider import SkillCatalogProvider` and "
         f"`SkillCatalogProvider([Skill.from_directory({str(skill_path)!r})])`. "
         + _readiness(invalid, main_file_name),
         FastMCPDeprecationWarning,
