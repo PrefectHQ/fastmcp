@@ -1,12 +1,14 @@
-"""Provider that serves `Skill` objects defined in code or loaded from any source."""
+"""Providers that serve `Skill` objects defined in code, loaded from folders, or from any source."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import mimetypes
+import os
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import suppress
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote, unquote
 
@@ -52,7 +54,7 @@ class SkillFileResource(Resource):
 
 
 class SkillManifestResource(Resource):
-    """The resource-mode `_manifest` listing used by `sync_skills` and `download_skill`."""
+    """The `_manifest` file listing `Client.read_skill` uses without the Skills extension."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -162,9 +164,6 @@ class SkillCatalogProvider(Provider):
             return _locate(uri, self._static) is not None
         return uri.startswith("skill://")
 
-    def _validate_skill_source(self) -> None:
-        return None
-
     async def _skill_uris(self, uri: str | None = None) -> Sequence[str]:
         uris = [_skill_md_uri(path) for path in await self._catalog()]
         return uris if uri is None else [u for u in uris if u == uri]
@@ -202,6 +201,110 @@ class SkillCatalogProvider(Provider):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}()"
+
+
+class SkillsDirectoryProvider(SkillCatalogProvider):
+    """Serve every skill folder found below one or more root directories.
+
+    A folder containing a `SKILL.md` is a skill, served at its path relative to
+    the root, so `root/ops/deploy/SKILL.md` becomes `skill://ops/deploy/SKILL.md`.
+    The folder name must match the `name` in its `SKILL.md`. Folders that aren't
+    valid skills are skipped with a warning. When a path appears under more than
+    one root, the first root wins.
+
+    Skills are read once, at construction. Pass `reload=True` to re-read the
+    folders on every request while you're editing them.
+
+    Example:
+        ```python
+        from pathlib import Path
+
+        from fastmcp import FastMCP
+        from fastmcp.skills.provider import SkillsDirectoryProvider
+
+        mcp = FastMCP("Local Skills")
+        mcp.add_provider(SkillsDirectoryProvider(Path.home() / ".claude" / "skills"))
+        ```
+    """
+
+    def __init__(
+        self,
+        roots: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
+        *,
+        reload: bool = False,
+    ) -> None:
+        if isinstance(roots, str | os.PathLike):
+            roots = [roots]
+        self._roots = tuple(Path(root).expanduser().absolute() for root in roots)
+        self._reload = reload
+        super().__init__(None if reload else self._scan())
+
+    async def load_skills(self) -> SkillCatalog:
+        if self._reload:
+            return await anyio.to_thread.run_sync(self._scan)
+        return self._static
+
+    def _scan(self) -> dict[str, Skill]:
+        skills: dict[str, Skill] = {}
+        for root in self._roots:
+            for path, folder in _skill_folders(root):
+                if path in skills:
+                    logger.debug("Skipping duplicate skill %r from %s", path, root)
+                    continue
+                if any(_nested(path, other) for other in skills):
+                    logger.warning("Skipping skill %r nested in another skill", path)
+                    continue
+                try:
+                    skill = Skill.from_directory(folder)
+                except (OSError, ValueError) as exc:
+                    logger.warning("Skipping invalid skill at %s: %s", folder, exc)
+                    continue
+                if skill.name != path.rsplit("/", 1)[-1]:
+                    logger.warning(
+                        "Skipping skill at %s: folder name must match its SKILL.md name %r",
+                        root / path,
+                        skill.name,
+                    )
+                    continue
+                skills[path] = skill
+        return skills
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}(roots={list(self._roots)!r}, reload={self._reload})"
+        )
+
+
+def _skill_folders(root: Path) -> list[tuple[str, Path]]:
+    """Find skill folders below `root` as (relative path, folder) pairs.
+
+    A skill folder's subfolders belong to the skill, so the walk stops there.
+    A symlink is followed only when it points at a skill folder.
+    """
+    found: list[tuple[str, Path]] = []
+
+    def visit(directory: Path, prefix: str) -> None:
+        try:
+            entries = sorted(directory.iterdir())
+        except OSError as exc:
+            logger.warning("Skipping unreadable skills folder %s: %s", directory, exc)
+            return
+        for entry in entries:
+            if not entry.is_dir():
+                continue
+            path = f"{prefix}{entry.name}"
+            if (entry / "SKILL.md").is_file():
+                found.append((path, entry.resolve()))
+            elif not entry.is_symlink():
+                visit(entry, f"{path}/")
+
+    if root.is_dir():
+        visit(root, "")
+    return found
+
+
+def _nested(path: str, other: str) -> bool:
+    return path.startswith(f"{other}/") or other.startswith(f"{path}/")
 
 
 def _normalize(skills: SkillCatalog) -> dict[str, Skill]:

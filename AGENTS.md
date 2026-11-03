@@ -16,7 +16,7 @@ Run the tests relevant to the behavior you changed, including neighboring paths
 that share the implementation. For example:
 
 ```bash
-uv run pytest tests/skills tests/utilities/test_skills.py -n 0
+uv run pytest tests/skills tests/server/providers/proxy/test_skills.py -n 0
 ```
 
 Broaden the selection when a concrete dependency or failure warrants it and the
