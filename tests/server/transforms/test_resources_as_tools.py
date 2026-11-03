@@ -1287,3 +1287,72 @@ class TestResourcesAsToolsVisibilityOnServer:
         async with Client(mcp) as client:
             with pytest.raises(ToolError):
                 await client.call_tool("read_resource", {"uri": "test://secret"})
+
+    async def test_mounted_child_with_resources_as_tools_yields_parent_synthetic_tool(
+        self,
+    ):
+        """Unnamespaced mounted child with ResourcesAsTools does not suppress parent adapter."""
+        child = FastMCP("Child")
+
+        @child.resource("res://child")
+        def child_resource() -> str:
+            return "child content"
+
+        child.add_transform(ResourcesAsTools(child))
+
+        parent = FastMCP("Parent")
+
+        @parent.resource("res://parent")
+        def parent_resource() -> str:
+            return "parent content"
+
+        parent.mount(child)
+        parent.add_transform(ResourcesAsTools(parent))
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            read_tools = [t for t in tools if t.name == "read_resource"]
+            assert len(read_tools) == 1
+            assert "uri" in read_tools[0].input_schema["properties"]
+
+            list_res = await client.call_tool("list_resources", {})
+            items = json.loads(list_res.data)
+            uris = [r.get("uri") for r in items if r.get("uri")]
+            assert "res://parent" in uris
+            assert "res://child" in uris
+
+            parent_res = await client.call_tool(
+                "read_resource", {"uri": "res://parent"}
+            )
+            assert parent_res.data == "parent content"
+
+            child_res = await client.call_tool("read_resource", {"uri": "res://child"})
+            assert child_res.data == "child content"
+
+    async def test_preceding_visibility_order_preserved_across_rename_and_adapter(self):
+        """Preceding visibility rules respect pipeline order and are not replayed on renamed tools."""
+        from fastmcp.server.transforms import Namespace
+
+        mcp = FastMCP("Test")
+
+        @mcp.tool(name="resource", tags={"internal"})
+        def user_resource(query: str) -> str:
+            return f"query: {query}"
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "app config"
+
+        mcp.disable(tags={"internal"})
+        mcp.enable(names={"read_resource"})
+        mcp.add_transform(Namespace("read"))
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            matched = [t for t in tools if t.name == "read_resource"]
+            assert len(matched) == 1
+            assert "uri" in matched[0].input_schema["properties"]
+
+            res = await client.call_tool("read_resource", {"uri": "config://read/app"})
+            assert res.data == "app config"

@@ -1182,3 +1182,70 @@ class TestPromptsAsToolsRepr:
         mcp = FastMCP("Test")
         transform = PromptsAsTools(mcp)
         assert "PromptsAsTools" in repr(transform)
+
+    async def test_mounted_child_with_prompts_as_tools_yields_parent_synthetic_tool(
+        self,
+    ):
+        """Unnamespaced mounted child with PromptsAsTools does not suppress parent adapter."""
+        child = FastMCP("Child")
+
+        @child.prompt
+        def child_prompt() -> str:
+            return "child prompt content"
+
+        child.add_transform(PromptsAsTools(child))
+
+        parent = FastMCP("Parent")
+
+        @parent.prompt
+        def parent_prompt() -> str:
+            return "parent prompt content"
+
+        parent.mount(child)
+        parent.add_transform(PromptsAsTools(parent))
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            get_tools = [t for t in tools if t.name == "get_prompt"]
+            assert len(get_tools) == 1
+            assert "name" in get_tools[0].input_schema["properties"]
+
+            list_res = await client.call_tool("list_prompts", {})
+            items = json.loads(list_res.data)
+            names = [p.get("name") for p in items if p.get("name")]
+            assert "parent_prompt" in names
+            assert "child_prompt" in names
+
+            parent_res = await client.call_tool("get_prompt", {"name": "parent_prompt"})
+            assert "parent prompt content" in parent_res.data
+
+            child_res = await client.call_tool("get_prompt", {"name": "child_prompt"})
+            assert "child prompt content" in child_res.data
+
+    async def test_preceding_visibility_order_preserved_across_rename_and_adapter(self):
+        """Preceding visibility rules respect pipeline order and are not replayed on renamed tools."""
+        from fastmcp.server.transforms import Namespace
+
+        mcp = FastMCP("Test")
+
+        @mcp.tool(name="prompt", tags={"internal"})
+        def user_prompt(query: str) -> str:
+            return f"query: {query}"
+
+        @mcp.prompt
+        def public_prompt() -> str:
+            return "public prompt content"
+
+        mcp.disable(tags={"internal"})
+        mcp.enable(names={"get_prompt"})
+        mcp.add_transform(Namespace("get"))
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            matched = [t for t in tools if t.name == "get_prompt"]
+            assert len(matched) == 1
+            assert "name" in matched[0].input_schema["properties"]
+
+            res = await client.call_tool("get_prompt", {"name": "get_public_prompt"})
+            assert "public prompt content" in res.data
