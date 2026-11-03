@@ -265,7 +265,8 @@ The proxy, OpenAPI, and app integrations moved to their permanent homes, and the
 | `AuthCheck` / `AuthContext` / `require_scopes` / `require_roles` / `restrict_tag` / `run_auth_checks` from `fastmcp.server.auth.authorization` | `fastmcp.server.auth` |
 | `run_auth_checks_with_shortfall` / `scope_requirements` from `fastmcp.server.auth.authorization` | `fastmcp.utilities.authorization` |
 | `SkillsProvider` / `SkillsDirectoryProvider` from `fastmcp.server.providers.skills` | `SkillsDirectoryProvider` from `fastmcp.skills.provider` |
-| `SkillProvider(path)` / `ClaudeSkillsProvider()` and the other vendor presets | `SkillsDirectoryProvider(path)` / `SkillsDirectoryProvider(Path.home() / ".claude" / "skills")` |
+| `SkillProvider(path)` | `SkillCatalogProvider([Skill.from_directory(path)])` from `fastmcp.skills.provider` and `fastmcp.skills` |
+| `ClaudeSkillsProvider()` and the other vendor presets | `SkillsDirectoryProvider(Path.home() / ".claude" / "skills")` |
 | `sync_skills()` / `download_skill()` from `fastmcp.utilities.skills` | `client.read_skill(uri)` then `skill.to_directory(path)` ([example](/servers/skills#install-skills-into-a-local-agent)) |
 | `TaskConfig` from `fastmcp.server.tasks` | `fastmcp.utilities.tasks` |
 | `CurrentDocket` / `CurrentWorker` from `fastmcp.dependencies` | `fastmcp_tasks.dependencies` |
