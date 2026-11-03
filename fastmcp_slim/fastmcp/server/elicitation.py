@@ -89,6 +89,10 @@ class ElicitationJsonSchema(GenerateJsonSchema):
             # If items have oneOf pattern, convert to anyOf for multi-select per SEP-1330
             if "oneOf" in items:
                 items = {"anyOf": items["oneOf"]}
+            # The 2025-11-25 multi-select schema requires `"type": "string"` on items;
+            # a plain `{"enum": [...]}` is rejected by clients that validate it.
+            elif "enum" in items and all(isinstance(v, str) for v in items["enum"]):
+                items = {"type": "string", **items}
             return {
                 "type": "array",
                 "items": items,  # Will be {"enum": [...]} or {"anyOf": [...]}
