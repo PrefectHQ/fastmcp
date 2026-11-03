@@ -66,8 +66,14 @@ def test_custom_main_file_is_told_to_rename(tmp_path: Path):
         SkillsDirectoryProvider as OldDirectoryProvider,
     )
 
-    with pytest.warns(FastMCPDeprecationWarning, match=r"Rename each `README\.md`"):
+    (tmp_path / "pdf_tools").mkdir()
+    (tmp_path / "pdf_tools" / "README.md").write_text("# PDF tools\n")
+    with pytest.warns(FastMCPDeprecationWarning) as record:
         OldDirectoryProvider(tmp_path, main_file_name="README.md")
+    message = str(record[0].message)
+    assert "Rename each `README.md`" in message
+    assert "can only be checked once" in message
+    assert "already passes" not in message
 
 
 def test_no_warning_or_scan_when_deprecation_warnings_are_off(tmp_path: Path):

@@ -217,3 +217,16 @@ async def test_only_a_reloading_provider_claims_unknown_skill_uris(tmp_path: Pat
     assert SkillsDirectoryProvider(tmp_path, reload=True)._owns_skill_resource(
         "skill://other/SKILL.md"
     )
+
+
+async def test_reload_keeps_the_last_valid_skills_when_a_folder_breaks(tmp_path: Path):
+    write_skill(tmp_path / "review")
+    provider = SkillsDirectoryProvider(tmp_path, reload=True)
+    async with skills_client(FastMCP("Skills", providers=[provider])) as client:
+        (tmp_path / "Bad Skill").mkdir()
+        (tmp_path / "Bad Skill" / "SKILL.md").write_text("hi")
+        uris = [entry.uri for entry in await client.list_skills()]
+        skill = await client.read_skill("skill://review/SKILL.md")
+
+    assert uris == ["skill://review/SKILL.md"]
+    assert skill.name == "review"

@@ -15,7 +15,7 @@ from urllib.parse import quote, unquote
 
 import anyio
 from mcp.server.context import ServerRequestContext
-from pydantic import AnyUrl, ConfigDict
+from pydantic import AnyUrl, ConfigDict, ValidationError
 
 from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
 from fastmcp.server.dependencies import get_context
@@ -217,7 +217,8 @@ class SkillsDirectoryProvider(SkillCatalogProvider):
     the first root wins.
 
     Skills are read once, at construction. Pass `reload=True` to re-read the
-    folders on every request while you're editing them.
+    folders on every request while you're editing them; if a re-read finds an
+    invalid folder, the error is logged and the last valid skills keep serving.
 
     Example:
         ```python
@@ -242,12 +243,18 @@ class SkillsDirectoryProvider(SkillCatalogProvider):
         self._roots = tuple(Path(root).expanduser().absolute() for root in roots)
         self._reload = reload
         # Scan even with reload=True so an invalid folder fails at startup.
-        super().__init__(self._scan())
+        self._last_good = self._scan()
+        super().__init__(self._last_good)
 
     async def load_skills(self) -> SkillCatalog:
-        if self._reload:
-            return await anyio.to_thread.run_sync(self._scan)
-        return self._static
+        if not self._reload:
+            return self._static
+        try:
+            self._last_good = await anyio.to_thread.run_sync(self._scan)
+        except ValueError as exc:
+            # A folder broke mid-edit: keep serving the last good scan.
+            logger.error("Keeping the last valid skills; %s", exc)
+        return self._last_good
 
     def _owns_skill_resource(self, uri: str) -> bool:
         if self._reload:
@@ -301,7 +308,10 @@ def _scan_skill_roots(roots: Sequence[Path]) -> tuple[dict[str, Skill], list[str
 
 def _invalid_folder(folder: Path, folder_name: str, exc: Exception) -> str:
     """One line per invalid folder: what's wrong, then how to fix it."""
-    reason = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+    if isinstance(exc, ValidationError):
+        reason = exc.errors()[0]["msg"].removeprefix("Value error, ")
+    else:
+        reason = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
     if isinstance(exc, OSError) or any(
         word in reason for word in ("symlink", "non-regular", "at most")
     ):

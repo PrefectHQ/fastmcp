@@ -46,12 +46,15 @@ if TYPE_CHECKING:
 
 __all__ = [
     "AggregateProvider",
+    "ClaudeSkillsProvider",
     "FastMCPProvider",
     "FileSystemProvider",
     "LocalProvider",
     "OpenAPIProvider",
     "Provider",
     "ProxyProvider",
+    "SkillProvider",
+    "SkillsDirectoryProvider",
 ]
 
 

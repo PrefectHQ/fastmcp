@@ -84,6 +84,8 @@ def _readiness(invalid: list[str], main_file_name: str = "SKILL.md") -> str:
         "`skill://` resources, and it stops the server at startup if a folder is not "
         f"a valid Agent Skill ({_SPEC}). {rename}"
     )
+    if main_file_name != "SKILL.md":
+        return intro + "The folders can only be checked once they use `SKILL.md`."
     if not invalid:
         return intro + "Every skill folder found already passes."
     return intro + "Fix these folders first:\n" + "\n".join(invalid)

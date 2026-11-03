@@ -82,7 +82,7 @@ root = Path.home() / ".claude" / "skills"
 mcp = FastMCP("Local Skills", providers=[SkillsDirectoryProvider(root)])
 ```
 
-Each `SKILL.md` must follow the [Agent Skills spec](https://agentskills.io/specification): YAML frontmatter with a `description` and a `name` of lowercase letters, digits and hyphens that matches its folder. A folder that breaks the rules stops the server at startup with an error naming the fix for each one, so a server never comes up quietly missing skills. Hidden folders such as `.git` are skipped. Pass several roots and the first one wins when two contain the same path. The provider reads the folders once at startup; pass `reload=True` to re-read them on every request while you're editing a skill.
+Each `SKILL.md` must follow the [Agent Skills spec](https://agentskills.io/specification): YAML frontmatter with a `description` and a `name` of lowercase letters, digits and hyphens that matches its folder. A folder that breaks the rules stops the server at startup with an error naming the fix for each one, so a server never comes up quietly missing skills. Hidden folders such as `.git` are skipped. Pass several roots and the first one wins when two contain the same path. The provider reads the folders once at startup; pass `reload=True` to re-read them on every request while you're editing a skill. If a re-read finds a broken folder, the error is logged and the last valid skills keep serving until you fix it.
 
 ## Access control
 
@@ -183,7 +183,7 @@ Every file is verified before anything is written. `overwrite=True` replaces an 
 
 ## Moving off the 4.1 skills API
 
-The providers in `fastmcp.server.providers.skills` and the helpers in `fastmcp.utilities.skills` still work in 4.2, exactly as they did in 4.1, and are removed in 4.3. Each one warns once at startup with the call that replaces it. The directory warnings also list every folder the new `SkillsDirectoryProvider` would refuse and the fix for each, so you can fix those first and then switch.
+The providers in `fastmcp.server.providers.skills` and the helpers in `fastmcp.utilities.skills` still work in 4.2, exactly as they did in 4.1, and are removed in 4.3. Each warns with the call that replaces it: the providers when they're constructed, the helpers when they're called. The directory warnings also list every folder the new `SkillsDirectoryProvider` would refuse and the fix for each, so you can fix those first and then switch.
 
 | 4.1 | 4.2 |
 | --- | --- |
@@ -194,4 +194,4 @@ The providers in `fastmcp.server.providers.skills` and the helpers in `fastmcp.u
 | `list_skills(client)` / `get_skill_manifest(client, name)` | `client.list_skills()` / `client.get_skill(uri)` |
 | `download_skill()` / `sync_skills()` | `client.read_skill(uri)` then `skill.to_directory(path)` ([example](#install-skills-into-a-local-agent)) |
 
-The new provider has no `main_file_name` or `supporting_files`: the main file is always `SKILL.md`, and every file in a skill is readable as a resource.
+`client.list_skills()` needs a server that serves the Skills extension, which a 4.1 server doesn't; `client.read_skill(uri)` still reads a valid skill from one through its `_manifest` resource. The new provider has no `main_file_name` or `supporting_files`: the main file is always `SKILL.md`, and every file in a skill is readable as a resource.
