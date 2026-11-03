@@ -18,9 +18,10 @@ from pydantic import AnyUrl
 from fastmcp import Client, FastMCP
 from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import FunctionResource
+from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from fastmcp.server.providers import Provider
 from fastmcp.server.transforms import Namespace
-from fastmcp.skills import Skill, SkillsClientExtension
+from fastmcp.skills import MCPSkill, SkillsClientExtension
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
 from fastmcp.skills.extension import SkillsExtension
 from fastmcp.skills.models import (
@@ -36,9 +37,9 @@ SKILL_CONTENT = "# Review\n"
 DIGEST = f"sha256:{hashlib.sha256(SKILL_CONTENT.encode()).hexdigest()}"
 
 
-def make_skill(name: str) -> Skill:
+def make_skill(name: str) -> MCPSkill:
     uri = f"skill://{name}/SKILL.md"
-    return Skill.model_validate(
+    return MCPSkill.model_validate(
         {
             "uri": uri,
             "frontmatter": {"name": name, "description": f"Use {name}"},
@@ -53,8 +54,8 @@ class MemorySkillProvider(Provider):
     def __init__(
         self,
         *,
-        listed: Sequence[Skill],
-        addressable: Sequence[Skill] | None = None,
+        listed: Sequence[MCPSkill],
+        addressable: Sequence[MCPSkill] | None = None,
     ) -> None:
         super().__init__()
         self.listed = list(listed)
@@ -75,13 +76,13 @@ class MemorySkillProvider(Provider):
 
     async def _list_skill_entries(
         self, context: ServerRequestContext[Any, Any]
-    ) -> Sequence[Skill]:
+    ) -> Sequence[MCPSkill]:
         self.contexts.append(context)
         return self.listed
 
     async def _get_skill_entry(
         self, uri: str, context: ServerRequestContext[Any, Any]
-    ) -> Skill | None:
+    ) -> MCPSkill | None:
         self.contexts.append(context)
         return self.addressable.get(uri)
 
@@ -410,3 +411,21 @@ async def test_duplicate_uris_are_omitted_from_list_and_get(
 
     assert exc_info.value.error.code == INVALID_PARAMS
     assert "Omitting duplicate Skills entries" in caplog.text
+
+
+async def test_transform_added_after_registration_keeps_unrelated_reads() -> None:
+    provider = MemorySkillProvider(listed=[])
+    server = make_server(provider)
+    server.add_middleware(ResponseCachingMiddleware())
+
+    @server.resource("data://plain")
+    def plain() -> str:
+        return "plain"
+
+    server.add_transform(Namespace("docs"))
+
+    async with skills_client(server) as client:
+        result = await client.read_resource("data://docs/plain")
+
+    assert isinstance(result[0], TextResourceContents)
+    assert result[0].text == "plain"

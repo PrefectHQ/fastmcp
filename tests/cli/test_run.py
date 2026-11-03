@@ -1073,6 +1073,40 @@ class TestInspectorModuleMode:
         assert "--transport" not in cmd
 
 
+class TestInspectorServerLoading:
+    """The inspector leaves loading the server to the configured environment."""
+
+    async def test_server_is_not_imported_in_the_invoking_environment(
+        self, tmp_path: Path
+    ):
+        """A dependency supplied only via --with must not be imported up front."""
+        server_file = tmp_path / "server.py"
+        server_file.write_text(
+            "import fastmcp_missing_dependency_for_test\n"
+            "from fastmcp import FastMCP\n\n"
+            "mcp = FastMCP('test')\n"
+        )
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+
+        with (
+            patch("fastmcp.cli.cli._get_npx_command", return_value="npx"),
+            patch(
+                "fastmcp.cli.cli.subprocess.run", return_value=mock_process
+            ) as mock_subprocess,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            await inspector(
+                str(server_file),
+                with_packages=["fastmcp_missing_dependency_for_test"],
+            )
+
+        assert exc_info.value.code == 0
+        cmd = mock_subprocess.call_args.args[0]
+        assert cmd[:2] == ["npx", "@modelcontextprotocol/inspector"]
+        assert "fastmcp_missing_dependency_for_test" in cmd
+
+
 class TestInspectorHttpDeployment:
     """Test the inspector command with an HTTP deployment in fastmcp.json."""
 

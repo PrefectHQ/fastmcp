@@ -17,6 +17,8 @@ from mcp.client.caching import CacheMode
 from fastmcp.client.client import CallToolResult, Client, ConnectMode
 from fastmcp.client.progress import ProgressHandler
 from fastmcp.mcp_config import MCPConfig
+from fastmcp.skills.models import MCPSkill
+from fastmcp.skills.skill import Skill
 from fastmcp.utilities.async_utils import gather
 
 
@@ -47,7 +49,8 @@ class ClientGroup:
     """Coordinate independent clients without introducing a proxy server.
 
     Each client retains its own transport, session, capabilities, and protocol
-    version. The group only combines tool discovery and routes tool calls.
+    version. The group only combines tool and skill discovery and routes tool
+    calls.
 
     Callers may manage the clients' connections themselves or use the group as
     a convenience context manager. The group's context is reentrant in the
@@ -216,6 +219,17 @@ class ClientGroup:
             names = ", ".join(repr(name) for name in disconnected)
             raise RuntimeError(f"ClientGroup clients are not connected: {names}")
 
+    def _get_connected_client(self, server_name: str) -> Client[Any]:
+        try:
+            client = self._clients[server_name]
+        except KeyError as exc:
+            raise KeyError(f"Unknown ClientGroup server: {server_name!r}") from exc
+        if not client.is_connected():
+            raise RuntimeError(
+                f"ClientGroup client for server {server_name!r} is not connected"
+            )
+        return client
+
     def _require_route_connected(self, route: ToolRoute) -> None:
         if not route.client.is_connected():
             raise RuntimeError(
@@ -258,6 +272,43 @@ class ClientGroup:
         self._tool_routes = routes
         self._catalog_loaded = True
         return tools
+
+    async def list_skills(
+        self, *, cache_mode: CacheMode = "use"
+    ) -> dict[str, list[MCPSkill]]:
+        """List skills from every client that negotiated the Skills extension.
+
+        Results are keyed by server name, since skill URIs are only unique
+        within one server. Clients without the extension, because they didn't
+        pass `SkillsClientExtension()` or their server doesn't advertise it,
+        are left out.
+        """
+        self._require_connected()
+        clients = [
+            (name, client)
+            for name, client in self._clients.items()
+            if client._skills_unavailable_reason() is None
+        ]
+        skill_lists = await gather(
+            client.list_skills(cache_mode=cache_mode) for _, client in clients
+        )
+        return {
+            name: skills for (name, _), skills in zip(clients, skill_lists, strict=True)
+        }
+
+    async def get_skill(
+        self, server_name: str, uri: str, *, cache_mode: CacheMode = "use"
+    ) -> MCPSkill:
+        """Fetch one skill entry from the named server."""
+        client = self._get_connected_client(server_name)
+        return await client.get_skill(uri, cache_mode=cache_mode)
+
+    async def read_skill(
+        self, server_name: str, uri: str, *, cache_mode: CacheMode = "use"
+    ) -> Skill:
+        """Read one whole skill from the named server; see `Client.read_skill`."""
+        client = self._get_connected_client(server_name)
+        return await client.read_skill(uri, cache_mode=cache_mode)
 
     async def resolve_tool(self, name: str) -> ToolRoute:
         """Resolve a public tool name to its client and upstream identity.
