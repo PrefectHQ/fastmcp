@@ -12,6 +12,11 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from fastmcp_tasks.client_models import (
+    ClientGetTaskResult,
+    GetTaskRequest,
+    GetTaskRequestParams,
+)
 from fastmcp_tasks.models import MISSING_REQUIRED_CLIENT_CAPABILITY
 from mcp.shared.exceptions import MCPError
 
@@ -19,6 +24,7 @@ from fastmcp import Context, FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.utilities.tasks import TaskConfig
+from fastmcp.utilities.tests import asgi_server
 from fastmcp_tasks import TasksExtension, ToolTask, call_tool_task
 
 
@@ -75,6 +81,35 @@ async def test_tool_task_status_and_wait(tool_task_server: FastMCP):
 
         final = await task.wait(timeout=2.0)
         assert final.status == "completed"
+
+
+async def test_task_result_can_be_retrieved_by_another_client():
+    call_count = 0
+    mcp = FastMCP("task-result-by-id-test")
+    mcp.add_extension(TasksExtension())
+
+    @mcp.tool(task=True)
+    async def count_calls() -> int:
+        nonlocal call_count
+        call_count += 1
+        return call_count
+
+    async with asgi_server(mcp) as server:
+        async with server.client(mode="auto") as submitting_client:
+            task = await call_tool_task(submitting_client, "count_calls")
+            task_id = task.task_id
+            await task.wait(timeout=2.0)
+
+        async with server.client(mode="auto") as follow_up_client:
+            result = await follow_up_client.session.send_request(
+                GetTaskRequest(params=GetTaskRequestParams(task_id=task_id)),
+                ClientGetTaskResult,
+            )
+
+    assert result.status == "completed"
+    assert result.result is not None
+    assert result.result["structuredContent"]["result"] == 1
+    assert call_count == 1
 
 
 async def test_tool_task_result_is_cached(tool_task_server: FastMCP):

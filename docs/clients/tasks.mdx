@@ -52,6 +52,39 @@ async with Client(server, mode="auto") as client:
 
 `call_tool_task` requires the server to actually run the call as a task — if the tool isn't `task=True`, or the server doesn't have the tasks extension registered, it raises `ToolError`. Use it when you specifically need the handle; use `call_tool` when you just want the result.
 
+### Retrieving a Task by ID
+
+You can reconnect with a new client and query a task using its saved ID. The new client must reach the same task backend and, when tasks are scoped to an authenticated caller, use the same identity. With the current Docket defaults, completed tasks are retained for 15 minutes; retrieve the result before the server's retention period expires.
+
+```python
+from fastmcp import Client
+from fastmcp_tasks import call_tool_task
+from fastmcp_tasks.client_models import (
+    ClientGetTaskResult,
+    GetTaskRequest,
+    GetTaskRequestParams,
+)
+
+server_url = "http://localhost:8000/mcp"
+
+async with Client(server_url, mode="auto") as submitting_client:
+    task = await call_tool_task(
+        submitting_client, "slow_computation", {"duration": 10}
+    )
+    task_id = task.task_id
+    await task.wait(timeout=30.0)
+
+async with Client(server_url, mode="auto") as follow_up_client:
+    task_result = await follow_up_client.session.send_request(
+        GetTaskRequest(params=GetTaskRequestParams(task_id=task_id)),
+        ClientGetTaskResult,
+    )
+    print(task_result.status)
+    print(task_result.result)
+```
+
+`tasks/get` returns the result in its wire-format JSON shape; it does not restore FastMCP's parsed Python result. Results are available only while the server retains the task. If separate server instances handle these connections, configure them to share a Redis or Valkey task backend; the default in-memory backend is local to one process.
+
 ### Checking Status
 
 ```python
