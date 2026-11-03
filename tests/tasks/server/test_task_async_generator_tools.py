@@ -48,6 +48,7 @@ async def _task_outcome(
 ) -> tuple[str | None, bool]:
     task = await run_task(server, name, arguments)
     assert task.status == "completed"
+    assert task.result is not None
     return _text(task.result.get("content")), bool(task.result.get("isError"))
 
 
@@ -122,8 +123,10 @@ def _task_server() -> FastMCP:
         for i in range(n):
             yield f"item{i}"
 
+    # The annotation describes the materialized list this tool returns (it is
+    # what the output schema is built from), not the generator object itself.
     @mcp.tool(task=True)
-    async def agen_typed(n: int) -> list[int]:
+    async def agen_typed(n: int) -> list[int]:  # ty: ignore[invalid-return-type]
         for i in range(n):
             yield i
 
