@@ -9,6 +9,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthContext
+from fastmcp.server.context import Context
 from fastmcp.server.transforms import ResourcesAsTools, VersionFilter
 from fastmcp.server.transforms.search import RegexSearchTransform
 
@@ -405,6 +406,151 @@ class TestResourcesAsToolsBasic:
 
             result = await client.call_tool("read_resource", {"uri": "config://app"})
             assert result.data == "config data"
+
+    async def test_session_disabled_user_tool_yields_synthetic_tool(self):
+        """When a user tool colliding with synthetic tool is disabled in session, synthetic tool is advertised and callable."""
+        mcp = FastMCP("Server")
+
+        @mcp.tool(tags={"internal"})
+        def read_resource(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.tool
+        async def deactivate_internal(ctx: Context) -> str:
+            await ctx.disable_components(tags={"internal"})
+            return "deactivated"
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "config data"
+
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            user_tool = next(t for t in tools if t.name == "read_resource")
+            assert "query" in user_tool.input_schema.get("properties", {})
+
+            await client.call_tool("deactivate_internal", {})
+
+            tools_after = await client.list_tools()
+            syn_tool = next((t for t in tools_after if t.name == "read_resource"), None)
+            assert syn_tool is not None
+            assert "uri" in syn_tool.input_schema.get("properties", {})
+
+            res = await client.call_tool("read_resource", {"uri": "config://app"})
+            assert res.data == "config data"
+
+    async def test_version_spec_passed_to_provider_get_tool(self):
+        """Provider expecting VersionSpec in _get_tool receives valid VersionSpec when probed."""
+        from typing import Any
+
+        from fastmcp.server.providers.base import Provider
+        from fastmcp.tools.base import Tool
+        from fastmcp.utilities.versions import VersionSpec
+
+        received_spec: list[Any] = []
+
+        class VersionAwareProvider(Provider):
+            def __init__(self):
+                super().__init__()
+                self._tool = Tool.from_function(
+                    lambda query: f"custom: {query}",
+                    name="read_resource",
+                    version="1.2.3",
+                )
+
+            async def _list_tools(self):
+                return [self._tool]
+
+            async def _get_tool(self, name: str, version: VersionSpec | None = None):
+                received_spec.append(version)
+                if name == "read_resource" and (
+                    version is None or version.matches(self._tool.version)
+                ):
+                    return self._tool
+                return None
+
+        provider = VersionAwareProvider()
+        provider.add_transform(RegexSearchTransform())
+
+        server = FastMCP("Server", providers=[provider])
+
+        @server.resource("config://app")
+        def app_config() -> str:
+            return "config data"
+
+        server.add_transform(ResourcesAsTools(server))
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            assert "read_resource" in [t.name for t in tools]
+            res = await client.call_tool("read_resource", {"uri": "config://app"})
+            assert res.data == "config data"
+            assert any(isinstance(spec, VersionSpec) for spec in received_spec)
+
+    async def test_sequence_sensitive_catalog_transform_hiding_tool(self):
+        """Sequence-sensitive transforms like catalog slicing are evaluated against full provider catalog."""
+        from collections.abc import Sequence
+
+        from fastmcp.server.transforms.catalog import CatalogTransform
+        from fastmcp.tools.base import Tool
+
+        class SlicingCatalogTransform(CatalogTransform):
+            async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
+                return tools[:1]
+
+        server = FastMCP("Server")
+
+        @server.tool
+        def first_tool() -> str:
+            return "first"
+
+        @server.tool
+        def read_resource(query: str) -> str:
+            return f"colliding: {query}"
+
+        server.add_transform(SlicingCatalogTransform())
+
+        @server.resource("config://app")
+        def app_config() -> str:
+            return "config data"
+
+        server.add_transform(ResourcesAsTools(server))
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            names = [t.name for t in tools]
+            assert "first_tool" in names
+            assert "read_resource" in names
+
+            res = await client.call_tool("read_resource", {"uri": "config://app"})
+            assert res.data == "config data"
+
+    async def test_namespaced_provider_user_tool_collision(self):
+        """Collisions with user tools under a Namespace transform are recognized and prioritized."""
+        sub = FastMCP("Sub")
+
+        @sub.tool(name="resource")
+        def resource_tool(uri: str) -> str:
+            return f"sub: {uri}"
+
+        server = FastMCP("Server")
+        server.mount(sub, namespace="read")
+
+        @server.resource("config://app")
+        def app_config() -> str:
+            return "resource data"
+
+        server.add_transform(ResourcesAsTools(server))
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            read_tools = [t for t in tools if t.name == "read_resource"]
+            assert len(read_tools) == 1
+
+            res = await client.call_tool("read_resource", {"uri": "custom_arg"})
+            assert res.data == "sub: custom_arg"
 
 
 class TestListResourcesTool:

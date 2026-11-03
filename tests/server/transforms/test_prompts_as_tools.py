@@ -6,6 +6,7 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.server.context import Context
 from fastmcp.server.transforms import PromptsAsTools, VersionFilter
 from fastmcp.server.transforms.search import RegexSearchTransform
 
@@ -428,6 +429,160 @@ class TestPromptsAsToolsBasic:
             )
             data = json.loads(result.data)
             assert "Hello, Alice!" in data["messages"][0]["content"]
+
+    async def test_session_disabled_user_tool_yields_synthetic_tool(self):
+        """When a user tool colliding with synthetic tool is disabled in session, synthetic tool is advertised and callable."""
+        mcp = FastMCP("Server")
+
+        @mcp.tool(tags={"internal"})
+        def get_prompt(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.tool
+        async def deactivate_internal(ctx: Context) -> str:
+            await ctx.disable_components(tags={"internal"})
+            return "deactivated"
+
+        @mcp.prompt
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            user_tool = next(t for t in tools if t.name == "get_prompt")
+            assert "query" in user_tool.input_schema.get("properties", {})
+
+            await client.call_tool("deactivate_internal", {})
+
+            tools_after = await client.list_tools()
+            syn_tool = next((t for t in tools_after if t.name == "get_prompt"), None)
+            assert syn_tool is not None
+            assert "arguments" in syn_tool.input_schema.get("properties", {})
+
+            res = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(res.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
+
+    async def test_version_spec_passed_to_provider_get_tool(self):
+        """Provider expecting VersionSpec in _get_tool receives valid VersionSpec when probed."""
+        from typing import Any
+
+        from fastmcp.server.providers.base import Provider
+        from fastmcp.tools.base import Tool
+        from fastmcp.utilities.versions import VersionSpec
+
+        received_spec: list[Any] = []
+
+        class VersionAwareProvider(Provider):
+            def __init__(self):
+                super().__init__()
+                self._tool = Tool.from_function(
+                    lambda query: f"custom: {query}",
+                    name="get_prompt",
+                    version="1.2.3",
+                )
+
+            async def _list_tools(self):
+                return [self._tool]
+
+            async def _get_tool(self, name: str, version: VersionSpec | None = None):
+                received_spec.append(version)
+                if name == "get_prompt" and (
+                    version is None or version.matches(self._tool.version)
+                ):
+                    return self._tool
+                return None
+
+        provider = VersionAwareProvider()
+        provider.add_transform(RegexSearchTransform())
+
+        server = FastMCP("Server", providers=[provider])
+
+        @server.prompt
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        server.add_transform(PromptsAsTools(server))
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            assert "get_prompt" in [t.name for t in tools]
+            res = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(res.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
+            assert any(isinstance(spec, VersionSpec) for spec in received_spec)
+
+    async def test_sequence_sensitive_catalog_transform_hiding_tool(self):
+        """Sequence-sensitive transforms like catalog slicing are evaluated against full provider catalog."""
+        from collections.abc import Sequence
+
+        from fastmcp.server.transforms.catalog import CatalogTransform
+        from fastmcp.tools.base import Tool
+
+        class SlicingCatalogTransform(CatalogTransform):
+            async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
+                return tools[:1]
+
+        server = FastMCP("Server")
+
+        @server.tool
+        def first_tool() -> str:
+            return "first"
+
+        @server.tool
+        def get_prompt(query: str) -> str:
+            return f"colliding: {query}"
+
+        server.add_transform(SlicingCatalogTransform())
+
+        @server.prompt
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        server.add_transform(PromptsAsTools(server))
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            names = [t.name for t in tools]
+            assert "first_tool" in names
+            assert "get_prompt" in names
+
+            res = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(res.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
+
+    async def test_namespaced_provider_user_tool_collision(self):
+        """Collisions with user tools under a Namespace transform are recognized and prioritized."""
+        sub = FastMCP("Sub")
+
+        @sub.tool(name="prompt")
+        def prompt_tool(name: str) -> str:
+            return f"sub: {name}"
+
+        server = FastMCP("Server")
+        server.mount(sub, namespace="get")
+
+        @server.prompt
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        server.add_transform(PromptsAsTools(server))
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            get_tools = [t for t in tools if t.name == "get_prompt"]
+            assert len(get_tools) == 1
+
+            res = await client.call_tool("get_prompt", {"name": "custom_arg"})
+            assert res.data == "sub: custom_arg"
 
 
 class TestListPromptsTool:
