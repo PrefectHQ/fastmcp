@@ -291,6 +291,13 @@ def test_wire_skill_does_not_satisfy_an_authoring_subclass():
         CustomSkill(name="review", description="Review", instructions=""), Skill
     )
 
+    adapter = TypeAdapter(CustomSkill)
+    custom = CustomSkill(name="review", description="Review", instructions="")
+    assert adapter.validate_python(custom) is custom
+    for wire in (REVIEW.to_mcp_skill(), REVIEW.to_mcp_skill().model_dump()):
+        with pytest.raises(ValidationError, match="CustomSkill"):
+            adapter.validate_python(wire)
+
 
 async def test_manifest_warning_preserves_resource_only_access(tmp_path: Path):
     from fastmcp.server.providers.skills import SkillProvider

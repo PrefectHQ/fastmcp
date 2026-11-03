@@ -115,6 +115,8 @@ class Skill(metaclass=_SkillMeta):
     ) -> CoreSchema:
         # Existing authoring values stay intact; dictionaries and JSON retain
         # the 4.1 wire-model validation and serialization contract.
+        if cls is not Skill:
+            return core_schema.is_instance_schema(cls)
         wire_schema = handler.generate_schema(MCPSkill)
         return core_schema.union_schema(
             [core_schema.is_instance_schema(cls), wire_schema]
