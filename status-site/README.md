@@ -61,3 +61,39 @@ remain ranking hints; their presence does not prove that the reporter still owes
 a response. Check the discussion and later edits before acting on them.
 
 On GitHub Pages, the browser reads JSON directly from the public `status` branch: bot commits do not trigger a Pages rebuild. Other hosts and local previews use adjacent `status.json`. Publishing the UI itself still requires a Pages deployment.
+
+## Public triage leads
+
+The same half-hourly backlog job publishes `triage.json` (`fastmcp-public-triage/1`).
+It reuses the complete inventory read for age buckets and inspects the five oldest
+open, non-draft, non-held contributor PR leads (by non-maintainer user accounts).
+Non-draft does not imply ready: contributors may still owe revisions. Both JSON and the
+page are public, reproducible from this repository, and independent of personal
+infrastructure, models, private reviewer ledgers, and Prefect Cloud credentials.
+
+```sh
+python scripts/backlog_status.py --previous previous-backlog.json --output backlog.json --triage-output triage.json
+```
+
+Run in a checkout with `gh` authenticated for read access. The report records the
+source commit, collection start/end, inventory size, selection bounds, exact PR
+head/base and activity collection status. Conversation comments and submitted
+reviews use all API pages; inline threads and other timeline events are excluded.
+Failed reads stay unavailable, never “unanswered.” Maintainer account activity
+can be agent-assisted and is not acknowledgement or approval. Triage-app review
+presence is separated from a review on the snapshot head; neither proves tests
+or independent verification. Reads are not atomic: recheck heads, holds, discussion,
+CI, compatibility and supported behavior before any action. Missing from this
+bounded oldest-first queue does not mean handled. No closure/merge is authorized.
+
+Age buckets describe inventory at collection, including draft PRs; they are not
+historical reconstructions. Empty successful collection is explicitly zero, while
+GitHub inventory failure fails the job. The page flags collections over two hours
+old and handles unavailable triage data independently of the existing chart.
+Private evidence, author assessments and human authorizations must stay out of
+this public JSON. This is review prioritization, not a measure of causal model
+benefit or shipped fixes. A smaller backlog remains subject to correctness,
+performance, contributor credit and downstream compatibility checks.
+
+Refresh waits for both datasets; superseded successes and errors cannot replace
+a newer refresh. Check this behavior with `node --test tests/test_status_refresh.cjs`.
