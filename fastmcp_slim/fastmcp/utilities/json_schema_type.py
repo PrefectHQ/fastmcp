@@ -173,9 +173,17 @@ class _LRUCache(Generic[_V]):
     is not stored.
     """
 
-    def __init__(self, max_entries: int, max_weight: int) -> None:
+    def __init__(
+        self,
+        max_entries: int,
+        max_weight: int,
+        on_put: Callable[[Hashable, _V], None] | None = None,
+        on_evict: Callable[[Hashable, _V], None] | None = None,
+    ) -> None:
         self.max_entries = max_entries
         self.max_weight = max_weight
+        self.on_put = on_put
+        self.on_evict = on_evict
         self._items: OrderedDict[Hashable, tuple[_V, int]] = OrderedDict()
         self._weight = 0
         self._lock = threading.Lock()
@@ -193,16 +201,27 @@ class _LRUCache(Generic[_V]):
             previous = self._items.pop(key, None)
             if previous is not None:
                 self._weight -= previous[1]
+                if self.on_evict is not None:
+                    self.on_evict(key, previous[0])
             if weight > self.max_weight:
                 return
             self._items[key] = (value, weight)
             self._weight += weight
+            if self.on_put is not None:
+                self.on_put(key, value)
             while len(self._items) > self.max_entries or self._weight > self.max_weight:
-                _, (_, evicted_weight) = self._items.popitem(last=False)
+                evicted_key, (evicted_val, evicted_weight) = self._items.popitem(
+                    last=False
+                )
                 self._weight -= evicted_weight
+                if self.on_evict is not None:
+                    self.on_evict(evicted_key, evicted_val)
 
     def clear(self) -> None:
         with self._lock:
+            if self.on_evict is not None:
+                for key, (val, _) in self._items.items():
+                    self.on_evict(key, val)
             self._items.clear()
             self._weight = 0
 
@@ -210,15 +229,30 @@ class _LRUCache(Generic[_V]):
         return len(self._items)
 
 
-# Generated classes keyed by (schema hash + root schema hash, class name). Each
-# class is weighted by the size of its root schema, so a conversion whose root
-# is larger than the weight limit adds nothing to the cache.
-_classes: _LRUCache[type] = _LRUCache(max_entries=5000, max_weight=4_000_000)
-# TypeAdapters for whole schemas, keyed by schema hash. They hold their
-# classes, so they are bounded the same way.
-_adapters: _LRUCache[TypeAdapter[Any]] = _LRUCache(
-    max_entries=1000, max_weight=4_000_000
-)
+_RESERVED_MODULE_ATTRS: frozenset[str] = frozenset(globals().keys())
+
+
+def _register_class_in_module(name: str, cls: type) -> None:
+    mod = sys.modules.get(__name__)
+    if mod is not None and name not in _RESERVED_MODULE_ATTRS:
+        setattr(mod, name, cls)
+
+
+def _unregister_class_from_module(name: str, cls: type) -> None:
+    mod = sys.modules.get(__name__)
+    if mod is not None and getattr(mod, name, None) is cls:
+        delattr(mod, name)
+
+
+def _on_class_put(key: Hashable, cls: type) -> None:
+    if isinstance(key, tuple) and len(key) == 2 and isinstance(key[1], str):
+        _register_class_in_module(key[1], cls)
+
+
+def _on_class_evict(key: Hashable, cls: type) -> None:
+    if isinstance(key, tuple) and len(key) == 2 and isinstance(key[1], str):
+        _unregister_class_from_module(key[1], cls)
+
 
 # Limits on a single conversion. Depth counts nested schemas and `$ref` hops;
 # steps count every schema visited.
@@ -227,6 +261,22 @@ _MAX_CONVERSION_DEPTH = 64
 # levels (such as `properties` and then the property's schema).
 _MAX_NESTING = 4 * _MAX_CONVERSION_DEPTH
 _MAX_CONVERSION_STEPS = 50_000
+
+
+# Generated classes keyed by (schema hash + root schema hash, class name). Each
+# class is weighted by the size of its root schema, so a conversion whose root
+# is larger than the weight limit adds nothing to the cache.
+_classes: _LRUCache[type] = _LRUCache(
+    max_entries=5000,
+    max_weight=4_000_000,
+    on_put=_on_class_put,
+    on_evict=_on_class_evict,
+)
+# TypeAdapters for whole schemas, keyed by schema hash. They hold their
+# classes, so they are bounded the same way.
+_adapters: _LRUCache[TypeAdapter[Any]] = _LRUCache(
+    max_entries=1000, max_weight=4_000_000
+)
 
 
 @dataclass
@@ -238,6 +288,7 @@ class _Conversion:
     # Sanitized name of the class generated for the root schema; `"$ref": "#"`
     # resolves to that class.
     root_class_name: str
+    root_schema: Any = None
     resolved_refs: dict[str, Any] = field(default_factory=dict)
     building: set[tuple[str, str]] = field(default_factory=set)
     depth: int = 0
@@ -358,21 +409,65 @@ def _convert_normalized(schema: dict[str, Any], name: str | None) -> type:
     # `title` can carry any JSON value in a malformed schema; only a string
     # (including the empty string) is a valid class-name source.
     title = schema.get("title")
+    if not isinstance(title, str) and "$ref" in schema:
+        ref = schema["$ref"]
+        if isinstance(ref, str) and ref != "#":
+            ref_part = ref.rsplit("/", 1)[-1].replace("~1", "/").replace("~0", "~")
+            if ref_part and ref_part != "#":
+                title = ref_part
+    matched_def_name: str | None = None
+    if not isinstance(title, str):
+        defs = schema.get("$defs") or schema.get("definitions")
+        if isinstance(defs, Mapping):
+            props = schema.get("properties")
+            stype = schema.get("type")
+            sreq = schema.get("required")
+            if props:
+                for def_name, dschema in defs.items():
+                    if isinstance(dschema, Mapping):
+                        if (
+                            dschema.get("type") == stype
+                            and dschema.get("properties") == props
+                        ):
+                            if sreq is None or dschema.get("required") == sreq:
+                                title = def_name
+                                matched_def_name = def_name
+                                break
     root_title = title if isinstance(title, str) else "Root"
-    token = _conversion.set(
-        _Conversion(
-            root_hash=root_hash,
-            root_size=root_size,
-            root_class_name=_sanitize_name(name or root_title),
-        )
+    resolved_name = name or (root_title if root_title != "Root" else None)
+    root_schema = schema
+    if schema.get("type") != "object" and "$ref" in schema:
+        ref = schema["$ref"]
+        if isinstance(ref, str) and ref != "#":
+            resolved = _resolve_ref(ref, schema)
+            if isinstance(resolved, Mapping):
+                root_schema = resolved
+    conversion = _Conversion(
+        root_hash=root_hash,
+        root_size=root_size,
+        root_class_name=_sanitize_name(name or root_title),
+        root_schema=root_schema,
     )
+    if matched_def_name:
+        sanitized_root = _sanitize_name(name or root_title)
+        conversion.resolved_refs[f"#/$defs/{matched_def_name}"] = ForwardRef(
+            sanitized_root
+        )
+        conversion.resolved_refs[f"#/definitions/{matched_def_name}"] = ForwardRef(
+            sanitized_root
+        )
+    token = _conversion.set(conversion)
     try:
         # Always use the top-level schema for references
         if schema.get("type") == "object":
-            return _object_schema_to_type(schema, schemas=schema, name=name)
+            result = _object_schema_to_type(schema, schemas=schema, name=resolved_name)
         elif name:
             raise ValueError(f"Can not apply name to non-object schema: {name}")
-        result = _schema_to_type(schema, schemas=schema)
+        else:
+            result = _schema_to_type(schema, schemas=schema, name=resolved_name)
+        if matched_def_name and isinstance(result, type):
+            conversion.resolved_refs[f"#/$defs/{matched_def_name}"] = result
+            conversion.resolved_refs[f"#/definitions/{matched_def_name}"] = result
         return result  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
     finally:
         _conversion.reset(token)
@@ -788,6 +883,7 @@ def _get_from_type_handler(
     schema: Mapping[str, Any],
     schemas: Mapping[str, Any],
     resolving_refs: frozenset[str],
+    name: str | None = None,
 ) -> Callable[..., Any]:
     """Get the appropriate type handler for the schema."""
 
@@ -799,7 +895,7 @@ def _get_from_type_handler(
         "null": lambda _: type(None),
         "array": lambda s: _create_array_type(s, schemas, resolving_refs),
         "object": lambda s: _object_schema_to_type(
-            s, schemas, resolving_refs=resolving_refs
+            s, schemas, name=name, resolving_refs=resolving_refs
         ),
     }
     return type_handlers.get(schema.get("type", None), _return_Any)
@@ -809,6 +905,7 @@ def _schema_to_type(
     schema: Mapping[str, Any] | bool,
     schemas: Mapping[str, Any],
     resolving_refs: frozenset[str] = frozenset(),
+    name: str | None = None,
 ) -> type | ForwardRef:
     """Convert schema to appropriate Python type, within the conversion limits."""
     conversion = _conversion.get()
@@ -819,7 +916,7 @@ def _schema_to_type(
         raise ValueError("JSON schema is too large to convert")
     conversion.depth += 1
     try:
-        return _convert_schema(schema, schemas, resolving_refs)
+        return _convert_schema(schema, schemas, resolving_refs, name=name)
     finally:
         conversion.depth -= 1
 
@@ -828,6 +925,7 @@ def _convert_schema(
     schema: Mapping[str, Any] | bool,
     schemas: Mapping[str, Any],
     resolving_refs: frozenset[str],
+    name: str | None = None,
 ) -> type | ForwardRef:
     # Boolean schemas are valid in JSON Schema draft-06+:
     # true means "any value is valid" (equivalent to {}),
@@ -841,7 +939,12 @@ def _convert_schema(
         return object
 
     if "type" not in schema and "properties" in schema:
-        return _create_dataclass(schema, schema.get("title", "<unknown>"), schemas)
+        return _create_dataclass(
+            schema,
+            name or schema.get("title", "<unknown>"),
+            schemas,
+            resolving_refs,
+        )
 
     # Handle references first
     if "$ref" in schema:
@@ -849,19 +952,31 @@ def _convert_schema(
         # Handle self-reference
         if ref == "#":
             return ForwardRef(_conversion.get().root_class_name)
+
+        ref_name = schema.get("title")
+        if not ref_name and ref != "#" and isinstance(ref, str):
+            ref_part = ref.rsplit("/", 1)[-1].replace("~1", "/").replace("~0", "~")
+            if ref_part and ref_part != "#":
+                ref_name = ref_part
+        if not ref_name:
+            ref_name = name
+
         if ref in resolving_refs:
             resolved = _resolve_ref(ref, schemas)
             if isinstance(resolved, Mapping) and (
                 resolved.get("type") == "object" or "properties" in resolved
             ):
-                return _schema_to_type(resolved, schemas, resolving_refs)
+                return _schema_to_type(resolved, schemas, resolving_refs, name=ref_name)
             return Any
         # Convert each reference once per conversion, so a definition shared
         # by many references is not expanded again for every path to it.
         resolved_refs = _conversion.get().resolved_refs
         if ref not in resolved_refs:
             resolved_refs[ref] = _schema_to_type(
-                _resolve_ref(ref, schemas), schemas, resolving_refs | {ref}
+                _resolve_ref(ref, schemas),
+                schemas,
+                resolving_refs | {ref},
+                name=ref_name,
             )
         return resolved_refs[ref]
 
@@ -874,7 +989,7 @@ def _convert_schema(
     # Handle anyOf unions
     if "anyOf" in schema:
         types: list[type | Any] = [
-            _schema_to_type(subschema, schemas, resolving_refs)
+            _schema_to_type(subschema, schemas, resolving_refs, name=name)
             for subschema in schema["anyOf"]
         ]
 
@@ -909,7 +1024,7 @@ def _convert_schema(
                 # identity (and name) that "$ref": "#" resolves to.
                 types.append(
                     _object_schema_to_type(
-                        schema, schemas, resolving_refs=resolving_refs
+                        schema, schemas, name=name, resolving_refs=resolving_refs
                     )
                 )
                 continue
@@ -925,7 +1040,7 @@ def _convert_schema(
                 return Union[(*types, type(None))]  # type: ignore
         return Union[tuple(types)]  # type: ignore # noqa: UP007
 
-    return _get_from_type_handler(schema, schemas, resolving_refs)(schema)
+    return _get_from_type_handler(schema, schemas, resolving_refs, name=name)(schema)
 
 
 def _sanitize_name(name: str) -> str:
@@ -1043,7 +1158,9 @@ def _nested_class_name(
     root's name would capture every ``"$ref": "#"`` reference inside it.
     Keep the root name pointing at the root class.
     """
-    if sanitized_name == conversion.root_class_name and schema is not schemas:
+    root_schema = getattr(conversion, "root_schema", None)
+    is_root = (schema is schemas) or (root_schema is not None and schema is root_schema)
+    if sanitized_name == conversion.root_class_name and not is_root:
         return f"{sanitized_name}_2"
     return sanitized_name
 
@@ -1106,7 +1223,14 @@ def _build_pydantic_model(
             field_type = _schema_to_type(prop_schema, schemas, resolving_refs)
             prop_schema = {}
         else:
-            field_type = _schema_to_type(prop_schema, schemas, resolving_refs)
+            cand_name = (
+                prop_schema.get("title") or prop_name
+                if isinstance(prop_schema, Mapping)
+                else None
+            )
+            field_type = _schema_to_type(
+                prop_schema, schemas, resolving_refs, name=cand_name
+            )
 
         # Handle defaults
         default_value = prop_schema.get("default", MISSING)
@@ -1220,7 +1344,14 @@ def _build_dataclass(
             # may be a different class than the one being built here.
             field_type = ForwardRef(_conversion.get().root_class_name)
         else:
-            field_type = _schema_to_type(prop_schema, schemas, resolving_refs)
+            cand_name = (
+                prop_schema.get("title") or prop_name
+                if isinstance(prop_schema, Mapping)
+                else None
+            )
+            field_type = _schema_to_type(
+                prop_schema, schemas, resolving_refs, name=cand_name
+            )
 
         default_val = prop_schema.get("default", MISSING)
         is_required = prop_name in required

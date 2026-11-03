@@ -6,7 +6,7 @@ import datetime
 import gc
 import weakref
 from collections.abc import AsyncGenerator
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 import anyio
 import pytest
@@ -1241,3 +1241,37 @@ class TestExitUnderCancelledScope:
         assert await asyncio.create_task(enter_and_call()) == "fast"
         await close
         self.assert_disconnected(client)
+
+
+async def test_call_tool_mutually_recursive_return_types_hydrate_with_class_identity():
+    """Mutually recursive Pydantic models returned by a tool preserve class identity during hydration."""
+    server = FastMCP()
+
+    class RecursivePet(BaseModel):
+        name: str
+        owner: Optional["RecursivePerson"] = None
+
+    class RecursivePerson(BaseModel):
+        name: str
+        pet: RecursivePet | None = None
+
+    RecursivePet.model_rebuild()
+    RecursivePerson.model_rebuild()
+
+    @server.tool
+    def get_family() -> RecursivePerson:
+        max_pet = RecursivePet(name="Max", owner=None)
+        bob = RecursivePerson(name="Bob", pet=max_pet)
+        rex = RecursivePet(name="Rex", owner=bob)
+        return RecursivePerson(name="Ann", pet=rex)
+
+    async with Client(server) as client:
+        result = await client.call_tool("get_family", {})
+        assert result.data.name == "Ann"
+        assert result.data.pet.name == "Rex"
+        assert result.data.pet.owner.name == "Bob"
+        assert result.data.pet.owner.pet.name == "Max"
+        assert result.data.pet.owner.pet.owner is None
+        assert type(result.data) is type(result.data.pet.owner)
+        assert type(result.data.pet) is type(result.data.pet.owner.pet)
+        assert type(result.data) is not type(result.data.pet)

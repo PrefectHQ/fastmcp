@@ -1219,3 +1219,55 @@ class TestFieldsWithDefaults:
         validator = TypeAdapter(generated_type)
         result = validator.validate_python({"flag": True})
         assert result.flag is True  # type: ignore[attr-defined]
+
+    def test_mutually_recursive_pydantic_hydration_preserves_class_identity(self):
+        """Test that mutually recursive schemas in $defs maintain distinct class identity and hydrate."""
+        schema = {
+            "$ref": "#/$defs/Person",
+            "$defs": {
+                "Person": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "pet": {
+                            "anyOf": [{"$ref": "#/$defs/Pet"}, {"type": "null"}],
+                            "default": None,
+                        },
+                    },
+                    "required": ["name"],
+                },
+                "Pet": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "owner": {
+                            "anyOf": [{"$ref": "#/$defs/Person"}, {"type": "null"}],
+                            "default": None,
+                        },
+                    },
+                    "required": ["name"],
+                },
+            },
+        }
+
+        PersonCls = json_schema_to_type(schema)
+        validator = TypeAdapter(PersonCls)
+        data = {
+            "name": "Ann",
+            "pet": {
+                "name": "Rex",
+                "owner": {
+                    "name": "Bob",
+                    "pet": {"name": "Max", "owner": None},
+                },
+            },
+        }
+        result = validator.validate_python(data)
+        assert result.name == "Ann"
+        assert result.pet.name == "Rex"
+        assert result.pet.owner.name == "Bob"
+        assert result.pet.owner.pet.name == "Max"
+        assert result.pet.owner.pet.owner is None
+        assert type(result) is type(result.pet.owner)
+        assert type(result.pet) is type(result.pet.owner.pet)
+        assert type(result) is not type(result.pet)
