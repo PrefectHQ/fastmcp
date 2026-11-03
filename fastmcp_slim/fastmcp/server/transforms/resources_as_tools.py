@@ -76,50 +76,92 @@ class ResourcesAsTools(Transform):
     def __repr__(self) -> str:
         return f"ResourcesAsTools({self._provider!r})"
 
-    def _is_hidden_by_upstream(self, name: str) -> bool:
-        """Check if a tool is hidden from list_tools by an upstream transform."""
+    def _is_tool_hidden_by_search(self, tool: Tool) -> bool:
+        """Check if a specific tool is hidden by a BaseSearchTransform on its provider path."""
         from fastmcp.server.transforms.search.base import BaseSearchTransform
 
-        def _hides(provider: Any, is_top: bool = False) -> bool:
-            transforms = getattr(provider, "transforms", [])
-            if is_top:
-                try:
-                    idx = transforms.index(self)
-                    transforms = transforms[:idx]
-                except ValueError:
-                    pass
+        name = tool.name
 
-            for transform in transforms:
-                if isinstance(transform, BaseSearchTransform):
-                    if name not in transform._always_visible:
+        def _transforms_hide(transforms: Sequence[Any]) -> bool:
+            for t in transforms:
+                if isinstance(t, BaseSearchTransform):
+                    if name not in t._always_visible:
                         return True
+            return False
 
-            for child in getattr(provider, "providers", []):
-                if _hides(child):
-                    return True
+        top_transforms = getattr(self._provider, "transforms", [])
+        try:
+            idx = top_transforms.index(self)
+            preceding = top_transforms[:idx]
+        except ValueError:
+            preceding = top_transforms
+
+        if _transforms_hide(preceding):
+            return True
+
+        direct_components = getattr(self._provider, "_components", {})
+        if tool.key in direct_components or any(
+            c is tool for c in direct_components.values()
+        ):
+            return False
+
+        def _find_provider_hiding(provider: Any) -> bool | None:
+            comps = getattr(provider, "_components", {})
+            has_tool = tool.key in comps or any(c is tool for c in comps.values())
 
             inner = getattr(provider, "_inner", None)
-            return bool(inner is not None and _hides(inner))
+            inner_hides = _find_provider_hiding(inner) if inner is not None else None
 
-        return _hides(self._provider, is_top=True)
+            child_hides = None
+            for child in getattr(provider, "providers", []):
+                res = _find_provider_hiding(child)
+                if res is not None:
+                    child_hides = res
+                    break
+
+            if has_tool or inner_hides is not None or child_hides is not None:
+                if _transforms_hide(getattr(provider, "transforms", [])):
+                    return True
+                return bool(inner_hides is True or child_hides is True)
+
+            return None
+
+        for child in getattr(self._provider, "providers", []):
+            res = _find_provider_hiding(child)
+            if res is not None:
+                return res
+
+        inner = getattr(self._provider, "_inner", None)
+        if inner is not None:
+            res = _find_provider_hiding(inner)
+            if res is not None:
+                return res
+
+        return False
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """Add resource tools to the tool list."""
         from fastmcp.server.server import _tool_auth_allows
+        from fastmcp.server.transforms.visibility import is_enabled
+
+        list_tool = self._make_list_resources_tool()
+        read_tool = self._make_read_resource_tool()
+        candidate_keys = {list_tool.key, read_tool.key}
 
         existing_keys: set[str] = set()
         for t in tools:
-            try:
-                if await _tool_auth_allows(t):
+            if t.key in candidate_keys:
+                if not is_enabled(t):
+                    continue
+                try:
+                    if await _tool_auth_allows(t):
+                        existing_keys.add(t.key)
+                except Exception:
                     existing_keys.add(t.key)
-            except Exception:
-                existing_keys.add(t.key)
 
         synthetic: list[Tool] = []
-        list_tool = self._make_list_resources_tool()
         if list_tool.key not in existing_keys:
             synthetic.append(list_tool)
-        read_tool = self._make_read_resource_tool()
         if read_tool.key not in existing_keys:
             synthetic.append(read_tool)
         return [*tools, *synthetic]
@@ -129,6 +171,7 @@ class ResourcesAsTools(Transform):
     ) -> Tool | None:
         """Get a tool by name, including generated resource tools."""
         from fastmcp.server.server import _tool_auth_allows
+        from fastmcp.server.transforms.visibility import is_enabled
 
         if name not in ("list_resources", "read_resource"):
             return await call_next(name, version=version)
@@ -140,16 +183,15 @@ class ResourcesAsTools(Transform):
         )
         syn_matches = version is None or version.matches(syn.version)
 
-        if syn_matches and self._is_hidden_by_upstream(name):
-            return syn
-
         existing = await call_next(name, version=version)
-        if existing is not None:
+        if existing is not None and is_enabled(existing):
             try:
                 allowed = await _tool_auth_allows(existing)
             except Exception:
                 allowed = True
             if allowed:
+                if syn_matches and self._is_tool_hidden_by_search(existing):
+                    return syn
                 return existing
 
         if syn_matches:

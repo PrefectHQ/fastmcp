@@ -194,6 +194,67 @@ class TestPromptsAsToolsBasic:
         finally:
             _current_transport.reset(token)
 
+    async def test_visible_colliding_parent_tool_with_unrelated_search_child(
+        self,
+    ):
+        """Visible colliding parent user tool is preferred over synthetic tool even if an unrelated child has search transform."""
+        from fastmcp.server.providers import LocalProvider
+
+        mcp = FastMCP("Test")
+
+        @mcp.tool
+        def get_prompt(query: str) -> str:
+            return f"parent: {query}"
+
+        child = LocalProvider()
+
+        @child.tool
+        def unrelated_tool() -> str:
+            return "unrelated"
+
+        child.add_transform(RegexSearchTransform())
+        mcp.add_provider(child)
+
+        @mcp.prompt
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "get_prompt" in tool_names
+
+            result = await client.call_tool("get_prompt", {"query": "hello"})
+            assert result.data == "parent: hello"
+
+    async def test_disabled_user_tool_falls_back_to_synthetic_tool(self):
+        """When user tool is disabled, synthetic tool is advertised and callable."""
+        mcp = FastMCP("Test")
+
+        @mcp.tool(tags={"internal"})
+        def get_prompt(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.prompt
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        mcp.disable(tags={"internal"})
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "get_prompt" in tool_names
+
+            result = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(result.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
+
 
 class TestListPromptsTool:
     """Test the list_prompts tool."""

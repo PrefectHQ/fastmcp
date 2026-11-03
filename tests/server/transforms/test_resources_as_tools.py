@@ -184,6 +184,64 @@ class TestResourcesAsToolsBasic:
         finally:
             _current_transport.reset(token)
 
+    async def test_visible_colliding_parent_tool_with_unrelated_search_child(
+        self,
+    ):
+        """Visible colliding parent user tool is preferred over synthetic tool even if an unrelated child has search transform."""
+        from fastmcp.server.providers import LocalProvider
+
+        mcp = FastMCP("Test")
+
+        @mcp.tool
+        def read_resource(query: str) -> str:
+            return f"parent: {query}"
+
+        child = LocalProvider()
+
+        @child.tool
+        def unrelated_tool() -> str:
+            return "unrelated"
+
+        child.add_transform(RegexSearchTransform())
+        mcp.add_provider(child)
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "config data"
+
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "read_resource" in tool_names
+
+            result = await client.call_tool("read_resource", {"query": "hello"})
+            assert result.data == "parent: hello"
+
+    async def test_disabled_user_tool_falls_back_to_synthetic_tool(self):
+        """When user tool is disabled, synthetic tool is advertised and callable."""
+        mcp = FastMCP("Test")
+
+        @mcp.tool(tags={"internal"})
+        def read_resource(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "config data"
+
+        mcp.disable(tags={"internal"})
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "read_resource" in tool_names
+
+            result = await client.call_tool("read_resource", {"uri": "config://app"})
+            assert result.data == "config data"
+
 
 class TestListResourcesTool:
     """Test the list_resources tool."""
