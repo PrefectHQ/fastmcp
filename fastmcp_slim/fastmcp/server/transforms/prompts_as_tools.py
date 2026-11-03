@@ -20,6 +20,7 @@ Example:
 
 from __future__ import annotations
 
+import contextlib
 import json
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Annotated, Any
@@ -73,23 +74,114 @@ class PromptsAsTools(Transform):
     def __repr__(self) -> str:
         return f"PromptsAsTools({self._provider!r})"
 
-    def _is_tool_hidden_by_search(self, tool: Tool) -> bool:
+    def _is_tool_finally_enabled(self, tool: Tool) -> bool:
+        """Check if tool is enabled and will not be disabled by a subsequent visibility transform."""
+        from fastmcp.server.transforms.visibility import Visibility, is_enabled
+
+        if not is_enabled(tool):
+            return False
+
+        transforms = getattr(self._provider, "transforms", [])
+        try:
+            idx = transforms.index(self)
+            subsequent = transforms[idx + 1 :]
+        except ValueError:
+            subsequent = []
+
+        current_enabled = True
+        for t in subsequent:
+            if isinstance(t, Visibility):
+                if t._matches(tool):
+                    current_enabled = t._enabled
+        return current_enabled
+
+    async def _is_tool_hidden_by_search(self, tool: Tool) -> bool:
         """Check if a specific tool is hidden by a search or catalog transform on its provider path."""
         from fastmcp.server.transforms.catalog import CatalogTransform
+        from fastmcp.tools.base import Tool as ToolCls
 
-        name = tool.name
-
-        def _transforms_hide(transforms: Sequence[Any]) -> bool:
+        async def _transforms_hide(
+            transforms: Sequence[Any], target_tool: Tool
+        ) -> bool:
             for t in transforms:
                 if isinstance(t, CatalogTransform):
                     always_visible = getattr(t, "_always_visible", None)
                     if always_visible is not None:
-                        if name not in always_visible:
+                        if target_tool.name not in always_visible:
                             return True
-                    elif (
-                        type(t).transform_tools is not CatalogTransform.transform_tools
+                        continue
+                    try:
+                        res = await t.transform_tools([target_tool])
+                        if not any(
+                            getattr(x, "name", None) == target_tool.name for x in res
+                        ):
+                            return True
+                    except Exception:
+                        if type(t).__name__ == "CodeMode":
+                            return True
+            return False
+
+        async def _provider_owns_tool(provider: Any, target_tool: Tool) -> bool:
+            if getattr(provider, "providers", None):
+                return False
+
+            orig_name = getattr(target_tool, "_original_name", None) or target_tool.name
+
+            if (
+                getattr(target_tool, "_server", None) is provider
+                or getattr(target_tool, "_provider", None) is provider
+            ):
+                return True
+
+            comps = getattr(provider, "_components", None)
+            if isinstance(comps, dict):
+                for c in comps.values():
+                    if isinstance(c, ToolCls) and (
+                        c is target_tool
+                        or c.key == target_tool.key
+                        or (c.name == orig_name and c.version == target_tool.version)
                     ):
                         return True
+
+            tools_dict = getattr(provider, "_tools", None)
+            if isinstance(tools_dict, dict):
+                for t in tools_dict.values():
+                    if isinstance(t, ToolCls) and (
+                        t is target_tool
+                        or t.key == target_tool.key
+                        or (t.name == orig_name and t.version == target_tool.version)
+                    ):
+                        return True
+
+            cache = getattr(provider, "_tools_cache", None)
+            if cache is not None:
+                items = getattr(cache, "items", None)
+                if isinstance(items, list):
+                    for t in items:
+                        if isinstance(t, ToolCls) and (
+                            t is target_tool
+                            or t.key == target_tool.key
+                            or (
+                                t.name == orig_name and t.version == target_tool.version
+                            )
+                        ):
+                            return True
+
+            get_tool_fn = getattr(provider, "_get_tool", None)
+            if callable(get_tool_fn):
+                with contextlib.suppress(Exception):
+                    p_tool = await get_tool_fn(orig_name, version=target_tool.version)
+                    if p_tool is not None and isinstance(p_tool, ToolCls):
+                        if (
+                            p_tool is target_tool
+                            or p_tool.key == target_tool.key
+                            or (
+                                p_tool.name == orig_name
+                                and p_tool.version == target_tool.version
+                            )
+                        ):
+                            return True
+
             return False
 
         top_transforms = getattr(self._provider, "transforms", [])
@@ -99,16 +191,10 @@ class PromptsAsTools(Transform):
         except ValueError:
             preceding = top_transforms
 
-        if _transforms_hide(preceding):
+        if await _transforms_hide(preceding, tool):
             return True
 
-        direct_components = getattr(self._provider, "_components", {})
-        if tool.key in direct_components or any(
-            c is tool for c in direct_components.values()
-        ):
-            return False
-
-        def _find_provider_hiding(
+        async def _find_provider_hiding(
             provider: Any, visited: set[int] | None = None
         ) -> bool | None:
             if provider is None:
@@ -120,34 +206,25 @@ class PromptsAsTools(Transform):
                 return None
             visited.add(pid)
 
-            comps = getattr(provider, "_components", {})
-            orig_name = getattr(tool, "_original_name", None) or tool.name
-            has_tool = (
-                tool.key in comps
-                or any(c is tool for c in comps.values())
-                or getattr(tool, "_server", None) is provider
-                or any(
-                    getattr(c, "name", None) == orig_name
-                    and getattr(c, "version", None) == tool.version
-                    for c in comps.values()
-                )
-            )
+            has_tool = await _provider_owns_tool(provider, tool)
 
             inner = getattr(provider, "_inner", None)
             inner_hides = (
-                _find_provider_hiding(inner, visited) if inner is not None else None
+                await _find_provider_hiding(inner, visited)
+                if inner is not None
+                else None
             )
 
             mounted_server = getattr(provider, "server", None)
             mounted_hides = (
-                _find_provider_hiding(mounted_server, visited)
+                await _find_provider_hiding(mounted_server, visited)
                 if mounted_server is not None
                 else None
             )
 
             child_hides = None
             for child in getattr(provider, "providers", []):
-                res = _find_provider_hiding(child, visited)
+                res = await _find_provider_hiding(child, visited)
                 if res is not None:
                     child_hides = res
                     break
@@ -158,7 +235,7 @@ class PromptsAsTools(Transform):
                 or mounted_hides is not None
                 or child_hides is not None
             ):
-                if _transforms_hide(getattr(provider, "transforms", [])):
+                if await _transforms_hide(getattr(provider, "transforms", []), tool):
                     return True
                 return bool(
                     inner_hides is True or mounted_hides is True or child_hides is True
@@ -167,19 +244,19 @@ class PromptsAsTools(Transform):
             return None
 
         for child in getattr(self._provider, "providers", []):
-            res = _find_provider_hiding(child)
+            res = await _find_provider_hiding(child)
             if res is not None:
                 return res
 
         inner = getattr(self._provider, "_inner", None)
         if inner is not None:
-            res = _find_provider_hiding(inner)
+            res = await _find_provider_hiding(inner)
             if res is not None:
                 return res
 
         mounted = getattr(self._provider, "server", None)
         if mounted is not None:
-            res = _find_provider_hiding(mounted)
+            res = await _find_provider_hiding(mounted)
             if res is not None:
                 return res
 
@@ -187,8 +264,7 @@ class PromptsAsTools(Transform):
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """Add prompt tools to the tool list."""
-        from fastmcp.server.server import _tool_auth_allows
-        from fastmcp.server.transforms.visibility import is_enabled
+        from fastmcp.server.server import _component_auth_allows
 
         list_tool = self._make_list_prompts_tool()
         get_tool = self._make_get_prompt_tool()
@@ -197,10 +273,10 @@ class PromptsAsTools(Transform):
         existing_keys: set[str] = set()
         for t in tools:
             if t.key in candidate_keys:
-                if not is_enabled(t):
+                if not self._is_tool_finally_enabled(t):
                     continue
                 try:
-                    if await _tool_auth_allows(t):
+                    if await _component_auth_allows(t):
                         existing_keys.add(t.key)
                 except Exception:
                     existing_keys.add(t.key)
@@ -216,8 +292,7 @@ class PromptsAsTools(Transform):
         self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get a tool by name, including generated prompt tools."""
-        from fastmcp.server.server import _tool_auth_allows
-        from fastmcp.server.transforms.visibility import is_enabled
+        from fastmcp.server.server import _component_auth_allows
 
         if name not in ("list_prompts", "get_prompt"):
             return await call_next(name, version=version)
@@ -230,13 +305,13 @@ class PromptsAsTools(Transform):
         syn_matches = version is None or version.matches(syn.version)
 
         existing = await call_next(name, version=version)
-        if existing is not None and is_enabled(existing):
+        if existing is not None and self._is_tool_finally_enabled(existing):
             try:
-                allowed = await _tool_auth_allows(existing)
+                allowed = await _component_auth_allows(existing)
             except Exception:
                 allowed = True
             if allowed:
-                if syn_matches and self._is_tool_hidden_by_search(existing):
+                if syn_matches and await self._is_tool_hidden_by_search(existing):
                     return syn
                 return existing
 

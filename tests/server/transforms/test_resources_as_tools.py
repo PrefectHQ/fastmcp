@@ -289,6 +289,123 @@ class TestResourcesAsToolsBasic:
         assert tool is not None
         assert "uri" in tool.parameters["properties"]
 
+    async def test_retaining_catalog_transform_preserves_colliding_user_tool(self):
+        """A pass-through CatalogTransform leaves user tool advertised and callable via Client."""
+        from fastmcp.server.transforms.catalog import CatalogTransform
+
+        class RetainingTransform(CatalogTransform):
+            async def transform_tools(self, tools):
+                return tools
+
+        mcp = FastMCP("Test")
+
+        @mcp.tool
+        def read_resource(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "config data"
+
+        mcp.add_transform(RetainingTransform())
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool = next(t for t in tools if t.name == "read_resource")
+            assert "query" in tool.input_schema["properties"]
+
+            result = await client.call_tool("read_resource", {"query": "hello"})
+            assert result.data == "user: hello"
+
+    async def test_subsequent_disable_transform_leaves_synthetic_tool_accessible(self):
+        """When mcp.disable follows ResourcesAsTools, disabled user tool does not suppress synthetic tool."""
+        mcp = FastMCP("Test")
+
+        @mcp.tool(tags={"internal"})
+        def read_resource(query: str) -> str:
+            return f"internal: {query}"
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "config data"
+
+        mcp.add_transform(ResourcesAsTools(mcp))
+        mcp.disable(tags={"internal"})
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "read_resource" in tool_names
+
+            result = await client.call_tool("read_resource", {"uri": "config://app"})
+            assert result.data == "config data"
+
+    async def test_type_aware_identity_does_not_hijack_child_tool_ownership(self):
+        """Parent resource named read_resource does not hijack provider identity of child's search-hidden tool."""
+        parent = FastMCP("Parent")
+        child = FastMCP("Child")
+
+        @child.tool
+        def read_resource(query: str) -> str:
+            return f"child: {query}"
+
+        child.add_transform(RegexSearchTransform())
+        parent.mount(child)
+
+        @parent.resource("res://read_resource")
+        def read_resource_res() -> str:
+            return "resource payload"
+
+        parent.add_transform(ResourcesAsTools(parent))
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "read_resource" in tool_names
+
+            result = await client.call_tool(
+                "read_resource", {"uri": "res://read_resource"}
+            )
+            assert result.data == "resource payload"
+
+    async def test_custom_provider_with_search_transform_hides_user_tool(self):
+        """Providers resolving via _get_tool with SearchTransform yield synthetic reader."""
+        from fastmcp.server.providers.base import Provider
+        from fastmcp.tools.base import Tool
+
+        class CustomProvider(Provider):
+            def __init__(self):
+                super().__init__()
+                self._tool = Tool.from_function(
+                    lambda query: f"custom: {query}", name="read_resource"
+                )
+
+            async def _list_tools(self):
+                return [self._tool]
+
+            async def _get_tool(self, name: str, version=None):
+                return self._tool if name == "read_resource" else None
+
+        provider = CustomProvider()
+        provider.add_transform(RegexSearchTransform())
+
+        server = FastMCP("Server", providers=[provider])
+
+        @server.resource("config://app")
+        def app_config() -> str:
+            return "config data"
+
+        server.add_transform(ResourcesAsTools(server))
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "read_resource" in tool_names
+
+            result = await client.call_tool("read_resource", {"uri": "config://app"})
+            assert result.data == "config data"
+
 
 class TestListResourcesTool:
     """Test the list_resources tool."""
