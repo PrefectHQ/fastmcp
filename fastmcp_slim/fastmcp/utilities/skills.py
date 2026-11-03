@@ -124,8 +124,10 @@ async def get_skill_manifest(client: Client, skill_name: str) -> SkillManifest:
     """
     _deprecated(
         "get_skill_manifest",
-        "Use `await client.get_skill('skill://<name>/SKILL.md')`; its "
-        "`resources` list every file with its digest and size.",
+        "Use `await client.read_resource('skill://<name>/_manifest')` to read "
+        "manifest JSON without the Skills extension, or "
+        "`await client.get_skill('skill://<name>/SKILL.md')` for "
+        "Skills-extension entries with file digests and sizes.",
     )
     return await _get_skill_manifest(client, skill_name)
 
