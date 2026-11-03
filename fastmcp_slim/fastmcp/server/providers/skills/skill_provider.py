@@ -9,8 +9,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import quote, unquote
 
-from anyio.to_thread import run_sync
-from mcp.shared.path_security import PathEscapeError, safe_join
+from mcp.shared.path_security import PathEscapeError
 from pydantic import AnyUrl
 
 from fastmcp.resources.base import Resource, ResourceResult
@@ -22,7 +21,6 @@ from fastmcp.server.providers.skills._common import (
     resolve_within,
     scan_skill_files,
 )
-from fastmcp.skills._resources import read_file
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec
 
@@ -72,10 +70,6 @@ class SkillResource(Resource):
         if self.is_manifest:
             return self._generate_manifest()
         else:
-            if self.skill_info.preserve_bytes:
-                return await run_sync(
-                    read_file, self.skill_info.path, self.skill_info.main_file
-                )
             main_file_path = resolve_within(
                 self.skill_info.path, self.skill_info.main_file
             )
@@ -101,9 +95,6 @@ class SkillFileTemplate(ResourceTemplate):
     async def read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult:
         """Read a file from the skill directory."""
         file_path = arguments.get("path", "")
-        if self.skill_info.preserve_bytes:
-            return await run_sync(read_file, self.skill_info.path, file_path)
-
         full_path = _resolve_supporting_file(self.skill_info.path, file_path)
 
         if not full_path.exists():
@@ -163,8 +154,6 @@ class SkillFileResource(Resource):
 
     async def read(self) -> str | bytes | ResourceResult:
         """Read the file content."""
-        if self.skill_info.preserve_bytes:
-            return await run_sync(read_file, self.skill_info.path, self.file_path)
         full_path = _resolve_supporting_file(self.skill_info.path, self.file_path)
 
         if not full_path.exists():
@@ -217,20 +206,15 @@ class SkillProvider(Provider):
         skill_path: str | Path,
         main_file_name: str = "SKILL.md",
         supporting_files: Literal["template", "resources"] = "template",
-        *,
-        _skill_info: SkillInfo | None = None,
     ) -> None:
         super().__init__()
-        self._skill_path = (
-            _skill_info.path if _skill_info is not None else Path(skill_path).resolve()
-        )
+        self._skill_path = Path(skill_path).resolve()
         self._main_file_name = main_file_name
         self._supporting_files = supporting_files
-        self._skill_info = _skill_info
+        self._skill_info: SkillInfo | None = None
 
         # Load at init to catch errors early
-        if self._skill_info is None:
-            self._load_skill()
+        self._load_skill()
 
     def _load_skill(self) -> None:
         """Load and parse the skill directory."""
@@ -375,8 +359,6 @@ class SkillProvider(Provider):
             )
         elif self._supporting_files == "resources":
             known = any(file_info.path == file_path for file_info in skill.files)
-            if skill.preserve_bytes:
-                known = safe_join(skill.path, file_path).is_file()
             if known:
                 mime_type, _ = mimetypes.guess_type(file_path)
                 return SkillFileResource(

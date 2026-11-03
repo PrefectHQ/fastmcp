@@ -156,21 +156,24 @@ A skill you read is the same value as one you build, so you can hand it to a `Sk
 
 ### Install skills into a local agent
 
-Most agents still only read skills from disk. `sync_skills()` reads every skill a server lists and writes each one into a local folder, verified the same way:
+Most agents still only read skills from disk. List a server's skills, read each one, and write it into the agent's folder:
 
 ```python
 from pathlib import Path
 
 from fastmcp import Client
-from fastmcp.utilities.skills import sync_skills
+from fastmcp.skills import SkillsClientExtension
 
-async with Client("http://localhost:8000/mcp") as client:
-    await sync_skills(client, Path.home() / ".claude" / "skills", overwrite=True)
+target = Path.home() / ".claude" / "skills"
+client = Client("http://localhost:8000/mcp", extensions=[SkillsClientExtension()])
+
+async with client:
+    for entry in await client.list_skills():
+        skill = await client.read_skill(entry.uri)
+        skill.to_directory(target / skill.name, overwrite=True)
 ```
 
-Downloads now require valid `SKILL.md` frontmatter with a `name` matching the skill's URI and a `description`; add these fields to older resource-only skills before downloading them. Digest or size mismatches raise an error before writing. `overwrite=True` replaces the existing skill folder, including removing locally added files.
-
-If a folder uses a custom main filename, create a standard `SKILL.md` with those fields and update affected relative references before exporting it as a skill. Existing resource providers can still serve the original documents through `resources/read`.
+Every file is verified before anything is written. `overwrite=True` replaces an existing skill folder, including any files added to it locally.
 
 ## Current limits
 

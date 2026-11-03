@@ -15,9 +15,8 @@ Skills extension, verifies each complete skill and exports it to a temporary
 directory. The temporary copies are removed when the example exits. No local
 agent's skills folder is changed.
 
-The last connection uses resource-only discovery with `list_skill_summaries()`.
-`read_skill()` downloads the same content through the `_manifest` fallback, so
-this also works when the connection does not negotiate Skills.
+The last connection doesn't negotiate Skills. `read_skill()` downloads the same
+content through the `_manifest` resource instead.
 
 To launch the server over stdio for another MCP client:
 
