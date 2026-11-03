@@ -113,7 +113,6 @@ from fastmcp.utilities.tasks import TaskConfig
 from fastmcp.utilities.types import AnyFunction, FastMCPBaseModel, NotSet, NotSetT
 from fastmcp.utilities.versions import (
     VersionSpec,
-    version_sort_key,
 )
 
 if TYPE_CHECKING:
@@ -948,21 +947,45 @@ class FastMCP(
         if version is not None:
             return None
 
-        all_tools = [t for t in await super().list_tools() if t.name == name]
+        # Probe successively lower versions with get calls instead of
+        # enumerating candidates by listing: a listing runs list middleware,
+        # which may hide components that a lookup must still resolve (for
+        # example, a mounted server whose middleware filters tools/list).
+        # Each probe asks for the highest version below the one just rejected.
         # During a hashed lookup, only versions of the identity being looked
         # up qualify; another tool listed under the same name does not.
         found = hashed_lookup_target(self)
-        if found is not None:
-            identity = tool_identity(found)
-            all_tools = [t for t in all_tools if tool_identity(t) == identity]
-        all_tools = list(await apply_session_transforms(all_tools))
-        enabled = [t for t in all_tools if is_enabled(t)]
-
-        authorized = [t for t in enabled if await _component_auth_allows(t)]
-
-        if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+        identity = tool_identity(found) if found is not None else None
+        spec = VersionSpec(lt=tool.version) if tool.version is not None else None
+        rejected: set[str | None] = {tool.version}
+        while spec is not None:
+            candidate = await super().get_tool(name, spec)
+            if candidate is None:
+                # The highest matching version may have been withheld by
+                # the server-level component-auth check rather than missing;
+                # learn its version from the raw aggregate result and probe
+                # below it instead of giving up.
+                raw = await AggregateProvider._get_tool(self, name, spec)
+                if raw is None or raw.version is None or raw.version in rejected:
+                    return None
+                rejected.add(raw.version)
+                spec = VersionSpec(lt=raw.version)
+                continue
+            if candidate.version in rejected:
+                return None
+            rejected.add(candidate.version)
+            candidates = await apply_session_transforms([candidate])
+            if (
+                candidates
+                and (identity is None or tool_identity(candidate) == identity)
+                and is_enabled(candidates[0])
+                and await _component_auth_allows(candidates[0])
+            ):
+                return candidates[0]
+            if candidate.version is None:
+                return None
+            spec = VersionSpec(lt=candidate.version)
+        return None
 
     async def list_resources(
         self, *, run_middleware: bool = True
@@ -1098,25 +1121,48 @@ class FastMCP(
         if version is not None:
             return None, True
 
-        all_resources = [r for r in await super().list_resources() if str(r.uri) == uri]
-        all_resources = list(await apply_session_transforms(all_resources))
-        enabled = [r for r in all_resources if is_enabled(r)]
-
-        skip_auth, token = _get_auth_context()
-        authorized: list[Resource] = []
-        for r in enabled:
-            if not skip_auth and r.auth is not None:
-                ctx = AuthContext(token=token, component=r)
+        # Probe successively lower versions with get calls instead of
+        # enumerating candidates by listing: a listing runs list middleware,
+        # which may hide components that a lookup must still resolve (for
+        # example, a mounted server whose middleware filters resources/list).
+        # Each probe asks for the highest version below the one just rejected.
+        spec = (
+            VersionSpec(lt=resource.version) if resource.version is not None else None
+        )
+        rejected: set[str | None] = {resource.version}
+        while spec is not None:
+            try:
+                candidate = await super().get_resource(uri, spec)
+            except AuthorizationError:
+                candidate = None
+            if candidate is None:
+                # The highest matching version may have been withheld by the
+                # server-level component-auth check rather than missing; learn
+                # its version from the raw aggregate result and probe below it
+                # instead of giving up.
                 try:
-                    if not await run_auth_checks(r.auth, ctx):
-                        continue
+                    raw = await AggregateProvider._get_resource(self, uri, spec)
                 except AuthorizationError:
-                    continue
-            authorized.append(r)
-
-        if not authorized:
-            return None, True
-        return max(authorized, key=version_sort_key), True
+                    return None, True
+                if raw is None or raw.version is None or raw.version in rejected:
+                    return None, True
+                rejected.add(raw.version)
+                spec = VersionSpec(lt=raw.version)
+                continue
+            if candidate.version in rejected:
+                return None, True
+            rejected.add(candidate.version)
+            resources = await apply_session_transforms([candidate])
+            if (
+                resources
+                and is_enabled(resources[0])
+                and await _component_auth_allows(resources[0])
+            ):
+                return resources[0], True
+            if candidate.version is None:
+                return None, True
+            spec = VersionSpec(lt=candidate.version)
+        return None, True
 
     async def list_resource_templates(
         self, *, run_middleware: bool = True
@@ -1241,29 +1287,42 @@ class FastMCP(
         if version is not None:
             return None
 
-        all_templates = [
-            t
-            for t in await super().list_resource_templates()
-            if t.matches(uri) is not None
-        ]
-        all_templates = list(await apply_session_transforms(all_templates))
-        enabled = [t for t in all_templates if is_enabled(t)]
-
-        skip_auth, token = _get_auth_context()
-        authorized: list[ResourceTemplate] = []
-        for t in enabled:
-            if not skip_auth and t.auth is not None:
-                ctx = AuthContext(token=token, component=t)
-                try:
-                    if not await run_auth_checks(t.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(t)
-
-        if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+        # Probe successively lower versions with get calls instead of
+        # enumerating candidates by listing: a listing runs list middleware,
+        # which may hide components that a lookup must still resolve (for
+        # example, a mounted server whose middleware filters resources/templates/list).
+        # Each probe asks for the highest version below the one just rejected.
+        spec = (
+            VersionSpec(lt=template.version) if template.version is not None else None
+        )
+        rejected: set[str | None] = {template.version}
+        while spec is not None:
+            candidate = await super().get_resource_template(uri, spec)
+            if candidate is None:
+                # The highest matching version may have been withheld by
+                # the server-level component-auth check rather than missing;
+                # learn its version from the raw aggregate result and probe
+                # below it instead of giving up.
+                raw = await AggregateProvider._get_resource_template(self, uri, spec)
+                if raw is None or raw.version is None or raw.version in rejected:
+                    return None
+                rejected.add(raw.version)
+                spec = VersionSpec(lt=raw.version)
+                continue
+            if candidate.version in rejected:
+                return None
+            rejected.add(candidate.version)
+            templates = await apply_session_transforms([candidate])
+            if (
+                templates
+                and is_enabled(templates[0])
+                and await _component_auth_allows(templates[0])
+            ):
+                return templates[0]
+            if candidate.version is None:
+                return None
+            spec = VersionSpec(lt=candidate.version)
+        return None
 
     async def list_prompts(self, *, run_middleware: bool = True) -> Sequence[Prompt]:
         """List all enabled prompts from providers.
@@ -1376,25 +1435,40 @@ class FastMCP(
         if version is not None:
             return None
 
-        all_prompts = [p for p in await super().list_prompts() if p.name == name]
-        all_prompts = list(await apply_session_transforms(all_prompts))
-        enabled = [p for p in all_prompts if is_enabled(p)]
-
-        skip_auth, token = _get_auth_context()
-        authorized: list[Prompt] = []
-        for p in enabled:
-            if not skip_auth and p.auth is not None:
-                ctx = AuthContext(token=token, component=p)
-                try:
-                    if not await run_auth_checks(p.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(p)
-
-        if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+        # Probe successively lower versions with get calls instead of
+        # enumerating candidates by listing: a listing runs list middleware,
+        # which may hide components that a lookup must still resolve (for
+        # example, a mounted server whose middleware filters prompts/list).
+        # Each probe asks for the highest version below the one just rejected.
+        spec = VersionSpec(lt=prompt.version) if prompt.version is not None else None
+        rejected: set[str | None] = {prompt.version}
+        while spec is not None:
+            candidate = await super().get_prompt(name, spec)
+            if candidate is None:
+                # The highest matching version may have been withheld by
+                # the server-level component-auth check rather than missing;
+                # learn its version from the raw aggregate result and probe
+                # below it instead of giving up.
+                raw = await AggregateProvider._get_prompt(self, name, spec)
+                if raw is None or raw.version is None or raw.version in rejected:
+                    return None
+                rejected.add(raw.version)
+                spec = VersionSpec(lt=raw.version)
+                continue
+            if candidate.version in rejected:
+                return None
+            rejected.add(candidate.version)
+            prompts = await apply_session_transforms([candidate])
+            if (
+                prompts
+                and is_enabled(prompts[0])
+                and await _component_auth_allows(prompts[0])
+            ):
+                return prompts[0]
+            if candidate.version is None:
+                return None
+            spec = VersionSpec(lt=candidate.version)
+        return None
 
     async def call_tool(
         self,

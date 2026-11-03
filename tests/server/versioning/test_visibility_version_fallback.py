@@ -14,6 +14,7 @@ from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.server.auth import AccessToken, require_scopes
+from fastmcp.server.middleware import Middleware
 from fastmcp.utilities.versions import VersionSpec
 
 
@@ -374,3 +375,116 @@ class TestFallbackRespectsAuth:
         tool = await mcp.get_tool("calc")
         assert tool is not None
         assert tool.version == "1.0"
+
+
+class HideFromLists(Middleware):
+    """Hides everything from listings; lookups are untouched."""
+
+    async def on_list_tools(self, context, call_next):
+        return []
+
+    async def on_list_prompts(self, context, call_next):
+        return []
+
+    async def on_list_resources(self, context, call_next):
+        return []
+
+    async def on_list_resource_templates(self, context, call_next):
+        return []
+
+
+def _mounted_parent_with_list_filtering() -> FastMCP:
+    """Parent mounting a child whose middleware hides all listings.
+
+    The child serves v1 and v2 of each component; the parent disables
+    the "beta" tag, which marks v2, so versionless lookups should fall
+    back to v1 even though listings through the mount come back empty.
+    """
+    child = FastMCP("child", middleware=[HideFromLists()])
+
+    @child.tool(version="1")
+    def wave() -> str:
+        return "wave from v1"
+
+    @child.tool(version="2", tags={"beta"})
+    def wave() -> str:
+        return "wave from v2"
+
+    @child.prompt(version="1")
+    def greet() -> str:
+        return "hello from v1"
+
+    @child.prompt(version="2", tags={"beta"})
+    def greet() -> str:
+        return "hello from v2"
+
+    @child.resource("data://info", version="1")
+    def info() -> str:
+        return "info from v1"
+
+    @child.resource("data://info", version="2", tags={"beta"})
+    def info() -> str:
+        return "info from v2"
+
+    @child.resource("data://items/{id}", version="1")
+    def item(id: str) -> str:
+        return f"item from v1-{id}"
+
+    @child.resource("data://items/{id}", version="2", tags={"beta"})
+    def item(id: str) -> str:
+        return f"item from v2-{id}"
+
+    parent = FastMCP("parent")
+    parent.mount(child)
+    parent.disable(tags={"beta"})
+    return parent
+
+
+class TestFallbackThroughMountWithListFilteringMiddleware:
+    """Version fallback must not depend on listing output.
+
+    Regression tests for https://github.com/PrefectHQ/fastmcp/issues/6301:
+    the fallback enumerated candidates by listing, so a mounted child
+    whose middleware filters its lists (as AuthMiddleware does) made
+    versionless lookups fail instead of falling back to the next-highest
+    enabled version. Listings themselves must stay filtered.
+    """
+
+    async def test_prompt_fallback_through_mount(self):
+        parent = _mounted_parent_with_list_filtering()
+
+        prompt = await parent.get_prompt("greet")
+        assert prompt is not None
+        assert prompt.version == "1"
+
+    async def test_tool_fallback_through_mount(self):
+        parent = _mounted_parent_with_list_filtering()
+
+        tool = await parent.get_tool("wave")
+        assert tool is not None
+        assert tool.version == "1"
+
+        result = await parent.call_tool("wave", {})
+        assert result.content[0].text == "wave from v1"
+
+    async def test_resource_fallback_through_mount(self):
+        parent = _mounted_parent_with_list_filtering()
+
+        resource = await parent.get_resource("data://info")
+        assert resource is not None
+        assert resource.version == "1"
+
+    async def test_resource_template_fallback_through_mount(self):
+        parent = _mounted_parent_with_list_filtering()
+
+        template = await parent.get_resource_template("data://items/{id}")
+        assert template is not None
+        assert template.version == "1"
+
+    async def test_listing_still_filtered_by_child_middleware(self):
+        """The fix must not un-hide listings: the child's list filtering
+        still applies to prompts/list through the mount."""
+        parent = _mounted_parent_with_list_filtering()
+
+        assert [p.name for p in await parent.list_prompts()] == []
+        assert [t.name for t in await parent.list_tools()] == []
