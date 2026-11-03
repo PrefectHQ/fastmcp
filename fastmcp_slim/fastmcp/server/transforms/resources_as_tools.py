@@ -80,23 +80,41 @@ class ResourcesAsTools(Transform):
         """Check if a tool is hidden from list_tools by an upstream transform."""
         from fastmcp.server.transforms.search.base import BaseSearchTransform
 
-        if not hasattr(self._provider, "transforms"):
-            return False
+        def _hides(provider: Any, is_top: bool = False) -> bool:
+            transforms = getattr(provider, "transforms", [])
+            if is_top:
+                try:
+                    idx = transforms.index(self)
+                    transforms = transforms[:idx]
+                except ValueError:
+                    pass
 
-        try:
-            idx = self._provider.transforms.index(self)
-        except ValueError:
-            return False
+            for transform in transforms:
+                if isinstance(transform, BaseSearchTransform):
+                    if name not in transform._always_visible:
+                        return True
 
-        for transform in self._provider.transforms[:idx]:
-            if isinstance(transform, BaseSearchTransform):
-                if name not in transform._always_visible:
+            for child in getattr(provider, "providers", []):
+                if _hides(child):
                     return True
-        return False
+
+            inner = getattr(provider, "_inner", None)
+            return bool(inner is not None and _hides(inner))
+
+        return _hides(self._provider, is_top=True)
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """Add resource tools to the tool list."""
-        existing_keys = {t.key for t in tools}
+        from fastmcp.server.server import _tool_auth_allows
+
+        existing_keys: set[str] = set()
+        for t in tools:
+            try:
+                if await _tool_auth_allows(t):
+                    existing_keys.add(t.key)
+            except Exception:
+                existing_keys.add(t.key)
+
         synthetic: list[Tool] = []
         list_tool = self._make_list_resources_tool()
         if list_tool.key not in existing_keys:
@@ -110,6 +128,8 @@ class ResourcesAsTools(Transform):
         self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get a tool by name, including generated resource tools."""
+        from fastmcp.server.server import _tool_auth_allows
+
         if name not in ("list_resources", "read_resource"):
             return await call_next(name, version=version)
 
@@ -125,7 +145,12 @@ class ResourcesAsTools(Transform):
 
         existing = await call_next(name, version=version)
         if existing is not None:
-            return existing
+            try:
+                allowed = await _tool_auth_allows(existing)
+            except Exception:
+                allowed = True
+            if allowed:
+                return existing
 
         if syn_matches:
             return syn

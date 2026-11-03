@@ -130,6 +130,70 @@ class TestPromptsAsToolsBasic:
             data = json.loads(result.data)
             assert "Hello, Alice!" in data["messages"][0]["content"]
 
+    async def test_provider_scoped_search_transform_hiding(self):
+        """When child provider has RegexSearchTransform, parent PromptsAsTools advertises and calls synthetic tool."""
+        from fastmcp.server.providers import LocalProvider
+
+        mcp = FastMCP("Test")
+        child = LocalProvider()
+
+        @child.tool
+        def get_prompt(query: str) -> str:
+            return f"child: {query}"
+
+        child.add_transform(RegexSearchTransform())
+        mcp.add_provider(child)
+
+        @mcp.prompt
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "get_prompt" in tool_names
+            assert "list_prompts" in tool_names
+
+            result = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(result.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
+
+    async def test_auth_denied_user_tool_falls_back_to_synthetic_tool(self):
+        """When user tool is denied by auth, synthetic tool is advertised and callable."""
+        from fastmcp.server.auth import AuthContext
+        from fastmcp.server.context import _current_transport
+
+        def _deny(ctx: AuthContext) -> bool:
+            return False
+
+        mcp = FastMCP("Test")
+
+        @mcp.tool(auth=_deny)
+        def get_prompt(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.prompt
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        token = _current_transport.set("http")
+        try:
+            tools = await mcp.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "get_prompt" in tool_names
+
+            tool = await mcp.get_tool("get_prompt")
+            assert tool is not None
+            assert "name" in tool.parameters["properties"]
+        finally:
+            _current_transport.reset(token)
+
 
 class TestListPromptsTool:
     """Test the list_prompts tool."""

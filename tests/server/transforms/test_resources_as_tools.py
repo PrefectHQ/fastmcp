@@ -127,6 +127,63 @@ class TestResourcesAsToolsBasic:
             result = await client.call_tool("read_resource", {"uri": "config://app"})
             assert result.data == "config data"
 
+    async def test_provider_scoped_search_transform_hiding(self):
+        """When child provider has RegexSearchTransform, parent ResourcesAsTools advertises and calls synthetic tool."""
+        from fastmcp.server.providers import LocalProvider
+
+        mcp = FastMCP("Test")
+        child = LocalProvider()
+
+        @child.tool
+        def read_resource(query: str) -> str:
+            return f"child: {query}"
+
+        child.add_transform(RegexSearchTransform())
+        mcp.add_provider(child)
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "config data"
+
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "read_resource" in tool_names
+            assert "list_resources" in tool_names
+
+            result = await client.call_tool("read_resource", {"uri": "config://app"})
+            assert result.data == "config data"
+
+    async def test_auth_denied_user_tool_falls_back_to_synthetic_tool(self):
+        """When user tool is denied by auth, synthetic tool is advertised and callable."""
+        from fastmcp.server.context import _current_transport
+
+        mcp = FastMCP("Test")
+
+        @mcp.tool(auth=_deny_all)
+        def read_resource(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "config data"
+
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        token = _current_transport.set("http")
+        try:
+            tools = await mcp.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "read_resource" in tool_names
+
+            tool = await mcp.get_tool("read_resource")
+            assert tool is not None
+            assert "uri" in tool.parameters["properties"]
+        finally:
+            _current_transport.reset(token)
+
 
 class TestListResourcesTool:
     """Test the list_resources tool."""
