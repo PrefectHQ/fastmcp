@@ -15,6 +15,9 @@ from yaml.nodes import MappingNode
 
 from fastmcp.skills.models import MCPSkill, SkillFrontmatter
 from fastmcp.skills.skill import Skill, _validate_limits
+from fastmcp.utilities.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class _FrontmatterLoader(yaml.SafeLoader):
@@ -65,7 +68,20 @@ def parse_frontmatter(content: bytes) -> SkillFrontmatter:
     if not isinstance(value, dict):
         raise ValueError("frontmatter must be a mapping")
     _validate_json(value, set())
-    return SkillFrontmatter.model_validate(value)
+    frontmatter = SkillFrontmatter.model_validate(value)
+    if any(not isinstance(item, str) for item in (frontmatter.metadata or {}).values()):
+        logger.info(
+            "Skill %r has non-string metadata values; the Agent Skills spec "
+            "expects strings, so they are served as written",
+            frontmatter.name,
+        )
+    if isinstance(frontmatter.allowed_tools, list):
+        logger.info(
+            "Skill %r lists allowed-tools as a list; the Agent Skills spec "
+            "expects a space-separated string, so it is served as written",
+            frontmatter.name,
+        )
+    return frontmatter
 
 
 def scan_files(root: Path) -> list[Path]:

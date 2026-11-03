@@ -68,7 +68,7 @@ def test_snapshot_retains_backing_paths_for_encoded_nested_files(tmp_path: Path)
         "custom: !!set {a: null}",
         "custom: &cycle [*cycle]",
         "custom: {a: &x 1, b: *x}",
-        "metadata: {count: 2}",
+        "metadata: [author, version]",
     ],
 )
 def test_rejects_lossy_or_invalid_frontmatter(extra: str):
