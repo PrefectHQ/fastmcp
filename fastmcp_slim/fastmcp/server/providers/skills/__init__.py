@@ -6,13 +6,16 @@ Every name here warns with the replacement and will be removed in FastMCP 5.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from fastmcp._warnings import FastMCPDeprecationWarning
 from fastmcp.skills.provider import (
     SkillCatalogProvider,
+    _invalid_folder,
+)
+from fastmcp.skills.provider import (
     SkillsDirectoryProvider as _SkillsDirectoryProvider,
 )
 from fastmcp.skills.skill import Skill
@@ -64,34 +67,58 @@ def SkillProvider(skill_path: str | Path, **_: Any) -> SkillCatalogProvider:
         "`fastmcp.skills.provider` and `fastmcp.skills`, or point "
         "`SkillsDirectoryProvider` at the parent folder.",
     )
-    return SkillCatalogProvider([Skill.from_directory(skill_path)])
+    folder = Path(skill_path)
+    try:
+        skill = Skill.from_directory(folder)
+    except (OSError, ValueError) as exc:
+        raise ValueError(_invalid_folder(folder, folder.name, exc)) from exc
+    return SkillCatalogProvider([skill])
 
 
-def _preset(name: str, *roots: str) -> Callable[..., _SkillsDirectoryProvider]:
-    paths = ", ".join(f'Path("{root}").expanduser()' for root in roots)
+class _VendorPreset(SkillsDirectoryProvider):
+    _ROOTS: tuple[str, ...] = ()
 
-    def preset(reload: bool = False, **_: Any) -> _SkillsDirectoryProvider:
+    def __init__(self, reload: bool = False, supporting_files: Any = None) -> None:
+        paths = ", ".join(f'Path("{root}").expanduser()' for root in self._ROOTS)
         _warn(
-            name,
+            type(self).__name__,
             "Use `from fastmcp.skills.provider import SkillsDirectoryProvider` and "
             f"`SkillsDirectoryProvider([{paths}])`.",
         )
-        return _SkillsDirectoryProvider(roots, reload=reload)
-
-    preset.__name__ = preset.__qualname__ = name
-    return preset
+        _SkillsDirectoryProvider.__init__(self, self._ROOTS, reload=reload)
 
 
-ClaudeSkillsProvider = _preset("ClaudeSkillsProvider", "~/.claude/skills")
-CursorSkillsProvider = _preset("CursorSkillsProvider", "~/.cursor/skills")
-VSCodeSkillsProvider = _preset("VSCodeSkillsProvider", "~/.copilot/skills")
-CopilotSkillsProvider = _preset("CopilotSkillsProvider", "~/.copilot/skills")
-CodexSkillsProvider = _preset(
-    "CodexSkillsProvider", "/etc/codex/skills", "~/.codex/skills"
-)
-GeminiSkillsProvider = _preset("GeminiSkillsProvider", "~/.gemini/skills")
-GooseSkillsProvider = _preset("GooseSkillsProvider", "~/.config/agents/skills")
-OpenCodeSkillsProvider = _preset("OpenCodeSkillsProvider", "~/.config/opencode/skills")
+class ClaudeSkillsProvider(_VendorPreset):
+    _ROOTS = ("~/.claude/skills",)
+
+
+class CursorSkillsProvider(_VendorPreset):
+    _ROOTS = ("~/.cursor/skills",)
+
+
+class VSCodeSkillsProvider(_VendorPreset):
+    _ROOTS = ("~/.copilot/skills",)
+
+
+class CopilotSkillsProvider(_VendorPreset):
+    _ROOTS = ("~/.copilot/skills",)
+
+
+class CodexSkillsProvider(_VendorPreset):
+    _ROOTS = ("/etc/codex/skills", "~/.codex/skills")
+
+
+class GeminiSkillsProvider(_VendorPreset):
+    _ROOTS = ("~/.gemini/skills",)
+
+
+class GooseSkillsProvider(_VendorPreset):
+    _ROOTS = ("~/.config/agents/skills",)
+
+
+class OpenCodeSkillsProvider(_VendorPreset):
+    _ROOTS = ("~/.config/opencode/skills",)
+
 
 __all__ = [
     "ClaudeSkillsProvider",

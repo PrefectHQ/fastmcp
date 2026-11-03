@@ -53,7 +53,11 @@ def test_old_skill_provider_serves_one_folder(tmp_path: Path):
     assert isinstance(provider, SkillCatalogProvider)
 
 
-def test_vendor_preset_names_its_folder():
+def test_vendor_preset_names_its_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     from fastmcp.server.providers import ClaudeSkillsProvider
     from fastmcp.server.providers.skills import CodexSkillsProvider
 
@@ -61,7 +65,9 @@ def test_vendor_preset_names_its_folder():
         provider = CodexSkillsProvider()
     assert isinstance(provider, SkillsDirectoryProvider)
     with pytest.warns(FastMCPDeprecationWarning, match=r"\.claude/skills"):
-        ClaudeSkillsProvider()
+        claude = ClaudeSkillsProvider()
+    assert isinstance(claude, ClaudeSkillsProvider)
+    assert not isinstance(claude, CodexSkillsProvider)
 
 
 async def test_sync_and_download_still_install(tmp_path: Path):
@@ -75,6 +81,31 @@ async def test_sync_and_download_still_install(tmp_path: Path):
             downloaded = await download_skill(client, "review", tmp_path / "b")
     assert Skill.from_directory(synced) == REVIEW
     assert Skill.from_directory(downloaded) == REVIEW
+
+
+async def test_sync_skills_installs_from_a_server_without_the_extension(
+    tmp_path: Path,
+):
+    from fastmcp.utilities.skills import sync_skills
+
+    server = FastMCP("Skills", providers=[SkillCatalogProvider([REVIEW])])
+    async with Client(server) as client:
+        with pytest.warns(FastMCPDeprecationWarning):
+            (synced,) = await sync_skills(client, tmp_path)
+    assert Skill.from_directory(synced) == REVIEW
+
+
+def test_old_skill_provider_names_the_fix(tmp_path: Path):
+    from fastmcp.server.providers.skills import SkillProvider
+
+    folder = tmp_path / "pdf_tools"
+    folder.mkdir()
+    (folder / "SKILL.md").write_text("# PDF tools\n")
+    with (
+        pytest.warns(FastMCPDeprecationWarning),
+        pytest.raises(ValueError, match="rename the folder to 'pdf-tools'"),
+    ):
+        SkillProvider(folder)
 
 
 def test_removed_helpers_name_their_replacement():

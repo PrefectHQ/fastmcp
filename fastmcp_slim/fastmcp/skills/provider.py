@@ -6,6 +6,7 @@ import hashlib
 import json
 import mimetypes
 import os
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import suppress
 from pathlib import Path
@@ -208,9 +209,12 @@ class SkillsDirectoryProvider(SkillCatalogProvider):
 
     A folder containing a `SKILL.md` is a skill, served at its path relative to
     the root, so `root/ops/deploy/SKILL.md` becomes `skill://ops/deploy/SKILL.md`.
-    The folder name must match the `name` in its `SKILL.md`. Folders that aren't
-    valid skills are skipped with a warning. When a path appears under more than
-    one root, the first root wins.
+    Each `SKILL.md` must follow the [Agent Skills spec](https://agentskills.io/specification):
+    YAML frontmatter with a `description` and a `name` of lowercase letters,
+    digits and hyphens that matches its folder. An invalid folder raises
+    `ValueError` naming the fix, so a server never starts with skills missing.
+    Hidden folders are skipped. When a path appears under more than one root,
+    the first root wins.
 
     Skills are read once, at construction. Pass `reload=True` to re-read the
     folders on every request while you're editing them.
@@ -237,7 +241,8 @@ class SkillsDirectoryProvider(SkillCatalogProvider):
             roots = [roots]
         self._roots = tuple(Path(root).expanduser().absolute() for root in roots)
         self._reload = reload
-        super().__init__(None if reload else self._scan())
+        # Scan even with reload=True so an invalid folder fails at startup.
+        super().__init__(self._scan())
 
     async def load_skills(self) -> SkillCatalog:
         if self._reload:
@@ -251,6 +256,7 @@ class SkillsDirectoryProvider(SkillCatalogProvider):
 
     def _scan(self) -> dict[str, Skill]:
         skills: dict[str, Skill] = {}
+        invalid: list[str] = []
         for root in self._roots:
             for path, folder in _skill_folders(root):
                 if path in skills:
@@ -259,19 +265,22 @@ class SkillsDirectoryProvider(SkillCatalogProvider):
                 if any(_nested(path, other) for other in skills):
                     logger.warning("Skipping skill %r nested in another skill", path)
                     continue
+                folder_name = path.rsplit("/", 1)[-1]
                 try:
                     skill = Skill.from_directory(folder)
+                    if skill.name != folder_name:
+                        raise ValueError(
+                            f"folder name must match its SKILL.md name {skill.name!r}"
+                        )
                 except (OSError, ValueError) as exc:
-                    logger.warning("Skipping invalid skill at %s: %s", folder, exc)
-                    continue
-                if skill.name != path.rsplit("/", 1)[-1]:
-                    logger.warning(
-                        "Skipping skill at %s: folder name must match its SKILL.md name %r",
-                        root / path,
-                        skill.name,
-                    )
+                    invalid.append(_invalid_folder(root / path, folder_name, exc))
                     continue
                 skills[path] = skill
+        if invalid:
+            raise ValueError(
+                f"{len(invalid)} skill folder(s) are not valid Agent Skills "
+                "(https://agentskills.io/specification):\n" + "\n".join(invalid)
+            )
         return skills
 
     def __repr__(self) -> str:
@@ -280,11 +289,28 @@ class SkillsDirectoryProvider(SkillCatalogProvider):
         )
 
 
+def _invalid_folder(folder: Path, folder_name: str, exc: Exception) -> str:
+    """One line per invalid folder: what's wrong, then how to fix it."""
+    reason = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+    if isinstance(exc, OSError) or any(
+        word in reason for word in ("symlink", "non-regular", "at most")
+    ):
+        return f"- {folder}: {reason}"
+    name = re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", folder_name.lower()))
+    name = name.strip("-")[:64] or "my-skill"
+    rename = f"rename the folder to {name!r} and " if name != folder_name else ""
+    return (
+        f"- {folder}: {reason}. Fix: {rename}start SKILL.md with "
+        f"'---\\nname: {name}\\ndescription: <what it does and when to use it>\\n---'"
+    )
+
+
 def _skill_folders(root: Path) -> list[tuple[str, Path]]:
     """Find skill folders below `root` as (relative path, folder) pairs.
 
     A skill folder's subfolders belong to the skill, so the walk stops there.
-    A symlink is followed only when it points at a skill folder.
+    A symlink is followed only when it points at a skill folder. Hidden folders,
+    such as `.git`, are skipped.
     """
     found: list[tuple[str, Path]] = []
 
@@ -295,6 +321,8 @@ def _skill_folders(root: Path) -> list[tuple[str, Path]]:
             logger.warning("Skipping unreadable skills folder %s: %s", directory, exc)
             return
         for entry in entries:
+            if entry.name.startswith("."):
+                continue
             path = f"{prefix}{entry.name}"
             try:
                 if not entry.is_dir():

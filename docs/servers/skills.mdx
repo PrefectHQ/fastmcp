@@ -82,7 +82,7 @@ root = Path.home() / ".claude" / "skills"
 mcp = FastMCP("Local Skills", providers=[SkillsDirectoryProvider(root)])
 ```
 
-Each folder name must match the `name` in its `SKILL.md`, and a folder that isn't a valid skill is skipped with a warning. Pass several roots and the first one wins when two contain the same path. The provider reads the folders once at startup; pass `reload=True` to re-read them on every request while you're editing a skill.
+Each `SKILL.md` must follow the [Agent Skills spec](https://agentskills.io/specification): YAML frontmatter with a `description` and a `name` of lowercase letters, digits and hyphens that matches its folder. A folder that breaks the rules stops the server at startup with an error naming the fix for each one, so a server never comes up quietly missing skills. Hidden folders such as `.git` are skipped. Pass several roots and the first one wins when two contain the same path. The provider reads the folders once at startup; pass `reload=True` to re-read them on every request while you're editing a skill.
 
 ## Access control
 

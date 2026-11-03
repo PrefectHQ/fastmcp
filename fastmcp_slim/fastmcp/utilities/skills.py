@@ -52,9 +52,20 @@ async def sync_skills(
 ) -> list[Path]:
     """Deprecated: read every listed skill and write each to `target_dir`."""
     _warn("sync_skills", "Loop over `await client.list_skills()`. " + _INSTALL)
+    if client._skills_unavailable_reason() is None:
+        uris = [entry.uri for entry in await client.list_skills()]
+    else:
+        # A 4.1 server or a client without the extension: find skills as resources.
+        resources = await client.list_resources()
+        uris = [
+            str(resource.uri)
+            for resource in resources
+            if str(resource.uri).startswith("skill://")
+            and str(resource.uri).endswith("/SKILL.md")
+        ]
     paths = []
-    for entry in await client.list_skills():
-        skill = await client.read_skill(entry.uri)
+    for uri in uris:
+        skill = await client.read_skill(uri)
         target = Path(target_dir).expanduser() / skill.name
         if target.exists() and not overwrite:
             continue

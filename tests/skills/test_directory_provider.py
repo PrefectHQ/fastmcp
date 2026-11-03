@@ -59,18 +59,42 @@ async def test_a_skill_folder_owns_everything_below_it(tmp_path: Path):
     assert "examples/inner/SKILL.md" in skill.files
 
 
-async def test_invalid_folders_are_skipped(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-):
+def test_invalid_folders_stop_startup_with_a_fix_for_each(tmp_path: Path):
     write_skill(tmp_path / "good")
     write_skill(tmp_path / "renamed", name="other")
-    (tmp_path / "no-frontmatter").mkdir()
-    (tmp_path / "no-frontmatter" / "SKILL.md").write_bytes(b"# Just text\n")
-    write_skill(tmp_path / "bad-yaml", body="")
+    (tmp_path / "use_cli").mkdir()
+    (tmp_path / "use_cli" / "SKILL.md").write_bytes(b"# Just text\n")
+    (tmp_path / "bad-yaml").mkdir()
     (tmp_path / "bad-yaml" / "SKILL.md").write_bytes(b"---\nname: [\n---\n")
 
-    assert await listed(SkillsDirectoryProvider(tmp_path)) == ["skill://good/SKILL.md"]
-    assert caplog.text.count("Skipping invalid skill") == 3
+    with pytest.raises(ValueError, match="3 skill folder") as exc_info:
+        SkillsDirectoryProvider(tmp_path)
+
+    lines = str(exc_info.value).splitlines()[1:]
+    assert [line.split(":")[0] for line in lines] == [
+        f"- {tmp_path / 'bad-yaml'}",
+        f"- {tmp_path / 'renamed'}",
+        f"- {tmp_path / 'use_cli'}",
+    ]
+    assert "rename the folder to 'use-cli'" in lines[2]
+    assert "name: use-cli" in lines[2]
+    assert "rename the folder" not in lines[1]
+
+
+def test_reload_also_validates_at_startup(tmp_path: Path):
+    write_skill(tmp_path / "renamed", name="other")
+    with pytest.raises(ValueError, match="must match"):
+        SkillsDirectoryProvider(tmp_path, reload=True)
+
+
+async def test_hidden_folders_are_not_walked(tmp_path: Path):
+    write_skill(tmp_path / ".system" / "secret")
+    write_skill(tmp_path / ".hidden")
+    write_skill(tmp_path / "review")
+
+    assert await listed(SkillsDirectoryProvider(tmp_path)) == [
+        "skill://review/SKILL.md"
+    ]
 
 
 async def test_first_root_wins(tmp_path: Path):
@@ -110,12 +134,13 @@ async def test_symlinked_skill_folder_is_followed(tmp_path: Path):
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges")
-async def test_symlink_inside_a_skill_rejects_it(tmp_path: Path):
+def test_symlink_inside_a_skill_rejects_it(tmp_path: Path):
     folder = write_skill(tmp_path / "review")
     (tmp_path / "secret.txt").write_text("secret")
     os.symlink(tmp_path / "secret.txt", folder / "notes.md")
 
-    assert await listed(SkillsDirectoryProvider(tmp_path)) == []
+    with pytest.raises(ValueError, match="symlink"):
+        SkillsDirectoryProvider(tmp_path)
 
 
 async def test_without_reload_folders_are_read_once(tmp_path: Path):
@@ -153,14 +178,14 @@ async def test_reload_shows_edits_through_the_response_cache(tmp_path: Path):
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges")
-async def test_symlink_named_differently_from_its_skill_is_skipped(tmp_path: Path):
+def test_symlink_named_differently_from_its_skill_is_rejected(tmp_path: Path):
     target = write_skill(tmp_path / "elsewhere" / "review")
     root = tmp_path / "skills"
     root.mkdir()
     os.symlink(target, root / "renamed", target_is_directory=True)
-    write_skill(root / "deploy")
 
-    assert await listed(SkillsDirectoryProvider(root)) == ["skill://deploy/SKILL.md"]
+    with pytest.raises(ValueError, match="renamed"):
+        SkillsDirectoryProvider(root)
 
 
 async def test_unreadable_folder_is_skipped(
