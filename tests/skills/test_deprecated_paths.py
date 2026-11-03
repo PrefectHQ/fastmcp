@@ -253,11 +253,17 @@ def test_41_skill_pydantic_field_and_instance_checks():
     envelope = Envelope.model_validate({"skill": payload})
     assert isinstance(envelope.skill, Skill)
     assert isinstance(envelope.skill, MCPSkill)
-    assert Envelope.model_validate_json(envelope.model_dump_json()) == envelope
+    assert (
+        Envelope.model_validate_json(envelope.model_dump_json(by_alias=True))
+        == envelope
+    )
     assert Envelope.model_json_schema()["properties"]["skill"]
     adapter = TypeAdapter(Skill)
     assert adapter.validate_python(payload) == envelope.skill
-    assert adapter.validate_json(adapter.dump_json(envelope.skill)) == envelope.skill
+    assert (
+        adapter.validate_json(adapter.dump_json(envelope.skill, by_alias=True))
+        == envelope.skill
+    )
     assert adapter.validate_python(REVIEW) is REVIEW
 
 
