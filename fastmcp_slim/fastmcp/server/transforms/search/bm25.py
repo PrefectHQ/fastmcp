@@ -81,8 +81,8 @@ class _BM25Index:
 
 
 def _catalog_hash(tools: Sequence[Tool]) -> str:
-    """SHA256 hash of sorted tool searchable text for staleness detection."""
-    key = json.dumps(sorted(_extract_searchable_text(t) for t in tools))
+    """SHA256 hash of sorted tool names and searchable text for staleness detection."""
+    key = json.dumps(sorted((t.name, _extract_searchable_text(t)) for t in tools))
     return hashlib.sha256(key.encode()).hexdigest()
 
 
