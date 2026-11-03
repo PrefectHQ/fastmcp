@@ -64,15 +64,16 @@ On GitHub Pages, the browser reads JSON directly from the public `status` branch
 
 ## Public triage leads
 
-The same half-hourly backlog job publishes `triage.json` (`fastmcp-public-triage/1`).
-It reuses the complete inventory read for age buckets and inspects the five oldest
+The existing half-hourly workflow publishes `triage.json` (`fastmcp-public-triage/1`)
+from a separate read-only job. Its independent public inventory read supplies age
+buckets and the five oldest
 open, non-draft, non-held contributor PR leads (by non-maintainer user accounts).
 Non-draft does not imply ready: contributors may still owe revisions. Both JSON and the
 page are public, reproducible from this repository, and independent of personal
 infrastructure, models, private reviewer ledgers, and Prefect Cloud credentials.
 
 ```sh
-python scripts/backlog_status.py --previous previous-backlog.json --output backlog.json --triage-output triage.json
+python scripts/public_triage.py --output triage.json
 ```
 
 Run in a checkout with `gh` authenticated for read access. The report records the
@@ -81,8 +82,13 @@ head/base and activity collection status. Conversation comments and submitted
 reviews use all API pages; inline threads and other timeline events are excluded.
 Failed reads stay unavailable, never “unanswered.” Maintainer account activity
 can be agent-assisted and is not acknowledgement or approval. Triage-app review
-presence is separated from a review on the snapshot head; neither proves tests
-or independent verification. Reads are not atomic: recheck heads, holds, discussion,
+presence is separated from an authenticated EGM marker matching the PR number,
+snapshot head, submitted-review commit and separately collected target-branch tip.
+`base_sha` is the PR metadata's reported base; `baseline_sha` is the target tip
+read from the branch endpoint. A missing target tip makes revision matching
+unknown, not false. Valid public marker bindings retain the review ID and body
+hash, not the body. None of these observations proves tests or independent
+verification. Reads are not atomic: recheck heads, holds, discussion,
 CI, compatibility and supported behavior before any action. Missing from this
 bounded oldest-first queue does not mean handled. No closure/merge is authorized.
 
@@ -97,3 +103,27 @@ performance, contributor credit and downstream compatibility checks.
 
 Refresh waits for both datasets; superseded successes and errors cannot replace
 a newer refresh. Check this behavior with `node --test tests/test_status_refresh.cjs`.
+
+## Collection failures and publication independence
+
+PR-detail reads retry once for timeouts, invalid JSON, HTTP 429 and HTTP 5xx.
+Authentication/permission/not-found errors are not blindly retried. Public
+`collection_diagnostics` contain only a stage, fixed error category, numeric HTTP
+status when available and attempt count. Raw stdout, stderr, response bodies and
+credentials are never diagnostics. A successful PR observation survives a failed
+discussion or target-tip read. `lead_collection_status` is partial when any
+returned lead has a gap; it does not claim coverage of all PRs or all activity.
+
+The first PR build retained five unavailable detail reads without their causes;
+that artifact cannot establish why they failed. This diagnostics contract makes
+future gaps inspectable without inventing an outage diagnosis or a no-response
+verdict. A successful retry is not evidence that historical failures had the
+same cause.
+
+Backlog collection and publication do not depend on the optional triage job.
+Both publishers serialize writes to the existing status branch. The independent
+reads can observe different queue states; compare their collection timestamps
+rather than treating different totals as an inconsistency. A failed triage
+build leaves its previous snapshot to age visibly while the backlog can still
+advance. The public marker lookup reads GitHub only; it neither queries private
+Cloud artifacts nor acknowledges, authorizes or executes workflow decisions.

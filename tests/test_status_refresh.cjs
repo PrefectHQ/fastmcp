@@ -132,3 +132,54 @@ test("older failed requests cannot clear newer results", async () => {
   assert.equal(h.elements.get("triage-freshness").textContent, latestTriage);
   assert.notEqual(h.elements.get("notice")?.hidden, false);
 });
+
+function textContent(element) {
+  return [
+    element.textContent || "",
+    ...(element.children || []).map(textContent),
+  ].join(" ");
+}
+for (const [matching, expected] of [
+  [true, "marker matches snapshot head and target baseline"],
+  [false, "Historical or unbound triage-app review"],
+  [null, "target baseline unavailable"],
+]) {
+  test(`review display respects revision match ${matching}`, async () => {
+    const h = harness();
+    const report = triage("2026-11-03T12:00:00Z");
+    report.review_leads = [
+      {
+        number: 1,
+        title: "Fixture",
+        age_days: 10,
+        head_sha: "a".repeat(40),
+        baseline_sha: matching === null ? null : "b".repeat(40),
+        target: "main",
+        activity: {
+          status: "collected",
+          triage_app_review_seen: true,
+          triage_app_review_on_snapshot_revision: matching,
+        },
+        collection_diagnostics:
+          matching === null
+            ? [
+                {
+                  stage: "target_baseline",
+                  kind: "http_error",
+                  http_status: 403,
+                  attempts: 1,
+                },
+              ]
+            : [],
+      },
+    ];
+    h.respond(h.requests("triage")[0].index, report);
+    h.respond(h.requests("backlog")[0].index, backlog("2026-11-03T12:00:00Z"));
+    await flush();
+    const text = textContent(h.elements.get("triage-leads"));
+    assert.ok(text.includes(expected), text);
+    if (matching !== true) assert.ok(!text.includes("marker matches"));
+    if (matching === null)
+      assert.ok(text.includes("target_baseline: http_error (HTTP 403)"));
+  });
+}

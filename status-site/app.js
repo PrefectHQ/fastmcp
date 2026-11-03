@@ -505,7 +505,9 @@ async function refreshTriage(generation) {
         report.selection.returned === 1 ? "" : "s"
       } shown from ${
         report.selection.eligible_in_inventory
-      } eligible PRs. Reads are not atomic.`;
+      } eligible PRs. Detail collection: ${
+        report.lead_collection_status || "unknown"
+      }. Reads are not atomic.`;
     const ages = node("table"),
       header = node("tr");
     for (const label of [
@@ -543,16 +545,31 @@ async function refreshTriage(generation) {
           ? `Last maintainer account activity: ${dateLabel(last)}.`
           : "No maintainer account response in collected conversation comments or reviews.";
         if (lead.activity.triage_app_review_seen)
-          status += lead.activity.triage_app_review_on_snapshot_head
-            ? " Triage-app review on snapshot head; verification still needs checking."
-            : " Historical triage-app review; no review on snapshot head.";
+          status += lead.activity.triage_app_review_on_snapshot_revision
+            ? " Triage-app marker matches snapshot head and target baseline; verification still needs checking."
+            : lead.activity.triage_app_review_on_snapshot_revision === null
+              ? " Triage-app review seen; target baseline unavailable."
+              : " Historical or unbound triage-app review; no matching revision marker.";
       }
       description.append(node("small", status));
+      for (const gap of lead.collection_diagnostics || [])
+        description.append(
+          node(
+            "small",
+            ` ${gap.stage}: ${gap.kind}${
+              gap.http_status ? ` (HTTP ${gap.http_status})` : ""
+            }; ${gap.attempts} attempt(s).`,
+          ),
+        );
       if (lead.head_sha)
         description.append(
           node(
             "small",
-            ` Snapshot head ${lead.head_sha.slice(0, 8)} · ${lead.target}.`,
+            ` Snapshot head ${lead.head_sha.slice(0, 8)} · ${lead.target}${
+              lead.baseline_sha
+                ? ` at ${lead.baseline_sha.slice(0, 8)}`
+                : " (baseline unavailable)"
+            }.`,
           ),
         );
       row.append(

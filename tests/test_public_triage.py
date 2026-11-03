@@ -2,7 +2,9 @@
 
 import importlib.util
 import json
+import os
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -72,7 +74,7 @@ def test_discussion_after_first_page_and_historical_review(triage, monkeypatch):
         calls.append(command)
         value = [[*comments], [last]] if "comments" in command[2] else [[review]]
         if "--paginate" not in command:
-            value = pr()
+            value = {"commit": {"sha": "b" * 40}} if "branches/" in command[2] else pr()
         return SimpleNamespace(stdout=json.dumps(value))
 
     monkeypatch.setattr(triage.subprocess, "run", run)
@@ -81,9 +83,13 @@ def test_discussion_after_first_page_and_historical_review(triage, monkeypatch):
     assert lead["activity"]["comments"] == 101
     assert lead["activity"]["last_maintainer_account_activity_at"] == last["created_at"]
     assert lead["activity"]["triage_app_review_seen"] is True
-    assert lead["activity"]["triage_app_review_on_snapshot_head"] is False
+    assert lead["activity"]["triage_app_review_on_snapshot_revision"] is False
     assert lead["head_sha"] == "a" * 40
-    assert all("--slurp" in command for command in calls[1:])
+    assert all(
+        "--slurp" in command
+        for command in calls
+        if "comments" in command[2] or "reviews" in command[2]
+    )
 
 
 def test_failed_activity_is_unknown_not_unanswered(triage, monkeypatch):
@@ -206,3 +212,258 @@ def test_discussion_failure_preserves_successful_head_observation(triage, monkey
     assert lead["pr_collected_at"]
     assert lead["activity"] == {"status": "unavailable"}
     assert "collection_gap" in lead
+
+
+@pytest.mark.parametrize(
+    "failure,expected_kind,status,expected_calls",
+    [
+        (
+            subprocess.TimeoutExpired("gh", 15, stderr="secret-sentinel"),
+            "timeout",
+            None,
+            2,
+        ),
+        (
+            subprocess.CalledProcessError(1, "gh", stderr="secret-sentinel (HTTP 503)"),
+            "http_error",
+            503,
+            2,
+        ),
+        (
+            subprocess.CalledProcessError(1, "gh", stderr="secret-sentinel (HTTP 403)"),
+            "http_error",
+            403,
+            1,
+        ),
+        (
+            subprocess.CalledProcessError(
+                1,
+                "gh",
+                stderr="invalid character 'S' looking for beginning of value: secret-sentinel",
+            ),
+            "invalid_json",
+            None,
+            2,
+        ),
+    ],
+)
+def test_sanitized_diagnostics_and_bounded_retry(
+    triage, monkeypatch, failure, expected_kind, status, expected_calls
+):
+    calls = []
+
+    def run(*args, **kwargs):
+        calls.append(args)
+        raise failure
+
+    monkeypatch.setattr(triage.subprocess, "run", run)
+    monkeypatch.setattr(triage.time, "sleep", lambda seconds: None)
+    report = triage.build([item()], NOW)
+    gap = report["review_leads"][0]["collection_diagnostics"][0]
+    assert gap == {
+        "stage": "pr_metadata",
+        "kind": expected_kind,
+        "attempts": expected_calls,
+        "http_status": status,
+    }
+    assert len(calls) == expected_calls
+    assert "secret-sentinel" not in json.dumps(report)
+    assert report["review_leads"][0]["activity"]["status"] == "unavailable"
+
+
+def test_transient_non_json_response_recovers_without_retaining_body(
+    triage, monkeypatch
+):
+    results = iter(
+        [
+            SimpleNamespace(stdout="Server Error secret-sentinel"),
+            SimpleNamespace(stdout=json.dumps(pr())),
+        ]
+    )
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        return next(results)
+
+    monkeypatch.setattr(triage.subprocess, "run", run)
+    monkeypatch.setattr(triage.time, "sleep", lambda seconds: None)
+    assert triage.github("pulls/1")["head"]["sha"] == "a" * 40
+    assert len(calls) == 2
+
+
+def marked_review(*, head="a" * 40, baseline="b" * 40, number=1, **overrides):
+    return (
+        activity(
+            "fastmcp-triage-reviewer[bot]",
+            "2026-10-03T00:00:00Z",
+            bot=True,
+            id=7,
+            state="COMMENTED",
+            commit_id=head,
+            body=f"<!-- fastmcp-triage-review:v1 pr:{number} head:{head} base:{baseline} -->\nPublic finding",
+        )
+        | overrides
+    )
+
+
+@pytest.mark.parametrize(
+    "review,expected",
+    [
+        (marked_review(), True),
+        (marked_review(baseline="c" * 40), False),
+        (marked_review(head="c" * 40), False),
+        (marked_review(number=2), False),
+        (marked_review(commit_id="c" * 40), False),
+        (marked_review(body="unbound review"), False),
+        (marked_review(state="DISMISSED"), False),
+    ],
+)
+def test_review_provenance_requires_pr_head_and_current_target_baseline(
+    triage, monkeypatch, review, expected
+):
+    def fetch(path, **kwargs):
+        if path.startswith("branches/"):
+            return {"commit": {"sha": "b" * 40}}
+        if path.endswith("/reviews?per_page=100"):
+            return [review]
+        return [] if kwargs else pr(base={"sha": "d" * 40, "ref": "main"})
+
+    monkeypatch.setattr(triage, "github", fetch)
+    lead = triage.build([item()], NOW)["review_leads"][0]
+    assert (
+        lead["base_sha"] == "d" * 40
+    )  # PR metadata isn't the authoritative target tip.
+    assert lead["baseline_sha"] == "b" * 40
+    assert lead["activity"]["triage_app_review_on_snapshot_revision"] is expected
+    assert lead["activity"]["triage_app_review_seen"] is True
+
+
+def test_missing_baseline_stays_unknown_while_discussion_is_retained(
+    triage, monkeypatch
+):
+    def fetch(path, **kwargs):
+        if path.startswith("branches/"):
+            raise triage.GitHubReadError("http_error", 1, 403)
+        if "/reviews?" in path:
+            return [marked_review()]
+        return [] if kwargs else pr()
+
+    monkeypatch.setattr(triage, "github", fetch)
+    lead = triage.build([item()], NOW)["review_leads"][0]
+    assert lead["head_sha"] == "a" * 40
+    assert lead["baseline_sha"] is None
+    assert lead["activity"]["status"] == "collected"
+    assert lead["activity"]["triage_app_review_on_snapshot_revision"] is None
+    assert lead["collection_diagnostics"] == [
+        {
+            "stage": "target_baseline",
+            "kind": "http_error",
+            "attempts": 1,
+            "http_status": 403,
+        }
+    ]
+
+
+def test_untrusted_account_cannot_supply_revision_marker(triage, monkeypatch):
+    review = marked_review(
+        user={"login": "fastmcp-triage-reviewer[bot]", "type": "User"}
+    )
+    monkeypatch.setattr(
+        triage,
+        "github",
+        lambda path, **kw: (
+            {"commit": {"sha": "b" * 40}}
+            if path.startswith("branches/")
+            else [review]
+            if "/reviews?" in path
+            else []
+            if kw
+            else pr()
+        ),
+    )
+    activity_result = triage.build([item()], NOW)["review_leads"][0]["activity"]
+    assert activity_result["triage_app_review_seen"] is False
+    assert activity_result["triage_app_review_bindings"] == []
+
+
+def test_optional_triage_failure_cannot_block_backlog_publication():
+    import yaml
+
+    workflow = yaml.safe_load(
+        (Path(__file__).parents[1] / ".github/workflows/backlog-status.yml").read_text()
+    )
+    jobs = workflow["jobs"]
+    assert jobs["publish"]["needs"] == "build"
+    assert jobs["publish-triage"]["needs"] == "triage"
+    assert "needs" not in jobs["build"] and "needs" not in jobs["triage"]
+    assert jobs["publish"]["concurrency"] == jobs["publish-triage"]["concurrency"]
+    commands = "\n".join(step.get("run", "") for step in jobs["build"]["steps"])
+    assert "--triage-output" not in commands and "public_triage.py" not in commands
+    assert (
+        "pull_request" in jobs["publish"]["if"]
+        and "pull_request" in jobs["publish-triage"]["if"]
+    )
+
+
+def test_malformed_discussion_retains_metadata_and_stage(triage, monkeypatch):
+    def fetch(path, **kwargs):
+        if path.startswith("branches/"):
+            return {"commit": {"sha": "b" * 40}}
+        return ["secret-sentinel"] if kwargs else pr()
+
+    monkeypatch.setattr(triage, "github", fetch)
+    report = triage.build([item()], NOW)
+    lead = report["review_leads"][0]
+    assert lead["head_sha"] == "a" * 40
+    assert lead["activity"]["status"] == "unavailable"
+    assert lead["collection_diagnostics"] == [
+        {
+            "stage": "discussion",
+            "kind": "invalid_response",
+            "attempts": 1,
+            "http_status": None,
+        }
+    ]
+    assert report["lead_collection_status"] == "partial"
+    assert "secret-sentinel" not in json.dumps(report)
+
+
+def test_standalone_cli_generates_provenance_without_cloud_access(
+    tmp_path, monkeypatch
+):
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    fake = bindir / "gh"
+    fake.write_text(
+        f"#!{sys.executable}\nimport json,sys\n"
+        "endpoint=sys.argv[2]\n"
+        "if 'per_page=1&' in endpoint: value=1\n"
+        f"elif '/issues?' in endpoint: value={item()!r}\n"
+        f"elif '/branches/' in endpoint: value={{'commit':{{'sha':{'b' * 40!r}}}}}\n"
+        "elif '--slurp' in sys.argv: value=[[]]\n"
+        f"else: value={pr()!r}\n"
+        "print(json.dumps(value))\n"
+    )
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bindir) + os.pathsep + os.environ.get("PATH", ""))
+    output = tmp_path / "triage.json"
+    root = Path(__file__).parents[1]
+    subprocess.run(
+        [
+            sys.executable,
+            str(root / "scripts/public_triage.py"),
+            "--output",
+            str(output),
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    report = json.loads(output.read_text())
+    assert len(report["source_sha"]) == 40
+    assert report["inventory_items"] == 1
+    assert report["lead_collection_status"] == "collected"
+    assert report["review_leads"][0]["baseline_sha"] == "b" * 40
+    assert report["review_leads"][0]["activity"]["status"] == "collected"
