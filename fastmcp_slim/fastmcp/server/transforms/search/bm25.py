@@ -81,8 +81,13 @@ class _BM25Index:
 
 
 def _catalog_hash(tools: Sequence[Tool]) -> str:
-    """SHA256 hash of sorted tool searchable text for staleness detection."""
-    key = json.dumps(sorted(_extract_searchable_text(t) for t in tools))
+    """SHA256 hash of sorted tool identity and searchable text for staleness detection."""
+    entries = []
+    for t in tools:
+        version = getattr(t, "version", None)
+        v_str = str(version) if version is not None else None
+        entries.append((t.name, v_str, _extract_searchable_text(t)))
+    key = json.dumps(sorted(entries), default=str)
     return hashlib.sha256(key.encode()).hexdigest()
 
 
@@ -146,4 +151,8 @@ class BM25SearchTransform(BaseSearchTransform):
         indices = self._index.query(query, self._max_results)
         # The catalog is deduplicated by name; resolve the current version's schema.
         tools_by_name = {t.name: t for t in tools}
-        return [tools_by_name[self._indexed_names[i]] for i in indices]
+        return [
+            tool
+            for i in indices
+            if (tool := tools_by_name.get(self._indexed_names[i])) is not None
+        ]

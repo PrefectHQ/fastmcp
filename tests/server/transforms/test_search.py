@@ -576,3 +576,38 @@ class TestCatalogHash:
         tool_b.parameters = {}
 
         assert _catalog_hash([tool_a]) != _catalog_hash([tool_b])
+
+    def test_hash_differs_when_tool_renamed_preserving_searchable_text(self):
+        """Hash must change when a tool is renamed even if its combined searchable text is identical."""
+        tool_a = MagicMock()
+        tool_a.name = "foo"
+        tool_a.description = "bar"
+        tool_a.version = None
+        tool_a.parameters = {}
+
+        tool_b = MagicMock()
+        tool_b.name = "foo bar"
+        tool_b.description = ""
+        tool_b.version = None
+        tool_b.parameters = {}
+
+        assert _catalog_hash([tool_a]) != _catalog_hash([tool_b])
+
+    async def test_search_after_rename_preserving_searchable_text(self):
+        """BM25 search rebuilds index and updates name mapping after tool rename (#6284)."""
+
+        def action() -> str:
+            return "ok"
+
+        t = BM25SearchTransform()
+        first = Tool.from_function(action, name="foo", description="bar")
+        other = Tool.from_function(action, name="baz")
+
+        res1 = await t._search([first, other], "bar")
+        assert len(res1) == 1
+        assert res1[0].name == "foo"
+
+        renamed = Tool.from_function(action, name="foo bar")
+        res2 = await t._search([renamed, other], "bar")
+        assert len(res2) == 1
+        assert res2[0].name == "foo bar"
