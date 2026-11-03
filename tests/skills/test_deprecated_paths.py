@@ -192,7 +192,8 @@ def test_41_wire_model_spellings_build_an_mcp_skill():
         "resources": "dynamic",
     }
     with pytest.warns(FastMCPDeprecationWarning, match=r"MCPSkill\(") as record:
-        built = Skill41(**entry)
+        # The 4.1 spelling no longer type-checks; it only has to keep running.
+        built = Skill41(**entry)  # ty: ignore[invalid-argument-type]
     assert record[0].filename == __file__
     with pytest.warns(FastMCPDeprecationWarning, match=r"MCPSkill\.model_validate"):
         parsed = Skill41.model_validate(entry)
