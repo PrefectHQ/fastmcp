@@ -71,6 +71,30 @@ def test_from_files_requires_valid_frontmatter():
         Skill.from_files({"SKILL.md": "# no frontmatter\n"})
 
 
+def test_from_files_accepts_structured_metadata_and_tool_lists():
+    skill = Skill.from_files(
+        {
+            "SKILL.md": (
+                "---\n"
+                "name: nextjs\n"
+                "description: Next.js guidance\n"
+                "allowed-tools:\n"
+                "  - Read\n"
+                "  - Bash(next build)\n"
+                "metadata:\n"
+                "  priority: 5\n"
+                "  pathPatterns:\n"
+                "    - 'app/**'\n"
+                "---\n"
+                "# Next.js\n"
+            )
+        }
+    )
+
+    assert skill.frontmatter.metadata == {"priority": 5, "pathPatterns": ["app/**"]}
+    assert skill.frontmatter.allowed_tools == ["Read", "Bash(next build)"]
+
+
 def test_from_directory_snapshots_exact_bytes(tmp_path: Path):
     folder = write_skill(tmp_path)
     skill = Skill.from_directory(folder)
