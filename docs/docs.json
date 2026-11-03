@@ -559,6 +559,20 @@
   "search": {
     "prompt": "Search the docs..."
   },
+  "seo": {
+    "organization": {
+      "name": "FastMCP",
+      "legalName": "Prefect Technologies, Inc.",
+      "url": "https://gofastmcp.com",
+      "logo": "https://gofastmcp.com/assets/brand/wordmark.png",
+      "sameAs": [
+        "https://github.com/PrefectHQ/fastmcp",
+        "https://x.com/fastmcp",
+        "https://bsky.app/profile/gofastmcp.com",
+        "https://www.prefect.io"
+      ]
+    }
+  },
   "styling": {
     "codeblocks": {
       "theme": {
