@@ -182,6 +182,42 @@ def test_alpha_only_helper_is_gone():
     assert not hasattr(helpers, "list_skill_summaries")
 
 
+def test_41_wire_model_spellings_build_an_mcp_skill():
+    from fastmcp.skills import MCPSkill
+    from fastmcp.skills import Skill as Skill41
+
+    entry = {
+        "uri": "skill://review/SKILL.md",
+        "frontmatter": {"name": "review", "description": "Review changes"},
+        "resources": "dynamic",
+    }
+    with pytest.warns(FastMCPDeprecationWarning, match=r"MCPSkill\(") as record:
+        built = Skill41(**entry)
+    assert record[0].filename == __file__
+    with pytest.warns(FastMCPDeprecationWarning, match=r"MCPSkill\.model_validate"):
+        parsed = Skill41.model_validate(entry)
+    with pytest.warns(FastMCPDeprecationWarning, match="fastmcp.skills.models.Skill"):
+        from fastmcp.skills.models import Skill as ModelsSkill
+    assert built == parsed == MCPSkill.model_validate(entry)
+    assert ModelsSkill is MCPSkill
+    # The authoring constructor is untouched.
+    assert isinstance(REVIEW, Skill)
+
+
+async def test_list_skill_resources_reaches_a_41_style_server(tmp_path: Path):
+    from fastmcp.server.providers.skills import (
+        SkillsDirectoryProvider as OldDirectoryProvider,
+    )
+
+    REVIEW.to_directory(tmp_path / "review")
+    with pytest.warns(FastMCPDeprecationWarning):
+        provider = OldDirectoryProvider(tmp_path)
+    async with Client(FastMCP("Skills", providers=[provider])) as client:
+        (resource,) = await client.list_skill_resources()
+        skill = await client.read_skill(str(resource.uri))
+    assert skill == REVIEW
+
+
 def test_experimental_skills_refuses_subclasses(tmp_path: Path):
     from fastmcp.server.providers.skills import (
         SkillsDirectoryProvider as OldDirectoryProvider,

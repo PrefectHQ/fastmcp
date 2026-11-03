@@ -6,16 +6,30 @@ import hashlib
 import os
 import shutil
 import tempfile
+import warnings
 from collections.abc import Mapping
 from pathlib import Path, PureWindowsPath
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote
 
 from pydantic import JsonValue
+from typing_extensions import Self
 
+from fastmcp._warnings import FastMCPDeprecationWarning
 from fastmcp.skills._constants import MAX_SKILL_BYTES, MAX_SKILL_FILES
 from fastmcp.skills.models import MCPSkill, SkillFrontmatter, SkillResource
+
+
+def _warn_wire_model(call: str) -> None:
+    warnings.warn(
+        f"`{call}` builds the 4.1 wire model, which is now `MCPSkill`; "
+        "`fastmcp.skills.Skill` is the skill authoring class. Replace it with "
+        f"`{call.replace('Skill', 'MCPSkill', 1)}` and "
+        "`from fastmcp.skills import MCPSkill`. This alias is removed in FastMCP 4.3.",
+        FastMCPDeprecationWarning,
+        stacklevel=3,
+    )
 
 
 def _validate_limits(file_count: int, total_bytes: int) -> None:
@@ -73,6 +87,27 @@ class Skill:
 
     _files: Mapping[str, bytes]
     _frontmatter: SkillFrontmatter
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        # In 4.1 `fastmcp.skills.Skill` was the wire model now named `MCPSkill`.
+        # Its keywords (`uri`, `resources`) never mean an authored skill.
+        if cls is Skill and ("uri" in kwargs or "resources" in kwargs):
+            _warn_wire_model("Skill(uri=..., frontmatter=..., resources=...)")
+            # Statically a `Skill`, so authoring code keeps its types.
+            return cast(Any, MCPSkill(*args, **kwargs))
+        return super().__new__(cls)
+
+    @classmethod
+    def model_validate(cls, obj: Any, **kwargs: Any) -> MCPSkill:
+        """Deprecated 4.1 alias for `MCPSkill.model_validate`."""
+        _warn_wire_model("Skill.model_validate(...)")
+        return MCPSkill.model_validate(obj, **kwargs)
+
+    @classmethod
+    def model_validate_json(cls, json_data: str | bytes, **kwargs: Any) -> MCPSkill:
+        """Deprecated 4.1 alias for `MCPSkill.model_validate_json`."""
+        _warn_wire_model("Skill.model_validate_json(...)")
+        return MCPSkill.model_validate_json(json_data, **kwargs)
 
     def __init__(
         self,

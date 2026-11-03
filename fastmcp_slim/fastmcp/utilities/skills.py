@@ -81,8 +81,8 @@ async def list_skills(client: Client) -> list[SkillSummary]:
     """
     _deprecated(
         "list_skills",
-        "Use `await client.list_skills()` with "
-        "`Client(..., extensions=[SkillsClientExtension()])` from `fastmcp.skills`.",
+        "Use `await client.list_skill_resources()`, or `await client.list_skills()` "
+        "for servers with the Skills extension.",
     )
     return await _list_skills(client)
 
@@ -289,8 +289,8 @@ async def sync_skills(
     """
     _deprecated(
         "sync_skills",
-        "Loop over `await client.list_skills()` and call "
-        "`(await client.read_skill(entry.uri)).to_directory(target_dir / name)`.",
+        "Loop over `await client.list_skill_resources()` and call "
+        "`(await client.read_skill(str(resource.uri))).to_directory(target_dir / name)`.",
     )
     skills = await _list_skills(client)
     downloaded = []
