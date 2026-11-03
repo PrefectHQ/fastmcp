@@ -38,7 +38,10 @@ async def test_old_directory_provider_warns_and_keeps_serving(tmp_path: Path):
     message = str(warning.message)
     assert warning.filename == __file__
     assert "removed in FastMCP 4.3" in message
-    assert f"SkillsDirectoryProvider([{str(tmp_path)!r}], reload=True)" in message
+    assert (
+        f"SkillsDirectoryProvider([{str(tmp_path.resolve())!r}], reload=True)"
+        in message
+    )
     assert "Fix these folders first:" in message
     assert "rename the folder to 'pdf-tools'" in message
 
@@ -143,8 +146,8 @@ def test_vendor_presets_name_their_folder(
 
     codex, claude = record
     assert str(codex.message).startswith("`CodexSkillsProvider` is deprecated")
-    assert str(Path(tmp_path, ".codex", "skills")) in str(codex.message)
-    assert str(Path(tmp_path, ".claude", "skills")) in str(claude.message)
+    assert str(Path(tmp_path, ".codex", "skills").resolve()) in str(codex.message)
+    assert str(Path(tmp_path, ".claude", "skills").resolve()) in str(claude.message)
     assert codex.filename == claude.filename == __file__
 
 

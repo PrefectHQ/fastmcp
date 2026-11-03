@@ -71,7 +71,7 @@ def test_invalid_folders_stop_startup_with_a_fix_for_each(tmp_path: Path):
         SkillsDirectoryProvider(tmp_path)
 
     lines = str(exc_info.value).splitlines()[1:]
-    assert [line.split(":")[0] for line in lines] == [
+    assert [line.split(": ")[0] for line in lines] == [
         f"- {tmp_path / 'bad-yaml'}",
         f"- {tmp_path / 'renamed'}",
         f"- {tmp_path / 'use_cli'}",
