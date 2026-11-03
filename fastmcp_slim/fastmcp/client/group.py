@@ -204,7 +204,9 @@ class ClientGroup:
                 # Closed already, or another context entered while we waited.
                 return None
             self._exit_stack = None
-            self._tool_routes.clear()
+            # Keep the known routes: a route needs only its own client, which a
+            # caller may connect without the group. Mark the catalog for lazy
+            # rediscovery, so the next unknown name re-reads every server.
             self._catalog_loaded = False
             return await held.__aexit__(exc_type, exc_value, traceback)
 
