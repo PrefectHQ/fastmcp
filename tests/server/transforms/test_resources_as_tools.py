@@ -1356,3 +1356,78 @@ class TestResourcesAsToolsVisibilityOnServer:
 
             res = await client.call_tool("read_resource", {"uri": "config://read/app"})
             assert res.data == "app config"
+
+    async def test_mounted_child_with_adapter_and_user_tool_override_preserves_user_tool(
+        self,
+    ):
+        """When child has ResourcesAsTools AND defines a user read_resource(query, version="2.0"), child user tool is preserved."""
+        child = FastMCP("Child")
+
+        @child.tool(name="read_resource", version="2.0")
+        def child_user_reader(query: str) -> str:
+            return f"child-user: {query}"
+
+        @child.resource("res://child")
+        def child_resource() -> str:
+            return "child content"
+
+        child.add_transform(ResourcesAsTools(child))
+
+        parent = FastMCP("Parent")
+
+        @parent.resource("res://parent")
+        def parent_resource() -> str:
+            return "parent content"
+
+        parent.mount(child)
+        parent.add_transform(ResourcesAsTools(parent))
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            user_readers = [
+                t
+                for t in tools
+                if t.name == "read_resource"
+                and t.meta.get("fastmcp", {}).get("version") == "2.0"
+            ]
+            assert len(user_readers) == 1
+            assert "query" in user_readers[0].input_schema["properties"]
+
+            res = await client.call_tool(
+                "read_resource", {"query": "hello"}, version="2.0"
+            )
+            assert res.data == "child-user: hello"
+
+            parent_res = await client.call_tool(
+                "read_resource", {"uri": "res://parent"}
+            )
+            assert parent_res.data == "parent content"
+
+    async def test_subsequent_namespace_and_disable_preserves_synthetic_tool(
+        self,
+    ):
+        """Intervening Namespace followed by disable on namespaced name correctly marks user tool and retains synthetic reader."""
+        from fastmcp.server.transforms import Namespace
+
+        mcp = FastMCP("Test")
+
+        @mcp.tool(name="read_resource", tags={"internal"})
+        def user_reader(query: str) -> str:
+            return f"query: {query}"
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "app config"
+
+        mcp.add_transform(ResourcesAsTools(mcp))
+        mcp.add_transform(Namespace("ns"))
+        mcp.disable(names={"ns_read_resource"}, tags={"internal"})
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            readers = [t for t in tools if t.name == "ns_read_resource"]
+            assert len(readers) == 1
+            assert "uri" in readers[0].input_schema["properties"]
+
+            res = await client.call_tool("ns_read_resource", {"uri": "config://ns/app"})
+            assert res.data == "app config"

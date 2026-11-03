@@ -1249,3 +1249,76 @@ class TestPromptsAsToolsRepr:
 
             res = await client.call_tool("get_prompt", {"name": "get_public_prompt"})
             assert "public prompt content" in res.data
+
+    async def test_mounted_child_with_adapter_and_user_tool_override_preserves_user_tool(
+        self,
+    ):
+        """When child has PromptsAsTools AND defines a user get_prompt(query, version="2.0"), child user tool is preserved."""
+        child = FastMCP("Child")
+
+        @child.tool(name="get_prompt", version="2.0")
+        def child_user_getter(query: str) -> str:
+            return f"child-user: {query}"
+
+        @child.prompt
+        def child_prompt() -> str:
+            return "child prompt content"
+
+        child.add_transform(PromptsAsTools(child))
+
+        parent = FastMCP("Parent")
+
+        @parent.prompt
+        def parent_prompt() -> str:
+            return "parent prompt content"
+
+        parent.mount(child)
+        parent.add_transform(PromptsAsTools(parent))
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            user_getters = [
+                t
+                for t in tools
+                if t.name == "get_prompt"
+                and t.meta.get("fastmcp", {}).get("version") == "2.0"
+            ]
+            assert len(user_getters) == 1
+            assert "query" in user_getters[0].input_schema["properties"]
+
+            res = await client.call_tool(
+                "get_prompt", {"query": "hello"}, version="2.0"
+            )
+            assert res.data == "child-user: hello"
+
+            parent_res = await client.call_tool("get_prompt", {"name": "parent_prompt"})
+            assert "parent prompt content" in parent_res.data
+
+    async def test_subsequent_namespace_and_disable_preserves_synthetic_tool(
+        self,
+    ):
+        """Intervening Namespace followed by disable on namespaced name correctly marks user tool and retains synthetic getter."""
+        from fastmcp.server.transforms import Namespace
+
+        mcp = FastMCP("Test")
+
+        @mcp.tool(name="get_prompt", tags={"internal"})
+        def user_getter(query: str) -> str:
+            return f"query: {query}"
+
+        @mcp.prompt
+        def public_prompt() -> str:
+            return "public prompt content"
+
+        mcp.add_transform(PromptsAsTools(mcp))
+        mcp.add_transform(Namespace("ns"))
+        mcp.disable(names={"ns_get_prompt"}, tags={"internal"})
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            getters = [t for t in tools if t.name == "ns_get_prompt"]
+            assert len(getters) == 1
+            assert "name" in getters[0].input_schema["properties"]
+
+            res = await client.call_tool("ns_get_prompt", {"name": "ns_public_prompt"})
+            assert "public prompt content" in res.data

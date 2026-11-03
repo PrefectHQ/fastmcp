@@ -91,25 +91,12 @@ class ResourcesAsTools(Transform):
                 and meta.get("fastmcp:adapter") == "ResourcesAsTools"
             ):
                 return True
+            fn = getattr(curr, "fn", None)
+            if fn is not None and getattr(fn, "__qualname__", "").startswith(
+                "ResourcesAsTools."
+            ):
+                return True
             curr = getattr(curr, "parent_tool", None)
-
-        server = getattr(tool, "_server", None)
-        if server is not None:
-            server_transforms = getattr(server, "transforms", [])
-            if any(type(t).__name__ == "ResourcesAsTools" for t in server_transforms):
-                if tool.name in ("list_resources", "read_resource"):
-                    return True
-
-        if tool.name == "read_resource":
-            desc = getattr(tool, "description", "") or ""
-            if desc.startswith("Read a resource by its URI.") and "uri" in getattr(
-                tool, "parameters", {}
-            ).get("properties", {}):
-                return True
-        elif tool.name == "list_resources":
-            desc = getattr(tool, "description", "") or ""
-            if desc.startswith("List all available resources and resource templates."):
-                return True
 
         return False
 
@@ -121,9 +108,6 @@ class ResourcesAsTools(Transform):
             is_enabled,
         )
 
-        if not is_enabled(tool):
-            return False
-
         top_transforms = getattr(self._provider, "transforms", [])
         try:
             idx = top_transforms.index(self)
@@ -131,13 +115,28 @@ class ResourcesAsTools(Transform):
         except ValueError:
             subsequent = []
 
-        current_tool = tool
+        current_tools: Sequence[Tool] = [tool]
         for t in subsequent:
-            if isinstance(t, Visibility):
-                current_tool = t._mark_component(current_tool)
+            if hasattr(t, "list_tools"):
+                try:
+                    res = await t.list_tools(current_tools)
+                    if not res:
+                        return False
+                    current_tools = res
+                except Exception:
+                    if isinstance(t, Visibility):
+                        current_tools = [
+                            t._mark_component(t_item) for t_item in current_tools
+                        ]
+            elif isinstance(t, Visibility):
+                current_tools = [t._mark_component(t_item) for t_item in current_tools]
 
-        session_tools = await apply_session_transforms([current_tool])
-        return is_enabled(session_tools[0])
+        for t_item in current_tools:
+            if not is_enabled(t_item):
+                return False
+
+        session_tools = await apply_session_transforms(current_tools)
+        return bool(session_tools and all(is_enabled(st) for st in session_tools))
 
     async def _is_tool_authorized(self, tool: Tool) -> bool:
         """Check if tool is authorized by component auth and server AuthMiddleware."""
@@ -545,6 +544,11 @@ class ResourcesAsTools(Transform):
                     user_override_keys.add(t.key)
                 filtered_tools.append(t)
             else:
+                if t.name in ("list_resources", "read_resource"):
+                    if self._is_adapter_generated_tool(t):
+                        continue
+                    if not await self._is_tool_finally_enabled(t):
+                        continue
                 filtered_tools.append(t)
 
         synthetic: list[Tool] = []
@@ -577,7 +581,8 @@ class ResourcesAsTools(Transform):
         ):
             if syn_matches and await self._is_tool_hidden_by_search(existing):
                 return syn
-            return existing
+            if version is not None or existing.version is None:
+                return existing
 
         if syn_matches:
             return syn
