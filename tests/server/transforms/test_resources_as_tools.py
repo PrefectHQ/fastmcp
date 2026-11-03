@@ -631,6 +631,38 @@ class TestResourcesAsToolsBasic:
             res = await client.call_tool("read_resource", {"uri": "config://app"})
             assert res.data == "app config"
 
+    async def test_parent_search_transform_with_untransformed_mounted_child_pinned_tool(
+        self,
+    ):
+        """When parent has a search transform with always_visible before ResourcesAsTools,
+        an untransformed mounted child tool in always_visible is preserved and called with user schema."""
+        from fastmcp.server.transforms.search.regex import RegexSearchTransform
+
+        child = FastMCP("Child")
+
+        @child.tool(name="read_resource")
+        def child_resource(query: str) -> str:
+            return f"child: {query}"
+
+        parent = FastMCP("Parent")
+        parent.mount(child)
+
+        @parent.resource("config://app")
+        def app_config() -> str:
+            return "app config"
+
+        parent.add_transform(RegexSearchTransform(always_visible=["read_resource"]))
+        parent.add_transform(ResourcesAsTools(parent))
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            matched = [t for t in tools if t.name == "read_resource"]
+            assert len(matched) == 1
+            assert "query" in matched[0].input_schema["properties"]
+
+            res = await client.call_tool("read_resource", {"query": "hello"})
+            assert res.data == "child: hello"
+
 
 class TestListResourcesTool:
     """Test the list_resources tool."""

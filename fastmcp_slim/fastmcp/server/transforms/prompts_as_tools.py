@@ -247,13 +247,7 @@ class PromptsAsTools(Transform):
         owner = await _find_tool_provider(tool)
         owner_server = getattr(owner, "server", None)
 
-        has_owner_catalog = bool(
-            owner
-            and any(
-                isinstance(t, CatalogTransform)
-                for t in getattr(owner, "transforms", [])
-            )
-        )
+        has_owner_transforms = bool(owner and getattr(owner, "transforms", []))
         has_owner_server_transforms = bool(
             owner_server and getattr(owner_server, "transforms", [])
         )
@@ -263,7 +257,7 @@ class PromptsAsTools(Transform):
         has_preceding_catalog = any(isinstance(t, CatalogTransform) for t in preceding)
 
         if (
-            not has_owner_catalog
+            not has_owner_transforms
             and not has_owner_server_transforms
             and not has_owner_server_middleware
             and not has_preceding_catalog
@@ -272,23 +266,21 @@ class PromptsAsTools(Transform):
             # Avoids querying unrelated providers (e.g. ProxyProvider over network).
             return False
 
-        # Load tool candidate sequence from the owning provider
-        current_tools: list[Tool]
-        if owner is not None and (
-            has_owner_catalog
-            or has_owner_server_transforms
-            or has_owner_server_middleware
-        ):
-            list_fn = getattr(owner, "_list_tools", None)
-            if callable(list_fn):
-                try:
-                    raw = await list_fn()
-                    current_tools = list(raw) if isinstance(raw, Sequence) else [tool]
-                except Exception:
-                    current_tools = [tool]
-            else:
+        # Load tool candidate sequence from the owning provider (or local provider if unowned)
+        target_provider = (
+            owner or getattr(self._provider, "local_provider", None) or self._provider
+        )
+        list_fn = getattr(target_provider, "_list_tools", None)
+        if callable(list_fn):
+            try:
+                raw = await list_fn()
+                current_tools = list(raw) if isinstance(raw, Sequence) else [tool]
+            except Exception:
                 current_tools = [tool]
+        else:
+            current_tools = [tool]
 
+        if owner is not None and getattr(owner, "transforms", None):
             for t in getattr(owner, "transforms", []):
                 try:
                     current_tools = list(await t.list_tools(current_tools))
@@ -296,35 +288,25 @@ class PromptsAsTools(Transform):
                     if type(t).__name__ == "CodeMode":
                         return True
 
+        local_prov = getattr(self._provider, "local_provider", None)
+        if owner is not None and owner is not local_prov:
             if not any(
                 isinstance(x, ToolCls)
                 and (
                     x is tool
                     or x.key == tool.key
                     or (x.name == tool.name and x.version == tool.version)
+                    or (
+                        getattr(tool, "_original_name", None) is not None
+                        and x.name == getattr(tool, "_original_name", None)
+                    )
                 )
                 for x in current_tools
             ):
                 return True
-        else:
-            local_prov = getattr(self._provider, "local_provider", None)
-            list_fn = getattr(local_prov, "_list_tools", None) if local_prov else None
-            if callable(list_fn):
-                try:
-                    raw = await list_fn()
-                    current_tools = list(raw) if isinstance(raw, Sequence) else [tool]
-                except Exception:
-                    current_tools = [tool]
-            else:
-                current_tools = [tool]
 
         # Evaluate preceding transforms on self._provider (e.g. Namespace, CatalogTransform)
         for t in preceding:
-            always_visible = getattr(t, "_always_visible", None)
-            if always_visible is not None:
-                if tool.name not in always_visible:
-                    return True
-                continue
             try:
                 current_tools = list(await t.list_tools(current_tools))
             except Exception:

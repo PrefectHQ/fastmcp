@@ -666,6 +666,38 @@ class TestPromptsAsToolsBasic:
             data = json.loads(res.data)
             assert "Hello, Alice!" in data["messages"][0]["content"]
 
+    async def test_parent_search_transform_with_untransformed_mounted_child_pinned_tool(
+        self,
+    ):
+        """When parent has a search transform with always_visible before PromptsAsTools,
+        an untransformed mounted child tool in always_visible is preserved and called with user schema."""
+        from fastmcp.server.transforms.search.regex import RegexSearchTransform
+
+        child = FastMCP("Child")
+
+        @child.tool(name="get_prompt")
+        def child_prompt(query: str) -> str:
+            return f"child: {query}"
+
+        parent = FastMCP("Parent")
+        parent.mount(child)
+
+        @parent.prompt(name="greet")
+        def greet_prompt(name: str = "World") -> str:
+            return f"Hello, {name}!"
+
+        parent.add_transform(RegexSearchTransform(always_visible=["get_prompt"]))
+        parent.add_transform(PromptsAsTools(parent))
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            matched = [t for t in tools if t.name == "get_prompt"]
+            assert len(matched) == 1
+            assert "query" in matched[0].input_schema["properties"]
+
+            res = await client.call_tool("get_prompt", {"query": "hello"})
+            assert res.data == "child: hello"
+
 
 class TestListPromptsTool:
     """Test the list_prompts tool."""
