@@ -220,8 +220,6 @@ REMOVED_MODULES = [
     "fastmcp.experimental.sampling",  # -> fastmcp.client.sampling
     "fastmcp.experimental.sampling.handlers",  # -> fastmcp.client.sampling.handlers
     "fastmcp.server.auth.authorization",  # -> fastmcp.server.auth / fastmcp.utilities.authorization
-    "fastmcp.server.providers.skills",  # -> fastmcp.skills.provider
-    "fastmcp.utilities.skills",  # -> Client.read_skill + Skill.to_directory
 ]
 
 # Names that were re-export shims and are gone; import them from the canonical
@@ -234,8 +232,8 @@ REMOVED_NAMES = [
     ("fastmcp.server.middleware.caching", "CachableToolResult"),  # codespell:ignore
     ("fastmcp.server.middleware.caching", "CachablePromptResult"),  # codespell:ignore
     # 3.0-era rename alias -> fastmcp.skills.provider.SkillsDirectoryProvider
+    ("fastmcp.server.providers.skills", "SkillsProvider"),
     ("fastmcp.server.providers", "SkillsProvider"),
-    ("fastmcp.server.providers", "SkillsDirectoryProvider"),
 ]
 
 
