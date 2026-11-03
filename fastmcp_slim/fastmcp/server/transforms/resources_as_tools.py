@@ -119,34 +119,58 @@ class ResourcesAsTools(Transform):
 
         def _reverse_name_through_provider(provider: Any, name: str) -> str:
             current = name
+
+            def _apply_reverse_transform(t: Any, n: str) -> str:
+                if isinstance(t, Namespace):
+                    rev = t._reverse_name(n)
+                    return rev if rev is not None else n
+                name_reverse = getattr(t, "_name_reverse", None)
+                if isinstance(name_reverse, dict) and n in name_reverse:
+                    return name_reverse[n]
+                return n
+
             single_t = getattr(provider, "_transform", None)
-            if isinstance(single_t, Namespace):
-                rev = single_t._reverse_name(current)
-                if rev is not None:
-                    current = rev
+            if single_t is not None:
+                current = _apply_reverse_transform(single_t, current)
 
             for t in reversed(getattr(provider, "transforms", [])):
-                if isinstance(t, Namespace):
-                    rev = t._reverse_name(current)
-                    if rev is not None:
-                        current = rev
+                current = _apply_reverse_transform(t, current)
+
+            prov_server = getattr(provider, "server", None)
+            if prov_server is not None:
+                for t in reversed(getattr(prov_server, "transforms", [])):
+                    current = _apply_reverse_transform(t, current)
+
             return current
 
         async def _find_tool_provider_chain(target_tool: Tool) -> list[Any]:
-            server_attr = getattr(target_tool, "_server", None)
-            provider_attr = getattr(target_tool, "_provider", None)
+            candidate_tools = [target_tool]
+            curr = target_tool
+            while getattr(curr, "parent_tool", None) is not None:
+                curr = curr.parent_tool
+                candidate_tools.append(curr)
+
+            server_attrs = [
+                getattr(t, "_server", None)
+                for t in candidate_tools
+                if getattr(t, "_server", None) is not None
+            ]
+            provider_attrs = [
+                getattr(t, "_provider", None)
+                for t in candidate_tools
+                if getattr(t, "_provider", None) is not None
+            ]
 
             def _find_by_identity(providers_list: Sequence[Any]) -> list[Any] | None:
                 for p in providers_list:
-                    if server_attr is not None:
-                        if getattr(p, "server", None) is server_attr:
-                            return [p]
-                        inner = getattr(p, "_inner", None)
-                        if getattr(inner, "server", None) is server_attr:
-                            return [p]
-                    if provider_attr is not None and (
-                        p is provider_attr
-                        or getattr(p, "_inner", None) is provider_attr
+                    if any(getattr(p, "server", None) is s for s in server_attrs):
+                        return [p]
+                    inner = getattr(p, "_inner", None)
+                    if any(getattr(inner, "server", None) is s for s in server_attrs):
+                        return [p]
+                    if any(
+                        p is pr or getattr(p, "_inner", None) is pr
+                        for pr in provider_attrs
                     ):
                         return [p]
                     sub = getattr(p, "providers", [])
@@ -155,7 +179,7 @@ class ResourcesAsTools(Transform):
                         return [p, *found]
                 return None
 
-            if server_attr is not None or provider_attr is not None:
+            if server_attrs or provider_attrs:
                 by_id = _find_by_identity(getattr(self._provider, "providers", []))
                 if by_id is not None:
                     return by_id
@@ -165,17 +189,23 @@ class ResourcesAsTools(Transform):
             ) -> list[Any] | None:
                 for p in providers_list:
                     local_name = _reverse_name_through_provider(p, name)
+                    candidate_names = {local_name, *(t.name for t in candidate_tools)}
+
                     comps = getattr(p, "_components", None)
                     if isinstance(comps, dict) and any(
                         isinstance(c, ToolCls)
-                        and (
-                            c is target_tool
-                            or getattr(c, "key", None) == target_tool.key
+                        and any(
+                            c is ct
                             or (
-                                getattr(c, "name", None)
-                                in (local_name, target_tool.name)
-                                and getattr(c, "version", None) == target_tool.version
+                                getattr(c, "key", None) is not None
+                                and getattr(c, "key", None) == getattr(ct, "key", None)
                             )
+                            or (
+                                getattr(c, "name", None) in candidate_names
+                                and getattr(c, "version", None)
+                                == getattr(ct, "version", None)
+                            )
+                            for ct in candidate_tools
                         )
                         for c in comps.values()
                     ):
@@ -184,14 +214,18 @@ class ResourcesAsTools(Transform):
                     tools_dict = getattr(p, "_tools", None)
                     if isinstance(tools_dict, dict) and any(
                         isinstance(t, ToolCls)
-                        and (
-                            t is target_tool
-                            or getattr(t, "key", None) == target_tool.key
+                        and any(
+                            t is ct
                             or (
-                                getattr(t, "name", None)
-                                in (local_name, target_tool.name)
-                                and getattr(t, "version", None) == target_tool.version
+                                getattr(t, "key", None) is not None
+                                and getattr(t, "key", None) == getattr(ct, "key", None)
                             )
+                            or (
+                                getattr(t, "name", None) in candidate_names
+                                and getattr(t, "version", None)
+                                == getattr(ct, "version", None)
+                            )
+                            for ct in candidate_tools
                         )
                         for t in tools_dict.values()
                     ):
@@ -205,22 +239,35 @@ class ResourcesAsTools(Transform):
 
                     get_tool_fn = getattr(p, "_get_tool", None)
                     if callable(get_tool_fn):
-                        with contextlib.suppress(Exception):
-                            version_arg = (
-                                VersionSpec(eq=target_tool.version)
-                                if target_tool.version is not None
-                                else None
-                            )
-                            p_tool = await get_tool_fn(local_name, version=version_arg)
-                            if p_tool is not None and (
-                                p_tool is target_tool
-                                or getattr(p_tool, "key", None) == target_tool.key
-                                or (
-                                    p_tool.name in (local_name, target_tool.name)
-                                    and p_tool.version == target_tool.version
+                        probe_names = [local_name]
+                        for ct in candidate_tools:
+                            if ct.name not in probe_names:
+                                probe_names.append(ct.name)
+                        for probe_name in probe_names:
+                            with contextlib.suppress(Exception):
+                                version_arg = (
+                                    VersionSpec(eq=target_tool.version)
+                                    if target_tool.version is not None
+                                    else None
                                 )
-                            ):
-                                return [p]
+                                p_tool = await get_tool_fn(
+                                    probe_name, version=version_arg
+                                )
+                                if p_tool is not None and any(
+                                    p_tool is ct
+                                    or (
+                                        getattr(p_tool, "key", None) is not None
+                                        and getattr(p_tool, "key", None)
+                                        == getattr(ct, "key", None)
+                                    )
+                                    or (
+                                        p_tool.name in candidate_names
+                                        and p_tool.version
+                                        == getattr(ct, "version", None)
+                                    )
+                                    for ct in candidate_tools
+                                ):
+                                    return [p]
                 return None
 
             found = await _search_providers(
@@ -234,13 +281,19 @@ class ResourcesAsTools(Transform):
                 comps = getattr(local_prov, "_components", None)
                 if isinstance(comps, dict) and any(
                     isinstance(c, ToolCls)
-                    and (
-                        c is target_tool
-                        or getattr(c, "key", None) == target_tool.key
+                    and any(
+                        c is ct
                         or (
-                            getattr(c, "name", None) == target_tool.name
-                            and getattr(c, "version", None) == target_tool.version
+                            getattr(c, "key", None) is not None
+                            and getattr(c, "key", None) == getattr(ct, "key", None)
                         )
+                        or (
+                            getattr(c, "name", None)
+                            in {ct.name for ct in candidate_tools}
+                            and getattr(c, "version", None)
+                            == getattr(ct, "version", None)
+                        )
+                        for ct in candidate_tools
                     )
                     for c in comps.values()
                 ):
@@ -253,6 +306,21 @@ class ResourcesAsTools(Transform):
         owner = chain[-1] if chain else None
         owner_server = getattr(owner, "server", None)
 
+        candidate_tools = [tool]
+        curr = tool
+        while getattr(curr, "parent_tool", None) is not None:
+            curr = curr.parent_tool
+            candidate_tools.append(curr)
+
+        def _is_tool_listing_transform(t: Any) -> bool:
+            if isinstance(t, CatalogTransform):
+                return True
+            list_tool_method = getattr(t, "list_tools", None)
+            if not callable(list_tool_method):
+                return False
+            underlying = getattr(list_tool_method, "__func__", list_tool_method)
+            return underlying is not Transform.list_tools
+
         has_chain_transforms = any(getattr(p, "transforms", None) for p in chain)
         has_owner_server_transforms = bool(
             owner_server and getattr(owner_server, "transforms", [])
@@ -260,15 +328,15 @@ class ResourcesAsTools(Transform):
         has_owner_server_middleware = bool(
             owner_server and getattr(owner_server, "middleware", None)
         )
-        has_preceding_catalog = any(isinstance(t, CatalogTransform) for t in preceding)
+        has_preceding_listing = any(_is_tool_listing_transform(t) for t in preceding)
 
         if (
             not has_chain_transforms
             and not has_owner_server_transforms
             and not has_owner_server_middleware
-            and not has_preceding_catalog
+            and not has_preceding_listing
         ):
-            # Fast path: No catalog transforms or child middleware can hide this tool.
+            # Fast path: No listing transforms or child middleware can hide this tool.
             # Avoids querying unrelated providers (e.g. ProxyProvider over network).
             return False
 
@@ -295,23 +363,26 @@ class ResourcesAsTools(Transform):
                         return True
 
         local_prov = getattr(self._provider, "local_provider", None)
-        if owner is not None and owner is not local_prov:
+        if owner is not None and (
+            owner is not local_prov or getattr(local_prov, "transforms", None)
+        ):
             if not any(
                 isinstance(x, ToolCls)
-                and (
-                    x is tool
-                    or x.key == tool.key
-                    or (x.name == tool.name and x.version == tool.version)
+                and any(
+                    x is ct
+                    or (x.key is not None and x.key == ct.key)
+                    or (x.name == ct.name and x.version == ct.version)
                     or (
-                        getattr(tool, "_original_name", None) is not None
-                        and x.name == getattr(tool, "_original_name", None)
+                        getattr(ct, "_original_name", None) is not None
+                        and x.name == getattr(ct, "_original_name", None)
                     )
+                    for ct in candidate_tools
                 )
                 for x in current_tools
             ):
                 return True
 
-        # Evaluate preceding transforms on self._provider (e.g. Namespace, CatalogTransform)
+        # Evaluate preceding transforms on self._provider (e.g. Namespace, CatalogTransform, custom Transform)
         for t in preceding:
             try:
                 current_tools = list(await t.list_tools(current_tools))
@@ -321,10 +392,15 @@ class ResourcesAsTools(Transform):
 
         return not any(
             isinstance(x, ToolCls)
-            and (
-                x is tool
-                or x.key == tool.key
-                or (x.name == tool.name and x.version == tool.version)
+            and any(
+                x is ct
+                or (x.key is not None and x.key == ct.key)
+                or (x.name == ct.name and x.version == ct.version)
+                or (
+                    getattr(ct, "_original_name", None) is not None
+                    and x.name == getattr(ct, "_original_name", None)
+                )
+                for ct in candidate_tools
             )
             for x in current_tools
         )

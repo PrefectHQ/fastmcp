@@ -736,6 +736,81 @@ class TestPromptsAsToolsBasic:
             data = json.loads(res.data)
             assert "Hello, Alice!" in data["messages"][0]["content"]
 
+    async def test_tool_transform_rename_with_search_transform_yields_synthetic_tool(
+        self,
+    ):
+        """When child provider renames a colliding tool via ToolTransform and hides it via search,
+        ownership is resolved and the synthetic tool is advertised and callable."""
+        from fastmcp.server.providers import LocalProvider
+        from fastmcp.server.transforms import ToolTransform
+        from fastmcp.server.transforms.search.regex import RegexSearchTransform
+        from fastmcp.tools.tool_transform import ToolTransformConfig
+
+        child = LocalProvider()
+
+        @child.tool
+        def fetch_data(query: str) -> str:
+            return query
+
+        child.add_transform(RegexSearchTransform(always_visible=[]))
+        child.add_transform(
+            ToolTransform({"fetch_data": ToolTransformConfig(name="get_prompt")})
+        )
+
+        parent = FastMCP("Parent", providers=[child])
+
+        @parent.prompt(name="greet")
+        def greet_prompt(name: str = "World") -> str:
+            return f"Hello, {name}!"
+
+        parent.add_transform(PromptsAsTools(parent))
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            matched = [t for t in tools if t.name == "get_prompt"]
+            assert len(matched) == 1
+            assert "name" in matched[0].input_schema["properties"]
+
+            res = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(res.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
+
+    async def test_plain_transform_listing_override_yields_synthetic_tool(self):
+        """When a plain Transform subclass overrides only list_tools to hide a colliding user tool,
+        the fast-path guard accounts for it and the synthetic tool is advertised and callable."""
+        from fastmcp.server.transforms import Transform
+
+        class CustomFilter(Transform):
+            async def list_tools(self, tools):
+                return [t for t in tools if t.name != "get_prompt"]
+
+        mcp = FastMCP("Test")
+
+        @mcp.tool
+        def get_prompt(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.prompt(name="greet")
+        def greet_prompt(name: str = "World") -> str:
+            return f"Hello, {name}!"
+
+        mcp.add_transform(CustomFilter())
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            matched = [t for t in tools if t.name == "get_prompt"]
+            assert len(matched) == 1
+            assert "name" in matched[0].input_schema["properties"]
+
+            res = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(res.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
+
 
 class TestListPromptsTool:
     """Test the list_prompts tool."""
