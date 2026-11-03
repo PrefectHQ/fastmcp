@@ -70,43 +70,19 @@ class StoredSkills(SkillCatalogProvider):
         ]
 ```
 
-A folder you're still editing is the same shape. Re-read it on every request and changes show up live:
-
-```python
-from pathlib import Path
-
-from fastmcp import Skill
-from fastmcp.skills.provider import SkillCatalogProvider
-
-
-class FolderSkills(SkillCatalogProvider):
-    def __init__(self, root: Path) -> None:
-        super().__init__()
-        self.root = root
-
-    async def load_skills(self) -> list[Skill]:
-        folders = sorted(self.root.iterdir())
-        return [
-            Skill.from_directory(folder)
-            for folder in folders
-            if (folder / "SKILL.md").is_file()
-        ]
-```
-
-For recursive folder discovery that skips invalid skills, use `SkillsDirectoryProvider(path, experimental_skills=True)`. To discover a coding agent's own skills folder through the extension, pass its path explicitly:
+To serve a folder of skills, point `SkillsDirectoryProvider` at it. Every subfolder with a `SKILL.md` becomes a skill, served at its path below the root, so `ops/deploy/SKILL.md` becomes `skill://ops/deploy/SKILL.md`. A coding agent's own skills folder works the same way:
 
 ```python
 from pathlib import Path
 
 from fastmcp import FastMCP
-from fastmcp.server.providers.skills import SkillsDirectoryProvider
+from fastmcp.skills.provider import SkillsDirectoryProvider
 
 root = Path.home() / ".claude" / "skills"
-provider = SkillsDirectoryProvider(root, experimental_skills=True)
-mcp = FastMCP("Local Skills", providers=[provider])
+mcp = FastMCP("Local Skills", providers=[SkillsDirectoryProvider(root)])
 ```
 
-Presets such as `ClaudeSkillsProvider` expose ordinary resources and do not accept the `experimental_skills` option.
+Each `SKILL.md` must follow the [Agent Skills spec](https://agentskills.io/specification): YAML frontmatter with a `description` and a `name` of lowercase letters, digits and hyphens that matches its folder. A folder that breaks the rules stops the server at startup with an error naming the fix for each one, so a server never comes up quietly missing skills. Hidden folders such as `.git` are skipped. Pass several roots and the first one wins when two contain the same path. The provider reads the folders once at startup; pass `reload=True` to re-read them on every request while you're editing a skill. If a re-read finds a broken folder, the error is logged and the last valid skills keep serving until you fix it.
 
 ## Access control
 
