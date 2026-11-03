@@ -51,3 +51,15 @@ def test_alpha_only_helper_is_gone():
     import fastmcp.utilities.skills as helpers
 
     assert not hasattr(helpers, "list_skill_summaries")
+
+
+def test_experimental_skills_refuses_subclasses(tmp_path: Path):
+    from fastmcp.server.providers.skills import (
+        SkillsDirectoryProvider as OldDirectoryProvider,
+    )
+
+    class GuardedProvider(OldDirectoryProvider):
+        pass
+
+    with pytest.raises(TypeError, match="GuardedProvider"):
+        GuardedProvider(tmp_path, experimental_skills=True)

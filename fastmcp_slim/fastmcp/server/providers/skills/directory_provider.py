@@ -62,6 +62,14 @@ class SkillsDirectoryProvider(AggregateProvider):
     def __new__(cls, *args: Any, **kwargs: Any) -> Any:
         if not kwargs.get("experimental_skills"):
             return super().__new__(cls)
+        if cls is not SkillsDirectoryProvider:
+            # A subclass may carry overrides (such as access checks) that the
+            # replacement would silently drop, so refuse instead.
+            raise TypeError(
+                f"`experimental_skills=True` is no longer supported on subclasses "
+                f"such as `{cls.__name__}`. Build on "
+                "`fastmcp.skills.provider.SkillsDirectoryProvider` instead."
+            )
         return _experimental_replacement(*args, **kwargs)
 
     def __init__(
