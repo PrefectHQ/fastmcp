@@ -55,7 +55,7 @@ class SkillFileResource(Resource):
 
 
 class SkillManifestResource(Resource):
-    """The resource-mode `_manifest` listing used by `sync_skills` and `download_skill`."""
+    """The `_manifest` file listing `Client.read_skill` uses without the Skills extension."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -164,9 +164,6 @@ class SkillCatalogProvider(Provider):
         if type(self).load_skills is SkillCatalogProvider.load_skills:
             return _locate(uri, self._static) is not None
         return uri.startswith("skill://")
-
-    def _validate_skill_source(self) -> None:
-        return None
 
     async def _skill_uris(self, uri: str | None = None) -> Sequence[str]:
         uris = [_skill_md_uri(path) for path in await self._catalog()]
