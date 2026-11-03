@@ -698,6 +698,44 @@ class TestPromptsAsToolsBasic:
             res = await client.call_tool("get_prompt", {"query": "hello"})
             assert res.data == "child: hello"
 
+    async def test_ancestor_aggregate_search_transform_hiding_child_tool_yields_synthetic_tool(
+        self,
+    ):
+        """When an untransformed mounted child is inside an AggregateProvider with a search transform,
+        the ancestor search transform is retained and the synthetic tool is advertised and callable."""
+        from fastmcp.server.providers import AggregateProvider
+        from fastmcp.server.transforms.search.regex import RegexSearchTransform
+
+        child = FastMCP("Child")
+
+        @child.tool(name="get_prompt")
+        def child_prompt(query: str) -> str:
+            return f"child: {query}"
+
+        agg = AggregateProvider()
+        agg.add_provider(child)
+        agg.add_transform(RegexSearchTransform(always_visible=[]))
+
+        parent = FastMCP("Parent", providers=[agg])
+
+        @parent.prompt(name="greet")
+        def greet_prompt(name: str = "World") -> str:
+            return f"Hello, {name}!"
+
+        parent.add_transform(PromptsAsTools(parent))
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            matched = [t for t in tools if t.name == "get_prompt"]
+            assert len(matched) == 1
+            assert "name" in matched[0].input_schema["properties"]
+
+            res = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(res.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
+
 
 class TestListPromptsTool:
     """Test the list_prompts tool."""

@@ -129,27 +129,27 @@ class PromptsAsTools(Transform):
                         current = rev
             return current
 
-        async def _find_tool_provider(target_tool: Tool) -> Any:
+        async def _find_tool_provider_chain(target_tool: Tool) -> list[Any]:
             server_attr = getattr(target_tool, "_server", None)
             provider_attr = getattr(target_tool, "_provider", None)
 
-            def _find_by_identity(providers_list: Sequence[Any]) -> Any:
+            def _find_by_identity(providers_list: Sequence[Any]) -> list[Any] | None:
                 for p in providers_list:
                     if server_attr is not None:
                         if getattr(p, "server", None) is server_attr:
-                            return p
+                            return [p]
                         inner = getattr(p, "_inner", None)
                         if getattr(inner, "server", None) is server_attr:
-                            return p
+                            return [p]
                     if provider_attr is not None and (
                         p is provider_attr
                         or getattr(p, "_inner", None) is provider_attr
                     ):
-                        return p
+                        return [p]
                     sub = getattr(p, "providers", [])
                     found = _find_by_identity(sub)
                     if found is not None:
-                        return found
+                        return [p, *found]
                 return None
 
             if server_attr is not None or provider_attr is not None:
@@ -159,7 +159,7 @@ class PromptsAsTools(Transform):
 
             async def _search_providers(
                 providers_list: Sequence[Any], name: str
-            ) -> Any:
+            ) -> list[Any] | None:
                 for p in providers_list:
                     local_name = _reverse_name_through_provider(p, name)
                     comps = getattr(p, "_components", None)
@@ -176,7 +176,7 @@ class PromptsAsTools(Transform):
                         )
                         for c in comps.values()
                     ):
-                        return p
+                        return [p]
 
                     tools_dict = getattr(p, "_tools", None)
                     if isinstance(tools_dict, dict) and any(
@@ -192,7 +192,13 @@ class PromptsAsTools(Transform):
                         )
                         for t in tools_dict.values()
                     ):
-                        return p
+                        return [p]
+
+                    sub = getattr(p, "providers", [])
+                    if sub:
+                        found = await _search_providers(sub, local_name)
+                        if found is not None:
+                            return [p, *found]
 
                     get_tool_fn = getattr(p, "_get_tool", None)
                     if callable(get_tool_fn):
@@ -211,12 +217,7 @@ class PromptsAsTools(Transform):
                                     and p_tool.version == target_tool.version
                                 )
                             ):
-                                return p
-
-                    sub = getattr(p, "providers", [])
-                    found = await _search_providers(sub, local_name)
-                    if found is not None:
-                        return found
+                                return [p]
                 return None
 
             found = await _search_providers(
@@ -240,14 +241,16 @@ class PromptsAsTools(Transform):
                     )
                     for c in comps.values()
                 ):
-                    return local_prov
+                    return [local_prov]
 
-            return getattr(self._provider, "local_provider", None) or self._provider
+            fallback = getattr(self._provider, "local_provider", None) or self._provider
+            return [fallback]
 
-        owner = await _find_tool_provider(tool)
+        chain = await _find_tool_provider_chain(tool)
+        owner = chain[-1] if chain else None
         owner_server = getattr(owner, "server", None)
 
-        has_owner_transforms = bool(owner and getattr(owner, "transforms", []))
+        has_chain_transforms = any(getattr(p, "transforms", None) for p in chain)
         has_owner_server_transforms = bool(
             owner_server and getattr(owner_server, "transforms", [])
         )
@@ -257,7 +260,7 @@ class PromptsAsTools(Transform):
         has_preceding_catalog = any(isinstance(t, CatalogTransform) for t in preceding)
 
         if (
-            not has_owner_transforms
+            not has_chain_transforms
             and not has_owner_server_transforms
             and not has_owner_server_middleware
             and not has_preceding_catalog
@@ -280,8 +283,8 @@ class PromptsAsTools(Transform):
         else:
             current_tools = [tool]
 
-        if owner is not None and getattr(owner, "transforms", None):
-            for t in getattr(owner, "transforms", []):
+        for p in reversed(chain):
+            for t in getattr(p, "transforms", []):
                 try:
                     current_tools = list(await t.list_tools(current_tools))
                 except Exception:
