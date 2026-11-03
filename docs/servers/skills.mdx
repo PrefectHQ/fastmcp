@@ -194,8 +194,12 @@ The providers in `fastmcp.server.providers.skills` and the helpers in `fastmcp.u
 | `SkillProvider(path)` | `SkillCatalogProvider([Skill.from_directory(path)])` |
 | `SkillsDirectoryProvider(root, experimental_skills=True)` | `SkillsDirectoryProvider(root)` from `fastmcp.skills.provider`; the old call already returns it |
 | `list_skills(client)` | `client.list_skill_resources()` (any server) or `client.list_skills()` (Skills extension) |
-| `get_skill_manifest(client, name)` | `client.get_skill(uri)` |
+| `get_skill_manifest(client, name)` | `client.read_resource('skill://<name>/_manifest')` for manifest JSON on any resource server; `client.get_skill(uri)` for Skills-extension entries |
 | `Skill(uri=..., frontmatter=..., resources=...)` from `fastmcp.skills` | `MCPSkill(...)`; `Skill` is now the authoring class |
 | `download_skill()` / `sync_skills()` | `client.read_skill(uri)` then `skill.to_directory(path)` ([example](#install-skills-into-a-local-agent)) |
 
 `client.list_skills()` needs a server that serves the Skills extension, which a 4.1 server doesn't. `client.list_skill_resources()` lists skills on any server that publishes them as `skill://` resources, and `client.read_skill(uri)` reads a valid skill through its `_manifest` resource, so both keep working with older servers after 4.3. The new provider has no `main_file_name` or `supporting_files`: the main file is always `SKILL.md`, and every file in a skill is readable as a resource.
+
+For manifest metadata alone, read the `_manifest` resource and parse its JSON; this does not require the Skills extension, download the skill's files, or validate their frontmatter. `client.get_skill(uri)` requires the extension, while `client.read_skill(uri)` downloads and validates the whole skill.
+
+Existing Pydantic fields annotated with the 4.1 `Skill` spelling still validate wire payloads as `MCPSkill`, and wire entries still satisfy `isinstance(entry, Skill)`. Change wire-model annotations and checks to `MCPSkill` before 4.3. File-serving providers require authored `Skill` values containing the actual files, so passing a wire entry to `SkillCatalogProvider` remains an error.

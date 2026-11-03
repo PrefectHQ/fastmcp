@@ -10,10 +10,11 @@ import warnings
 from collections.abc import Mapping
 from pathlib import Path, PureWindowsPath
 from types import MappingProxyType
-from typing import Any, cast
+from typing import Any, TypeGuard, cast
 from urllib.parse import quote
 
-from pydantic import JsonValue
+from pydantic import GetCoreSchemaHandler, JsonValue
+from pydantic_core import CoreSchema, core_schema
 from typing_extensions import Self
 
 from fastmcp._warnings import FastMCPDeprecationWarning
@@ -62,7 +63,27 @@ def _render_skill_md(frontmatter: Mapping[str, JsonValue], instructions: str) ->
     return f"---\n{header}---\n{instructions}".encode()
 
 
-class Skill:
+class _SkillMeta(type):
+    def __instancecheck__(cls, instance: object) -> bool:
+        # The public 4.1 spelling also identified wire entries. Do not extend
+        # this compatibility behavior to subclasses of the authoring class.
+        return super().__instancecheck__(instance) or (
+            cls is Skill and isinstance(instance, MCPSkill)
+        )
+
+
+def _is_authored_skill(value: object) -> TypeGuard[Skill]:
+    """Check real inheritance, excluding the public wire-model compatibility alias."""
+    return issubclass(type(value), Skill)
+
+
+def _require_authored_skill(value: object) -> Skill:
+    if not _is_authored_skill(value):
+        raise ValueError("Expected an authored Skill with file contents")
+    return value
+
+
+class Skill(metaclass=_SkillMeta):
     """An agent skill: a `SKILL.md` plus supporting files, independent of storage.
 
     A `Skill` holds exact file bytes. It doesn't know where it came from or which
@@ -87,6 +108,17 @@ class Skill:
 
     _files: Mapping[str, bytes]
     _frontmatter: SkillFrontmatter
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        # Existing authoring values stay intact; dictionaries and JSON retain
+        # the 4.1 wire-model validation and serialization contract.
+        wire_schema = handler.generate_schema(MCPSkill)
+        return core_schema.union_schema(
+            [core_schema.is_instance_schema(cls), wire_schema]
+        )
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         # In 4.1 `fastmcp.skills.Skill` was the wire model now named `MCPSkill`.
@@ -310,7 +342,7 @@ class Skill:
         )
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, Skill) and self._files == other._files
+        return _is_authored_skill(other) and self._files == other._files
 
     def __hash__(self) -> int:
         return hash(tuple(self._files.items()))

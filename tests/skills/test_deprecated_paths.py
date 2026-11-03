@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import warnings
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from fastmcp import Client, FastMCP
 from fastmcp._warnings import FastMCPDeprecationWarning
-from fastmcp.skills import Skill, SkillsClientExtension
+from fastmcp.skills import MCPSkill, Skill, SkillsClientExtension
 from fastmcp.skills.extension import SkillsExtension
-from fastmcp.skills.provider import SkillsDirectoryProvider
+from fastmcp.skills.provider import (
+    SkillCatalogProvider,
+    SkillFileResource,
+    SkillManifestResource,
+    SkillsDirectoryProvider,
+)
 from fastmcp.utilities.tests import temporary_settings
 
 REVIEW = Skill(name="review", description="Review changes", instructions="# Review\n")
@@ -232,3 +239,75 @@ def test_experimental_skills_refuses_subclasses(tmp_path: Path):
 
     with pytest.raises(TypeError, match="GuardedProvider"):
         GuardedProvider(tmp_path, experimental_skills=True)
+
+
+def test_41_skill_pydantic_field_and_instance_checks():
+    class Envelope(BaseModel):
+        skill: Skill
+
+    payload = {
+        "uri": "skill://review/SKILL.md",
+        "frontmatter": {"name": "review", "description": "Review changes"},
+        "resources": "dynamic",
+    }
+    envelope = Envelope.model_validate({"skill": payload})
+    assert isinstance(envelope.skill, Skill)
+    assert isinstance(envelope.skill, MCPSkill)
+    assert Envelope.model_validate_json(envelope.model_dump_json()) == envelope
+    assert Envelope.model_json_schema()["properties"]["skill"]
+    adapter = TypeAdapter(Skill)
+    assert adapter.validate_python(payload) == envelope.skill
+    assert adapter.validate_json(adapter.dump_json(envelope.skill)) == envelope.skill
+    assert adapter.validate_python(REVIEW) is REVIEW
+
+
+def test_wire_skill_is_not_an_authored_catalog_value():
+    entry = REVIEW.to_mcp_skill()
+    assert isinstance(entry, Skill)
+    assert REVIEW != entry
+    with pytest.raises(TypeError, match="Expected a Skill"):
+        SkillCatalogProvider({"review": entry})
+    with pytest.raises(TypeError, match="Expected a Skill"):
+        SkillCatalogProvider([entry])
+
+
+@pytest.mark.parametrize("resource_cls", [SkillFileResource, SkillManifestResource])
+def test_skill_resources_require_authored_file_contents(resource_cls: type):
+    with pytest.raises(ValidationError, match="Expected an authored Skill"):
+        resource_cls(
+            uri="skill://review/SKILL.md",
+            skill=REVIEW.to_mcp_skill(),
+            skill_path="review",
+            file_path="SKILL.md",
+        )
+
+
+def test_wire_skill_does_not_satisfy_an_authoring_subclass():
+    class CustomSkill(Skill):
+        pass
+
+    assert not isinstance(REVIEW.to_mcp_skill(), CustomSkill)
+    assert isinstance(
+        CustomSkill(name="review", description="Review", instructions=""), Skill
+    )
+
+
+async def test_manifest_warning_preserves_resource_only_access(tmp_path: Path):
+    from fastmcp.server.providers.skills import SkillProvider
+    from fastmcp.utilities.skills import get_skill_manifest
+
+    folder = write_invalid(tmp_path / "review")
+    with pytest.warns(FastMCPDeprecationWarning):
+        provider = SkillProvider(folder)
+    async with Client(FastMCP("Resources only", providers=[provider])) as client:
+        with pytest.warns(FastMCPDeprecationWarning) as record:
+            manifest = await get_skill_manifest(client, "review")
+        assert "client.read_resource('skill://<name>/_manifest')" in str(
+            record[0].message
+        )
+        (content,) = await client.read_resource("skill://review/_manifest")
+        assert json.loads(getattr(content, "text"))["files"][0]["size"] == (
+            manifest.files[0].size
+        )
+        with pytest.raises(RuntimeError, match="Skills extension"):
+            await client.get_skill("skill://review/SKILL.md")

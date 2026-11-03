@@ -10,19 +10,24 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Annotated, Any, cast
 from urllib.parse import quote, unquote
 
 import anyio
 from mcp.server.context import ServerRequestContext
-from pydantic import AnyUrl, ConfigDict, ValidationError
+from pydantic import AnyUrl, BeforeValidator, ConfigDict, ValidationError
 
 from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.providers.base import Provider
 from fastmcp.skills._routing import _may_read, _resolve_read
 from fastmcp.skills.models import MCPSkill
-from fastmcp.skills.skill import Skill, _validate_relative_path
+from fastmcp.skills.skill import (
+    Skill,
+    _is_authored_skill,
+    _require_authored_skill,
+    _validate_relative_path,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec
 
@@ -41,7 +46,7 @@ class SkillFileResource(Resource):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    skill: Skill
+    skill: Annotated[Skill, BeforeValidator(_require_authored_skill)]
     skill_path: str
     file_path: str
 
@@ -59,7 +64,7 @@ class SkillManifestResource(Resource):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    skill: Skill
+    skill: Annotated[Skill, BeforeValidator(_require_authored_skill)]
 
     async def read(self) -> str:
         files = [
@@ -375,11 +380,13 @@ def _normalize(skills: SkillCatalog) -> dict[str, Skill]:
     else:
         catalog = {}
         for skill in skills:
+            if not _is_authored_skill(skill):
+                raise TypeError(f"Expected a Skill, got {type(skill).__name__}")
             if skill.name in catalog:
                 raise ValueError(f"Duplicate skill name: {skill.name!r}")
             catalog[skill.name] = skill
     for path, skill in catalog.items():
-        if not isinstance(skill, Skill):
+        if not _is_authored_skill(skill):
             raise TypeError(f"Expected a Skill at {path!r}, got {type(skill).__name__}")
         if path.split("/")[-1] != skill.name:
             raise ValueError(
