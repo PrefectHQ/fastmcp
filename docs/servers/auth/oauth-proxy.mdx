@@ -815,6 +815,10 @@ On every platform, FastMCP deterministically derives `jwt_signing_key` from `ups
 **For production:**
 Configure the following parameters together: provide a unique `jwt_signing_key` (for signing FastMCP JWTs), and a shared `client_storage` backend (for storing tokens). Both are required for production deployments. Use a network-accessible storage backend like Redis or DynamoDB rather than local disk storage. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** (see the `client_storage` parameter documentation above for examples). The keys accept any secret string and derive proper cryptographic keys using HKDF. See [OAuth Token Security](/deployment/http#oauth-token-security) and [Storage Backends](/servers/storage-backends) for complete production setup.
 
+#### Expired state cleanup
+
+The default file store accumulates expired entries on disk (authorization transaction state, auth codes, upstream tokens, and JTI mappings). FastMCP reaps them in the background as the proxy handles OAuth traffic, at most once an hour, and the first flow after a restart clears whatever previous runs left behind. Entries without a TTL (e.g. DCR client registrations) are left untouched, and a custom `client_storage` is never culled: expiry there is the backend's job.
+
 ### Confused Deputy Attacks
 
 <VersionBadge version="2.13.0" />

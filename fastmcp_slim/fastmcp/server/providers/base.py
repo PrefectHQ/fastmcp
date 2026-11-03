@@ -281,7 +281,7 @@ class Provider:
         Server (FastMCP) performs enabled filtering after all transforms.
 
         Args:
-            tool_hash: The identity hash from a `<hash>_<local_name>` name.
+            tool_hash: The identity hash from a `__<hash>_<local_name>` name.
             tool_name: The local tool name from the same name.
 
         Returns:

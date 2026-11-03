@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from collections.abc import Awaitable, Iterable, Sequence
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 _SKILLS_METHOD_VERSIONS = frozenset(MODERN_PROTOCOL_VERSIONS)
+_T = TypeVar("_T")
 
 
 class SkillsExtension(ServerExtension):
@@ -41,9 +42,10 @@ class SkillsExtension(ServerExtension):
 
     Skill providers register this extension automatically, so most servers
     never construct it. With no `providers`, it serves every skill source
-    registered directly on the server plus the skills of mounted servers,
+    registered directly on the server, the backend skills of each
+    `ProxyProvider(..., skills=True)`, and the skills of mounted servers,
     rewritten to the URIs the parent serves them at. Pass `providers` to limit
-    discovery to an explicit list of directly registered providers.
+    discovery to an explicit list of directly registered skill providers.
     """
 
     identifier = SKILLS_EXTENSION_ID
@@ -108,11 +110,14 @@ class SkillsExtension(ServerExtension):
             )
         if server.transforms:
             return ()
+        # Deferred so that registering Skills doesn't load the client stack.
+        from fastmcp.skills._proxy import _proxied_source
+
         sources: list[_SkillSource] = []
         for provider in server.providers:
-            mounted = _mounted_source(provider)
-            if mounted is not None:
-                sources.append(mounted)
+            source = _mounted_source(provider) or _proxied_source(provider)
+            if source is not None:
+                sources.append(source)
             elif isinstance(provider, _SkillSource) and not provider.transforms:
                 try:
                     provider._validate_skill_source()
@@ -144,21 +149,35 @@ class SkillsExtension(ServerExtension):
             ),
         )
 
+    async def _gather(self, operations: Iterable[Awaitable[_T]]) -> list[_T]:
+        async with Context(fastmcp=self.server):
+            results = await gather(operations, return_exceptions=True)
+        successful = []
+        for result in results:
+            if isinstance(result, BaseException):
+                if (
+                    not isinstance(result, Exception)
+                    or self.server._raises_on_provider_error()
+                ):
+                    raise result
+                logger.warning("Error loading Skills source: %s", result)
+            else:
+                successful.append(result)
+        return successful
+
     async def _identities(self, uri: str | None = None) -> list[str]:
         """Skill URIs before authorization, preserving duplicates across sources."""
         sources = self._sources
-        async with Context(fastmcp=self.server):
-            groups = await gather(source._skill_uris(uri) for source in sources)
+        groups = await self._gather(source._skill_uris(uri) for source in sources)
         return [identity for group in groups for identity in group]
 
     async def _list_entries(
         self, context: ServerRequestContext[Any, Any]
     ) -> list[MCPSkill]:
         sources = self._sources
-        async with Context(fastmcp=self.server):
-            source_entries = await gather(
-                source._list_skill_entries(context) for source in sources
-            )
+        source_entries = await self._gather(
+            source._list_skill_entries(context) for source in sources
+        )
         counts = Counter(await self._identities())
         collisions = sorted(uri for uri, count in counts.items() if count > 1)
         if collisions:
@@ -182,10 +201,9 @@ class SkillsExtension(ServerExtension):
         if (await self._identities(uri)).count(uri) != 1:
             return None
         sources = self._sources
-        async with Context(fastmcp=self.server):
-            results = await gather(
-                source._get_skill_entry(uri, context) for source in sources
-            )
+        results = await self._gather(
+            source._get_skill_entry(uri, context) for source in sources
+        )
         matches = [entry for entry in results if entry is not None]
         if len(matches) != 1 or matches[0].uri != uri:
             return None

@@ -4,25 +4,36 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
+import tempfile
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from types import MappingProxyType
 from typing import Any
 from urllib.parse import quote
 
 from pydantic import JsonValue
 
+from fastmcp.skills._constants import MAX_SKILL_BYTES, MAX_SKILL_FILES
 from fastmcp.skills.models import MCPSkill, SkillFrontmatter, SkillResource
 
-# SEP-2640 per-skill limits; servers should not serve skills that exceed them.
-MAX_SKILL_FILES = 512
-MAX_SKILL_BYTES = 16 * 1024 * 1024
+
+def _validate_limits(file_count: int, total_bytes: int) -> None:
+    if file_count > MAX_SKILL_FILES:
+        raise ValueError(f"A skill may contain at most {MAX_SKILL_FILES} files")
+    if total_bytes > MAX_SKILL_BYTES:
+        raise ValueError(f"A skill may contain at most {MAX_SKILL_BYTES} bytes")
 
 
 def _validate_relative_path(path: str) -> str:
     if not isinstance(path, str) or not path:
         raise ValueError("Skill file paths must be non-empty strings")
-    if path.startswith("/") or "\\" in path or "\x00" in path:
+    if (
+        path.startswith("/")
+        or PureWindowsPath(path).drive
+        or "\\" in path
+        or "\x00" in path
+    ):
         raise ValueError(f"Skill file path must be relative POSIX: {path!r}")
     parts = path.split("/")
     if any(part in {"", ".", ".."} for part in parts):
@@ -99,10 +110,7 @@ class Skill:
             )
         if "SKILL.md" not in normalized:
             raise ValueError("A skill must contain SKILL.md")
-        if len(normalized) > MAX_SKILL_FILES:
-            raise ValueError(f"A skill may contain at most {MAX_SKILL_FILES} files")
-        if sum(map(len, normalized.values())) > MAX_SKILL_BYTES:
-            raise ValueError(f"A skill may contain at most {MAX_SKILL_BYTES} bytes")
+        _validate_limits(len(normalized), sum(map(len, normalized.values())))
         for path in normalized:
             parts = path.split("/")
             for index in range(1, len(parts)):
@@ -140,10 +148,9 @@ class Skill:
         from fastmcp.skills._snapshot import scan_files
 
         root = Path(path).absolute()
-        files = {
-            file.relative_to(root).as_posix(): file.read_bytes()
-            for file in scan_files(root)
-        }
+        paths = scan_files(root)
+        _validate_limits(len(paths), sum(file.stat().st_size for file in paths))
+        files = {file.relative_to(root).as_posix(): file.read_bytes() for file in paths}
         skill = cls.from_files(files)
         if skill.name != root.name:
             raise ValueError(
@@ -177,6 +184,62 @@ class Skill:
                 f"Skill folder {root.name!r} must match its SKILL.md name {skill.name!r}"
             )
         return skill
+
+    def to_directory(
+        self, path: str | os.PathLike[str], *, overwrite: bool = False
+    ) -> Path:
+        """Write the skill's files into `path`, a folder named after the skill.
+
+        The folder name must match the skill's `name`, so `from_directory` can
+        read it back. An existing folder raises `FileExistsError` unless
+        `overwrite` is set, in which case it is replaced: files that aren't
+        part of the skill are removed. Files are staged before replacing an
+        existing folder. If replacement and restoration both fail, the error
+        identifies where the previous folder has been retained.
+        """
+        root = Path(path)
+        if root.name != self.name:
+            raise ValueError(
+                f"Skill folder {root.name!r} must match the skill's name {self.name!r}"
+            )
+        if root.is_symlink():
+            raise ValueError(f"Skill folder is a symlink: {root}")
+        if root.exists():
+            if not overwrite:
+                raise FileExistsError(
+                    f"Skill directory already exists: {root}. "
+                    "Use overwrite=True to replace."
+                )
+            if not root.is_dir():
+                raise ValueError(f"Skill folder is not a directory: {root}")
+        root.parent.mkdir(parents=True, exist_ok=True)
+        staging = Path(tempfile.mkdtemp(prefix=f".{root.name}-", dir=root.parent))
+        previous = staging / "previous"
+        try:
+            replacement = staging / "new"
+            for relative, content in self._files.items():
+                target = replacement / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+            if root.exists():
+                root.rename(previous)
+            try:
+                replacement.rename(root)
+            except OSError:
+                if previous.exists():
+                    try:
+                        previous.rename(root)
+                    except OSError as exc:
+                        raise OSError(
+                            f"Could not restore {root}; previous skill remains at {previous}"
+                        ) from exc
+                raise
+            if previous.exists():
+                shutil.rmtree(previous)
+        finally:
+            if not previous.exists():
+                shutil.rmtree(staging)
+        return root
 
     @property
     def name(self) -> str:
