@@ -5,6 +5,19 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.1.6" description="2026-11-03">
+
+**[v4.1.6: Group Therapy](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.6)**
+
+`ClientGroup` keeps its tool routes after the group context exits, so a tool resolved inside the group can still be called while its owning client stays connected. This is the fix LangChain's MCP adapter needs. Thanks to @hntrl and @YingzuoLiu.
+
+### Fixes 🐞
+* fix(client): keep ClientGroup tool routes after the group context exits by [@zzstoatzz](https://github.com/zzstoatzz), [@hntrl](https://github.com/hntrl) and [@YingzuoLiu](https://github.com/YingzuoLiu) in [#6271](https://github.com/PrefectHQ/fastmcp/pull/6271)
+
+**Full Changelog**: [v4.1.5...v4.1.6](https://github.com/PrefectHQ/fastmcp/compare/v4.1.5...v4.1.6)
+
+</Update>
+
 <Update label="v4.1.5" description="2026-11-01">
 
 **[v4.1.5: Back to the Fourture](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.5)**
