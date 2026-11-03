@@ -109,14 +109,14 @@ class FileSystemProvider(LocalProvider):
 
     def _load_components(self) -> None:
         """Discover and register all components from the filesystem."""
-        if self._loaded:
-            self._components.clear()
-
         if not self._root.exists():
             logger.warning("FileSystemProvider root does not exist: %s", self._root)
 
         result = discover_and_import(self._root)
         self._failed_files = dict(result.failed_files)
+
+        if self._loaded:
+            self._components.clear()
 
         # Log warnings for failed files (only once per file version)
         for file_path, error in result.failed_files.items():

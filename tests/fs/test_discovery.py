@@ -388,6 +388,42 @@ def bad_function():
         assert failed_path in result.failed_files
         assert "nonexistent_module_xyz123" in result.failed_files[failed_path]
 
+    def test_discover_and_import_skips_component_construction_failures(
+        self, tmp_path: Path
+    ):
+        """Should skip files whose decorators fail component conversion and track them."""
+        (tmp_path / "good.py").write_text(
+            """\
+from fastmcp.tools import tool
+
+@tool
+def good_tool() -> str:
+    return "good"
+"""
+        )
+        (tmp_path / "bad.py").write_text(
+            """\
+from fastmcp.tools import tool
+
+@tool
+def bad_tool(*args: str) -> str:
+    return "bad"
+"""
+        )
+
+        result = discover_and_import(tmp_path)
+
+        # Only good.py should be imported
+        assert len(result.components) == 1
+        _, component = result.components[0]
+        assert component.name == "good_tool"
+
+        # bad.py should be in failed_files
+        assert len(result.failed_files) == 1
+        failed_path = tmp_path / "bad.py"
+        assert failed_path in result.failed_files
+        assert "*args are not supported" in result.failed_files[failed_path]
+
 
 class TestExtractComponentsVersion:
     """Tests for version propagation in extract_components."""

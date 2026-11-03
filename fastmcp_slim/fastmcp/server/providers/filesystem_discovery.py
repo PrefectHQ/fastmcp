@@ -419,9 +419,9 @@ def discover_and_import(root: Path) -> DiscoveryResult:
         DiscoveryResult with components and any failed files.
 
     Note:
-        Files that fail to import are tracked in failed_files, not logged.
-        The caller is responsible for logging/handling failures.
-        Files with no components are silently skipped.
+        Files that fail to import or extract components from are tracked in
+        failed_files, not logged. The caller is responsible for logging/handling
+        failures. Files with no components are silently skipped.
     """
     result = DiscoveryResult()
 
@@ -432,7 +432,12 @@ def discover_and_import(root: Path) -> DiscoveryResult:
             result.failed_files[file_path] = str(e)
             continue
 
-        components = extract_components(module)
+        try:
+            components = extract_components(module)
+        except Exception as e:
+            result.failed_files[file_path] = str(e)
+            continue
+
         for component in components:
             result.components.append((file_path, component))
 

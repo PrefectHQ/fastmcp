@@ -83,6 +83,41 @@ def my_tool() -> str:
         assert await provider.list_tools() == []
         assert provider.failed_files == {}
 
+    async def test_provider_isolates_component_construction_failures(
+        self, tmp_path: Path
+    ):
+        """Component construction failures should not hide healthy tools on reload or startup."""
+        (tmp_path / "healthy.py").write_text(
+            """\
+from fastmcp.tools import tool
+
+@tool
+def healthy() -> str:
+    return "ok"
+"""
+        )
+        provider = FileSystemProvider(tmp_path, reload=True)
+        tools = await provider.list_tools()
+        assert [t.name for t in tools] == ["healthy"]
+        assert provider.failed_files == {}
+
+        # Add a file with an invalid tool signature (*args)
+        broken_file = tmp_path / "broken.py"
+        broken_file.write_text(
+            """\
+from fastmcp.tools import tool
+
+@tool
+def broken(*args: str) -> str:
+    return "broken"
+"""
+        )
+
+        tools = await provider.list_tools()
+        assert [t.name for t in tools] == ["healthy"]
+        assert set(provider.failed_files) == {broken_file}
+        assert "*args are not supported" in provider.failed_files[broken_file]
+
     def test_provider_discovers_tools(self, tmp_path: Path):
         """Provider should discover @tool decorated functions."""
         tools_dir = tmp_path / "tools"
