@@ -811,6 +811,193 @@ class TestPromptsAsToolsBasic:
             data = json.loads(res.data)
             assert "Hello, Alice!" in data["messages"][0]["content"]
 
+    async def test_preceding_visibility_disable_yields_synthetic_tool(self):
+        """When mcp.disable precedes PromptsAsTools and disables user tool, synthetic tool is retained."""
+        mcp = FastMCP("Test")
+
+        @mcp.tool(tags={"internal"})
+        def get_prompt(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.prompt(name="greet")
+        def greet_prompt(name: str = "World") -> str:
+            return f"Hello, {name}!"
+
+        mcp.disable(tags={"internal"})
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            matched = [t for t in tools if t.name == "get_prompt"]
+            assert len(matched) == 1
+            assert "name" in matched[0].input_schema["properties"]
+
+            res = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(res.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
+
+    async def test_session_visibility_disable_yields_synthetic_tool(self):
+        """When session visibility disables user tool, synthetic tool is retained."""
+        mcp = FastMCP("Test")
+
+        @mcp.tool(tags={"internal"})
+        def get_prompt(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.tool
+        async def deactivate(ctx: Context) -> str:
+            await ctx.disable_components(tags={"internal"}, components={"tool"})
+            return "ok"
+
+        @mcp.prompt(name="greet")
+        def greet_prompt(name: str = "World") -> str:
+            return f"Hello, {name}!"
+
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        async with Client(mcp) as client:
+            await client.call_tool("deactivate", {})
+            tools = await client.list_tools()
+            matched = [t for t in tools if t.name == "get_prompt"]
+            assert len(matched) == 1
+            assert "name" in matched[0].input_schema["properties"]
+
+            res = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(res.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
+
+    async def test_server_auth_middleware_unauthorized_yields_synthetic_tool(self):
+        """When server AuthMiddleware denies caller access to user tool, synthetic tool is retained."""
+        from fastmcp.server.auth import restrict_tag
+        from fastmcp.server.context import _current_transport
+        from fastmcp.server.middleware import AuthMiddleware
+
+        mcp = FastMCP(
+            "Test",
+            middleware=[AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"]))],
+        )
+
+        @mcp.tool(tags={"admin"})
+        def get_prompt(query: str) -> str:
+            return f"admin: {query}"
+
+        @mcp.prompt(name="greet")
+        def greet_prompt(name: str = "World") -> str:
+            return f"Hello, {name}!"
+
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        token = _current_transport.set("sse")
+        try:
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+                matched = [t for t in tools if t.name == "get_prompt"]
+                assert len(matched) == 1
+                assert "name" in matched[0].input_schema["properties"]
+
+                res = await client.call_tool(
+                    "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+                )
+                data = json.loads(res.data)
+                assert "Hello, Alice!" in data["messages"][0]["content"]
+        finally:
+            _current_transport.reset(token)
+
+    async def test_parent_and_child_same_name_resolves_child_search_hiding(self):
+        """When parent and child both have a tool named fetch_data, and child hides it before renaming to get_prompt,
+        child ownership is resolved and synthetic tool is retained."""
+        from fastmcp.server.providers import LocalProvider
+        from fastmcp.server.transforms import ToolTransform
+        from fastmcp.server.transforms.search.regex import RegexSearchTransform
+        from fastmcp.tools.tool_transform import ToolTransformConfig
+
+        child = LocalProvider()
+
+        @child.tool(name="fetch_data")
+        def child_fetch_data(query: str) -> str:
+            return f"child: {query}"
+
+        child.add_transform(RegexSearchTransform(always_visible=[]))
+        child.add_transform(
+            ToolTransform({"fetch_data": ToolTransformConfig(name="get_prompt")})
+        )
+
+        parent = FastMCP("Parent", providers=[child])
+
+        @parent.tool(name="fetch_data")
+        def parent_fetch_data(query: str) -> str:
+            return f"parent: {query}"
+
+        @parent.prompt(name="greet")
+        def greet_prompt(name: str = "World") -> str:
+            return f"Hello, {name}!"
+
+        parent.add_transform(PromptsAsTools(parent))
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            matched = [t for t in tools if t.name == "get_prompt"]
+            assert len(matched) == 1
+            assert "name" in matched[0].input_schema["properties"]
+
+            res = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(res.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
+
+    async def test_tool_transform_swap_post_transform_identity(self):
+        """When tools are renamed in a swap and search retains the other tool, post-transform identity check
+        correctly detects that get_prompt is hidden and returns the synthetic tool."""
+        from fastmcp.server.providers import LocalProvider
+        from fastmcp.server.transforms import ToolTransform
+        from fastmcp.server.transforms.search.regex import RegexSearchTransform
+        from fastmcp.tools.tool_transform import ToolTransformConfig
+
+        provider = LocalProvider()
+
+        @provider.tool
+        def fetch_data(query: str) -> str:
+            return f"reader: {query}"
+
+        @provider.tool
+        def read_report(query: str) -> str:
+            return f"report: {query}"
+
+        provider.add_transform(
+            ToolTransform(
+                {
+                    "fetch_data": ToolTransformConfig(name="get_prompt"),
+                    "read_report": ToolTransformConfig(name="fetch_data"),
+                }
+            )
+        )
+        provider.add_transform(RegexSearchTransform(always_visible=["fetch_data"]))
+
+        mcp = FastMCP("Test", providers=[provider])
+
+        @mcp.prompt(name="greet")
+        def greet_prompt(name: str = "World") -> str:
+            return f"Hello, {name}!"
+
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            matched = [t for t in tools if t.name == "get_prompt"]
+            assert len(matched) == 1
+            assert "name" in matched[0].input_schema["properties"]
+
+            res = await client.call_tool(
+                "get_prompt", {"name": "greet", "arguments": {"name": "Alice"}}
+            )
+            data = json.loads(res.data)
+            assert "Hello, Alice!" in data["messages"][0]["content"]
+
 
 class TestListPromptsTool:
     """Test the list_prompts tool."""

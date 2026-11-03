@@ -78,30 +78,54 @@ class ResourcesAsTools(Transform):
         return f"ResourcesAsTools({self._provider!r})"
 
     async def _is_tool_finally_enabled(self, tool: Tool) -> bool:
-        """Check if tool is enabled and will not be disabled by subsequent or session visibility transforms."""
+        """Check if tool is enabled and will not be disabled by server or session visibility transforms."""
         from fastmcp.server.transforms.visibility import (
             Visibility,
             apply_session_transforms,
             is_enabled,
         )
 
-        if not is_enabled(tool):
-            return False
-
-        transforms = getattr(self._provider, "transforms", [])
-        try:
-            idx = transforms.index(self)
-            subsequent = transforms[idx + 1 :]
-        except ValueError:
-            subsequent = []
-
         current_tool = tool
-        for t in subsequent:
+        transforms = getattr(self._provider, "transforms", [])
+        for t in transforms:
             if isinstance(t, Visibility):
                 current_tool = t._mark_component(current_tool)
 
         session_tools = await apply_session_transforms([current_tool])
         return is_enabled(session_tools[0])
+
+    async def _is_tool_authorized(self, tool: Tool) -> bool:
+        """Check if tool is authorized by component auth and server AuthMiddleware."""
+        from fastmcp.exceptions import AuthorizationError
+        from fastmcp.server.auth import AuthContext, run_auth_checks
+        from fastmcp.server.context import _current_transport
+        from fastmcp.server.dependencies import get_access_token
+        from fastmcp.server.middleware.authorization import AuthMiddleware
+        from fastmcp.server.server import _component_auth_allows
+
+        try:
+            if not await _component_auth_allows(tool):
+                return False
+        except Exception:
+            return False
+
+        if _current_transport.get() == "stdio":
+            return True
+
+        middleware = getattr(self._provider, "middleware", None)
+        if isinstance(middleware, list):
+            token = get_access_token()
+            ctx = AuthContext(token=token, component=tool)
+            for mw in middleware:
+                if isinstance(mw, AuthMiddleware):
+                    try:
+                        if not await run_auth_checks(mw.auth, ctx):
+                            return False
+                    except AuthorizationError:
+                        return False
+                    except Exception:
+                        return False
+        return True
 
     async def _is_tool_hidden_by_search(self, tool: Tool) -> bool:
         """Check if a specific tool is hidden by search, catalog transforms, or child middleware."""
@@ -183,6 +207,50 @@ class ResourcesAsTools(Transform):
                 by_id = _find_by_identity(getattr(self._provider, "providers", []))
                 if by_id is not None:
                     return by_id
+
+            def _find_by_tool_object(
+                providers_list: Sequence[Any],
+            ) -> list[Any] | None:
+                for p in providers_list:
+                    comps = getattr(p, "_components", None)
+                    if isinstance(comps, dict) and any(
+                        isinstance(c, ToolCls)
+                        and any(c is ct for ct in candidate_tools)
+                        for c in comps.values()
+                    ):
+                        return [p]
+                    tools_dict = getattr(p, "_tools", None)
+                    if isinstance(tools_dict, dict) and any(
+                        isinstance(t, ToolCls)
+                        and any(t is ct for ct in candidate_tools)
+                        for t in tools_dict.values()
+                    ):
+                        return [p]
+                    sub = getattr(p, "providers", [])
+                    if sub:
+                        found = _find_by_tool_object(sub)
+                        if found is not None:
+                            return [p, *found]
+                return None
+
+            by_tool_obj = _find_by_tool_object(getattr(self._provider, "providers", []))
+            if by_tool_obj is not None:
+                return by_tool_obj
+
+            local_prov = getattr(self._provider, "local_provider", None)
+            if local_prov is not None:
+                comps = getattr(local_prov, "_components", None)
+                if isinstance(comps, dict) and any(
+                    isinstance(c, ToolCls) and any(c is ct for ct in candidate_tools)
+                    for c in comps.values()
+                ):
+                    return [local_prov]
+                tools_dict = getattr(local_prov, "_tools", None)
+                if isinstance(tools_dict, dict) and any(
+                    isinstance(t, ToolCls) and any(t is ct for ct in candidate_tools)
+                    for t in tools_dict.values()
+                ):
+                    return [local_prov]
 
             async def _search_providers(
                 providers_list: Sequence[Any], name: str
@@ -366,17 +434,28 @@ class ResourcesAsTools(Transform):
         if owner is not None and (
             owner is not local_prov or getattr(local_prov, "transforms", None)
         ):
+            pre_name = tool.name
+            for t in reversed(preceding):
+                if isinstance(t, Namespace):
+                    rev = t._reverse_name(pre_name)
+                    if rev is not None:
+                        pre_name = rev
+                name_reverse = getattr(t, "_name_reverse", None)
+                if isinstance(name_reverse, dict) and pre_name in name_reverse:
+                    pre_name = name_reverse[pre_name]
+
             if not any(
                 isinstance(x, ToolCls)
-                and any(
-                    x is ct
-                    or (x.key is not None and x.key == ct.key)
-                    or (x.name == ct.name and x.version == ct.version)
+                and (
+                    x is tool
+                    or getattr(x, "parent_tool", None) is tool
+                    or getattr(tool, "parent_tool", None) is x
+                    or (x.name == pre_name and x.version == tool.version)
                     or (
-                        getattr(ct, "_original_name", None) is not None
-                        and x.name == getattr(ct, "_original_name", None)
+                        pre_name == tool.name
+                        and x.key is not None
+                        and x.key == tool.key
                     )
-                    for ct in candidate_tools
                 )
                 for x in current_tools
             ):
@@ -392,23 +471,18 @@ class ResourcesAsTools(Transform):
 
         return not any(
             isinstance(x, ToolCls)
-            and any(
-                x is ct
-                or (x.key is not None and x.key == ct.key)
-                or (x.name == ct.name and x.version == ct.version)
-                or (
-                    getattr(ct, "_original_name", None) is not None
-                    and x.name == getattr(ct, "_original_name", None)
-                )
-                for ct in candidate_tools
+            and (
+                x is tool
+                or getattr(x, "parent_tool", None) is tool
+                or getattr(tool, "parent_tool", None) is x
+                or (x.key is not None and x.key == tool.key)
+                or (x.name == tool.name and x.version == tool.version)
             )
             for x in current_tools
         )
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """Add resource tools to the tool list."""
-        from fastmcp.server.server import _component_auth_allows
-
         list_tool = self._make_list_resources_tool()
         read_tool = self._make_read_resource_tool()
         candidate_keys = {list_tool.key, read_tool.key}
@@ -418,10 +492,7 @@ class ResourcesAsTools(Transform):
             if t.key in candidate_keys:
                 if not await self._is_tool_finally_enabled(t):
                     continue
-                try:
-                    if await _component_auth_allows(t):
-                        existing_keys.add(t.key)
-                except Exception:
+                if await self._is_tool_authorized(t):
                     existing_keys.add(t.key)
 
         synthetic: list[Tool] = []
@@ -435,8 +506,6 @@ class ResourcesAsTools(Transform):
         self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get a tool by name, including generated resource tools."""
-        from fastmcp.server.server import _component_auth_allows
-
         if name not in ("list_resources", "read_resource"):
             return await call_next(name, version=version)
 
@@ -448,15 +517,14 @@ class ResourcesAsTools(Transform):
         syn_matches = version is None or version.matches(syn.version)
 
         existing = await call_next(name, version=version)
-        if existing is not None and await self._is_tool_finally_enabled(existing):
-            try:
-                allowed = await _component_auth_allows(existing)
-            except Exception:
-                allowed = True
-            if allowed:
-                if syn_matches and await self._is_tool_hidden_by_search(existing):
-                    return syn
-                return existing
+        if (
+            existing is not None
+            and await self._is_tool_finally_enabled(existing)
+            and await self._is_tool_authorized(existing)
+        ):
+            if syn_matches and await self._is_tool_hidden_by_search(existing):
+                return syn
+            return existing
 
         if syn_matches:
             return syn

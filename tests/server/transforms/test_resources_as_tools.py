@@ -767,6 +767,178 @@ class TestResourcesAsToolsBasic:
             res = await client.call_tool("read_resource", {"uri": "config://app"})
             assert res.data == "app config"
 
+    async def test_preceding_visibility_disable_yields_synthetic_tool(self):
+        """When mcp.disable precedes ResourcesAsTools and disables user tool, synthetic tool is retained."""
+        mcp = FastMCP("Test")
+
+        @mcp.tool(tags={"internal"})
+        def read_resource(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "app config"
+
+        mcp.disable(tags={"internal"})
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            matched = [t for t in tools if t.name == "read_resource"]
+            assert len(matched) == 1
+            assert "uri" in matched[0].input_schema["properties"]
+
+            res = await client.call_tool("read_resource", {"uri": "config://app"})
+            assert res.data == "app config"
+
+    async def test_session_visibility_disable_yields_synthetic_tool(self):
+        """When session visibility disables user tool, synthetic tool is retained."""
+        mcp = FastMCP("Test")
+
+        @mcp.tool(tags={"internal"})
+        def read_resource(query: str) -> str:
+            return f"user: {query}"
+
+        @mcp.tool
+        async def deactivate(ctx: Context) -> str:
+            await ctx.disable_components(tags={"internal"}, components={"tool"})
+            return "ok"
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "app config"
+
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            await client.call_tool("deactivate", {})
+            tools = await client.list_tools()
+            matched = [t for t in tools if t.name == "read_resource"]
+            assert len(matched) == 1
+            assert "uri" in matched[0].input_schema["properties"]
+
+            res = await client.call_tool("read_resource", {"uri": "config://app"})
+            assert res.data == "app config"
+
+    async def test_server_auth_middleware_unauthorized_yields_synthetic_tool(self):
+        """When server AuthMiddleware denies caller access to user tool, synthetic tool is retained."""
+        from fastmcp.server.auth import restrict_tag
+        from fastmcp.server.context import _current_transport
+        from fastmcp.server.middleware import AuthMiddleware
+
+        mcp = FastMCP(
+            "Test",
+            middleware=[AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"]))],
+        )
+
+        @mcp.tool(tags={"admin"})
+        def read_resource(query: str) -> str:
+            return f"admin: {query}"
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "app config"
+
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        token = _current_transport.set("sse")
+        try:
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+                matched = [t for t in tools if t.name == "read_resource"]
+                assert len(matched) == 1
+                assert "uri" in matched[0].input_schema["properties"]
+
+                res = await client.call_tool("read_resource", {"uri": "config://app"})
+                assert res.data == "app config"
+        finally:
+            _current_transport.reset(token)
+
+    async def test_parent_and_child_same_name_resolves_child_search_hiding(self):
+        """When parent and child both have a tool named fetch_data, and child hides it before renaming to read_resource,
+        child ownership is resolved and synthetic tool is retained."""
+        from fastmcp.server.providers import LocalProvider
+        from fastmcp.server.transforms import ToolTransform
+        from fastmcp.server.transforms.search.regex import RegexSearchTransform
+        from fastmcp.tools.tool_transform import ToolTransformConfig
+
+        child = LocalProvider()
+
+        @child.tool(name="fetch_data")
+        def child_fetch_data(query: str) -> str:
+            return f"child: {query}"
+
+        child.add_transform(RegexSearchTransform(always_visible=[]))
+        child.add_transform(
+            ToolTransform({"fetch_data": ToolTransformConfig(name="read_resource")})
+        )
+
+        parent = FastMCP("Parent", providers=[child])
+
+        @parent.tool(name="fetch_data")
+        def parent_fetch_data(query: str) -> str:
+            return f"parent: {query}"
+
+        @parent.resource("config://app")
+        def app_config() -> str:
+            return "app config"
+
+        parent.add_transform(ResourcesAsTools(parent))
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            matched = [t for t in tools if t.name == "read_resource"]
+            assert len(matched) == 1
+            assert "uri" in matched[0].input_schema["properties"]
+
+            res = await client.call_tool("read_resource", {"uri": "config://app"})
+            assert res.data == "app config"
+
+    async def test_tool_transform_swap_post_transform_identity(self):
+        """When tools are renamed in a swap and search retains the other tool, post-transform identity check
+        correctly detects that read_resource is hidden and returns the synthetic tool."""
+        from fastmcp.server.providers import LocalProvider
+        from fastmcp.server.transforms import ToolTransform
+        from fastmcp.server.transforms.search.regex import RegexSearchTransform
+        from fastmcp.tools.tool_transform import ToolTransformConfig
+
+        provider = LocalProvider()
+
+        @provider.tool
+        def fetch_data(query: str) -> str:
+            return f"reader: {query}"
+
+        @provider.tool
+        def read_report(query: str) -> str:
+            return f"report: {query}"
+
+        provider.add_transform(
+            ToolTransform(
+                {
+                    "fetch_data": ToolTransformConfig(name="read_resource"),
+                    "read_report": ToolTransformConfig(name="fetch_data"),
+                }
+            )
+        )
+        provider.add_transform(RegexSearchTransform(always_visible=["fetch_data"]))
+
+        mcp = FastMCP("Test", providers=[provider])
+
+        @mcp.resource("config://app")
+        def app_config() -> str:
+            return "app config"
+
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            matched = [t for t in tools if t.name == "read_resource"]
+            assert len(matched) == 1
+            assert "uri" in matched[0].input_schema["properties"]
+
+            res = await client.call_tool("read_resource", {"uri": "config://app"})
+            assert res.data == "app config"
+
 
 class TestListResourcesTool:
     """Test the list_resources tool."""
