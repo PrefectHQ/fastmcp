@@ -180,3 +180,18 @@ Every file is verified before anything is written. `overwrite=True` replaces an 
 - A provider added with a namespace or other transforms isn't discoverable; mount a server instead.
 - A proxied skill whose manifest is `"dynamic"` is left out, since the gateway can't check its files.
 - `directoryRead` isn't implemented.
+
+## Moving off the 4.1 skills API
+
+The providers in `fastmcp.server.providers.skills` and the helpers in `fastmcp.utilities.skills` still work in 4.2, exactly as they did in 4.1, and are removed in 4.3. Each warns with the call that replaces it: the providers when they're constructed, the helpers when they're called. The directory warnings also list every folder the new `SkillsDirectoryProvider` would refuse and the fix for each, so you can fix those first and then switch.
+
+| 4.1 | 4.2 |
+| --- | --- |
+| `SkillsDirectoryProvider(root)` from `fastmcp.server.providers.skills` | `SkillsDirectoryProvider(root)` from `fastmcp.skills.provider` |
+| `ClaudeSkillsProvider()` and the other vendor presets | `SkillsDirectoryProvider(Path.home() / ".claude" / "skills")` with the preset's folder |
+| `SkillProvider(path)` | `SkillCatalogProvider([Skill.from_directory(path)])` |
+| `SkillsDirectoryProvider(root, experimental_skills=True)` | `SkillsDirectoryProvider(root)` from `fastmcp.skills.provider`; the old call already returns it |
+| `list_skills(client)` / `get_skill_manifest(client, name)` | `client.list_skills()` / `client.get_skill(uri)` |
+| `download_skill()` / `sync_skills()` | `client.read_skill(uri)` then `skill.to_directory(path)` ([example](#install-skills-into-a-local-agent)) |
+
+`client.list_skills()` needs a server that serves the Skills extension, which a 4.1 server doesn't; `client.read_skill(uri)` still reads a valid skill from one through its `_manifest` resource. The new provider has no `main_file_name` or `supporting_files`: the main file is always `SKILL.md`, and every file in a skill is readable as a resource.

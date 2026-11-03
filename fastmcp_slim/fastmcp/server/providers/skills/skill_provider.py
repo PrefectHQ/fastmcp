@@ -21,6 +21,7 @@ from fastmcp.server.providers.skills._common import (
     resolve_within,
     scan_skill_files,
 )
+from fastmcp.server.providers.skills._deprecation import warn_skill_provider
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec
 
@@ -170,6 +171,9 @@ class SkillFileResource(Resource):
 class SkillProvider(Provider):
     """Provider that exposes a single skill folder as MCP resources.
 
+    Deprecated since 4.2 and removed in 4.3: use
+    `SkillCatalogProvider([Skill.from_directory(path)])` from `fastmcp.skills`.
+
     Each skill folder must contain a main file (default: SKILL.md) and may
     contain additional supporting files.
 
@@ -206,12 +210,16 @@ class SkillProvider(Provider):
         skill_path: str | Path,
         main_file_name: str = "SKILL.md",
         supporting_files: Literal["template", "resources"] = "template",
+        *,
+        _from_directory_provider: bool = False,
     ) -> None:
         super().__init__()
         self._skill_path = Path(skill_path).resolve()
         self._main_file_name = main_file_name
         self._supporting_files = supporting_files
         self._skill_info: SkillInfo | None = None
+        if not _from_directory_provider:
+            warn_skill_provider(self._skill_path, main_file_name)
 
         # Load at init to catch errors early
         self._load_skill()

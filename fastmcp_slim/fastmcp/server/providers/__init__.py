@@ -69,7 +69,7 @@ def __getattr__(name: str) -> object:
 
         return OpenAPIProvider
     if name in ("SkillProvider", "SkillsDirectoryProvider", "ClaudeSkillsProvider"):
-        # Imported lazily so `fastmcp.server.providers` stays light.
+        # Deprecated providers; constructing one warns with the replacement.
         from fastmcp.server.providers import skills
 
         return getattr(skills, name)

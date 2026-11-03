@@ -13,6 +13,7 @@ from fastmcp._warnings import FastMCPDeprecationWarning
 from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.aggregate import AggregateProvider
+from fastmcp.server.providers.skills._deprecation import warn_directory_provider
 from fastmcp.server.providers.skills.skill_provider import SkillProvider
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec
@@ -22,6 +23,11 @@ logger = get_logger(__name__)
 
 class SkillsDirectoryProvider(AggregateProvider):
     """Provider that scans directories and creates a SkillProvider per skill folder.
+
+    Deprecated since 4.2 and removed in 4.3: use
+    `fastmcp.skills.provider.SkillsDirectoryProvider`, which also serves the MCP
+    skills extension. Constructing this provider warns with the replacement call
+    and the folders that would stop the replacement from starting.
 
     This extends AggregateProvider to combine multiple SkillProviders into one.
     Each subdirectory containing a main file (default: SKILL.md) becomes a skill.
@@ -91,6 +97,15 @@ class SkillsDirectoryProvider(AggregateProvider):
         self._main_file_name = main_file_name
         self._supporting_files = supporting_files
         self._discovered = False
+        # A preset subclass adds one frame between the caller and this one.
+        depth = 2 + type(self).__mro__.index(SkillsDirectoryProvider)
+        warn_directory_provider(
+            type(self),
+            self._roots,
+            reload=reload,
+            main_file_name=main_file_name,
+            stacklevel=depth,
+        )
         self._discover_skills()
 
     def _discover_skills(self) -> None:
@@ -137,6 +152,7 @@ class SkillsDirectoryProvider(AggregateProvider):
                         skill_path=skill_dir,
                         main_file_name=self._main_file_name,
                         supporting_files=self._supporting_files,
+                        _from_directory_provider=True,
                     )
                     self.providers.append(provider)
                     seen_skill_names.add(skill_name)
