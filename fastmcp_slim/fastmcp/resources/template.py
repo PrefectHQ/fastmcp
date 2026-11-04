@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import logging
 import re
 from collections.abc import Callable, Collection
 from types import UnionType
@@ -20,6 +21,7 @@ from pydantic import (
 )
 from pydantic.json_schema import SkipJsonSchema
 
+from fastmcp.exceptions import ValidationError
 from fastmcp.resources.base import (
     Resource,
     ResourceResult,
@@ -639,23 +641,26 @@ class FunctionResourceTemplate(ResourceTemplate):
                 if annotation is inspect.Parameter.empty or annotation is str:
                     continue
 
-                try:
-                    if annotation is int:
-                        kwargs[param_name] = int(param_value)
-                    elif annotation is float:
-                        kwargs[param_name] = float(param_value)
-                    elif annotation is bool:
-                        lower = param_value.lower()
-                        if lower in ("true", "1", "yes"):
-                            kwargs[param_name] = True
-                        elif lower in ("false", "0", "no"):
-                            kwargs[param_name] = False
-                        else:
-                            raise ValueError(
-                                f"Invalid boolean value for {param_name}: {param_value!r}"
-                            )
-                except (ValueError, AttributeError):
-                    raise
+                # An unconvertible parameter is a client error, not a server fault
+                if annotation is int or annotation is float:
+                    try:
+                        kwargs[param_name] = annotation(param_value)
+                    except ValueError:
+                        raise ValidationError(
+                            f"Invalid {annotation.__name__} value for {param_name}: {param_value!r}",
+                            log_level=logging.WARNING,
+                        ) from None
+                elif annotation is bool:
+                    lower = param_value.lower()
+                    if lower in ("true", "1", "yes"):
+                        kwargs[param_name] = True
+                    elif lower in ("false", "0", "no"):
+                        kwargs[param_name] = False
+                    else:
+                        raise ValidationError(
+                            f"Invalid boolean value for {param_name}: {param_value!r}",
+                            log_level=logging.WARNING,
+                        )
 
         # self.fn is wrapped by without_injected_parameters which handles
         # dependency resolution internally
