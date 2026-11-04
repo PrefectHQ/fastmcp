@@ -63,6 +63,28 @@ packages are disabled. These checks reject persistent contamination; they do not
 turn execution of contribution code into a security proof or replace contract review.
 Identical verification specs reuse the retained execution.
 
+## Public review delivery
+
+Every selected contribution still needs fresh head/baseline verification and independent
+review. Public feedback carries an explicit `no_findings`, `findings` or `inconclusive`
+outcome and stable finding identities. Under the existing per-PR claim, delivery compares
+the latest review from the configured bot with that fresh outcome, only when intact. Equivalent
+feedback is retained as `unchanged_feedback` in `review_delivery.skipped`, with the newly
+verified revisions and a separate `previous_review` receipt at its original revisions;
+it is never counted as a newly published or current-revision GitHub review. Suppression
+still runs the evidence freshness guard. Added, resolved or materially changed findings
+produce new feedback, including changes at the same code revision. Finding ids must be
+reused for the same defect and changed when impact or the required correction changes;
+severity changes are also significant. Wording and verification transcripts are not
+feedback identities. The body hash only detects edits to previously published feedback.
+
+Legacy reviews and older pinned plans lack semantic identities and cannot authorize
+suppression; they may produce one initial structured review after deployment. Edited,
+dismissed or inconclusive reviews also cannot authorize suppression. Accepted POSTs with
+lost responses still reconcile by exact revision and body. The stored plan schema and
+objective are updated together here; publishing the plan and deploying the new source
+remain separate steps. No live workflow changes follow from this patch.
+
 ## Deploy
 
 Merging does not deploy. Live automations run the `source_sha` pinned in their

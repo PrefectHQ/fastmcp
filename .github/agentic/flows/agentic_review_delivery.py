@@ -97,24 +97,40 @@ def deliver_reviews(
                     raise EvidenceChanged(
                         "Contribution verification is unavailable or stale"
                     )
-                revision = digest([check["head_sha"], check["baseline_sha"], app.slug])[
-                    :24
-                ]
+                body = review_body(
+                    pr["number"], check["head_sha"], check["baseline_sha"], outcome
+                )
+                revision = digest(
+                    [check["head_sha"], check["baseline_sha"], app.slug, body]
+                )[:24]
                 key = f"{batch.id}-pr-{pr['number']}-review-{revision}"
                 receipt = saved(owner, key)
-                if receipt is not None and any(
-                    receipt.get(name) != value
-                    for name, value in {
-                        "pr_number": pr["number"],
-                        "head_sha": check["head_sha"],
-                        "baseline_sha": check["baseline_sha"],
-                        "reviewer_login": app.slug + "[bot]",
-                    }.items()
-                ):
-                    raise ValueError(
-                        "Retained publication receipt has a different revision"
+                suppressed = (
+                    receipt is not None
+                    and receipt.get("status") == "unchanged_feedback"
+                )
+                if receipt is not None:
+                    expected = (
+                        {
+                            "pr_number": pr["number"],
+                            "verified_head_sha": check["head_sha"],
+                            "verified_baseline_sha": check["baseline_sha"],
+                        }
+                        if suppressed
+                        else {
+                            "pr_number": pr["number"],
+                            "head_sha": check["head_sha"],
+                            "baseline_sha": check["baseline_sha"],
+                            "reviewer_login": app.slug + "[bot]",
+                        }
                     )
-                if receipt is None:
+                    if any(
+                        receipt.get(name) != value for name, value in expected.items()
+                    ):
+                        raise ValueError(
+                            "Retained publication receipt has a different revision"
+                        )
+                if receipt is None or suppressed:
 
                     def guard() -> None:
                         owner_alive(owner, batch.expires_at)
@@ -128,9 +144,6 @@ def deliver_reviews(
                                 "Issue or contribution changed after review"
                             )
 
-                    body = review_body(
-                        pr["number"], check["head_sha"], check["baseline_sha"], outcome
-                    )
                     with claim_work(
                         [f"fastmcp-pr-{pr['number']}-review"], owner, batch.expires_at
                     ):
@@ -144,7 +157,10 @@ def deliver_reviews(
                             guard,
                         )
                     record(owner, key, receipt)
-                receipts.append(receipt)
+                if receipt["status"] == "unchanged_feedback":
+                    skipped.append(receipt)
+                else:
+                    receipts.append(receipt)
         except (
             ValueError,
             RuntimeError,
