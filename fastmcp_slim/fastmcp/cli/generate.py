@@ -44,22 +44,21 @@ def _is_simple_type(schema: dict[str, Any]) -> bool:
 
 
 # Flag annotations for `X | None` parameters. The token `null` sends an explicit
-# null, so integer and number flags accept it as well. A boolean stays a flag,
-# because cyclopts cannot combine a flag with a value.
+# null, so integer and number flags accept it as well. `bool | None` is not
+# listed: it keeps taking JSON (`true`, `false` or `null`).
 _OPTIONAL_SCALAR_ANNOTATIONS = {
     "string": "str",
     "integer": 'int | Literal["null"]',
     "number": 'float | Literal["null"]',
-    "boolean": "bool",
 }
 
 
 def _optional_scalar_type(schema: dict[str, Any]) -> str | None:
     """Return `X` when the schema is pydantic's `anyOf` form of `X | None`.
 
-    `X` must be a single string, integer, number or boolean type, so a
-    parameter such as `str | None` takes a plain value. Other unions, such as
-    `str | int`, still take JSON.
+    `X` must be a single string, integer or number type, so a parameter such
+    as `str | None` takes a plain value. Other unions, such as `str | int` or
+    `bool | None`, still take JSON.
     """
     branches = schema.get("anyOf")
     if "type" in schema or not isinstance(branches, list) or len(branches) != 2:
@@ -259,8 +258,7 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             py_type, needs_json = _schema_to_python_type(prop_schema)
         else:
             py_type, needs_json = _OPTIONAL_SCALAR_ANNOTATIONS[scalar_type], False
-            if scalar_type != "boolean":
-                null_params.append(prop_name)
+            null_params.append(prop_name)
         help_text = prop_schema.get("description", "")
         is_required = prop_name in required
         safe_name = _to_python_identifier(prop_name)

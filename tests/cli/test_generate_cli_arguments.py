@@ -199,26 +199,23 @@ async def test_optional_string_parameter_takes_plain_text() -> None:
 @pytest.mark.parametrize(
     ("arguments", "expected"),
     [
-        ([], (None, None, None)),
-        (["--count", "3", "--loud", "--labels", '{"a": 1}'], (3, True, {"a": 1})),
-        (["--no-loud"], (None, False, None)),
-        (["--loud=false"], (None, False, None)),
+        ([], (None, None)),
+        (["--count", "3", "--labels", '{"a": 1}'], (3, {"a": 1})),
     ],
 )
 async def test_optional_parameters_keep_their_types(
     arguments: list[str],
-    expected: tuple[int | None, bool | None, dict[str, int] | None],
+    expected: tuple[int | None, dict[str, int] | None],
 ) -> None:
     server = FastMCP("Options")
-    received: list[tuple[int | None, bool | None, dict[str, int] | None]] = []
+    received: list[tuple[int | None, dict[str, int] | None]] = []
 
     @server.tool
     def configure(
         count: int | None = None,
-        loud: bool | None = None,
         labels: dict[str, int] | None = None,
     ) -> None:
-        received.append((count, loud, labels))
+        received.append((count, labels))
 
     namespace = await generated_cli(server)
     await namespace["app"].run_async(
@@ -227,6 +224,35 @@ async def test_optional_parameters_keep_their_types(
 
     assert received == [expected]
     assert [type(value) for value in received[0]] == [type(value) for value in expected]
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        ([], True),
+        (["--loud", "true"], True),
+        (["--loud", "false"], False),
+        (["--loud", "null"], None),
+        (["--loud=null"], None),
+    ],
+)
+async def test_optional_boolean_parameter_takes_json(
+    arguments: list[str], expected: bool | None
+) -> None:
+    server = FastMCP("Options")
+    received: list[bool | None] = []
+
+    @server.tool
+    def configure(loud: bool | None = Field(default_factory=lambda: True)) -> None:
+        received.append(loud)
+
+    namespace = await generated_cli(server)
+    await namespace["app"].run_async(
+        ["call-tool", "configure", *arguments], result_action="return_value"
+    )
+
+    assert received == [expected]
+    assert type(received[0]) is type(expected)
 
 
 @pytest.mark.parametrize(
@@ -311,7 +337,6 @@ async def test_other_unions_take_json_values(
             {"anyOf": [{"type": "number"}, {"type": "null"}]},
             'float | Literal["null"] | None',
         ),
-        ({"anyOf": [{"type": "boolean"}, {"type": "null"}]}, "bool | None"),
     ],
 )
 def test_optional_scalar_any_of_parameter_is_a_typed_flag(
@@ -333,6 +358,7 @@ def test_optional_scalar_any_of_parameter_is_a_typed_flag(
     "value_schema",
     [
         {"anyOf": [{"type": "object"}, {"type": "null"}]},
+        {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
         {"anyOf": [True, {"type": "string"}]},
         {"anyOf": [{"type": "string"}, {"type": "integer"}]},
         {"anyOf": [{"type": "integer"}, {"type": "boolean"}]},
@@ -379,7 +405,9 @@ def test_skill_documents_optional_scalars_as_flags_and_other_unions_as_json() ->
     )
     content = generate_skill_content("test", "cli.py", [tool])
 
-    assert "call-tool greet --greeting <value> --loud --value <value>" in content
+    assert (
+        "call-tool greet --greeting <value> --loud <value> --value <value>" in content
+    )
     assert "| `--greeting` | string \\| null | no |  |" in content
-    assert "| `--loud` | boolean \\| null | no |  |" in content
+    assert "| `--loud` | string | no | JSON string |" in content
     assert "| `--value` | string | no | JSON string |" in content
