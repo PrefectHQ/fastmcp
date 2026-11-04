@@ -1,6 +1,7 @@
 """Generated parameter help must preserve descriptions as Python string literals."""
 
-from typing import Annotated, Any, get_type_hints
+from inspect import get_annotations
+from typing import Annotated, Any
 
 import pytest
 from pydantic import Field
@@ -39,9 +40,8 @@ async def test_parameter_help_preserves_line_endings(newline: str) -> None:
     exec(compile(script, "<generated>", "exec"), namespace)
     namespace["CLIENT_SPEC"] = server
     app = namespace["app"]
-    annotations = get_type_hints(
-        app["call-tool"]["record"].default_command, include_extras=True
-    )
+    # Python 3.10's get_type_hints adds Optional around parameters defaulted to None.
+    annotations = get_annotations(app["call-tool"]["record"].default_command)
     for name in ("message", "label"):
         assert annotations[name].__metadata__[0].help == description
     for name in ("options", "optional"):
