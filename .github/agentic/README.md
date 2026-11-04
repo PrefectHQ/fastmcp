@@ -40,6 +40,29 @@ uv run pytest -q
 
 `agentic-checks.yml` runs the same checks in CI.
 
+## Contribution verification
+
+Changed author tests run on baseline and head. A module that only collects on
+head is retained as `baseline_collection_incompatible`, with its collection
+errors and output in the review summary. Without a standalone behavior probe,
+verification returns `evidence_needed`; do not retry unchanged tests as an
+environment outage or count an import error as a reproduced bug.
+
+Supply a baseline-compatible test through the item's `verification_probes` to
+repair the evidence. If author-module collection blocks the combined baseline
+run, the verifier runs those probes separately on both revisions, reusing their
+completed setup and limiting each probe run to 60 seconds. Author head results
+remain separate; only completed failure-to-pass test transitions establish
+`fixed_tests`. Source/probe/configuration files, Git metadata and installed dependency
+files are fingerprinted before execution and checked before/after each run and
+again before returning comparisons. Added, removed or modified inputs invalidate
+all transitions and produce `evidence_needed`, with bounded changed-path diagnostics.
+Both environments are prepared before author tests run; each test invocation gets
+a fresh HOME, temporary directory and pytest cache. Bytecode writes and user-site
+packages are disabled. These checks reject persistent contamination; they do not
+turn execution of contribution code into a security proof or replace contract review.
+Identical verification specs reuse the retained execution.
+
 ## Public review delivery
 
 Every selected contribution still needs fresh head/baseline verification and independent
