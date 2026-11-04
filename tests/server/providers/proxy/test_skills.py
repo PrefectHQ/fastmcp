@@ -16,7 +16,6 @@ from fastmcp.server.middleware.authorization import AuthMiddleware
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from fastmcp.server.providers.aggregate import ProviderErrorStrategy
 from fastmcp.server.providers.proxy import ProxyClient, ProxyProvider
-from fastmcp.server.providers.skills import SkillsDirectoryProvider
 from fastmcp.skills import Skill, SkillsClientExtension
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
 from fastmcp.skills.extension import SkillsExtension
@@ -81,19 +80,18 @@ async def test_forwards_backend_skills_without_reading_files() -> None:
         assert "# Review" in content.text
 
 
-async def test_files_behind_a_backend_template_are_checked_without_reads(
-    tmp_path: Path,
-) -> None:
-    folder = tmp_path / "review"
-    folder.mkdir()
-    (folder / "SKILL.md").write_bytes(
-        b"---\nname: review\ndescription: Review changes\n---\n# Review\n"
-    )
-    (folder / "notes.md").write_bytes(b"Read the diff first.\n")
-    upstream = FastMCP(
-        "backend",
-        providers=[SkillsDirectoryProvider(tmp_path, experimental_skills=True)],
-    )
+async def test_files_behind_a_backend_template_are_checked_without_reads() -> None:
+    class UnlistedNotes(SkillCatalogProvider):
+        async def _list_resources(self):
+            resources = await super()._list_resources()
+            return [r for r in resources if not str(r.uri).endswith("/notes.md")]
+
+    upstream = FastMCP("backend", providers=[UnlistedNotes([REVIEW])])
+
+    @upstream.resource("skill://review/{path*}")
+    def review_file(path: str) -> str:
+        return REVIEW.files[path].decode()
+
     reads = Reads()
     upstream.add_middleware(reads)
 
@@ -142,6 +140,33 @@ async def test_follows_backend_pagination() -> None:
         "skill://deploy/SKILL.md",
         "skill://review/SKILL.md",
     ]
+
+
+class ListSkillsRequests(Middleware):
+    def __init__(self) -> None:
+        self.count = 0
+
+    async def on_request(self, context, call_next):
+        if context.method == "skills/list":
+            self.count += 1
+        return await call_next(context)
+
+
+async def test_backend_pagination_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    # raising=False keeps this a behavioral failure on code without the bound.
+    monkeypatch.setattr(
+        "fastmcp.skills._proxy.AUTO_PAGINATION_MAX_PAGES", 1, raising=False
+    )
+    upstream = backend(REVIEW, DEPLOY, page_size=1)
+    requests = ListSkillsRequests()
+    upstream.add_middleware(requests)
+    server = gateway(upstream)
+    server.provider_error_strategy = "raise"
+
+    async with skills_client(server) as client:
+        with pytest.raises(MCPError):
+            await client.list_skills()
+    assert requests.count == 1
 
 
 async def test_local_and_proxied_skills_share_one_catalog() -> None:

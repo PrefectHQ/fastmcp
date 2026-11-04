@@ -70,6 +70,7 @@ Repository skills live in `.agents/skills/`. [The development guide](docs/develo
 | Decide whether to assign an external contributor | `review-issue` |
 | Fix a chosen bug through to a PR | `fix-issue` |
 | Review a PR or local change, including compatibility, tests, CI, and bot feedback | `review-pr` |
+| Challenge a triage outcome before anyone acts on it publicly | `adversarial-review` |
 | Write regression tests | `python-tests` |
 | Write or revise a docs page | `docs` |
 | Evaluate a vulnerability report | `review-security-report` |

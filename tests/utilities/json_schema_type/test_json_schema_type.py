@@ -4,7 +4,7 @@ import dataclasses
 import warnings
 from dataclasses import Field
 from enum import Enum
-from typing import Any, Literal, cast
+from typing import Any, Literal, cast, get_args
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -281,11 +281,73 @@ class TestConstrainedTypes:
         validator = TypeAdapter(MyEnum)
         schema = validator.json_schema()
         type_ = json_schema_to_type(schema)
-        assert type_ == Literal[1, 2]
+        assert get_args(type_)[0] == Literal[1, 2]
         assert TypeAdapter(type_).validate_python(1) == 1
         assert TypeAdapter(type_).validate_python(2) == 2
         with pytest.raises(ValidationError):
             TypeAdapter(type_).validate_python(3)
+
+    @pytest.mark.parametrize(
+        "values",
+        [
+            [1, True],
+            [True, 1],
+            [0, False],
+            [False, 0],
+            [1.0, True],
+            [True, 1.0],
+            [0.0, False],
+            [False, 0.0],
+        ],
+    )
+    def test_mixed_boolean_numeric_enums_preserve_value_types(
+        self, values: list[int | float | bool]
+    ) -> None:
+        validator = TypeAdapter(json_schema_to_type({"enum": values}))
+        for value in values:
+            result = validator.validate_python(value)
+            assert result == value
+            assert type(result) is type(value)
+        number = next(value for value in values if not isinstance(value, bool))
+        alternate = int(number) if isinstance(number, float) else float(number)
+        result = validator.validate_python(alternate)
+        assert result == number
+        assert type(result) is type(number)
+        for expected, actual in zip(
+            values, validator.json_schema()["enum"], strict=True
+        ):
+            assert actual == expected
+            assert type(actual) is type(expected)
+
+    @pytest.mark.parametrize(
+        "schema, value",
+        [
+            ({"const": 1}, True),
+            ({"enum": [1]}, True),
+            ({"const": True}, 1),
+            ({"const": [1]}, [True]),
+            ({"enum": [{"a": 0}]}, {"a": False}),
+        ],
+    )
+    def test_const_and_enum_reject_booleans_for_numbers(
+        self, schema: dict[str, Any], value: Any
+    ):
+        with pytest.raises(ValidationError):
+            TypeAdapter(json_schema_to_type(schema)).validate_python(value)
+
+    def test_boolean_falls_through_numeric_const_in_union(self):
+        validator = TypeAdapter(json_schema_to_type({"anyOf": [{"const": 1}, {}]}))
+        assert validator.validate_python(1) == 1
+        assert validator.validate_python(True) is True
+
+    def test_object_const_in_union(self):
+        validator = TypeAdapter(
+            json_schema_to_type({"anyOf": [{"const": {}}, {"const": 1}]})
+        )
+        assert validator.validate_python({}) == {}
+        assert validator.validate_python(1) == 1
+        with pytest.raises(ValidationError):
+            validator.validate_python({"a": 1})
 
     def test_choice(self):
         validator = TypeAdapter(Literal["x", "y"])

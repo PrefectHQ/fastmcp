@@ -79,9 +79,6 @@ class _MountedSkills:
                 uri = reversed_uri
         return uri
 
-    def _validate_skill_source(self) -> None:
-        return None
-
     def _owns_skill_resource(self, uri: str) -> bool:
         child_uri = self._to_child(uri)
         return child_uri is not None and self._extension._requires_live_resource(

@@ -9,7 +9,6 @@ from prefect.client.orchestration import get_client
 from prefect.context import FlowRunContext
 
 from flows.agentic_existing_review import verify_existing
-from flows.agentic_review_queue import retain_review_queue
 from flows.agentic_stack_plans import Reproduction
 from flows.agentic_stack_runtime import intake_tools, record, saved
 from flows.agentic_triage_records import (
@@ -139,7 +138,4 @@ def triage_finalize(ref: AdmissionRef) -> dict:
     }
     record(ref.owner, ref.key + "-outcome", final)
     record(parent_id, ref.key + "-outcome", final)
-    retain_review_queue(
-        parent_id, {"batch_id": ref.key, "bins": {destination: [result]}}
-    )
     return final

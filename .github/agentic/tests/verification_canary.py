@@ -74,7 +74,7 @@ with tempfile.TemporaryDirectory(prefix="verification-canary-") as temporary:
     spec = Spec({"private_file": str(private), "parent_pid": os.getpid()})
     for oversized in (False, True):
         spec.values["oversize"] = oversized
-        run = root / ("large" if oversized else "normal")
+        run = root / ("contribution" + ("-large" if oversized else "-normal"))
         run.mkdir()
         try:
             result = module.isolated_verification(spec, run)

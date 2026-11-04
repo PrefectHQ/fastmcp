@@ -73,9 +73,43 @@ def test_mutual_recursion_keeps_distinct_types(model: bool, titles: bool) -> Non
     assert result.person.pet.owner.pet.owner is None
     assert type(result.person.pet.owner) is type(result.person)
     assert type(result.person.pet.owner.pet) is type(result.person.pet)
-    assert type(result.person).__name__ == ("Record" if titles else "Root")
+    assert type(result.person).__name__ == ("Record" if titles else "Root_2")
     assert schema == original
     assert json_schema_type.json_schema_to_type(schema) is generated
+
+
+@pytest.mark.parametrize("model", [False, True], ids=["dataclass", "pydantic"])
+def test_mutual_recursion_with_root_reference(model: bool) -> None:
+    definitions: dict[str, Any] = {
+        "A": {
+            "type": "object",
+            "properties": {
+                "b": {"$ref": "#/$defs/B"},
+                "doc": {"$ref": "#"},
+            },
+        },
+        "B": {
+            "type": "object",
+            "properties": {"a": {"$ref": "#/$defs/A"}},
+        },
+    }
+    if model:
+        for definition in definitions.values():
+            definition["additionalProperties"] = True
+    generated = json_schema_type.json_schema_to_type(
+        {
+            "type": "object",
+            "title": "Doc",
+            "properties": {"first": {"$ref": "#/$defs/A"}},
+            "$defs": definitions,
+        }
+    )
+    result = TypeAdapter[Any](generated).validate_python(
+        {"first": {"b": {"a": {"doc": {}}}}}
+    )
+    assert type(result.first.b.a) is type(result.first)
+    assert type(result.first.b.a.doc) is generated
+    assert result.first.b.a.doc.first is None
 
 
 class HydrationPerson(BaseModel):

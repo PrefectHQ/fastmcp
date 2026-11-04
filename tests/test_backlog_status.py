@@ -1,6 +1,8 @@
 """Counts, outcomes, and imported evidence for the public backlog charts."""
 
 import importlib.util
+import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -136,3 +138,15 @@ def test_truncated_collection_fails_without_publishing(backlog, tmp_path, monkey
 
 def test_items_created_during_collection_are_accepted(backlog):
     backlog.require_complete([item(1), item(2), item(3)], 2)
+
+
+def test_backlog_cli_does_not_require_optional_triage(backlog, tmp_path, monkeypatch):
+    output = tmp_path / "backlog.json"
+    monkeypatch.setitem(sys.modules, "public_triage", None)
+    monkeypatch.setattr("sys.argv", ["backlog_status.py", "--output", str(output)])
+    monkeypatch.setattr(backlog, "newest_number", lambda: 1)
+    monkeypatch.setattr(backlog, "fetch_items", lambda: [item(1)])
+    backlog.main()
+    report = json.loads(output.read_text())
+    assert report["schema"] == "fastmcp-backlog/1"
+    assert report["samples"][-1]["issues"]["open"] == 1
