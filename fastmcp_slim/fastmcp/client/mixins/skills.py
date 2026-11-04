@@ -207,6 +207,24 @@ class ClientSkillsMixin:
                 send=_send,
             )
 
+    async def list_skill_resources(self: Client) -> list[mcp_types.Resource]:
+        """List the skills a server publishes as `skill://.../SKILL.md` resources.
+
+        Use this for servers that serve skills as resources but not through the
+        Skills extension, such as FastMCP 4.1 and earlier. Pass a returned
+        resource's `uri` to `read_skill()` to fetch the whole skill.
+
+        Returns:
+            The `SKILL.md` resource of each skill, in the server's order.
+        """
+        resources = await self.list_resources()
+        return [
+            resource
+            for resource in resources
+            if str(resource.uri).startswith("skill://")
+            and str(resource.uri).endswith("/SKILL.md")
+        ]
+
     async def get_skill(
         self: Client,
         uri: str,

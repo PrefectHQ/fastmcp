@@ -225,3 +225,20 @@ class GetSkillRequest(mcp_types.Request[GetSkillParams, Literal["skills/get"]]):
 
     method: Literal["skills/get"] = "skills/get"
     params: GetSkillParams
+
+
+def __getattr__(name: str) -> object:
+    if name == "Skill":
+        import warnings
+
+        from fastmcp._warnings import FastMCPDeprecationWarning
+
+        warnings.warn(
+            "`fastmcp.skills.models.Skill` is now `MCPSkill`; replace it with "
+            "`from fastmcp.skills import MCPSkill`. This alias is removed in "
+            "FastMCP 4.3.",
+            FastMCPDeprecationWarning,
+            stacklevel=2,
+        )
+        return MCPSkill
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

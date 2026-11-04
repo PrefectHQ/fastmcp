@@ -65,9 +65,6 @@ class MemorySkillProvider(Provider):
         }
         self.contexts: list[ServerRequestContext[Any, Any]] = []
 
-    def _validate_skill_source(self) -> None:
-        pass
-
     async def _skill_uris(self, uri: str | None = None) -> Sequence[str]:
         return [key for key in self.addressable if uri is None or key == uri]
 

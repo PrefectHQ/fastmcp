@@ -1,20 +1,16 @@
-"""Strict filesystem snapshots for experimental Skills publication."""
+"""Strict `SKILL.md` frontmatter parsing and skill folder scanning."""
 
 from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 import yaml
-from mcp.shared.path_security import safe_join
 from yaml.nodes import MappingNode
 
-from fastmcp.skills.models import MCPSkill, SkillFrontmatter
-from fastmcp.skills.skill import Skill, _validate_limits
+from fastmcp.skills.models import SkillFrontmatter
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -64,7 +60,10 @@ def parse_frontmatter(content: bytes) -> SkillFrontmatter:
     match = re.match(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|\Z)", text, re.DOTALL)
     if match is None:
         raise ValueError("SKILL.md must begin with YAML frontmatter")
-    value = yaml.load(match.group(1), Loader=_FrontmatterLoader)  # noqa: S506 - SafeLoader subclass rejects duplicate keys
+    try:
+        value = yaml.load(match.group(1), Loader=_FrontmatterLoader)  # noqa: S506 - SafeLoader subclass rejects duplicate keys
+    except (yaml.YAMLError, RecursionError) as exc:
+        raise ValueError(f"frontmatter is not valid YAML: {exc}") from exc
     if not isinstance(value, dict):
         raise ValueError("frontmatter must be a mapping")
     _validate_json(value, set())
@@ -98,29 +97,3 @@ def scan_files(root: Path) -> list[Path]:
                 f"skill contains a non-regular file: {path.relative_to(root)}"
             )
     return files
-
-
-@dataclass(frozen=True)
-class Snapshot:
-    entry: MCPSkill
-    files: tuple[tuple[str, Path], ...]
-
-
-def snapshot(root: Path, skill_path: str) -> Snapshot:
-    paths = scan_files(root)
-    main = root / "SKILL.md"
-    if main not in paths:
-        raise ValueError("skill must contain SKILL.md")
-    _validate_limits(len(paths), sum(path.stat().st_size for path in paths))
-    contents: dict[str, bytes] = {}
-    files: list[tuple[str, Path]] = []
-    for path in paths:
-        relative = path.relative_to(root).as_posix()
-        safe_join(root, relative)
-        contents[relative] = path.read_bytes()
-        uri = f"skill://{quote(skill_path, safe='/')}/{quote(relative, safe='/')}"
-        files.append((uri, path))
-    if scan_files(root) != paths:
-        raise ValueError("skill files changed while building the manifest")
-    entry = Skill.from_files(contents).to_mcp_skill(skill_path)
-    return Snapshot(entry=entry, files=tuple(files))
