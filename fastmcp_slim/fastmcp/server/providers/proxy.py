@@ -15,6 +15,7 @@ import warnings
 from collections.abc import Awaitable, Callable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast
 
 import anyio
@@ -1694,12 +1695,24 @@ def _restore_request_context(
         _current_server.set(weakref.ref(fastmcp))
 
 
-def _make_restoring_handler(handler: Callable, rc_ref: list[Any]) -> Callable:
+def _make_restoring_handler(
+    handler: Callable,
+    rc_ref: list[Any],
+    pending: set[anyio.Event] | None = None,
+) -> Callable:
     """Wrap a proxy handler to restore request_ctx before delegating."""
 
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         _restore_request_context(rc_ref)
-        return await handler(*args, **kwargs)
+        if pending is None:
+            return await handler(*args, **kwargs)
+        done = anyio.Event()
+        pending.add(done)
+        try:
+            return await handler(*args, **kwargs)
+        finally:
+            pending.remove(done)
+            done.set()
 
     return wrapper
 
@@ -1775,6 +1788,7 @@ class ProxyClient(Client[ClientTransportT]):
         # Install context-restoring handler wrappers BEFORE super().__init__
         # registers them with the Client's session kwargs.
         self._proxy_rc_ref = [None]
+        self._pending_proxy_logs: set[anyio.Event] = set()
         self._proxy_restoring_handler_keys = set()
         for key, default_fn in (
             ("roots", default_proxy_roots_handler),
@@ -1784,7 +1798,11 @@ class ProxyClient(Client[ClientTransportT]):
             ("progress_handler", default_proxy_progress_handler),
         ):
             if key not in kwargs:
-                kwargs[key] = _make_restoring_handler(default_fn, self._proxy_rc_ref)
+                kwargs[key] = _make_restoring_handler(
+                    default_fn,
+                    self._proxy_rc_ref,
+                    self._pending_proxy_logs if key == "log_handler" else None,
+                )
                 self._proxy_restoring_handler_keys.add(key)
         super().__init__(transport=transport, **kwargs)  # ty: ignore[no-matching-overload]
 
@@ -1812,16 +1830,37 @@ class ProxyClient(Client[ClientTransportT]):
             )
         if "log_handler" in self._proxy_restoring_handler_keys:
             self._session_kwargs["logging_callback"] = create_log_callback(
-                _make_restoring_handler(default_proxy_log_handler, self._proxy_rc_ref)
+                _make_restoring_handler(
+                    default_proxy_log_handler,
+                    self._proxy_rc_ref,
+                    self._pending_proxy_logs,
+                )
             )
         if "progress_handler" in self._proxy_restoring_handler_keys:
             self._progress_handler = _make_restoring_handler(
                 default_proxy_progress_handler, self._proxy_rc_ref
             )
 
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        try:
+            if exc_type is None:
+                # SDK notification callbacks run concurrently with the result.
+                # Finish forwarding accepted logs before disconnect cancels them.
+                while self._pending_proxy_logs:
+                    for done in tuple(self._pending_proxy_logs):
+                        await done.wait()
+        finally:
+            await super().__aexit__(exc_type, exc_val, exc_tb)
+
     def new(self) -> ProxyClient[ClientTransportT]:
         new_client = cast(ProxyClient[ClientTransportT], super().new())
         new_client._proxy_rc_ref = [None]
+        new_client._pending_proxy_logs = set()
         new_client._proxy_restoring_handler_keys = set(
             self._proxy_restoring_handler_keys
         )
