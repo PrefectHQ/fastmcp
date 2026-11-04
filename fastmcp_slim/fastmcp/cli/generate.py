@@ -4,6 +4,7 @@ import keyword
 import re
 import sys
 import textwrap
+from collections import defaultdict
 from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import urlparse
@@ -207,11 +208,83 @@ def _to_python_identifier(name: str) -> str:
     return safe
 
 
+def _resolve_tool_param_flags(
+    properties: dict[str, Any],
+) -> dict[str, tuple[str, str | None]]:
+    """Resolve CLI flags for tool parameters, disambiguating colliding names.
+
+    Returns a mapping of ``prop_name -> (cli_flag, explicit_name)`` where:
+    - ``cli_flag`` is the flag string for documentation / invocation (e.g. ``--user-id`` or ``--userId``).
+    - ``explicit_name`` is the explicit flag to pass to ``cyclopts.Parameter(name=...)``,
+      or ``None`` if the parameter can rely on cyclopts' default name transform.
+    """
+    items: list[tuple[str, str, str, str]] = []
+    for prop_name in properties:
+        safe_name = _to_python_identifier(prop_name)
+        if safe_name in {"_call_tool", "isinstance", "json", "str"}:
+            safe_name = f"{safe_name}_"
+        default_flag = _param_to_cli_flag(prop_name)
+        norm_key = default_flag.replace("_", "-")
+        items.append((prop_name, safe_name, default_flag, norm_key))
+
+    groups: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
+    for prop_name, safe_name, default_flag, norm_key in items:
+        groups[norm_key].append((prop_name, safe_name, default_flag))
+
+    # Fast path: no collisions anywhere in the tool
+    if all(len(group) == 1 for group in groups.values()):
+        return {
+            prop_name: (default_flag, None) for prop_name, _, default_flag, _ in items
+        }
+
+    result: dict[str, tuple[str, str | None]] = {}
+    assigned_norms: set[str] = set()
+
+    # Pass 1: non-colliding flags claim their default
+    for norm_key, group_items in groups.items():
+        if len(group_items) == 1:
+            prop_name, _safe_name, default_flag = group_items[0]
+            result[prop_name] = (default_flag, None)
+            assigned_norms.add(norm_key)
+
+    # Pass 2: resolve colliding flags
+    for norm_key, group_items in groups.items():
+        if len(group_items) <= 1:
+            continue
+
+        # If exactly one matches the default flag in lowercase snake_case, let it keep the default
+        exact_default = [
+            (p, s, d)
+            for p, s, d in group_items
+            if f"--{p.replace('_', '-')}".lower() == d and p.islower()
+        ]
+        default_prop = exact_default[0][0] if len(exact_default) == 1 else None
+
+        for prop_name, safe_name, default_flag in group_items:
+            if prop_name == default_prop and norm_key not in assigned_norms:
+                result[prop_name] = (default_flag, None)
+                assigned_norms.add(norm_key)
+            else:
+                candidate = f"--{safe_name.rstrip('_')}"
+                norm = candidate.replace("_", "-")
+                if norm in assigned_norms:
+                    suffix = 2
+                    while f"{norm}-{suffix}" in assigned_norms:
+                        suffix += 1
+                    candidate = f"{candidate}-{suffix}"
+                    norm = candidate.replace("_", "-")
+                assigned_norms.add(norm)
+                result[prop_name] = (candidate, candidate)
+
+    return result
+
+
 def _tool_function_source(tool: mcp_types.Tool) -> str:
     """Generate the source for a single ``@call_tool_app.command`` function."""
     schema = tool.input_schema
     properties: dict[str, Any] = schema.get("properties", {})
     required = set(schema.get("required", []))
+    param_flags = _resolve_tool_param_flags(properties)
 
     # Build parameter lines and track which need JSON parsing
     param_lines: list[str] = []
@@ -243,9 +316,12 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             help_text = f"{help_text}\\n{schema_help}" if help_text else schema_help
             json_params.append((prop_name, safe_name))
 
+        _, explicit_name = param_flags[prop_name]
+        flag_arg = f'name="{explicit_name}", ' if explicit_name else ""
+
         # Build parameter annotation
         if is_required:
-            annotation = f"Annotated[{py_type}, cyclopts.Parameter(help={help_text!r})]"
+            annotation = f"Annotated[{py_type}, cyclopts.Parameter({flag_arg}help={help_text!r})]"
             param_lines.append(f"    {safe_name}: {annotation},")
         else:
             default = prop_schema.get("default")
@@ -253,19 +329,15 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
                 # For complex types with defaults, serialize to JSON string
                 if needs_json:
                     default_str = pydantic_core.to_json(default, fallback=str).decode()
-                    annotation = (
-                        f"Annotated[{py_type}, cyclopts.Parameter(help={help_text!r})]"
-                    )
+                    annotation = f"Annotated[{py_type}, cyclopts.Parameter({flag_arg}help={help_text!r})]"
                     param_lines.append(
                         f"    {safe_name}: {annotation} = {default_str!r},"
                     )
                 else:
-                    annotation = (
-                        f"Annotated[{py_type}, cyclopts.Parameter(help={help_text!r})]"
-                    )
+                    annotation = f"Annotated[{py_type}, cyclopts.Parameter({flag_arg}help={help_text!r})]"
                     param_lines.append(f"    {safe_name}: {annotation} = {default!r},")
             else:
-                annotation = f"Annotated[{py_type} | None, cyclopts.Parameter(help={help_text!r})]"
+                annotation = f"Annotated[{py_type} | None, cyclopts.Parameter({flag_arg}help={help_text!r})]"
                 param_lines.append(f"    {safe_name}: {annotation} = None,")
 
         call_args.append(f"{prop_name!r}: {safe_name}")
@@ -610,11 +682,12 @@ def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
     schema = tool.input_schema
     properties: dict[str, Any] = schema.get("properties", {})
     required = set(schema.get("required", []))
+    param_flags = _resolve_tool_param_flags(properties)
 
     # Build example invocation flags
     flag_parts_list: list[str] = []
     for p, p_schema in properties.items():
-        flag = _param_to_cli_flag(p)
+        flag = param_flags[p][0]
         schema_type = p_schema.get("type")
         is_bool = schema_type == "boolean" or (
             isinstance(schema_type, list) and "boolean" in schema_type
@@ -631,7 +704,7 @@ def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
     # Build parameter table rows
     rows: list[str] = []
     for prop_name, prop_schema in properties.items():
-        flag = f"`{_param_to_cli_flag(prop_name)}`"
+        flag = f"`{param_flags[prop_name][0]}`"
         type_label = _schema_type_label(prop_schema).replace("|", "\\|")
         is_required = "yes" if prop_name in required else "no"
         description = prop_schema.get("description", "")
