@@ -53,11 +53,16 @@ def verification_result(run_id: UUID, runtime: Runtime, spec: VerificationSpec) 
 
 def summary(result: dict) -> dict:
     stages = {}
-    for name in ("base", "head", "adjacent"):
+    for name in ("base", "head", "adjacent", "probe_base", "probe_head"):
         stage = result.get(name, {})
         stages[name] = {
             "status": stage.get("status", "not_run"),
             "reason": stage.get("reason"),
+            "command": stage.get("command"),
+            "returncode": stage.get("returncode"),
+            "output_tail": stage.get("output_tail", "")[-6000:],
+            "output_truncated": stage.get("output_truncated", False)
+            or len(stage.get("output_tail", "")) > 6000,
             "counts": dict(Counter(case["state"] for case in stage.get("cases", []))),
             "failures": [
                 case
@@ -71,6 +76,7 @@ def summary(result: dict) -> dict:
         "head_sha": result["spec"]["head_sha"],
         "baseline_sha": result.get("baseline_sha"),
         "status": result["status"],
+        "reason": result.get("reason"),
         "tests": stages,
         "comparison": result.get("comparison", {}),
         "independent_probes": sorted(result["spec"]["probes"]),
@@ -220,6 +226,14 @@ def verify_existing(
         if results
         else "Review the assessment of merged contributions and subsequent history; no unmerged contribution was sent to verification"
     )
+    if any(result["status"] == "evidence_needed" for result in results):
+        status = "evidence_needed"
+        next_step = (
+            "Repair the retained collection failure with a standalone baseline-compatible "
+            "behavior probe in verification_probes, then verify the changed inputs. "
+            "Keep author tests on head; collection errors never establish a fix. "
+            "Do not retry unchanged inputs as an environment failure."
+        )
     if not results and any(not pr["merged"] for pr in evidence["prs"]):
         status = "verification_selection_required"
         next_step = "Review why assessment selected no contribution for execution; no tests were run"

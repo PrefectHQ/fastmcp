@@ -128,8 +128,17 @@ def merge_base(directory: Path, env: dict[str, str], head: str, trunk: str) -> s
 
 
 def pytest_result(command: dict, report: Path) -> dict:
-    result = {**command, "status": "environment_failure", "cases": []}
-    if command["timed_out"] or command["returncode"] not in {0, 1}:
+    result = {
+        **command,
+        "status": "environment_failure",
+        "cases": [],
+        "reason": "Pytest did not produce a valid completed test report",
+    }
+    if command["timed_out"]:
+        result["reason"] = "Pytest timed out"
+        return result
+    if command["returncode"] not in {0, 1, 2}:
+        result["reason"] = f"Pytest exited with code {command['returncode']}"
         return result
     if not report.is_file() or report.stat().st_size > 5_000_000:
         return result
@@ -155,6 +164,14 @@ def pytest_result(command: dict, report: Path) -> dict:
                 "detail": detail,
             }
         )
+    if command["returncode"] == 2:
+        errors = [
+            case["detail"] for case in result["cases"] if case["state"] == "error"
+        ]
+        if errors:
+            result["status"] = "collection_failure"
+            result["reason"] = "Pytest collection failed: " + "\n".join(errors)[-6000:]
+        return result
     states = [case["state"] for case in result["cases"]]
     ids = [case["id"] for case in result["cases"]]
     if (
@@ -168,25 +185,51 @@ def pytest_result(command: dict, report: Path) -> dict:
         result["status"] = "test_failure"
     elif command["returncode"] == 0 and "failure" not in states and "passed" in states:
         result["status"] = "passed"
+    if result["status"] != "environment_failure":
+        result["reason"] = None
     return result
 
 
-def run_tests(repo: Path, paths: list[str], env: dict[str, str], report: Path) -> dict:
-    setup = execute(["uv", "sync", "--frozen"], repo, env, timeout=300)
+def run_tests(
+    repo: Path,
+    paths: list[str],
+    env: dict[str, str],
+    report: Path,
+    *,
+    setup: dict | None = None,
+    timeout: int = 600,
+) -> dict:
+    if setup is None:
+        setup = execute(["uv", "sync", "--frozen"], repo, env, timeout=300)
     if setup["returncode"]:
-        return {"status": "environment_failure", "setup": setup, "cases": []}
+        return {
+            "status": "environment_failure",
+            "reason": "Dependency setup failed",
+            "setup": setup,
+            "cases": [],
+        }
     lock = repo / "uv.lock"
     lock_sha = hashlib.sha256(lock.read_bytes()).hexdigest() if lock.exists() else None
     result = execute(
         ["uv", "run", "--no-sync", "pytest", "-n", "0", f"--junitxml={report}", *paths],
         repo,
         env,
-        timeout=600,
+        timeout=timeout,
     )
     return {**pytest_result(result, report), "setup": setup, "lock_sha256": lock_sha}
 
 
 def outcomes(base: dict, head: dict) -> dict:
+    if base["status"] not in {"passed", "test_failure"} or head["status"] not in {
+        "passed",
+        "test_failure",
+    }:
+        return {
+            "fixed_tests": [],
+            "regressed_tests": [],
+            "unmatched_tests": [],
+            "interpretation": "Incomplete test runs cannot establish behavior transitions.",
+        }
     before = {case["id"]: case for case in base["cases"]}
     after = {case["id"]: case for case in head["cases"]}
     return {
@@ -273,6 +316,35 @@ def verify(
     selected = [*paths, *spec.probes]
     baseline = run_tests(base, selected, env, directory / "base.xml")
     candidate = run_tests(head, selected, env, directory / "head.xml")
+    probe_results = {}
+    comparison = outcomes(baseline, candidate)
+    if baseline["status"] == "collection_failure" and candidate["status"] in {
+        "passed",
+        "test_failure",
+    }:
+        baseline["status"] = "baseline_collection_incompatible"
+        baseline["reason"] += (
+            "\nAuthor tests cannot collect on baseline. Supply a standalone baseline-compatible behavior probe; do not copy implementation helpers onto baseline."
+        )
+        if spec.probes:
+            probe_base = run_tests(
+                base,
+                list(spec.probes),
+                env,
+                directory / "probe-base.xml",
+                setup=baseline["setup"],
+                timeout=60,
+            )
+            probe_head = run_tests(
+                head,
+                list(spec.probes),
+                env,
+                directory / "probe-head.xml",
+                setup=candidate["setup"],
+                timeout=60,
+            )
+            probe_results = {"probe_base": probe_base, "probe_head": probe_head}
+            comparison = outcomes(probe_base, probe_head)
     parents = sorted({str(PurePosixPath(p).parent) for p in paths})
     tracked = git(
         head, env, "ls-tree", "-r", "--name-only", "HEAD", "--", "tests"
@@ -304,18 +376,27 @@ def verify(
         }
     )
     status = "verification_recorded"
-    if any(
-        r["status"] == "environment_failure" for r in (baseline, candidate, adjacent)
-    ):
+    reason = None
+    if baseline["status"] == "baseline_collection_incompatible" and not probe_results:
+        status = "evidence_needed"
+        reason = baseline["reason"]
+    stages = (baseline, candidate, adjacent, *probe_results.values())
+    if any(r["status"] == "collection_failure" for r in stages):
+        status = "evidence_needed"
+        reason = "Test collection failed; repair the test inputs before requesting verification again."
+    if any(r["status"] == "environment_failure" for r in stages):
         status = "environment_failure"
+        reason = "Verification could not complete; inspect stage diagnostics before retrying."
     return {
         **result,
         "status": status,
+        "reason": reason,
+        **probe_results,
         "base": baseline,
         "head": candidate,
         "adjacent": adjacent,
         "adjacent_tests": neighbors,
-        "comparison": outcomes(baseline, candidate),
+        "comparison": comparison,
         "limitations": limitations,
     }
 
