@@ -214,15 +214,45 @@ class ClientSkillsMixin:
         Skills extension, such as FastMCP 4.1 and earlier. Pass a returned
         resource's `uri` to `read_skill()` to fetch the whole skill.
 
+        When skill paths overlap, advertised manifests distinguish supporting
+        `SKILL.md` files from independent skills. Entries are kept if their
+        containing skill's manifest is unavailable or invalid.
+
         Returns:
             The `SKILL.md` resource of each skill, in the server's order.
         """
         resources = await self.list_resources()
-        return [
+        skills = [
             resource
             for resource in resources
             if str(resource.uri).startswith("skill://")
             and str(resource.uri).endswith("/SKILL.md")
+        ]
+        resource_uris = {str(resource.uri) for resource in resources}
+        skill_uris = {str(resource.uri) for resource in skills}
+        supporting_uris: set[str] = set()
+        # Process parents first, so a supporting file's own name or contents
+        # cannot make it an authority over another skill's discovery.
+        for uri in sorted(skill_uris, key=lambda uri: (len(uri), uri)):
+            if uri in supporting_uris:
+                continue
+            prefix = uri.removesuffix("SKILL.md")
+            if f"{prefix}_manifest" not in resource_uris or not any(
+                other != uri and other.startswith(prefix) for other in skill_uris
+            ):
+                continue
+            try:
+                manifest = await self._resource_mode_manifest(uri)
+            except (MCPError, ValueError):
+                # Manually registered resources need not have readable manifests.
+                continue
+            supporting_uris.update(
+                record.uri
+                for path, record in manifest.items()
+                if path != "SKILL.md" and record.uri.startswith(prefix)
+            )
+        return [
+            resource for resource in skills if str(resource.uri) not in supporting_uris
         ]
 
     async def get_skill(
