@@ -58,6 +58,10 @@ def summary(result: dict) -> dict:
         stages[name] = {
             "status": stage.get("status", "not_run"),
             "reason": stage.get("reason"),
+            "input_sha256": stage.get("input_sha256"),
+            "input_changes": stage.get("input_changes", []),
+            "input_changes_truncated": stage.get("input_changes_truncated", False),
+            "test_status": stage.get("test_status"),
             "command": stage.get("command"),
             "returncode": stage.get("returncode"),
             "output_tail": stage.get("output_tail", "")[-6000:],
@@ -229,8 +233,9 @@ def verify_existing(
     if any(result["status"] == "evidence_needed" for result in results):
         status = "evidence_needed"
         next_step = (
-            "Repair the retained collection failure with a standalone baseline-compatible "
-            "behavior probe in verification_probes, then verify the changed inputs. "
+            "Repair the retained verification inputs. For baseline collection failures, "
+            "supply a standalone baseline-compatible behavior probe in verification_probes. "
+            "For input_mutation, fix the tests that modified the listed inputs. "
             "Keep author tests on head; collection errors never establish a fix. "
             "Do not retry unchanged inputs as an environment failure."
         )

@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from flows.agentic_stack import digest
 from flows.agentic_validate_patch import install_tools
+from flows.agentic_verification_inputs import VerificationInputs, reject_mutations
 from flows.agentic_verification_process import isolated_verification
 
 
@@ -66,6 +67,8 @@ def environment(home: Path) -> dict[str, str]:
         "GIT_COMMITTER_NAME": "Verification",
         "GIT_COMMITTER_EMAIL": "verification@example.invalid",
         "PYTEST_XDIST_AUTO_NUM_WORKERS": "4",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONNOUSERSITE": "1",
     }
 
 
@@ -196,11 +199,10 @@ def run_tests(
     env: dict[str, str],
     report: Path,
     *,
-    setup: dict | None = None,
+    setup: dict,
+    inputs: VerificationInputs,
     timeout: int = 600,
 ) -> dict:
-    if setup is None:
-        setup = execute(["uv", "sync", "--frozen"], repo, env, timeout=300)
     if setup["returncode"]:
         return {
             "status": "environment_failure",
@@ -208,15 +210,50 @@ def run_tests(
             "setup": setup,
             "cases": [],
         }
+    if changes := inputs.changes():
+        return reject_mutations(
+            {"status": "not_run", "cases": [], "setup": setup}, changes
+        )
     lock = repo / "uv.lock"
     lock_sha = hashlib.sha256(lock.read_bytes()).hexdigest() if lock.exists() else None
+    stage_home = tempfile.mkdtemp(prefix=report.stem + "-home-", dir=report.parent)
+    stage_tmp = tempfile.mkdtemp(prefix=report.stem + "-tmp-", dir=report.parent)
+    stage_cache = tempfile.mkdtemp(prefix=report.stem + "-cache-", dir=report.parent)
+    stage_env = {**env, "HOME": stage_home, "TMPDIR": stage_tmp}
     result = execute(
-        ["uv", "run", "--no-sync", "pytest", "-n", "0", f"--junitxml={report}", *paths],
+        [
+            "uv",
+            "run",
+            "--no-sync",
+            "--no-config",
+            "--no-env-file",
+            "pytest",
+            "-n",
+            "0",
+            "-o",
+            f"cache_dir={stage_cache}",
+            f"--junitxml={report}",
+            *paths,
+        ],
         repo,
-        env,
+        stage_env,
         timeout=timeout,
     )
-    return {**pytest_result(result, report), "setup": setup, "lock_sha256": lock_sha}
+    return reject_mutations(
+        {
+            **pytest_result(result, report),
+            "setup": setup,
+            "lock_sha256": lock_sha,
+            "input_sha256": digest(
+                {
+                    "source": inputs.source,
+                    "installed": inputs.installed,
+                    "metadata": inputs.metadata,
+                }
+            ),
+        },
+        inputs.changes(),
+    )
 
 
 def outcomes(base: dict, head: dict) -> dict:
@@ -313,9 +350,42 @@ def verify(
                 raise ValueError("Independent probes must not replace existing files")
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(source)
+    parents = sorted({str(PurePosixPath(p).parent) for p in paths})
+    tracked = git(
+        head, env, "ls-tree", "-r", "--name-only", "HEAD", "--", "tests"
+    ).splitlines()
+    neighbors = [
+        path
+        for path in tracked
+        if str(PurePosixPath(path).parent) in parents
+        and PurePosixPath(path).name.startswith("test_")
+        and path.endswith(".py")
+        and path not in paths
+    ]
+    base_inputs = VerificationInputs(base)
+    head_inputs = VerificationInputs(head)
+    setups = {}
+    for repo, inputs in ((base, base_inputs), (head, head_inputs)):
+        setups[repo] = execute(["uv", "sync", "--frozen"], repo, env, timeout=300)
+        inputs.installed_inputs()
+    head_inputs.seal_metadata()
     selected = [*paths, *spec.probes]
-    baseline = run_tests(base, selected, env, directory / "base.xml")
-    candidate = run_tests(head, selected, env, directory / "head.xml")
+    baseline = run_tests(
+        base,
+        selected,
+        env,
+        directory / "base.xml",
+        setup=setups[base],
+        inputs=base_inputs,
+    )
+    candidate = run_tests(
+        head,
+        selected,
+        env,
+        directory / "head.xml",
+        setup=setups[head],
+        inputs=head_inputs,
+    )
     probe_results = {}
     comparison = outcomes(baseline, candidate)
     if baseline["status"] == "collection_failure" and candidate["status"] in {
@@ -333,6 +403,7 @@ def verify(
                 env,
                 directory / "probe-base.xml",
                 setup=baseline["setup"],
+                inputs=base_inputs,
                 timeout=60,
             )
             probe_head = run_tests(
@@ -341,22 +412,11 @@ def verify(
                 env,
                 directory / "probe-head.xml",
                 setup=candidate["setup"],
+                inputs=head_inputs,
                 timeout=60,
             )
             probe_results = {"probe_base": probe_base, "probe_head": probe_head}
             comparison = outcomes(probe_base, probe_head)
-    parents = sorted({str(PurePosixPath(p).parent) for p in paths})
-    tracked = git(
-        head, env, "ls-tree", "-r", "--name-only", "HEAD", "--", "tests"
-    ).splitlines()
-    neighbors = [
-        path
-        for path in tracked
-        if str(PurePosixPath(path).parent) in parents
-        and PurePosixPath(path).name.startswith("test_")
-        and path.endswith(".py")
-        and path not in paths
-    ]
     limitations = [
         "Current target-branch composition and full-suite/static validation remain separate checks.",
         "Author tests are not independent contract verification; supplied probes are identified separately.",
@@ -367,7 +427,14 @@ def verify(
         )
         neighbors = []
     adjacent = (
-        run_tests(head, neighbors, env, directory / "adjacent.xml")
+        run_tests(
+            head,
+            neighbors,
+            env,
+            directory / "adjacent.xml",
+            setup=setups[head],
+            inputs=head_inputs,
+        )
         if neighbors
         else {
             "status": "not_run",
@@ -375,6 +442,18 @@ def verify(
             "reason": "No sibling modules within the verification budget",
         }
     )
+    base_changes = base_inputs.changes()
+    head_changes = head_inputs.changes()
+    baseline = reject_mutations(baseline, base_changes)
+    candidate = reject_mutations(candidate, head_changes)
+    if "probe_base" in probe_results:
+        probe_results["probe_base"] = reject_mutations(
+            probe_results["probe_base"], base_changes
+        )
+        probe_results["probe_head"] = reject_mutations(
+            probe_results["probe_head"], head_changes
+        )
+    adjacent = reject_mutations(adjacent, head_changes)
     status = "verification_recorded"
     reason = None
     if baseline["status"] == "baseline_collection_incompatible" and not probe_results:
@@ -387,6 +466,10 @@ def verify(
     if any(r["status"] == "environment_failure" for r in stages):
         status = "environment_failure"
         reason = "Verification could not complete; inspect stage diagnostics before retrying."
+    if any(r["status"] == "input_mutation" for r in stages):
+        status = "evidence_needed"
+        reason = "Verification inputs were modified; retained test output cannot establish behavior transitions."
+        comparison = outcomes({"status": "input_mutation"}, candidate)
     return {
         **result,
         "status": status,

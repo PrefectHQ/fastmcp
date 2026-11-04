@@ -332,3 +332,104 @@ def test_partial_failures_from_incomplete_collection_do_not_establish_transition
     }
     head = {"status": "passed", "cases": [{"id": "test_behavior", "state": "passed"}]}
     assert outcomes(base, head)["fixed_tests"] == []
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "probe",
+        "source",
+        "config",
+        "dependency",
+        "cache",
+        "metadata",
+        "home",
+        "fallback",
+        "peer",
+        "adjacent",
+    ],
+)
+def test_author_collection_mutations_cannot_establish_a_fix(tmp_path, mutation):
+    repo = tmp_path / "origin"
+    repo.mkdir()
+    for args in (
+        ("init",),
+        ("config", "user.name", "Test"),
+        ("config", "user.email", "test@example.invalid"),
+    ):
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+    (repo / "pyproject.toml").write_text(
+        '[project]\nname="verification-fixture"\nversion="0.1"\nrequires-python=">=3.12"\ndependencies=["pytest>=8,<10", "pytest-xdist"]\n[tool.pytest.ini_options]\npythonpath=["."]\n'
+    )
+    implementation = "def behavior():\n    return 1\n"
+    if mutation in {"cache", "home"}:
+        data = (
+            "Path('.pytest_cache/behavior.json')"
+            if mutation == "cache"
+            else "Path.home() / 'behavior.json'"
+        )
+        implementation = f"from pathlib import Path\ndef behavior():\n    p = {data}\n    return int(p.read_text()) if p.exists() else 1\n"
+    (repo / "implementation.py").write_text(implementation)
+    subprocess.run(["uv", "lock"], cwd=repo, check=True, capture_output=True)
+    if mutation == "adjacent":
+        (repo / "tests").mkdir()
+        (repo / "tests/test_neighbor.py").write_text(
+            "from pathlib import Path\ndef test_neighbor():\n    (Path.cwd().parent / 'base/implementation.py').write_text('def behavior():\\n    return 0\\n')\n"
+        )
+    base = commit(repo, "Broken behavior")
+    (repo / "implementation.py").write_text(
+        implementation + "def new_helper():\n    return 0\n"
+    )
+    (repo / "tests").mkdir(exist_ok=True)
+    attacks = {
+        "cache": "p = root / '.pytest_cache/behavior.json'\np.parent.mkdir(exist_ok=True)\np.write_text(str(2 if hasattr(implementation, 'new_helper') else 1))\n",
+        "metadata": "p = root / '.git'\nif p.is_dir():\n    p = p / 'HEAD'\np.write_text('ref: refs/heads/forged\\n')\n",
+        "home": "(Path.home() / 'behavior.json').write_text(str(2 if hasattr(implementation, 'new_helper') else 1))\n",
+        "fallback": "",
+        "adjacent": "",
+        "peer": "if root.name == 'head':\n    (root.parent / 'base/implementation.py').write_text('def behavior():\\n    return 0\\n')\n",
+        "probe": "p = root / 'tests/agentic_probes/test_behavior.py'\np.write_text('def test_behavior():\\n    assert ' + str(hasattr(implementation, 'new_helper')) + '\\n')\n",
+        "source": "p = root / 'implementation.py'\np.write_text('def behavior():\\n    return ' + str(2 if hasattr(implementation, 'new_helper') else 1) + '\\ndef new_helper():\\n    return 0\\n')\n",
+        "config": "(root / 'tests/agentic_probes/conftest.py').write_text('def pytest_collection_modifyitems(items):\\n    items.clear()\\n')\n",
+        "dependency": "(Path(sys.prefix) / 'lib/tampered.pth').write_text('import builtins\\n')\n",
+    }
+    (repo / "tests/test_helper.py").write_text(
+        "from pathlib import Path\nimport implementation, sys\nroot = Path.cwd()\n"
+        + attacks[mutation]
+        + "from implementation import new_helper\ndef test_helper():\n    assert new_helper() == 0\n"
+    )
+    if mutation == "adjacent":
+        (repo / "tests/test_neighbor.py").write_text(
+            "from pathlib import Path\ndef test_neighbor():\n    (Path.cwd().parent / 'base/implementation.py').write_text('def behavior():\\n    return 0\\n')\n"
+        )
+    head = commit(repo, "Add helper but retain broken behavior")
+    probe = "from implementation import behavior\ndef test_behavior():\n    assert behavior() == 2\n"
+    if mutation == "fallback":
+        probe = "import sys\nfrom pathlib import Path\nimport implementation\ndef test_behavior():\n    if not any('test_helper.py' in arg for arg in sys.argv):\n        Path(__file__).write_text('def test_behavior():\\n    assert True\\n')\n        assert hasattr(implementation, 'new_helper')\n    else:\n        assert implementation.behavior() == 2\n"
+    spec = VerificationSpec(
+        issue_number=6294,
+        pr_number=6311,
+        head_sha=head,
+        trunk_sha=base,
+        trunk_ref="main",
+        evidence_revision="c" * 64,
+        probes={"tests/agentic_probes/test_behavior.py": probe},
+    )
+    directory = tmp_path / "verification"
+    directory.mkdir()
+    result = verify(spec, directory, str(repo))
+    assert not result["comparison"]["fixed_tests"]
+    if mutation == "home":
+        assert result["probe_head"]["status"] == "test_failure"
+        assert result["probe_base"]["status"] == "test_failure"
+        return
+    assert result["status"] == "evidence_needed"
+    assert result["base"]["status"] == "input_mutation"
+    assert result["base"]["input_changes"]
+    assert not result["comparison"]["fixed_tests"]
+    if mutation in {"fallback", "peer", "adjacent"}:
+        assert result["probe_base"]["status"] == "input_mutation"
+        if mutation == "fallback":
+            assert result["probe_head"]["status"] == "input_mutation"
+    else:
+        assert "probe_base" not in result
