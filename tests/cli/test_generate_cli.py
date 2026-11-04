@@ -1040,7 +1040,7 @@ class TestResolveToolParamFlags:
         )
         compile(script, "<generated>", "exec")
 
-        namespace = {}
+        namespace: dict[str, Any] = {}
         exec(script, namespace)
         call_tool_app = namespace["call_tool_app"]
 
