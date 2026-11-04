@@ -15,6 +15,7 @@ from fastmcp.cli.client import Client
 from fastmcp.cli.generate import (
     _derive_server_name,
     _param_to_cli_flag,
+    _resolve_tool_param_flags,
     _schema_to_python_type,
     _schema_type_label,
     _to_python_identifier,
@@ -974,3 +975,104 @@ class TestGenerateSkillContent:
         content = generate_skill_content("My Weather API", "cli.py", [])
         assert "# My Weather API CLI" in content
         assert 'name: "my-weather-api-cli"' in content
+
+
+# ---------------------------------------------------------------------------
+# _resolve_tool_param_flags & Flag Collisions (Issue #6294)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveToolParamFlags:
+    def test_no_collisions(self):
+        flags = _resolve_tool_param_flags({"city": {}, "max_days": {}})
+        assert flags == {
+            "city": ("--city", None),
+            "max_days": ("--max-days", None),
+        }
+
+    def test_snake_and_camel_collision(self):
+        flags = _resolve_tool_param_flags({"user_id": {}, "userId": {}})
+        assert flags["user_id"] == ("--user-id", None)
+        assert flags["userId"] == ("--userId", "--userId")
+
+    def test_order_independence(self):
+        flags = _resolve_tool_param_flags({"userId": {}, "user_id": {}})
+        assert flags["user_id"] == ("--user-id", None)
+        assert flags["userId"] == ("--userId", "--userId")
+
+    def test_multiple_collisions(self):
+        flags = _resolve_tool_param_flags({"user_id": {}, "userId": {}, "UserId": {}})
+        assert flags["user_id"] == ("--user-id", None)
+        assert flags["userId"] == ("--userId", "--userId")
+        assert flags["UserId"] == ("--UserId", "--UserId")
+
+    def test_case_collision(self):
+        flags = _resolve_tool_param_flags({"id": {}, "Id": {}})
+        assert flags["id"] == ("--id", None)
+        assert flags["Id"] == ("--Id", "--Id")
+
+    def test_colliding_params_emit_explicit_flag_and_execute(self):
+        tool = mcp_types.Tool(
+            name="lookup",
+            input_schema={
+                "properties": {
+                    "user_id": {"type": "string"},
+                    "userId": {"type": "string"},
+                },
+                "required": ["user_id", "userId"],
+            },
+        )
+        source = _tool_function_source(tool)
+        assert 'user_id: Annotated[str, cyclopts.Parameter(help="")]' in source
+        assert (
+            'userId: Annotated[str, cyclopts.Parameter(name="--userId", help="")]'
+            in source
+        )
+        compile(source, "<test>", "exec")
+
+        # End-to-end execution with generate_cli_script and Cyclopts
+        script = generate_cli_script(
+            server_name="users",
+            server_spec="server.py",
+            transport_code='"http://localhost"',
+            extra_imports=set(),
+            tools=[tool],
+        )
+        compile(script, "<generated>", "exec")
+
+        namespace: dict[str, Any] = {}
+        exec(script, namespace)
+        call_tool_app = namespace["call_tool_app"]
+
+        called = []
+
+        async def mock_call_tool(name, args):
+            called.append((name, args))
+
+        namespace["_call_tool"] = mock_call_tool
+
+        call_tool_app(
+            ["lookup", "--user-id", "val1", "--userId", "val2"],
+            result_action="return_value",
+        )
+        assert called == [("lookup", {"user_id": "val1", "userId": "val2"})]
+
+    def test_colliding_flags_in_skill_generation(self):
+        tools = [
+            mcp_types.Tool(
+                name="lookup",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "user_id": {"type": "string"},
+                        "userId": {"type": "string"},
+                    },
+                    "required": ["user_id", "userId"],
+                },
+            )
+        ]
+        content = generate_skill_content("users", "cli.py", tools)
+        assert "--user-id <value>" in content
+        assert "--userId <value>" in content
+        assert "| `--user-id` |" in content
+        assert "| `--userId` |" in content
