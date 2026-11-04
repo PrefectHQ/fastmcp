@@ -308,9 +308,9 @@ class TestToolFunctionSource:
         source = _tool_function_source(tool)
         # Should use str type for complex object
         assert "metadata: Annotated[str | None" in source
-        # Should include JSON schema in help (with escaped quotes)
+        # Should include JSON schema in help
         assert "JSON Schema:" in source
-        assert '\\"type\\": \\"object\\"' in source
+        assert '"type": "object"' in source
         # Should decode retained JSON values without changing the raw parameter.
         assert "isinstance(_arguments['metadata'], str)" in source
         assert "_arguments['metadata'] = json.loads(_arguments['metadata'])" in source
@@ -1023,9 +1023,9 @@ class TestResolveToolParamFlags:
             },
         )
         source = _tool_function_source(tool)
-        assert 'user_id: Annotated[str, cyclopts.Parameter(help="")]' in source
+        assert "user_id: Annotated[str, cyclopts.Parameter(help='')]" in source
         assert (
-            'userId: Annotated[str, cyclopts.Parameter(name="--userId", help="")]'
+            "userId: Annotated[str, cyclopts.Parameter(name=\"--userId\", help='')]"
             in source
         )
         compile(source, "<test>", "exec")
