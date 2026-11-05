@@ -680,10 +680,23 @@ class FunctionResourceTemplate(ResourceTemplate):
         is_callable_object = not inspect.isroutine(fn) and not isinstance(
             fn, functools.partial
         )
+        callable_object = fn
         callable_exposes_signature = is_callable_object and (
             hasattr(fn, "__wrapped__") or hasattr(fn, "__signature__")
         )
         validation_fn = fn
+
+        # The wrapper can also live on __call__ itself, e.g. a decorator method
+        # marked with functools.wraps. Its unbound function carries the exposed
+        # signature; the bound method would drop the first wrapped parameter.
+        if is_callable_object:
+            call_method_fn = getattr(fn.__call__, "__func__", fn.__call__)
+            if not callable_exposes_signature and (
+                hasattr(call_method_fn, "__wrapped__")
+                or hasattr(call_method_fn, "__signature__")
+            ):
+                callable_exposes_signature = True
+                validation_fn = call_method_fn
 
         # if the fn is a callable class, we need to get the __call__ method from here out
         if is_callable_object:
@@ -843,13 +856,12 @@ class FunctionResourceTemplate(ResourceTemplate):
         # exposed signature so DI, the generated schema, and runtime validation
         # all agree with the URI checks.
         if is_callable_object and callable_exposes_signature:
-            callable_object = validation_fn
 
             @functools.wraps(callable_object)
             def callable_shim(*args: Any, **kwargs: Any) -> Any:
                 return callable_object(*args, **kwargs)
 
-            exposed_signature = inspect.signature(callable_object)
+            exposed_signature = inspect.signature(validation_fn)
             callable_shim.__signature__ = exposed_signature  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
             callable_shim.__annotations__ = {
                 name: param.annotation
