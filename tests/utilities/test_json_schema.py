@@ -415,6 +415,81 @@ class TestDereferenceRefs:
             assert variant["required"] == ["kind"]
 
 
+class TestDereferenceRefsLiteralData:
+    """`$ref` keys inside instance data are values, not references."""
+
+    @pytest.mark.parametrize("keyword", ["default", "const", "examples", "enum"])
+    @pytest.mark.parametrize(
+        "ref", ["https://example.com/customer.json", "#/$defs/Text"]
+    )
+    def test_literal_ref_in_data_is_preserved(self, keyword: str, ref: str):
+        value: Any = {"$ref": ref}
+        if keyword in ("examples", "enum"):
+            value = [value]
+        schema = {
+            "type": "object",
+            "properties": {"config": {"type": "object", keyword: value}},
+            "$defs": {"Text": {"type": "string"}},
+        }
+        result = dereference_refs(schema)
+        assert result["properties"]["config"][keyword] == value
+
+    @pytest.mark.parametrize(
+        "pointer", ["#/properties/a/default", "#/properties/a/enum/0"]
+    )
+    def test_ref_pointing_into_data_resolves(self, pointer: str):
+        """A `$ref` whose pointer reaches into instance data still resolves."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "a": {
+                    "default": {"type": "string"},
+                    "enum": [{"type": "string"}],
+                },
+                "b": {"$ref": pointer},
+                "c": {"$ref": "#/$defs/Text"},
+            },
+            "$defs": {"Text": {"type": "string"}},
+        }
+        result = dereference_refs(schema)
+        assert result["properties"]["b"] == {"type": "string"}
+        assert result["properties"]["c"] == {"type": "string"}
+
+    def test_escaped_looking_keys_round_trip(self):
+        """Keys shaped like the internal escape of `$ref` are kept unchanged."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "\x00$ref": {"type": "string", "default": {"\x00$ref": 1}},
+            },
+        }
+        assert dereference_refs(schema) == schema
+
+    def test_literal_ref_in_sibling_default_is_preserved(self):
+        """A default placed next to a `$ref` survives the sibling merge."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/$defs/Config",
+                    "default": {"$ref": "#/$defs/Text"},
+                }
+            },
+            "$defs": {
+                "Config": {
+                    "type": "object",
+                    "default": {"$ref": "https://example.com/customer.json"},
+                },
+                "Text": {"type": "string"},
+            },
+        }
+        result = dereference_refs(schema)
+        assert result["properties"]["config"] == {
+            "type": "object",
+            "default": {"$ref": "#/$defs/Text"},
+        }
+
+
 class TestCompressSchema:
     """Tests for the compress_schema function."""
 

@@ -1,6 +1,7 @@
 """Tests for DereferenceRefsMiddleware."""
 
 from enum import Enum
+from typing import Annotated, Any
 
 import pydantic
 
@@ -134,3 +135,21 @@ class TestDereferenceRefsMiddleware:
         # Simple schema should not have $defs regardless
         assert "$defs" not in schema
         assert schema["properties"]["a"]["type"] == "integer"
+
+    async def test_literal_ref_in_default_is_preserved(self):
+        """A `$ref` key in a default value is data and is advertised as-is."""
+        mcp = FastMCP("test")
+        default = {"$ref": "https://example.com/customer.json"}
+
+        @mcp.tool
+        def describe(
+            config: Annotated[dict[str, Any], pydantic.Field(default=default)],
+        ) -> dict[str, Any]:
+            return config
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            result = await client.call_tool("describe", {})
+
+        assert tools[0].input_schema["properties"]["config"]["default"] == default
+        assert result.data == default

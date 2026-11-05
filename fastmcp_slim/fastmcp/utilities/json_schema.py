@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import suppress
 from typing import Any
 from urllib.parse import unquote
@@ -14,7 +14,9 @@ def replace_refs(*args: Any, **kwargs: Any) -> Any:
     return _replace_refs(*args, **kwargs)
 
 
-def _copy_schema(schema: dict[str, Any]) -> dict[str, Any]:
+def _copy_schema(
+    schema: dict[str, Any], *, rename_key: Callable[[Any], Any] | None = None
+) -> dict[str, Any]:
     """Return a deep copy of a JSON schema without recursing.
 
     `copy.deepcopy` consumes stack frames in proportion to nesting depth, so a
@@ -22,7 +24,7 @@ def _copy_schema(schema: dict[str, Any]) -> dict[str, Any]:
     module can apply their own depth guards — turning a schema that used to
     compress into one that fails outright. Schemas are plain JSON, so an
     explicit stack copies the containers at any depth and shares the immutable
-    scalars at the leaves.
+    scalars at the leaves. *rename_key*, if given, maps every dict key.
     """
     root: dict[str, Any] = {}
     stack: list[tuple[Any, Any]] = [(schema, root)]
@@ -31,6 +33,8 @@ def _copy_schema(schema: dict[str, Any]) -> dict[str, Any]:
         source, target = stack.pop()
         if isinstance(source, dict):
             pairs: list[tuple[Any, Any]] = list(source.items())
+            if rename_key is not None:
+                pairs = [(rename_key(key), value) for key, value in pairs]
         else:
             pairs = list(enumerate(source))
 
@@ -189,6 +193,43 @@ def _text_within_limit(schema: dict[str, Any]) -> bool:
     return True
 
 
+# Keys that hold instance data, not sub-schemas.
+_DATA_KEYS = frozenset({"default", "const", "examples", "enum"})
+
+# A `$ref` key inside instance data is a literal value, not a reference.
+# `_strip_remote_refs` prefixes those keys with this character so that
+# `jsonref` and the reference walks here don't follow them, and
+# `_restore_literal_refs` removes one prefix afterwards. Keys that already
+# look escaped get another prefix, so the round trip is lossless.
+_LITERAL_REF_PREFIX = "\x00"
+
+
+def _is_escaped_ref_key(key: Any) -> bool:
+    return (
+        isinstance(key, str)
+        and key.startswith(_LITERAL_REF_PREFIX)
+        and key.lstrip(_LITERAL_REF_PREFIX) == "$ref"
+    )
+
+
+def _escape_schema_key(key: Any) -> Any:
+    return _LITERAL_REF_PREFIX + key if _is_escaped_ref_key(key) else key
+
+
+def _escape_data_key(key: Any) -> Any:
+    return _LITERAL_REF_PREFIX + key if key == "$ref" else _escape_schema_key(key)
+
+
+def _restore_key(key: Any) -> Any:
+    return key[len(_LITERAL_REF_PREFIX) :] if _is_escaped_ref_key(key) else key
+
+
+def _restore_literal_refs(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of *schema* with the `$ref` keys escaped by
+    `_strip_remote_refs` restored."""
+    return _copy_schema(schema, rename_key=_restore_key)
+
+
 def _strip_remote_refs(obj: Any) -> Any:
     """Return a deep copy of *obj* with non-local ``$ref`` values removed.
 
@@ -197,13 +238,32 @@ def _strip_remote_refs(obj: Any) -> Any:
     stripped so that ``jsonref.replace_refs`` never attempts to fetch an
     external resource.  This prevents SSRF / LFI when proxying schemas
     from untrusted servers.
+
+    A ``$ref`` key inside instance data (``default``, ``const``, ``examples``,
+    ``enum``) is a literal value, so it is kept but escaped instead; see
+    `_restore_literal_refs`.
     """
     if isinstance(obj, dict):
         ref = obj.get("$ref")
-        if isinstance(ref, str) and not ref.startswith("#"):
-            # Drop the remote $ref key; keep all other keys.
-            return {k: _strip_remote_refs(v) for k, v in obj.items() if k != "$ref"}
-        return {k: _strip_remote_refs(v) for k, v in obj.items()}
+        result: dict[str, Any] = {}
+        for k, v in obj.items():
+            if k == "$ref" and isinstance(ref, str) and not ref.startswith("#"):
+                # Drop the remote $ref key; keep all other keys.
+                continue
+            if k in _SUBSCHEMA_MAP_KEYS and isinstance(v, dict):
+                # The keys here are user property/definition names, so one
+                # named like a data keyword still holds a sub-schema.
+                result[k] = {
+                    _escape_schema_key(name): _strip_remote_refs(sub)
+                    for name, sub in v.items()
+                }
+            elif k in _DATA_KEYS:
+                result[k] = _copy_schema({"value": v}, rename_key=_escape_data_key)[
+                    "value"
+                ]
+            else:
+                result[_escape_schema_key(k)] = _strip_remote_refs(v)
+        return result
     if isinstance(obj, list):
         return [_strip_remote_refs(item) for item in obj]
     return obj
@@ -227,7 +287,6 @@ def _strip_discriminator(obj: Any, *, copy_data: bool = False) -> Any:
         if skip:
             obj = require_discriminator_property(obj)
         # Keys that hold instance data, not sub-schemas — don't recurse.
-        _DATA_KEYS = {"default", "const", "examples", "enum"}
         result: dict[str, Any] = {}
         for k, v in obj.items():
             if k == "discriminator" and skip:
@@ -348,7 +407,8 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         >>> resolved = dereference_refs(schema)
         >>> # Result: {"properties": {"cat": {"enum": ["a", "b"], "type": "string", "default": "a"}}}
     """
-    # Strip any remote $ref values before processing to prevent SSRF / LFI.
+    # Strip any remote $ref values before processing to prevent SSRF / LFI,
+    # and escape literal `$ref` keys in instance data so they stay data.
     schema = _strip_remote_refs(schema)
 
     # Check before inlining anything. Circular references can't be inlined:
@@ -356,7 +416,7 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
     # that Pydantic's model_dump rejects. Acyclic graphs can still expand far
     # beyond their own size, so oversized results are refused as well.
     if not _within_inline_limits(schema, follow_refs=True):
-        return resolve_root_ref(schema)
+        return resolve_root_ref(_restore_literal_refs(schema))
 
     # Most schema operations do not dereference. Keep jsonref (and its requests
     # dependency tree) out of server startup until a schema actually needs it.
@@ -384,7 +444,7 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         # check above, so measure what it built (shared containers, not yet
         # copied) before the discriminator pass copies the whole tree.
         if not _within_inline_limits(dereferenced, follow_refs=False):
-            return resolve_root_ref(schema)
+            return resolve_root_ref(_restore_literal_refs(schema))
 
         # Strip `discriminator` keys — they contain `mapping` values that
         # point at `#/$defs/...` entries we just removed.  `discriminator`
@@ -397,8 +457,8 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         dereferenced = _strip_discriminator(dereferenced, copy_data=not needs_merge)
 
         if not _text_within_limit(dereferenced):
-            return resolve_root_ref(schema)
-        return dereferenced
+            return resolve_root_ref(_restore_literal_refs(schema))
+        return _restore_literal_refs(dereferenced)
 
     except (JsonRefError, RecursionError, _CannotInline):
         # Self-referencing/circular schemas can't be fully dereferenced.
@@ -406,7 +466,7 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         # (e.g. "#/properties/nodes/items") that bypass $defs-based cycle
         # detection — common in schemas from .NET/System.Text.Json.
         # Fall back to resolving only root-level $ref (for MCP spec compliance)
-        return resolve_root_ref(schema)
+        return resolve_root_ref(_restore_literal_refs(schema))
 
 
 def _merge_ref_siblings(
