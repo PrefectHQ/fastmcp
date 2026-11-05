@@ -834,6 +834,19 @@ class FunctionResourceTemplate(ResourceTemplate):
                     f"URI parameters {all_uri_params} must be a subset of the function arguments: {func_params}"
                 )
 
+        # Callable decorators that use functools.update_wrapper expose the
+        # wrapped function's signature, while __call__ itself may just accept
+        # **kwargs. Route through a shim with the exposed signature so DI, the
+        # generated schema, and runtime validation all agree with the URI checks.
+        if is_callable_object and hasattr(validation_fn, "__wrapped__"):
+            callable_object = validation_fn
+
+            @functools.wraps(callable_object)
+            def callable_shim(*args: Any, **kwargs: Any) -> Any:
+                return callable_object(*args, **kwargs)
+
+            fn = transform_context_annotations(callable_shim)
+
         wrapper_fn = without_injected_parameters(fn)
         type_adapter = get_cached_typeadapter(wrapper_fn)
         parameters = type_adapter.json_schema()

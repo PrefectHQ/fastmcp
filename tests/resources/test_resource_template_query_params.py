@@ -134,6 +134,36 @@ class TestQueryParameterTypeCoercion:
         assert result["page"] == 5
         assert result["type"] == "int"
 
+    async def test_callable_wrapper_coerces_with_exposed_signature(self):
+        """Test that runtime coercion uses a callable wrapper's exposed signature."""
+
+        def get_page(resource: str, page: int = 1) -> dict:
+            return {"resource": resource, "page": page, "type": type(page).__name__}
+
+        class Wrapped:
+            def __init__(self, fn):
+                functools.update_wrapper(self, fn)
+                self._fn = fn
+
+            def __call__(self, **kwargs):
+                return self._fn(**kwargs)
+
+        template = ResourceTemplate.from_function(
+            fn=Wrapped(get_page),
+            uri_template="resource://{resource}{?page}",
+            name="test",
+        )
+
+        resource = await template.create_resource(
+            "resource://docs?page=5",
+            {"resource": "docs", "page": "5"},
+        )
+
+        result = await resource.read()
+        assert isinstance(result, dict)
+        assert result["page"] == 5
+        assert result["type"] == "int"
+
     async def test_bool_coercion(self):
         """Test boolean type coercion for query parameters."""
 
