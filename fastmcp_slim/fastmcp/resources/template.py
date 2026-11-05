@@ -713,9 +713,12 @@ class FunctionResourceTemplate(ResourceTemplate):
         )
 
         fn = transform_context_annotations(fn)
-        validation_fn = (
-            transform_context_annotations(validation_fn) if is_callable_object else fn
-        )
+        if callable_exposes_signature:
+            validation_fn = transform_context_annotations(validation_fn)
+        else:
+            # Ordinary callable objects keep using their __call__ method, as
+            # before; only wrappers need their exposed signature retained.
+            validation_fn = fn
 
         # Reject functions with positional-only parameters or *args
         # (**kwargs is allowed because the URI will define the parameter names)
