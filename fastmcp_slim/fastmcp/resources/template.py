@@ -674,8 +674,15 @@ class FunctionResourceTemplate(ResourceTemplate):
 
         description = description if description is not None else inspect.getdoc(fn)
 
+        # Callable objects can expose a wrapped function's signature via
+        # functools.update_wrapper. Preserve that signature for URI validation.
+        is_callable_object = not inspect.isroutine(fn) and not isinstance(
+            fn, functools.partial
+        )
+        validation_fn = fn
+
         # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
+        if is_callable_object:
             fn = fn.__call__
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
@@ -689,10 +696,13 @@ class FunctionResourceTemplate(ResourceTemplate):
         )
 
         fn = transform_context_annotations(fn)
+        validation_fn = (
+            transform_context_annotations(validation_fn) if is_callable_object else fn
+        )
 
         # Reject functions with positional-only parameters or *args
         # (**kwargs is allowed because the URI will define the parameter names)
-        sig = inspect.signature(fn)
+        sig = inspect.signature(validation_fn)
         for param in sig.parameters.values():
             if param.kind == inspect.Parameter.POSITIONAL_ONLY:
                 raise ValueError(
@@ -734,7 +744,7 @@ class FunctionResourceTemplate(ResourceTemplate):
             raise ValueError("URI template must contain at least one parameter")
 
         # Use wrapper to get user-facing parameters (excludes injected params)
-        wrapper_fn = without_injected_parameters(fn)
+        wrapper_fn = without_injected_parameters(validation_fn)
         user_sig = inspect.signature(wrapper_fn)
         func_params = set(user_sig.parameters.keys())
 
@@ -771,7 +781,7 @@ class FunctionResourceTemplate(ResourceTemplate):
             from fastmcp.tools.function_tool import _resolve_param_hints
 
             try:
-                hints = _resolve_param_hints(fn)
+                hints = _resolve_param_hints(validation_fn)
             except NameError:
                 # Pydantic resolves annotations against namespaces this doesn't
                 # see, so a name we can't resolve may still be valid. Fall back

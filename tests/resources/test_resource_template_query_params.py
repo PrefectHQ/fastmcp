@@ -1,3 +1,5 @@
+import functools
+
 import pytest
 
 from fastmcp.resources import ResourceTemplate
@@ -49,6 +51,32 @@ class TestQueryParameterExtraction:
         # Both query params
         params = template.matches("items://books?page=2&limit=20")
         assert params == {"category": "books", "page": "2", "limit": "20"}
+
+    async def test_callable_wrapper_preserves_exposed_signature(self):
+        """Test that a callable wrapper's exposed signature is used for URI validation."""
+
+        def get_item(item_id: str, format: str = "json") -> str:
+            return f"{item_id}:{format}"
+
+        class Wrapped:
+            def __init__(self, fn):
+                functools.update_wrapper(self, fn)
+                self._fn = fn
+
+            def __call__(self, **kwargs):
+                return self._fn(**kwargs)
+
+        template = ResourceTemplate.from_function(
+            fn=Wrapped(get_item),
+            uri_template="items://{item_id}{?format}",
+            name="items",
+        )
+
+        resource = await template.create_resource(
+            "items://abc?format=xml",
+            {"item_id": "abc", "format": "xml"},
+        )
+        assert await resource.read() == "abc:xml"
 
 
 class TestQueryParameterTypeCoercion:
