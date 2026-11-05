@@ -12,6 +12,7 @@ from fastmcp.server.auth.redirect_validation import (
     DEFAULT_LOCALHOST_PATTERNS,
     add_query_params,
     build_client_redirect,
+    is_redirect_uri_allowed_for_application_type,
     matches_allowed_pattern,
     replace_query_param,
     validate_redirect_uri,
@@ -582,4 +583,92 @@ class TestDefaultPatterns:
         )
         assert not validate_redirect_uri(
             "https://claude.ai/api/mcp/auth_callback", DEFAULT_LOCALHOST_PATTERNS
+        )
+
+
+class TestRawStringNormalization:
+    """Raw-string redirect URIs must validate identically to the AnyUrl form.
+
+    Browsers parse a 302 Location with WHATWG rules, and pydantic's AnyUrl
+    normalizes the same way (backslash becomes a path separator, dot-segments
+    are resolved, IPv4 shorthand is expanded, trailing C0 characters are
+    stripped). A plain string skips that parser, so attacker-controlled
+    spellings matched allowlist patterns that the parsed form would have
+    failed (#6295).
+    """
+
+    @pytest.mark.parametrize(
+        "uri,pattern",
+        [
+            (r"https://evil.com\.example.com/cb", "https://*.example.com/*"),
+            (r"https://app.example.com/cb/..\steal", "https://app.example.com/cb/*"),
+            ("https://app.example.com/cb/.. ", "https://app.example.com/cb/*"),
+        ],
+    )
+    def test_raw_string_rejects_whatwg_ambiguous_spellings(self, uri, pattern):
+        assert not matches_allowed_pattern(uri, pattern)
+        # The parsed (AnyUrl) form already failed the same pattern; the two
+        # input forms must agree.
+        assert not matches_allowed_pattern(str(AnyUrl(uri)), pattern)
+
+    def test_raw_string_rejected_by_validate_redirect_uri(self):
+        patterns = ["https://*.example.com/*"]
+        uri = r"https://evil.com\.example.com/cb"
+        assert not validate_redirect_uri(uri, patterns)
+        assert not validate_redirect_uri(AnyUrl(uri), patterns)
+
+    def test_web_application_type_rejects_ipv4_shorthand(self):
+        # `https://127.1/cb` normalizes to the loopback `127.0.0.1`, so a
+        # "web" client (which requires a non-loopback https host) must be
+        # rejected in both input forms.
+        assert not is_redirect_uri_allowed_for_application_type(
+            "https://127.1/cb", "web"
+        )
+        assert not is_redirect_uri_allowed_for_application_type(
+            AnyUrl("https://127.1/cb"), "web"
+        )
+
+    def test_native_application_type_rejects_backslash_localhost(self):
+        # `http://evil.com\.localhost/cb` keeps the loopback-suffix host only
+        # in the un-normalized form; normalized it is `evil.com`, not loopback.
+        assert not is_redirect_uri_allowed_for_application_type(
+            r"http://evil.com\.localhost/cb", "native"
+        )
+        assert not is_redirect_uri_allowed_for_application_type(
+            AnyUrl(r"http://evil.com\.localhost/cb"), "native"
+        )
+
+    def test_dot_segments_still_rejected_after_normalization(self):
+        # Normalization resolves dot-segments away, so the raw spelling must
+        # still be rejected: a normalized-only check would turn a rejected
+        # traversal into a matching ordinary path.
+        patterns = ["https://app.example.com/oauth/callback/*"]
+        assert not validate_redirect_uri(
+            "https://app.example.com/oauth/callback/./foo", patterns
+        )
+        assert not validate_redirect_uri(
+            "https://app.example.com/oauth/callback/foo/..", patterns
+        )
+        assert not matches_allowed_pattern(
+            "https://app.example.com/oauth/callback/./foo", patterns[0]
+        )
+
+    def test_legitimate_raw_strings_unchanged(self):
+        # Ordinary http(s) redirect URIs validate exactly as before.
+        assert validate_redirect_uri(
+            "http://localhost:3000/callback", ["http://localhost:*"]
+        )
+        assert validate_redirect_uri(
+            "https://app.example.com/cb", ["https://*.example.com/*"]
+        )
+        # Custom schemes that AnyUrl cannot express are passed through
+        # unchanged and keep their previous classification.
+        assert is_redirect_uri_allowed_for_application_type(
+            "com.example.app:/callback", "native"
+        )
+        assert is_redirect_uri_allowed_for_application_type(
+            "urn:ietf:wg:oauth:2.0:oob", "native"
+        )
+        assert is_redirect_uri_allowed_for_application_type(
+            "myapp://callback", "native"
         )
