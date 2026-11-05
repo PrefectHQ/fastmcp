@@ -434,6 +434,15 @@ def generate_cli_script(
     lines.append("from fastmcp import Client")
     lines.extend(sorted(extra_imports))
     lines.append("")
+    lines.append(
+        textwrap.dedent("""\
+        try:
+            import fastmcp_tasks
+        except ModuleNotFoundError as exc:
+            if exc.name != "fastmcp_tasks":
+                raise
+        """)
+    )
 
     # --- Transport config ---
     lines.append("# Modify this to change how the CLI connects to the MCP server.")
