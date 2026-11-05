@@ -293,6 +293,8 @@ def extract_trace_context(meta: dict[str, Any] | None) -> Context:
         carrier["traceparent"] = str(meta[TRACE_PARENT_KEY])
     if TRACE_STATE_KEY in meta:
         carrier["tracestate"] = str(meta[TRACE_STATE_KEY])
+    if BAGGAGE_KEY in meta:
+        carrier[BAGGAGE_KEY] = str(meta[BAGGAGE_KEY])
 
     if carrier:
         # Extract *onto the current context* rather than a fresh root, so the

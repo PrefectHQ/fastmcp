@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from opentelemetry import trace
+from opentelemetry import baggage, trace
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fastmcp.server.telemetry import get_auth_span_attributes
@@ -68,6 +68,15 @@ class TestExtractTraceContext:
         span_ctx = trace.get_current_span(ctx).get_span_context()
         assert span_ctx.is_valid
         assert span_ctx.trace_state.get("congo") == "t61rcWkgMzE"
+
+    def test_baggage(self, trace_exporter: InMemorySpanExporter):
+        ctx = extract_trace_context(
+            {
+                "traceparent": VALID_TRACEPARENT,
+                "baggage": "tenant=acme",
+            }
+        )
+        assert baggage.get_baggage("tenant", ctx) == "acme"
 
     def test_none_meta_returns_current_context(
         self, trace_exporter: InMemorySpanExporter
