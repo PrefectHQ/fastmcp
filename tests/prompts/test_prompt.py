@@ -295,18 +295,15 @@ class TestPromptTypeConversion:
 
     async def test_type_conversion_error_handling(self):
         """Test that informative errors are raised for invalid type conversions."""
-        from fastmcp.exceptions import PromptError
 
         def typed_prompt(numbers: list[int]) -> str:
             return f"Got {len(numbers)} numbers"
 
         prompt = Prompt.from_function(typed_prompt)
 
-        # Test with invalid JSON - should raise PromptError with type conversion details
-        with pytest.raises(PromptError) as exc_info:
+        with pytest.raises(ValidationError) as exc_info:
             await prompt.render(arguments={"numbers": "not valid json"})
 
-        # PromptError passes through unchanged
         assert "Could not convert argument 'numbers'" in str(exc_info.value)
         assert "list[int]" in str(exc_info.value)
 
