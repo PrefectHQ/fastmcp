@@ -234,6 +234,10 @@ class TestQueryParameterExtraction:
             name="items",
         )
 
+        assert template.parameters["properties"] == {
+            "item_id": {"type": "string"},
+            "format": {"default": "json", "type": "string"},
+        }
         assert template.matches("items://abc?format=xml") == {
             "item_id": "abc",
             "format": "xml",

@@ -714,6 +714,8 @@ class FunctionResourceTemplate(ResourceTemplate):
 
         fn = transform_context_annotations(fn)
         if callable_exposes_signature:
+            # URI validation and the generated schema must see the wrapper's
+            # exposed signature, not __call__'s **kwargs.
             validation_fn = transform_context_annotations(validation_fn)
         else:
             # Ordinary callable objects keep using their __call__ method, as
