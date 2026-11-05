@@ -139,6 +139,39 @@ class TestQueryParameterExtraction:
         )
         assert await resource.read() == "abc:xml"
 
+    async def test_async_callable_wrapper_with_wrapped_call_method_preserves_signature(
+        self,
+    ):
+        """Test an async callable whose __call__ wrapper exposes the signature."""
+
+        async def get_item(item_id: str, format: str = "json") -> str:
+            return f"{item_id}:{format}"
+
+        class Wrapped:
+            def __init__(self, fn):
+                self._fn = fn
+
+            @functools.wraps(get_item)
+            def __call__(self, **kwargs):
+                return self._fn(**kwargs)
+
+        template = ResourceTemplate.from_function(
+            fn=Wrapped(get_item),
+            uri_template="items://{item_id}{?format}",
+            name="items",
+        )
+
+        assert template.parameters["properties"] == {
+            "item_id": {"type": "string"},
+            "format": {"default": "json", "type": "string"},
+        }
+
+        resource = await template.create_resource(
+            "items://abc?format=xml",
+            {"item_id": "abc", "format": "xml"},
+        )
+        assert await resource.read() == "abc:xml"
+
     async def test_callable_wrapper_with_injected_param_preserves_exposed_signature(
         self,
     ):
