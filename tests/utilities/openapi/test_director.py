@@ -1558,3 +1558,129 @@ class TestCookieParameters:
         assert "version=3" in cookie
         # Booleans use OpenAPI convention (true/false, not True/False)
         assert "debug=true" in cookie
+
+    def _collection_cookie_route(self, explode: bool | None) -> HTTPRoute:
+        return HTTPRoute(
+            path="/things",
+            method="GET",
+            operation_id="get_things",
+            parameters=[
+                ParameterInfo(
+                    name="session_tags",
+                    location="cookie",
+                    required=False,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=explode,
+                ),
+                ParameterInfo(
+                    name="prefs",
+                    location="cookie",
+                    required=False,
+                    schema={
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    },
+                    explode=explode,
+                ),
+            ],
+            parameter_map={
+                "session_tags": {
+                    "location": "cookie",
+                    "openapi_name": "session_tags",
+                },
+                "prefs": {"location": "cookie", "openapi_name": "prefs"},
+            },
+        )
+
+    @pytest.mark.parametrize("explode", [None, True])
+    def test_cookie_array_explodes_by_default_and_true(self, director, explode):
+        """Exploded arrays repeat the cookie name once per item."""
+        request = director.build(
+            self._collection_cookie_route(explode),
+            {"session_tags": ["a", "b"]},
+        )
+        assert request.headers["cookie"] == "session_tags=a; session_tags=b"
+
+    def test_cookie_array_with_explode_false_joins_with_commas(self, director):
+        """Non-exploded arrays use one comma-joined cookie value."""
+        request = director.build(
+            self._collection_cookie_route(False),
+            {"session_tags": ["a", "b"]},
+        )
+        assert request.headers["cookie"] == "session_tags=a,b"
+
+    @pytest.mark.parametrize("explode", [None, True])
+    def test_cookie_object_explodes_by_default_and_true(self, director, explode):
+        """Exploded objects use one cookie pair per property."""
+        request = director.build(
+            self._collection_cookie_route(explode),
+            {"prefs": {"theme": "dark", "density": "compact"}},
+        )
+        assert request.headers["cookie"] == "theme=dark; density=compact"
+
+    def test_cookie_object_with_explode_false_joins_key_value_pairs(self, director):
+        """Non-exploded objects alternate property names and values."""
+        request = director.build(
+            self._collection_cookie_route(False),
+            {"prefs": {"theme": "dark", "density": "compact"}},
+        )
+        assert request.headers["cookie"] == "prefs=theme,dark,density,compact"
+
+    def test_cookie_values_merge_with_existing_cookie_header(self, director):
+        """Generated cookies are appended to a Cookie header parameter."""
+        route = HTTPRoute(
+            path="/things",
+            method="GET",
+            operation_id="get_things",
+            parameters=[
+                ParameterInfo(
+                    name="Cookie",
+                    location="header",
+                    required=False,
+                    schema={"type": "string"},
+                ),
+                ParameterInfo(
+                    name="session_tags",
+                    location="cookie",
+                    required=False,
+                    schema={"type": "array", "items": {"type": "string"}},
+                ),
+            ],
+            parameter_map={
+                "Cookie": {"location": "header", "openapi_name": "Cookie"},
+                "session_tags": {
+                    "location": "cookie",
+                    "openapi_name": "session_tags",
+                },
+            },
+        )
+        request = director.build(
+            route,
+            {"Cookie": "keep=1", "session_tags": ["a", "b"]},
+        )
+        assert request.headers["cookie"] == ("keep=1; session_tags=a; session_tags=b")
+
+    @pytest.mark.parametrize(
+        "arguments",
+        [
+            pytest.param({"session_tags": [["nested"]]}, id="array-item"),
+            pytest.param({"prefs": {"nested": {"value": "x"}}}, id="object-value"),
+        ],
+    )
+    def test_cookie_nested_collection_values_raise(self, director, arguments):
+        """Nested values have no form-style cookie representation."""
+        with pytest.raises(ValueError, match="nested"):
+            director.build(self._collection_cookie_route(None), arguments)
+
+    def test_cookie_non_exploded_values_encode_separators(self, director):
+        """Comma-joined items stay distinct when their values contain separators."""
+        route = self._collection_cookie_route(False)
+
+        request = director.build(route, {"session_tags": ["a,b", "c"]})
+        assert request.headers["cookie"] == "session_tags=a%2Cb,c"
+
+        request = director.build(route, {"session_tags": ["a", "b,c"]})
+        assert request.headers["cookie"] == "session_tags=a,b%2Cc"
+
+        request = director.build(route, {"prefs": {"theme": "dark=night"}})
+        assert request.headers["cookie"] == "prefs=theme,dark%3Dnight"
