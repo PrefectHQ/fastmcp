@@ -3,6 +3,7 @@ import functools
 import pytest
 
 from fastmcp.resources import ResourceTemplate
+from fastmcp.server.sessions import UserSession
 
 
 class TestQueryParameterExtraction:
@@ -77,6 +78,33 @@ class TestQueryParameterExtraction:
             {"item_id": "abc", "format": "xml"},
         )
         assert await resource.read() == "abc:xml"
+
+    async def test_callable_wrapper_with_injected_param_preserves_exposed_signature(
+        self,
+    ):
+        """Test that DI normalization keeps a callable wrapper's exposed signature."""
+
+        def get_item(item_id: str, session: UserSession, format: str = "json") -> str:
+            return f"{item_id}:{format}"
+
+        class Wrapped:
+            def __init__(self, fn):
+                functools.update_wrapper(self, fn)
+                self._fn = fn
+
+            def __call__(self, **kwargs):
+                return self._fn(**kwargs)
+
+        template = ResourceTemplate.from_function(
+            fn=Wrapped(get_item),
+            uri_template="items://{item_id}{?format}",
+            name="items",
+        )
+
+        assert template.matches("items://abc?format=xml") == {
+            "item_id": "abc",
+            "format": "xml",
+        }
 
 
 class TestQueryParameterTypeCoercion:
