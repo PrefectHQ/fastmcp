@@ -233,6 +233,35 @@ class TestUnionHydrationFidelity:
         assert result.structured_content == {"value": {"a": 0}}
         assert result.data == {"value": {"a": 0}}
 
+    async def test_anyof_string_coercion_keeps_server_value(self):
+        mcp = FastMCP()
+
+        # Only the first branch accepts {"a": "5"}; the second coerces the
+        # string to an integer. No ``format: json`` anywhere in the schema,
+        # so the string the server sent must reach data unchanged (#6136).
+        schema = {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "anyOf": [
+                        {"type": "object", "properties": {"x": {}}},
+                        {"type": "object", "properties": {"a": {"type": "integer"}}},
+                    ]
+                }
+            },
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"value": {"a": "5"}}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"value": {"a": "5"}}
+        assert result.data == {"value": {"a": "5"}}
+
     async def test_unambiguous_anyof_still_hydrates(self):
         mcp = FastMCP()
 

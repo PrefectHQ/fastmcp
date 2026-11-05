@@ -27,7 +27,9 @@ logger = get_logger(__name__)
 AUTO_PAGINATION_MAX_PAGES = 250
 
 
-def _round_trips_to_payload(type_adapter: Any, typed: Any, original: Any) -> bool:
+def _round_trips_to_payload(
+    type_adapter: Any, typed: Any, original: Any, *, allow_json_text: bool
+) -> bool:
     """Check that the typed hydration re-serializes to the server's payload.
 
     Pydantic unions validate with smart mode, which may coerce across
@@ -37,8 +39,9 @@ def _round_trips_to_payload(type_adapter: Any, typed: Any, original: Any) -> boo
     hydration-legitimate asymmetries: fields the payload omitted may appear
     in the dump (schema defaults serialize out), date-time strings may
     be spelled differently for the same instant (pydantic renders UTC as
-    ``Z`` while a payload may say ``+00:00``), and ``format: json`` text
-    is compared as its decoded value (pydantic's ``Json`` type).
+    ``Z`` while a payload may say ``+00:00``), and — when the schema
+    actually declares it — ``format: json`` text is compared as its
+    decoded value (pydantic's ``Json`` type).
     """
     try:
         rehydrated = json.loads(type_adapter.dump_json(typed))
@@ -46,7 +49,18 @@ def _round_trips_to_payload(type_adapter: Any, typed: Any, original: Any) -> boo
         # If the typed form cannot be re-serialized, fidelity is unknowable;
         # keep the hydrated value rather than second-guessing a valid model.
         return True
-    return _hydration_covers_payload(rehydrated, original)
+    return _hydration_covers_payload(rehydrated, original, allow_json_text)
+
+
+def _schema_asks_json_text(schema: Any) -> bool:
+    """True when any subschema in `schema` declares ``format: json``."""
+    if isinstance(schema, dict):
+        if schema.get("format") == "json":
+            return True
+        return any(_schema_asks_json_text(value) for value in schema.values())
+    if isinstance(schema, list):
+        return any(_schema_asks_json_text(value) for value in schema)
+    return False
 
 
 def _json_text_decodes_to(original: Any, dumped: Any) -> bool:
@@ -55,6 +69,9 @@ def _json_text_decodes_to(original: Any, dumped: Any) -> bool:
     ``format: json`` properties hydrate through pydantic's ``Json`` type:
     the server sends JSON text and the typed value is the decoded object,
     so the dump re-emits the decoded form rather than the original string.
+    Callers gate this on the schema actually declaring ``format: json``
+    (``_schema_asks_json_text``); without it, a JSON-looking string must
+    not stand in for its decoded value.
     """
     if not isinstance(original, str):
         return False
@@ -68,10 +85,17 @@ def _json_text_decodes_to(original: Any, dumped: Any) -> bool:
     return decoded == dumped
 
 
-def _hydration_covers_payload(dumped: Any, original: Any) -> bool:
+def _hydration_covers_payload(
+    dumped: Any, original: Any, allow_json_text: bool = True
+) -> bool:
     """Every value the server sent must survive hydration; extra keys in the
-    dump are defaults for fields the payload omitted and are allowed."""
-    if _json_text_decodes_to(original, dumped):
+    dump are defaults for fields the payload omitted and are allowed.
+
+    ``allow_json_text`` gates the JSON-text decode asymmetry: it should be
+    True only when the output schema declares ``format: json``, so a
+    schema without it never blesses a coerced value (a string ``"5"``
+    standing in for the integer ``5``)."""
+    if allow_json_text and _json_text_decodes_to(original, dumped):
         # Intentional decode: format: json hydrates JSON text into a value.
         return True
     if isinstance(original, bool) or isinstance(dumped, bool):
@@ -85,7 +109,8 @@ def _hydration_covers_payload(dumped: Any, original: Any) -> bool:
         if not isinstance(original, Mapping) or not isinstance(dumped, Mapping):
             return False
         return all(
-            key in dumped and _hydration_covers_payload(dumped[key], value)
+            key in dumped
+            and _hydration_covers_payload(dumped[key], value, allow_json_text)
             for key, value in original.items()
         )
     if isinstance(original, list) or isinstance(dumped, list):
@@ -96,7 +121,7 @@ def _hydration_covers_payload(dumped: Any, original: Any) -> bool:
         ):
             return False
         return all(
-            _hydration_covers_payload(d, o)
+            _hydration_covers_payload(d, o, allow_json_text)
             for o, d in zip(original, dumped, strict=True)
         )
     if original == dumped:
@@ -539,7 +564,12 @@ async def _parse_call_tool_result(
                 # union can coerce across branches (0 → False) or drop keys.
                 # When the typed form re-serializes differently, hand back
                 # the payload untouched.
-                if _round_trips_to_payload(type_adapter, typed, structured_content):
+                if _round_trips_to_payload(
+                    type_adapter,
+                    typed,
+                    structured_content,
+                    allow_json_text=_schema_asks_json_text(output_schema),
+                ):
                     data = typed
                 else:
                     data = structured_content
