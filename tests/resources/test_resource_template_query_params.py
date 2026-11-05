@@ -89,6 +89,37 @@ class TestQueryParameterExtraction:
         )
         assert await resource.read() == "abc:xml"
 
+    async def test_callable_wrapper_preserves_exposed_signature_for_path_params(
+        self,
+    ):
+        """Test a callable wrapper keeps its signature when the URI has no query params."""
+
+        def get_item(item_id: str) -> str:
+            return item_id
+
+        class Wrapped:
+            def __init__(self, fn):
+                functools.update_wrapper(self, fn)
+                self._fn = fn
+
+            def __call__(self, **kwargs):
+                return self._fn(**kwargs)
+
+        template = ResourceTemplate.from_function(
+            fn=Wrapped(get_item),
+            uri_template="items://{item_id}",
+            name="items",
+        )
+
+        assert template.parameters["properties"] == {"item_id": {"type": "string"}}
+        assert template.matches("items://abc") == {"item_id": "abc"}
+
+        resource = await template.create_resource(
+            "items://abc",
+            {"item_id": "abc"},
+        )
+        assert await resource.read() == "abc"
+
     async def test_async_callable_wrapper_preserves_exposed_signature(self):
         """Test an async callable wrapper keeps its exposed signature for URI validation."""
 
