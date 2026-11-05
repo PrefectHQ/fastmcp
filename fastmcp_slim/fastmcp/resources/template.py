@@ -675,9 +675,13 @@ class FunctionResourceTemplate(ResourceTemplate):
         description = description if description is not None else inspect.getdoc(fn)
 
         # Callable objects can expose a wrapped function's signature via
-        # functools.update_wrapper. Preserve that signature for URI validation.
+        # functools.update_wrapper or by setting __signature__. Preserve that
+        # signature for URI validation.
         is_callable_object = not inspect.isroutine(fn) and not isinstance(
             fn, functools.partial
+        )
+        callable_exposes_signature = is_callable_object and (
+            hasattr(fn, "__wrapped__") or hasattr(fn, "__signature__")
         )
         validation_fn = fn
 
@@ -834,16 +838,28 @@ class FunctionResourceTemplate(ResourceTemplate):
                     f"URI parameters {all_uri_params} must be a subset of the function arguments: {func_params}"
                 )
 
-        # Callable decorators that use functools.update_wrapper expose the
-        # wrapped function's signature, while __call__ itself may just accept
-        # **kwargs. Route through a shim with the exposed signature so DI, the
-        # generated schema, and runtime validation all agree with the URI checks.
-        if is_callable_object and hasattr(validation_fn, "__wrapped__"):
+        # Callable decorators may expose a wrapped function's signature while
+        # __call__ itself just accepts **kwargs. Route through a shim with the
+        # exposed signature so DI, the generated schema, and runtime validation
+        # all agree with the URI checks.
+        if is_callable_object and callable_exposes_signature:
             callable_object = validation_fn
 
             @functools.wraps(callable_object)
             def callable_shim(*args: Any, **kwargs: Any) -> Any:
                 return callable_object(*args, **kwargs)
+
+            exposed_signature = inspect.signature(callable_object)
+            callable_shim.__signature__ = exposed_signature  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            callable_shim.__annotations__ = {
+                name: param.annotation
+                for name, param in exposed_signature.parameters.items()
+                if param.annotation is not inspect.Parameter.empty
+            }
+            if exposed_signature.return_annotation is not inspect.Signature.empty:
+                callable_shim.__annotations__["return"] = (
+                    exposed_signature.return_annotation
+                )
 
             fn = transform_context_annotations(callable_shim)
 

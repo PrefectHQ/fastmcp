@@ -1,4 +1,5 @@
 import functools
+import inspect
 
 import pytest
 
@@ -153,6 +154,41 @@ class TestQueryParameterTypeCoercion:
             uri_template="resource://{resource}{?page}",
             name="test",
         )
+
+        resource = await template.create_resource(
+            "resource://docs?page=5",
+            {"resource": "docs", "page": "5"},
+        )
+
+        result = await resource.read()
+        assert isinstance(result, dict)
+        assert result["page"] == 5
+        assert result["type"] == "int"
+
+    async def test_callable_signature_wrapper_coerces_with_exposed_signature(self):
+        """Test coercion when a callable exposes its signature directly."""
+
+        def get_page(resource: str, page: int = 1) -> dict:
+            return {"resource": resource, "page": page, "type": type(page).__name__}
+
+        class Wrapped:
+            def __init__(self, fn):
+                self.__signature__ = inspect.signature(fn)
+                self._fn = fn
+
+            def __call__(self, **kwargs):
+                return self._fn(**kwargs)
+
+        template = ResourceTemplate.from_function(
+            fn=Wrapped(get_page),
+            uri_template="resource://{resource}{?page}",
+            name="test",
+        )
+
+        assert template.parameters["properties"] == {
+            "resource": {"type": "string"},
+            "page": {"default": 1, "type": "integer"},
+        }
 
         resource = await template.create_resource(
             "resource://docs?page=5",
