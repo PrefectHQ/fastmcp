@@ -295,18 +295,17 @@ class TestPromptTypeConversion:
 
     async def test_type_conversion_error_handling(self):
         """Test that informative errors are raised for invalid type conversions."""
-        from fastmcp.exceptions import PromptError
 
         def typed_prompt(numbers: list[int]) -> str:
             return f"Got {len(numbers)} numbers"
 
         prompt = Prompt.from_function(typed_prompt)
 
-        # Test with invalid JSON - should raise PromptError with type conversion details
-        with pytest.raises(PromptError) as exc_info:
+        # Test with invalid JSON - should raise ValidationError with type conversion details
+        with pytest.raises(ValidationError) as exc_info:
             await prompt.render(arguments={"numbers": "not valid json"})
 
-        # PromptError passes through unchanged
+        # Conversion errors are client input errors, not server faults
         assert "Could not convert argument 'numbers'" in str(exc_info.value)
         assert "list[int]" in str(exc_info.value)
 
@@ -849,6 +848,27 @@ class TestMissingRequiredArguments:
 
         assert exc_info.value.error.code == INVALID_PARAMS
         assert exc_info.value.error.message == "Missing required arguments: {'topic'}"
+
+
+class TestUnconvertibleArguments:
+    """A present-but-unconvertible argument is a client error, not a server fault."""
+
+    @pytest.mark.parametrize("mask_error_details", [False, True])
+    async def test_get_prompt_unconvertible_argument_is_invalid_params(
+        self, mask_error_details: bool
+    ):
+        mcp = FastMCP(mask_error_details=mask_error_details)
+
+        @mcp.prompt
+        def summarize(count: int) -> str:
+            return str(count)
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError) as exc_info:
+                await client.get_prompt("summarize", {"count": "zz"})
+
+        assert exc_info.value.error.code == INVALID_PARAMS
+        assert "Could not convert argument 'count'" in exc_info.value.error.message
 
 
 class TestPromptFieldDefaults:

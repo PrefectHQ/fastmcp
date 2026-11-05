@@ -308,8 +308,10 @@ class FunctionPrompt(Prompt):
                                 ):
                                     converted_kwargs[param_name] = python_value
                     except (ValueError, TypeError, pydantic_core.ValidationError) as e:
-                        # If conversion fails, provide informative error
-                        raise PromptError(
+                        # A value that cannot be converted is bad client input, so
+                        # ValidationError keeps it classified as invalid params on
+                        # the wire instead of an internal error.
+                        raise ValidationError(
                             f"Could not convert argument '{param_name}' with value '{param_value}' "
                             f"to expected type {param.annotation}. Error: {e}"
                         ) from e

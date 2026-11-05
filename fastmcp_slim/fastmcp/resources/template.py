@@ -20,6 +20,7 @@ from pydantic import (
 )
 from pydantic.json_schema import SkipJsonSchema
 
+from fastmcp.exceptions import ValidationError
 from fastmcp.resources.base import (
     Resource,
     ResourceResult,
@@ -654,8 +655,15 @@ class FunctionResourceTemplate(ResourceTemplate):
                             raise ValueError(
                                 f"Invalid boolean value for {param_name}: {param_value!r}"
                             )
-                except (ValueError, AttributeError):
-                    raise
+                except (ValueError, AttributeError) as e:
+                    # The URI carried a value that cannot be converted to the
+                    # parameter's declared type. That is bad client input, so
+                    # ValidationError keeps it classified as invalid params on
+                    # the wire instead of an internal error.
+                    raise ValidationError(
+                        f"Could not convert parameter '{param_name}' with value "
+                        f"'{param_value}' to expected type {annotation}. Error: {e}"
+                    ) from e
 
         # self.fn is wrapped by without_injected_parameters which handles
         # dependency resolution internally
