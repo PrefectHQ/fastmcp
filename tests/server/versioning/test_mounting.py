@@ -6,6 +6,19 @@ from __future__ import annotations
 from mcp_types import TextContent
 
 from fastmcp import FastMCP
+from fastmcp.prompts.base import Prompt
+from fastmcp.resources.base import Resource
+from fastmcp.resources.template import ResourceTemplate
+from fastmcp.server.auth import require_scopes
+from fastmcp.server.transforms import (
+    GetPromptNext,
+    GetResourceNext,
+    GetResourceTemplateNext,
+    GetToolNext,
+    Transform,
+    VersionFilter,
+)
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.versions import (
     VersionSpec,
 )
@@ -341,3 +354,459 @@ class TestMountedServerVersioning:
         result = await v1_tool.run({"x": 5})
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "50"  # 5 * 10, not 5 * 100
+
+
+def _make_versioned_child() -> FastMCP:
+    """Child server with v1.0 and v2.0 of every component type."""
+    child = FastMCP("Child")
+
+    @child.tool(version="1.0")
+    def calc() -> str:
+        return "tool-v1"
+
+    @child.tool(version="2.0")
+    def calc() -> str:
+        return "tool-v2"
+
+    @child.resource("data://cfg", version="1.0")
+    def cfg() -> str:
+        return "res-v1"
+
+    @child.resource("data://cfg", version="2.0")
+    def cfg() -> str:
+        return "res-v2"
+
+    @child.resource("data://items/{id}", version="1.0")
+    def item(id: str) -> str:
+        return f"tpl-v1-{id}"
+
+    @child.resource("data://items/{id}", version="2.0")
+    def item(id: str) -> str:
+        return f"tpl-v2-{id}"
+
+    @child.prompt(version="1.0")
+    def greet() -> str:
+        return "prompt-v1"
+
+    @child.prompt(version="2.0")
+    def greet() -> str:
+        return "prompt-v2"
+
+    return child
+
+
+def _mount_with_filter(child: FastMCP) -> FastMCP:
+    """Mount the child and constrain the parent to versions < 3.0."""
+    parent = FastMCP("Parent")
+    parent.mount(child)
+    parent.add_transform(VersionFilter(version_lt="3.0"))
+    return parent
+
+
+class TestMountedVersionFilterWithDisabledLatest:
+    """A parent VersionFilter must not hide the child's enabled fallback.
+
+    VersionFilter forwards its range as an explicit version spec to the
+    mounted server. That used to suppress the disabled-version fallback inside
+    the child, so the parent listed the older enabled version but versionless
+    lookups returned None and calls failed.
+    """
+
+    async def test_versionless_resolution_falls_back_for_all_component_types(self):
+        """Listing v1 and resolving/calling it must agree for all components."""
+        child = _make_versioned_child()
+        child.disable(version=VersionSpec(eq="2.0"))
+        parent = _mount_with_filter(child)
+
+        tools = await parent.list_tools()
+        assert [(t.name, t.version) for t in tools] == [("calc", "1.0")]
+        resources = await parent.list_resources()
+        assert [(str(r.uri), r.version) for r in resources] == [("data://cfg", "1.0")]
+        templates = await parent.list_resource_templates()
+        assert [(t.uri_template, t.version) for t in templates] == [
+            ("data://items/{id}", "1.0")
+        ]
+        prompts = await parent.list_prompts()
+        assert [(p.name, p.version) for p in prompts] == [("greet", "1.0")]
+
+        tool = await parent.get_tool("calc")
+        assert tool is not None
+        assert tool.version == "1.0"
+        resource = await parent.get_resource("data://cfg")
+        assert resource is not None
+        assert resource.version == "1.0"
+        template = await parent.get_resource_template("data://items/{id}")
+        assert template is not None
+        assert template.version == "1.0"
+        prompt = await parent.get_prompt("greet")
+        assert prompt is not None
+        assert prompt.version == "1.0"
+
+        tool_result = await parent.call_tool("calc", {})
+        assert isinstance(tool_result.content[0], TextContent)
+        assert tool_result.content[0].text == "tool-v1"
+
+        resource_result = await parent.read_resource("data://cfg")
+        assert resource_result.contents[0].content == "res-v1"
+
+        template_result = await parent.read_resource("data://items/7")
+        assert template_result.contents[0].content == "tpl-v1-7"
+
+        prompt_result = await parent.render_prompt("greet", {})
+        prompt_content = prompt_result.messages[0].content
+        assert isinstance(prompt_content, TextContent)
+        assert prompt_content.text == "prompt-v1"
+
+    async def test_enabled_latest_still_resolves_to_v2(self):
+        """Control: with v2 enabled, the filter changes nothing."""
+        child = _make_versioned_child()
+        parent = _mount_with_filter(child)
+
+        tools = await parent.list_tools()
+        assert sorted((t.name, t.version) for t in tools) == [
+            ("calc", "1.0"),
+            ("calc", "2.0"),
+        ]
+        resources = await parent.list_resources()
+        assert sorted((str(r.uri), r.version) for r in resources) == [
+            ("data://cfg", "1.0"),
+            ("data://cfg", "2.0"),
+        ]
+        templates = await parent.list_resource_templates()
+        assert sorted((t.uri_template, t.version) for t in templates) == [
+            ("data://items/{id}", "1.0"),
+            ("data://items/{id}", "2.0"),
+        ]
+        prompts = await parent.list_prompts()
+        assert sorted((p.name, p.version) for p in prompts) == [
+            ("greet", "1.0"),
+            ("greet", "2.0"),
+        ]
+
+        tool = await parent.get_tool("calc")
+        assert tool is not None
+        assert tool.version == "2.0"
+        resource = await parent.get_resource("data://cfg")
+        assert resource is not None
+        assert resource.version == "2.0"
+        template = await parent.get_resource_template("data://items/{id}")
+        assert template is not None
+        assert template.version == "2.0"
+        prompt = await parent.get_prompt("greet")
+        assert prompt is not None
+        assert prompt.version == "2.0"
+
+        tool_result = await parent.call_tool("calc", {})
+        assert isinstance(tool_result.content[0], TextContent)
+        assert tool_result.content[0].text == "tool-v2"
+        resource_result = await parent.read_resource("data://cfg")
+        assert resource_result.contents[0].content == "res-v2"
+        template_result = await parent.read_resource("data://items/7")
+        assert template_result.contents[0].content == "tpl-v2-7"
+        prompt_result = await parent.render_prompt("greet", {})
+        prompt_content = prompt_result.messages[0].content
+        assert isinstance(prompt_content, TextContent)
+        assert prompt_content.text == "prompt-v2"
+
+    async def test_disabled_latest_without_parent_filter_still_falls_back(self):
+        """Control: mounting alone already falls back to v1."""
+        child = _make_versioned_child()
+        child.disable(version=VersionSpec(eq="2.0"))
+        parent = FastMCP("Parent")
+        parent.mount(child)
+
+        tool = await parent.get_tool("calc")
+        assert tool is not None
+        assert tool.version == "1.0"
+        resource = await parent.get_resource("data://cfg")
+        assert resource is not None
+        assert resource.version == "1.0"
+        template = await parent.get_resource_template("data://items/{id}")
+        assert template is not None
+        assert template.version == "1.0"
+        prompt = await parent.get_prompt("greet")
+        assert prompt is not None
+        assert prompt.version == "1.0"
+
+        tool_result = await parent.call_tool("calc", {})
+        assert isinstance(tool_result.content[0], TextContent)
+        assert tool_result.content[0].text == "tool-v1"
+
+    async def test_explicit_version_requests_are_still_honored(self):
+        """Control: an exact version request is not replaced by the fallback."""
+        child = _make_versioned_child()
+        child.disable(version=VersionSpec(eq="2.0"))
+        parent = _mount_with_filter(child)
+
+        v1 = VersionSpec(eq="1.0")
+        tool = await parent.get_tool("calc", v1)
+        assert tool is not None
+        assert tool.version == "1.0"
+        resource = await parent.get_resource("data://cfg", v1)
+        assert resource is not None
+        assert resource.version == "1.0"
+        template = await parent.get_resource_template("data://items/{id}", v1)
+        assert template is not None
+        assert template.version == "1.0"
+        prompt = await parent.get_prompt("greet", v1)
+        assert prompt is not None
+        assert prompt.version == "1.0"
+
+        tool_result = await parent.call_tool("calc", {}, version=v1)
+        assert isinstance(tool_result.content[0], TextContent)
+        assert tool_result.content[0].text == "tool-v1"
+        resource_result = await parent.read_resource("data://cfg", version=v1)
+        assert resource_result.contents[0].content == "res-v1"
+        prompt_result = await parent.render_prompt("greet", {}, version=v1)
+        prompt_content = prompt_result.messages[0].content
+        assert isinstance(prompt_content, TextContent)
+        assert prompt_content.text == "prompt-v1"
+
+        # An exact request for the disabled version is still not served.
+        assert await parent.get_tool("calc", VersionSpec(eq="2.0")) is None
+        assert await parent.get_resource("data://cfg", VersionSpec(eq="2.0")) is None
+        assert (
+            await parent.get_resource_template(
+                "data://items/{id}", VersionSpec(eq="2.0")
+            )
+            is None
+        )
+        assert await parent.get_prompt("greet", VersionSpec(eq="2.0")) is None
+
+    async def test_filter_added_to_child_directly_still_falls_back(self):
+        """Control: a filter on the child itself does not break the fallback."""
+        child = _make_versioned_child()
+        child.disable(version=VersionSpec(eq="2.0"))
+        child.add_transform(VersionFilter(version_lt="3.0"))
+        parent = FastMCP("Parent")
+        parent.mount(child)
+
+        tool = await parent.get_tool("calc")
+        assert tool is not None
+        assert tool.version == "1.0"
+        resource = await parent.get_resource("data://cfg")
+        assert resource is not None
+        assert resource.version == "1.0"
+        template = await parent.get_resource_template("data://items/{id}")
+        assert template is not None
+        assert template.version == "1.0"
+        prompt = await parent.get_prompt("greet")
+        assert prompt is not None
+        assert prompt.version == "1.0"
+
+
+class _RefuseLowerLookups(Transform):
+    """Lists every component but refuses exact lookups of the lower version.
+
+    Range and versionless lookups still resolve the highest version, so the
+    disabled-version fallback is left to walk the listing. The lower version
+    is only refused on its own (exact) lookup path.
+    """
+
+    @staticmethod
+    def _refused(version: VersionSpec | None) -> bool:
+        return version is not None and version.eq is not None and version.matches("1.0")
+
+    async def get_tool(
+        self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
+    ) -> Tool | None:
+        if self._refused(version):
+            return None
+        return await call_next(name, version=version)
+
+    async def get_resource(
+        self,
+        uri: str,
+        call_next: GetResourceNext,
+        *,
+        version: VersionSpec | None = None,
+    ) -> Resource | None:
+        if self._refused(version):
+            return None
+        return await call_next(uri, version=version)
+
+    async def get_resource_template(
+        self,
+        uri: str,
+        call_next: GetResourceTemplateNext,
+        *,
+        version: VersionSpec | None = None,
+    ) -> ResourceTemplate | None:
+        if self._refused(version):
+            return None
+        return await call_next(uri, version=version)
+
+    async def get_prompt(
+        self, name: str, call_next: GetPromptNext, *, version: VersionSpec | None = None
+    ) -> Prompt | None:
+        if self._refused(version):
+            return None
+        return await call_next(name, version=version)
+
+
+class _RefuseAllLookups(Transform):
+    """Lists every component but refuses to resolve any of them."""
+
+    async def get_tool(
+        self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
+    ) -> Tool | None:
+        return None
+
+    async def get_resource(
+        self,
+        uri: str,
+        call_next: GetResourceNext,
+        *,
+        version: VersionSpec | None = None,
+    ) -> Resource | None:
+        return None
+
+    async def get_resource_template(
+        self,
+        uri: str,
+        call_next: GetResourceTemplateNext,
+        *,
+        version: VersionSpec | None = None,
+    ) -> ResourceTemplate | None:
+        return None
+
+    async def get_prompt(
+        self, name: str, call_next: GetPromptNext, *, version: VersionSpec | None = None
+    ) -> Prompt | None:
+        return None
+
+
+def _make_auth_protected_latest_child() -> FastMCP:
+    """Child whose v2.0 of every component requires the admin scope."""
+    child = FastMCP("Child")
+
+    @child.tool(version="1.0")
+    def calc() -> str:
+        return "tool-v1"
+
+    @child.tool(version="2.0", auth=require_scopes("admin"))
+    def calc() -> str:
+        return "tool-v2"
+
+    @child.resource("data://cfg", version="1.0")
+    def cfg() -> str:
+        return "res-v1"
+
+    @child.resource("data://cfg", version="2.0", auth=require_scopes("admin"))
+    def cfg() -> str:
+        return "res-v2"
+
+    @child.resource("data://items/{id}", version="1.0")
+    def item(id: str) -> str:
+        return f"tpl-v1-{id}"
+
+    @child.resource("data://items/{id}", version="2.0", auth=require_scopes("admin"))
+    def item(id: str) -> str:
+        return f"tpl-v2-{id}"
+
+    @child.prompt(version="1.0")
+    def greet() -> str:
+        return "prompt-v1"
+
+    @child.prompt(version="2.0", auth=require_scopes("admin"))
+    def greet() -> str:
+        return "prompt-v2"
+
+    return child
+
+
+class TestMountedVersionFilterLookupRefusals:
+    """A range fallback must not bypass lookup-time refusals."""
+
+    async def test_lookup_only_refusal_is_not_bypassed_by_range_filter(self):
+        child = _make_versioned_child()
+        child.add_transform(_RefuseAllLookups())
+        parent = _mount_with_filter(child)
+
+        # The transform passes listing through, so candidates stay visible.
+        assert len(await parent.list_tools()) == 2
+        assert len(await parent.list_resources()) == 2
+        assert len(await parent.list_resource_templates()) == 2
+        assert len(await parent.list_prompts()) == 2
+
+        # Resolution must honor the refusal rather than trusting the listing.
+        assert await parent.get_tool("calc") is None
+        assert await parent.get_resource("data://cfg") is None
+        assert await parent.get_resource_template("data://items/{id}") is None
+        assert await parent.get_prompt("greet") is None
+
+    async def test_disabled_highest_does_not_expose_a_refused_lower_version(self):
+        """The disabled-highest fallback must re-run the lower version's lookup.
+
+        Listing still advertises v1 (the transform only refuses lookups), and
+        v2 is disabled after resolution. Taking v1 straight from the listing
+        would serve a component the lookup path refuses.
+        """
+        import pytest
+
+        from fastmcp.exceptions import NotFoundError
+
+        child = _make_versioned_child()
+        child.add_transform(_RefuseLowerLookups())
+        child.disable(version=VersionSpec(eq="2.0"))
+        parent = _mount_with_filter(child)
+
+        # Listing passes the transform through, so v1 stays advertised.
+        assert [(t.name, t.version) for t in await parent.list_tools()] == [
+            ("calc", "1.0")
+        ]
+        assert [(str(r.uri), r.version) for r in await parent.list_resources()] == [
+            ("data://cfg", "1.0")
+        ]
+        assert [
+            (t.uri_template, t.version) for t in await parent.list_resource_templates()
+        ] == [("data://items/{id}", "1.0")]
+        assert [(p.name, p.version) for p in await parent.list_prompts()] == [
+            ("greet", "1.0")
+        ]
+
+        # v2 is disabled, and v1 is refused by its normal lookup path, so
+        # resolution must fail rather than trust the listing.
+        assert await parent.get_tool("calc") is None
+        assert await parent.get_resource("data://cfg") is None
+        assert await parent.get_resource_template("data://items/{id}") is None
+        assert await parent.get_prompt("greet") is None
+
+        # The refusal also applies to an explicit lower-version request.
+        assert await parent.get_tool("calc", VersionSpec(eq="1.0")) is None
+        assert await parent.get_resource("data://cfg", VersionSpec(eq="1.0")) is None
+        assert (
+            await parent.get_resource_template(
+                "data://items/{id}", VersionSpec(eq="1.0")
+            )
+            is None
+        )
+        assert await parent.get_prompt("greet", VersionSpec(eq="1.0")) is None
+
+        # Calls and reads fail for the same reason instead of serving v1.
+        with pytest.raises(NotFoundError):
+            await parent.call_tool("calc", {})
+        with pytest.raises(NotFoundError):
+            await parent.read_resource("data://cfg")
+        with pytest.raises(NotFoundError):
+            await parent.render_prompt("greet", {})
+
+    async def test_auth_denied_highest_falls_back_to_public_lower_version(self):
+        child = _make_auth_protected_latest_child()
+        parent = _mount_with_filter(child)
+
+        tool = await parent.get_tool("calc")
+        assert tool is not None
+        assert tool.version == "1.0"
+        resource = await parent.get_resource("data://cfg")
+        assert resource is not None
+        assert resource.version == "1.0"
+        template = await parent.get_resource_template("data://items/{id}")
+        assert template is not None
+        assert template.version == "1.0"
+        prompt = await parent.get_prompt("greet")
+        assert prompt is not None
+        assert prompt.version == "1.0"
+
+        # The exact protected version remains denied.
+        assert await parent.get_tool("calc", VersionSpec(eq="2.0")) is None
