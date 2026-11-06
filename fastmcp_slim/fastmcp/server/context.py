@@ -504,7 +504,9 @@ class Context:
             # Update progress in Redis using Docket's progress API.
             # Docket only exposes increment() (relative), so we compute
             # the delta from the last reported value stored on this execution.
-            if total is not None:
+            # Docket rejects a total below 1, e.g. an empty batch reporting
+            # total=0, so leave the default total in place in that case.
+            if total is not None and int(total) >= 1:
                 await execution.progress.set_total(int(total))
 
             current = int(progress)
