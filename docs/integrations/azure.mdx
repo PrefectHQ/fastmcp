@@ -160,14 +160,16 @@ Using your specific tenant ID is recommended for better security and control.
 </Note>
 
 <Note>
-**Important**: The `required_scopes` parameter is **REQUIRED** and must include at least one scope. Azure's OAuth API requires the `scope` parameter in all authorization requests - you cannot authenticate without specifying at least one scope. Use the unprefixed scope names from your Azure App registration (e.g., `["read", "write"]`). These scopes must be created under **Expose an API** in your App registration.
+With the default verifier, `required_scopes` must include at least one non-OIDC API scope. Use the unprefixed names from **Expose an API** in your Azure App registration, such as `["read", "write"]`. If you supply a custom verifier, configure the scopes your Azure authorization flow needs here and configure token validation on the verifier, as described in [Custom Token Verification](#custom-token-verification)
 </Note>
 
 ### Scope Handling
 
 FastMCP automatically prefixes `required_scopes` with your `identifier_uri` (e.g., `api://your-client-id`) since these are your custom API scopes. Scopes in `additional_authorize_scopes` are sent as-is since they target external resources like Microsoft Graph.
 
-**`required_scopes`** — Your custom API scopes, defined in Azure "Expose an API":
+The following validation rules apply to the default verifier. When you pass `token_verifier`, its configuration determines which token scopes are required
+
+**`required_scopes`**: Your custom API scopes, defined in Azure "Expose an API":
 
 | You write | Sent to Azure | Validated on tokens |
 |-----------|---------------|---------------------|
@@ -194,6 +196,43 @@ FastMCP automatically prefixes `required_scopes` with your `identifier_uri` (e.g
 <Note>
 OIDC scopes (`openid`, `profile`, `email`, `offline_access`) are never prefixed and excluded from validation because Azure doesn't include them in access token `scp` claims.
 </Note>
+
+### Custom Token Verification
+
+Pass `token_verifier` when you need custom issuer, audience, scope, or role validation without replacing the Azure OAuth flow. The supplied verifier replaces the default JWT verifier and is responsible for validating token signatures, issuer, audience, and any required scopes or roles
+
+`AzureProvider.required_scopes` controls Azure authorization requests, default challenge scopes, and advertised scope metadata. It does not add validation requirements to a custom verifier. Configure the verifier's `required_scopes` separately if tokens must contain those API scopes. With `JWTVerifier`, use the short scope names from Azure's `scp` claim, such as `read`, rather than the prefixed authorization URI
+
+This example requests the `read` API scope and requires the returned token to contain it:
+
+```python server.py
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.azure import AzureProvider
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+tenant_id = "your-tenant-id"
+client_id = "your-client-id"
+
+verifier = JWTVerifier(
+    jwks_uri=f"https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys",
+    issuer=f"https://login.microsoftonline.com/{tenant_id}/v2.0",
+    audience=client_id,
+    required_scopes=["read"],
+)
+
+auth = AzureProvider(
+    client_id=client_id,
+    client_secret="your-client-secret",
+    tenant_id=tenant_id,
+    base_url="http://localhost:8000",
+    required_scopes=["read"],
+    token_verifier=verifier,
+)
+
+mcp = FastMCP(name="Azure Custom Verification", auth=auth)
+```
+
+Keep validation-only role requirements on the custom verifier. Azure application roles cannot be requested as OAuth scopes, so do not put them in `AzureProvider.required_scopes`. If the verifier only checks issuer or roles, configuring `required_scopes=["read"]` on the provider does not also enforce `read` on tokens
 
 ### Account Selection
 
