@@ -59,6 +59,62 @@ async def test_tool_transform_chaining(add_tool):
     assert result.content[0].text == "custom 8"
 
 
+@pytest.mark.parametrize("rename", [False, True])
+@pytest.mark.parametrize("override_default", [False, True])
+async def test_mutable_schema_default_is_isolated_between_calls(
+    rename: bool, override_default: bool
+) -> None:
+    def append_event(
+        config: dict[str, Any] = Field(default={"events": []}),
+    ) -> int:
+        config["events"].append("call")
+        return len(config["events"])
+
+    parent = Tool.from_function(append_event)
+    arg_name = "settings" if rename else "config"
+    transform = (
+        ArgTransform(name=arg_name, default={"events": []})
+        if override_default
+        else ArgTransform(name=arg_name)
+    )
+    transformed = Tool.from_tool(parent, transform_args={"config": transform})
+    server = FastMCP()
+    server.add_tool(transformed)
+
+    async with Client(server) as client:
+        for _ in range(2):
+            result = await client.call_tool("append_event", {})
+            assert result.data == 1
+            tools = await client.list_tools()
+            assert tools[0].input_schema["properties"][arg_name]["default"] == {
+                "events": []
+            }
+            assert get_property(parent, "config")["default"] == {"events": []}
+
+
+async def test_custom_transform_does_not_mutate_schema_default() -> None:
+    def append_event(config: dict[str, Any]) -> int:
+        config["events"].append("call")
+        return len(config["events"])
+
+    transformed = Tool.from_tool(
+        Tool.from_function(append_event),
+        transform_fn=append_event,
+        transform_args={"config": ArgTransform(default={"events": []})},
+    )
+
+    for _ in range(2):
+        result = await transformed.run({})
+        assert result.structured_content == {"result": 1}
+        assert get_property(transformed, "config")["default"] == {"events": []}
+
+    supplied = {"events": ["existing"]}
+    result = await transformed.run({"config": supplied})
+    assert result.structured_content == {"result": 2}
+    assert supplied == {"events": ["existing", "call"]}
+    assert get_property(transformed, "config")["default"] == {"events": []}
+
+
 class MyModel(BaseModel):
     x: int
     y: str
