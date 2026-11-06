@@ -31,7 +31,7 @@ classifiers = [
 [project.urls]
 Homepage = "https://gofastmcp.com"
 Repository = "https://github.com/PrefectHQ/fastmcp"
-Documentation = "https://gofastmcp.com"
+Documentation = "https://gofastmcp.com/docs"
 
 [build-system]
 requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]

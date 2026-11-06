@@ -25,4 +25,4 @@ python client.py
 
 Use `127.0.0.1` consistently — mixing `localhost` and `127.0.0.1` breaks audience validation.
 
-For troubleshooting (DCR grants, token exchange errors, MCP Inspector), see the [Auth0 integration guide](https://gofastmcp.com/integrations/auth0).
+For troubleshooting (DCR grants, token exchange errors, MCP Inspector), see the [Auth0 integration guide](https://gofastmcp.com/docs/integrations/auth0).

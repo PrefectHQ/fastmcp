@@ -489,7 +489,7 @@ class FunctionTool(Tool):
                     logger.warning(
                         f"Tool '{self.name}' timed out after {self.timeout}s. "
                         f"Consider using task=True for long-running operations. "
-                        f"See https://gofastmcp.com/servers/tasks"
+                        f"See https://gofastmcp.com/docs/servers/tasks"
                     )
                     raise MCPError(
                         code=-32000,
@@ -643,7 +643,7 @@ def tool(
     if isinstance(name_or_fn, classmethod):
         raise TypeError(
             "To decorate a classmethod, use @classmethod above @tool. "
-            "See https://gofastmcp.com/servers/tools#using-with-methods"
+            "See https://gofastmcp.com/docs/servers/tools#using-with-methods"
         )
 
     def attach_metadata(fn: F, tool_name: str | None) -> F:

@@ -2,7 +2,7 @@
 title: Client Groups
 ---
 
-**Status: In review (#4904).** `ClientGroup` coordinates independent FastMCP clients — one managed connection per server — with collision-checked tool namespacing and call routing. User-facing usage is documented at [Client Groups](https://gofastmcp.com/clients/client-groups).
+**Status: In review (#4904).** `ClientGroup` coordinates independent FastMCP clients — one managed connection per server — with collision-checked tool namespacing and call routing. User-facing usage is documented at [Client Groups](https://gofastmcp.com/docs/clients/client-groups).
 
 ## TL;DR
 

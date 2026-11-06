@@ -76,7 +76,7 @@ The backend is configured on the extension. Every option also has a `FASTMCP_DOC
 | `name` | `FASTMCP_DOCKET_NAME` | `fastmcp` | Queue name. Servers and workers sharing a name and URL share a queue. |
 | `concurrency` | `FASTMCP_DOCKET_CONCURRENCY` | `10` | Maximum concurrent tasks per worker. |
 
-See the [FastMCP task documentation](https://gofastmcp.com/servers/tasks) for the full reference.
+See the [FastMCP task documentation](https://gofastmcp.com/docs/servers/tasks) for the full reference.
 
 ## Status
 

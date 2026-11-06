@@ -64,7 +64,7 @@ FastMCP depends on the `mcp` package, so the SDK stays installed and importable.
 <Prompt description="Copy this prompt into any LLM along with your server code to get automated upgrade guidance.">
 You are upgrading an MCP server from FastMCP 1.0 (bundled in v1 of the `mcp` package) to standalone FastMCP 4.
 
-FIRST, fetch https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk-v1 — it explains every item below, with the replacement code. Fetch https://gofastmcp.com for anything the guide doesn't cover. Do not invent a FastMCP API you have not confirmed in the docs.
+FIRST, fetch https://gofastmcp.com/docs/getting-started/upgrading/from-mcp-sdk-v1 — it explains every item below, with the replacement code. Fetch https://gofastmcp.com for anything the guide doesn't cover. Do not invent a FastMCP API you have not confirmed in the docs.
 
 For most servers the entire upgrade is the first item. Work through the rest looking for signals, and report only what you actually find.
 
@@ -89,7 +89,7 @@ CONTEXT METHODS WITH CHANGED SIGNATURES (compile fine, fail at runtime)
 AUTHENTICATION (the one case where the single import change is NOT enough)
 - `token_verifier=` and `auth_server_provider=` — both raise TypeError on FastMCP 4
 - `auth=AuthSettings(...)` — the keyword survives but the value does not: FastMCP's `auth=` takes a FastMCP `AuthProvider`, not the SDK settings object
-Report these as a real migration, not a rename: FastMCP consolidates all three into one provider, and ships `JWTVerifier` for tokens you already issue, `RemoteAuthProvider` for delegating to an external authorization server, `OAuthProxy` for wrapping a provider without Dynamic Client Registration, and named providers for GitHub, Google, Auth0, Keycloak, and others. Look up the right one at https://gofastmcp.com/servers/auth/authentication rather than guessing.
+Report these as a real migration, not a rename: FastMCP consolidates all three into one provider, and ships `JWTVerifier` for tokens you already issue, `RemoteAuthProvider` for delegating to an external authorization server, `OAuthProxy` for wrapping a provider without Dynamic Client Registration, and named providers for GitHub, Google, Auth0, Keycloak, and others. Look up the right one at https://gofastmcp.com/docs/servers/auth/authentication rather than guessing.
 
 PROMPT RETURN VALUES
 - prompt functions returning `PromptMessage`, or `TextContent`-wrapped content

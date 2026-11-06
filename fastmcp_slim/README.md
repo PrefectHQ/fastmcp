@@ -52,21 +52,21 @@ FastMCP has three pillars:
 <table>
 <tr>
 <td align="center" valign="top" width="33%">
-<a href="https://gofastmcp.com/servers/server">
+<a href="https://gofastmcp.com/docs/servers/server">
 <img src="https://raw.githubusercontent.com/PrefectHQ/fastmcp/main/docs/assets/images/servers-card.png" alt="Servers" />
 <br /><strong>Servers</strong>
 </a>
 <br />Expose tools, resources, and prompts to LLMs.
 </td>
 <td align="center" valign="top" width="33%">
-<a href="https://gofastmcp.com/apps/overview">
+<a href="https://gofastmcp.com/docs/apps/overview">
 <img src="https://raw.githubusercontent.com/PrefectHQ/fastmcp/main/docs/assets/images/apps-card.png" alt="Apps" />
 <br /><strong>Apps</strong>
 </a>
 <br />Give your tools interactive UIs rendered directly in the conversation.
 </td>
 <td align="center" valign="top" width="33%">
-<a href="https://gofastmcp.com/clients/client">
+<a href="https://gofastmcp.com/docs/clients/client">
 <img src="https://raw.githubusercontent.com/PrefectHQ/fastmcp/main/docs/assets/images/clients-card.png" alt="Clients" />
 <br /><strong>Clients</strong>
 </a>
@@ -75,9 +75,9 @@ FastMCP has three pillars:
 </tr>
 </table>
 
-**[Servers](https://gofastmcp.com/servers/server)** wrap your Python functions into MCP-compliant tools, resources, and prompts. **[Clients](https://gofastmcp.com/clients/client)** connect to any server with full protocol support. And **[Apps](https://gofastmcp.com/apps/overview)** give your tools interactive UIs rendered directly in the conversation.
+**[Servers](https://gofastmcp.com/docs/servers/server)** wrap your Python functions into MCP-compliant tools, resources, and prompts. **[Clients](https://gofastmcp.com/docs/clients/client)** connect to any server with full protocol support. And **[Apps](https://gofastmcp.com/docs/apps/overview)** give your tools interactive UIs rendered directly in the conversation.
 
-Ready to build? Start with the [installation guide](https://gofastmcp.com/getting-started/installation) or jump straight to the [quickstart](https://gofastmcp.com/getting-started/quickstart).
+Ready to build? Start with the [installation guide](https://gofastmcp.com/docs/getting-started/installation) or jump straight to the [quickstart](https://gofastmcp.com/docs/getting-started/quickstart).
 
 <a id="run-fastmcp-in-production-with-horizon"></a>
 
@@ -99,13 +99,13 @@ We recommend installing FastMCP with [uv](https://docs.astral.sh/uv/):
 uv pip install fastmcp
 ```
 
-For full installation instructions, including verification and upgrading, see the [**Installation Guide**](https://gofastmcp.com/getting-started/installation).
+For full installation instructions, including verification and upgrading, see the [**Installation Guide**](https://gofastmcp.com/docs/getting-started/installation).
 
 **Upgrading?** We have guides for:
-- [Upgrading from FastMCP 3](https://gofastmcp.com/getting-started/upgrading/from-fastmcp-3)
-- [Upgrading from FastMCP 2](https://gofastmcp.com/getting-started/upgrading/from-fastmcp-2)
-- [Upgrading from MCP SDK v1](https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk-v1) or [v2](https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk-v2)
-- [Upgrading from the low-level SDK v1](https://gofastmcp.com/getting-started/upgrading/from-low-level-sdk-v1) or [v2](https://gofastmcp.com/getting-started/upgrading/from-low-level-sdk-v2)
+- [Upgrading from FastMCP 3](https://gofastmcp.com/docs/getting-started/upgrading/from-fastmcp-3)
+- [Upgrading from FastMCP 2](https://gofastmcp.com/docs/getting-started/upgrading/from-fastmcp-2)
+- [Upgrading from MCP SDK v1](https://gofastmcp.com/docs/getting-started/upgrading/from-mcp-sdk-v1) or [v2](https://gofastmcp.com/docs/getting-started/upgrading/from-mcp-sdk-v2)
+- [Upgrading from the low-level SDK v1](https://gofastmcp.com/docs/getting-started/upgrading/from-low-level-sdk-v1) or [v2](https://gofastmcp.com/docs/getting-started/upgrading/from-low-level-sdk-v2)
 
 ## 📚 Documentation
 
@@ -120,4 +120,4 @@ Documentation is also available in [llms.txt format](https://llmstxt.org/), whic
 
 ## Contributing
 
-We welcome contributions! See the [Contributing Guide](https://gofastmcp.com/development/contributing) for setup instructions, testing requirements, and PR guidelines.
+We welcome contributions! See the [Contributing Guide](https://gofastmcp.com/docs/development/contributing) for setup instructions, testing requirements, and PR guidelines.

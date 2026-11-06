@@ -2418,15 +2418,15 @@ This is also the release where FastMCP moves from [jlowin/fastmcp](https://githu
 
 ---
 
-If you hit 3.0 because you didn't pin your dependencies and something breaks — the [upgrade guides](https://gofastmcp.com/getting-started/upgrading/from-fastmcp-2) will get you sorted. We minimized breaking changes, but a major version is a major version.
+If you hit 3.0 because you didn't pin your dependencies and something breaks — the [upgrade guides](https://gofastmcp.com/docs/getting-started/upgrading/from-fastmcp-2) will get you sorted. We minimized breaking changes, but a major version is a major version.
 
 ```bash
 pip install fastmcp -U
 ```
 
 📖 [Documentation](https://gofastmcp.com)
-🚀 [Upgrade from FastMCP v2](https://gofastmcp.com/getting-started/upgrading/from-fastmcp-2)
-🔀 [Upgrade from MCP Python SDK](https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk)
+🚀 [Upgrade from FastMCP v2](https://gofastmcp.com/docs/getting-started/upgrading/from-fastmcp-2)
+🔀 [Upgrade from MCP Python SDK](https://gofastmcp.com/docs/getting-started/upgrading/from-mcp-sdk)
 
 ## What's Changed
 ### New Features 🎉
@@ -3279,16 +3279,16 @@ FastMCP 2.13 "Cache Me If You Can" represents a fundamental maturation of the fr
 🔐 **OAuth maturity** brings months of production learnings into the framework. The new consent screen prevents confused deputy and authorization bypass attacks discovered in earlier versions while providing a clean UX with customizable branding. The OAuth proxy now issues its own tokens with automatic key derivation from client secrets, and RFC 7662 token introspection support enables enterprise auth flows. Path prefix mounting enables OAuth-protected servers to integrate into existing web applications under custom paths like `/api`, and MCP 1.17+ compliance with RFC 9728 ensures protocol compatibility. Combined with improved error handling and platform-aware token storage, OAuth is now production-ready and security-hardened for serious applications.
 
 FastMCP now supports out-of-the-box authentication with:
-- **[WorkOS](https://gofastmcp.com/integrations/workos)** and **[AuthKit](https://gofastmcp.com/integrations/authkit)**
-- **[GitHub](https://gofastmcp.com/integrations/github)**
-- **[Google](https://gofastmcp.com/integrations/google)**
-- **[Azure](https://gofastmcp.com/integrations/azure)** (Entra ID)
-- **[AWS Cognito](https://gofastmcp.com/integrations/aws-cognito)**
-- **[Auth0](https://gofastmcp.com/integrations/auth0)**
-- **[Descope](https://gofastmcp.com/integrations/descope)**
-- **[Scalekit](https://gofastmcp.com/integrations/scalekit)**
-- **[JWTs](https://gofastmcp.com/servers/auth/token-verification#jwt-token-verification)**
-- **[RFC 7662 token introspection](https://gofastmcp.com/servers/auth/token-verification#token-introspection-protocol)**
+- **[WorkOS](https://gofastmcp.com/docs/integrations/workos)** and **[AuthKit](https://gofastmcp.com/docs/integrations/authkit)**
+- **[GitHub](https://gofastmcp.com/docs/integrations/github)**
+- **[Google](https://gofastmcp.com/docs/integrations/google)**
+- **[Azure](https://gofastmcp.com/docs/integrations/azure)** (Entra ID)
+- **[AWS Cognito](https://gofastmcp.com/docs/integrations/aws-cognito)**
+- **[Auth0](https://gofastmcp.com/docs/integrations/auth0)**
+- **[Descope](https://gofastmcp.com/docs/integrations/descope)**
+- **[Scalekit](https://gofastmcp.com/docs/integrations/scalekit)**
+- **[JWTs](https://gofastmcp.com/docs/servers/auth/token-verification#jwt-token-verification)**
+- **[RFC 7662 token introspection](https://gofastmcp.com/docs/servers/auth/token-verification#token-introspection-protocol)**
 
 ⚡ **Response Caching Middleware** dramatically improves performance for expensive operations. Cache tool and resource responses with configurable TTLs, reducing redundant API calls and speeding up repeated queries.
 

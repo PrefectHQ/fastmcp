@@ -158,7 +158,7 @@ class PromptDecoratorMixin:
         if isinstance(name_or_fn, classmethod):
             raise TypeError(
                 "To decorate a classmethod, use @classmethod above @prompt. "
-                "See https://gofastmcp.com/servers/prompts#using-with-methods"
+                "See https://gofastmcp.com/docs/servers/prompts#using-with-methods"
             )
 
         def decorate_and_register(
@@ -181,7 +181,7 @@ class PromptDecoratorMixin:
                     f"            ...\n\n"
                     f"    obj = MyClass()\n"
                     f"    mcp.add_prompt(obj.{fn_name})\n\n"
-                    f"See https://gofastmcp.com/servers/prompts#using-with-methods"
+                    f"See https://gofastmcp.com/docs/servers/prompts#using-with-methods"
                 )
 
             from fastmcp.prompts.function_prompt import PromptMeta

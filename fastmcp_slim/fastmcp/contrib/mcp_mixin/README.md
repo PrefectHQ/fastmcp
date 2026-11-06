@@ -8,18 +8,18 @@ It allows developers to easily define classes whose methods can be registered as
 
 Includes support for
 Tools:
-* [enable/disable](https://gofastmcp.com/servers/tools#disabling-tools)
-* [annotations](https://gofastmcp.com/servers/tools#annotations-2)
-* [excluded arguments](https://gofastmcp.com/servers/tools#excluding-arguments)
-* [meta](https://gofastmcp.com/servers/tools#param-meta)
+* [enable/disable](https://gofastmcp.com/docs/servers/tools#component-visibility)
+* [annotations](https://gofastmcp.com/docs/servers/tools#mcp-annotations)
+* [excluded arguments](https://gofastmcp.com/docs/servers/tools#hiding-parameters-from-the-llm)
+* [meta](https://gofastmcp.com/docs/servers/tools#param-meta)
 
 Prompts:
-* [enable/disable](https://gofastmcp.com/servers/prompts#disabling-prompts)
-* [meta](https://gofastmcp.com/servers/prompts#param-meta)
+* [enable/disable](https://gofastmcp.com/docs/servers/prompts#component-visibility)
+* [meta](https://gofastmcp.com/docs/servers/prompts#param-meta)
 
 Resources:
-* [enable/disable](https://gofastmcp.com/servers/resources#disabling-resources)
-* [meta](https://gofastmcp.com/servers/resources#param-meta)
+* [enable/disable](https://gofastmcp.com/docs/servers/resources#component-visibility)
+* [meta](https://gofastmcp.com/docs/servers/resources#param-meta)
   
 ## Usage
 

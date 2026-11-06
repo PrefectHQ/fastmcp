@@ -187,7 +187,7 @@ class ResourceDecoratorMixin:
                     f"            ...\n\n"
                     f"    obj = MyClass()\n"
                     f"    mcp.add_resource(obj.{fn_name})\n\n"
-                    f"See https://gofastmcp.com/servers/resources#using-with-methods"
+                    f"See https://gofastmcp.com/docs/servers/resources#using-with-methods"
                 )
 
             from fastmcp.resources.function_resource import ResourceMeta
