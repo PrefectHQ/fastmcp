@@ -78,7 +78,23 @@ Send a `skills/get` request and return its protocol result.
 - `MCPError`: If the server rejects the request.
 
 
-#### `get_skill` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L210" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_skill_resources` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L210" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_skill_resources(self: Client) -> list[mcp_types.Resource]
+```
+
+List the skills a server publishes as `skill://.../SKILL.md` resources.
+
+Use this for servers that serve skills as resources but not through the
+Skills extension, such as FastMCP 4.1 and earlier. Pass a returned
+resource's `uri` to `read_skill()` to fetch the whole skill.
+
+**Returns:**
+- The `SKILL.md` resource of each skill, in the server's order.
+
+
+#### `get_skill` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L228" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_skill(self: Client, uri: str) -> MCPSkill
@@ -98,7 +114,7 @@ Retrieve one skill entry by its `SKILL.md` resource URI.
 - `MCPError`: If the server rejects the request.
 
 
-#### `read_skill` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L232" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read_skill` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L250" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_skill(self: Client, uri: str) -> Skill
