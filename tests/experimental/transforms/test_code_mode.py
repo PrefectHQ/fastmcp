@@ -1008,6 +1008,77 @@ async def test_code_mode_max_tool_calls_none_is_unlimited() -> None:
     assert _unwrap_result(result) == 60
 
 
+@requires_monty
+async def test_monty_provider_max_external_calls() -> None:
+    """Exceeding max_external_calls raises RuntimeError."""
+    call_count = 0
+
+    async def my_callback() -> int:
+        nonlocal call_count
+        call_count += 1
+        return call_count
+
+    provider = MontySandboxProvider(max_external_calls=2)
+    code = """
+for _ in range(5):
+    await my_callback()
+return 0
+"""
+    with pytest.raises(Exception) as exc_info:
+        await provider.run(code, external_functions={"my_callback": my_callback})
+
+    assert "External call limit exceeded" in str(exc_info.value)
+    assert call_count == 2
+
+
+async def test_monty_provider_wall_clock_timeout_cancels_future() -> None:
+    """Wall-clock timeout cancels the sandbox future and raises TimeoutError."""
+    loop = asyncio.get_running_loop()
+    sandbox_future: asyncio.Future[Any] = loop.create_future()
+    sandbox_started = asyncio.Event()
+
+    class _HangingProvider(MontySandboxProvider):
+        async def _run_monty(
+            self,
+            pydantic_monty: Any,
+            *,
+            code: str,
+            inputs: Any,
+            external_functions: Any,
+        ) -> Any:
+            sandbox_started.set()
+            return await sandbox_future
+
+    provider = _HangingProvider(wall_clock_timeout_secs=0.05)
+    with pytest.raises(asyncio.TimeoutError):
+        await provider.run("return 1")
+
+    assert sandbox_future.cancelled()
+
+
+async def test_code_mode_wall_clock_timeout_raises_tool_error() -> None:
+    """CodeMode converts wall-clock timeout into a legible ToolError."""
+    mcp = FastMCP("CodeMode Timeout")
+
+    @mcp.tool
+    async def slow_tool() -> str:
+        await asyncio.sleep(0.5)
+        return "done"
+
+    mcp.add_transform(
+        CodeMode(
+            sandbox_provider=_UnsafeTestSandboxProvider(),
+            wall_clock_timeout_secs=0.05,
+        )
+    )
+
+    code = "await call_tool('slow_tool', {})\nreturn 1"
+    with pytest.raises(ToolError) as exc_info:
+        await _run_tool(mcp, "execute", {"code": code})
+
+    assert "Execution timed out" in str(exc_info.value)
+
+
 async def test_monty_provider_cancels_future_when_task_cancelled() -> None:
     """Cancelling the awaiting task must cancel the underlying sandbox future.
 
