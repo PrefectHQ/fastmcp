@@ -948,7 +948,12 @@ class FastMCP(
         if version is not None:
             return None
 
-        all_tools = [t for t in await super().list_tools() if t.name == name]
+        # Enumerate without list middleware so a list-filtering middleware
+        # (which may hide tools from listings, on this or a mounted server)
+        # cannot break the fallback lookup.
+        all_tools = [
+            t for t in await super().list_tools_all_versions() if t.name == name
+        ]
         # During a hashed lookup, only versions of the identity being looked
         # up qualify; another tool listed under the same name does not.
         found = hashed_lookup_target(self)
@@ -1098,7 +1103,13 @@ class FastMCP(
         if version is not None:
             return None, True
 
-        all_resources = [r for r in await super().list_resources() if str(r.uri) == uri]
+        # Enumerate without list middleware so a list-filtering middleware
+        # cannot hide a resource from a fallback lookup (see list_tools_all_versions).
+        all_resources = [
+            r
+            for r in await super().list_resources_all_versions()
+            if str(r.uri) == uri
+        ]
         all_resources = list(await apply_session_transforms(all_resources))
         enabled = [r for r in all_resources if is_enabled(r)]
 
@@ -1241,9 +1252,11 @@ class FastMCP(
         if version is not None:
             return None
 
+        # Enumerate without list middleware so a list-filtering middleware
+        # cannot hide a template from a fallback lookup (see list_tools_all_versions).
         all_templates = [
             t
-            for t in await super().list_resource_templates()
+            for t in await super().list_resource_templates_all_versions()
             if t.matches(uri) is not None
         ]
         all_templates = list(await apply_session_transforms(all_templates))
@@ -1376,7 +1389,13 @@ class FastMCP(
         if version is not None:
             return None
 
-        all_prompts = [p for p in await super().list_prompts() if p.name == name]
+        # Enumerate without list middleware so a list-filtering middleware
+        # cannot hide a prompt from a fallback lookup (see list_tools_all_versions).
+        all_prompts = [
+            p
+            for p in await super().list_prompts_all_versions()
+            if p.name == name
+        ]
         all_prompts = list(await apply_session_transforms(all_prompts))
         enabled = [p for p in all_prompts if is_enabled(p)]
 

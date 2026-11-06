@@ -569,6 +569,34 @@ class FastMCPProvider(Provider):
         raw_prompts = await self.server.list_prompts()
         return [FastMCPProviderPrompt.wrap(self.server, p) for p in raw_prompts]
 
+    async def _list_tools_all_versions(self) -> Sequence[Tool]:
+        """List all tools from the mounted server for fallback lookups.
+
+        Bypasses the mounted server's list middleware: middleware may hide
+        components from listings, while a fallback lookup must still resolve
+        every version that exists. Disabled components and component-level
+        auth are still filtered by the nested server's core listing logic.
+        """
+        raw_tools = await self.server.list_tools(run_middleware=False)
+        return [FastMCPProviderTool.wrap(self.server, t) for t in raw_tools]
+
+    async def _list_resources_all_versions(self) -> Sequence[Resource]:
+        """List all resources from the mounted server for fallback lookups."""
+        raw_resources = await self.server.list_resources(run_middleware=False)
+        return [FastMCPProviderResource.wrap(self.server, r) for r in raw_resources]
+
+    async def _list_resource_templates_all_versions(self) -> Sequence[ResourceTemplate]:
+        """List all resource templates from the mounted server for fallback lookups."""
+        raw_templates = await self.server.list_resource_templates(run_middleware=False)
+        return [
+            FastMCPProviderResourceTemplate.wrap(self.server, t) for t in raw_templates
+        ]
+
+    async def _list_prompts_all_versions(self) -> Sequence[Prompt]:
+        """List all prompts from the mounted server for fallback lookups."""
+        raw_prompts = await self.server.list_prompts(run_middleware=False)
+        return [FastMCPProviderPrompt.wrap(self.server, p) for p in raw_prompts]
+
     async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
     ) -> Prompt | None:

@@ -396,6 +396,42 @@ class AggregateProvider(Provider):
         )
         return self._collect_list_results(results, "list_prompts")
 
+    async def _list_tools_all_versions(self) -> Sequence[Tool]:
+        """List all tools from all providers for fallback lookups.
+
+        Forwards each provider's fallback enumeration so a provider that
+        wraps another server can bypass that server's list middleware.
+        """
+        results = await gather(
+            (p.list_tools_all_versions() for p in self.providers),
+            return_exceptions=True,
+        )
+        return self._collect_list_results(results, "list_tools_all_versions")
+
+    async def _list_resources_all_versions(self) -> Sequence[Resource]:
+        """List all resources from all providers for fallback lookups."""
+        results = await gather(
+            (p.list_resources_all_versions() for p in self.providers),
+            return_exceptions=True,
+        )
+        return self._collect_list_results(results, "list_resources_all_versions")
+
+    async def _list_resource_templates_all_versions(self) -> Sequence[ResourceTemplate]:
+        """List all resource templates from all providers for fallback lookups."""
+        results = await gather(
+            (p.list_resource_templates_all_versions() for p in self.providers),
+            return_exceptions=True,
+        )
+        return self._collect_list_results(results, "list_resource_templates_all_versions")
+
+    async def _list_prompts_all_versions(self) -> Sequence[Prompt]:
+        """List all prompts from all providers for fallback lookups."""
+        results = await gather(
+            (p.list_prompts_all_versions() for p in self.providers),
+            return_exceptions=True,
+        )
+        return self._collect_list_results(results, "list_prompts_all_versions")
+
     async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
     ) -> Prompt | None:

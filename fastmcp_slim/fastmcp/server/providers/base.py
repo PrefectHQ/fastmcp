@@ -586,6 +586,78 @@ class Provider:
         return max(matching, key=version_sort_key)
 
     # -------------------------------------------------------------------------
+    # Fallback enumeration (versionless lookups)
+    # -------------------------------------------------------------------------
+    #
+    # A server's versionless lookup falls back to enumerating all versions of
+    # a component when the highest one is disabled. That enumeration must see
+    # every version that actually exists, even when a middleware hides
+    # components from listings: a list-filtering middleware is scoped to the
+    # list protocol methods, while fallback lookups are lookups. A provider
+    # whose raw listing is filtered through another server's middleware
+    # (e.g. FastMCPProvider, which runs the mounted server's middleware)
+    # overrides the `_*_all_versions` methods so the enumeration is not
+    # affected by that middleware.
+
+    async def list_tools_all_versions(self) -> Sequence[Tool]:
+        """List tools with all transforms applied, for fallback lookups.
+
+        Unlike `list_tools()`, a provider that sources its components through
+        another server's list middleware enumerates them without that
+        middleware, so a version hidden from listings can still be resolved.
+        """
+        tools = await self._list_tools_all_versions()
+        for transform in self.transforms:
+            tools = await transform.list_tools(tools)
+        return tools
+
+    async def list_resources_all_versions(self) -> Sequence[Resource]:
+        """List resources with all transforms applied, for fallback lookups.
+
+        See `list_tools_all_versions()`.
+        """
+        resources = await self._list_resources_all_versions()
+        for transform in self.transforms:
+            resources = await transform.list_resources(resources)
+        return resources
+
+    async def list_resource_templates_all_versions(self) -> Sequence[ResourceTemplate]:
+        """List resource templates with all transforms applied, for fallback lookups.
+
+        See `list_tools_all_versions()`.
+        """
+        templates = await self._list_resource_templates_all_versions()
+        for transform in self.transforms:
+            templates = await transform.list_resource_templates(templates)
+        return templates
+
+    async def list_prompts_all_versions(self) -> Sequence[Prompt]:
+        """List prompts with all transforms applied, for fallback lookups.
+
+        See `list_tools_all_versions()`.
+        """
+        prompts = await self._list_prompts_all_versions()
+        for transform in self.transforms:
+            prompts = await transform.list_prompts(prompts)
+        return prompts
+
+    async def _list_tools_all_versions(self) -> Sequence[Tool]:
+        """Raw tool enumeration for fallback lookups (before transforms)."""
+        return await self._list_tools()
+
+    async def _list_resources_all_versions(self) -> Sequence[Resource]:
+        """Raw resource enumeration for fallback lookups (before transforms)."""
+        return await self._list_resources()
+
+    async def _list_resource_templates_all_versions(self) -> Sequence[ResourceTemplate]:
+        """Raw resource template enumeration for fallback lookups (before transforms)."""
+        return await self._list_resource_templates()
+
+    async def _list_prompts_all_versions(self) -> Sequence[Prompt]:
+        """Raw prompt enumeration for fallback lookups (before transforms)."""
+        return await self._list_prompts()
+
+    # -------------------------------------------------------------------------
     # Task registration
     # -------------------------------------------------------------------------
 
