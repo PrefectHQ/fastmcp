@@ -79,30 +79,42 @@ class ResponseLimitingMiddleware(Middleware):
         is_error: bool = False,
     ) -> ToolResult:
         """Truncate text to fit within max_size and wrap in ToolResult."""
-        suffix_bytes = len(self.truncation_suffix.encode("utf-8"))
-        # Account for JSON wrapper overhead: {"content":[{"type":"text","text":"..."}]}
-        overhead = 50
-        target_size = self.max_size - suffix_bytes - overhead
+        # The size gate in on_call_tool measures the serialized result
+        # (pydantic_core.to_json), which includes JSON escaping overhead
+        # (e.g. control characters serialize as 6-byte \uXXXX escapes).
+        # Bounding only the UTF-8 bytes of the text can therefore leave the
+        # serialized result over max_size. Binary-search the largest text
+        # prefix whose serialized result (including suffix, meta, flags)
+        # fits within max_size.
 
-        if target_size <= 0:
-            # Edge case: max_size too small for even the suffix
-            truncated = self.truncation_suffix
-        else:
-            # Truncate to target size, preserving UTF-8 boundaries
-            encoded = text.encode("utf-8")
-            if len(encoded) <= target_size:
-                truncated = text + self.truncation_suffix
+        def _build(n: int) -> ToolResult:
+            return ToolResult(
+                content=[
+                    TextContent(type="text", text=text[:n] + self.truncation_suffix)
+                ],
+                meta=meta,
+                is_error=is_error,
+            )
+
+        def _size(result: ToolResult) -> int:
+            return len(pydantic_core.to_json(result, fallback=str))
+
+        if _size(_build(len(text))) <= self.max_size:
+            return _build(len(text))
+
+        # Best effort: even the suffix alone (with meta/flags) may exceed
+        # max_size; there is nothing further to trim.
+        if _size(_build(0)) > self.max_size:
+            return _build(0)
+
+        lo, hi = 0, len(text)
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if _size(_build(mid)) <= self.max_size:
+                lo = mid
             else:
-                truncated = (
-                    encoded[:target_size].decode("utf-8", errors="ignore")
-                    + self.truncation_suffix
-                )
-
-        return ToolResult(
-            content=[TextContent(type="text", text=truncated)],
-            meta=meta,
-            is_error=is_error,
-        )
+                hi = mid - 1
+        return _build(lo)
 
     async def on_list_tools(
         self,
