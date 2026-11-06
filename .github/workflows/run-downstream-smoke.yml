@@ -166,6 +166,7 @@ jobs:
         working-directory: pydantic-ai
         run: |
           echo "UV_RUN=uv run --all-extras --no-extra mcp-tasks --all-packages \
+            --exclude-newer-package authlib=false \
             --exclude-newer-package certifi=false \
             --exclude-newer-package pydocket=2026-10-06T00:00:00Z \
             --with fastmcp@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp-4*.whl) \
