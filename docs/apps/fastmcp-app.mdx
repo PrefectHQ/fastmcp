@@ -85,14 +85,14 @@ With a host that honors app visibility, the model sees one tool: `notes_app`. Ca
 A fair question. Any [Interactive Tool](/apps/prefab) can call a server tool — there's nothing stopping you from putting `CallTool("add_note")` inside a regular `@mcp.tool(app=True)`. It works for one or two tools. Things get harder once the app grows:
 
 - Which tools should the model see, and which are UI-only?
-- What happens to `CallTool("add_note")` when you mount this server under a namespace and the tool becomes `notes_add_note`?
+- How does `CallTool("add_note")` keep reaching the right backend when a namespace or gateway changes the server topology?
 - How do you keep it all wired correctly as you compose servers?
 
 `FastMCPApp` owns these concerns. Entry points register as model-visible, backend tools register as UI-only, and hosts act on those declarations to decide what the model sees.
 
 App tool visibility is not a security boundary. Backend tools remain callable through direct MCP requests by clients that know their names, subject to the server's authentication and authorization checks. Use [authorization](/servers/authorization) and server-side validation to enforce access and approval requirements; [visibility metadata](/apps/low-level#tool-visibility) only declares the intended audience.
 
-Composition is handled by never writing the name down. `CallTool` takes a function reference, and FastMCP resolves it when the UI is serialized — to whatever that tool is actually called by then. Mount the server under a namespace and the button calls `notes_add_note`; put a gateway in front and it calls whatever the gateway lists. Since you never wrote a name, renaming cannot break it. [The architecture page](/apps/architecture) covers how that resolution works.
+FastMCP resolves `CallTool("add_note")` or `CallTool(add_note)` to a stable callback address such as `__<12 hex>_add_note`. That address appears in `tools/list`, so a host that only forwards listed names can call it. A namespace or gateway can rename the app's UI entry point, but the callback address stays the same. [The architecture page](/apps/architecture) covers how that resolution works.
 
 The one rule that comes with this: **an app name must be unique within a server.** Composing the same app twice breaks its UI — two copies of `FastMCPApp("notes")` are indistinguishable no matter what namespaces you mount them under, so FastMCP declines to bind rather than picking one. Name apps for what they serve: `FastMCPApp("notes-acme")` and `FastMCPApp("notes-globex")`. [The architecture page](/apps/architecture) explains why identity works this way.
 
@@ -319,16 +319,21 @@ def create_bug(data: BugReport) -> str:
 
 The reason `FastMCPApp` exists — and why you'd pick it over plain `@mcp.tool(app=True)` with string-based `CallTool` — is composition safety.
 
-When you mount a server under a namespace, tool names get prefixed:
+When you mount a server under a namespace, ordinary tools and UI entry points get prefixed. App backend callbacks keep their identity-based public names:
 
 ```python
 platform = FastMCP("Platform")
 platform.mount("contacts", contacts_server)
 
-# "save_contact" becomes "contacts_save_contact"
+# The UI entry point is prefixed; the app callback is listed as
+# __<12 hex>_save_contact on both servers.
 ```
 
-`CallTool("save_contact")` would now be broken. But `CallTool(save_contact)` with a function reference resolves to a globally stable identifier that bypasses the namespace. Your app works the same whether standalone or mounted.
+Both `CallTool("save_contact")` and `CallTool(save_contact)` resolve to that listed callback address. The same rule applies to `@app.tool(model=True)`; its visibility still tells the host that the model may see it.
+
+This changes the public name of app backend callbacks, including a single app with no name collision. If a gateway filter or mount `tool_names` mapping targets a callback from another server, update its input key from a local name such as `"save_contact"` to the generated address for that app and callback. A mount mapping can still change an intermediate name, but the outer server lists the callback under its stable address. Provider-local transforms still see the local name: a filter targeting `"save_contact"` attached inside the app still matches, while a filter attached to a proxy receiving the app's wire listing must target the generated address. Tool names cached by a host should be refreshed from `tools/list` after upgrading.
+
+The exact `__<12 lowercase hex>_<name>` shape is reserved for app callback addresses across all tools. Ordinary or injected tools with a name in that shape are rejected from listing and calling, even when no callback currently uses the address. Rename such a tool before upgrading. Names such as `abcdef012345_save` and `__save` are unaffected.
 
 ### Mounting
 

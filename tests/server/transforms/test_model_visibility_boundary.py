@@ -99,9 +99,10 @@ async def test_app_only_tools_are_listed_for_forwarding():
     async with Client(plain) as client:
         listed = {tool.name: tool for tool in await client.list_tools()}
 
-    assert "save_contact" in listed
-    assert listed["save_contact"].meta is not None
-    assert listed["save_contact"].meta["ui"]["visibility"] == ["app"]
+    address = hashed_backend_name("contacts", "save_contact")
+    assert address in listed
+    assert listed[address].meta is not None
+    assert listed[address].meta["ui"]["visibility"] == ["app"]
 
 
 async def test_call_tool_proxy_refuses_undiscoverable_tools():
@@ -112,12 +113,18 @@ async def test_call_tool_proxy_refuses_undiscoverable_tools():
         with pytest.raises(ToolError, match="save_contact"):
             await client.call_tool(
                 "call_tool",
-                {"name": "save_contact", "arguments": {"name": "eve"}},
+                {
+                    "name": hashed_backend_name("contacts", "save_contact"),
+                    "arguments": {"name": "eve"},
+                },
             )
 
         allowed = await client.call_tool(
             "call_tool",
-            {"name": "search_contacts", "arguments": {"query": "ada"}},
+            {
+                "name": hashed_backend_name("contacts", "search_contacts"),
+                "arguments": {"query": "ada"},
+            },
         )
         assert allowed.content[0].text == "found ada"  # type: ignore[union-attr]
 

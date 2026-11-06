@@ -598,7 +598,7 @@ class TestAppOnlyToolVisibility:
 
         tools = await server.list_tools()
         names = [t.name for t in tools]
-        assert "save_contact" in names
+        assert hashed_backend_name("crm", "save_contact") in names
 
     async def test_app_only_tool_declares_app_visibility(self):
         """The listed tool carries visibility=["app"] so a host can filter it."""
@@ -611,7 +611,11 @@ class TestAppOnlyToolVisibility:
         server = FastMCP("Platform")
         server.add_provider(app)
 
-        tool = next(t for t in await server.list_tools() if t.name == "save_contact")
+        tool = next(
+            t
+            for t in await server.list_tools()
+            if t.name == hashed_backend_name("crm", "save_contact")
+        )
         assert tool.meta is not None
         assert tool.meta["ui"]["visibility"] == ["app"]
 
@@ -628,7 +632,9 @@ class TestAppOnlyToolVisibility:
 
         async with Client(server) as client:
             tool = next(
-                t for t in await client.list_tools() if t.name == "save_contact"
+                t
+                for t in await client.list_tools()
+                if t.name == hashed_backend_name("crm", "save_contact")
             )
         assert tool.meta is not None
         assert tool.meta["ui"]["visibility"] == ["app"]
@@ -646,7 +652,7 @@ class TestAppOnlyToolVisibility:
 
         tools = await server.list_tools()
         names = [t.name for t in tools]
-        assert "query" in names
+        assert hashed_backend_name("crm", "query") in names
 
     async def test_ui_tool_in_list_tools(self):
         """@app.ui() (visibility=["model"]) appears in list_tools."""
@@ -697,7 +703,7 @@ class TestAppOnlyToolVisibility:
         assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_app_only_tool_namespaced_in_list_tools(self):
-        """Namespacing renames app-only tools like any other tool."""
+        """App callback names stay stable across namespace transforms."""
         app = FastMCPApp("crm")
 
         @app.tool()
@@ -709,7 +715,7 @@ class TestAppOnlyToolVisibility:
 
         tools = await server.list_tools()
         names = [t.name for t in tools]
-        assert "crm_save" in names
+        assert hashed_backend_name("crm", "save") in names
 
     async def test_app_only_tool_carries_public_hash(self):
         """The identity hash is public meta, so intermediaries can match on it."""
@@ -723,7 +729,11 @@ class TestAppOnlyToolVisibility:
         server.add_provider(app, namespace="crm")
 
         async with Client(server) as client:
-            tool = next(t for t in await client.list_tools() if t.name == "crm_save")
+            tool = next(
+                t
+                for t in await client.list_tools()
+                if t.name == hashed_backend_name("crm", "save")
+            )
         assert tool.meta is not None
         assert tool.meta["fastmcp"]["tool_hash"] == hash_tool("crm", "save")
 
@@ -762,7 +772,7 @@ class TestEndToEnd:
         async with Client(server) as client:
             tools = await client.list_tools()
             names = [t.name for t in tools]
-            assert "query" in names
+            assert hashed_backend_name("test", "query") in names
 
 
 # ---------------------------------------------------------------------------
@@ -922,9 +932,13 @@ class TestAppIntegration:
             tools = await client.list_tools()
             tool_names = [t.name for t in tools]
             assert "crm_contact_form" in tool_names
-            assert "crm_save_contact" in tool_names
+            assert hashed_backend_name("contacts", "save_contact") in tool_names
 
-            backend = next(t for t in tools if t.name == "crm_save_contact")
+            backend = next(
+                t
+                for t in tools
+                if t.name == hashed_backend_name("contacts", "save_contact")
+            )
             assert backend.meta is not None
             assert backend.meta["ui"]["visibility"] == ["app"]
 
