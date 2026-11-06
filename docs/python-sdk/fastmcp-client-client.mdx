@@ -67,6 +67,8 @@ Connection source specification, which can be\:
 - `timeout`: Optional timeout for requests (seconds or timedelta)
 - `init_timeout`: Optional timeout for initial connection (seconds or timedelta).
 Set to 0 to disable. If None, uses the value in the FastMCP global settings.
+- `client_info`: The identity this client declares to servers. Defaults to
+`fastmcp` and the installed FastMCP version.
 - `mode`: Protocol-era negotiation at connect time. `"auto"` (the default) probes
 `server/discover` and negotiates the modern era, denylist-falling-back to the
 initialize handshake for any server that is not positive evidence of a modern
@@ -116,7 +118,7 @@ async with client:
 
 **Methods:**
 
-#### `session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L668" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L671" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 session(self) -> ClientSession
@@ -125,7 +127,7 @@ session(self) -> ClientSession
 Get the current active session. Raises RuntimeError if not connected.
 
 
-#### `prior_discover` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L678" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prior_discover` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L694" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prior_discover(self) -> mcp_types.DiscoverResult | None
@@ -134,7 +136,7 @@ prior_discover(self) -> mcp_types.DiscoverResult | None
 The configured result to adopt when `mode` pins a modern version.
 
 
-#### `initialize_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L683" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `initialize_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L699" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 initialize_result(self) -> mcp_types.InitializeResult | None
@@ -148,7 +150,7 @@ Get the result of the initialization request.
 access to the negotiated server metadata.
 
 
-#### `protocol_version` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L694" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `protocol_version` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L710" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 protocol_version(self) -> str | None
@@ -160,7 +162,7 @@ Set during connect-time negotiation regardless of era: the initialize
 handshake, `server/discover`, or a direct version pin all populate it.
 
 
-#### `server_capabilities` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L704" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `server_capabilities` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L720" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 server_capabilities(self) -> mcp_types.ServerCapabilities | None
@@ -172,7 +174,7 @@ Populated from whichever negotiation result the era produced (the
 `InitializeResult` on legacy, the `DiscoverResult` on modern).
 
 
-#### `server_info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L714" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `server_info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L730" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 server_info(self) -> mcp_types.Implementation | None
@@ -185,7 +187,7 @@ Populated from whichever negotiation result the era produced (the
 pinned modern version uses a synthesized identity with an empty name.
 
 
-#### `instructions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L725" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `instructions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L741" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 instructions(self) -> str | None
@@ -197,7 +199,7 @@ Populated from whichever negotiation result the era produced (the
 `InitializeResult` on legacy, the `DiscoverResult` on modern).
 
 
-#### `set_roots` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L734" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_roots` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L750" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_roots(self, roots: RootsList | RootsHandler) -> None
@@ -206,7 +208,7 @@ set_roots(self, roots: RootsList | RootsHandler) -> None
 Set the roots for the client. This does not automatically call `send_roots_list_changed`.
 
 
-#### `set_sampling_callback` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L738" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_sampling_callback` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L754" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_sampling_callback(self, sampling_callback: SamplingHandler, sampling_capabilities: mcp_types.SamplingCapability | None = None) -> None
@@ -215,7 +217,7 @@ set_sampling_callback(self, sampling_callback: SamplingHandler, sampling_capabil
 Set the sampling callback for the client.
 
 
-#### `set_elicitation_callback` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L753" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_elicitation_callback` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L769" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_elicitation_callback(self, elicitation_callback: ElicitationHandler) -> None
@@ -224,7 +226,7 @@ set_elicitation_callback(self, elicitation_callback: ElicitationHandler) -> None
 Set the elicitation callback for the client.
 
 
-#### `is_connected` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L764" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `is_connected` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L780" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_connected(self) -> bool
@@ -233,7 +235,7 @@ is_connected(self) -> bool
 Check if the client is currently connected.
 
 
-#### `new` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L768" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `new` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L784" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 new(self) -> Client[ClientTransportT]
@@ -249,7 +251,7 @@ share state with the original client.
 - A new Client instance with the same configuration but disconnected state.
 
 
-#### `initialize` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L909" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `initialize` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L925" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 initialize(self, timeout: datetime.timedelta | float | int | None = None) -> mcp_types.InitializeResult
@@ -284,13 +286,13 @@ capabilities, protocol version, and optional instructions.
 negotiated era carries no `InitializeResult` (a modern `discover` connection).
 
 
-#### `close` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1489" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `close` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1505" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 close(self)
 ```
 
-#### `ping` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1495" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `ping` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1511" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 ping(self) -> bool
@@ -299,7 +301,7 @@ ping(self) -> bool
 Send a ping request.
 
 
-#### `cancel` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1500" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `cancel` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1516" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 cancel(self, request_id: str | int, reason: str | None = None) -> None
@@ -308,7 +310,7 @@ cancel(self, request_id: str | int, reason: str | None = None) -> None
 Send a cancellation notification for an in-progress request.
 
 
-#### `progress` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1515" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `progress` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1531" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 progress(self, progress_token: str | int, progress: float, total: float | None = None, message: str | None = None) -> None
@@ -317,7 +319,7 @@ progress(self, progress_token: str | int, progress: float, total: float | None =
 Send a progress notification.
 
 
-#### `set_logging_level` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1529" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_logging_level` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1545" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_logging_level(self, level: mcp_types.LoggingLevel) -> None
@@ -333,7 +335,7 @@ request's own stream, so a server's `ctx.info()` still reaches you.
 Filter by level on the receiving side instead, in your `log_handler`.
 
 
-#### `send_roots_list_changed` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1552" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `send_roots_list_changed` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1568" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 send_roots_list_changed(self) -> None
@@ -342,7 +344,7 @@ send_roots_list_changed(self) -> None
 Send a roots/list_changed notification.
 
 
-#### `complete_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1560" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `complete_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1576" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 complete_mcp(self, ref: mcp_types.ResourceTemplateReference | mcp_types.PromptReference, argument: dict[str, str], context_arguments: dict[str, Any] | None = None) -> mcp_types.CompleteResult
@@ -365,7 +367,7 @@ containing the completion and any additional metadata.
 - `MCPError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `complete` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1591" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `complete` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1607" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 complete(self, ref: mcp_types.ResourceTemplateReference | mcp_types.PromptReference, argument: dict[str, str], context_arguments: dict[str, Any] | None = None) -> mcp_types.Completion
@@ -387,7 +389,7 @@ include with the completion request. Defaults to None.
 - `MCPError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `generate_name` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1618" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `generate_name` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/client.py#L1634" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_name(cls, name: str | None = None) -> str
