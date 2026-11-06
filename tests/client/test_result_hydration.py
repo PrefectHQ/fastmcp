@@ -262,6 +262,69 @@ class TestUnionHydrationFidelity:
         assert result.structured_content == {"value": {"a": "5"}}
         assert result.data == {"value": {"a": "5"}}
 
+    async def test_json_format_sibling_does_not_license_coercion(self):
+        mcp = FastMCP()
+
+        # A format: json field elsewhere in the schema must not open the
+        # decode asymmetry for value: the anyOf coercion of "5" to 5 is
+        # still a fidelity loss (#6136).
+        schema = {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "anyOf": [
+                        {"type": "object", "properties": {"x": {}}},
+                        {"type": "object", "properties": {"a": {"type": "integer"}}},
+                    ]
+                },
+                "payload": {"type": "string", "format": "json"},
+            },
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"value": {"a": "5"}}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"value": {"a": "5"}}
+        assert result.data == {"value": {"a": "5"}}
+
+    async def test_json_format_field_decodes_beside_ordinary_fields(self):
+        mcp = FastMCP()
+
+        # Mixed payload: the format: json field still decodes (its own path
+        # asks for it) while the anyOf field keeps the server's string.
+        schema = {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "anyOf": [
+                        {"type": "object"},
+                        {"type": "object", "properties": {"a": {"type": "integer"}}},
+                    ]
+                },
+                "payload": {"type": "string", "format": "json"},
+            },
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"value": {"a": "5"}, "payload": '{"b": 1}'}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {
+            "value": {"a": "5"},
+            "payload": '{"b": 1}',
+        }
+        assert result.data.value["a"] == "5"
+        assert result.data.payload == {"b": 1}
+
     async def test_unambiguous_anyof_still_hydrates(self):
         mcp = FastMCP()
 

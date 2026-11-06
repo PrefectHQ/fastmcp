@@ -28,7 +28,7 @@ AUTO_PAGINATION_MAX_PAGES = 250
 
 
 def _round_trips_to_payload(
-    type_adapter: Any, typed: Any, original: Any, *, allow_json_text: bool
+    type_adapter: Any, typed: Any, original: Any, *, output_schema: Any
 ) -> bool:
     """Check that the typed hydration re-serializes to the server's payload.
 
@@ -39,9 +39,9 @@ def _round_trips_to_payload(
     hydration-legitimate asymmetries: fields the payload omitted may appear
     in the dump (schema defaults serialize out), date-time strings may
     be spelled differently for the same instant (pydantic renders UTC as
-    ``Z`` while a payload may say ``+00:00``), and — when the schema
-    actually declares it — ``format: json`` text is compared as its
-    decoded value (pydantic's ``Json`` type).
+    ``Z`` while a payload may say ``+00:00``), and ``format: json`` text
+    is compared as its decoded value (pydantic's ``Json`` type) — only at
+    the schema positions that actually declare it.
     """
     try:
         rehydrated = json.loads(type_adapter.dump_json(typed))
@@ -49,18 +49,113 @@ def _round_trips_to_payload(
         # If the typed form cannot be re-serialized, fidelity is unknowable;
         # keep the hydrated value rather than second-guessing a valid model.
         return True
-    return _hydration_covers_payload(rehydrated, original, allow_json_text)
+    return _hydration_covers_payload(
+        rehydrated, original, [output_schema], output_schema
+    )
 
 
-def _schema_asks_json_text(schema: Any) -> bool:
-    """True when any subschema in `schema` declares ``format: json``."""
-    if isinstance(schema, dict):
-        if schema.get("format") == "json":
-            return True
-        return any(_schema_asks_json_text(value) for value in schema.values())
-    if isinstance(schema, list):
-        return any(_schema_asks_json_text(value) for value in schema)
-    return False
+def _ref_target(node: dict[str, Any], root: Any) -> Any:
+    """Resolve a local ``$ref`` (``#/$defs/Name``) against the root schema."""
+    ref = node.get("$ref")
+    if not (isinstance(ref, str) and ref.startswith("#/")):
+        return node
+    target: Any = root
+    for part in ref[2:].split("/"):
+        if not isinstance(target, dict):
+            return node
+        target = target.get(part.replace("~1", "/").replace("~0", "~"))
+    return target if target is not None else node
+
+
+def _schema_branches(node: Any, root: Any) -> list[Any]:
+    """Schema node(s) governing one value position: local ``$ref``s resolved
+    and ``anyOf``/``oneOf``/``allOf`` flattened. Recursive references are
+    safe; unresolvable ones keep the original node."""
+    branches: list[Any] = []
+    seen: set[int] = set()
+    frontier: list[Any] = [node]
+    while frontier:
+        current = frontier.pop()
+        if isinstance(current, dict):
+            current = _ref_target(current, root)
+            if not isinstance(current, dict) or id(current) in seen:
+                continue
+            seen.add(id(current))
+            flattened = False
+            for keyword in ("anyOf", "oneOf", "allOf"):
+                sub = current.get(keyword)
+                if isinstance(sub, list):
+                    frontier.extend(sub)
+                    flattened = True
+                    break
+            if not flattened:
+                branches.append(current)
+        else:
+            branches.append(current)
+    return branches
+
+
+def _node_asks_json_text(node: Any, root: Any) -> bool:
+    """True when any branch of `node` declares ``format: json``."""
+    return any(
+        isinstance(branch, dict) and branch.get("format") == "json"
+        for branch in _schema_branches(node, root)
+    )
+
+
+def _property_schemas(
+    schemas: list[Any] | None, key: str, root: Any
+) -> list[Any] | None:
+    """Candidate schema nodes for `key` under each candidate node."""
+    if schemas is None:
+        return None
+    children: list[Any] = []
+    for node in schemas:
+        for branch in _schema_branches(node, root):
+            if not isinstance(branch, dict):
+                continue
+            properties = branch.get("properties")
+            if isinstance(properties, dict) and key in properties:
+                children.append(properties[key])
+                continue
+            matched_pattern = False
+            pattern_properties = branch.get("patternProperties")
+            if isinstance(pattern_properties, dict):
+                for pattern, sub in pattern_properties.items():
+                    try:
+                        if re.search(pattern, key):
+                            children.append(sub)
+                            matched_pattern = True
+                    except re.error:
+                        pass
+            if matched_pattern:
+                continue
+            additional = branch.get("additionalProperties")
+            if isinstance(additional, dict):
+                children.append(additional)
+    return children
+
+
+def _item_schemas(schemas: list[Any] | None, index: int, root: Any) -> list[Any] | None:
+    """Candidate schema nodes for item `index` under each candidate node."""
+    if schemas is None:
+        return None
+    children: list[Any] = []
+    for node in schemas:
+        for branch in _schema_branches(node, root):
+            if not isinstance(branch, dict):
+                continue
+            prefix_items = branch.get("prefixItems")
+            if isinstance(prefix_items, list) and index < len(prefix_items):
+                children.append(prefix_items[index])
+                continue
+            items = branch.get("items")
+            if isinstance(items, list):
+                if index < len(items):
+                    children.append(items[index])
+            elif isinstance(items, dict):
+                children.append(items)
+    return children
 
 
 def _json_text_decodes_to(original: Any, dumped: Any) -> bool:
@@ -69,9 +164,9 @@ def _json_text_decodes_to(original: Any, dumped: Any) -> bool:
     ``format: json`` properties hydrate through pydantic's ``Json`` type:
     the server sends JSON text and the typed value is the decoded object,
     so the dump re-emits the decoded form rather than the original string.
-    Callers gate this on the schema actually declaring ``format: json``
-    (``_schema_asks_json_text``); without it, a JSON-looking string must
-    not stand in for its decoded value.
+    Callers gate this on the schema position actually declaring
+    ``format: json``; without it, a JSON-looking string must not stand in
+    for its decoded value.
     """
     if not isinstance(original, str):
         return False
@@ -86,16 +181,22 @@ def _json_text_decodes_to(original: Any, dumped: Any) -> bool:
 
 
 def _hydration_covers_payload(
-    dumped: Any, original: Any, allow_json_text: bool = True
+    dumped: Any, original: Any, schemas: list[Any] | None = None, root: Any = None
 ) -> bool:
     """Every value the server sent must survive hydration; extra keys in the
     dump are defaults for fields the payload omitted and are allowed.
 
-    ``allow_json_text`` gates the JSON-text decode asymmetry: it should be
-    True only when the output schema declares ``format: json``, so a
-    schema without it never blesses a coerced value (a string ``"5"``
-    standing in for the integer ``5``)."""
-    if allow_json_text and _json_text_decodes_to(original, dumped):
+    `schemas` holds the candidate output-schema nodes for THIS position and
+    `root` is the schema document ``$ref``s resolve against. They gate the
+    JSON-text decode asymmetry to the paths that declare ``format: json``;
+    with no schema context (direct callers) the asymmetry stays open, so a
+    coerced value can never slip through at a path the schema does not
+    exempt."""
+    if schemas and root is not None:
+        node_asks = any(_node_asks_json_text(node, root) for node in schemas)
+    else:
+        node_asks = schemas is None
+    if node_asks and _json_text_decodes_to(original, dumped):
         # Intentional decode: format: json hydrates JSON text into a value.
         return True
     if isinstance(original, bool) or isinstance(dumped, bool):
@@ -110,7 +211,12 @@ def _hydration_covers_payload(
             return False
         return all(
             key in dumped
-            and _hydration_covers_payload(dumped[key], value, allow_json_text)
+            and _hydration_covers_payload(
+                dumped[key],
+                value,
+                _property_schemas(schemas, str(key), root),
+                root,
+            )
             for key, value in original.items()
         )
     if isinstance(original, list) or isinstance(dumped, list):
@@ -121,8 +227,13 @@ def _hydration_covers_payload(
         ):
             return False
         return all(
-            _hydration_covers_payload(d, o, allow_json_text)
-            for o, d in zip(original, dumped, strict=True)
+            _hydration_covers_payload(
+                d,
+                o,
+                _item_schemas(schemas, position, root),
+                root,
+            )
+            for position, (o, d) in enumerate(zip(original, dumped, strict=True))
         )
     if original == dumped:
         return True
@@ -568,7 +679,7 @@ async def _parse_call_tool_result(
                     type_adapter,
                     typed,
                     structured_content,
-                    allow_json_text=_schema_asks_json_text(output_schema),
+                    output_schema=output_schema,
                 ):
                     data = typed
                 else:
