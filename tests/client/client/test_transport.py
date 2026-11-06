@@ -1,9 +1,12 @@
 """Client transport inference tests."""
 
+import sys
 import warnings
+from pathlib import Path
 
 import pytest
 
+from fastmcp import Client
 from fastmcp.client.transports import (
     FastMCPTransport,
     MCPConfigTransport,
@@ -186,3 +189,43 @@ class TestScriptPathInference:
     def test_path_with_unsupported_suffix_is_rejected(self, tmp_path):
         with pytest.raises(ValueError, match="Unsupported script type"):
             infer_transport(tmp_path / "server.rb")
+
+
+# A pure-stdlib stdio MCP server used to observe real subprocess lifetimes.
+MINIMAL_STDIO_SERVER = Path(__file__).parent.parent / "minimal_stdio_server.py"
+
+
+def _two_stdio_server_config() -> dict:
+    server = {"command": sys.executable, "args": [str(MINIMAL_STDIO_SERVER)]}
+    return {"mcpServers": {"one": dict(server), "two": dict(server)}}
+
+
+@pytest.mark.timeout(60)
+async def test_unconnected_original_close_keeps_live_clone_backends():
+    """Closing a never-connected original leaves a connected clone's servers up."""
+    original = Client(_two_stdio_server_config())
+    clone = original.new()
+
+    async with clone:
+        pid_before = (await clone.call_tool("two_pid", {})).data
+
+        await original.close()
+
+        # Same subprocess, still serving: the close did not touch it.
+        pid_after = (await clone.call_tool("two_pid", {})).data
+        assert pid_after == pid_before
+
+
+@pytest.mark.timeout(60)
+async def test_unconnected_clone_close_keeps_live_original_backends():
+    """Closing a never-connected clone leaves the connected original's servers up."""
+    original = Client(_two_stdio_server_config())
+    clone = original.new()
+
+    async with original:
+        pid_before = (await original.call_tool("two_pid", {})).data
+
+        await clone.close()
+
+        pid_after = (await original.call_tool("two_pid", {})).data
+        assert pid_after == pid_before
