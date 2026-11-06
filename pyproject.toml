@@ -59,6 +59,7 @@ apps = ["fastmcp-slim[apps]=={{ version }}"]
 azure = ["fastmcp-slim[azure]=={{ version }}"]
 code-mode = ["fastmcp-slim[code-mode]=={{ version }}"]
 jev = ["fastmcp-slim[jev]=={{ version }}"]
+keystone = ["fastmcp-slim[keystone]=={{ version }}"]
 gemini = ["fastmcp-slim[gemini]=={{ version }}"]
 openai = ["fastmcp-slim[openai]=={{ version }}"]
 tasks = ["fastmcp-tasks=={{ version }}"]
@@ -85,7 +86,7 @@ exclude-newer-package = { certifi = false, fastmcp = false, fastmcp-slim = false
 [dependency-groups]
 dev = [
     "dirty-equals>=0.9.0",
-    "fastmcp[anthropic,apps,azure,code-mode,gemini,jev,openai,tasks]",
+    "fastmcp[anthropic,apps,azure,code-mode,gemini,jev,keystone,openai,tasks]",
     "fastapi>=0.115.12",
     "fastmcp-remote",
     "opentelemetry-sdk>=1.20.0",
