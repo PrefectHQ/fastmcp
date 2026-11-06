@@ -2,12 +2,11 @@
 
 from pathlib import Path
 
-from fastmcp import FastMCP, Skill
-from fastmcp.skills.provider import SkillCatalogProvider
+from fastmcp import FastMCP
+from fastmcp.skills.provider import SkillsDirectoryProvider
 
 root = Path(__file__).parent / "sample_skills"
-skills = [Skill.from_directory(folder) for folder in sorted(root.iterdir())]
-mcp = FastMCP("Skills Server", providers=[SkillCatalogProvider(skills)])
+mcp = FastMCP("Skills Server", providers=[SkillsDirectoryProvider(root)])
 
 
 if __name__ == "__main__":
