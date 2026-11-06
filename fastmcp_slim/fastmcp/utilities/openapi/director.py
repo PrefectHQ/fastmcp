@@ -165,7 +165,7 @@ class RequestDirector:
         # httpx requires cookie values to be strings; use OpenAPI-style
         # serialization (e.g. true/false for booleans, not True/False)
         cookies = (
-            {k: _query_scalar_to_str(v) for k, v in cookie_params.items()}
+            self._serialize_simple_params(route, cookie_params, location="cookie")
             if cookie_params
             else None
         )
@@ -530,6 +530,55 @@ class RequestDirector:
                     parts.append(self._encode_path_scalar(param_name, v))
             return ",".join(parts)
         return self._encode_path_scalar(param_name, value)
+
+    def _serialize_simple_params(
+        self,
+        route: HTTPRoute,
+        params: dict[str, Any],
+        *,
+        location: str,
+    ) -> dict[str, str]:
+        """
+        Serialize cookie parameter values to strings.
+
+        A cookie interpolates a single string per parameter, so a
+        collection value passed through `str()` would leak its Python
+        repr into the request. Arrays join with commas and objects
+        serialize as key,value pairs — or key=value pairs with explode —
+        following the OpenAPI "simple" style, the only representation a
+        single cookie value can carry. (Path parameters are serialized
+        separately, inside `_build_url`.) Scalars use the same
+        conversion as query values (true/false for booleans, not
+        True/False).
+        """
+        param_lookup: dict[str, ParameterInfo] = {
+            p.name: p for p in route.parameters if p.location == location
+        }
+        serialized: dict[str, str] = {}
+        for key, value in params.items():
+            if isinstance(value, dict):
+                param_info = param_lookup.get(key)
+                explode = (
+                    param_info.explode
+                    if param_info is not None and param_info.explode is not None
+                    else False
+                )
+                if explode:
+                    serialized[key] = ",".join(
+                        f"{_query_scalar_to_str(k)}={_query_scalar_to_str(v)}"
+                        for k, v in value.items()
+                    )
+                else:
+                    parts: list[str] = []
+                    for k, v in value.items():
+                        parts.append(_query_scalar_to_str(k))
+                        parts.append(_query_scalar_to_str(v))
+                    serialized[key] = ",".join(parts)
+            elif isinstance(value, list):
+                serialized[key] = ",".join(_query_scalar_to_str(item) for item in value)
+            else:
+                serialized[key] = _query_scalar_to_str(value)
+        return serialized
 
     def _build_url(
         self,

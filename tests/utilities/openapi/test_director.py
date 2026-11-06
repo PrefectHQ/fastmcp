@@ -1,6 +1,7 @@
 """Unit tests for RequestDirector."""
 
 import json
+from urllib.parse import unquote
 
 import pytest
 from jsonschema_path import SchemaPath
@@ -1558,3 +1559,72 @@ class TestCookieParameters:
         assert "version=3" in cookie
         # Booleans use OpenAPI convention (true/false, not True/False)
         assert "debug=true" in cookie
+
+
+class TestDirectorCollectionPathAndCookieParams:
+    """Array/object path and cookie parameters serialize OpenAPI-style.
+
+    Passing the raw JSON value through str() leaked the Python repr into
+    the request ("/items/['a', 'b']"), which no server can parse back
+    into the declared array.
+    """
+
+    def _route(self):
+        spec = {
+            "openapi": "3.1.0",
+            "info": {"title": "t", "version": "1"},
+            "servers": [{"url": "http://localhost"}],
+            "paths": {
+                "/items/{ids}": {
+                    "get": {
+                        "operationId": "get_items",
+                        "parameters": [
+                            {
+                                "name": "ids",
+                                "in": "path",
+                                "required": True,
+                                "schema": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                            },
+                            {
+                                "name": "prefs",
+                                "in": "cookie",
+                                "required": False,
+                                "schema": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                            },
+                            {
+                                "name": "cfg",
+                                "in": "cookie",
+                                "required": False,
+                                "schema": {"type": "object"},
+                            },
+                        ],
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                }
+            },
+        }
+        routes = parse_openapi_to_http_routes(spec)
+        return SchemaPath.from_dict(spec), routes[0]
+
+    def test_array_path_param_serializes_comma_joined(self):
+        spec_path, route = self._route()
+        director = RequestDirector(spec_path)
+        request = director.build(route, {"ids": ["a", "b", "c"]})
+        assert unquote(str(request.url)) == "http://localhost/items/a,b,c"
+
+    def test_array_and_object_cookie_params_serialize(self):
+        spec_path, route = self._route()
+        director = RequestDirector(spec_path)
+        request = director.build(
+            route,
+            {"ids": ["a"], "prefs": ["x", "y"], "cfg": {"theme": "dark"}},
+        )
+        cookie = request.headers["cookie"]
+        assert "prefs=x,y" in cookie
+        assert "cfg=theme,dark" in cookie
