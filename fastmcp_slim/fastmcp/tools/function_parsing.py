@@ -226,9 +226,10 @@ def _is_object_schema(
     root_schema = _root_schema or schema
     seen_refs = _seen_refs or set()
 
-    # Direct object type
-    if schema.get("type") == "object":
-        return True
+    # An explicit type takes precedence over properties, which only constrain
+    # objects and do not exclude other allowed types.
+    if "type" in schema:
+        return schema["type"] == "object"
 
     # Schema with properties but no explicit type is treated as object
     if "properties" in schema:

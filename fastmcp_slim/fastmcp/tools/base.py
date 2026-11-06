@@ -191,6 +191,40 @@ class ToolResult(BaseModel):
         return self.content, self.structured_content
 
 
+class RawStructuredToolResult(ToolResult):
+    """A proxied result whose structured value need not be an object."""
+
+    structured_content: Any = None
+
+    def __init__(
+        self,
+        content: list[ContentBlock],
+        structured_content: Any,
+        meta: dict[str, Any] | None = None,
+        is_error: bool = False,
+    ) -> None:
+        # The proxy already received wire-format content from the backend.
+        # ToolResult's constructor intentionally rejects non-object values for
+        # ordinary tools; the wire handler wraps these for legacy clients.
+        BaseModel.__init__(
+            self,
+            content=content,
+            structured_content=structured_content,
+            meta=meta,
+            is_error=is_error,
+        )
+
+    def to_mcp_result(self) -> CallToolResult:
+        # Serialize the current public fields so response middleware edits are
+        # reflected on the wire, including when it uses model_copy().
+        return CallToolResult(
+            content=self.content,
+            structured_content=self.structured_content,
+            is_error=self.is_error,
+            _meta=self.meta,  # type: ignore[call-arg]
+        )
+
+
 class InputRequiredToolResult(ToolResult):
     """The full result of a single multi-round-trip leg (SEP-2322).
 

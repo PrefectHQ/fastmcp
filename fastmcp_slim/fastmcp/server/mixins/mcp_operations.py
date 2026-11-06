@@ -36,7 +36,13 @@ from fastmcp.server.dependencies import (
     bind_request_context,
     extract_version_spec,
 )
-from fastmcp.tools.base import InputRequiredToolResult, ToolResult
+from fastmcp.server.providers.addressing import parse_hashed_backend_name
+from fastmcp.tools.base import (
+    InputRequiredToolResult,
+    RawStructuredToolResult,
+    ToolResult,
+)
+from fastmcp.tools.function_parsing import _is_object_schema
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -145,7 +151,39 @@ class MCPOperationsMixin:
             tools = dedupe_with_versions(
                 list(await self.list_tools()), lambda t: t.name
             )
-            sdk_tools = [tool.to_mcp_tool(name=tool.name) for tool in tools]
+            sdk_tools = []
+            for tool in tools:
+                output_schema = tool.output_schema
+                if (
+                    ctx.protocol_version not in MODERN_PROTOCOL_VERSIONS
+                    and output_schema is not None
+                ):
+                    if _is_object_schema(output_schema) and "type" not in output_schema:
+                        # An implicit object schema is valid JSON Schema, but
+                        # legacy MCP requires a literal object type at the root.
+                        output_schema = {"type": "object", **output_schema}
+                    elif not _is_object_schema(output_schema):
+                        output_schema = {
+                            "type": "object",
+                            "properties": {"result": output_schema},
+                            "required": ["result"],
+                            "x-fastmcp-wrap-result": True,
+                            # Local references inside the original schema still
+                            # resolve from the document root after wrapping.
+                            **(
+                                {"$defs": output_schema["$defs"]}
+                                if "$defs" in output_schema
+                                else {}
+                            ),
+                            **(
+                                {"definitions": output_schema["definitions"]}
+                                if "definitions" in output_schema
+                                else {}
+                            ),
+                        }
+                sdk_tools.append(
+                    tool.to_mcp_tool(name=tool.name, outputSchema=output_schema)
+                )
             cursor = params.cursor if params else None
             page, next_cursor = _apply_pagination(
                 sdk_tools, cursor, self._list_page_size
@@ -296,6 +334,40 @@ class MCPOperationsMixin:
                         ),
                     )
                 return result.input_required
+            if ctx.protocol_version not in MODERN_PROTOCOL_VERSIONS and (
+                result.structured_content is not None
+                or isinstance(result, RawStructuredToolResult)
+            ):
+                fastmcp_meta = result.meta.get("fastmcp") if result.meta else None
+                already_wrapped = (
+                    isinstance(fastmcp_meta, dict)
+                    and fastmcp_meta.get("wrap_result") is True
+                )
+                if not already_wrapped:
+                    needs_wrap = not isinstance(result.structured_content, dict)
+                    if not needs_wrap:
+                        tool = await self.get_tool(key, version=version)
+                        if tool is None:
+                            hashed = parse_hashed_backend_name(key)
+                            if hashed is not None:
+                                tool = await self.get_tool_by_hash(*hashed)
+                        needs_wrap = (
+                            tool is not None
+                            and tool.output_schema is not None
+                            and not _is_object_schema(tool.output_schema)
+                        )
+                    if needs_wrap:
+                        meta = dict(result.meta or {})
+                        meta["fastmcp"] = {
+                            **(fastmcp_meta if isinstance(fastmcp_meta, dict) else {}),
+                            "wrap_result": True,
+                        }
+                        result = ToolResult(
+                            content=result.content,
+                            structured_content={"result": result.structured_content},
+                            meta=meta,
+                            is_error=result.is_error,
+                        )
             return _normalize_call_tool_result(result.to_mcp_result())
 
     async def _on_read_resource(
