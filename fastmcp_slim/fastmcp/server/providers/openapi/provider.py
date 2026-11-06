@@ -113,8 +113,12 @@ class OpenAPIProvider(Provider):
         super().__init__()
 
         self._owns_client = client is None
+        self._default_client_base_url: str | None = None
         if client is None:
             client = self._create_default_client(openapi_spec)
+            # Remember the generated configuration so the client can be
+            # recreated after it is closed at the end of a lifespan.
+            self._default_client_base_url = str(client.base_url)
         elif _is_legacy_httpx_client(client):
             warnings.warn(
                 "Passing an httpx.AsyncClient to OpenAPIProvider is deprecated "
@@ -200,10 +204,37 @@ class OpenAPIProvider(Provider):
             base_url = base_url.replace(f"{{{name}}}", var.get("default", ""))
         return httpx2.AsyncClient(base_url=base_url, timeout=DEFAULT_TIMEOUT)
 
+    def _create_owned_client(self) -> httpx2.AsyncClient:
+        """Create a fresh default client with the provider's original config."""
+        if self._default_client_base_url is None:  # pragma: no cover - defensive
+            raise RuntimeError("Provider does not own an auto-created client")
+        return httpx2.AsyncClient(
+            base_url=self._default_client_base_url,
+            timeout=DEFAULT_TIMEOUT,
+        )
+
+    def _rebind_client(self, client: httpx2.AsyncClient) -> None:
+        """Point the provider and all pre-created components at ``client``."""
+        self._client = client
+        for tool in self._tools.values():
+            tool._client = client
+        for resource in self._resources.values():
+            resource._client = client
+        for template in self._templates.values():
+            template._client = client
+
     @asynccontextmanager
     async def lifespan(self) -> AsyncGenerator[None, None]:
-        """Manage the lifecycle of the auto-created httpx client."""
+        """Manage the lifecycle of the auto-created httpx client.
+
+        An owned client is closed at the end of each lifespan and cannot be
+        reopened, so a closed client is replaced with a fresh one configured
+        identically before it is entered again. A caller-supplied client is
+        never closed or replaced by the provider.
+        """
         if self._owns_client:
+            if self._client.is_closed:
+                self._rebind_client(self._create_owned_client())
             async with self._client:
                 yield
         else:
