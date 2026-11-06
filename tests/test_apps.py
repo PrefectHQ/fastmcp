@@ -6,6 +6,7 @@ extension negotiation, and the ``Context.client_supports_extension`` method.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -26,8 +27,15 @@ from fastmcp.apps import (
     ResourcePermissions,
     app_config_to_meta_dict,
 )
+from fastmcp.prompts.base import Prompt
+from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.context import Context
+from fastmcp.server.extensions import ServerExtension
 from fastmcp.server.low_level import client_supports_extension
+from fastmcp.server.providers import AggregateProvider, FastMCPProvider, Provider
+from fastmcp.server.providers.local_provider import LocalProvider
+from fastmcp.server.transforms import ToolTransform, Transform
+from fastmcp.tools.tool_transform import ToolTransformConfig
 
 # ---------------------------------------------------------------------------
 # Model serialization
@@ -402,7 +410,7 @@ class TestExtensionAdvertisement:
     async def test_capabilities_include_ui_extension(self):
         server = FastMCP("test")
 
-        @server.tool
+        @server.tool(app=AppConfig(resource_uri="ui://dashboard"))
         def my_tool() -> str:
             return "hello"
 
@@ -433,6 +441,229 @@ class TestExtensionAdvertisement:
 # ---------------------------------------------------------------------------
 # Context.client_supports_extension
 # ---------------------------------------------------------------------------
+
+
+class TestAppCapabilityGating:
+    """The UI extension is advertised only while the server can serve an app.
+
+    Every FastMCP server used to declare it, so a host that reads the
+    declaration could offer a UI affordance with no app behind it.
+    """
+
+    @staticmethod
+    def _computed_extensions(server: FastMCP) -> dict[str, Any]:
+        """Extensions the server computes, before the SDK's version sieve."""
+        capabilities = server._mcp_server.get_capabilities()
+        return dict(capabilities.extensions or {})
+
+    def test_plain_server_does_not_advertise(self):
+        server = FastMCP("test")
+
+        @server.tool
+        def my_tool() -> str:
+            return "hello"
+
+        assert UI_EXTENSION_ID not in self._computed_extensions(server)
+
+    def test_app_tool_advertises(self):
+        server = FastMCP("test")
+
+        @server.tool(app=AppConfig(resource_uri="ui://dashboard"))
+        def dashboard() -> str:
+            return "data"
+
+        assert UI_EXTENSION_ID in self._computed_extensions(server)
+
+    def test_ui_resource_advertises(self):
+        server = FastMCP("test")
+
+        @server.resource("ui://my-app/view.html")
+        def view() -> str:
+            return "<html></html>"
+
+        assert UI_EXTENSION_ID in self._computed_extensions(server)
+
+    def test_ui_resource_template_advertises(self):
+        server = FastMCP("test")
+
+        @server.resource("ui://my-app/{name}.html")
+        def view(name: str) -> str:
+            return f"<html>{name}</html>"
+
+        assert UI_EXTENSION_ID in self._computed_extensions(server)
+
+    def test_ui_resource_with_other_mime_type_advertises(self):
+        """The scheme marks the app, not the MIME type.
+
+        An app ships more than its HTML entry point — a stylesheet served from
+        ``ui://`` is explicitly ``text/css``, and the server still has an app.
+        """
+        server = FastMCP("test")
+
+        @server.resource("ui://my-app/view.css", mime_type="text/css")
+        def stylesheet() -> str:
+            return "body {}"
+
+        assert UI_EXTENSION_ID in self._computed_extensions(server)
+
+    def test_mounted_app_advertises(self):
+        parent = FastMCP("parent")
+
+        @parent.tool
+        def plain() -> str:
+            return "x"
+
+        child = FastMCP("child")
+
+        @child.tool(app=AppConfig(resource_uri="ui://child/app"))
+        def child_app() -> str:
+            return "y"
+
+        parent.mount(child)
+
+        assert UI_EXTENSION_ID in self._computed_extensions(parent)
+
+    def test_mounted_plain_child_does_not_advertise(self):
+        parent = FastMCP("parent")
+        child = FastMCP("child")
+
+        @child.tool
+        def plain() -> str:
+            return "x"
+
+        parent.mount(child)
+
+        assert UI_EXTENSION_ID not in self._computed_extensions(parent)
+
+    def test_unenumerable_provider_stays_conservative(self):
+        """A provider whose components we can't enumerate keeps the promise.
+
+        Suppressing the declaration for a proxy, or for a third-party provider,
+        could hide an app that does exist — worse than a spurious promise.
+        """
+
+        class OpaqueProvider(Provider):
+            pass
+
+        server = FastMCP("test")
+        server.add_provider(OpaqueProvider())
+
+        assert UI_EXTENSION_ID in self._computed_extensions(server)
+
+    def test_registered_extension_does_not_imply_apps(self):
+        """An unrelated extension advertises itself without dragging UI along."""
+
+        class Other(ServerExtension):
+            identifier = "com.example/other"
+
+            def settings(self) -> dict[str, Any]:
+                return {"version": "1"}
+
+        server = FastMCP("test")
+        server.add_extension(Other())
+
+        extensions = self._computed_extensions(server)
+        assert extensions["com.example/other"] == {"version": "1"}
+        assert UI_EXTENSION_ID not in extensions
+
+    async def test_modern_client_sees_no_ui_extension_without_apps(self):
+        """The reporter's observation, on the era that carries extensions."""
+        server = FastMCP("test")
+
+        @server.tool
+        def my_tool() -> str:
+            return "hello"
+
+        async with Client(server, mode="auto") as client:
+            extensions = client.server_capabilities.extensions or {}
+            assert UI_EXTENSION_ID not in extensions
+
+    @pytest.mark.parametrize(
+        "scope", ["server", "local", "wrapped", "aggregate", "fastmcp"]
+    )
+    async def test_tool_transform_apps_advertised(self, scope: str):
+        server = FastMCP("test")
+        local = LocalProvider()
+
+        @local.tool
+        def plain() -> str:
+            return "hello"
+
+        transform = ToolTransform(
+            {"plain": ToolTransformConfig(meta={"ui": {"resourceUri": "ui://app"}})}
+        )
+        if scope == "server":
+            server.add_provider(local)
+            server.add_transform(transform)
+        else:
+            provider: Provider = local
+            if scope == "aggregate":
+                provider = AggregateProvider([local])
+            elif scope == "fastmcp":
+                child = FastMCP("child")
+                child.add_provider(local)
+                provider = FastMCPProvider(child)
+            if scope == "wrapped":
+                provider = provider.wrap_transform(transform)
+            else:
+                provider.add_transform(transform)
+            server.add_provider(provider)
+
+        async with Client(server, mode="auto") as client:
+            tools = await client.list_tools()
+            assert len(tools) == 1
+            assert tools[0].meta is not None
+            assert tools[0].meta["ui"]["resourceUri"] == "ui://app"
+            assert UI_EXTENSION_ID in (client.server_capabilities.extensions or {})
+
+    async def test_custom_transform_non_tool_apps_advertised(self):
+        class AddAppMetadata(Transform):
+            async def list_resources(
+                self, resources: Sequence[Resource]
+            ) -> Sequence[Resource]:
+                return [
+                    r.model_copy(update={"meta": {"ui": {"prefersBorder": True}}})
+                    for r in resources
+                ]
+
+            async def list_resource_templates(
+                self, templates: Sequence[ResourceTemplate]
+            ) -> Sequence[ResourceTemplate]:
+                return [
+                    t.model_copy(update={"meta": {"ui": {"prefersBorder": True}}})
+                    for t in templates
+                ]
+
+            async def list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]:
+                return [
+                    p.model_copy(update={"meta": {"ui": {"resourceUri": "ui://app"}}})
+                    for p in prompts
+                ]
+
+        server = FastMCP("test")
+
+        @server.resource("data://plain")
+        def plain_resource() -> str:
+            return "hello"
+
+        @server.resource("data://plain/{name}")
+        def plain_template(name: str) -> str:
+            return name
+
+        @server.prompt
+        def plain_prompt() -> str:
+            return "hello"
+
+        server.add_transform(AddAppMetadata())
+        async with Client(server, mode="auto") as client:
+            resources = await client.list_resources()
+            templates = await client.list_resource_templates()
+            prompts = await client.list_prompts()
+            for components in (resources, templates, prompts):
+                assert len(components) == 1
+                assert components[0].meta is not None
+                assert "ui" in components[0].meta
+            assert UI_EXTENSION_ID in (client.server_capabilities.extensions or {})
 
 
 class TestContextClientSupportsExtension:
