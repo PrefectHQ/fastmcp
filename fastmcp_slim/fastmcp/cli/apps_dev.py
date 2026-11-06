@@ -1259,6 +1259,22 @@ async def _read_mcp_resource(mcp_url: str, uri: str) -> str | None:
 # app-bridge.js download, patch, and Zod import-map generation
 # ---------------------------------------------------------------------------
 
+_DEFAULT_NPM_REGISTRY = "https://registry.npmjs.org"
+
+
+def _npm_tarball_url(version: str) -> str:
+    """Return the ext-apps tarball URL, honoring ``npm_config_registry``."""
+    # npm itself sets and reads the lowercase name, so honor both spellings.
+    registry = (
+        os.environ.get("npm_config_registry")  # noqa: SIM112
+        or os.environ.get("NPM_CONFIG_REGISTRY")
+        or _DEFAULT_NPM_REGISTRY
+    )
+    return (
+        f"{registry.rstrip('/')}/@modelcontextprotocol/ext-apps/-/"
+        f"ext-apps-{version}.tgz"
+    )
+
 
 def _fetch_app_bridge_bundle_sync(
     version: str,
@@ -1348,7 +1364,8 @@ def _fetch_app_bridge_bundle_sync(
         app_bridge_js = app_bridge_cache.read_text(encoding="utf-8")
         return app_bridge_js, import_map_json
 
-    npm_url = f"https://registry.npmjs.org/@modelcontextprotocol/ext-apps/-/ext-apps-{version}.tgz"
+    npm_url = _npm_tarball_url(version)
+
     with httpx2.Client(timeout=30.0) as client:
         resp = client.get(npm_url, follow_redirects=True)
         resp.raise_for_status()

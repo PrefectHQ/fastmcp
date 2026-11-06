@@ -655,3 +655,56 @@ class TestSpawnedServer:
 
         env = spawn.call_args.kwargs["env"]
         assert env["FASTMCP_HTTP_HOST_ORIGIN_PROTECTION"] == "true"
+
+
+class TestNpmRegistry:
+    @pytest.fixture(autouse=True)
+    def _clear_registry_env(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("npm_config_registry", raising=False)
+        monkeypatch.delenv("NPM_CONFIG_REGISTRY", raising=False)
+
+    def test_default_registry_is_public_npm(self):
+        url = apps_dev._npm_tarball_url("1.0.0")
+
+        assert url == (
+            "https://registry.npmjs.org/@modelcontextprotocol/ext-apps/-/"
+            "ext-apps-1.0.0.tgz"
+        )
+
+    def test_registry_can_be_overridden(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("npm_config_registry", "https://npm.example.com")
+
+        url = apps_dev._npm_tarball_url("1.0.0")
+
+        assert url.startswith("https://npm.example.com/@modelcontextprotocol/")
+
+    def test_uppercase_registry_is_honored(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("NPM_CONFIG_REGISTRY", "https://npm.example.com")
+
+        url = apps_dev._npm_tarball_url("1.0.0")
+
+        assert url.startswith("https://npm.example.com/@modelcontextprotocol/")
+
+    def test_empty_registry_falls_back_to_public_npm(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv("npm_config_registry", "")
+
+        url = apps_dev._npm_tarball_url("1.0.0")
+
+        assert url.startswith("https://registry.npmjs.org/@modelcontextprotocol/")
+
+    @pytest.mark.parametrize(
+        "registry",
+        ["https://npm.example.com/", "https://npm.example.com//"],
+        ids=["one_slash", "two_slashes"],
+    )
+    def test_trailing_slashes_are_ignored(
+        self, monkeypatch: pytest.MonkeyPatch, registry: str
+    ):
+        monkeypatch.setenv("npm_config_registry", registry)
+
+        url = apps_dev._npm_tarball_url("1.0.0")
+
+        assert url.startswith("https://npm.example.com/@modelcontextprotocol/")
+        assert "//@modelcontextprotocol" not in url
