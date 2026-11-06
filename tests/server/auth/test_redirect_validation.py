@@ -672,3 +672,53 @@ class TestRawStringNormalization:
         assert is_redirect_uri_allowed_for_application_type(
             "myapp://callback", "native"
         )
+
+
+class TestBackslashAuthorityRejects:
+    r"""A backslash in the raw authority must be rejected outright.
+
+    WHATWG parsing (pydantic's AnyUrl, and any browser reading a 302
+    Location) ends the authority at a backslash, so
+    ``https://trusted.example\@attacker.example/cb`` normalizes to host
+    ``trusted.example`` with ``@attacker.example/cb`` as the path and would
+    pass the pattern check. But the raw string is what callers emit:
+    ``RedirectResponse`` percent-encodes the backslash, and a browser then
+    reads ``trusted.example%5C`` as userinfo with host ``attacker.example``
+    -- outside the allowlisted origin. Both spellings were rejected by
+    the pre-normalization implementation; keep them rejected (#6295).
+    """
+
+    @pytest.mark.parametrize(
+        "uri,pattern",
+        [
+            (
+                "https://trusted.example\\@attacker.example/cb",
+                "https://trusted.example/*",
+            ),
+            ("http://localhost\\@attacker.example/cb", "http://localhost:*"),
+        ],
+    )
+    def test_backslash_authority_pattern_rejected(self, uri, pattern):
+        assert not matches_allowed_pattern(uri, pattern)
+
+    @pytest.mark.parametrize(
+        "uri,application_type",
+        [
+            ("http://localhost\\@attacker.example/cb", "native"),
+            ("https://trusted.example\\@attacker.example/cb", "web"),
+        ],
+    )
+    def test_backslash_authority_application_type_rejected(self, uri, application_type):
+        assert not is_redirect_uri_allowed_for_application_type(uri, application_type)
+
+    def test_legitimate_uris_still_allowed(self):
+        # No backslash in the authority: ordinary behavior is intact.
+        assert matches_allowed_pattern(
+            "https://trusted.example/cb", "https://trusted.example/*"
+        )
+        assert matches_allowed_pattern(
+            "http://localhost:3000/callback", "http://localhost:*"
+        )
+        assert is_redirect_uri_allowed_for_application_type(
+            "http://localhost:8123/callback", "native"
+        )

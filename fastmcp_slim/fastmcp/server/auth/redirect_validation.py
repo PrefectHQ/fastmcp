@@ -344,13 +344,14 @@ def matches_allowed_pattern(uri: str, pattern: str) -> bool:
     Returns:
         True if the URI matches the pattern
     """
-    # Capture the raw path before normalization: resolving dot-segments away
-    # (which AnyUrl normalization does) must not turn a rejected traversal
-    # spelling into a matching ordinary path.
+    # Capture the raw authority and path before normalization: resolving
+    # dot-segments away (which AnyUrl normalization does) must not turn a
+    # rejected traversal spelling into a matching ordinary path.
     try:
-        raw_path = urlparse(uri).path
+        raw_parsed = urlparse(uri)
     except ValueError:
         return False
+    raw_path = raw_parsed.path
 
     uri = _normalize_redirect_uri(uri)
     try:
@@ -366,6 +367,19 @@ def matches_allowed_pattern(uri: str, pattern: str) -> bool:
     # This prevents bypass attacks like http://localhost@evil.com/callback
     # which would match http://localhost:* with naive fnmatch
     if uri_parsed.username is not None or uri_parsed.password is not None:
+        return False
+
+    # SECURITY: Reject URIs whose raw authority contains a backslash.
+    # WHATWG URL parsing (which pydantic's AnyUrl applies above) ends the
+    # authority at `\`, so `https://trusted.example\@attacker.example/cb`
+    # normalizes to host `trusted.example` with `@attacker.example/cb` as
+    # the path -- the userinfo check no longer sees an `@`. But the raw
+    # string round-trips through callers that do not apply WHATWG rules:
+    # `RedirectResponse` percent-encodes the backslash, and a browser then
+    # reads `trusted.example%5C` as userinfo with host `attacker.example`,
+    # leaving the allowlisted origin entirely. `\` is a forbidden host code
+    # point, so no legitimate redirect URI carries one in its authority.
+    if "\\" in raw_parsed.netloc:
         return False
 
     # SECURITY: Reject URIs with dot-segments in the path.
@@ -438,6 +452,17 @@ def is_redirect_uri_allowed_for_application_type(
     registered-client record carries when the field was never set — is treated
     the same way.
     """
+    # SECURITY: Reject URIs whose raw authority contains a backslash (same
+    # WHATWG-raw divergence as matches_allowed_pattern):
+    # `http://localhost\@attacker.example/cb` normalizes to a loopback host
+    # and passes the native-client check, but `RedirectResponse` percent-
+    # encodes the backslash and a browser then reads host `attacker.example`.
+    try:
+        if "\\" in urlparse(str(redirect_uri)).netloc:
+            return False
+    except ValueError:
+        return False
+
     uri_str = _normalize_redirect_uri(redirect_uri)
 
     if _is_unsafe_redirect_uri(uri_str):
