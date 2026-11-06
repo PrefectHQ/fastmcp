@@ -1343,8 +1343,9 @@ class Client(
         Mirrors the SDK Client's list caching while also supporting cacheable
         extension methods whose request parameters form part of the cache key.
         Cursor pages skip the cache and evict a listing on an expired-cursor
-        `INVALID_PARAMS`. The cache is inert on legacy connections because the SDK
-        cache reads no TTL/scope hints below the modern era.
+        `INVALID_PARAMS`. The cache is inert on legacy connections: the SDK gates
+        server TTL/scope hints on the modern era, but its configured
+        `default_ttl_ms` fallback would otherwise still cache below that era.
 
         `absorb` (tools/list only) re-applies the session's derived per-tool state to a
         served cache hit, since a hit skips `session.list_tools`.
@@ -1353,7 +1354,11 @@ class Client(
         if cache is None or cache_mode == "bypass":
             return await send()
         # A closed (or never-entered) client must raise, never serve cached entries.
-        _ = self.session
+        session = self.session
+        # Modern-only: a legacy connection must neither serve nor store a listing,
+        # even when `CacheConfig.default_ttl_ms` is positive.
+        if session.protocol_version not in MODERN_PROTOCOL_VERSIONS:
+            return await send()
         if cursor is not None:
             # Continuation pages skip the cache; an expired cursor means the listing
             # changed, so evict (spec SHOULD) and re-raise.
