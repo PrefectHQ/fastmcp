@@ -533,6 +533,33 @@ class TestEdgeCases:
             assert isinstance(result.content[0], TextContent)
             assert result.content[0].text == "6"
 
+    async def test_client_error_omits_pydantic_details(self):
+        """The caller gets the failing arguments, not the library internals."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def echo(message: str) -> str:
+            return message
+
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "echo", {"message": 123, "extra": "x"}, raise_on_error=False
+            )
+
+        assert result.is_error
+        text = result.content[0].text
+        assert text.startswith("Invalid arguments for tool 'echo'")
+        assert "- message: Input should be a valid string" in text
+        assert "- extra: Unexpected keyword argument" in text
+        for leaked in (
+            "errors.pydantic.dev",
+            "call[",
+            "input_value",
+            "input_type",
+            "2 validation errors for",
+        ):
+            assert leaked not in text, leaked
+
 
 class TestExpectedToolFailureLogging:
     @pytest.mark.parametrize("mask_error_details", [False, True])
@@ -668,8 +695,15 @@ class TestExpectedToolFailureLogging:
                 )
 
         assert result.is_error
-        # The client still gets its detailed validation error.
-        assert "PRIVATE" in str(result.content)
+        # The client learns which argument failed and why, but the message no
+        # longer carries pydantic's version URL, the internal adapter name, or
+        # the submitted values.
+        client_message = str(result.content)
+        assert "Invalid arguments for tool 'submit'" in client_message
+        assert "errors.pydantic.dev" not in client_message
+        assert "input_value" not in client_message
+        assert "input_type" not in client_message
+        assert "call[" not in client_message
         records = [r for r in caplog.records if r.name == "fastmcp.server.server"]
         assert len(records) == 1
         assert "PRIVATE" not in records[0].getMessage()
