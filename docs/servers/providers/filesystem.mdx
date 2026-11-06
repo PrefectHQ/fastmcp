@@ -199,11 +199,11 @@ from fastmcp.server.providers import FileSystemProvider
 provider = FileSystemProvider(Path(__file__).parent / "components", reload=True)
 ```
 
-With `reload=True`, the provider:
+With `reload=True`, the provider re-discovers Python files on each request and imports files previously loaded by discovery into fresh module objects. The component registry then reflects the current source, including removed definitions.
 
-1. Re-discovers all Python files on each request
-2. Re-imports modules that have changed
-3. Updates the component registry with any new, modified, or removed components
+Discovery-owned files are refreshed together before imports begin, so direct sibling imports resolve against the current generation. A sibling imported during the scan is reused for the rest of that scan.
+
+Modules already imported by your application, including shared helpers under the provider root, retain their identity and state. Modules outside the discovered files and package initializers are also left in Python's module cache. References re-exported by these cached modules, such as imports through a package initializer, also remain unchanged. Restart your application to pick up changes to them.
 
 <Warning>
 Reload mode adds overhead to every request. Use it only during development, not in production.
