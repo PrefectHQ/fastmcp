@@ -44,6 +44,38 @@ def _is_simple_type(schema: dict[str, Any]) -> bool:
     return schema_type in _SIMPLE_TYPES
 
 
+# Flag annotations for `X | None` parameters. The token `null` sends an explicit
+# null, so integer and number flags accept it as well. `bool | None` is not
+# listed: it keeps taking JSON (`true`, `false` or `null`).
+_OPTIONAL_SCALAR_ANNOTATIONS = {
+    "string": "str",
+    "integer": 'int | Literal["null"]',
+    "number": 'float | Literal["null"]',
+}
+
+
+def _optional_scalar_type(schema: dict[str, Any]) -> str | None:
+    """Return `X` when the schema is pydantic's `anyOf` form of `X | None`.
+
+    `X` must be a single string, integer or number type, so a parameter such
+    as `str | None` takes a plain value. Other unions, such as `str | int` or
+    `bool | None`, still take JSON.
+    """
+    branches = schema.get("anyOf")
+    if "type" in schema or not isinstance(branches, list) or len(branches) != 2:
+        return None
+    types = [
+        branch.get("type") if isinstance(branch, dict) else None for branch in branches
+    ]
+    if types.count("null") != 1:
+        return None
+    types.remove("null")
+    scalar_type = types[0]
+    if isinstance(scalar_type, str) and scalar_type in _OPTIONAL_SCALAR_ANNOTATIONS:
+        return scalar_type
+    return None
+
+
 def _is_simple_array(schema: dict[str, Any]) -> tuple[bool, str | None]:
     """Check if schema is an array of simple types.
 
@@ -290,10 +322,16 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
     param_lines: list[str] = []
     call_args: list[str] = []
     json_params: list[tuple[str, str]] = []  # (prop_name, safe_name)
+    null_params: list[str] = []  # `X | None` flags that take the token `null`
     seen_names: dict[str, str] = {}  # safe_name -> original prop_name
 
     for prop_name, prop_schema in properties.items():
-        py_type, needs_json = _schema_to_python_type(prop_schema)
+        scalar_type = _optional_scalar_type(prop_schema)
+        if scalar_type is None:
+            py_type, needs_json = _schema_to_python_type(prop_schema)
+        else:
+            py_type, needs_json = _OPTIONAL_SCALAR_ANNOTATIONS[scalar_type], False
+            null_params.append(prop_name)
         help_text = prop_schema.get("description", "")
         is_required = prop_name in required
         safe_name = _to_python_identifier(prop_name)
@@ -381,6 +419,9 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
                 f"    if {prop_name!r} in {arguments_name} and isinstance({value}, str):"
             )
             lines.append(f"        {value} = json.loads({value})")
+        for prop_name in null_params:
+            lines.append(f"    if {arguments_name}.get({prop_name!r}) == 'null':")
+            lines.append(f"        {arguments_name}[{prop_name!r}] = None")
         lines.append(f"    await _call_tool({tool.name!r}, {arguments_name})")
     else:
         lines.append(f"    await _call_tool({tool.name!r}, {{}})")
@@ -425,7 +466,7 @@ def generate_cli_script(
     # --- Imports ---
     lines.append("import json")
     lines.append("import sys")
-    lines.append("from typing import Annotated")
+    lines.append("from typing import Annotated, Literal")
     lines.append("")
     lines.append("import cyclopts")
     lines.append("import mcp_types")
@@ -680,7 +721,13 @@ def _schema_type_label(prop_schema: dict[str, Any]) -> str:
 def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
     """Generate a SKILL.md section for a single tool."""
     schema = tool.input_schema
-    properties: dict[str, Any] = schema.get("properties", {})
+    properties: dict[str, Any] = {}
+    for name, prop_schema in schema.get("properties", {}).items():
+        scalar_type = _optional_scalar_type(prop_schema)
+        if scalar_type is not None:
+            # Document `X | None` like the equivalent `type` list.
+            prop_schema = {**prop_schema, "type": [scalar_type, "null"]}
+        properties[name] = prop_schema
     required = set(schema.get("required", []))
     param_flags = _resolve_tool_param_flags(properties)
 

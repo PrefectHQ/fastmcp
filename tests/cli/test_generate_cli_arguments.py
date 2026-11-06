@@ -8,7 +8,11 @@ import pytest
 from pydantic import Field
 
 from fastmcp import Client, FastMCP
-from fastmcp.cli.generate import generate_cli_script
+from fastmcp.cli.generate import (
+    _tool_function_source,
+    generate_cli_script,
+    generate_skill_content,
+)
 
 
 async def generated_cli(server: FastMCP) -> dict[str, Any]:
@@ -173,3 +177,237 @@ async def test_parameter_named_json_does_not_break_json_arguments() -> None:
     )
 
     assert received == [({"a": 1}, {"b": "2"})]
+
+
+async def test_optional_string_parameter_takes_plain_text() -> None:
+    server = FastMCP("Greeter")
+    received: list[tuple[str, str | None]] = []
+
+    @server.tool
+    def greet(name: str, greeting: str | None = None) -> None:
+        received.append((name, greeting))
+
+    namespace = await generated_cli(server)
+    await namespace["app"].run_async(
+        ["call-tool", "greet", "--name", "World", "--greeting", "Howdy"],
+        result_action="return_value",
+    )
+
+    assert received == [("World", "Howdy")]
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        ([], (None, None)),
+        (["--count", "3", "--labels", '{"a": 1}'], (3, {"a": 1})),
+    ],
+)
+async def test_optional_parameters_keep_their_types(
+    arguments: list[str],
+    expected: tuple[int | None, dict[str, int] | None],
+) -> None:
+    server = FastMCP("Options")
+    received: list[tuple[int | None, dict[str, int] | None]] = []
+
+    @server.tool
+    def configure(
+        count: int | None = None,
+        labels: dict[str, int] | None = None,
+    ) -> None:
+        received.append((count, labels))
+
+    namespace = await generated_cli(server)
+    await namespace["app"].run_async(
+        ["call-tool", "configure", *arguments], result_action="return_value"
+    )
+
+    assert received == [expected]
+    assert [type(value) for value in received[0]] == [type(value) for value in expected]
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        ([], True),
+        (["--loud", "true"], True),
+        (["--loud", "false"], False),
+        (["--loud", "null"], None),
+        (["--loud=null"], None),
+    ],
+)
+async def test_optional_boolean_parameter_takes_json(
+    arguments: list[str], expected: bool | None
+) -> None:
+    server = FastMCP("Options")
+    received: list[bool | None] = []
+
+    @server.tool
+    def configure(loud: bool | None = Field(default_factory=lambda: True)) -> None:
+        received.append(loud)
+
+    namespace = await generated_cli(server)
+    await namespace["app"].run_async(
+        ["call-tool", "configure", *arguments], result_action="return_value"
+    )
+
+    assert received == [expected]
+    assert type(received[0]) is type(expected)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        ([], ("Hello", 1, 0.5)),
+        (
+            ["--greeting", "Howdy", "--count", "5", "--ratio", "2.5"],
+            ("Howdy", 5, 2.5),
+        ),
+        (
+            ["--greeting", "null", "--count", "null", "--ratio", "null"],
+            (None, None, None),
+        ),
+    ],
+)
+async def test_optional_scalar_parameter_distinguishes_null_from_omission(
+    arguments: list[str],
+    expected: tuple[str | None, int | None, float | None],
+) -> None:
+    server = FastMCP("Options")
+    received: list[tuple[str | None, int | None, float | None]] = []
+
+    @server.tool
+    def configure(
+        greeting: str | None = Field(default_factory=lambda: "Hello"),
+        count: int | None = Field(default_factory=lambda: 1),
+        ratio: float | None = Field(default_factory=lambda: 0.5),
+    ) -> None:
+        received.append((greeting, count, ratio))
+
+    namespace = await generated_cli(server)
+    await namespace["app"].run_async(
+        ["call-tool", "configure", *arguments], result_action="return_value"
+    )
+
+    assert received == [expected]
+    assert [type(value) for value in received[0]] == [type(value) for value in expected]
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "value", "expected"),
+    [
+        ("str_or_int", "3", 3),
+        ("str_or_int", '"3"', "3"),
+        ("int_or_bool", "3", 3),
+        ("int_or_bool", "true", True),
+    ],
+)
+async def test_other_unions_take_json_values(
+    tool_name: str, value: str, expected: str | int | bool
+) -> None:
+    server = FastMCP("Unions")
+    received: list[str | int | bool] = []
+
+    @server.tool
+    def str_or_int(value: str | int) -> None:
+        received.append(value)
+
+    @server.tool
+    def int_or_bool(value: int | bool) -> None:
+        received.append(value)
+
+    namespace = await generated_cli(server)
+    await namespace["app"].run_async(
+        ["call-tool", tool_name, "--value", value], result_action="return_value"
+    )
+
+    assert received == [expected]
+    assert type(received[0]) is type(expected)
+
+
+@pytest.mark.parametrize(
+    ("value_schema", "annotation"),
+    [
+        ({"anyOf": [{"type": "string"}, {"type": "null"}]}, "str | None"),
+        (
+            {"anyOf": [{"type": "null"}, {"type": "integer", "minimum": 0}]},
+            'int | Literal["null"] | None',
+        ),
+        (
+            {"anyOf": [{"type": "number"}, {"type": "null"}]},
+            'float | Literal["null"] | None',
+        ),
+    ],
+)
+def test_optional_scalar_any_of_parameter_is_a_typed_flag(
+    value_schema: dict[str, Any], annotation: str
+) -> None:
+    tool = mcp_types.Tool(
+        name="set",
+        input_schema={"properties": {"value": {**value_schema, "default": None}}},
+    )
+    source = _tool_function_source(tool)
+
+    assert f"value: Annotated[{annotation}, cyclopts.Parameter(" in source
+    assert "JSON Schema" not in source
+    assert "json.loads" not in source
+    compile(source, "<test>", "exec")
+
+
+@pytest.mark.parametrize(
+    "value_schema",
+    [
+        {"anyOf": [{"type": "object"}, {"type": "null"}]},
+        {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
+        {"anyOf": [True, {"type": "string"}]},
+        {"anyOf": [{"type": "string"}, {"type": "integer"}]},
+        {"anyOf": [{"type": "integer"}, {"type": "boolean"}]},
+        {"anyOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]},
+    ],
+)
+def test_other_any_of_unions_are_parsed_as_json(
+    value_schema: dict[str, Any],
+) -> None:
+    tool = mcp_types.Tool(
+        name="set",
+        input_schema={"properties": {"value": value_schema}, "required": ["value"]},
+    )
+    source = _tool_function_source(tool)
+
+    assert "_arguments['value'] = json.loads(_arguments['value'])" in source
+    compile(source, "<test>", "exec")
+
+
+def test_skill_documents_optional_scalars_as_flags_and_other_unions_as_json() -> None:
+    tool = mcp_types.Tool(
+        name="greet",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "greeting": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                },
+                "loud": {
+                    "anyOf": [{"type": "boolean"}, {"type": "null"}],
+                    "default": None,
+                },
+                "value": {
+                    "anyOf": [
+                        {"type": "string"},
+                        {"type": "integer"},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                },
+            },
+        },
+    )
+    content = generate_skill_content("test", "cli.py", [tool])
+
+    assert (
+        "call-tool greet --greeting <value> --loud <value> --value <value>" in content
+    )
+    assert "| `--greeting` | string \\| null | no |  |" in content
+    assert "| `--loud` | string | no | JSON string |" in content
+    assert "| `--value` | string | no | JSON string |" in content
