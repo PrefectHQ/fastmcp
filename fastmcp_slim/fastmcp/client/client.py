@@ -517,9 +517,9 @@ class Client(
         self.auto_initialize = auto_initialize
 
         # Client-side response cache (SEP-2549). Only honored at modern protocol
-        # versions (the SDK ClientResponseCache gates hint-reading on the negotiated
-        # era), so it is inert for legacy connections. `cache=False` disables it.
-        # Retained so `new()` can rebuild an independent cache per clone.
+        # versions (`_cached_fetch` gates the fetch path on the negotiated era), so
+        # it is inert for legacy connections. `cache=False` disables it. Retained so
+        # `new()` can rebuild an independent cache per clone.
         self._cache_arg: CacheConfig | bool | None = cache
         self._response_cache: ClientResponseCache | None = self._build_response_cache(
             cache
@@ -1343,8 +1343,9 @@ class Client(
         Mirrors the SDK Client's list caching while also supporting cacheable
         extension methods whose request parameters form part of the cache key.
         Cursor pages skip the cache and evict a listing on an expired-cursor
-        `INVALID_PARAMS`. The cache is inert on legacy connections because the SDK
-        cache reads no TTL/scope hints below the modern era.
+        `INVALID_PARAMS`. The cache is inert on legacy connections: the SDK applies
+        `CacheConfig.default_ttl_ms` even below the modern era, so we gate the whole
+        fetch path on the negotiated version rather than relying on hint-reading.
 
         `absorb` (tools/list only) re-applies the session's derived per-tool state to a
         served cache hit, since a hit skips `session.list_tools`.
@@ -1354,6 +1355,10 @@ class Client(
             return await send()
         # A closed (or never-entered) client must raise, never serve cached entries.
         _ = self.session
+        # The cache is inert below the modern era even though `default_ttl_ms` would
+        # otherwise store results there.
+        if self.protocol_version not in MODERN_PROTOCOL_VERSIONS:
+            return await send()
         if cursor is not None:
             # Continuation pages skip the cache; an expired cursor means the listing
             # changed, so evict (spec SHOULD) and re-raise.
