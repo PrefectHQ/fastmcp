@@ -733,7 +733,8 @@ class Context:
 
         # Get session from request context or _session (for on_initialize)
         request_ctx = self.request_context
-        if request_ctx is not None:
+        # _detached_request_context binds a request context with no session
+        if request_ctx is not None and request_ctx.session is not None:
             session = request_ctx.session
         elif self._session is not None:
             session = self._session
