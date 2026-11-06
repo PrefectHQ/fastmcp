@@ -366,6 +366,30 @@ def described_envelope_discriminator_spec() -> dict[str, Any]:
     return spec
 
 
+def variant_nested_discriminator_spec(body_ref: str = "PetEnvelope") -> dict[str, Any]:
+    """A variant adds a reference to a second discriminated schema."""
+    spec = envelope_discriminator_spec()
+    schemas = spec["components"]["schemas"]
+    schemas["Cat"]["allOf"][1]["properties"]["toy"] = {
+        "$ref": "#/components/schemas/Toy"
+    }
+    schemas["Toy"] = {
+        "type": "object",
+        "properties": {"kind": {"type": "string"}},
+        "required": ["kind"],
+        "discriminator": {"propertyName": "kind", "mapping": {"ball": "Ball"}},
+    }
+    schemas["Ball"] = {
+        "allOf": [
+            {"$ref": "#/components/schemas/Toy"},
+            {"type": "object", "properties": {"radius": {"type": "number"}}},
+        ]
+    }
+    body = spec["paths"]["/pets"]["post"]["requestBody"]["content"]
+    body["application/json"]["schema"] = {"$ref": f"#/components/schemas/{body_ref}"}
+    return spec
+
+
 class TestNestedDiscriminatorRequestBodies:
     """A discriminated schema below the top level flattens like the body itself."""
 
@@ -493,3 +517,13 @@ class TestNestedDiscriminatorRequestBodies:
         assert pet["description"] == "The pet to create"
         assert pet["maxProperties"] == 4
         assert pet["properties"].keys() >= {"petType", "meowVolume", "packSize"}
+
+    async def test_variant_added_references_are_flattened(self):
+        """A reference a variant introduces expands like the body-level control."""
+        nested = await tool_schema(variant_nested_discriminator_spec())
+        direct = await tool_schema(variant_nested_discriminator_spec("Pet"))
+
+        for parent in (nested["properties"]["pet"], direct):
+            toy = parent["properties"]["toy"]
+            assert toy["properties"].keys() >= {"kind", "radius"}
+            assert "discriminator" not in toy

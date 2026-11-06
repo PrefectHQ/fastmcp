@@ -653,6 +653,14 @@ def _resolve_and_flatten(
 
     flattened = _flatten_discriminator_subtypes(schema, schema_defs)
     if flattened is not None:
+        # Variant fields only exist after the expansion above, so they are
+        # walked separately: a variant that adds a reference to another
+        # discriminated schema would otherwise be emitted unflattened.
+        introduced = {
+            name: value
+            for name, value in flattened.items()
+            if name not in (schema.get("properties") or {})
+        }
         schema["properties"] = flattened
         schema.pop("discriminator", None)
         required = _merge_required(schema, schema_defs)
@@ -660,6 +668,12 @@ def _resolve_and_flatten(
             schema["required"] = required
         else:
             schema.pop("required", None)
+        for name, property_schema in introduced.items():
+            child, child_changed = _resolve_and_flatten(
+                property_schema, schema_defs, path
+            )
+            if child_changed:
+                flattened[name] = child
         changed = True
     return schema, changed
 
