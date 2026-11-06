@@ -21,6 +21,11 @@ from fastmcp import Client, FastMCP
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import Audio, File, Image
+from tests.tools.tool._pep563_none_fixture import (
+    do_nothing,
+    do_nothing_async,
+    give_int,
+)
 
 
 class TestToolFromFunctionOutputSchema:
@@ -39,6 +44,7 @@ class TestToolFromFunctionOutputSchema:
             bool,
             str,
             int | float,
+            int | None,
             list[int],
             list[int | float],
             dict,
@@ -105,19 +111,9 @@ class TestToolFromFunctionOutputSchema:
         tool = Tool.from_function(func)
         assert tool.output_schema is None
 
-    async def test_none_return_annotation_under_pep563(self):
-        """``-> None`` must not generate an outputSchema under PEP 563.
-
-        The fixture module carries ``from __future__ import annotations``, so
-        its return annotation is the string ``"None"``; ``get_type_hints``
-        resolves that to the ``NoneType`` *class* (``type(None)``). The exclusion
-        guard in ``function_parsing.from_function`` must match both the singleton
-        and the class, otherwise the tool advertises a ``{"result": null}``
-        outputSchema and wraps structured content as ``{"result": null}``.
-        """
-        from tests.tools.tool._pep563_none_fixture import do_nothing
-
-        tool = Tool.from_function(do_nothing)
+    @pytest.mark.parametrize("func", [do_nothing, do_nothing_async])
+    async def test_none_return_annotation_under_pep563(self, func):
+        tool = Tool.from_function(func)
         assert tool.output_schema is None
 
         result = await tool.run({})
@@ -125,31 +121,21 @@ class TestToolFromFunctionOutputSchema:
         assert result.content == []
 
     async def test_none_return_annotation_under_pep563_via_client(self):
-        """End-to-end: a real PEP 563 ``-> None`` tool must not advertise outputSchema."""
-        from tests.tools.tool._pep563_none_fixture import do_nothing
-
         mcp = FastMCP("pep563-none")
         mcp.add_tool(do_nothing)
+        mcp.add_tool(give_int)
 
         async with Client(mcp) as c:
             tools = await c.list_tools()
             by_name = {t.name: t for t in tools}
-            assert by_name["do_nothing"].outputSchema is None
+            assert by_name["do_nothing"].output_schema is None
 
             result = await c.call_tool("do_nothing", {})
             assert result.structured_content is None
             assert result.content == []
-
-    async def test_none_return_annotation_under_pep563_async(self):
-        """Async ``-> None`` fixture under PEP 563 must also suppress outputSchema."""
-        from tests.tools.tool._pep563_none_fixture import do_nothing_async
-
-        tool = Tool.from_function(do_nothing_async)
-        assert tool.output_schema is None
-
-        result = await tool.run({})
-        assert result.structured_content is None
-        assert result.content == []
+            assert by_name["give_int"].output_schema is not None
+            typed_result = await c.call_tool("give_int", {})
+            assert typed_result.structured_content == {"result": 42}
 
     async def test_any_return_annotation(self):
         from typing import Any
