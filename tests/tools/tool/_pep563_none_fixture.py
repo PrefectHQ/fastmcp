@@ -6,12 +6,18 @@ strings, so ``get_type_hints`` resolves ``-> None`` to the ``NoneType`` class.
 
 from __future__ import annotations
 
+from mcp_types import InputRequiredResult
+
 
 def do_nothing() -> None:
     return None
 
 
 async def do_nothing_async() -> None:
+    return None
+
+
+async def do_nothing_guarded_async() -> InputRequiredResult | None:
     return None
 
 

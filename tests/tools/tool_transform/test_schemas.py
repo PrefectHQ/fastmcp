@@ -4,7 +4,7 @@ from typing import Annotated, Any
 import pytest
 from dirty_equals import IsList
 from inline_snapshot import snapshot
-from mcp_types import TextContent
+from mcp_types import InputRequiredResult, TextContent
 from pydantic import BaseModel, Field, TypeAdapter
 
 from fastmcp import Client, FastMCP
@@ -18,11 +18,16 @@ from fastmcp.tools.tool_transform import (
 from tests.tools.tool._pep563_none_fixture import (
     do_nothing,
     do_nothing_async,
+    do_nothing_guarded_async,
     give_int,
 )
 
 
 def do_nothing_without_future() -> None:
+    return None
+
+
+def do_nothing_guarded_without_future() -> InputRequiredResult | None:
     return None
 
 
@@ -251,7 +256,14 @@ class TestTransformToolOutputSchema:
         assert new_tool.output_schema == base_string_tool.output_schema
 
     @pytest.mark.parametrize(
-        "func", [do_nothing, do_nothing_async, do_nothing_without_future]
+        "func",
+        [
+            do_nothing,
+            do_nothing_async,
+            do_nothing_without_future,
+            do_nothing_guarded_async,
+            do_nothing_guarded_without_future,
+        ],
     )
     async def test_none_transform_does_not_inherit_schema(
         self, func: Callable[..., Any]
@@ -261,9 +273,9 @@ class TestTransformToolOutputSchema:
         server.add_tool(transformed)
 
         async with Client(server) as client:
+            result = await client.call_tool("discard", {})
             tools = await client.list_tools()
             assert tools[0].output_schema is None
-            result = await client.call_tool("discard", {})
             assert result.content == []
             assert result.structured_content is None
 
@@ -292,7 +304,10 @@ class TestTransformToolOutputSchema:
             result = await client.call_tool("forward_int", {})
             assert result.structured_content == {"result": 42}
 
-    async def test_none_transform_explicit_schema_takes_precedence(self) -> None:
+    @pytest.mark.parametrize("func", [do_nothing_async, do_nothing_guarded_async])
+    async def test_none_transform_explicit_schema_takes_precedence(
+        self, func: Callable[..., Any]
+    ) -> None:
         schema = {
             "type": "object",
             "properties": {"result": {"type": "null"}},
@@ -302,7 +317,7 @@ class TestTransformToolOutputSchema:
         transformed = Tool.from_tool(
             give_int,
             name="explicit_null",
-            transform_fn=do_nothing_async,
+            transform_fn=func,
             output_schema=schema,
         )
         server = FastMCP("explicit-transform")
