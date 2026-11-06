@@ -80,7 +80,7 @@ exclude-newer = "1 week"
 # MCP SDK, where a new major is the only version satisfying our floor and so
 # has nothing older to fall back to, and uncalled-for, the DI engine whose
 # releases we adopt deliberately. Monty 1.1.0 supplies Python 3.15 wheels.
-exclude-newer-package = { fastmcp = false, fastmcp-slim = false, fastmcp-remote = false, prefab-ui = false, mcp = false, mcp-types = false, uncalled-for = false, pydocket = false, pydantic-monty = false, pydantic-monty-client = false, pydantic-monty-runtime = false }
+exclude-newer-package = { certifi = false, fastmcp = false, fastmcp-slim = false, fastmcp-remote = false, prefab-ui = false, mcp = false, mcp-types = false, uncalled-for = false, pydocket = false, pydantic-monty = false, pydantic-monty-client = false, pydantic-monty-runtime = false }
 
 [dependency-groups]
 dev = [
@@ -105,7 +105,7 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6.1",
     "ruff>=0.12.8",
-    "ty>=0.0.69",
+    "ty>=0.0.89",
     "prek>=0.2.12",
     "loq>=0.1.0a3",
     "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",

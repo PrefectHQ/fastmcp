@@ -67,6 +67,7 @@ from time import monotonic
 from typing import Any
 
 from fastmcp.apps.app import FastMCPApp
+from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context
 
 _TEXT_EXTENSIONS = frozenset(
@@ -118,12 +119,15 @@ class FileUpload(FastMCPApp):
     the current ``Context``, giving access to session ID, auth tokens,
     and request metadata for partitioning and authorization.
 
-    **Session scoping:** The default storage uses ``ctx.session_id`` to
-    isolate files by session. This works with stdio, SSE, and stateful
-    HTTP transports. In **stateless HTTP** mode, each request creates a
-    new session, so files won't persist across requests. For stateless
-    deployments, override the storage methods to partition by a stable
-    identifier from the auth context::
+    **Session scoping:** The default storage isolates files by MCP session
+    on handshake-era connections. MCP 2026-07-28 connections have no
+    session, so files are scoped to the authenticated user instead, or
+    shared by the server process on stdio. Unauthenticated 2026-07-28 HTTP
+    requests carry no client identity, so the default storage rejects them.
+    In **stateless HTTP** mode, each request creates a new session, so
+    files won't persist across requests. For stateless deployments,
+    override the storage methods to partition by a stable identifier from
+    the auth context::
 
         class UserScopedUpload(FileUpload):
             def on_store(self, files, ctx):
@@ -184,9 +188,13 @@ class FileUpload(FastMCPApp):
     def _get_scope_key(self, ctx: Context) -> str:
         """Return the key used to partition file storage.
 
-        Defaults to ``ctx.session_id``, which is stable for stdio, SSE,
-        and stateful HTTP. The default ``on_store``/``on_list``/``on_read``
-        implementations call this to partition the in-memory store.
+        Defaults to the MCP session on handshake-era connections. A 2026-07-28
+        connection has no session, so files are scoped to the authenticated
+        user, or shared by the server process on stdio, which serves a single
+        client. An unauthenticated 2026-07-28 HTTP request has nothing to scope
+        files to and raises a `ToolError`. The default
+        ``on_store``/``on_list``/``on_read`` implementations call this to
+        partition the in-memory store.
 
         Override to scope by user, tenant, or any other dimension::
 
@@ -194,9 +202,17 @@ class FileUpload(FastMCPApp):
                 return ctx.access_token["sub"]
         """
         try:
-            return ctx.session_id
+            scope = ctx._session_scope_key()
         except RuntimeError:
             return "__default__"
+        if scope is None:
+            raise ToolError(
+                "File uploads are scoped to a client, and this unauthenticated "
+                "request carries no client identity: MCP 2026-07-28 HTTP "
+                "connections have no session. Add authentication to the server, "
+                "or override FileUpload._get_scope_key."
+            )
+        return scope
 
     def _prune_expired(self, now: float) -> None:
         """Remove expired files while holding the default storage lock."""

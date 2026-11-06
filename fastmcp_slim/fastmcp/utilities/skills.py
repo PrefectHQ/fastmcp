@@ -1,17 +1,33 @@
-"""Client utilities for discovering and downloading skills from MCP servers."""
+"""Client helpers for skills served as `skill://` resources.
+
+Deprecated since 4.2 and removed in 4.3. Use the `Client` skills methods:
+`list_skills()`, `get_skill()` and `read_skill()`, then `Skill.to_directory()`.
+"""
 
 from __future__ import annotations
 
 import base64
 import json
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import mcp_types
 
+from fastmcp._warnings import FastMCPDeprecationWarning
+
 if TYPE_CHECKING:
     from fastmcp.client import Client
+
+
+def _deprecated(name: str, replacement: str) -> None:
+    warnings.warn(
+        f"`fastmcp.utilities.skills.{name}` is deprecated and will be removed in "
+        f"FastMCP 4.3. {replacement}",
+        FastMCPDeprecationWarning,
+        stacklevel=3,
+    )
 
 
 @dataclass
@@ -63,6 +79,15 @@ async def list_skills(client: Client) -> list[SkillSummary]:
                 print(f"{skill.name}: {skill.description}")
         ```
     """
+    _deprecated(
+        "list_skills",
+        "Use `await client.list_skill_resources()`, or `await client.list_skills()` "
+        "for servers with the Skills extension.",
+    )
+    return await _list_skills(client)
+
+
+async def _list_skills(client: Client) -> list[SkillSummary]:
     resources = await client.list_resources()
     skills = []
 
@@ -97,6 +122,17 @@ async def get_skill_manifest(client: Client, skill_name: str) -> SkillManifest:
     Raises:
         ValueError: If manifest cannot be read or parsed
     """
+    _deprecated(
+        "get_skill_manifest",
+        "Use `await client.read_resource('skill://<name>/_manifest')` to read "
+        "manifest JSON without the Skills extension, or "
+        "`await client.get_skill('skill://<name>/SKILL.md')` for "
+        "Skills-extension entries with file digests and sizes.",
+    )
+    return await _get_skill_manifest(client, skill_name)
+
+
+async def _get_skill_manifest(client: Client, skill_name: str) -> SkillManifest:
     manifest_uri = f"skill://{skill_name}/_manifest"
     result = await client.read_resource(manifest_uri)
 
@@ -163,6 +199,17 @@ async def download_skill(
             print(f"Downloaded to: {skill_path}")
         ```
     """
+    _deprecated(
+        "download_skill",
+        "Use `(await client.read_skill('skill://<name>/SKILL.md'))"
+        ".to_directory(target_dir / '<name>')`.",
+    )
+    return await _download_skill(client, skill_name, target_dir, overwrite=overwrite)
+
+
+async def _download_skill(
+    client: Client, skill_name: str, target_dir: str | Path, *, overwrite: bool
+) -> Path:
     target_dir = Path(target_dir).expanduser().resolve()
     skill_dir = (target_dir / skill_name).resolve()
 
@@ -178,7 +225,7 @@ async def download_skill(
         )
 
     # Get manifest to know what files to download
-    manifest = await get_skill_manifest(client, skill_name)
+    manifest = await _get_skill_manifest(client, skill_name)
 
     # Create skill directory
     skill_dir.mkdir(parents=True, exist_ok=True)
@@ -205,7 +252,8 @@ async def download_skill(
 
         # Write content
         if isinstance(content, mcp_types.TextResourceContents):
-            file_path.write_text(content.text, encoding="utf-8")
+            # newline="" writes the served text as is, without CRLF translation.
+            file_path.write_text(content.text, encoding="utf-8", newline="")
         elif isinstance(content, mcp_types.BlobResourceContents):
             file_path.write_bytes(base64.b64decode(content.blob))
         else:
@@ -241,12 +289,17 @@ async def sync_skills(
             print(f"Downloaded {len(paths)} skills")
         ```
     """
-    skills = await list_skills(client)
+    _deprecated(
+        "sync_skills",
+        "Loop over `await client.list_skill_resources()` and call "
+        "`(await client.read_skill(str(resource.uri))).to_directory(target_dir / name)`.",
+    )
+    skills = await _list_skills(client)
     downloaded = []
 
     for skill in skills:
         try:
-            path = await download_skill(
+            path = await _download_skill(
                 client, skill.name, target_dir, overwrite=overwrite
             )
             downloaded.append(path)

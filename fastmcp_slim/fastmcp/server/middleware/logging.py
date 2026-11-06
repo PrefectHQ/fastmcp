@@ -126,7 +126,7 @@ class BaseLoggingMiddleware(Middleware):
     ) -> Any:
         """Log messages for configured methods."""
 
-        if self.methods and context.method not in self.methods:
+        if self.methods is not None and context.method not in self.methods:
             return await call_next(context)
 
         self._log_message(self._create_before_message(context))
@@ -194,7 +194,7 @@ class LoggingMiddleware(BaseLoggingMiddleware):
         self.include_payloads: bool = include_payloads
         self.include_payload_length: bool = include_payload_length
         self.estimate_payload_tokens: bool = estimate_payload_tokens
-        self.max_payload_length: int = max_payload_length
+        self.max_payload_length: int | None = max_payload_length
         self.methods: list[str] | None = methods
         self.payload_serializer: Callable[[Any], str] | None = payload_serializer
         self.structured_logging: bool = False
