@@ -945,7 +945,11 @@ location /api/ {
 }
 ```
 
-Note the trailing `/` on both `location /api/` and `proxy_pass http://127.0.0.1:8000/` — this ensures nginx strips the `/api` prefix before forwarding to your server. If you're using OAuth authentication with a mount prefix, see [Mounting Authenticated Servers](#mounting-authenticated-servers) for additional configuration.
+Note the trailing `/` on both `location /api/` and `proxy_pass http://127.0.0.1:8000/` — this ensures nginx strips the `/api` prefix before forwarding to your server.
+
+If you serve the legacy SSE transport this way, also set Uvicorn's `root_path` to the stripped prefix (`--root-path /api`, or `uvicorn_config={"root_path": "/api"}` with `mcp.run()`) so the server advertises its message endpoint as `/api/messages/`. Only set `root_path` when a proxy strips the prefix: a client that connects directly to a server with `root_path` set gets the prefix twice and a 404.
+
+If you're using OAuth authentication with a mount prefix, see [Mounting Authenticated Servers](#mounting-authenticated-servers) for additional configuration.
 
 ## Testing Your Deployment
 
