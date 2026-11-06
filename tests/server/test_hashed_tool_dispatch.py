@@ -117,7 +117,7 @@ def filtered_by_gateway_transform_over_a_proxy(calls: list[str]) -> FastMCP:
     backend = server_with(contacts_app(calls))
     gateway = FastMCP("Gateway")
     gateway.add_provider(ProxyProvider(lambda: ProxyClient(backend)))
-    gateway.add_transform(FilterTools("save"))
+    gateway.add_transform(FilterTools(SAVE))
     return gateway
 
 
@@ -210,7 +210,7 @@ def renamed_by_mount(calls: list[str]) -> FastMCP:
     server.mount(
         server_with(contacts_app(calls)),
         namespace="child",
-        tool_names={"save": "store"},
+        tool_names={SAVE: "store"},
     )
     return server
 

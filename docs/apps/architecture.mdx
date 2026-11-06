@@ -65,7 +65,7 @@ The final tool result has two parts: `content` (a list of `TextContent` blocks f
 
 ## Tool call routing
 
-A tool has two things that behave very differently. Its **name** is unstable by design — namespace transforms rename it, so `save_contact` becomes `contacts_save_contact` in one composition and something else in another. Its **identity** is a hash of the app name and the registered tool name, written once at registration and never changed.
+A tool has an internal name that namespace transforms can change. An app callback also has a stable public name derived from its app name and original registered name, such as `__<hash>_save_contact`. Its identity hash is written once at registration and carried in public metadata through proxies.
 
 A UI is serialized during the entry tool's call, deep inside whatever composition the server happens to have, so it cannot know what its backend tools will be called by the time the payload reaches a host.
 
@@ -75,7 +75,7 @@ The payload leaves the app addressed by identity, and every FastMCP server rewri
 
 Rewriting a name in place would destroy the identity for the next layer up, so the payload carries a name-to-identity map under `_meta.fastmcp.toolNames`. Each layer resolves through the map and updates it. The action objects keep the exact shape `prefab_ui` defines: only the value of `tool` changes, and only ever to another valid tool name.
 
-The result is that a renderer receives names that exist in the listing the host is looking at. Under three layers of namespacing the button calls `c_b_a_save`; behind a gateway it calls whatever the gateway lists. No intermediary has to understand a FastMCP-specific convention.
+The result is that a renderer receives the callback's identity-based name from the same listing the host sees. Under three layers of namespacing or behind a gateway, the button still calls `__<hash>_save`. No intermediary has to understand a FastMCP-specific convention to forward a listed name.
 
 A reference this server cannot resolve is left alone rather than corrupted. This is what keeps apps working behind [tool search](/servers/transforms/tool-search) and code mode, which replace `tools/list` with a handful of synthetic tools: there is no better name to bind to, so the reference stays identity-addressed and the fallback below carries it.
 

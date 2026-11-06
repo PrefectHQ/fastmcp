@@ -40,6 +40,9 @@ HASH_LENGTH = 12
 #: Key inside the ``fastmcp`` meta namespace holding a tool's identity hash.
 TOOL_HASH_META_KEY = "tool_hash"
 
+#: Original callback name; preserved through namespace and proxy renames.
+TOOL_NAME_META_KEY = "tool_name"
+
 
 def hash_tool(app_name: str, tool_name: str) -> str:
     """Deterministic hex hash for a tool in an app.
@@ -73,6 +76,42 @@ def is_app_tool_with_identity(tool: Tool, tool_hash: str) -> bool:
 def hashed_backend_name(app_name: str, tool_name: str) -> str:
     """Format the universal name for a backend tool: ``__<hash>_<local_name>``."""
     return f"__{hash_tool(app_name, tool_name)}_{tool_name}"
+
+
+def public_backend_name(tool: Tool) -> str | None:
+    """Return the stable public name of a registered app callback, if any."""
+    meta = tool.meta or {}
+    fastmcp_meta = meta.get("fastmcp")
+    if not isinstance(fastmcp_meta, dict):
+        return None
+    app_name = fastmcp_meta.get("app")
+    local_name = fastmcp_meta.get(TOOL_NAME_META_KEY)
+    if not isinstance(app_name, str) or not isinstance(local_name, str):
+        return None
+    identity = hash_tool(app_name, local_name)
+    if not is_app_tool_with_identity(tool, identity):
+        return None
+    return hashed_backend_name(app_name, local_name)
+
+
+def is_public_backend_address(tool: Tool, name: str) -> bool:
+    """Whether this tool owns a generated address, including older proxy metadata."""
+    parsed = parse_hashed_backend_name(name)
+    if parsed is None:
+        return False
+    digest, local_name = parsed
+    meta = tool.meta or {}
+    fastmcp_meta = meta.get("fastmcp")
+    if not isinstance(fastmcp_meta, dict):
+        return False
+    app_name = fastmcp_meta.get("app")
+    original_name = fastmcp_meta.get(TOOL_NAME_META_KEY, local_name)
+    return (
+        isinstance(app_name, str)
+        and original_name == local_name
+        and hash_tool(app_name, local_name) == digest
+        and is_app_tool_with_identity(tool, digest)
+    )
 
 
 def parse_hashed_backend_name(name: str) -> tuple[str, str] | None:

@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import pytest
+
 from fastmcp.server.providers.addressing import (
     HASH_LENGTH,
     hash_tool,
     hashed_backend_name,
     hashed_resource_uri,
+    is_public_backend_address,
     parse_hashed_backend_name,
     parse_hashed_resource_uri,
+    public_backend_name,
 )
+from fastmcp.tools.base import Tool
 
 
 class TestHashFunction:
@@ -35,6 +40,62 @@ class TestHashFunction:
 
 
 class TestBackendNameRoundtrip:
+    def test_legacy_proxy_metadata_still_owns_canonical_address(self):
+        address = hashed_backend_name("contacts", "save")
+        tool = Tool.from_function(
+            lambda: None,
+            name=address,
+            meta={
+                "fastmcp": {
+                    "app": "contacts",
+                    "tool_hash": hash_tool("contacts", "save"),
+                },
+                "ui": {"visibility": ["app"]},
+            },
+        )
+        assert is_public_backend_address(tool, address)
+
+    def test_mismatched_original_name_does_not_own_canonical_address(self):
+        address = hashed_backend_name("contacts", "save")
+        tool = Tool.from_function(
+            lambda: None,
+            name=address,
+            meta={
+                "fastmcp": {
+                    "app": "contacts",
+                    "tool_hash": hash_tool("contacts", "save"),
+                    "tool_name": "delete",
+                },
+                "ui": {"visibility": ["app"]},
+            },
+        )
+        assert not is_public_backend_address(tool, address)
+
+    @pytest.mark.parametrize(
+        "fastmcp_meta",
+        [
+            None,
+            {"app": "contacts", "tool_name": "save", "tool_hash": "wrong"},
+            {
+                "app": 123,
+                "tool_name": "save",
+                "tool_hash": hash_tool("contacts", "save"),
+            },
+            {
+                "app": "contacts",
+                "tool_name": 123,
+                "tool_hash": hash_tool("contacts", "save"),
+            },
+        ],
+    )
+    def test_public_name_rejects_invalid_metadata(self, fastmcp_meta):
+        tool = Tool.from_function(
+            lambda: None,
+            name="save",
+            meta={"fastmcp": fastmcp_meta, "ui": {"visibility": ["app"]}},
+        )
+        assert public_backend_name(tool) is None
+
     def test_format_and_parse(self):
         name = hashed_backend_name("contacts", "submit_form")
         assert name == f"__{hash_tool('contacts', 'submit_form')}_submit_form"
