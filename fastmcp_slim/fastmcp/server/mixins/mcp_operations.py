@@ -146,6 +146,24 @@ class MCPOperationsMixin:
                 list(await self.list_tools()), lambda t: t.name
             )
             sdk_tools = [tool.to_mcp_tool(name=tool.name) for tool in tools]
+            # Refresh the Mcp-Param schema cache (served to the SDK's
+            # `get_tool_input_schema` hook, mcp>=2.3) from the full visible
+            # set, pre-pagination: these are the authoritative wire schemas,
+            # including proxied and mounted tools. Merged in place with
+            # `update` (never `clear`) — the dict is shared with
+            # _SchemaCacheLocalProvider and single server-wide, so an
+            # auth-scoped listing of one client must not evict the schemas
+            # another (differently authorized) client validated against. The
+            # cache may therefore hold a superset of any one client's listing;
+            # a stale entry can only appear for tools removed remotely between
+            # listings, and a miss stays fail-open.
+            self._wire_input_schemas.update(
+                {
+                    sdk_tool.name: sdk_tool.input_schema
+                    for sdk_tool in sdk_tools
+                    if sdk_tool.input_schema is not None
+                }
+            )
             cursor = params.cursor if params else None
             page, next_cursor = _apply_pagination(
                 sdk_tools, cursor, self._list_page_size
