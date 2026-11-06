@@ -311,6 +311,20 @@ def matches_allowed_pattern(uri: str, pattern: str) -> bool:
     - https://*.example.com/* matches any subdomain of example.com
     - https://app.example.com/auth/* matches any path under /auth/
 
+    The query component must also match the pattern's query exactly
+    (RFC 6749 §3.1.2) — unless the pattern is a wildcard pattern with
+    no query of its own, in which case any query is accepted, so
+    operators using wildcard patterns do not break silently. A pattern
+    that carries a query, or that has no wildcard at all, always
+    compares queries byte-for-byte. There is no loopback special case:
+    `http://localhost:*` accepts any query because it is a wildcard
+    pattern without a query, while `http://localhost/callback?x=1`
+    rejects `?x=2` because it has no wildcard.
+
+    A redirect URI must not carry a fragment at all (RFC 6749 §3.1.2),
+    so a registered pattern never has one and any URI with a fragment
+    is rejected, loopback patterns included.
+
     Security: Rejects URIs with userinfo (user:pass@host) which could bypass
     naive string matching (e.g., http://localhost@evil.com).
 
@@ -361,6 +375,28 @@ def matches_allowed_pattern(uri: str, pattern: str) -> bool:
     if not (is_loopback_host(pattern_host) and pattern_port is None):
         if not _match_port(uri_port, pattern_port, uri_parsed.scheme.lower()):
             return False
+
+    # RFC 6749 §3.1.2: the query component is part of the registered
+    # redirect URI, so a pattern only matches a URI whose query is
+    # byte-for-byte the pattern's — unless the pattern is a wildcard
+    # pattern with no query of its own, in which case any query is
+    # accepted (see the docstring). A pattern carrying a query, or with
+    # no wildcard at all, always compares queries; a wildcard pattern
+    # without a query is the only exemption, and it applies to loopback
+    # and non-loopback patterns alike.
+    if pattern_parsed.query or "*" not in pattern:
+        if uri_parsed.query != pattern_parsed.query:
+            return False
+
+    # RFC 6749 §3.1.2: a redirection endpoint URI MUST NOT include a
+    # fragment component, so a registered pattern never has one and a
+    # candidate carrying one is not the registered URI. This applies to
+    # loopback patterns too — the RFC 8252 §7.3 flexibility covers the
+    # port, not the fragment — and matches
+    # _matches_registered_loopback_redirect_uri, which also requires
+    # fragment equality.
+    if uri_parsed.fragment:
+        return False
 
     # Path must match (with fnmatch wildcards)
     return _match_path(uri_parsed.path, pattern_parsed.path)

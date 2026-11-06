@@ -289,6 +289,163 @@ class TestMatchesAllowedPattern:
         )
 
 
+class TestQueryMatching:
+    """The query component is part of the registered redirect URI.
+
+    RFC 6749 §3.1.2 requires the redirect URI to match the registered one
+    by simple string comparison, so a URI that adds, drops, or changes
+    query parameters does not match — unless the pattern is a wildcard
+    pattern with no query of its own, in which case any query is
+    accepted. There is no loopback special case: a pattern that carries
+    a query, or that has no wildcard at all, always compares queries.
+    """
+
+    def test_pattern_without_query_rejects_added_query(self):
+        """The report from #5999: a query-less pattern accepted any query."""
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb?code_to=attacker",
+            "https://app.example.com/cb",
+        )
+
+    def test_pattern_with_query_requires_exact_query(self):
+        pattern = "https://app.example.com/cb?tenant=acme"
+        assert matches_allowed_pattern(
+            "https://app.example.com/cb?tenant=acme", pattern
+        )
+        assert not matches_allowed_pattern("https://app.example.com/cb", pattern)
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb?tenant=other", pattern
+        )
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb?tenant=acme&extra=1", pattern
+        )
+
+    def test_query_comparison_is_exact_not_semantic(self):
+        """Parameter order is significant: matching is a string comparison."""
+        pattern = "https://app.example.com/cb?a=1&b=2"
+        assert matches_allowed_pattern("https://app.example.com/cb?a=1&b=2", pattern)
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb?b=2&a=1", pattern
+        )
+
+    def test_wildcard_pattern_with_query_still_compares_query(self):
+        """A wildcard pattern that carries a query compares it exactly."""
+        assert matches_allowed_pattern(
+            "https://app.example.com/callback?tenant=acme",
+            "https://*.example.com/callback?tenant=acme",
+        )
+        assert not matches_allowed_pattern(
+            "https://app.example.com/callback?tenant=other",
+            "https://*.example.com/callback?tenant=acme",
+        )
+
+    def test_wildcard_pattern_without_query_accepts_any_query(self):
+        """A wildcard pattern with no query of its own accepts any query.
+
+        Operators using wildcard patterns (e.g. `https://*.example.com/*`)
+        would otherwise break silently when a client adds a query.
+        """
+        assert matches_allowed_pattern(
+            "https://app.example.com/callback?tenant=acme",
+            "https://*.example.com/callback",
+        )
+        assert matches_allowed_pattern(
+            "https://app.example.com/auth/callback?code_challenge=abc",
+            "https://*.example.com/auth/*",
+        )
+
+    def test_loopback_pattern_without_wildcard_compares_query(self):
+        """No loopback special case: a non-wildcard loopback pattern
+        carrying a query compares it exactly."""
+        assert not matches_allowed_pattern(
+            "http://localhost:3000/callback?x=2",
+            "http://localhost/callback?x=1",
+        )
+        assert matches_allowed_pattern(
+            "http://localhost:3000/callback?x=1",
+            "http://localhost/callback?x=1",
+        )
+
+    def test_loopback_wildcard_pattern_accepts_any_query(self):
+        """`http://localhost:*` is a wildcard pattern without a query,
+        so it still accepts any query — the RFC 8252 §7.3 port
+        flexibility for native clients is unchanged."""
+        assert matches_allowed_pattern(
+            "http://localhost:3000/callback?code_challenge=abc",
+            "http://localhost:*",
+        )
+
+    def test_validate_redirect_uri_with_query_patterns(self):
+        patterns = ["https://app.example.com/cb?tenant=acme"]
+        assert validate_redirect_uri("https://app.example.com/cb?tenant=acme", patterns)
+        assert not validate_redirect_uri(
+            "https://app.example.com/cb?tenant=other", patterns
+        )
+        assert not validate_redirect_uri("https://app.example.com/cb", patterns)
+
+
+class TestFragmentMatching:
+    """A redirect URI must not carry a fragment (RFC 6749 §3.1.2).
+
+    The redirection endpoint URI "MUST NOT include a fragment
+    component", so a registered pattern never has one and a candidate
+    that adds one is not the registered URI — the same class of gap as
+    #5999, where the query was ignored. Unlike the query check, this
+    applies to loopback patterns too: RFC 8252 §7.3 flexibility covers
+    the port, not the fragment.
+    """
+
+    def test_fragment_only_addition_rejected(self):
+        """The reviewer's repro: a fragment-only addition matched."""
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb#evil",
+            "https://app.example.com/cb",
+        )
+
+    def test_query_and_fragment_rejected(self):
+        """A fragment is rejected even when the query matches exactly."""
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb?x=1#frag",
+            "https://app.example.com/cb?x=1",
+        )
+
+    def test_empty_query_matches_queryless_pattern(self):
+        """`...?` carries an empty query, equal to a query-less pattern's.
+
+        `urlparse(...).query` is `''` for both, so this is allowed and
+        pinned here to document the choice.
+        """
+        assert matches_allowed_pattern(
+            "https://app.example.com/cb?",
+            "https://app.example.com/cb",
+        )
+
+    def test_loopback_fragment_rejected(self):
+        """Loopback flexibility does not extend to fragments."""
+        assert not matches_allowed_pattern(
+            "http://localhost:3000/callback#frag",
+            "http://localhost:*",
+        )
+        assert not matches_allowed_pattern(
+            "http://localhost:3000/callback?x=1#frag",
+            "http://localhost:*",
+        )
+
+    def test_fragmentless_uri_still_matches(self):
+        assert matches_allowed_pattern(
+            "https://app.example.com/cb?x=1",
+            "https://app.example.com/cb?x=1",
+        )
+        assert matches_allowed_pattern(
+            "http://localhost:3000/callback?x=1",
+            "http://localhost:*",
+        )
+
+    def test_validate_redirect_uri_rejects_fragment(self):
+        patterns = ["https://app.example.com/cb"]
+        assert not validate_redirect_uri("https://app.example.com/cb#evil", patterns)
+
+
 class TestValidateRedirectUri:
     """Test redirect URI validation with pattern lists."""
 
