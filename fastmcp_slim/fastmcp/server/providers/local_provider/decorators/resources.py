@@ -49,13 +49,18 @@ class ResourceDecoratorMixin:
         if not isinstance(resource, (Resource, ResourceTemplate)):
             from fastmcp.decorators import get_fastmcp_meta
             from fastmcp.resources.function_resource import ResourceMeta
-            from fastmcp.server.dependencies import without_injected_parameters
+            from fastmcp.server.dependencies import (
+                transform_context_annotations,
+                without_injected_parameters,
+            )
 
             meta = get_fastmcp_meta(resource)
             if meta is not None and isinstance(meta, ResourceMeta):
                 enabled = meta.enabled
                 has_uri_params = "{" in meta.uri and "}" in meta.uri
-                wrapper_fn = without_injected_parameters(resource)
+                wrapper_fn = without_injected_parameters(
+                    transform_context_annotations(resource)
+                )
                 has_func_params = bool(inspect.signature(wrapper_fn).parameters)
 
                 if has_uri_params or has_func_params:

@@ -693,9 +693,59 @@ class FunctionResourceTemplate(ResourceTemplate):
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
+        description = description if description is not None else inspect.getdoc(fn)
+
+        # Callable objects can expose a wrapped function's signature via
+        # functools.update_wrapper or by setting __signature__. Preserve that
+        # signature for URI validation.
+        is_callable_object = not inspect.isroutine(fn) and not isinstance(
+            fn, functools.partial
+        )
+        callable_object = fn
+        callable_exposes_signature = is_callable_object and (
+            hasattr(fn, "__wrapped__") or hasattr(fn, "__signature__")
+        )
+        validation_fn = fn
+
+        # The wrapper can also live on __call__ itself, e.g. a decorator method
+        # marked with functools.wraps. Its unbound function carries the exposed
+        # signature; the bound method would drop the first wrapped parameter.
+        if is_callable_object:
+            call_method_fn = getattr(fn.__call__, "__func__", fn.__call__)
+            if not callable_exposes_signature and (
+                hasattr(call_method_fn, "__wrapped__")
+                or hasattr(call_method_fn, "__signature__")
+            ):
+                callable_exposes_signature = True
+                validation_fn = call_method_fn
+
+        # if the fn is a callable class, we need to get the __call__ method from here out
+        if is_callable_object:
+            fn = fn.__call__
+        # if the fn is a staticmethod, we need to work with the underlying function
+        if isinstance(fn, staticmethod):
+            fn = fn.__func__
+
+        # Transform injected-by-type params (Context, UserSession) before
+        # validating, so they are not mistaken for URI parameters.
+        from fastmcp.server.dependencies import (
+            transform_context_annotations,
+            without_injected_parameters,
+        )
+
+        fn = transform_context_annotations(fn)
+        if callable_exposes_signature:
+            # URI validation and the generated schema must see the wrapper's
+            # exposed signature, not __call__'s **kwargs.
+            validation_fn = transform_context_annotations(validation_fn)
+        else:
+            # Ordinary callable objects keep using their __call__ method, as
+            # before; only wrappers need their exposed signature retained.
+            validation_fn = fn
+
         # Reject functions with positional-only parameters or *args
         # (**kwargs is allowed because the URI will define the parameter names)
-        sig = inspect.signature(fn)
+        sig = inspect.signature(validation_fn)
         for param in sig.parameters.values():
             if param.kind == inspect.Parameter.POSITIONAL_ONLY:
                 raise ValueError(
@@ -737,12 +787,7 @@ class FunctionResourceTemplate(ResourceTemplate):
             raise ValueError("URI template must contain at least one parameter")
 
         # Use wrapper to get user-facing parameters (excludes injected params)
-        from fastmcp.server.dependencies import (
-            transform_context_annotations,
-            without_injected_parameters,
-        )
-
-        wrapper_fn = without_injected_parameters(fn)
+        wrapper_fn = without_injected_parameters(validation_fn)
         user_sig = inspect.signature(wrapper_fn)
         func_params = set(user_sig.parameters.keys())
 
@@ -779,7 +824,7 @@ class FunctionResourceTemplate(ResourceTemplate):
             from fastmcp.tools.function_tool import _resolve_param_hints
 
             try:
-                hints = _resolve_param_hints(fn)
+                hints = _resolve_param_hints(validation_fn)
             except NameError:
                 # Pydantic resolves annotations against namespaces this doesn't
                 # see, so a name we can't resolve may still be valid. Fall back
@@ -832,17 +877,29 @@ class FunctionResourceTemplate(ResourceTemplate):
                     f"URI parameters {all_uri_params} must be a subset of the function arguments: {func_params}"
                 )
 
-        description = description if description is not None else inspect.getdoc(fn)
+        # Callable decorators may expose a wrapped function's signature while
+        # __call__ itself just accepts **kwargs. Route through a shim with the
+        # exposed signature so DI, the generated schema, and runtime validation
+        # all agree with the URI checks.
+        if is_callable_object and callable_exposes_signature:
 
-        # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
-            fn = fn.__call__
-        # if the fn is a staticmethod, we need to work with the underlying function
-        if isinstance(fn, staticmethod):
-            fn = fn.__func__
+            @functools.wraps(callable_object)
+            def callable_shim(*args: Any, **kwargs: Any) -> Any:
+                return callable_object(*args, **kwargs)
 
-        # Transform Context type annotations to Depends() for unified DI
-        fn = transform_context_annotations(fn)
+            exposed_signature = inspect.signature(validation_fn)
+            callable_shim.__signature__ = exposed_signature  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            callable_shim.__annotations__ = {
+                name: param.annotation
+                for name, param in exposed_signature.parameters.items()
+                if param.annotation is not inspect.Parameter.empty
+            }
+            if exposed_signature.return_annotation is not inspect.Signature.empty:
+                callable_shim.__annotations__["return"] = (
+                    exposed_signature.return_annotation
+                )
+
+            fn = transform_context_annotations(callable_shim)
 
         wrapper_fn = without_injected_parameters(fn)
         type_adapter = get_cached_typeadapter(wrapper_fn)
