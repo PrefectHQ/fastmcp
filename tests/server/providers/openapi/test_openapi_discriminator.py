@@ -357,6 +357,15 @@ def array_envelope_discriminator_spec() -> dict[str, Any]:
     return spec
 
 
+def described_envelope_discriminator_spec() -> dict[str, Any]:
+    """The nested reference carries its own description and constraints."""
+    spec = envelope_discriminator_spec()
+    pet = spec["components"]["schemas"]["PetEnvelope"]["properties"]["pet"]
+    pet["description"] = "The pet to create"
+    pet["maxProperties"] = 4
+    return spec
+
+
 class TestNestedDiscriminatorRequestBodies:
     """A discriminated schema below the top level flattens like the body itself."""
 
@@ -475,3 +484,12 @@ class TestNestedDiscriminatorRequestBodies:
         schema = await tool_schema(inherited_parent_spec())
 
         assert set(schema["properties"]["pet"]["required"]) == {"petId", "petType"}
+
+    async def test_reference_siblings_are_preserved(self):
+        """Inlining a nested $ref keeps its own description and constraints."""
+        schema = await tool_schema(described_envelope_discriminator_spec())
+
+        pet = schema["properties"]["pet"]
+        assert pet["description"] == "The pet to create"
+        assert pet["maxProperties"] == 4
+        assert pet["properties"].keys() >= {"petType", "meowVolume", "packSize"}

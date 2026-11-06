@@ -573,6 +573,45 @@ def _merge_required(schema: dict[str, Any], schema_defs: dict[str, Any]) -> list
     return merged
 
 
+def _merge_ref_siblings(
+    target: dict[str, Any], siblings: dict[str, Any]
+) -> dict[str, Any]:
+    """Apply a ``$ref``'s siblings on top of the schema it resolves to.
+
+    Applies the same rule the top-level ``$ref`` merge uses: the sibling
+    schema comes last and wins, a property declared on both sides must satisfy
+    both definitions, and ``required`` names are combined. The siblings would
+    otherwise disappear together with the ``$ref`` itself, dropping constraints
+    such as ``description`` or ``maxProperties`` from the emitted schema.
+    """
+    properties = dict(target.get("properties") or {})
+    for name, property_schema in (siblings.get("properties") or {}).items():
+        declared = properties.get(name)
+        properties[name] = (
+            {"allOf": [declared, property_schema]}
+            if declared is not None and declared != property_schema
+            else property_schema
+        )
+    if properties:
+        target["properties"] = properties
+
+    required = list(target.get("required") or [])
+    for name in siblings.get("required") or []:
+        if name not in required:
+            required.append(name)
+    if required:
+        target["required"] = required
+
+    target.update(
+        {
+            key: value
+            for key, value in siblings.items()
+            if key not in ("properties", "required")
+        }
+    )
+    return target
+
+
 def _resolve_and_flatten(
     schema: dict[str, Any],
     schema_defs: dict[str, Any],
@@ -586,7 +625,9 @@ def _resolve_and_flatten(
 
     Returns the schema to keep together with whether anything below it
     changed. A ``$ref`` with no change underneath is returned untouched, so
-    plain references are not inlined into the emitted schema.
+    plain references are not inlined into the emitted schema. When the ref is
+    inlined, its sibling keywords are merged onto the resolved schema rather
+    than dropped with the ref.
     """
     name = _local_ref_name(schema.get("$ref"))
     if name is not None:
@@ -598,7 +639,10 @@ def _resolve_and_flatten(
         inner, changed = _resolve_and_flatten(
             deepcopy(resolved), schema_defs, (*path, name)
         )
-        return (inner, True) if changed else (schema, False)
+        if not changed:
+            return schema, False
+        siblings = {key: value for key, value in schema.items() if key != "$ref"}
+        return (_merge_ref_siblings(inner, siblings) if siblings else inner), True
 
     changed = False
     for container, key in _nested_schema_positions(schema):
