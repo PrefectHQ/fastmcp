@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import math
 from collections.abc import Callable
 from typing import (
     TYPE_CHECKING,
@@ -74,6 +75,32 @@ def default_serializer(data: Any) -> str:
     return _JSONABLE_ADAPTER.dump_json(data, fallback=str).decode()
 
 
+def _find_nonfinite_float(data: Any) -> float | None:
+    """Return the first non-finite float reachable in serialized ``data``.
+
+    Pydantic's per-model default ``ser_json_inf_nan="null"`` rewrites NaN and
+    Infinity to valid-JSON ``null`` on ``dump_json``, but ``dump_python(mode="json")``
+    still emits Python ``nan``/``inf`` *after* exclude and field serializers have
+    run. Walking that dump rejects values that would still reach the wire,
+    without flagging fields Pydantic omitted or rewrote to a JSON-safe sentinel.
+    """
+    if isinstance(data, float):
+        return data if not math.isfinite(data) else None
+    if isinstance(data, dict):
+        for key, value in data.items():
+            found = _find_nonfinite_float(key) or _find_nonfinite_float(value)
+            if found is not None:
+                return found
+        return None
+    if isinstance(data, list | tuple | set | frozenset):
+        for item in data:
+            found = _find_nonfinite_float(item)
+            if found is not None:
+                return found
+        return None
+    return None
+
+
 def _serialize_to_jsonable(data: Any, annotation: Any = Any) -> Any:
     """Serialize through Pydantic, falling back for unsupported annotations."""
     if (
@@ -86,11 +113,20 @@ def _serialize_to_jsonable(data: Any, annotation: Any = Any) -> Any:
         adapter = _JSONABLE_ADAPTER
     else:
         try:
-            return get_cached_typeadapter(annotation).dump_python(data, mode="json")
+            adapter = get_cached_typeadapter(annotation)
         except PydanticSchemaGenerationError:
             adapter = _JSONABLE_ADAPTER
 
-    return adapter.dump_python(data, mode="json")
+    result = adapter.dump_python(data, mode="json")
+    nonfinite = _find_nonfinite_float(result)
+    if nonfinite is not None:
+        raise ValueError(
+            "Tool result contains a non-finite float "
+            f"({nonfinite!r}), which cannot be represented in JSON. "
+            "Return a finite value or omit the field."
+        )
+
+    return result
 
 
 class ToolResult(BaseModel):
