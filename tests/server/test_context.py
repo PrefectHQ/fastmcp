@@ -613,3 +613,41 @@ class TestContextToClientLogger:
             for r in caplog.records
             if r.name == to_client_logger.name
         ] == [(logging.DEBUG, "DEBUG", f"Sending {method.upper()} to client: hello")]
+
+
+async def test_background_context_logging_without_session():
+    from fastmcp.server.dependencies import _background_task_session_id
+
+    context = Context(
+        fastmcp=FastMCP("test"),
+        task_id="task-1",
+        origin_request_id="request-1",
+    )
+    token = _background_task_session_id.set("session-1")
+    try:
+        await context.info("worker progress")
+    finally:
+        _background_task_session_id.reset(token)
+
+
+async def test_background_context_logging_honors_no_session_level(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from fastmcp.server.dependencies import _background_task_session_id
+
+    mcp = FastMCP("test")
+    mcp._client_log_levels["__no_session__"] = "warning"
+    context = Context(
+        fastmcp=mcp,
+        task_id="task-1",
+        origin_request_id="request-1",
+    )
+    sender = AsyncMock()
+    monkeypatch.setattr("fastmcp.server.context._log_to_server_and_client", sender)
+    token = _background_task_session_id.set("snapshot-session")
+    try:
+        await context.info("suppressed")
+    finally:
+        _background_task_session_id.reset(token)
+
+    sender.assert_not_awaited()
