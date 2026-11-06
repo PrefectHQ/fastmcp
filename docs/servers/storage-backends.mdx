@@ -53,6 +53,7 @@ from key_value.aio.stores.filetree import (
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 
 storage_dir = Path("/var/cache/fastmcp")
+storage_dir.mkdir(parents=True, exist_ok=True)  # FileTreeStore does not create the directory itself
 store = FileTreeStore(
     data_directory=storage_dir,
     key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(storage_dir),
@@ -215,6 +216,7 @@ from key_value.aio.stores.filetree import (
 mcp = FastMCP("My Server")
 
 cache_dir = Path("cache")
+cache_dir.mkdir(parents=True, exist_ok=True)  # FileTreeStore does not create the directory itself
 cache_store = FileTreeStore(
     data_directory=cache_dir,
     key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(cache_dir),
@@ -256,6 +258,7 @@ from key_value.aio.stores.filetree import (
 
 # Store tokens on disk for persistence across restarts
 token_dir = Path("~/.local/share/fastmcp/tokens").expanduser()
+token_dir.mkdir(parents=True, exist_ok=True)  # FileTreeStore does not create the directory itself
 token_storage = FileTreeStore(
     data_directory=token_dir,
     key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(token_dir),
