@@ -15,12 +15,14 @@ from typing import (
     Protocol,
     TypeVar,
     cast,
+    get_type_hints,
     overload,
     runtime_checkable,
 )
 
 import pydantic_core
 from mcp_types import Icon
+from pydantic.fields import FieldInfo
 from pydantic.json_schema import SkipJsonSchema
 
 from fastmcp.exceptions import FastMCPError, PromptError, ValidationError
@@ -38,6 +40,51 @@ from fastmcp.utilities.types import get_cached_typeadapter
 F = TypeVar("F", bound=Callable[..., Any])
 
 logger = get_logger(__name__)
+
+
+def _python_names_by_argument_name(fn: Callable[..., Any]) -> dict[str, str]:
+    """Map advertised prompt-argument names to Python parameter names.
+
+    Prompt arguments are advertised from the Pydantic call schema, so a
+    parameter with an alias is listed under the alias. MCP callers send the
+    advertised name, which must be translated back before the arguments are
+    converted and filtered against the Python signature.
+    """
+    mapping: dict[str, str] = {}
+    try:
+        hints = get_type_hints(fn, include_extras=True)
+    except Exception:
+        hints = {}
+    for param_name, param in inspect.signature(fn).parameters.items():
+        annotation = hints.get(param_name, param.annotation)
+        default = param.default
+        try:
+            if isinstance(default, FieldInfo):
+                # A Field(...) default is part of the call schema too. Merge
+                # it with Annotated metadata exactly as pydantic does, so the
+                # alias pydantic advertises is the one we map.
+                if annotation is inspect.Parameter.empty:
+                    field_info = default
+                else:
+                    field_info = FieldInfo.from_annotated_attribute(annotation, default)
+            elif annotation is not inspect.Parameter.empty:
+                field_info = FieldInfo.from_annotation(annotation)
+            else:
+                continue
+        except Exception as e:
+            logger.debug(
+                "Could not determine alias for prompt argument %s: %s", param_name, e
+            )
+            continue
+
+        advertised_name = (
+            field_info.validation_alias
+            if isinstance(field_info.validation_alias, str)
+            else field_info.alias
+        )
+        if advertised_name and advertised_name != param_name:
+            mapping[advertised_name] = param_name
+    return mapping
 
 
 @runtime_checkable
@@ -270,11 +317,13 @@ class FunctionPrompt(Prompt):
         wrapper_fn = without_injected_parameters(self.fn)
         sig = inspect.signature(wrapper_fn)
         converted_kwargs = {}
+        # Callers send advertised names; an advertised name may be a Pydantic
+        # alias whose Python parameter is declared under a different name.
+        aliases = _python_names_by_argument_name(self.fn)
 
         for param_name, param_value in kwargs.items():
-            if param_name in sig.parameters:
-                param = sig.parameters[param_name]
-
+            param = sig.parameters.get(aliases.get(param_name, param_name))
+            if param is not None:
                 if param.annotation == inspect.Parameter.empty or not isinstance(
                     param_value, str
                 ):
@@ -346,9 +395,14 @@ class FunctionPrompt(Prompt):
             # This is important for security: dependencies should not be overridable
             # from external callers. self.fn is wrapped by without_injected_parameters,
             # so we only accept arguments that are in the wrapped function's signature.
+            # Advertised names may be Pydantic aliases; those are accepted too
+            # and validated under the alias by the type adapter below.
             sig = inspect.signature(self.fn)
             valid_params = set(sig.parameters.keys())
-            kwargs = {k: v for k, v in kwargs.items() if k in valid_params}
+            aliases = _python_names_by_argument_name(self.fn)
+            kwargs = {
+                k: v for k, v in kwargs.items() if k in valid_params or k in aliases
+            }
 
             # Use type adapter to validate arguments and handle Field() defaults
             # This matches the behavior of tools in function_tool
