@@ -489,6 +489,21 @@ FastMCP handles array parameters according to OpenAPI specifications:
 
 Header parameters are automatically converted to strings and included in the HTTP request.
 
+### Cookies
+
+Cookie parameters use the OpenAPI `form` style, where `explode` defaults to `true`. Exploded arrays repeat the parameter name and exploded objects send one pair per property. With `explode=false`, arrays join with commas and objects use alternating key/value pairs. In that non-exploded form, commas, semicolons, and equals signs inside an item are percent-encoded so item boundaries stay unambiguous. Nested arrays and objects are rejected because form-style cookies carry only scalar values.
+
+```text
+# Array cookie, explode omitted or true
+Cookie: tags=red; tags=blue
+
+# Array cookie, explode=false
+Cookie: tags=red,blue
+
+# Object cookie, explode=false
+Cookie: prefs=theme,dark
+```
+
 ### Multipart Request Bodies
 
 For `multipart/form-data`, non-empty string arrays use one form field per element. Calling a tool with `{"tags": ["a", "b"]}` sends two `tags` fields, so a backend reading repeated fields receives `["a", "b"]`.
