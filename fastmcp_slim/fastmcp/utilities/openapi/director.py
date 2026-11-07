@@ -48,6 +48,31 @@ def _uses_default_multipart_encoding(encoding: dict[str, Any]) -> bool:
     )
 
 
+def _required_json_object_without_properties(route: HTTPRoute) -> bool:
+    """Return whether an omitted required JSON object body should be sent empty.
+
+    Flattened object properties are optional tool arguments. Leaving all of
+    them out is still an empty JSON object. Optional bodies stay absent.
+    """
+    request_body = route.request_body
+    if (
+        request_body is None
+        or not request_body.required
+        or not request_body.content_schema
+    ):
+        return False
+    content_type = next(iter(request_body.content_schema))
+    media_type = content_type.split(";")[0].strip().lower()
+    if media_type != "application/json" and not media_type.endswith("+json"):
+        return False
+    body_schema = request_body.content_schema[content_type]
+    return (
+        isinstance(body_schema, dict)
+        and bool(body_schema.get("properties"))
+        and _ref_is_mergeable_object(body_schema, route.request_schemas)
+    )
+
+
 def _prepare_parameter_map(
     route: HTTPRoute,
 ) -> tuple[HTTPRoute, dict[str, dict[str, str]]]:
@@ -365,6 +390,8 @@ class RequestDirector:
                     body = body_props
             else:
                 body = body_props
+        elif _required_json_object_without_properties(route):
+            body = {}
 
         return path_params, query_params, header_params, cookie_params, body
 
