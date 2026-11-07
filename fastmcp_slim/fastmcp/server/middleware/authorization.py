@@ -39,6 +39,7 @@ from fastmcp.server.middleware.middleware import (
     Middleware,
     MiddlewareContext,
 )
+from fastmcp.server.providers.addressing import parse_hashed_backend_name
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.authorization import (
     AuthCheck,
@@ -228,6 +229,18 @@ class AuthMiddleware(Middleware):
         version = _requested_version(context.message.meta)
         tool = await fastmcp.fastmcp.get_tool(tool_name, version=version)
         if tool is None:
+            # Core routing retries a failed display-name lookup as a hashed
+            # backend name: backend tools callable by apps are addressed as
+            # `<hash>_<local_name>` and resolved through `get_tool_by_hash`.
+            # Mirror that path so such a tool is authorized as the same
+            # component however it was addressed. `get_tool_by_hash` applies
+            # the transforms, visibility, enabled state, and component auth
+            # a name lookup applies, so a refused tool still resolves to None.
+            hashed = parse_hashed_backend_name(tool_name)
+            if hashed is not None:
+                digest, local_name = hashed
+                tool = await fastmcp.fastmcp.get_tool_by_hash(digest, local_name)
+        if tool is None:
             raise AuthorizationError(
                 f"Authorization failed for tool '{tool_name}': "
                 "not found or not authorized"
@@ -312,6 +325,19 @@ class AuthMiddleware(Middleware):
             component = await fastmcp.fastmcp.get_resource_template(
                 str(uri),
                 version=version,
+            )
+        if component is None:
+            # Per-tool Prefab renderer resources (`ui://prefab/tool/<hash>/
+            # renderer.html`) are synthesized on demand by core `read_resource`
+            # rather than stored on a provider, so neither lookup above can
+            # see them. Mirror that path so the global checks below run
+            # against the component core would actually read.
+            from fastmcp.server.providers.prefab_synthesis import (
+                synthesize_prefab_resource_by_uri,
+            )
+
+            component = await synthesize_prefab_resource_by_uri(
+                fastmcp.fastmcp, str(uri)
             )
         if component is None:
             raise AuthorizationError(
