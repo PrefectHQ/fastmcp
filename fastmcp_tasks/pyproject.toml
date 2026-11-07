@@ -71,5 +71,9 @@ dependencies = [
     # it starts. Earlier versions treated that cancellation as a shutdown
     # request, so the worker stopped reading tasks and every later task stayed
     # in `working` forever.
-    "pydocket>=0.26.0",
+    # pydocket 0.26.1 supports Redis credential providers and token rotation.
+    "pydocket>=0.26.1",
+    # Redis 8.1.0 reuses server-closed connections instead of reconnecting.
+    # Remove after the fix in redis/redis-py#4260 is released.
+    "redis!=8.1.0",
 ]

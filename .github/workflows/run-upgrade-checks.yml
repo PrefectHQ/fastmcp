@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup uv (upgrade)
         uses: ./.github/actions/setup-uv
@@ -32,7 +32,7 @@ jobs:
         uses: ./.github/actions/setup-gitleaks
 
       - name: Run prek
-        uses: j178/prek-action@v3.0.0
+        uses: j178/prek-action@44924fe9ef4a6f88253c4b6b1bf11c689d3ce53d # v3.1.0
         env:
           SKIP: no-commit-to-branch
 
@@ -60,7 +60,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup uv (upgrade)
         uses: ./.github/actions/setup-uv
@@ -82,7 +82,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup uv (upgrade)
         uses: ./.github/actions/setup-uv
@@ -106,7 +106,7 @@ jobs:
 
     steps:
       - name: Create or update failure issue
-        uses: jayqi/failed-build-issue-action@v1
+        uses: jayqi/failed-build-issue-action@940568ce50eeef3f31a920614cefcc6102d2f930 # v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           label: "build failed"

@@ -28,7 +28,7 @@ Example:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncGenerator, Generator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -109,7 +109,7 @@ class Provider:
     @contextmanager
     def _extension_runtime(
         self, available: frozenset[str], *, root: FastMCP | None
-    ) -> Iterator[None]:
+    ) -> Generator[None, None, None]:
         """Track a serving root independently of resource lifespan ownership.
 
         Composite providers forward this scope to their children so live
@@ -281,7 +281,7 @@ class Provider:
         Server (FastMCP) performs enabled filtering after all transforms.
 
         Args:
-            tool_hash: The identity hash from a `<hash>_<local_name>` name.
+            tool_hash: The identity hash from a `__<hash>_<local_name>` name.
             tool_name: The local tool name from the same name.
 
         Returns:
@@ -660,7 +660,7 @@ class Provider:
     # -------------------------------------------------------------------------
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         """User-overridable lifespan for custom setup and teardown.
 
         Override this method to perform provider-specific initialization

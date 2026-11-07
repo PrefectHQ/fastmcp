@@ -473,17 +473,17 @@ class TestMountedServerLifespanContext:
 
     async def test_mounted_child_sees_own_lifespan_context(self):
         """A tool on a mounted child reads its own lifespan result."""
-        from collections.abc import AsyncIterator
+        from collections.abc import AsyncGenerator
         from contextlib import asynccontextmanager
 
         from fastmcp.server.context import Context
 
         @asynccontextmanager
-        async def parent_lifespan(_mcp: FastMCP) -> AsyncIterator[dict]:
+        async def parent_lifespan(_mcp: FastMCP) -> AsyncGenerator[dict, None]:
             yield {"who": "parent", "parent_only": "P"}
 
         @asynccontextmanager
-        async def child_lifespan(_mcp: FastMCP) -> AsyncIterator[dict]:
+        async def child_lifespan(_mcp: FastMCP) -> AsyncGenerator[dict, None]:
             yield {"who": "child", "child_only": "C"}
 
         parent = FastMCP("Parent", lifespan=parent_lifespan)
@@ -554,7 +554,7 @@ class TestMountedServerLifespanContext:
 
     async def test_nested_grandchild_lifespan_runs(self):
         """A grandchild's lifespan is entered exactly once and visible to its tools."""
-        from collections.abc import AsyncIterator
+        from collections.abc import AsyncGenerator
         from contextlib import asynccontextmanager
 
         from fastmcp.server.context import Context
@@ -562,7 +562,7 @@ class TestMountedServerLifespanContext:
         events: list[str] = []
 
         @asynccontextmanager
-        async def grandchild_lifespan(_mcp: FastMCP) -> AsyncIterator[dict]:
+        async def grandchild_lifespan(_mcp: FastMCP) -> AsyncGenerator[dict, None]:
             events.append("enter")
             try:
                 yield {"who": "grandchild"}

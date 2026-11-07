@@ -28,9 +28,9 @@ fastmcp --help
 | [`generate-cli`](/cli/generate-cli) | Scaffold a standalone typed CLI from a server's tool schemas |
 | [`project prepare`](/cli/running#pre-building-environments) | Pre-install dependencies into a reusable uv project |
 | [`auth cimd`](/cli/auth) | Create and validate CIMD documents for OAuth |
-| `login` | Sign in to Prefect Horizon with a browser device flow |
-| `whoami` | Show the current Horizon account |
-| `logout` | Revoke the current Horizon key and remove the local credential |
+| `login` | Sign in to FastMCP Gateway with a browser device flow |
+| `whoami` | Show the current FastMCP Gateway account |
+| `logout` | Revoke the current FastMCP Gateway key and remove the local credential |
 | `version` | Print version info (`--copy` to copy to clipboard) |
 
 ## Server Targets
@@ -84,9 +84,11 @@ Run [`fastmcp discover`](/cli/client#discovering-configured-servers) to see what
 
 ## Authentication
 
-### Prefect Horizon Account
+<a id="prefect-horizon-account" />
 
-Use the top-level account commands to manage the credential for Prefect Horizon.
+### FastMCP Gateway Account
+
+Use the top-level account commands to manage the credential for FastMCP Gateway.
 
 ```bash
 fastmcp login
@@ -100,9 +102,9 @@ It opens a browser when the terminal supports it.
 If the browser does not open, use the shown URL and code on another device.
 To switch accounts, run `fastmcp logout` before you run `fastmcp login` again.
 
-Login stores only the personal Horizon API key.
+Login stores only the personal FastMCP Gateway API key.
 It does not select or store a deployment organization.
-`fastmcp whoami` gets the current user from Horizon.
+`fastmcp whoami` gets the current user from FastMCP Gateway.
 `fastmcp logout` attempts to revoke the stored key and always removes its local credential.
 
 Set `HORIZON_API_KEY` to use an environment credential instead.

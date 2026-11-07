@@ -37,8 +37,10 @@ class TestTimeout:
     async def test_timeout_tool_call_overrides_client_timeout_even_if_lower(
         self, fastmcp_server: FastMCP
     ):
+        # The client timeout still bounds the SDK's follow-up `tools/list` (it
+        # fetches output schemas after the call), so it needs real headroom.
         async with Client(
             transport=FastMCPTransport(fastmcp_server),
-            timeout=0.1,
+            timeout=0.5,
         ) as client:
-            await client.call_tool("sleep", {"seconds": 0.5}, timeout=2)
+            await client.call_tool("sleep", {"seconds": 1}, timeout=3)
