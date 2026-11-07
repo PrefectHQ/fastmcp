@@ -45,8 +45,19 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Clone openapi-directory
-        run: git clone --depth 1 https://github.com/APIs-guru/openapi-directory.git /tmp/openapi-directory
+      - name: Prepare pinned openapi-directory
+        env:
+          OPENAPI_DIRECTORY_PATH: /tmp/openapi-directory
+        run: |
+          uv run python - <<'PYTHON'
+          import runpy
+
+          corpus = runpy.run_path("tests/utilities/json_schema_type/test_real_world_schemas.py")
+          corpus["_ensure_repo"]()
+          if not corpus["_head_matches_pinned"]():
+              raise RuntimeError("openapi-directory is not at the pinned commit")
+          print("Prepared openapi-directory at", corpus["OPENAPI_DIRECTORY_COMMIT"])
+          PYTHON
 
       - name: Run schema crash test
         env:
