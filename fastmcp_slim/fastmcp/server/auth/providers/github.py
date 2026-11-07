@@ -43,17 +43,27 @@ def _is_transient(response: httpx2.Response) -> bool:
     """Whether a GitHub API error response is temporary rather than a verdict on the token.
 
     Server errors and rate limits are temporary. GitHub reports rate limits as
-    429, or as 403 with an exhausted ``x-ratelimit-remaining`` or a
-    ``retry-after`` header; any other 4xx is a final answer about the token.
+    429, or as 403 with exhausted quota, a retry header, or a secondary
+    rate-limit message. Other 4xx responses reject the token.
     """
     status = response.status_code
     if status >= 500 or status == 429:
         return True
     if status == 403:
         headers = response.headers
-        return (
+        if (
             headers.get("x-ratelimit-remaining") == "0"
             or headers.get("retry-after") is not None
+        ):
+            return True
+        try:
+            error = response.json()
+        except ValueError:
+            return False
+        return (
+            isinstance(error, dict)
+            and isinstance(error.get("message"), str)
+            and "secondary rate limit" in error["message"].casefold()
         )
     return False
 

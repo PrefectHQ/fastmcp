@@ -108,6 +108,22 @@ async def test_github_operational_http_failure_raises_typed_error(status_code, h
         await verifier.verify_token("still-valid-token")
 
 
+@pytest.mark.parametrize("headers", [{}, {"x-ratelimit-remaining": "42"}])
+async def test_secondary_rate_limit_message_is_operational_error(
+    headers: dict[str, str],
+):
+    client = AsyncMock()
+    client.get.return_value = _response(
+        403,
+        headers=headers,
+        json_data={"message": "You have exceeded a secondary rate limit."},
+    )
+    verifier = GitHubTokenVerifier(http_client=client)
+
+    with pytest.raises(TokenVerificationError, match="HTTP 403"):
+        await verifier.verify_token("still-valid-token")
+
+
 async def test_github_transport_failure_raises_typed_error():
     client = AsyncMock()
     client.get.side_effect = httpx2.ConnectError(
@@ -140,6 +156,18 @@ async def test_github_missing_user_id_raises_typed_error():
         await verifier.verify_token("still-valid-token")
 
 
+async def test_non_rate_limited_403_message_still_rejects_token():
+    client = AsyncMock()
+    client.get.return_value = _response(
+        403,
+        headers={"x-ratelimit-remaining": "42"},
+        json_data={"message": "Resource not accessible by integration"},
+    )
+    verifier = GitHubTokenVerifier(http_client=client)
+
+    assert await verifier.verify_token("rejected-token") is None
+
+
 @pytest.mark.parametrize("status_code", [403, 404])
 async def test_github_permanent_client_error_is_an_invalid_token(status_code):
     """A forbidden or missing user is a final answer, so the client re-authenticates."""
@@ -160,6 +188,22 @@ async def test_scope_rate_limit_raises_typed_error(status_code, headers):
     verifier = GitHubTokenVerifier(required_scopes=["user"], http_client=client)
 
     with pytest.raises(TokenVerificationError, match=str(status_code)):
+        await verifier.verify_token("still-valid-token")
+
+
+async def test_scope_secondary_rate_limit_message_is_operational_error():
+    client = AsyncMock()
+    client.get.side_effect = [
+        _github_user_response(),
+        _response(
+            403,
+            headers={"x-ratelimit-remaining": "42"},
+            json_data={"message": "You have exceeded a secondary rate limit."},
+        ),
+    ]
+    verifier = GitHubTokenVerifier(required_scopes=["user"], http_client=client)
+
+    with pytest.raises(TokenVerificationError, match="HTTP 403"):
         await verifier.verify_token("still-valid-token")
 
 
@@ -314,6 +358,36 @@ async def test_github_provider_scope_outage_propagates_operational_error():
 
     with pytest.raises(TokenVerificationError, match="503"):
         await provider.load_access_token(fastmcp_token)
+
+
+async def test_github_provider_secondary_rate_limit_recovers():
+    client = AsyncMock()
+    client.get.side_effect = [
+        _response(
+            403,
+            headers={"x-ratelimit-remaining": "42"},
+            json_data={"message": "You have exceeded a secondary rate limit."},
+        ),
+        _github_user_response(),
+        _response(200, headers={"x-oauth-scopes": "user"}),
+    ]
+    provider = GitHubProvider(
+        client_id="github-client",
+        client_secret="github-secret",
+        base_url="https://proxy.example.com",
+        required_scopes=["user"],
+        http_client=client,
+        jwt_signing_key="test-signing-key",
+        client_storage=MemoryStore(),
+    )
+    fastmcp_token = await _store_proxy_access_token(provider, upstream_scope="user")
+
+    with pytest.raises(TokenVerificationError, match="HTTP 403"):
+        await provider.load_access_token(fastmcp_token)
+
+    recovered = await provider.load_access_token(fastmcp_token)
+    assert recovered is not None
+    assert client.get.call_count == 3
 
 
 async def test_github_provider_scope_401_stays_invalid():
