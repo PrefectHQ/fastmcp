@@ -274,7 +274,7 @@ class ToolDecoratorMixin:
         if isinstance(name_or_fn, classmethod):
             raise TypeError(
                 "To decorate a classmethod, use @classmethod above @tool. "
-                "See https://gofastmcp.com/servers/tools#using-with-methods"
+                "See https://gofastmcp.com/docs/servers/tools#using-with-methods"
             )
 
         def decorate_and_register(
@@ -297,7 +297,7 @@ class ToolDecoratorMixin:
                     f"            ...\n\n"
                     f"    obj = MyClass()\n"
                     f"    mcp.add_tool(obj.{fn_name})\n\n"
-                    f"See https://gofastmcp.com/servers/tools#using-with-methods"
+                    f"See https://gofastmcp.com/docs/servers/tools#using-with-methods"
                 )
 
             from fastmcp.tools.function_tool import ToolMeta

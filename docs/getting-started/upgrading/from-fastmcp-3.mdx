@@ -35,12 +35,12 @@ The `fastmcp` package is a thin wrapper that depends on `fastmcp-slim` at the sa
 <Prompt description="Copy this prompt into any LLM along with your server code to get automated upgrade guidance.">
 You are upgrading an MCP server or client from FastMCP 3.x to FastMCP 4, which is built on the MCP Python SDK v2.
 
-FIRST, fetch https://gofastmcp.com/getting-started/upgrading/from-fastmcp-3 — it explains every item below, with the replacement code. Fetch https://gofastmcp.com for anything the guide doesn't cover. Do not invent a FastMCP API you have not confirmed in the docs.
+FIRST, fetch https://gofastmcp.com/docs/getting-started/upgrading/from-fastmcp-3 — it explains every item below, with the replacement code. Fetch https://gofastmcp.com for anything the guide doesn't cover. Do not invent a FastMCP API you have not confirmed in the docs.
 
 Then search the provided code for each signal below. Most FastMCP 3 servers upgrade untouched, so report only what you actually find.
 
 WRONG STARTING VERSION
-- `from mcp.server.fastmcp import FastMCP` means the server uses FastMCP 1.0 from MCP SDK v1, not standalone FastMCP 3. Stop and use https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk-v1 instead; that guide also covers `host` and `port` passed to `FastMCP(...)`.
+- `from mcp.server.fastmcp import FastMCP` means the server uses FastMCP 1.0 from MCP SDK v1, not standalone FastMCP 3. Stop and use https://gofastmcp.com/docs/getting-started/upgrading/from-mcp-sdk-v1 instead; that guide also covers `host` and `port` passed to `FastMCP(...)`.
 
 ENVIRONMENT
 - a pydantic pin below 2.12

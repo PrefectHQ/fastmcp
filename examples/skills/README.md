@@ -27,5 +27,5 @@ uv run python -m examples.skills.server
 The provider reads the folders once at startup. Pass `reload=True` to pick up
 edits on every request while you're writing a skill.
 
-See [Skills over MCP](https://gofastmcp.com/servers/skills) for custom loaders,
+See [Skills over MCP](https://gofastmcp.com/docs/servers/skills) for custom loaders,
 access control, mounts and installing skills into a local agent.

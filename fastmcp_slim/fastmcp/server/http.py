@@ -107,7 +107,7 @@ class StreamableHTTPASGIApp:
                     "parent app's constructor, where `mcp_app` is the application instance "
                     "returned by `fastmcp_instance.http_app()`. \\n"
                     "For more details, see the FastMCP ASGI integration documentation: "
-                    "https://gofastmcp.com/deployment/asgi"
+                    "https://gofastmcp.com/docs/deployment/http#integration-with-web-frameworks"
                 )
                 # Raise a new RuntimeError that includes the original error's message
                 # for full context, but leads with the more helpful guidance.

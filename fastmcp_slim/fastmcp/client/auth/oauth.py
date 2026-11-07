@@ -336,7 +336,7 @@ class OAuth(OAuthClientProvider):
             warn(
                 message="Using in-memory token storage -- tokens will be lost when the client restarts. "
                 "For persistent storage across multiple MCP servers, provide an encrypted AsyncKeyValue backend. "
-                "See https://gofastmcp.com/clients/auth/oauth#token-storage for details.",
+                "See https://gofastmcp.com/docs/clients/auth/oauth#token-storage for details.",
                 stacklevel=2,
             )
 

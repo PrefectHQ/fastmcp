@@ -995,7 +995,7 @@ class OAuthProvider(
                 f"OAuth endpoints at {self.base_url}, issuer at {self.issuer_url}. "
                 f"Ensure well-known routes are accessible at root "
                 f"({str(self.issuer_url).rstrip('/')}/.well-known/). "
-                f"See: https://gofastmcp.com/deployment/http#mounting-authenticated-servers"
+                f"See: https://gofastmcp.com/docs/deployment/http#mounting-authenticated-servers"
             )
 
         # Initialize OAuth Authorization Server Provider

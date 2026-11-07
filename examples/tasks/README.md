@@ -70,6 +70,6 @@ python -m fastmcp_tasks.worker_cli worker server.py     # extra worker(s) in oth
 
 ## Learn more
 
-- [Server background tasks](https://gofastmcp.com/servers/tasks)
-- [Client background tasks](https://gofastmcp.com/clients/tasks)
+- [Server background tasks](https://gofastmcp.com/docs/servers/tasks)
+- [Client background tasks](https://gofastmcp.com/docs/clients/tasks)
 - [Docket](https://github.com/chrisguidry/docket)

@@ -204,7 +204,7 @@ _REMOVED_KWARGS: dict[str, str] = {
     "on_duplicate_tools": "Use `on_duplicate=` instead.",
     "on_duplicate_resources": "Use `on_duplicate=` instead.",
     "on_duplicate_prompts": "Use `on_duplicate=` instead.",
-    "tool_serializer": "Return ToolResult from your tools instead. See https://gofastmcp.com/servers/tools#custom-serialization",
+    "tool_serializer": "Return ToolResult from your tools instead. See https://gofastmcp.com/docs/servers/tools#custom-serialization",
     "include_tags": "Use `server.enable(tags=..., only=True)` after creating the server.",
     "exclude_tags": "Use `server.disable(tags=...)` after creating the server.",
     "tool_transformations": "Use `server.add_transform(ToolTransform(...))` after creating the server.",
