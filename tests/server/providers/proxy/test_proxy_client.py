@@ -286,7 +286,7 @@ class TestProxyClient:
         "content",
         [
             TextContent(type="text", text="I love FastMCP"),
-            ImageContent(type="image", data="aGVsbG8=", mimeType="image/png"),
+            ImageContent(type="image", data="aGVsbG8=", mime_type="image/png"),
         ],
         ids=["text", "image"],
     )
@@ -301,7 +301,7 @@ class TestProxyClient:
             role="assistant",
             model="claude-sonnet-5-5",
             content=content,
-            stopReason="endTurn",
+            stop_reason="endTurn",
         )
         async with Client(
             proxy_server, mode="legacy", sampling_handler=lambda *args: answer
