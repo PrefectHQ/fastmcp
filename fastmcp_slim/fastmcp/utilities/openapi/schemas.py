@@ -2,6 +2,7 @@
 
 import re
 from collections import Counter
+from copy import deepcopy
 from typing import Any
 
 from fastmcp.utilities.logging import get_logger
@@ -524,6 +525,181 @@ def _flatten_discriminator_subtypes(
     return properties
 
 
+def _local_ref_name(ref: Any) -> str | None:
+    """Return the definition name a local ``$ref`` points at."""
+    if isinstance(ref, str) and ref.startswith("#/"):
+        return ref.rsplit("/", 1)[-1] or None
+    return None
+
+
+def _nested_schema_positions(
+    schema: dict[str, Any], include_composition: bool = False
+) -> list[tuple[Any, Any]]:
+    """List every slot inside ``schema`` that can hold a subschema."""
+    positions: list[tuple[Any, Any]] = []
+    props = schema.get("properties")
+    if isinstance(props, dict):
+        positions.extend(
+            (props, key) for key, value in props.items() if isinstance(value, dict)
+        )
+    positions.extend(
+        (schema, key)
+        for key in ("items", "additionalProperties")
+        if isinstance(schema.get(key), dict)
+    )
+    if include_composition:
+        # The body schema reaches this shape when a $ref with siblings is
+        # paired into allOf. Nesting does not: an allOf there is a subtype
+        # composing its parent, and flattening the parent inside it would
+        # advertise sibling variants on the subtype.
+        for group in ("allOf", "anyOf", "oneOf"):
+            members = schema.get(group)
+            if isinstance(members, list):
+                positions.extend(
+                    (members, index)
+                    for index, member in enumerate(members)
+                    if isinstance(member, dict)
+                )
+    return positions
+
+
+def _merge_required(schema: dict[str, Any], schema_defs: dict[str, Any]) -> list[str]:
+    """Required fields of a schema, including those inherited through allOf."""
+    merged: list[str] = []
+    for member in _allof_members(schema, schema_defs):
+        for name in member.get("required") or []:
+            if name not in merged:
+                merged.append(name)
+    return merged
+
+
+def _merge_ref_siblings(
+    target: dict[str, Any], siblings: dict[str, Any]
+) -> dict[str, Any]:
+    """Apply a ``$ref``'s siblings on top of the schema it resolves to.
+
+    Applies the same rule the top-level ``$ref`` merge uses: the sibling
+    schema comes last and wins, a property declared on both sides must satisfy
+    both definitions, and ``required`` names are combined. The siblings would
+    otherwise disappear together with the ``$ref`` itself, dropping constraints
+    such as ``description`` or ``maxProperties`` from the emitted schema.
+    """
+    properties = dict(target.get("properties") or {})
+    for name, property_schema in (siblings.get("properties") or {}).items():
+        declared = properties.get(name)
+        properties[name] = (
+            {"allOf": [declared, property_schema]}
+            if declared is not None and declared != property_schema
+            else property_schema
+        )
+    if properties:
+        target["properties"] = properties
+
+    required = list(target.get("required") or [])
+    for name in siblings.get("required") or []:
+        if name not in required:
+            required.append(name)
+    if required:
+        target["required"] = required
+
+    target.update(
+        {
+            key: value
+            for key, value in siblings.items()
+            if key not in ("properties", "required")
+        }
+    )
+    return target
+
+
+def _resolve_and_flatten(
+    schema: dict[str, Any],
+    schema_defs: dict[str, Any],
+    path: tuple[str, ...] = (),
+) -> tuple[dict[str, Any], bool]:
+    """Flatten discriminators below ``schema``, following $refs on the way.
+
+    ``path`` holds the definition names on the current branch. A name already
+    on it is a real cycle and ends the walk; the same name reaching two
+    sibling branches is not, so both get flattened.
+
+    Returns the schema to keep together with whether anything below it
+    changed. A ``$ref`` with no change underneath is returned untouched, so
+    plain references are not inlined into the emitted schema. When the ref is
+    inlined, its sibling keywords are merged onto the resolved schema rather
+    than dropped with the ref.
+    """
+    name = _local_ref_name(schema.get("$ref"))
+    if name is not None:
+        if name in path:
+            return schema, False
+        resolved = schema_defs.get(name)
+        if not isinstance(resolved, dict):
+            return schema, False
+        inner, changed = _resolve_and_flatten(
+            deepcopy(resolved), schema_defs, (*path, name)
+        )
+        if not changed:
+            return schema, False
+        siblings = {key: value for key, value in schema.items() if key != "$ref"}
+        return (_merge_ref_siblings(inner, siblings) if siblings else inner), True
+
+    changed = False
+    for container, key in _nested_schema_positions(schema):
+        child, child_changed = _resolve_and_flatten(container[key], schema_defs, path)
+        if child_changed:
+            container[key] = child
+            changed = True
+
+    flattened = _flatten_discriminator_subtypes(schema, schema_defs)
+    if flattened is not None:
+        # Variant fields only exist after the expansion above, so they are
+        # walked separately: a variant that adds a reference to another
+        # discriminated schema would otherwise be emitted unflattened.
+        introduced = {
+            name: value
+            for name, value in flattened.items()
+            if name not in (schema.get("properties") or {})
+        }
+        schema["properties"] = flattened
+        schema.pop("discriminator", None)
+        required = _merge_required(schema, schema_defs)
+        if required:
+            schema["required"] = required
+        else:
+            schema.pop("required", None)
+        for name, property_schema in introduced.items():
+            child, child_changed = _resolve_and_flatten(
+                property_schema, schema_defs, path
+            )
+            if child_changed:
+                flattened[name] = child
+        changed = True
+    return schema, changed
+
+
+def _flatten_nested_discriminator_subtypes(
+    schema: dict[str, Any],
+    schema_defs: dict[str, Any],
+) -> None:
+    """Flatten discriminator mappings on schemas nested below the request body.
+
+    The body schema itself is flattened by the caller, but a discriminated
+    union can equally sit inside an envelope property, array items, or a
+    free-form map value. Left as a bare ``$ref``, such a schema advertises
+    nothing but the discriminator property once composition keywords are
+    cleaned for display. The ref is replaced with the flattened schema
+    inline, so the mapped subtypes are pruned from ``$defs`` exactly as they
+    are at the top level.
+    """
+    # The body schema's own $ref is left alone: the caller decides whether it
+    # stays a reference or is merged with its siblings.
+    for container, key in _nested_schema_positions(schema, include_composition=True):
+        child, changed = _resolve_and_flatten(container[key], schema_defs)
+        if changed:
+            container[key] = child
+
+
 def _combine_schemas_and_map_params(
     route: HTTPRoute,
     convert_refs: bool = True,
@@ -645,6 +821,11 @@ def _combine_schemas_and_map_params(
         if flattened_props is not None:
             body_schema["properties"] = flattened_props
             body_schema.pop("discriminator", None)
+
+        # The same flattening applies below the top level, where the
+        # discriminated schema is reached through a $ref (or inline) rather
+        # than being the body schema itself.
+        _flatten_nested_discriminator_subtypes(body_schema, route.request_schemas)
 
         # A kept $ref still carries constraints the properties cannot express,
         # so the whole schema is exposed as one argument.
