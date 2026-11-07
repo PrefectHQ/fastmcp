@@ -41,7 +41,6 @@ import inspect
 import json
 import time
 from collections.abc import Callable, Sequence
-from functools import lru_cache
 from types import TracebackType
 from typing import (
     TYPE_CHECKING,
@@ -61,6 +60,7 @@ from uncalled_for import Dependency
 from fastmcp.exceptions import FastMCPError
 from fastmcp.server.dependencies import get_access_token, get_server, get_session
 from fastmcp.server.providers.base import Provider
+from fastmcp.utilities._callable_cache import cache_on_callable
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -339,7 +339,7 @@ class _SessionIdMarker:
 SessionId = Annotated[str, _SessionIdMarker()]
 
 
-@lru_cache(maxsize=5000)
+@cache_on_callable
 def session_id_parameter_names(fn: Callable[..., object]) -> tuple[str, ...]:
     """Names of a function's parameters annotated with `SessionId`.
 
