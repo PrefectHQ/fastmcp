@@ -31,6 +31,8 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 import mcp_types
+from docket import ExponentialRetry, Retry
+from docket.dependencies import get_single_dependency_of_type
 from mcp.shared.exceptions import MCPError
 
 from fastmcp.exceptions import FastMCPError
@@ -133,16 +135,14 @@ def reentrant_task_fn(
     `InputRequiredResult` is captured to Redis (outstanding requests + carried
     state) and the wrapper returns, ending the leg without blocking. The next
     leg is enqueued by ``tasks/update`` when the client answers. A raised tool
-    error becomes a completed `is_error` result (not a failed task), matching the
-    synchronous `tools/call` path.
+    error becomes a completed `is_error` result after any retries, matching the
+    synchronous `tools/call` error shape.
     """
 
     @functools.wraps(fn)
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
             result = await fn(*args, **kwargs)
-        except FastMCPError as exc:
-            return _error_result(tool_name, exc)
         except MCPError:
             # A protocol fault, not a tool error. SEP-2663 reserves `failed`
             # for exactly this, so it must escape the wrapper: the Docket
@@ -153,7 +153,17 @@ def reentrant_task_fn(
             )
             raise
         except Exception as exc:
-            logger.exception("background task tool %r raised", tool_name)
+            # Only the built-in retries guarantee another attempt before their
+            # limit. A custom handler can decline and expose an unmasked failure.
+            retry = get_single_dependency_of_type(kwargs, Retry)
+            if (
+                retry is not None
+                and type(retry) in (Retry, ExponentialRetry)
+                and (retry.attempts is None or retry.attempt < retry.attempts)
+            ):
+                raise
+            if not isinstance(exc, FastMCPError):
+                logger.exception("background task tool %r raised", tool_name)
             return _error_result(tool_name, exc)
         input_required = _as_input_required(result)
         if input_required is None:

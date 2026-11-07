@@ -11,14 +11,17 @@ prompt/resource task cases are gone.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from typing import Any, cast
 
 import pytest
+from docket import ExponentialRetry, Retry
 from fastmcp_tasks.dependencies import CurrentDocket
 from uncalled_for import Depends
 
 from fastmcp import Context, FastMCP
 from fastmcp.dependencies import CallArgument
+from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.dependencies import CurrentFastMCP
 from fastmcp.server.sessions import UserSession
@@ -82,6 +85,87 @@ async def test_background_tool_receives_docket_dependency(dependency_server):
     dep_type, dep_value = dependency_server._injected_values[0]
     assert dep_type == "docket"
     assert dep_value is not None
+
+
+@pytest.mark.parametrize(
+    ("policy", "explicit"),
+    [
+        pytest.param(Retry(attempts=2), False, id="exception"),
+        pytest.param(Retry(attempts=2), True, id="retry-after"),
+        pytest.param(
+            ExponentialRetry(attempts=2, minimum_delay=timedelta(0)),
+            False,
+            id="exponential",
+        ),
+        pytest.param(Retry.forever(), False, id="unlimited"),
+    ],
+)
+async def test_task_retry_recovers_from_first_attempt(policy: Retry, explicit: bool):
+    server = FastMCP("retry")
+    server.add_extension(TasksExtension())
+    attempts = []
+
+    @server.tool(task=True)
+    async def deliver(retry: Retry = policy) -> str:
+        attempts.append(retry.attempt)
+        if retry.attempt == 1:
+            if explicit:
+                retry.after(timedelta(0))
+            raise ConnectionError("service unavailable")
+        return "delivered"
+
+    async with running_task_server(server):
+        final = await run_task(server, "deliver")
+
+    assert attempts == [1, 2]
+    assert final.status == "completed" and final.result is not None
+    assert final.result["structuredContent"] == {"result": "delivered"}
+
+
+@pytest.mark.parametrize(
+    ("error_type", "expected"),
+    [(ConnectionError, "Error calling tool 'deliver'"), (ToolError, "try again later")],
+)
+async def test_exhausted_task_retry_preserves_tool_error(error_type, expected):
+    server = FastMCP("retry", mask_error_details=True)
+    server.add_extension(TasksExtension())
+    attempts = []
+
+    @server.tool(task=True)
+    async def deliver(retry: Retry = Retry(attempts=2)) -> str:
+        attempts.append(retry.attempt)
+        raise error_type("try again later")
+
+    async with running_task_server(server):
+        final = await run_task(server, "deliver")
+
+    assert attempts == [1, 2]
+    assert final.status == "completed" and final.result is not None
+    assert final.result["isError"] is True
+    assert final.result["content"][0]["text"] == expected
+
+
+async def test_custom_retry_can_decline_without_exposing_tool_error():
+    class NoRetry(Retry):
+        async def __aenter__(self):
+            return self
+
+        async def handle_failure(self, execution, outcome):
+            return False
+
+    server = FastMCP("custom-retry", mask_error_details=True)
+    server.add_extension(TasksExtension())
+
+    @server.tool(task=True)
+    async def deliver(retry: Retry = NoRetry(attempts=2)) -> str:
+        raise ConnectionError("internal detail")
+
+    async with running_task_server(server):
+        final = await run_task(server, "deliver")
+
+    assert final.status == "completed" and final.result is not None
+    assert final.result["isError"] is True
+    assert final.result["content"][0]["text"] == "Error calling tool 'deliver'"
 
 
 async def test_background_tool_receives_server_dependency(dependency_server):
