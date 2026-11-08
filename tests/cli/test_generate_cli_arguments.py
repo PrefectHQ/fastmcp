@@ -179,48 +179,70 @@ async def test_parameter_named_json_does_not_break_json_arguments() -> None:
     assert received == [({"a": 1}, {"b": "2"})]
 
 
-async def test_optional_string_parameter_takes_plain_text() -> None:
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("Howdy", "Howdy"),
+        ('"Howdy"', "Howdy"),
+        ("null", None),
+        ('"null"', "null"),
+        ("NULL", "NULL"),
+        ("123", "123"),
+        ("true", "true"),
+        ('{"a": 1}', '{"a": 1}'),
+        ("", ""),
+    ],
+)
+async def test_optional_string_parameter_takes_plain_text(
+    value: str, expected: str | None
+) -> None:
     server = FastMCP("Greeter")
-    received: list[tuple[str, str | None]] = []
+    received: list[str | None] = []
 
     @server.tool
-    def greet(name: str, greeting: str | None = None) -> None:
-        received.append((name, greeting))
+    def greet(greeting: str | None = None) -> None:
+        received.append(greeting)
 
     namespace = await generated_cli(server)
     await namespace["app"].run_async(
-        ["call-tool", "greet", "--name", "World", "--greeting", "Howdy"],
-        result_action="return_value",
+        ["call-tool", "greet", "--greeting", value], result_action="return_value"
     )
 
-    assert received == [("World", "Howdy")]
+    assert received == [expected]
+    assert type(received[0]) is type(expected)
 
 
 @pytest.mark.parametrize(
     ("arguments", "expected"),
     [
-        ([], (None, None, None)),
-        (["--count", "3", "--loud", "--labels", '{"a": 1}'], (3, True, {"a": 1})),
+        ([], ("Hello", "null", "Pal")),
+        (
+            ["--greeting", "null", "--fallback", "null", "--nickname", "null"],
+            (None, None, None),
+        ),
+        (
+            ["--greeting", "Howdy", "--fallback", '"null"', "--nickname", "Bob"],
+            ("Howdy", "null", "Bob"),
+        ),
     ],
 )
-async def test_optional_parameters_keep_their_types(
-    arguments: list[str],
-    expected: tuple[int | None, bool | None, dict[str, int] | None],
+async def test_optional_string_parameter_distinguishes_null_from_omission(
+    arguments: list[str], expected: tuple[str | None, str | None, str | None]
 ) -> None:
-    server = FastMCP("Options")
-    received: list[tuple[int | None, bool | None, dict[str, int] | None]] = []
+    server = FastMCP("Greeter")
+    received: list[tuple[str | None, str | None, str | None]] = []
 
     @server.tool
-    def configure(
-        count: int | None = None,
-        loud: bool | None = None,
-        labels: dict[str, int] | None = None,
+    def greet(
+        greeting: str | None = "Hello",
+        fallback: str | None = "null",
+        nickname: str | None = Field(default_factory=lambda: "Pal"),
     ) -> None:
-        received.append((count, loud, labels))
+        received.append((greeting, fallback, nickname))
 
     namespace = await generated_cli(server)
     await namespace["app"].run_async(
-        ["call-tool", "configure", *arguments], result_action="return_value"
+        ["call-tool", "greet", *arguments], result_action="return_value"
     )
 
     assert received == [expected]
@@ -228,21 +250,58 @@ async def test_optional_parameters_keep_their_types(
 
 
 @pytest.mark.parametrize(
-    ("value_schema", "annotation"),
+    ("tool_name", "value", "expected"),
     [
-        ({"anyOf": [{"type": "string"}, {"type": "null"}]}, "str | None"),
-        (
-            {"anyOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
-            "int | None",
-        ),
-        (
-            {"anyOf": [{"type": ["string", "integer"]}, {"type": "boolean"}]},
-            "str | int | bool | None",
-        ),
+        ("str_or_int", "3", 3),
+        ("str_or_int", '"3"', "3"),
+        ("int_or_bool", "3", 3),
+        ("int_or_bool", "true", True),
+        ("int_or_none", "7", 7),
+        ("int_or_none", "null", None),
+        ("bool_or_none", "false", False),
+        ("bool_or_none", "null", None),
     ],
 )
-def test_optional_simple_any_of_parameter_is_a_typed_flag(
-    value_schema: dict[str, Any], annotation: str
+async def test_other_unions_take_json_values(
+    tool_name: str, value: str, expected: str | int | bool | None
+) -> None:
+    server = FastMCP("Unions")
+    received: list[str | int | bool | None] = []
+
+    @server.tool
+    def str_or_int(value: str | int) -> None:
+        received.append(value)
+
+    @server.tool
+    def int_or_bool(value: int | bool) -> None:
+        received.append(value)
+
+    @server.tool
+    def int_or_none(value: int | None = 1) -> None:
+        received.append(value)
+
+    @server.tool
+    def bool_or_none(value: bool | None = True) -> None:
+        received.append(value)
+
+    namespace = await generated_cli(server)
+    await namespace["app"].run_async(
+        ["call-tool", tool_name, "--value", value], result_action="return_value"
+    )
+
+    assert received == [expected]
+    assert type(received[0]) is type(expected)
+
+
+@pytest.mark.parametrize(
+    "value_schema",
+    [
+        {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        {"anyOf": [{"type": "null"}, {"type": "string", "maxLength": 10}]},
+    ],
+)
+def test_optional_string_any_of_parameter_is_a_plain_flag(
+    value_schema: dict[str, Any],
 ) -> None:
     tool = mcp_types.Tool(
         name="set",
@@ -250,8 +309,8 @@ def test_optional_simple_any_of_parameter_is_a_typed_flag(
     )
     source = _tool_function_source(tool)
 
-    assert f"value: Annotated[{annotation}, cyclopts.Parameter(" in source
-    assert "JSON Schema" not in source
+    assert "value: Annotated[str | None, cyclopts.Parameter(help='')] = None" in source
+    assert "_arguments['value'] = _json_text(_arguments['value'])" in source
     assert "json.loads" not in source
     compile(source, "<test>", "exec")
 
@@ -259,11 +318,18 @@ def test_optional_simple_any_of_parameter_is_a_typed_flag(
 @pytest.mark.parametrize(
     "value_schema",
     [
+        {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+        {"anyOf": [{"type": "number"}, {"type": "null"}]},
+        {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
         {"anyOf": [{"type": "object"}, {"type": "null"}]},
-        {"anyOf": [True, {"type": "string"}]},
+        {"anyOf": [{"type": "string", "enum": ["red", "green"]}, {"type": "null"}]},
+        {"anyOf": [{"type": "string", "const": "red"}, {"type": "null"}]},
+        {"anyOf": [{"type": "string"}, {"type": "integer"}]},
+        {"anyOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]},
+        {"anyOf": [True, {"type": "null"}]},
     ],
 )
-def test_any_of_with_complex_branch_is_parsed_as_json(
+def test_other_any_of_unions_are_parsed_as_json(
     value_schema: dict[str, Any],
 ) -> None:
     tool = mcp_types.Tool(
@@ -272,11 +338,29 @@ def test_any_of_with_complex_branch_is_parsed_as_json(
     )
     source = _tool_function_source(tool)
 
+    assert "JSON Schema:" in source
     assert "_arguments['value'] = json.loads(_arguments['value'])" in source
     compile(source, "<test>", "exec")
 
 
-def test_skill_documents_optional_any_of_parameters_as_typed_flags() -> None:
+async def test_parameter_named_json_text_does_not_break_optional_strings() -> None:
+    server = FastMCP("Notes")
+    received: list[tuple[str, str | None]] = []
+
+    @server.tool
+    def note(_json_text: str, title: str | None = None) -> None:
+        received.append((_json_text, title))
+
+    namespace = await generated_cli(server)
+    await namespace["app"].run_async(
+        ["call-tool", "note", "--json-text", "body", "--title", '"Hi"'],
+        result_action="return_value",
+    )
+
+    assert received == [("body", "Hi")]
+
+
+def test_skill_documents_optional_strings_as_plain_flags() -> None:
     tool = mcp_types.Tool(
         name="greet",
         input_schema={
@@ -286,8 +370,8 @@ def test_skill_documents_optional_any_of_parameters_as_typed_flags() -> None:
                     "anyOf": [{"type": "string"}, {"type": "null"}],
                     "default": None,
                 },
-                "loud": {
-                    "anyOf": [{"type": "boolean"}, {"type": "null"}],
+                "count": {
+                    "anyOf": [{"type": "integer"}, {"type": "null"}],
                     "default": None,
                 },
             },
@@ -295,7 +379,5 @@ def test_skill_documents_optional_any_of_parameters_as_typed_flags() -> None:
     )
     content = generate_skill_content("test", "cli.py", [tool])
 
-    assert "--greeting <value>" in content
-    assert "--loud <value>" not in content
-    assert "| `--greeting` | string \\| null | no |" in content
-    assert "JSON string" not in content
+    assert "| `--greeting` | string \\| null | no |  |" in content
+    assert "| `--count` | string | no | JSON string |" in content

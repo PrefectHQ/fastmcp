@@ -44,25 +44,27 @@ def _is_simple_type(schema: dict[str, Any]) -> bool:
     return schema_type in _SIMPLE_TYPES
 
 
-def _collapse_simple_union(schema: dict[str, Any]) -> dict[str, Any]:
-    """Express an `anyOf` of simple types as the equivalent `type` list.
+def _is_optional_string(schema: dict[str, Any]) -> bool:
+    """Check if a schema is Pydantic's `anyOf` form of `str | None`.
 
-    Pydantic describes `str | None` with `anyOf` branches rather than
-    `type: ["string", "null"]`. Both should produce the same command, so a
-    plain value is not parsed as JSON.
+    Such a parameter takes plain text, like a required string. Other unions,
+    such as `int | None`, `bool | None` or an optional enum, take JSON.
     """
     branches = schema.get("anyOf")
-    if "type" in schema or not isinstance(branches, list) or not branches:
-        return schema
-    if not all(
-        isinstance(branch, dict) and _is_simple_type(branch) for branch in branches
-    ):
-        return schema
-    types: list[str] = []
-    for branch in branches:
-        branch_type = branch["type"]
-        types.extend(branch_type if isinstance(branch_type, list) else [branch_type])
-    return {**schema, "type": list(dict.fromkeys(types))}
+    if "type" in schema or not isinstance(branches, list) or len(branches) != 2:
+        return False
+    if branches[0] == {"type": "null"}:
+        string_branch = branches[1]
+    elif branches[1] == {"type": "null"}:
+        string_branch = branches[0]
+    else:
+        return False
+    return (
+        isinstance(string_branch, dict)
+        and string_branch.get("type") == "string"
+        and "enum" not in string_branch
+        and "const" not in string_branch
+    )
 
 
 def _is_simple_array(schema: dict[str, Any]) -> tuple[bool, str | None]:
@@ -242,7 +244,7 @@ def _resolve_tool_param_flags(
     items: list[tuple[str, str, str, str]] = []
     for prop_name in properties:
         safe_name = _to_python_identifier(prop_name)
-        if safe_name in {"_call_tool", "isinstance", "json", "str"}:
+        if safe_name in {"_call_tool", "_json_text", "isinstance", "json", "str"}:
             safe_name = f"{safe_name}_"
         default_flag = _param_to_cli_flag(prop_name)
         norm_key = default_flag.replace("_", "-")
@@ -303,17 +305,14 @@ def _resolve_tool_param_flags(
 def _tool_function_source(tool: mcp_types.Tool) -> str:
     """Generate the source for a single ``@call_tool_app.command`` function."""
     schema = tool.input_schema
-    properties: dict[str, Any] = {
-        name: _collapse_simple_union(prop_schema)
-        for name, prop_schema in schema.get("properties", {}).items()
-    }
+    properties: dict[str, Any] = schema.get("properties", {})
     required = set(schema.get("required", []))
     param_flags = _resolve_tool_param_flags(properties)
 
     # Build parameter lines and track which need JSON parsing
     param_lines: list[str] = []
     call_args: list[str] = []
-    json_params: list[tuple[str, str]] = []  # (prop_name, safe_name)
+    json_params: list[tuple[str, str]] = []  # (prop_name, decoder)
     seen_names: dict[str, str] = {}  # safe_name -> original prop_name
 
     for prop_name, prop_schema in properties.items():
@@ -321,7 +320,7 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
         help_text = prop_schema.get("description", "")
         is_required = prop_name in required
         safe_name = _to_python_identifier(prop_name)
-        if safe_name in {"_call_tool", "isinstance", "json", "str"}:
+        if safe_name in {"_call_tool", "_json_text", "isinstance", "json", "str"}:
             # The command body refers to these names, so a parameter must not
             # shadow them. Cyclopts drops the trailing underscore from the flag.
             safe_name = f"{safe_name}_"
@@ -334,11 +333,14 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             )
         seen_names[safe_name] = prop_name
 
-        # For complex types, add schema to help text
-        if needs_json:
+        # For complex types, add schema to help text. An optional string takes
+        # plain text, so it shows no schema and decodes only a JSON string or null.
+        if _is_optional_string(prop_schema):
+            json_params.append((prop_name, "_json_text"))
+        elif needs_json:
             schema_help = _format_schema_for_help(prop_schema)
             help_text = f"{help_text}\\n{schema_help}" if help_text else schema_help
-            json_params.append((prop_name, safe_name))
+            json_params.append((prop_name, "json.loads"))
 
         _, explicit_name = param_flags[prop_name]
         flag_arg = f'name="{explicit_name}", ' if explicit_name else ""
@@ -361,10 +363,7 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
                     annotation = f"Annotated[{py_type}, cyclopts.Parameter({flag_arg}help={help_text!r})]"
                     param_lines.append(f"    {safe_name}: {annotation} = {default!r},")
             else:
-                optional_type = (
-                    py_type if "None" in py_type.split(" | ") else f"{py_type} | None"
-                )
-                annotation = f"Annotated[{optional_type}, cyclopts.Parameter({flag_arg}help={help_text!r})]"
+                annotation = f"Annotated[{py_type} | None, cyclopts.Parameter({flag_arg}help={help_text!r})]"
                 param_lines.append(f"    {safe_name}: {annotation} = None,")
 
         call_args.append(f"{prop_name!r}: {safe_name}")
@@ -402,12 +401,12 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             f"    {arguments_name} = {{k: v for k, v in {arguments_name}.items() "
             f"if v is not None or k in {tuple(sorted(required))!r}}}"
         )
-        for prop_name, _safe_name in json_params:
+        for prop_name, decoder in json_params:
             value = f"{arguments_name}[{prop_name!r}]"
             lines.append(
                 f"    if {prop_name!r} in {arguments_name} and isinstance({value}, str):"
             )
-            lines.append(f"        {value} = json.loads({value})")
+            lines.append(f"        {value} = {decoder}({value})")
         lines.append(f"    await _call_tool({tool.name!r}, {arguments_name})")
     else:
         lines.append(f"    await _call_tool({tool.name!r}, {{}})")
@@ -518,7 +517,16 @@ def generate_cli_script(
                 result = await client.call_tool(tool_name, arguments, raise_on_error=False)
                 _print_tool_result(result)
                 if result.is_error:
-                    sys.exit(1)""")
+                    sys.exit(1)
+
+
+        def _json_text(value: str) -> str | None:
+            \"\"\"Decode a JSON string or null, and pass any other text through.\"\"\"
+            try:
+                decoded = json.loads(value)
+            except json.JSONDecodeError:
+                return value
+            return decoded if decoded is None or isinstance(decoded, str) else value""")
     )
     lines.append("")
     lines.append("")
@@ -687,6 +695,8 @@ def _param_to_cli_flag(prop_name: str) -> str:
 
 def _schema_type_label(prop_schema: dict[str, Any]) -> str:
     """Return a human-readable type label for a property schema."""
+    if _is_optional_string(prop_schema):
+        return "string | null"
     schema_type = prop_schema.get("type", "string")
     if isinstance(schema_type, list):
         labels = [_JSON_SCHEMA_TYPE_LABELS.get(t, t) for t in schema_type]
@@ -707,10 +717,7 @@ def _schema_type_label(prop_schema: dict[str, Any]) -> str:
 def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
     """Generate a SKILL.md section for a single tool."""
     schema = tool.input_schema
-    properties: dict[str, Any] = {
-        name: _collapse_simple_union(prop_schema)
-        for name, prop_schema in schema.get("properties", {}).items()
-    }
+    properties: dict[str, Any] = schema.get("properties", {})
     required = set(schema.get("required", []))
     param_flags = _resolve_tool_param_flags(properties)
 
@@ -739,7 +746,7 @@ def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
         is_required = "yes" if prop_name in required else "no"
         description = prop_schema.get("description", "")
         _, needs_json = _schema_to_python_type(prop_schema)
-        if needs_json:
+        if needs_json and not _is_optional_string(prop_schema):
             description = (
                 f"{description} (JSON string)" if description else "JSON string"
             )
