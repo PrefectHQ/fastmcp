@@ -333,6 +333,24 @@ class AnthropicSamplingHandler:
         return anthropic_messages
 
     @staticmethod
+    @staticmethod
+    def _stop_reason_from_message(message: Message) -> StopReason:
+        """Map Anthropic's stop reason onto MCP's.
+
+        Shared by the tool and no-tool converters: omitting it on the no-tool
+        path made a `max_tokens` cutoff look like a finished reply.
+        """
+        if message.stop_reason == "tool_use":
+            return "toolUse"
+        if message.stop_reason == "end_turn":
+            return "endTurn"
+        if message.stop_reason == "max_tokens":
+            return "maxTokens"
+        if message.stop_reason == "stop_sequence":
+            return "stopSequence"
+        return "endTurn"
+
+    @staticmethod
     def _message_to_create_message_result(
         message: Message,
     ) -> CreateMessageResult:
@@ -348,6 +366,7 @@ class AnthropicSamplingHandler:
                 content=TextContent(type="text", text=text),
                 role="assistant",
                 model=message.model,
+                stop_reason=AnthropicSamplingHandler._stop_reason_from_message(message),
             )
 
         raise ValueError(
@@ -412,17 +431,7 @@ class AnthropicSamplingHandler:
             raise ValueError("No content in response from Anthropic")
 
         # Determine stop reason
-        stop_reason: StopReason
-        if message.stop_reason == "tool_use":
-            stop_reason = "toolUse"
-        elif message.stop_reason == "end_turn":
-            stop_reason = "endTurn"
-        elif message.stop_reason == "max_tokens":
-            stop_reason = "maxTokens"
-        elif message.stop_reason == "stop_sequence":
-            stop_reason = "stopSequence"
-        else:
-            stop_reason = "endTurn"
+        stop_reason = AnthropicSamplingHandler._stop_reason_from_message(message)
 
         # Build content list
         content: list[SamplingMessageContentBlock] = []

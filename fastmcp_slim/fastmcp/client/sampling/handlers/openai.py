@@ -385,6 +385,22 @@ class OpenAISamplingHandler:
         return openai_messages
 
     @staticmethod
+    def _stop_reason_from_finish_reason(finish_reason: str | None) -> StopReason:
+        """Map OpenAI's finish reason onto MCP's stop reason.
+
+        Shared by the tool and no-tool converters: dropping it on the no-tool
+        path made a reply truncated at `max_tokens` indistinguishable from a
+        finished one, since `stopReason` was simply absent.
+        """
+        if finish_reason == "tool_calls":
+            return "toolUse"
+        if finish_reason == "stop":
+            return "endTurn"
+        if finish_reason == "length":
+            return "maxTokens"
+        return "endTurn"
+
+    @staticmethod
     def _chat_completion_to_create_message_result(
         chat_completion: ChatCompletion,
     ) -> CreateMessageResult:
@@ -398,6 +414,9 @@ class OpenAISamplingHandler:
                 content=TextContent(type="text", text=content),
                 role="assistant",
                 model=chat_completion.model,
+                stop_reason=OpenAISamplingHandler._stop_reason_from_finish_reason(
+                    first_choice.finish_reason
+                ),
             )
 
         raise ValueError("No content in response from completion")
@@ -460,15 +479,9 @@ class OpenAISamplingHandler:
         message = first_choice.message
 
         # Determine stop reason
-        stop_reason: StopReason
-        if first_choice.finish_reason == "tool_calls":
-            stop_reason = "toolUse"
-        elif first_choice.finish_reason == "stop":
-            stop_reason = "endTurn"
-        elif first_choice.finish_reason == "length":
-            stop_reason = "maxTokens"
-        else:
-            stop_reason = "endTurn"
+        stop_reason = OpenAISamplingHandler._stop_reason_from_finish_reason(
+            first_choice.finish_reason
+        )
 
         # Build content list
         content: list[TextContent | ToolUseContent] = []

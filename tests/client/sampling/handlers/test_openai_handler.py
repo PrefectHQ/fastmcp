@@ -317,7 +317,36 @@ async def test_chat_completion_to_create_message_result():
         content=TextContent(type="text", text="HELPFUL CONTENT FROM A VERY SMART LLM"),
         role="assistant",
         model="gpt-4o-mini",
+        stop_reason="endTurn",
     )
+
+
+async def test_chat_completion_to_create_message_result_keeps_max_tokens():
+    """A reply cut off at `max_tokens` must say so on the no-tool path too;
+    the converter used to return no `stopReason` at all, so the caller could
+    not tell a truncated answer from a finished one."""
+    mock_client = MagicMock(spec=AsyncOpenAI)
+    handler = OpenAISamplingHandler(default_model="fallback-model", client=mock_client)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+
+    result: CreateMessageResult = handler._chat_completion_to_create_message_result(
+        chat_completion=ChatCompletion(
+            id="123",
+            created=123,
+            model="gpt-4o-mini",
+            object="chat.completion",
+            choices=[
+                Choice(
+                    message=ChatCompletionMessage(
+                        content="half an answer", role="assistant"
+                    ),
+                    finish_reason="length",
+                    index=0,
+                )
+            ],
+        )
+    )
+
+    assert result.stop_reason == "maxTokens"
 
 
 def test_convert_messages_raises_on_unsupported_content_type():

@@ -188,8 +188,11 @@ def test_get_model():
 
 async def test_response_to_create_message_result():
     # Create a mock response
+    candidate = MagicMock(spec=Candidate)
+    candidate.finish_reason = "STOP"
     mock_response = MagicMock(spec=GenerateContentResponse)
     mock_response.text = "HELPFUL CONTENT FROM GEMINI"
+    mock_response.candidates = [candidate]
 
     result: CreateMessageResult = _response_to_create_message_result(
         response=mock_response, model="gemini-2.0-flash-exp"
@@ -198,7 +201,24 @@ async def test_response_to_create_message_result():
         content=TextContent(type="text", text="HELPFUL CONTENT FROM GEMINI"),
         role="assistant",
         model="gemini-2.0-flash-exp",
+        stop_reason="endTurn",
     )
+
+
+async def test_response_to_create_message_result_keeps_max_tokens():
+    """The no-tool converter must carry `finish_reason=MAX_TOKENS` through as
+    `maxTokens`; without it a truncated reply looked finished."""
+    candidate = MagicMock(spec=Candidate)
+    candidate.finish_reason = "MAX_TOKENS"
+    mock_response = MagicMock(spec=GenerateContentResponse)
+    mock_response.text = "half an answer"
+    mock_response.candidates = [candidate]
+
+    result: CreateMessageResult = _response_to_create_message_result(
+        response=mock_response, model="gemini-2.0-flash-exp"
+    )
+
+    assert result.stop_reason == "maxTokens"
 
 
 def test_convert_tool_choice_to_google_genai():

@@ -330,13 +330,26 @@ def _get_candidate_from_response(response: GenerateContentResponse) -> Candidate
     raise ValueError(msg)
 
 
+def _stop_reason_from_finish_reason(finish_reason: str | None) -> StopReason:
+    """Map Google GenAI's finish reason onto MCP's stop reason.
+
+    Shared by the tool and no-tool converters: omitting it on the no-tool path
+    made a `MAX_TOKENS` cutoff indistinguishable from a finished reply.
+    """
+    if finish_reason == "STOP":
+        return "endTurn"
+    if finish_reason == "MAX_TOKENS":
+        return "maxTokens"
+    return "endTurn"
+
+
 def _response_to_create_message_result(
     response: GenerateContentResponse,
     model: str,
 ) -> CreateMessageResult:
     """Convert Google GenAI response to CreateMessageResult (no tools)."""
+    candidate = _get_candidate_from_response(response)
     if not (text := response.text):
-        candidate = _get_candidate_from_response(response)
         # Check if the response only contained thinking
         has_thoughts = (
             candidate.content
@@ -355,6 +368,9 @@ def _response_to_create_message_result(
         content=TextContent(type="text", text=text),
         role="assistant",
         model=model,
+        stop_reason=_stop_reason_from_finish_reason(
+            candidate.finish_reason  # ty:ignore[invalid-argument-type]
+        ),
     )
 
 
@@ -378,12 +394,10 @@ def _response_to_result_with_tools(
 
     if has_function_calls:
         stop_reason = "toolUse"
-    elif finish_reason == "STOP":
-        stop_reason = "endTurn"
-    elif finish_reason == "MAX_TOKENS":
-        stop_reason = "maxTokens"
     else:
-        stop_reason = "endTurn"
+        stop_reason = _stop_reason_from_finish_reason(
+            finish_reason  # ty:ignore[invalid-argument-type]
+        )
 
     # Build content list
     content: list[SamplingMessageContentBlock] = []
