@@ -409,7 +409,10 @@ class MCPOperationsMixin:
         subsequent log messages below this level are suppressed. v2 sessions are
         per-request, so this state lives on the FastMCP server.
         """
-        from fastmcp.server.context import _log_level_session_key
+        from fastmcp.server.context import (
+            CLIENT_LOG_LEVEL_STATE_KEY,
+            _log_level_session_key,
+        )
 
         with bind_request_context(ctx) as rc:
             logger.debug(
@@ -419,10 +422,18 @@ class MCPOperationsMixin:
             self._client_log_levels[session_id] = params.level
             if session_id != "__no_session__":
                 connection = rc.session._connection
+                # A tool on a mounted server logs through *its* FastMCP
+                # instance, so that instance's `_client_log_levels` never sees
+                # this request. The connection is shared by both, so mirror the
+                # level there and let `Context.log` read it back.
+                connection.state[CLIENT_LOG_LEVEL_STATE_KEY] = params.level
                 cleanup_key = "_fastmcp_log_level_cleanup_registered"
                 if not connection.state.get(cleanup_key):
                     connection.exit_stack.callback(
                         self._client_log_levels.pop, session_id, None
+                    )
+                    connection.exit_stack.callback(
+                        connection.state.pop, CLIENT_LOG_LEVEL_STATE_KEY, None
                     )
                     connection.state[cleanup_key] = True
             return EmptyResult()

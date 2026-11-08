@@ -638,9 +638,14 @@ class Context:
         # keyed by session id, falling back to the server's configured default.
         min_level = self.fastmcp.client_log_level
         session = self.session
-        session_min = self.fastmcp._client_log_levels.get(
-            _log_level_session_key(session)
-        )
+        # The connection carries the level too, so a tool on a mounted server
+        # sees what the client asked of the parent (this instance's own dict
+        # never receives it).
+        session_min = _connection_log_level(session)
+        if session_min is None:
+            session_min = self.fastmcp._client_log_levels.get(
+                _log_level_session_key(session)
+            )
         if session_min is not None:
             min_level = session_min
 
@@ -1353,6 +1358,25 @@ def _log_level_session_key(session: ServerSession) -> str:
     connection = getattr(session, "_connection", None)
     session_id = getattr(connection, "session_id", None) if connection else None
     return session_id if session_id is not None else "__no_session__"
+
+
+CLIENT_LOG_LEVEL_STATE_KEY = "fastmcp_client_log_level"
+"""Connection-state key holding the level a client set via `logging/setLevel`.
+
+`server_span`'s counterpart for logs: the per-session gate lives on the
+connection rather than on one FastMCP instance, because a mounted server's
+tool runs against the child instance while the request — and therefore the
+`logging/setLevel` that arrived with it — belongs to the parent.
+"""
+
+
+def _connection_log_level(session: ServerSession) -> LoggingLevel | None:
+    """Return the level `logging/setLevel` recorded for this connection, if any."""
+    connection = getattr(session, "_connection", None)
+    if connection is None:
+        return None
+    level: LoggingLevel | None = connection.state.get(CLIENT_LOG_LEVEL_STATE_KEY)
+    return level
 
 
 async def _log_to_server_and_client(

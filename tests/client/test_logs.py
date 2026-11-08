@@ -6,6 +6,7 @@ from mcp_types import LoggingMessageNotificationParams
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.logging import LogMessage, create_log_callback
+from fastmcp.utilities.tests import asgi_client
 
 
 class LogHandler:
@@ -129,6 +130,32 @@ class TestSetLoggingLevel:
             await client.call_tool("echo_log", {"message": "info msg", "level": "info"})
 
         assert len(log_handler.logs) == 2
+
+    async def test_mounted_server_honours_the_client_level(self):
+        """`logging/setLevel` arrives at the parent, but the tool runs on the
+        child. Over a stateful transport the gate has to reach the child's
+        FastMCP instance too, otherwise a mounted tool keeps logging at its
+        own default level and the client sees messages it asked not to.
+        """
+        log_handler = LogHandler()
+        child = FastMCP("child")
+
+        @child.tool
+        async def say(ctx: Context) -> str:
+            await ctx.log("an info message", level="info")
+            await ctx.log("an error message", level="error")
+            return "done"
+
+        parent = FastMCP("parent")
+        parent.mount(child)
+
+        async with asgi_client(
+            parent, mode="legacy", log_handler=log_handler.handle_log
+        ) as client:
+            await client.set_logging_level("warning")
+            await client.call_tool("say")
+
+        assert [log.data["msg"] for log in log_handler.logs] == ["an error message"]
 
     async def test_default_level_allows_all(self, fastmcp_server: FastMCP):
         """Without calling set_logging_level, all messages are sent."""
