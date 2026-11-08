@@ -15,6 +15,7 @@
 *Made with 💙 by [Prefect](https://www.prefect.io/)*
 
 [![Docs](https://img.shields.io/badge/docs-gofastmcp.com-blue)](https://gofastmcp.com)
+[![MCP Security Audit](https://raw.githubusercontent.com/DSHCorrectover/mcp-security-scanner/main/badges/scanned.svg)](https://github.com/DSHCorrectover/mcp-security-scanner)
 [![Discord](https://img.shields.io/badge/community-discord-5865F2?logo=discord&logoColor=white)](https://discord.gg/uu8dJCgttd)
 [![PyPI - Version](https://img.shields.io/pypi/v/fastmcp.svg)](https://pypi.org/project/fastmcp)
 [![TypeScript](https://img.shields.io/npm/v/%40prefecthq%2Ffastmcp-ts?label=typescript&color=3178c6)](https://github.com/PrefectHQ/fastmcp-ts)
