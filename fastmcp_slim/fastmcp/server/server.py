@@ -1817,6 +1817,15 @@ class FastMCP(
                 span.set_attributes(prompt.get_span_attributes())
                 try:
                     return await prompt._render(arguments)
+                except PromptError as e:
+                    # A prompt's own render() already wrapped the handler failure
+                    # into a PromptError carrying the original message, and that
+                    # class is a FastMCPError -- so it would short-circuit the
+                    # generic branch below, the only place masking happens.
+                    logger.exception(f"Error rendering prompt {name!r}")
+                    if self._mask_error_details:
+                        raise PromptError(f"Error rendering prompt {name!r}") from e
+                    raise
                 except FastMCPError as e:
                     logger.log(
                         e.log_level, f"Error rendering prompt {name!r}", exc_info=True

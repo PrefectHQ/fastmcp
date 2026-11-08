@@ -985,3 +985,40 @@ class TestPromptCallableAndConcurrency:
             prompt.render(),
         )
         assert all(r.messages == [Message("done")] for r in results)
+
+
+class TestMaskErrorDetails:
+    """`mask_error_details` has to cover prompt handlers, not only tools.
+
+    A prompt's own `render()` wraps handler failures into a `PromptError`
+    carrying the original message; that class is a `FastMCPError`, so it used
+    to skip the generic masking branch entirely and the client got the
+    internal message verbatim.
+    """
+
+    async def test_handler_error_is_masked(self):
+        mcp = FastMCP(mask_error_details=True)
+
+        @mcp.prompt
+        def render(topic: str) -> str:
+            raise RuntimeError("INTERNAL_DETAIL")
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError) as exc_info:
+                await client.get_prompt("render", {"topic": "x"})
+
+        assert "INTERNAL_DETAIL" not in exc_info.value.error.message
+        assert "Error rendering prompt" in exc_info.value.error.message
+
+    async def test_handler_error_keeps_the_message_when_not_masking(self):
+        mcp = FastMCP(mask_error_details=False)
+
+        @mcp.prompt
+        def render(topic: str) -> str:
+            raise RuntimeError("INTERNAL_DETAIL")
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError) as exc_info:
+                await client.get_prompt("render", {"topic": "x"})
+
+        assert "INTERNAL_DETAIL" in exc_info.value.error.message
