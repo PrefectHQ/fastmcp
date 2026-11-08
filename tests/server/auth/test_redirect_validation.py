@@ -155,6 +155,42 @@ class TestBuildClientRedirect:
         assert len(iss_values) == 1
         assert iss_values == ["https://issuer.example.com/"]
 
+    def test_collapses_a_repeated_iss_from_the_registered_redirect_uri(self):
+        """A redirect_uri may carry `iss` more than once (`?iss=a&iss=b`).
+        `replace_query_param` rewrites only the first match, so the survivor
+        used to be `iss=<issuer>&iss=b` -- two response parameters, exactly
+        what RFC 6749 §3.1 forbids. The helper promises "exactly one", so
+        the later copies are dropped.
+        """
+        url = "https://client.example.com/cb?iss=a&iss=b"
+
+        result = build_client_redirect(
+            url,
+            {"error": "access_denied", "state": "xyz"},
+            iss="https://issuer.example.com/",
+        )
+
+        assert parse_qs(urlparse(result).query)["iss"] == [
+            "https://issuer.example.com/"
+        ]
+
+    def test_dropping_repeated_iss_keeps_other_query_bytes_verbatim(self):
+        """Collapsing the duplicates must not round-trip the rest of the
+        query: the valueless `flag` and the non-UTF-8 `sig` stay byte for
+        byte, and the surviving `iss` keeps its position.
+        """
+        url = "https://client.example.com/cb?iss=a&flag&sig=%FF%FE&iss=b"
+
+        result = build_client_redirect(
+            url,
+            {"code": "abc"},
+            iss="https://issuer.example.com/",
+        )
+
+        assert urlparse(result).query == (
+            "iss=https%3A%2F%2Fissuer.example.com%2F&flag&sig=%FF%FE&code=abc"
+        )
+
     def test_preserves_valueless_param_and_non_utf8_bytes_alongside_existing_iss(
         self,
     ):
