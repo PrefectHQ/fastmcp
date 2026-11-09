@@ -297,6 +297,7 @@ def test_export_retains_old_files_if_installation_fails(
         assert sorted(p.name for p in tmp_path.iterdir()) == ["review"]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges")
 def test_to_directory_refuses_a_symlink(tmp_path: Path):
     skill = Skill(name="review", description="Review", instructions="# Review\n")
     elsewhere = tmp_path / "elsewhere"
