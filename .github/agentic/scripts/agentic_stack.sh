@@ -179,21 +179,21 @@ case "${1:-}" in
            match_related:{},after:[],for_each:["prefect.resource.id"]},
          actions:[{type:"run-deployment",source:"selected",deployment_id:$deployment,job_variables:null,schedule_after:60,
            parameters:{controller_id:$controller,runtime:$runtime[0],
-             config:({queue:"events",max_items:3} + {(if $issue then "issues" else "pull_requests" end):
+             config:({queue:"events",max_items:3,
+               sender:{"__prefect_kind":"jinja",template:"{{ event.resource[\"github.sender.login\"] }}"}}
+               + {(if $issue then "issues" else "pull_requests" end):
                {"__prefect_kind":"json",value:{"__prefect_kind":"jinja",template:"[{{ event.resource[\"github.number\"]|int }}]"}}})}}],
          actions_on_trigger:[],actions_on_resolve:[]}' > "$scratch/automation-$kind.json"
       echo "automation $kind $(upsert automations "$scratch/automation-$kind.json")"
     done
     if [[ -n $notify ]]; then
-      jq -n --arg controller "$controller" --arg notify "$notify" '
-        {name:"fastmcp-triage-run-started",description:"Announce issues admitted to the triage controller; empty intake runs stay quiet",enabled:true,
-         trigger:{type:"event",posture:"Reactive",threshold:1,within:0,expect:["prefect.flow-run.Running"],
-           match:{"prefect.resource.id":"prefect.flow-run.*","prefect.resource.name":"fastmcp-stack-intake-*"},
-           match_related:{"prefect.resource.role":"deployment","prefect.resource.id":("prefect.deployment." + $controller)},
+      jq -n --arg notify "$notify" '
+        {name:"fastmcp-triage-outcome",description:"Post issues a finished intake left for a maintainer; intakes with nothing to decide stay quiet",enabled:true,
+         trigger:{type:"event",posture:"Reactive",threshold:1,within:0,expect:["fastmcp.triage.outcome"],
+           match:{"prefect.resource.id":"fastmcp.triage.intake.*"},match_related:{},
            after:[],for_each:["prefect.resource.id"]},
          actions:[{type:"send-notification",block_document_id:$notify,
-           subject:"",
-           body:"Accepted for triage: {% set ns = namespace(sep=\"\") %}{% for group in flow_run.parameters.batch.groups %}{% for item in group[\"items\"] %}{{ ns.sep }}<https://github.com/PrefectHQ/fastmcp/issues/{{ item.issue_number }}|#{{ item.issue_number }}>{% set ns.sep = \", \" %}{% endfor %}{% endfor %}\n<{{ flow_run|ui_url }}|Follow triage>"}],
+           subject:"",body:"{{ event.payload.text }}"}],
          actions_on_trigger:[],actions_on_resolve:[]}' > "$scratch/automation-notify.json"
       echo "automation notify $(upsert automations "$scratch/automation-notify.json")"
     fi

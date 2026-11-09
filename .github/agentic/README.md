@@ -18,6 +18,14 @@ public-facing outcome through the Sol `triage_review` node, which loads
 COMMENT reviews by the triage review app. Nothing in this path assigns, closes, labels or
 merges.
 
+Intake skips events sent by anyone with write access to the repository, so
+maintainers' own edits and their agents' activity don't start triage. If the
+permission lookup fails, triage runs anyway. When a finished intake leaves issues
+for a maintainer (an existing PR to review, a decision, a proposed close or missing
+repro info), it emits `fastmcp.triage.outcome` and the `fastmcp-triage-outcome`
+automation posts one line per issue to Slack. Intakes with nothing to decide stay
+quiet; failures go through the failure alert.
+
 Each controller run retains its results as `<batch-id>-review-bins`:
 
 ```sh
