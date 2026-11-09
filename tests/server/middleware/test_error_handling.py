@@ -776,3 +776,6 @@ async def test_prompt_handler_failure_remains_internal(
             await client.get_prompt("summarize", {"topic": "valid"})
 
     assert exc_info.value.error.code == -32603
+    assert (
+        "private handler failure" in exc_info.value.error.message
+    ) is not mask_error_details
