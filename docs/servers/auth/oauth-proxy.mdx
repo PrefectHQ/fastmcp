@@ -711,7 +711,7 @@ CIMD provides several security advantages over DCR:
 
 - **Verified identity**: The domain in the `client_id` URL is verified by HTTPS, so users know which organization is requesting access
 - **No registration required**: Clients don't need to store or manage dynamically-issued credentials
-- **Redirect URI enforcement**: CIMD documents must declare `redirect_uris`, which are enforced by the proxy (wildcard patterns supported)
+- **Redirect URI enforcement**: CIMD documents must declare `redirect_uris`, which are enforced by the proxy (wildcard patterns supported). `http` and `https` redirects must name a host; native apps may also declare private-use schemes such as `com.example.app:/callback`
 - **SSRF protection**: The OAuth proxy blocks fetches to localhost, private IPs, and reserved addresses
 - **Replay prevention**: For `private_key_jwt` clients, JTI claims are tracked to prevent assertion replay
 - **Cache-aware fetching**: CIMD documents are cached according to HTTP cache headers and revalidated when required
