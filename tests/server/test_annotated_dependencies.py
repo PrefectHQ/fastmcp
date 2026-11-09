@@ -6,7 +6,8 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.dependencies import Depends
+from fastmcp.dependencies import CurrentContext, CurrentFastMCP, Depends
+from fastmcp.server.context import Context
 
 
 def get_config() -> dict[str, str]:
@@ -77,3 +78,21 @@ def test_annotated_dependency_with_a_depends_default_is_rejected():
             config: Annotated[dict, Depends(get_config)] = Depends(get_config),
         ) -> str:
             return config["api_url"]
+
+
+async def test_builtin_dependencies_provide_values_as_annotations():
+    mcp = FastMCP("annotated-builtins")
+
+    @mcp.tool
+    async def whoami(
+        ctx: Annotated[Context, CurrentContext()],
+        server: Annotated[FastMCP, CurrentFastMCP()],
+    ) -> str:
+        return f"{ctx.fastmcp.name}/{server.name}"
+
+    async with Client(mcp) as client:
+        (tool,) = await client.list_tools()
+        result = await client.call_tool("whoami", {})
+
+    assert tool.input_schema.get("properties", {}) == {}
+    assert result.data == "annotated-builtins/annotated-builtins"
