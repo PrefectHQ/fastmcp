@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")/.."
+# FASTMCP_AGENTIC_DIR lets a newer driver operate on an older checkout (rollback).
+cd "${FASTMCP_AGENTIC_DIR:-$(dirname "$0")/..}"
 : "${PREFECT_API_URL:?Set the Prefect Cloud workspace API URL}"
 [[ $PREFECT_API_URL == https://api.prefect.cloud/api/accounts/*/workspaces/* ]] || {
   echo "Expected a Prefect Cloud workspace API URL" >&2; exit 2;
@@ -16,28 +17,100 @@ upsert() {
   else api POST "/$kind/" --data "@$body" | jq -er .id; fi
 }
 
+DEPLOYMENTS=(cloud-stack-batch cloud-contribution-verification cloud-triage-intake cloud-triage-verify cloud-triage-finalize)
+TRIGGERS=(fastmcp-triage-on-github-issue fastmcp-triage-on-github-pr)
+json_list() { printf '%s\n' "$@" | jq -R . | jq -sc .; }
+
+validate() {
+  local scratch role
+  scratch=$(mktemp -d)
+  for role in assess reproduce triage_review; do
+    jq '{plan: .}' "workflows/fastmcp-stack-$role.plan.json" > "$scratch/$role.json"
+    api POST /execution-plans/validate --data "@$scratch/$role.json" | jq -e '.valid == true'
+  done
+  rm -rf "$scratch"
+}
+
+register() {
+  local revision published name args=()
+  [[ -z $(git status --porcelain) ]] || {
+    echo 'Commit local changes before registration' >&2; exit 1;
+  }
+  revision=$(git rev-parse HEAD)
+  published=$(gh api "repos/PrefectHQ/fastmcp/commits/$revision" --jq .sha)
+  [[ $published == "$revision" ]] || {
+    echo 'Source commit must be available in PrefectHQ/fastmcp' >&2; exit 1;
+  }
+  for name in "${DEPLOYMENTS[@]}"; do args+=(--name "$name"); done
+  FASTMCP_AGENTIC_REF=$revision uv run --locked prefect --no-prompt deploy \
+    --prefect-file prefect.yaml "${args[@]}"
+}
+
+# Distinct source_sha values pinned by the two triage automations, as a JSON list.
+live_sources() {
+  jq -ec --argjson names "$(json_list "${TRIGGERS[@]}")" '
+    [.[] | select(.name | IN($names[]))] as $found
+    | if ([$found[].name] | sort) != ($names | sort)
+      then error("Expected exactly one of each triage automation") else . end
+    | [$found[].actions[0].parameters.runtime.source_sha] | unique
+    | if all(test("^[a-f0-9]{40}$")) then . else error("Invalid source_sha") end' "$1"
+}
+
 case "${1:-}" in
   validate)
-    scratch=$(mktemp -d)
-    trap 'rm -rf "$scratch"' EXIT
-    for role in assess reproduce triage_review; do
-      jq '{plan: .}' "workflows/fastmcp-stack-$role.plan.json" > "$scratch/$role.json"
-      api POST /execution-plans/validate --data "@$scratch/$role.json" | jq -e '.valid == true'
-    done
+    validate
     ;;
   register)
-    [[ -z $(git status --porcelain) ]] || {
-      echo 'Commit local changes before registration' >&2; exit 1;
-    }
+    register
+    ;;
+  deploy)
+    scratch=$(mktemp -d)
+    trap 'rm -rf "$scratch"' EXIT
     revision=$(git rev-parse HEAD)
-    published=$(gh api "repos/PrefectHQ/fastmcp/commits/$revision" --jq .sha)
-    [[ $published == "$revision" ]] || {
-      echo 'Source commit must be available in PrefectHQ/fastmcp' >&2; exit 1;
+    jq -n '{limit:200}' > "$scratch/filter.json"
+    api POST /automations/filter --data "@$scratch/filter.json" > "$scratch/automations.json"
+    # An interrupted deploy can leave one automation on the target already; treat
+    # the other commit as live so a retry finishes the repin.
+    current=$(live_sources "$scratch/automations.json" | jq -er --arg revision "$revision" '
+      map(select(. != $revision))
+      | if length == 0 then $revision elif length == 1 then .[0]
+        else error("Triage automations are pinned to several commits; repin them by hand") end')
+    if [[ $current == "$revision" ]]; then
+      echo "Already deployed $revision"; exit 0
+    fi
+    git cat-file -e "$current^{commit}" 2>/dev/null || {
+      echo "Live source $current is not in this checkout; fetch full history" >&2; exit 1;
     }
-    FASTMCP_AGENTIC_REF=$revision uv run --locked prefect --no-prompt deploy \
-      --prefect-file prefect.yaml \
-      --name cloud-stack-batch --name cloud-contribution-verification --name cloud-triage-intake \
-      --name cloud-triage-verify --name cloud-triage-finalize
+    git diff --quiet "$current" "$revision" -- 'workflows/*.plan.json' workflows/stack-models.json || {
+      echo "Execution plans changed since $current; publish them and update the automations' plan versions by hand" >&2; exit 1;
+    }
+    validate
+    jq -n --argjson names "$(json_list "${DEPLOYMENTS[@]}")" \
+      '{deployments:{name:{any_:$names}},flow_runs:{state:{type:{any_:["SCHEDULED","PENDING","RUNNING","PAUSED","CANCELLING"]}}},limit:10}' \
+      > "$scratch/active.json"
+    api POST /flow_runs/filter --data "@$scratch/active.json" > "$scratch/runs.json"
+    jq -e 'length == 0' "$scratch/runs.json" >/dev/null || {
+      echo 'Triage runs are in flight; deploy once they finish:' >&2
+      jq -r '.[] | "  \(.name) \(.state_type)"' "$scratch/runs.json" >&2
+      exit 1
+    }
+    register
+    # Flows refuse to run while their deployment version differs from the pinned
+    # source_sha, so repin both automations immediately after registration.
+    for name in "${TRIGGERS[@]}"; do
+      jq --arg name "$name" --arg sha "$revision" '
+        .[] | select(.name == $name)
+        | .actions[0].parameters.runtime.source_sha = $sha
+        | with_entries(select(.key | IN("name","description","enabled","tags","trigger","actions","actions_on_trigger","actions_on_resolve")))' \
+        "$scratch/automations.json" > "$scratch/$name.json"
+      id=$(jq -er --arg name "$name" '.[] | select(.name == $name) | .id' "$scratch/automations.json")
+      api PUT "/automations/$id" --data "@$scratch/$name.json" >/dev/null
+    done
+    api POST /automations/filter --data "@$scratch/filter.json" > "$scratch/automations.json"
+    [[ $(live_sources "$scratch/automations.json") == "[\"$revision\"]" ]] || {
+      echo 'Automations did not take the new source_sha; roll back by deploying the previous commit' >&2; exit 1;
+    }
+    echo "Deployed $revision (was $current)"
     ;;
   intake)
     config=${2:?intake configuration JSON file required}
@@ -152,7 +225,7 @@ case "${1:-}" in
     echo "automation alert $(upsert automations "$scratch/automation-alert.json")"
     ;;
   *)
-    echo 'Usage: agentic_stack.sh validate | register | intake CONFIG RUNTIME CONTROLLER DEPLOYMENT OPERATION | run BATCH RUNTIME DEPLOYMENT | results RUN | events RUNTIME CONTROLLER DEPLOYMENT [NOTIFY_BLOCK] | alerts RUNTIME NOTIFY_BLOCK' >&2
+    echo 'Usage: agentic_stack.sh validate | register | deploy | intake CONFIG RUNTIME CONTROLLER DEPLOYMENT OPERATION | run BATCH RUNTIME DEPLOYMENT | results RUN | events RUNTIME CONTROLLER DEPLOYMENT [NOTIFY_BLOCK] | alerts RUNTIME NOTIFY_BLOCK' >&2
     exit 2
     ;;
 esac
