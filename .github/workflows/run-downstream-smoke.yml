@@ -181,6 +181,7 @@ jobs:
             --exclude-newer-package authlib=false \
             --exclude-newer-package certifi=false \
             --exclude-newer-package pydocket=2026-10-06T00:00:00Z \
+            --exclude-newer-package uncalled-for=false \
             --with fastmcp@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp-4*.whl) \
             --with fastmcp-slim@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_slim-*.whl) \
             --with fastmcp-tasks@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_tasks-*.whl)" >> "$GITHUB_ENV"

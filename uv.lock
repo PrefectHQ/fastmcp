@@ -1053,7 +1053,7 @@ requires-dist = [
     { name = "starlette", marker = "extra == 'server'", specifier = ">=1.0.1" },
     { name = "typesafe-sdk", marker = "extra == 'jev'", specifier = ">=0.5.7" },
     { name = "typing-extensions", specifier = ">=4.0.0" },
-    { name = "uncalled-for", marker = "extra == 'server'", specifier = ">=0.4.0" },
+    { name = "uncalled-for", marker = "extra == 'server'", specifier = ">=0.6.0" },
     { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.35" },
     { name = "watchfiles", marker = "extra == 'server'", specifier = ">=1.0.0" },
     { name = "websockets", marker = "extra == 'server'", specifier = ">=15.0.1" },
@@ -3195,11 +3195,11 @@ wheels = [
 
 [[package]]
 name = "uncalled-for"
-version = "0.4.0"
+version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6b/5a/92ce0b3ea5481915f55da994c2c2c5f7a3c09949afde196ee89f8ab961aa/uncalled_for-0.4.0.tar.gz", hash = "sha256:335b95bd2422332ec210d518f314a16e4c640921c39fc8bf2ad095bd3538f4af", size = 56979, upload-time = "2026-08-10T14:51:46.247Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/58/49/423c660a9b548ebe875562c4f47d3dcbc5807377e19eced0596b05894ca9/uncalled_for-0.6.0.tar.gz", hash = "sha256:5872701bf3b4eb0698930f87126d339d56a904c53f052eb0eadad64439fa9b11", size = 68911, upload-time = "2026-11-05T23:47:08.578Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a2/40/97cec87c077eb3291fc7905e6633e08b7ca593c57d30238444bcb6bb3d53/uncalled_for-0.4.0-py3-none-any.whl", hash = "sha256:16c4bb3337532e4bd5569adc192285976f3ad5305402256d34c67a12b5c968bd", size = 15502, upload-time = "2026-08-10T14:51:45.068Z" },
+    { url = "https://files.pythonhosted.org/packages/a6/a7/d819bc9c5ea3d0ccbedc9999e36efebe9dbae61b024f494afc423483909a/uncalled_for-0.6.0-py3-none-any.whl", hash = "sha256:5c6932836965b0e6b0a80f9962388922f3bb235431d8f5d3fedc2ad07b581189", size = 16734, upload-time = "2026-11-05T23:47:07.177Z" },
 ]
 
 [[package]]
