@@ -63,10 +63,10 @@ def action(name: str, item: dict) -> str:
         label = "PR" if len(numbers) == 1 else "PRs"
         return f"review {label} " + ", ".join(f"#{number}" for number in numbers)
     if name == "pruning":
-        return "close? " + clip(first_sentence(item.get("reason")), 100)
+        return "close? " + clip(first_sentence(item.get("reason")), 60)
     if name == "evidence":
         return "needs repro info"
-    return clip(item.get("question") or first_sentence(item.get("reason")), 100)
+    return clip(item.get("question") or first_sentence(item.get("reason")), 60)
 
 
 def outcome_lines(review: dict, issues: list[dict]) -> list[str]:
@@ -80,7 +80,7 @@ def outcome_lines(review: dict, issues: list[dict]) -> list[str]:
             subject = known.get(number, {})
             text = ""
             if subject.get("title"):
-                text += " " + clip(subject["title"], 70)
+                text += " " + clip(subject["title"], 50)
             if subject.get("author"):
                 text += f" · @{subject['author']}"
             text += " → " + action(name, item)

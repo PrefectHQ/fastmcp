@@ -81,15 +81,10 @@ ISSUES = [
 
 def test_outcome_lists_only_items_waiting_on_a_maintainer():
     assert outcome_lines(REVIEW, ISSUES) == [
-        f"<{URL}6303|#6303> A proxy served over stdio forwards only some of the"
-        " backend's `ctx.lo… · @alpaylan → review PR #6309",
-        f"<{URL}6316|#6316> fastmcp-tasks: let TasksExtension run a custom docket"
-        " Worker · @rob-archivium → Should FastMCP add and maintain a supported"
-        " TasksExtension customization seam for alternate Docket…",
-        f"<{URL}6295|#6295> Redirect &lt;URI&gt; &amp; helpers · @alpaylan →"
-        " Security-labeled report requires restricted review",
-        f"<{URL}6344|#6344> Add CrakSEO MCP connect skills → close? The request is"
-        " promotional rather than a FastMCP defect.",
+        f"<{URL}6303|#6303> A proxy served over stdio forwards only some of t… · @alpaylan → review PR #6309",
+        f"<{URL}6316|#6316> fastmcp-tasks: let TasksExtension run a custom do… · @rob-archivium → Should FastMCP add and maintain a supported TasksExtension…",
+        f"<{URL}6295|#6295> Redirect &lt;URI&gt; &amp; helpers · @alpaylan → Security-labeled report requires restricted review",
+        f"<{URL}6344|#6344> Add CrakSEO MCP connect skills → close? The request is promotional rather than a FastMCP defect.",
         f"<{URL}6400|#6400> → needs repro info",
     ]
 
