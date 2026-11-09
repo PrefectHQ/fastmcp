@@ -88,23 +88,29 @@ remain separate steps. No live workflow changes follow from this patch.
 ## Deploy
 
 Merging does not deploy. Live automations run the `source_sha` pinned in their
-runtime parameters. To deploy a new main commit, from a clean checkout of it:
+runtime parameters. Run the [Deploy agentic triage](../workflows/deploy-agentic.yml)
+workflow from main to deploy main's tip, or pass a commit on main as `ref`. It uses the
+`PREFECT_API_KEY` repo secret against `prefect-technologies/marvin-bot` and runs:
 
 ```sh
-uv run python -m flows.agentic_stack_plans   # only if plans or models changed
-bash scripts/agentic_stack.sh validate
-bash scripts/agentic_stack.sh register       # registers deployments from prefect.yaml
+bash scripts/agentic_stack.sh deploy
 ```
 
-Then publish any changed role plans with the Agentic Workflows tooling and update
-`source_sha` (and any new plan versions) in both triage automations right away.
-Flows refuse to run when their deployment version differs from the pinned
-`source_sha`, so between `register` and that update, new intakes and any in-flight
-run that starts a child fail. Check for running intakes first. If the alert template
-changed, re-run `agentic_stack.sh alerts`.
+`deploy` validates the role plans, waits for no triage runs to be scheduled or in
+flight, registers the deployments from `prefect.yaml`, and immediately repins
+`source_sha` in both triage automations. Flows refuse to run when their deployment
+version differs from the pinned `source_sha`, so those two steps stay back to back.
+It is a no-op when the commit is already live.
+
+`deploy` refuses when the execution plans or `stack-models.json` changed since the
+live commit. Then, from a clean checkout of the new commit, rebuild the plans
+(`uv run python -m flows.agentic_stack_plans`), publish them with the Agentic
+Workflows tooling, run `agentic_stack.sh register`, and update `source_sha` and the
+plan versions in both automations right away. If the alert template changed, re-run
+`agentic_stack.sh alerts`.
 
 ## Roll back
 
-Set `source_sha` in both automations back to the previous commit and re-register
-from that commit. If a plan changed, also point the runtime back at the previous
-plan versions.
+Run the deploy workflow with the previous commit as `ref`. If the plans differ between
+the two commits, roll back by hand: re-register from the previous commit and point
+`source_sha` and the plan versions in both automations back.
