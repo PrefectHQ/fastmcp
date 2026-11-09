@@ -84,6 +84,34 @@ def replace_query_param(url: str, key: str, value: str) -> str:
     return _set_query(url, "&".join(new_segments))
 
 
+def _drop_repeated_query_param(url: str, key: str) -> str:
+    """Keep only the first occurrence of `key` in a URL's query string.
+
+    `replace_query_param` rewrites the first match and leaves any later ones
+    alone, which is right for a generic helper but wrong for a response
+    parameter: RFC 6749 §3.1 says a response parameter "MUST NOT be included
+    more than once". A registered redirect_uri can supply the repeats itself
+    (e.g. `?iss=a&iss=b`), so the caller that promises a single value has to
+    collapse them.
+
+    Byte-preserving like its siblings: every segment other than a dropped
+    duplicate is passed through verbatim.
+    """
+    parsed = urlparse(url)
+    segments = parsed.query.split("&") if parsed.query else []
+
+    kept: list[str] = []
+    seen = False
+    for segment in segments:
+        if unquote(segment.split("=", 1)[0]) == key:
+            if seen:
+                continue
+            seen = True
+        kept.append(segment)
+
+    return _set_query(url, "&".join(kept))
+
+
 def build_client_redirect(url: str, params: dict[str, str], *, iss: str) -> str:
     """Build a client-facing authorization redirect that carries exactly one `iss`.
 
@@ -103,7 +131,9 @@ def build_client_redirect(url: str, params: dict[str, str], *, iss: str) -> str:
     `iss` is then set idempotently via `replace_query_param`: an existing
     occurrence -- whether contributed by the registered redirect_uri or
     already present in `url` -- is overwritten with the canonical value;
-    otherwise `iss` is appended.
+    otherwise `iss` is appended. Any *further* `iss` the redirect_uri
+    carried is dropped (see `_drop_repeated_query_param`), so the result
+    holds exactly one.
 
     `iss` is keyword-only and required so a caller cannot forget to pass
     it. `params` must not itself contain an `"iss"` key -- pass it via the
@@ -129,7 +159,7 @@ def build_client_redirect(url: str, params: dict[str, str], *, iss: str) -> str:
         )
     if params:
         url = add_query_params(url, params)
-    return replace_query_param(url, "iss", iss)
+    return _drop_repeated_query_param(replace_query_param(url, "iss", iss), "iss")
 
 
 def _parse_host_port(netloc: str) -> tuple[str | None, str | None]:
