@@ -341,6 +341,11 @@ class TransformedTool(Tool):
                 if self.transform_args:
                     # Find the original parameter name that maps to this param_name
                     for orig_name, transform in self.transform_args.items():
+                        if transform.hide:
+                            # Hidden parameters are not part of the schema and
+                            # their factory defaults are applied when forwarding
+                            # to the parent, so they must not fill visible ones.
+                            continue
                         transform_name = (
                             transform.name
                             if transform.name is not NotSet
