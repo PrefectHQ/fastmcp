@@ -1,0 +1,50 @@
+# Shadow run of contribution intake: classify each external PR from GitHub
+# facts (scripts/contribution_intake.py) and write the verdict to the job
+# summary. It takes no action — no labels, comments, or closes. Compare its
+# verdicts with require-issue-link.yml before anything enforces them.
+
+name: Contribution Intake (shadow)
+
+on:
+  pull_request_target:
+    # SECURITY: pull_request_target runs with repo scope against the BASE
+    # repo. NEVER check out or execute PR-head code here — it would run with
+    # these permissions. This workflow checks out the BASE ref only, runs the
+    # classifier from it, and reads the PR through the API.
+    types: [opened, edited, reopened, ready_for_review, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  classify:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: contribution-intake-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout base ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          verdict="$(python3 scripts/contribution_intake.py classify --pr "$PR_NUMBER")"
+          echo "$verdict"
+          {
+            echo "### Contribution intake (shadow) — PR #$PR_NUMBER"
+            echo
+            echo '```json'
+            echo "$verdict"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
