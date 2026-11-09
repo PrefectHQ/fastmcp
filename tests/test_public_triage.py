@@ -4,13 +4,13 @@ import importlib.util
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-NOW = datetime(2026, 11, 3, 18, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 3, 18, tzinfo=UTC)
 
 
 @pytest.fixture

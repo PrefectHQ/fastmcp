@@ -21,7 +21,7 @@ import json
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import timezone
+from datetime import UTC
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlparse
@@ -278,7 +278,7 @@ class CIMDFetcher:
             try:
                 dt = parsedate_to_datetime(normalized["expires"])
                 if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
+                    dt = dt.replace(tzinfo=UTC)
                 expires_at = dt.timestamp()
             except (TypeError, ValueError):
                 logger.debug(

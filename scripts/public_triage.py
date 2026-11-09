@@ -10,7 +10,7 @@ import re
 import subprocess
 import time
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -118,7 +118,7 @@ def inspect_pr(number: int, now: datetime) -> dict:
         "base_sha": pr["base"]["sha"],
         "target": pr["base"]["ref"],
         "github_updated_at": pr["updated_at"],
-        "pr_collected_at": datetime.now(timezone.utc).isoformat(),
+        "pr_collected_at": datetime.now(UTC).isoformat(),
         "eligible_at_read": pr["state"] == "open" and not pr["draft"] and not held(pr),
         "activity": {"status": "unavailable"},
         "collection_diagnostics": [],
@@ -134,7 +134,7 @@ def inspect_pr(number: int, now: datetime) -> dict:
         if not re.fullmatch(r"[a-f0-9]{40}", baseline):
             raise ValueError("Invalid target SHA")
         result["baseline_sha"] = baseline
-        result["baseline_collected_at"] = datetime.now(timezone.utc).isoformat()
+        result["baseline_collected_at"] = datetime.now(UTC).isoformat()
     except (GitHubReadError, ValueError, KeyError, AssertionError) as exc:
         result["collection_diagnostics"].append(diagnostic(exc, "target_baseline"))
     try:
@@ -196,7 +196,7 @@ def read_activity(number: int, pr: dict, baseline: str | None) -> dict:
             else None
         ),
         "triage_app_review_bindings": bindings,
-        "collected_at": datetime.now(timezone.utc).isoformat(),
+        "collected_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -261,7 +261,7 @@ def build(items: list[dict], now: datetime, limit: int = 5) -> dict:
         "schema": "fastmcp-public-triage/1",
         "repo": REPO,
         "collection_started_at": now.isoformat(),
-        "collection_finished_at": datetime.now(timezone.utc).isoformat(),
+        "collection_finished_at": datetime.now(UTC).isoformat(),
         "inventory_items": len(items),
         "open_age_buckets": {
             kind: {key: counts[key] for key in ("lt_7d", "7_30d", "30_90d", "gte_90d")}
@@ -297,7 +297,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    started = datetime.now(timezone.utc).replace(microsecond=0)
+    started = datetime.now(UTC).replace(microsecond=0)
     newest = newest_number()
     items = fetch_items()
     require_complete(items, newest)

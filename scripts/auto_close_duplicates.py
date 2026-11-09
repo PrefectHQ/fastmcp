@@ -14,7 +14,7 @@ marked as duplicates and haven't received any preventing activity.
 
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -245,7 +245,7 @@ def is_past_cooldown(duplicate_comment: Comment) -> bool:
     comment_date = datetime.fromisoformat(
         duplicate_comment.created_at.replace("Z", "+00:00")
     )
-    three_days_ago = datetime.now(timezone.utc) - timedelta(days=3)
+    three_days_ago = datetime.now(UTC) - timedelta(days=3)
     return comment_date <= three_days_ago
 
 
