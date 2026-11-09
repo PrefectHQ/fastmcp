@@ -45,15 +45,14 @@ register() {
     --prefect-file prefect.yaml "${args[@]}"
 }
 
-# Live source_sha shared by both triage automations.
-live_source() {
-  jq -er --argjson names "$(json_list "${TRIGGERS[@]}")" '
+# Distinct source_sha values pinned by the two triage automations, as a JSON list.
+live_sources() {
+  jq -ec --argjson names "$(json_list "${TRIGGERS[@]}")" '
     [.[] | select(.name | IN($names[]))] as $found
     | if ([$found[].name] | sort) != ($names | sort)
       then error("Expected exactly one of each triage automation") else . end
     | [$found[].actions[0].parameters.runtime.source_sha] | unique
-    | if length == 1 and (.[0] | test("^[a-f0-9]{40}$")) then .[0]
-      else error("Triage automations disagree on source_sha") end' "$1"
+    | if all(test("^[a-f0-9]{40}$")) then . else error("Invalid source_sha") end' "$1"
 }
 
 case "${1:-}" in
@@ -69,7 +68,12 @@ case "${1:-}" in
     revision=$(git rev-parse HEAD)
     jq -n '{limit:200}' > "$scratch/filter.json"
     api POST /automations/filter --data "@$scratch/filter.json" > "$scratch/automations.json"
-    current=$(live_source "$scratch/automations.json")
+    # An interrupted deploy can leave one automation on the target already; treat
+    # the other commit as live so a retry finishes the repin.
+    current=$(live_sources "$scratch/automations.json" | jq -er --arg revision "$revision" '
+      map(select(. != $revision))
+      | if length == 0 then $revision elif length == 1 then .[0]
+        else error("Triage automations are pinned to several commits; repin them by hand") end')
     if [[ $current == "$revision" ]]; then
       echo "Already deployed $revision"; exit 0
     fi
@@ -102,7 +106,7 @@ case "${1:-}" in
       api PUT "/automations/$id" --data "@$scratch/$name.json" >/dev/null
     done
     api POST /automations/filter --data "@$scratch/filter.json" > "$scratch/automations.json"
-    [[ $(live_source "$scratch/automations.json") == "$revision" ]] || {
+    [[ $(live_sources "$scratch/automations.json") == "[\"$revision\"]" ]] || {
       echo 'Automations did not take the new source_sha; roll back by deploying the previous commit' >&2; exit 1;
     }
     echo "Deployed $revision (was $current)"

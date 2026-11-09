@@ -119,6 +119,13 @@ def stack(tmp_path):
         git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", path)
         return git(repo, "rev-parse", "HEAD")
 
+    def pin(name: str, source_sha: str) -> None:
+        current = json.loads((state / "automations.json").read_text())
+        for item in current:
+            if item["name"] == name:
+                item["actions"][0]["parameters"]["runtime"]["source_sha"] = source_sha
+        (state / "automations.json").write_text(json.dumps(current))
+
     def deploy(active_runs: list | None = None) -> subprocess.CompletedProcess:
         return subprocess.run(
             ["bash", str(agentic / "scripts/agentic_stack.sh"), "deploy"],
@@ -133,6 +140,7 @@ def stack(tmp_path):
             text=True,
         )
 
+    deploy.pin = pin
     return commit, deploy, state, live
 
 
@@ -159,6 +167,31 @@ def test_deploy_registers_and_repins_both_automations(stack):
         assert body["actions"][0]["parameters"]["runtime"]["source_sha"] == revision
         assert "id" not in body and "workspace" not in body
         AutomationCore.model_validate(body)
+
+
+def test_deploy_retry_finishes_a_partial_repin(stack):
+    commit, deploy, state, live = stack
+    revision = commit("notes.txt", "code change\n")
+    deploy.pin(TRIGGERS[0], revision)
+
+    result = deploy()
+
+    assert result.returncode == 0, result.stderr
+    assert f"Deployed {revision} (was {live})" in result.stdout
+    assert len(list(state.glob("put-*.json"))) == 2
+
+
+def test_deploy_refuses_automations_on_several_other_commits(stack):
+    commit, deploy, state, _ = stack
+    other = commit("other.txt", "x\n")
+    commit("notes.txt", "code change\n")
+    deploy.pin(TRIGGERS[0], other)
+
+    result = deploy()
+
+    assert result.returncode != 0
+    assert "pinned to several commits" in result.stderr
+    assert not (state / "deploy.json").exists()
 
 
 def test_deploy_is_a_no_op_for_the_live_commit(stack):
