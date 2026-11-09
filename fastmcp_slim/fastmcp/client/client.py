@@ -1338,6 +1338,8 @@ class Client(
             return await send()
         # A closed (or never-entered) client must raise, never serve cached entries.
         _ = self.session
+        if self.protocol_version not in MODERN_PROTOCOL_VERSIONS:
+            return await send()
         if cursor is not None:
             # Continuation pages skip the cache; an expired cursor means the listing
             # changed, so evict (spec SHOULD) and re-raise.
