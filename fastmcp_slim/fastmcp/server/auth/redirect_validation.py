@@ -109,7 +109,7 @@ def _drop_repeated_query_param(url: str, key: str) -> str:
             seen = True
         kept.append(segment)
 
-    return urlunparse(parsed._replace(query="&".join(kept)))
+    return _set_query(url, "&".join(kept))
 
 
 def build_client_redirect(url: str, params: dict[str, str], *, iss: str) -> str:
