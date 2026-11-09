@@ -165,7 +165,9 @@ class CIMDDocument(BaseModel):
                 raise ValueError(
                     f"CIMD redirect_uri must have a scheme (e.g. http:// or https://): {uri!r}"
                 )
-            if not parsed.netloc and not uri.startswith("urn:"):
+            # Private-use schemes (RFC 8252 section 7.1, e.g. com.example.app:/cb)
+            # have no host, so only http(s) redirects must name one.
+            if parsed.scheme in ("http", "https") and not parsed.netloc:
                 raise ValueError(f"CIMD redirect_uri must have a host: {uri!r}")
         return v
 
