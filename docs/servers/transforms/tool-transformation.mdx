@@ -87,12 +87,19 @@ Both mechanisms support the same modifications.
 | Option | Description |
 |--------|-------------|
 | `name` | New name for the tool |
+| `version` | New version for the tool; omit to preserve the source version, or set to `None` to remove it |
 | `description` | New description |
 | `title` | Human-readable title |
 | `tags` | Set of tags for categorization |
 | `annotations` | MCP ToolAnnotations |
 | `meta` | Custom metadata dictionary |
 | `enabled` | Whether the tool is visible to clients (default `True`) |
+
+When `ToolTransformConfig` sets a non-`None` `version`, calls select the transformed
+version, as advertised in tool listings. The original version is no longer a callable
+alias. Clearing the version follows normal unversioned-tool matching.
+Source lookup follows the existing provider, transform, visibility, and authorization
+rules. Omitting `version` preserves normal source-version selection.
 
 **Argument-level options** (via `ArgTransform` or `ArgTransformConfig`):
 
