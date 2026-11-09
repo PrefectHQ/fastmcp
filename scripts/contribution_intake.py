@@ -433,6 +433,26 @@ def gate_time(events: list[dict], since: datetime) -> datetime | None:
     return None
 
 
+def open_under_intake(events: list[dict], as_of: datetime, kept_open: bool) -> bool:
+    """Whether a PR was open at `as_of` had intake replaced the gate.
+
+    Only the gate's own close is discounted, and only when intake would have
+    kept the PR open; reopens, manual closes and merges replay as recorded.
+    """
+    state = "open"
+    for event in events:
+        if parse_time(event["created_at"]) > as_of:
+            break
+        kind = event["event"]
+        if kind == "closed":
+            by_gate = (event.get("actor") or {}).get("login") == GATE_ACTOR
+            if not (by_gate and kept_open):
+                state = "closed"
+        elif kind == "reopened":
+            state = "open"
+    return state == "open"
+
+
 def backtest(since: datetime) -> list[BacktestRow]:
     # Older PRs are included so an author's earlier PR can be a duplicate target.
     lookback = (since - timedelta(days=30)).date().isoformat()
@@ -466,10 +486,14 @@ def backtest(since: datetime) -> list[BacktestRow]:
             if parse_time(other["created_at"]) > as_of:
                 continue
             closed_at = other.get("closed_at")
-            # A PR the gate closed would have stayed open under intake if its
-            # own verdict keeps it open; any other close before as_of counts.
-            open_then = closed_at is None or parse_time(closed_at) > as_of
-            open_then = open_then or keeps_open.get(other["number"], False)
+            if closed_at is None or parse_time(closed_at) > as_of:
+                open_then = True
+            else:
+                open_then = open_under_intake(
+                    timeline(other["number"]),
+                    as_of,
+                    keeps_open.get(other["number"], False),
+                )
             if open_then:
                 others.append(
                     OtherPR(

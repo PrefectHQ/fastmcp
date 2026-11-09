@@ -12,6 +12,8 @@ from scripts.contribution_intake import (
     PRFacts,
     classify,
     linked_issue_numbers,
+    open_under_intake,
+    parse_time,
 )
 
 
@@ -168,3 +170,33 @@ def test_verdict_json_uses_plain_values():
 )
 def test_linked_issue_numbers(body, expected):
     assert linked_issue_numbers(body) == expected
+
+
+def _event(kind: str, at: str, actor: str = "maintainer") -> dict:
+    return {"event": kind, "created_at": at, "actor": {"login": actor}}
+
+
+GATE_CLOSED = _event("closed", "2026-11-01T00:00:00Z", "github-actions[bot]")
+AS_OF = parse_time("2026-11-05T00:00:00Z")
+
+
+@pytest.mark.parametrize(
+    "events, kept_open, expected",
+    [
+        ([GATE_CLOSED], True, True),
+        ([GATE_CLOSED], False, False),
+        (
+            [
+                GATE_CLOSED,
+                _event("reopened", "2026-11-02T00:00:00Z"),
+                _event("closed", "2026-11-03T00:00:00Z"),
+            ],
+            True,
+            False,
+        ),
+        ([_event("closed", "2026-11-02T00:00:00Z")], True, False),
+        ([GATE_CLOSED, _event("closed", "2026-11-06T00:00:00Z")], True, True),
+    ],
+)
+def test_open_under_intake_discounts_only_the_gate_close(events, kept_open, expected):
+    assert open_under_intake(events, AS_OF, kept_open) is expected
