@@ -20,6 +20,25 @@ UNSAFE_REDIRECT_URI_SCHEMES = frozenset(
 )
 
 
+def _set_query(url: str, query: str) -> str:
+    """Replace `url`'s query component while preserving an empty `//` authority.
+
+    `urlunparse` omits `//` when `netloc` is empty on custom schemes that are
+    not in `urllib.parse.uses_netloc` (turning `myapp://` into `myapp:` and
+    `myapp:///callback` into `myapp:/callback`).
+    """
+    parsed = urlparse(url)
+    result = urlunparse(parsed._replace(query=query))
+    prefix = f"{parsed.scheme}://"
+    if (
+        not parsed.netloc
+        and url[: len(prefix)].lower() == prefix
+        and not result.startswith(prefix)
+    ):
+        result = f"{parsed.scheme}://{result[len(parsed.scheme) + 1 :]}"
+    return result
+
+
 def add_query_params(url: str, params: dict[str, str]) -> str:
     """Append query parameters to a URL while preserving existing parameters.
 
@@ -32,7 +51,7 @@ def add_query_params(url: str, params: dict[str, str]) -> str:
     parsed = urlparse(url)
     new_query = urlencode(params)
     query = f"{parsed.query}&{new_query}" if parsed.query else new_query
-    return urlunparse(parsed._replace(query=query))
+    return _set_query(url, query)
 
 
 def replace_query_param(url: str, key: str, value: str) -> str:
@@ -62,7 +81,7 @@ def replace_query_param(url: str, key: str, value: str) -> str:
     if not replaced:
         new_segments.append(new_segment)
 
-    return urlunparse(parsed._replace(query="&".join(new_segments)))
+    return _set_query(url, "&".join(new_segments))
 
 
 def build_client_redirect(url: str, params: dict[str, str], *, iss: str) -> str:
