@@ -93,6 +93,7 @@ Keeping the claim path at the call site means any provider works, including ones
 | Microsoft Entra | `lambda c: c["roles"]` |
 | AWS Cognito | `lambda c: c["cognito:groups"]` |
 | Auth0 | `lambda c: c["permissions"]` |
+| ZITADEL | `lambda c: list(c["urn:zitadel:iam:org:project:roles"])` |
 
 Verify the claim against your own tenant before relying on it. Auth0's namespaced custom claims are configured per tenant, and Entra emits `roles` or `groups` depending on the app manifest.
 

@@ -1,0 +1,211 @@
+---
+title: ZITADEL 🤝 FastMCP
+sidebarTitle: ZITADEL
+description: Secure your FastMCP server with ZITADEL
+icon: shield-check
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="4.2.0" />
+
+This guide shows you how to secure your FastMCP server using [**ZITADEL**](https://zitadel.com), an open-source identity platform available as ZITADEL Cloud or self-hosted. The integration registers a single, static web application in ZITADEL and puts FastMCP's [**OAuth Proxy**](/servers/auth/oauth-proxy) in front of it: MCP clients register with FastMCP through Dynamic Client Registration or CIMD, and every user login is delegated to that one ZITADEL application.
+
+<Note>
+ZITADEL supports Dynamic Client Registration itself, but its tokens are not bound to the MCP server through the `aud` claim, and ZITADEL does not support Client ID Metadata Documents (CIMD). A static application behind the OAuth Proxy sidesteps both gaps: FastMCP issues audience-bound tokens to MCP clients and handles CIMD on its own.
+</Note>
+
+## Configuration
+
+### Prerequisites
+
+Before you begin, you will need:
+1. A **[ZITADEL Cloud](https://zitadel.com)** instance or a self-hosted ZITADEL instance
+2. Permission to create projects and applications in a ZITADEL organization
+3. Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:8000`)
+
+### Step 1: Create a ZITADEL Application
+
+<Steps>
+<Step title="Create a Project">
+    In the ZITADEL Console, open **Projects** and create a new project (e.g., `My MCP Server`).
+
+    <Tip>
+    Give the MCP server a dedicated project. ZITADEL scopes tokens to a whole project, so other applications in the same project share its audience.
+    </Tip>
+</Step>
+
+<Step title="Add a Web Application">
+    Inside the project, create a new application:
+
+    - **Name**: any name (e.g., `FastMCP OAuth Example`)
+    - **Type**: **Web**
+    - **Authentication method**: **Code** (client secret sent with HTTP Basic). **Post** also works if you set `token_endpoint_auth_method="client_secret_post"`. PKCE-only and JWT-based methods are not supported, because FastMCP authenticates with the client secret.
+    - **Redirect URI**: your server URL + `/auth/callback` (e.g., `http://localhost:8000/auth/callback`)
+
+    <Tip>
+    ZITADEL only accepts `http://` redirect URIs when the application's **Development Mode** is enabled. Use HTTPS in production.
+    </Tip>
+</Step>
+
+<Step title="Save Your Credentials">
+    After creation, ZITADEL shows the **Client ID** and **Client Secret**. Copy the secret right away; it is shown only once.
+
+    Also note your **instance domain**, e.g., `my-instance-abc123.zitadel.cloud` or the domain of your self-hosted instance.
+</Step>
+
+<Step title="Enable Refresh Tokens (Recommended)">
+    The creation wizard does not offer grant types, so this is done on the created application: open it, go to **Settings** → **OIDC Settings** → **Grant Types**, tick **Refresh Token** next to **Authorization Code**, and click **Save**. FastMCP then requests the `offline_access` scope (see below) and refreshes ZITADEL tokens transparently, so users are not sent back to the login page when an access token expires.
+</Step>
+</Steps>
+
+Both of ZITADEL's access token types work, **Bearer** (opaque, the default) and **JWT**: FastMCP validates them through ZITADEL's token introspection endpoint, authenticated with the application's client secret.
+
+### Step 2: FastMCP Configuration
+
+```python server.py
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.zitadel import ZitadelProvider
+from fastmcp.server.dependencies import get_access_token
+
+auth_provider = ZitadelProvider(
+    domain="https://my-instance-abc123.zitadel.cloud",  # Your ZITADEL instance
+    client_id="123456789012345678",                      # Web application client ID
+    client_secret="your-client-secret",                  # Web application client secret
+    base_url="http://localhost:8000",                    # Must match your redirect URI
+    required_scopes=["openid", "offline_access"],        # offline_access enables refresh
+)
+
+mcp = FastMCP(name="ZITADEL Secured App", auth=auth_provider)
+
+
+@mcp.tool
+async def get_user_info() -> dict:
+    """Return information about the authenticated ZITADEL user."""
+    token = get_access_token()
+    return {
+        "sub": token.claims.get("sub"),
+        "username": token.claims.get("username"),
+        "email": token.claims.get("email"),
+    }
+```
+
+The `domain` accepts a bare host (`my-instance-abc123.zitadel.cloud`, which defaults to HTTPS) or a full URL, such as `http://localhost:8080` for a local self-hosted instance.
+
+`required_scopes` defaults to `["openid"]`. Add `offline_access` only once the Refresh Token grant is enabled on the application. To request the user's profile and email as well, add `profile` and `email`.
+
+## Testing
+
+### Running the Server
+
+Start your FastMCP server with HTTP transport to enable OAuth flows:
+
+```bash
+fastmcp run server.py --transport http --port 8000
+```
+
+### Testing with a Client
+
+```python client.py
+import asyncio
+
+from fastmcp import Client
+
+
+async def main():
+    async with Client("http://localhost:8000/mcp", auth="oauth") as client:
+        print("✓ Authenticated with ZITADEL!")
+
+        result = await client.call_tool("get_user_info")
+        print(f"ZITADEL user: {result.data}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+When you run the client for the first time:
+1. Your browser opens FastMCP's consent page, then ZITADEL's login page
+2. After you sign in, ZITADEL redirects back to your MCP server
+3. The client receives a FastMCP-issued token and can make authenticated requests
+
+## Production Configuration
+
+For production deployments with persistent token management across server restarts, configure `jwt_signing_key` and `client_storage`:
+
+```python server.py
+import os
+
+from cryptography.fernet import Fernet
+from key_value.aio.stores.redis import RedisStore
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.zitadel import ZitadelProvider
+
+storage = FernetEncryptionWrapper(
+    key_value=RedisStore(
+        host=os.environ["REDIS_HOST"],
+        port=int(os.environ["REDIS_PORT"]),
+    ),
+    fernet=Fernet(os.environ["STORAGE_ENCRYPTION_KEY"]),
+)
+
+auth_provider = ZitadelProvider(
+    domain=os.environ["ZITADEL_DOMAIN"],
+    client_id=os.environ["ZITADEL_CLIENT_ID"],
+    client_secret=os.environ["ZITADEL_CLIENT_SECRET"],
+    base_url="https://your-production-domain.com",
+    required_scopes=["openid", "offline_access"],
+    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    client_storage=storage,
+)
+
+mcp = FastMCP(name="Production ZITADEL App", auth=auth_provider)
+```
+
+<Note>
+Parameters (`jwt_signing_key` and `client_storage`) work together to ensure tokens and client registrations survive server restarts. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** - without it, tokens are stored in plaintext.
+
+For complete details on these parameters, see the [OAuth Proxy documentation](/servers/auth/oauth-proxy#configuration-parameters).
+</Note>
+
+## Features
+
+### Token Validation via Introspection
+
+FastMCP validates every upstream ZITADEL token through ZITADEL's introspection endpoint rather than as a local JWT. Introspection works for opaque and JWT access tokens alike, and it returns the granted scopes, which ZITADEL's JWT access tokens do not carry. Revoked tokens and deactivated users are rejected on the next request.
+
+ZITADEL only reports a token as active when it belongs to the calling application's project. FastMCP additionally requires the application's own client ID in the token's audience, so a token issued to another application of the same project is rejected.
+
+Introspection costs one request to ZITADEL per MCP request. To trade some revocation latency for load, cache the results:
+
+```python
+auth_provider = ZitadelProvider(
+    # ...
+    introspection_cache_ttl_seconds=60,
+)
+```
+
+### Roles
+
+When **Assert Roles on Authentication** is enabled in the project's settings, ZITADEL includes the user's project roles in the `urn:zitadel:iam:org:project:roles` claim. The claim maps each role key to the organizations that granted it, so its keys are the role names:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth import require_roles
+
+mcp = FastMCP(name="ZITADEL Secured App", auth=auth_provider)
+
+
+def zitadel_roles(claims: dict) -> list[str]:
+    return list(claims["urn:zitadel:iam:org:project:roles"])
+
+
+@mcp.tool(auth=require_roles("admin", extract=zitadel_roles))
+def admin_operation() -> str:
+    """Requires the ZITADEL project role 'admin'."""
+    return "Admin action completed"
+```
+
+See [Authorization](/servers/authorization) for more on role- and scope-based checks.

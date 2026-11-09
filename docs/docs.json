@@ -307,7 +307,8 @@
                       "integrations/propelauth",
                       "integrations/scalekit",
                       "integrations/supabase",
-                      "integrations/workos"
+                      "integrations/workos",
+                      "integrations/zitadel"
                     ]
                   },
                   {
