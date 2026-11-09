@@ -196,6 +196,14 @@ case "${1:-}" in
            subject:"",body:"{{ event.payload.text }}"}],
          actions_on_trigger:[],actions_on_resolve:[]}' > "$scratch/automation-notify.json"
       echo "automation notify $(upsert automations "$scratch/automation-notify.json")"
+      # The outcome notice replaced this run-start notice.
+      jq -n '{limit:200}' > "$scratch/retired.filter"
+      api POST /automations/filter --data "@$scratch/retired.filter" \
+        | jq -r '.[] | select(.name == "fastmcp-triage-run-started") | .id' \
+        | while read -r retired; do
+            api DELETE "/automations/$retired" >/dev/null
+            echo "removed fastmcp-triage-run-started $retired"
+          done
     fi
     ;;
   alerts)
