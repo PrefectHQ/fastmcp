@@ -203,6 +203,29 @@ class TestBuildClientRedirect:
         assert "&&" not in result
         assert not result.endswith("&")
 
+    @pytest.mark.parametrize(
+        "registered_uri,expected_prefix",
+        [
+            ("myapp://", "myapp://?"),
+            ("myapp:///callback", "myapp:///callback?"),
+            ("myapp://callback", "myapp://callback?"),
+            ("com.example.app:/callback", "com.example.app:/callback?"),
+        ],
+    )
+    def test_preserves_custom_scheme_empty_authority(
+        self, registered_uri: str, expected_prefix: str
+    ):
+        """Regression test for #6296: custom native-app schemes with an empty
+        authority (`myapp://`, `myapp:///callback`) must not have their `//`
+        stripped by `urlunparse` when query parameters are appended."""
+        result = build_client_redirect(
+            registered_uri,
+            {"code": "abc"},
+            iss="https://as.example/",
+        )
+
+        assert result == (f"{expected_prefix}code=abc&iss=https%3A%2F%2Fas.example%2F")
+
 
 class TestNoHandSpecifiedIssOutsideHelper:
     """Guard against a future call site reintroducing the duplicate-`iss`
