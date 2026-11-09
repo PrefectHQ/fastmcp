@@ -28,7 +28,7 @@ loudly. The user enter/exit counter is kept as a secondary check on the
 "entered once, exited once at shutdown" shape.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -48,7 +48,7 @@ async def test_http_user_lifespan_fires_once_across_sessions():
     exit_count = 0
 
     @asynccontextmanager
-    async def counting_lifespan(mcp: FastMCP) -> AsyncIterator[dict[str, Any]]:
+    async def counting_lifespan(mcp: FastMCP) -> AsyncGenerator[dict[str, Any], None]:
         nonlocal enter_count, exit_count
         enter_count += 1
         try:
@@ -72,7 +72,7 @@ async def test_http_user_lifespan_fires_once_across_sessions():
     original_lifespan = server._mcp_server.lifespan
 
     @asynccontextmanager
-    async def counting_proxy(app: LowLevelServer[Any]) -> AsyncIterator[Any]:
+    async def counting_proxy(app: LowLevelServer[Any]) -> AsyncGenerator[Any, None]:
         nonlocal proxy_enter_count
         proxy_enter_count += 1
         async with original_lifespan(app) as state:

@@ -1,9 +1,639 @@
 ---
 title: "Changelog"
+description: "Release notes for every FastMCP version, with the changes, fixes, and contributors in each release."
 icon: "list-check"
 rss: true
 tag: NEW
 ---
+
+<Update label="v4.2.0a3" description="2026-11-03">
+
+**[v4.2.0a3: A Particular Set of Skills](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0a3)**
+
+FastMCP 4.2.0a3 consolidates skills around `Skill`, `SkillCatalogProvider`, and the new strict `SkillsDirectoryProvider` in `fastmcp.skills.provider`. Directory loading validates each skill before publication, and skills with structured metadata or YAML `allowed-tools` lists are accepted without changing their values. This alpha also fixes stale proxy discovery caches, preserves OpenAPI schema references and explicit null values, and improves client connection recovery. Skills support remains experimental; this prerelease is intended for integration testing. If you import the 4.1 skills providers directly, they keep their behavior in 4.2 and now warn ahead of removal in 4.3. Move directory loading to `from fastmcp.skills.provider import SkillsDirectoryProvider`; its startup errors and the legacy providers' warnings identify folders that need fixing. For a single skill, use `Skill.from_directory(...)` with `SkillCatalogProvider` from `fastmcp.skills.provider`. `Client.list_skill_resources()` remains available for servers without the Skills extension. The old `experimental_skills=True` path redirects to the new provider for the base class and rejects subclasses to preserve access controls. Legacy `Skill` wire-model construction still works with a warning, wire entries retain `isinstance(entry, Skill)` behavior, and existing Pydantic `Skill` fields still validate wire payloads. Use `MCPSkill` for wire entries, annotations, and checks, and `Skill` for authoring. For manifest metadata on resource-only servers, read `skill://<name>/_manifest` with `client.read_resource()` and parse its JSON; `client.get_skill()` requires the Skills extension, while `client.read_skill()` downloads and validates the whole skill. Since a2, `ClientGroup` retains known tool routes after its context exits, OpenAPI tool inputs omit `readOnly` properties, and header and path parameters follow their declared simple serialization style. OAuth consent bindings survive concurrent approvals, exception middleware matches subclasses, and empty logging method filters mean “log nothing.” Thanks to our 46 contributors, including 29 first-time contributors.
+
+### Breaking Changes ⚠️
+* Make Skill a storage-neutral object with folders as one loader by [@zzstoatzz](https://github.com/zzstoatzz) in [#6065](https://github.com/PrefectHQ/fastmcp/pull/6065)
+### Enhancements ✨
+* Rename the resource-era list_skills helper to list_skill_summaries by [@zzstoatzz](https://github.com/zzstoatzz) in [#6051](https://github.com/PrefectHQ/fastmcp/pull/6051)
+* Discover skills through mounted servers by [@zzstoatzz](https://github.com/zzstoatzz) in [#6067](https://github.com/PrefectHQ/fastmcp/pull/6067)
+* Share Prefab renderer resources across equivalent tools by [@jlowin](https://github.com/jlowin), [@fprieto14](https://github.com/fprieto14), and [@keremoktener](https://github.com/keremoktener) in [#6077](https://github.com/PrefectHQ/fastmcp/pull/6077)
+* Export Skill from fastmcp by [@zzstoatzz](https://github.com/zzstoatzz) in [#6071](https://github.com/PrefectHQ/fastmcp/pull/6071)
+* Add skills discovery to ClientGroup by [@zzstoatzz](https://github.com/zzstoatzz) in [#6072](https://github.com/PrefectHQ/fastmcp/pull/6072)
+* Add --skills to fastmcp list by [@zzstoatzz](https://github.com/zzstoatzz) in [#6073](https://github.com/PrefectHQ/fastmcp/pull/6073)
+* Add Client.read_skill and tighten skills docs by [@zzstoatzz](https://github.com/zzstoatzz) in [#6087](https://github.com/PrefectHQ/fastmcp/pull/6087)
+* Verify and export skills with resource-manifest fallback by [@zzstoatzz](https://github.com/zzstoatzz) in [#6086](https://github.com/PrefectHQ/fastmcp/pull/6086)
+* Forward Skills discovery through proxies by [@jakekaplan](https://github.com/jakekaplan) in [#5788](https://github.com/PrefectHQ/fastmcp/pull/5788)
+* Share strict skill snapshot projection by [@zzstoatzz](https://github.com/zzstoatzz) in [#6089](https://github.com/PrefectHQ/fastmcp/pull/6089)
+* Use scoped local tests and leave full suites to CI by [@zzstoatzz](https://github.com/zzstoatzz) in [#6094](https://github.com/PrefectHQ/fastmcp/pull/6094)
+* Share ClientGroup skill client lookup by [@zzstoatzz](https://github.com/zzstoatzz) in [#6101](https://github.com/PrefectHQ/fastmcp/pull/6101)
+* Share filesystem skill supporting-file reads by [@zzstoatzz](https://github.com/zzstoatzz) in [#6102](https://github.com/PrefectHQ/fastmcp/pull/6102)
+* Deliver concurrent triage reviews, draft fixes and mutation proposals by [@zzstoatzz](https://github.com/zzstoatzz) in [#6116](https://github.com/PrefectHQ/fastmcp/pull/6116)
+* Post Marvin's dedupe and too-long comments from workflow steps by [@gaker](https://github.com/gaker) in [#6170](https://github.com/PrefectHQ/fastmcp/pull/6170)
+* Remove the unused triage mutation batch by [@zzstoatzz](https://github.com/zzstoatzz) in [#6208](https://github.com/PrefectHQ/fastmcp/pull/6208)
+* Restore the status site by [@zzstoatzz](https://github.com/zzstoatzz) in [#6216](https://github.com/PrefectHQ/fastmcp/pull/6216)
+* Add agno, Agent Framework, and OpenAI Agents SDK to downstream smoke by [@zzstoatzz](https://github.com/zzstoatzz) in [#6222](https://github.com/PrefectHQ/fastmcp/pull/6222)
+* Close external PRs until their author is assigned again by [@zzstoatzz](https://github.com/zzstoatzz) in [#6227](https://github.com/PrefectHQ/fastmcp/pull/6227)
+* Let private triage sweeps run without the Sol reviewer by [@zzstoatzz](https://github.com/zzstoatzz) in [#6229](https://github.com/PrefectHQ/fastmcp/pull/6229)
+* Add named model tiers to the agentic triage plans by [@zzstoatzz](https://github.com/zzstoatzz) in [#6228](https://github.com/PrefectHQ/fastmcp/pull/6228)
+* Add reproducible public triage leads to backlog dashboard by [@zzstoatzz](https://github.com/zzstoatzz) in [#6293](https://github.com/PrefectHQ/fastmcp/pull/6293)
+* Add a strict SkillsDirectoryProvider to fastmcp.skills.provider by [@zzstoatzz](https://github.com/zzstoatzz) in [#6278](https://github.com/PrefectHQ/fastmcp/pull/6278)
+* Point experimental_skills at the new provider and drop alpha-only skills code by [@zzstoatzz](https://github.com/zzstoatzz) in [#6279](https://github.com/PrefectHQ/fastmcp/pull/6279)
+* Deprecate the 4.1 skills API for removal in 4.3 by [@zzstoatzz](https://github.com/zzstoatzz) in [#6280](https://github.com/PrefectHQ/fastmcp/pull/6280)
+### Security 🔒
+* Verify advertised skill frontmatter when reading content by [@zzstoatzz](https://github.com/zzstoatzz) in [#6090](https://github.com/PrefectHQ/fastmcp/pull/6090)
+* Check skill limits before reading directory and remote files by [@zzstoatzz](https://github.com/zzstoatzz) in [#6092](https://github.com/PrefectHQ/fastmcp/pull/6092)
+* fix: preserve _list_query_params in FastMCPProviderResourceTemplate.wrap by [@RS-ITACHI](https://github.com/RS-ITACHI) in [#6130](https://github.com/PrefectHQ/fastmcp/pull/6130)
+* Read composite action inputs from env and pin actions by digest by [@gaker](https://github.com/gaker) in [#6168](https://github.com/PrefectHQ/fastmcp/pull/6168)
+* Scope the /marvin App token to the permissions it uses by [@zzstoatzz](https://github.com/zzstoatzz) in [#6206](https://github.com/PrefectHQ/fastmcp/pull/6206)
+### Fixes 🐞
+* Make the version-check InvalidURL regression independent of proxy parsing by [@HootRock](https://github.com/HootRock) in [#6048](https://github.com/PrefectHQ/fastmcp/pull/6048)
+* Build the Prefab renderer page on read, not on resources/list by [@adam-zovos](https://github.com/adam-zovos) in [#6039](https://github.com/PrefectHQ/fastmcp/pull/6039)
+* Install mounted skills under their own name in sync_skills by [@zzstoatzz](https://github.com/zzstoatzz) in [#6078](https://github.com/PrefectHQ/fastmcp/pull/6078)
+* Stage skill exports before replacing installed files by [@zzstoatzz](https://github.com/zzstoatzz) in [#6091](https://github.com/PrefectHQ/fastmcp/pull/6091)
+* fix: Prefix backend hash addresses with double underscores by [@jlowin](https://github.com/jlowin) and [@BlueX888](https://github.com/BlueX888) in [#6100](https://github.com/PrefectHQ/fastmcp/pull/6100)
+* Rebind pre-4.2 Prefab backend addresses through 4.2 proxies by [@jakekaplan](https://github.com/jakekaplan) in [#6108](https://github.com/PrefectHQ/fastmcp/pull/6108)
+* Isolate and bound triage verification by [@zzstoatzz](https://github.com/zzstoatzz) in [#6109](https://github.com/PrefectHQ/fastmcp/pull/6109)
+* Improve OpenAPI upstream error details by [@zzstoatzz](https://github.com/zzstoatzz) and [@mssaleh](https://github.com/mssaleh) in [#6141](https://github.com/PrefectHQ/fastmcp/pull/6141)
+* Compare JSON const and enum values by JSON equality by [@prassu017](https://github.com/prassu017) and [@alpaylan](https://github.com/alpaylan) in [#6126](https://github.com/PrefectHQ/fastmcp/pull/6126)
+* Bound Skills proxy backend pagination by [@prassu017](https://github.com/prassu017) and [@Yash-Tripath1](https://github.com/Yash-Tripath1) in [#6104](https://github.com/PrefectHQ/fastmcp/pull/6104)
+* fix: forward script arguments in FastMCPStdioTransport by [@KashifManzer](https://github.com/KashifManzer) and [@BlueX888](https://github.com/BlueX888) in [#6119](https://github.com/PrefectHQ/fastmcp/pull/6119)
+* Return invalid params for prompts/get with a missing required argument by [@asasemahmed](https://github.com/asasemahmed) and [@xubenqiang](https://github.com/xubenqiang) in [#6027](https://github.com/PrefectHQ/fastmcp/pull/6027)
+* Fix kept-alive stdio transports ignoring client timeouts by [@HootRock](https://github.com/HootRock) and [@BlueX888](https://github.com/BlueX888) in [#6156](https://github.com/PrefectHQ/fastmcp/pull/6156)
+* perf(schema): skip unnecessary reference sibling restoration by [@andreivince](https://github.com/andreivince) in [#6161](https://github.com/PrefectHQ/fastmcp/pull/6161)
+* fix(cli): prefer Claude Code project servers by [@mikamikasuki](https://github.com/mikamikasuki) in [#5522](https://github.com/PrefectHQ/fastmcp/pull/5522)
+* fix(cli): preserve JSON content block fields by [@mikamikasuki](https://github.com/mikamikasuki) in [#5530](https://github.com/PrefectHQ/fastmcp/pull/5530)
+* Keep schema definitions when hydrating a wrapped tool result by [@asasemahmed](https://github.com/asasemahmed) in [#5927](https://github.com/PrefectHQ/fastmcp/pull/5927)
+* Reject undeclared OpenAPI tool arguments under strict input validation by [@prassu017](https://github.com/prassu017) and [@mssaleh](https://github.com/mssaleh) in [#6140](https://github.com/PrefectHQ/fastmcp/pull/6140)
+* fix(resources): reverse hostless URIs through Namespace unchanged by [@serhiizghama](https://github.com/serhiizghama) and [@andreivince](https://github.com/andreivince) in [#5230](https://github.com/PrefectHQ/fastmcp/pull/5230)
+* fix(openapi): preserve timeouts so the server maps them to the actionable message by [@BlueX888](https://github.com/BlueX888) in [#5847](https://github.com/PrefectHQ/fastmcp/pull/5847)
+* Keep posted review receipts on partial delivery and reject differing reviews by [@zzstoatzz](https://github.com/zzstoatzz) in [#6178](https://github.com/PrefectHQ/fastmcp/pull/6178)
+* Drop client context holds left by finished tasks by [@zzstoatzz](https://github.com/zzstoatzz) in [#6205](https://github.com/PrefectHQ/fastmcp/pull/6205)
+* Let clients with different timeouts share a kept-alive stdio session by [@zzstoatzz](https://github.com/zzstoatzz) in [#6223](https://github.com/PrefectHQ/fastmcp/pull/6223)
+* fix(cli): preserve explicit null in generated tool commands by [@likecake](https://github.com/likecake) in [#6191](https://github.com/PrefectHQ/fastmcp/pull/6191)
+* Honor empty tag inclusion filters in multi-server configs by [@PennEwan](https://github.com/PennEwan) in [#6200](https://github.com/PrefectHQ/fastmcp/pull/6200)
+* fix(mcp-config): reuse one OAuth client per configured server by [@kbkb628](https://github.com/kbkb628) and [@whoskn](https://github.com/whoskn) in [#6097](https://github.com/PrefectHQ/fastmcp/pull/6097)
+* Fix and quiet the triage alerts from 2026-11-02 by [@zzstoatzz](https://github.com/zzstoatzz) in [#6235](https://github.com/PrefectHQ/fastmcp/pull/6235)
+* fix(tasks): send task IDs in routing headers by [@eli-yip](https://github.com/eli-yip) in [#5810](https://github.com/PrefectHQ/fastmcp/pull/5810)
+* fix(middleware): treat an empty methods allowlist as "log nothing" by [@gdut4140](https://github.com/gdut4140) in [#5727](https://github.com/PrefectHQ/fastmcp/pull/5727)
+* Fix namespaced file resource reads while preserving URI normalization by [@BlueLi66](https://github.com/BlueLi66) in [#5716](https://github.com/PrefectHQ/fastmcp/pull/5716)
+* fix(server): pass typed list request messages to list middleware hooks by [@BlueX888](https://github.com/BlueX888) in [#5732](https://github.com/PrefectHQ/fastmcp/pull/5732)
+* Stop OpenAPI end-to-end tests from hitting the network by [@zzstoatzz](https://github.com/zzstoatzz) in [#6249](https://github.com/PrefectHQ/fastmcp/pull/6249)
+* fix(auth): Preserve browser consent bindings across concurrent OAuth approvals by [@mikamikasuki](https://github.com/mikamikasuki) in [#5541](https://github.com/PrefectHQ/fastmcp/pull/5541)
+* fix(openapi): serialize header and path parameters per the simple style by [@Harsh23Kashyap](https://github.com/Harsh23Kashyap) in [#5091](https://github.com/PrefectHQ/fastmcp/pull/5091)
+* Fall back to method and path when an OpenAPI name slugs to nothing by [@asasemahmed](https://github.com/asasemahmed) in [#5699](https://github.com/PrefectHQ/fastmcp/pull/5699)
+* Convert OpenAPI 3.0 boolean exclusive bounds to numeric bounds by [@asasemahmed](https://github.com/asasemahmed) in [#5697](https://github.com/PrefectHQ/fastmcp/pull/5697)
+* Rewrite component refs under not, if/then/else and similar keywords by [@asasemahmed](https://github.com/asasemahmed) in [#5698](https://github.com/PrefectHQ/fastmcp/pull/5698)
+* fix(openapi): keep media-type $defs beside component schemas by [@BlueX888](https://github.com/BlueX888) in [#5709](https://github.com/PrefectHQ/fastmcp/pull/5709)
+* Omit readOnly properties from OpenAPI tool input schemas by [@AarnavNoble](https://github.com/AarnavNoble) in [#5753](https://github.com/PrefectHQ/fastmcp/pull/5753)
+* fix: name root self-references after the generated root class by [@BlueX888](https://github.com/BlueX888) in [#5671](https://github.com/PrefectHQ/fastmcp/pull/5671)
+* fix(proxy): keep stale list results out of cache by [@mikamikasuki](https://github.com/mikamikasuki) in [#5521](https://github.com/PrefectHQ/fastmcp/pull/5521)
+* Match Claude Code project keys by path on Windows by [@zzstoatzz](https://github.com/zzstoatzz) and [@yongpange](https://github.com/yongpange) in [#6240](https://github.com/PrefectHQ/fastmcp/pull/6240)
+* Stop preloading the server before launching the Inspector by [@zzstoatzz](https://github.com/zzstoatzz) and [@mikamikasuki](https://github.com/mikamikasuki) in [#6241](https://github.com/PrefectHQ/fastmcp/pull/6241)
+* Cull expired OAuth state from the default OAuthProxy file store by [@zzstoatzz](https://github.com/zzstoatzz), [@nosmile99](https://github.com/nosmile99), and [@mheidari98](https://github.com/mheidari98) in [#6242](https://github.com/PrefectHQ/fastmcp/pull/6242)
+* Reuse the stdio session after a cancelled startup by [@zzstoatzz](https://github.com/zzstoatzz) and [@mikamikasuki](https://github.com/mikamikasuki) in [#6243](https://github.com/PrefectHQ/fastmcp/pull/6243)
+* Match Gemini function responses to tool-use IDs by [@zzstoatzz](https://github.com/zzstoatzz) and [@mikamikasuki](https://github.com/mikamikasuki) in [#6244](https://github.com/PrefectHQ/fastmcp/pull/6244)
+* Replace parent type keywords when an ArgTransform changes the type by [@zzstoatzz](https://github.com/zzstoatzz), [@syf2211](https://github.com/syf2211), [@HootRock](https://github.com/HootRock), and [@chrikrah](https://github.com/chrikrah) in [#6246](https://github.com/PrefectHQ/fastmcp/pull/6246)
+* Expire idle per-client rate limiters by [@zzstoatzz](https://github.com/zzstoatzz) and [@mikamikasuki](https://github.com/mikamikasuki) in [#6247](https://github.com/PrefectHQ/fastmcp/pull/6247)
+* Match resource templates that spell out a literal query by [@zzstoatzz](https://github.com/zzstoatzz) and [@taltal-beep](https://github.com/taltal-beep) in [#6248](https://github.com/PrefectHQ/fastmcp/pull/6248)
+* fix(openapi): preserve explicit null in nullable JSON body properties by [@mumu-bird](https://github.com/mumu-bird) in [#5633](https://github.com/PrefectHQ/fastmcp/pull/5633)
+* Keep OpenAPI refs that point into a component schema intact by [@zzstoatzz](https://github.com/zzstoatzz) and [@AarnavNoble](https://github.com/AarnavNoble) in [#6245](https://github.com/PrefectHQ/fastmcp/pull/6245)
+* fix(telemetry): record mounted and nested server spans as INTERNAL by [@zzstoatzz](https://github.com/zzstoatzz) and [@sonmaximum](https://github.com/sonmaximum) in [#6252](https://github.com/PrefectHQ/fastmcp/pull/6252)
+* fix(client): identify as fastmcp in clientInfo by default by [@zzstoatzz](https://github.com/zzstoatzz) in [#6254](https://github.com/PrefectHQ/fastmcp/pull/6254)
+* fix(openapi): keep both values when a query object property matches another parameter by [@zzstoatzz](https://github.com/zzstoatzz) and [@alpaylan](https://github.com/alpaylan) in [#6256](https://github.com/PrefectHQ/fastmcp/pull/6256)
+* fix(middleware): map exception subclasses in ErrorHandlingMiddleware by [@zzstoatzz](https://github.com/zzstoatzz) and [@zurmag](https://github.com/zurmag) in [#6257](https://github.com/PrefectHQ/fastmcp/pull/6257)
+* fix(client): report a lost connection instead of 'Client is not connected' by [@zzstoatzz](https://github.com/zzstoatzz) and [@alex-feel](https://github.com/alex-feel) in [#6259](https://github.com/PrefectHQ/fastmcp/pull/6259)
+* fix(client): keep ClientGroup tool routes after the group context exits by [@zzstoatzz](https://github.com/zzstoatzz), [@hntrl](https://github.com/hntrl), and [@YingzuoLiu](https://github.com/YingzuoLiu) in [#6268](https://github.com/PrefectHQ/fastmcp/pull/6268)
+* Accept structured skill metadata and allowed-tools lists by [@jakekaplan](https://github.com/jakekaplan) in [#6292](https://github.com/PrefectHQ/fastmcp/pull/6292)
+* Preserve 4.1 skills type checks and resource-only manifest migration by [@zzstoatzz](https://github.com/zzstoatzz) in [#6305](https://github.com/PrefectHQ/fastmcp/pull/6305)
+### Docs 📚
+* Consolidate skills docs into one Skills over MCP page by [@zzstoatzz](https://github.com/zzstoatzz) in [#6049](https://github.com/PrefectHQ/fastmcp/pull/6049)
+* Rewrite skills docs around Skill and SkillCatalogProvider by [@zzstoatzz](https://github.com/zzstoatzz) in [#6066](https://github.com/PrefectHQ/fastmcp/pull/6066)
+* Tighten skills docs examples by [@zzstoatzz](https://github.com/zzstoatzz) in [#6070](https://github.com/PrefectHQ/fastmcp/pull/6070)
+* Shorten the skills docs page by [@zzstoatzz](https://github.com/zzstoatzz) in [#6079](https://github.com/PrefectHQ/fastmcp/pull/6079)
+* Badge the skills page as 4.2.0 by [@zzstoatzz](https://github.com/zzstoatzz) in [#6083](https://github.com/PrefectHQ/fastmcp/pull/6083)
+* Consolidate skills examples around verified Skill values by [@zzstoatzz](https://github.com/zzstoatzz) in [#6093](https://github.com/PrefectHQ/fastmcp/pull/6093)
+* docs: add v4.2.0a1 changelog entries by [@zzstoatzz](https://github.com/zzstoatzz) in [#6105](https://github.com/PrefectHQ/fastmcp/pull/6105)
+* Add MCP tool annotations to get_file example by [@gl1tchdust](https://github.com/gl1tchdust) in [#5976](https://github.com/PrefectHQ/fastmcp/pull/5976)
+* Fix dead links in current documentation by [@zzstoatzz](https://github.com/zzstoatzz) and [@Wilson0511](https://github.com/Wilson0511) in [#6142](https://github.com/PrefectHQ/fastmcp/pull/6142)
+* docs: rename Horizon to FastMCP Gateway in current docs by [@parkedwards](https://github.com/parkedwards) in [#5653](https://github.com/PrefectHQ/fastmcp/pull/5653)
+* Document strict-mode handling of undeclared OpenAPI arguments by [@zzstoatzz](https://github.com/zzstoatzz) in [#6169](https://github.com/PrefectHQ/fastmcp/pull/6169)
+* docs: add v4.2.0a2 changelog entries by [@zzstoatzz](https://github.com/zzstoatzz) in [#6224](https://github.com/PrefectHQ/fastmcp/pull/6224)
+* docs(settings): explain what FASTMCP_DEBUG actually does by [@zzstoatzz](https://github.com/zzstoatzz) and [@ianw](https://github.com/ianw) in [#6255](https://github.com/PrefectHQ/fastmcp/pull/6255)
+* docs: pass referrers on outbound links, add organization schema and page descriptions by [@madureira-gabriel](https://github.com/madureira-gabriel) in [#6287](https://github.com/PrefectHQ/fastmcp/pull/6287)
+### Other Changes 🦾
+* chore(deps): Update dependency ruff to v0.17.2 by [@prefect-renovate](https://github.com/prefect-renovate) in [#6233](https://github.com/PrefectHQ/fastmcp/pull/6233)
+* chore(deps): Pin dependencies by [@prefect-renovate](https://github.com/prefect-renovate) in [#6064](https://github.com/PrefectHQ/fastmcp/pull/6064)
+## New Contributors
+* @adam-zovos made their first contribution in [#6039](https://github.com/PrefectHQ/fastmcp/pull/6039)
+* @alpaylan made their first contribution in [#6126](https://github.com/PrefectHQ/fastmcp/pull/6126)
+* @BlueLi66 made their first contribution in [#5716](https://github.com/PrefectHQ/fastmcp/pull/5716)
+* @eli-yip made their first contribution in [#5810](https://github.com/PrefectHQ/fastmcp/pull/5810)
+* @fprieto14 made their first contribution in [#6077](https://github.com/PrefectHQ/fastmcp/pull/6077)
+* @gaker made their first contribution in [#6168](https://github.com/PrefectHQ/fastmcp/pull/6168)
+* @gdut4140 made their first contribution in [#5727](https://github.com/PrefectHQ/fastmcp/pull/5727)
+* @gl1tchdust made their first contribution in [#5976](https://github.com/PrefectHQ/fastmcp/pull/5976)
+* @hntrl made their first contribution in [#6268](https://github.com/PrefectHQ/fastmcp/pull/6268)
+* @ianw made their first contribution in [#6255](https://github.com/PrefectHQ/fastmcp/pull/6255)
+* @KashifManzer made their first contribution in [#6119](https://github.com/PrefectHQ/fastmcp/pull/6119)
+* @keremoktener made their first contribution in [#6077](https://github.com/PrefectHQ/fastmcp/pull/6077)
+* @likecake made their first contribution in [#6191](https://github.com/PrefectHQ/fastmcp/pull/6191)
+* @mheidari98 made their first contribution in [#6242](https://github.com/PrefectHQ/fastmcp/pull/6242)
+* @mssaleh made their first contribution in [#6141](https://github.com/PrefectHQ/fastmcp/pull/6141)
+* @mumu-bird made their first contribution in [#5633](https://github.com/PrefectHQ/fastmcp/pull/5633)
+* @nosmile99 made their first contribution in [#6242](https://github.com/PrefectHQ/fastmcp/pull/6242)
+* @PennEwan made their first contribution in [#6200](https://github.com/PrefectHQ/fastmcp/pull/6200)
+* @prassu017 made their first contribution in [#6104](https://github.com/PrefectHQ/fastmcp/pull/6104)
+* @RS-ITACHI made their first contribution in [#6130](https://github.com/PrefectHQ/fastmcp/pull/6130)
+* @serhiizghama made their first contribution in [#5230](https://github.com/PrefectHQ/fastmcp/pull/5230)
+* @sonmaximum made their first contribution in [#6252](https://github.com/PrefectHQ/fastmcp/pull/6252)
+* @taltal-beep made their first contribution in [#6248](https://github.com/PrefectHQ/fastmcp/pull/6248)
+* @whoskn made their first contribution in [#6097](https://github.com/PrefectHQ/fastmcp/pull/6097)
+* @xubenqiang made their first contribution in [#6027](https://github.com/PrefectHQ/fastmcp/pull/6027)
+* @Yash-Tripath1 made their first contribution in [#6104](https://github.com/PrefectHQ/fastmcp/pull/6104)
+* @YingzuoLiu made their first contribution in [#6268](https://github.com/PrefectHQ/fastmcp/pull/6268)
+* @yongpange made their first contribution in [#6240](https://github.com/PrefectHQ/fastmcp/pull/6240)
+* @zurmag made their first contribution in [#6257](https://github.com/PrefectHQ/fastmcp/pull/6257)
+
+**Full Changelog**: [v4.1.6...v4.2.0a3](https://github.com/PrefectHQ/fastmcp/compare/v4.1.6...v4.2.0a3)
+
+</Update>
+
+<Update label="v4.2.0a2" description="2026-11-01">
+
+**[v4.2.0a2: Skill Waters Run Deep](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0a2)**
+
+The second 4.2 alpha carries every fix from 4.1.5 plus the ones that only land on 4.2: Skills discovery through proxies pages its backends with a bound, pre-4.2 Prefab backend addresses rebind through 4.2 proxies, large tool catalogs expand their schemas faster, and kept-alive stdio transports respect each client's timeout. Before tagging, this build ran against pydantic-ai, langchain, agno, Microsoft Agent Framework, and the OpenAI Agents SDK. Skills support remains experimental; this prerelease is intended for integration testing. Behavior changes since a1: JSON Schema `const` and `enum` compare by JSON equality, so `true` no longer passes for `1`; `prompts/get` with a missing argument returns invalid params (`-32602`); OpenAPI upstream errors are cut to 1 KB with HTML bodies dropped, and strict input validation rejects undeclared OpenAPI arguments; a later client with a different timeout restarts an idle kept-alive stdio subprocess, while one nested inside a live client shares its session's timeout and logs a warning. Thanks to our 22 contributors, including 13 first-time contributors.
+
+### Breaking Changes ⚠️
+* Make Skill a storage-neutral object with folders as one loader by [@zzstoatzz](https://github.com/zzstoatzz) in [#6065](https://github.com/PrefectHQ/fastmcp/pull/6065)
+### Enhancements ✨
+* Rename the resource-era list_skills helper to list_skill_summaries by [@zzstoatzz](https://github.com/zzstoatzz) in [#6051](https://github.com/PrefectHQ/fastmcp/pull/6051)
+* Discover skills through mounted servers by [@zzstoatzz](https://github.com/zzstoatzz) in [#6067](https://github.com/PrefectHQ/fastmcp/pull/6067)
+* Share Prefab renderer resources across equivalent tools by [@jlowin](https://github.com/jlowin), [@fprieto14](https://github.com/fprieto14), and [@keremoktener](https://github.com/keremoktener) in [#6077](https://github.com/PrefectHQ/fastmcp/pull/6077)
+* Export Skill from fastmcp by [@zzstoatzz](https://github.com/zzstoatzz) in [#6071](https://github.com/PrefectHQ/fastmcp/pull/6071)
+* Add skills discovery to ClientGroup by [@zzstoatzz](https://github.com/zzstoatzz) in [#6072](https://github.com/PrefectHQ/fastmcp/pull/6072)
+* Add --skills to fastmcp list by [@zzstoatzz](https://github.com/zzstoatzz) in [#6073](https://github.com/PrefectHQ/fastmcp/pull/6073)
+* Add Client.read_skill and tighten skills docs by [@zzstoatzz](https://github.com/zzstoatzz) in [#6087](https://github.com/PrefectHQ/fastmcp/pull/6087)
+* Verify and export skills with resource-manifest fallback by [@zzstoatzz](https://github.com/zzstoatzz) in [#6086](https://github.com/PrefectHQ/fastmcp/pull/6086)
+* Forward Skills discovery through proxies by [@jakekaplan](https://github.com/jakekaplan) in [#5788](https://github.com/PrefectHQ/fastmcp/pull/5788)
+* Share strict skill snapshot projection by [@zzstoatzz](https://github.com/zzstoatzz) in [#6089](https://github.com/PrefectHQ/fastmcp/pull/6089)
+* Use scoped local tests and leave full suites to CI by [@zzstoatzz](https://github.com/zzstoatzz) in [#6094](https://github.com/PrefectHQ/fastmcp/pull/6094)
+* Share ClientGroup skill client lookup by [@zzstoatzz](https://github.com/zzstoatzz) in [#6101](https://github.com/PrefectHQ/fastmcp/pull/6101)
+* Share filesystem skill supporting-file reads by [@zzstoatzz](https://github.com/zzstoatzz) in [#6102](https://github.com/PrefectHQ/fastmcp/pull/6102)
+* Deliver concurrent triage reviews, draft fixes and mutation proposals by [@zzstoatzz](https://github.com/zzstoatzz) in [#6116](https://github.com/PrefectHQ/fastmcp/pull/6116)
+* Post Marvin's dedupe and too-long comments from workflow steps by [@gaker](https://github.com/gaker) in [#6170](https://github.com/PrefectHQ/fastmcp/pull/6170)
+* Remove the unused triage mutation batch by [@zzstoatzz](https://github.com/zzstoatzz) in [#6208](https://github.com/PrefectHQ/fastmcp/pull/6208)
+* Restore the status site by [@zzstoatzz](https://github.com/zzstoatzz) in [#6216](https://github.com/PrefectHQ/fastmcp/pull/6216)
+* Add agno, Agent Framework, and OpenAI Agents SDK to downstream smoke by [@zzstoatzz](https://github.com/zzstoatzz) in [#6222](https://github.com/PrefectHQ/fastmcp/pull/6222)
+### Security 🔒
+* Verify advertised skill frontmatter when reading content by [@zzstoatzz](https://github.com/zzstoatzz) in [#6090](https://github.com/PrefectHQ/fastmcp/pull/6090)
+* Check skill limits before reading directory and remote files by [@zzstoatzz](https://github.com/zzstoatzz) in [#6092](https://github.com/PrefectHQ/fastmcp/pull/6092)
+* fix: preserve _list_query_params in FastMCPProviderResourceTemplate.wrap by [@RS-ITACHI](https://github.com/RS-ITACHI) in [#6130](https://github.com/PrefectHQ/fastmcp/pull/6130)
+* Read composite action inputs from env and pin actions by digest by [@gaker](https://github.com/gaker) in [#6168](https://github.com/PrefectHQ/fastmcp/pull/6168)
+* Scope the /marvin App token to the permissions it uses by [@zzstoatzz](https://github.com/zzstoatzz) in [#6206](https://github.com/PrefectHQ/fastmcp/pull/6206)
+### Fixes 🐞
+* Make the version-check InvalidURL regression independent of proxy parsing by [@HootRock](https://github.com/HootRock) in [#6048](https://github.com/PrefectHQ/fastmcp/pull/6048)
+* Build the Prefab renderer page on read, not on resources/list by [@adam-zovos](https://github.com/adam-zovos) in [#6039](https://github.com/PrefectHQ/fastmcp/pull/6039)
+* Install mounted skills under their own name in sync_skills by [@zzstoatzz](https://github.com/zzstoatzz) in [#6078](https://github.com/PrefectHQ/fastmcp/pull/6078)
+* Stage skill exports before replacing installed files by [@zzstoatzz](https://github.com/zzstoatzz) in [#6091](https://github.com/PrefectHQ/fastmcp/pull/6091)
+* fix: Prefix backend hash addresses with double underscores by [@jlowin](https://github.com/jlowin) and [@BlueX888](https://github.com/BlueX888) in [#6100](https://github.com/PrefectHQ/fastmcp/pull/6100)
+* Rebind pre-4.2 Prefab backend addresses through 4.2 proxies by [@jakekaplan](https://github.com/jakekaplan) in [#6108](https://github.com/PrefectHQ/fastmcp/pull/6108)
+* Isolate and bound triage verification by [@zzstoatzz](https://github.com/zzstoatzz) in [#6109](https://github.com/PrefectHQ/fastmcp/pull/6109)
+* Improve OpenAPI upstream error details by [@zzstoatzz](https://github.com/zzstoatzz) and [@mssaleh](https://github.com/mssaleh) in [#6141](https://github.com/PrefectHQ/fastmcp/pull/6141)
+* Compare JSON const and enum values by JSON equality by [@prassu017](https://github.com/prassu017) and [@alpaylan](https://github.com/alpaylan) in [#6126](https://github.com/PrefectHQ/fastmcp/pull/6126)
+* Bound Skills proxy backend pagination by [@prassu017](https://github.com/prassu017) and [@Yash-Tripath1](https://github.com/Yash-Tripath1) in [#6104](https://github.com/PrefectHQ/fastmcp/pull/6104)
+* fix: forward script arguments in FastMCPStdioTransport by [@KashifManzer](https://github.com/KashifManzer) and [@BlueX888](https://github.com/BlueX888) in [#6119](https://github.com/PrefectHQ/fastmcp/pull/6119)
+* Return invalid params for prompts/get with a missing required argument by [@asasemahmed](https://github.com/asasemahmed) and [@xubenqiang](https://github.com/xubenqiang) in [#6027](https://github.com/PrefectHQ/fastmcp/pull/6027)
+* Fix kept-alive stdio transports ignoring client timeouts by [@HootRock](https://github.com/HootRock) and [@BlueX888](https://github.com/BlueX888) in [#6156](https://github.com/PrefectHQ/fastmcp/pull/6156)
+* perf(schema): skip unnecessary reference sibling restoration by [@andreivince](https://github.com/andreivince) in [#6161](https://github.com/PrefectHQ/fastmcp/pull/6161)
+* fix(cli): prefer Claude Code project servers by [@mikamikasuki](https://github.com/mikamikasuki) in [#5522](https://github.com/PrefectHQ/fastmcp/pull/5522)
+* fix(cli): preserve JSON content block fields by [@mikamikasuki](https://github.com/mikamikasuki) in [#5530](https://github.com/PrefectHQ/fastmcp/pull/5530)
+* Keep schema definitions when hydrating a wrapped tool result by [@asasemahmed](https://github.com/asasemahmed) in [#5927](https://github.com/PrefectHQ/fastmcp/pull/5927)
+* Reject undeclared OpenAPI tool arguments under strict input validation by [@prassu017](https://github.com/prassu017) and [@mssaleh](https://github.com/mssaleh) in [#6140](https://github.com/PrefectHQ/fastmcp/pull/6140)
+* fix(resources): reverse hostless URIs through Namespace unchanged by [@serhiizghama](https://github.com/serhiizghama) and [@andreivince](https://github.com/andreivince) in [#5230](https://github.com/PrefectHQ/fastmcp/pull/5230)
+* fix(openapi): preserve timeouts so the server maps them to the actionable message by [@BlueX888](https://github.com/BlueX888) in [#5847](https://github.com/PrefectHQ/fastmcp/pull/5847)
+* Keep posted review receipts on partial delivery and reject differing reviews by [@zzstoatzz](https://github.com/zzstoatzz) in [#6178](https://github.com/PrefectHQ/fastmcp/pull/6178)
+* Drop client context holds left by finished tasks by [@zzstoatzz](https://github.com/zzstoatzz) in [#6205](https://github.com/PrefectHQ/fastmcp/pull/6205)
+* Let clients with different timeouts share a kept-alive stdio session by [@zzstoatzz](https://github.com/zzstoatzz) in [#6223](https://github.com/PrefectHQ/fastmcp/pull/6223)
+### Docs 📚
+* Consolidate skills docs into one Skills over MCP page by [@zzstoatzz](https://github.com/zzstoatzz) in [#6049](https://github.com/PrefectHQ/fastmcp/pull/6049)
+* Rewrite skills docs around Skill and SkillCatalogProvider by [@zzstoatzz](https://github.com/zzstoatzz) in [#6066](https://github.com/PrefectHQ/fastmcp/pull/6066)
+* Tighten skills docs examples by [@zzstoatzz](https://github.com/zzstoatzz) in [#6070](https://github.com/PrefectHQ/fastmcp/pull/6070)
+* Shorten the skills docs page by [@zzstoatzz](https://github.com/zzstoatzz) in [#6079](https://github.com/PrefectHQ/fastmcp/pull/6079)
+* Badge the skills page as 4.2.0 by [@zzstoatzz](https://github.com/zzstoatzz) in [#6083](https://github.com/PrefectHQ/fastmcp/pull/6083)
+* Consolidate skills examples around verified Skill values by [@zzstoatzz](https://github.com/zzstoatzz) in [#6093](https://github.com/PrefectHQ/fastmcp/pull/6093)
+* Add v4.2.0a1 changelog entries by [@zzstoatzz](https://github.com/zzstoatzz) in [#6105](https://github.com/PrefectHQ/fastmcp/pull/6105)
+* Add MCP tool annotations to get_file example by [@gl1tchdust](https://github.com/gl1tchdust) in [#5976](https://github.com/PrefectHQ/fastmcp/pull/5976)
+* Fix dead links in current documentation by [@zzstoatzz](https://github.com/zzstoatzz) in [#6142](https://github.com/PrefectHQ/fastmcp/pull/6142)
+* docs: rename Horizon to FastMCP Gateway in current docs by [@parkedwards](https://github.com/parkedwards) in [#5653](https://github.com/PrefectHQ/fastmcp/pull/5653)
+* Document strict-mode handling of undeclared OpenAPI arguments by [@zzstoatzz](https://github.com/zzstoatzz) in [#6169](https://github.com/PrefectHQ/fastmcp/pull/6169)
+
+## New Contributors
+* @adam-zovos made their first contribution in [#6039](https://github.com/PrefectHQ/fastmcp/pull/6039)
+* @gl1tchdust made their first contribution in [#5976](https://github.com/PrefectHQ/fastmcp/pull/5976)
+* @RS-ITACHI made their first contribution in [#6130](https://github.com/PrefectHQ/fastmcp/pull/6130)
+* @prassu017 made their first contribution in [#6126](https://github.com/PrefectHQ/fastmcp/pull/6126)
+* @KashifManzer made their first contribution in [#6119](https://github.com/PrefectHQ/fastmcp/pull/6119)
+* @serhiizghama made their first contribution in [#5230](https://github.com/PrefectHQ/fastmcp/pull/5230)
+* @gaker made their first contribution in [#6168](https://github.com/PrefectHQ/fastmcp/pull/6168)
+* @fprieto14 made their first contribution in [#6077](https://github.com/PrefectHQ/fastmcp/pull/6077)
+* @keremoktener made their first contribution in [#6077](https://github.com/PrefectHQ/fastmcp/pull/6077)
+* @mssaleh made their first contribution in [#6141](https://github.com/PrefectHQ/fastmcp/pull/6141)
+* @alpaylan made their first contribution in [#6126](https://github.com/PrefectHQ/fastmcp/pull/6126)
+* @xubenqiang made their first contribution in [#6027](https://github.com/PrefectHQ/fastmcp/pull/6027)
+* @Yash-Tripath1 made their first contribution in [#6104](https://github.com/PrefectHQ/fastmcp/pull/6104)
+
+**Full Changelog**: [v4.1.4...v4.2.0a2](https://github.com/PrefectHQ/fastmcp/compare/v4.1.4...v4.2.0a2)
+
+</Update>
+
+<Update label="v4.2.0a1" description="2026-10-27">
+
+**[v4.2.0a1: Skill Issue](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0a1)**
+
+FastMCP 4.2's first alpha brings code-defined skills, discovery through mounted and proxied servers, and verified downloads into one workflow. Build a `Skill` in Python or load one from a folder or package, publish it through `SkillCatalogProvider`, and let clients discover its metadata or download and export its files. Proxy discovery is opt-in with `skills=True`. Skills support remains experimental; this prerelease is intended for integration testing. It also includes lazy, shared Prefab renderer resources and backend-addressing fixes. Migration: `Skill` now represents file contents; the wire metadata model is named `MCPSkill`. Whole-skill downloads require a standard `SKILL.md` with a `name` matching its URI and a `description`. Exports with `overwrite=True` replace the installed folder, including locally added files. Ordinary resource providers still support their existing document formats. Thanks to our 8 contributors, including 3 first-time contributors.
+
+### Breaking Changes ⚠️
+* Make Skill a storage-neutral object with folders as one loader by [@zzstoatzz](https://github.com/zzstoatzz) in [#6065](https://github.com/PrefectHQ/fastmcp/pull/6065)
+### Enhancements ✨
+* Rename the resource-era list_skills helper to list_skill_summaries by [@zzstoatzz](https://github.com/zzstoatzz) in [#6051](https://github.com/PrefectHQ/fastmcp/pull/6051)
+* Discover skills through mounted servers by [@zzstoatzz](https://github.com/zzstoatzz) in [#6067](https://github.com/PrefectHQ/fastmcp/pull/6067)
+* Share Prefab renderer resources across equivalent tools by [@jlowin](https://github.com/jlowin), [@fprieto14](https://github.com/fprieto14), and [@keremoktener](https://github.com/keremoktener) in [#6077](https://github.com/PrefectHQ/fastmcp/pull/6077)
+* Export Skill from fastmcp by [@zzstoatzz](https://github.com/zzstoatzz) in [#6071](https://github.com/PrefectHQ/fastmcp/pull/6071)
+* Add skills discovery to ClientGroup by [@zzstoatzz](https://github.com/zzstoatzz) in [#6072](https://github.com/PrefectHQ/fastmcp/pull/6072)
+* Add --skills to fastmcp list by [@zzstoatzz](https://github.com/zzstoatzz) in [#6073](https://github.com/PrefectHQ/fastmcp/pull/6073)
+* Add Client.read_skill and tighten skills docs by [@zzstoatzz](https://github.com/zzstoatzz) in [#6087](https://github.com/PrefectHQ/fastmcp/pull/6087)
+* Verify and export skills with resource-manifest fallback by [@zzstoatzz](https://github.com/zzstoatzz) in [#6086](https://github.com/PrefectHQ/fastmcp/pull/6086)
+* Forward Skills discovery through proxies by [@jakekaplan](https://github.com/jakekaplan) in [#5788](https://github.com/PrefectHQ/fastmcp/pull/5788)
+* Share strict skill snapshot projection by [@zzstoatzz](https://github.com/zzstoatzz) in [#6089](https://github.com/PrefectHQ/fastmcp/pull/6089)
+* Use scoped local tests and leave full suites to CI by [@zzstoatzz](https://github.com/zzstoatzz) in [#6094](https://github.com/PrefectHQ/fastmcp/pull/6094)
+* Share ClientGroup skill client lookup by [@zzstoatzz](https://github.com/zzstoatzz) in [#6101](https://github.com/PrefectHQ/fastmcp/pull/6101)
+* Share filesystem skill supporting-file reads by [@zzstoatzz](https://github.com/zzstoatzz) in [#6102](https://github.com/PrefectHQ/fastmcp/pull/6102)
+### Security 🔒
+* Verify advertised skill frontmatter when reading content by [@zzstoatzz](https://github.com/zzstoatzz) in [#6090](https://github.com/PrefectHQ/fastmcp/pull/6090)
+* Check skill limits before reading directory and remote files by [@zzstoatzz](https://github.com/zzstoatzz) in [#6092](https://github.com/PrefectHQ/fastmcp/pull/6092)
+### Fixes 🐞
+* Make the version-check InvalidURL regression independent of proxy parsing by [@HootRock](https://github.com/HootRock) in [#6048](https://github.com/PrefectHQ/fastmcp/pull/6048)
+* Build the Prefab renderer page on read, not on resources/list by [@adam-zovos](https://github.com/adam-zovos) in [#6039](https://github.com/PrefectHQ/fastmcp/pull/6039)
+* Install mounted skills under their own name in sync_skills by [@zzstoatzz](https://github.com/zzstoatzz) in [#6078](https://github.com/PrefectHQ/fastmcp/pull/6078)
+* Stage skill exports before replacing installed files by [@zzstoatzz](https://github.com/zzstoatzz) in [#6091](https://github.com/PrefectHQ/fastmcp/pull/6091)
+* fix: Prefix backend hash addresses with double underscores by [@jlowin](https://github.com/jlowin) and [@BlueX888](https://github.com/BlueX888) in [#6100](https://github.com/PrefectHQ/fastmcp/pull/6100)
+### Docs 📚
+* Consolidate skills docs into one Skills over MCP page by [@zzstoatzz](https://github.com/zzstoatzz) in [#6049](https://github.com/PrefectHQ/fastmcp/pull/6049)
+* Rewrite skills docs around Skill and SkillCatalogProvider by [@zzstoatzz](https://github.com/zzstoatzz) in [#6066](https://github.com/PrefectHQ/fastmcp/pull/6066)
+* Tighten skills docs examples by [@zzstoatzz](https://github.com/zzstoatzz) in [#6070](https://github.com/PrefectHQ/fastmcp/pull/6070)
+* Shorten the skills docs page by [@zzstoatzz](https://github.com/zzstoatzz) in [#6079](https://github.com/PrefectHQ/fastmcp/pull/6079)
+* Badge the skills page as 4.2.0 by [@zzstoatzz](https://github.com/zzstoatzz) in [#6083](https://github.com/PrefectHQ/fastmcp/pull/6083)
+* Consolidate skills examples around verified Skill values by [@zzstoatzz](https://github.com/zzstoatzz) in [#6093](https://github.com/PrefectHQ/fastmcp/pull/6093)
+
+## New Contributors
+* @fprieto14 made their first contribution in [#6077](https://github.com/PrefectHQ/fastmcp/pull/6077)
+* @keremoktener made their first contribution in [#6077](https://github.com/PrefectHQ/fastmcp/pull/6077)
+* @adam-zovos made their first contribution in [#6039](https://github.com/PrefectHQ/fastmcp/pull/6039)
+
+**Full Changelog**: [v4.1.4...v4.2.0a1](https://github.com/PrefectHQ/fastmcp/compare/v4.1.4...v4.2.0a1)
+
+</Update>
+
+<Update label="v4.1.4" description="2026-10-26">
+
+**[v4.1.4: Token Gesture](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.4)**
+
+Generated CLIs now preserve remote transports, empty arrays, and parameters whose names collide with their own helpers; mounted servers honor session visibility and `mounted_components_raise_on_load_error`, a stale client context no longer closes a newer session, and OAuth provider wrappers accept identity assertions. Tasks accept a redis-py credential provider that returns current credentials for each new connection (streaming providers such as redis-entraid's are rejected until Docket can refresh them safely), Redis 8.1.0 is excluded, and custom `KeyringStore` users must now install `py-key-value-aio[keyring]` explicitly. Thanks to our 16 contributors, including 9 first-time contributors.
+
+### Enhancements ✨
+* Add server authoring guidance through the docs site by [@zzstoatzz](https://github.com/zzstoatzz) in [#5703](https://github.com/PrefectHQ/fastmcp/pull/5703)
+* Support rotating Redis credentials for tasks by [@zzstoatzz](https://github.com/zzstoatzz) and [@nazarii-plebanskyi-rf](https://github.com/nazarii-plebanskyi-rf) in [#5970](https://github.com/PrefectHQ/fastmcp/pull/5970)
+* fix(client): forward max_sse_event_size through StreamableHttpTransport by [@PrathmeshPawar2110](https://github.com/PrathmeshPawar2110) in [#6016](https://github.com/PrefectHQ/fastmcp/pull/6016)
+* Add a downstream smoke for Redis credential providers by [@zzstoatzz](https://github.com/zzstoatzz) in [#6044](https://github.com/PrefectHQ/fastmcp/pull/6044)
+### Security 🔒
+* Bump certifi to 2026.10.19 by [@jakekaplan](https://github.com/jakekaplan) in [#5989](https://github.com/PrefectHQ/fastmcp/pull/5989)
+* Let configured proxy headers replace forwarded ones regardless of case by [@leopranzl](https://github.com/leopranzl) in [#5972](https://github.com/PrefectHQ/fastmcp/pull/5972)
+### Fixes 🐞
+* Fix maintained skill discovery on the docs site by [@zzstoatzz](https://github.com/zzstoatzz) in [#5954](https://github.com/PrefectHQ/fastmcp/pull/5954)
+* Publish regular skill files for Mintlify discovery by [@zzstoatzz](https://github.com/zzstoatzz) in [#5956](https://github.com/PrefectHQ/fastmcp/pull/5956)
+* Serialize HTTP and SSE transports in generate-cli by [@asasemahmed](https://github.com/asasemahmed) in [#5891](https://github.com/PrefectHQ/fastmcp/pull/5891)
+* fix(cli): preserve empty arrays in generated commands by [@dailyun](https://github.com/dailyun) in [#5961](https://github.com/PrefectHQ/fastmcp/pull/5961)
+* Fix session visibility lookups through mounted servers by [@HootRock](https://github.com/HootRock) and [@leopranzl](https://github.com/leopranzl) in [#5966](https://github.com/PrefectHQ/fastmcp/pull/5966)
+* Fix generated CLI JSON parameter name collisions by [@Vittuu](https://github.com/Vittuu) in [#5959](https://github.com/PrefectHQ/fastmcp/pull/5959)
+* Escape server text in the fastmcp call elicitation prompt by [@asasemahmed](https://github.com/asasemahmed) in [#5909](https://github.com/PrefectHQ/fastmcp/pull/5909)
+* Map common audio extensions when Audio is given a path by [@asasemahmed](https://github.com/asasemahmed) in [#5919](https://github.com/PrefectHQ/fastmcp/pull/5919)
+* Drop clamped log records the logger is not enabled for by [@asasemahmed](https://github.com/asasemahmed) in [#5915](https://github.com/PrefectHQ/fastmcp/pull/5915)
+* Omit the output schema when an OpenAPI success response has no body by [@asasemahmed](https://github.com/asasemahmed) in [#5913](https://github.com/PrefectHQ/fastmcp/pull/5913)
+* Create the MCP config file on install when it is missing or empty by [@asasemahmed](https://github.com/asasemahmed) in [#5887](https://github.com/PrefectHQ/fastmcp/pull/5887)
+* Preserve credential providers when cloning task extensions by [@zzstoatzz](https://github.com/zzstoatzz) and [@nazarii-plebanskyi-rf](https://github.com/nazarii-plebanskyi-rf) in [#5984](https://github.com/PrefectHQ/fastmcp/pull/5984)
+* Exclude Redis 8.1.0 to preserve task reconnection by [@zzstoatzz](https://github.com/zzstoatzz) and [@nazarii-plebanskyi-rf](https://github.com/nazarii-plebanskyi-rf) in [#5985](https://github.com/PrefectHQ/fastmcp/pull/5985)
+* Remove unused keyring dependency by [@zzstoatzz](https://github.com/zzstoatzz) and [@tom42-otera](https://github.com/tom42-otera) in [#5987](https://github.com/PrefectHQ/fastmcp/pull/5987)
+* Fix static checks broken by ty 0.0.89 and pydantic 2.14 by [@zzstoatzz](https://github.com/zzstoatzz) in [#6001](https://github.com/PrefectHQ/fastmcp/pull/6001)
+* Run dev inspector servers over stdio and stop mapping the deployment port to the proxy by [@asasemahmed](https://github.com/asasemahmed) in [#6029](https://github.com/PrefectHQ/fastmcp/pull/6029)
+* fix(json-schema): apply a Draft-4 boolean exclusive bound to its sibling by [@kbkb628](https://github.com/kbkb628) in [#5234](https://github.com/PrefectHQ/fastmcp/pull/5234)
+* Strip a URL scheme from a Clerk domain by [@asasemahmed](https://github.com/asasemahmed) in [#5921](https://github.com/PrefectHQ/fastmcp/pull/5921)
+* Fix generate-cli commands for tools with a json parameter by [@andreivince](https://github.com/andreivince) in [#6032](https://github.com/PrefectHQ/fastmcp/pull/6032)
+* Honor mounted_components_raise_on_load_error in AggregateProvider by [@asasemahmed](https://github.com/asasemahmed) in [#6026](https://github.com/PrefectHQ/fastmcp/pull/6026)
+* Reject streaming credential providers in TasksExtension by [@zzstoatzz](https://github.com/zzstoatzz) in [#6043](https://github.com/PrefectHQ/fastmcp/pull/6043)
+* fix(client): keep stale contexts from closing newer sessions by [@mikamikasuki](https://github.com/mikamikasuki) in [#6018](https://github.com/PrefectHQ/fastmcp/pull/6018)
+* fix(auth): expose identity assertions on OAuth provider wrappers by [@computeaholic](https://github.com/computeaholic) and [@jonaseck2](https://github.com/jonaseck2) in [#6006](https://github.com/PrefectHQ/fastmcp/pull/6006)
+* Measure blocking duration with perf_counter in transform_fn generator test by [@Lokeshrao69](https://github.com/Lokeshrao69) in [#6014](https://github.com/PrefectHQ/fastmcp/pull/6014)
+### Docs 📚
+* Clarify request state across mounted servers by [@HootRock](https://github.com/HootRock) and [@leopranzl](https://github.com/leopranzl) in [#5967](https://github.com/PrefectHQ/fastmcp/pull/5967)
+* Pass mcp_path through the remote OAuth custom routes example by [@asasemahmed](https://github.com/asasemahmed) in [#5925](https://github.com/PrefectHQ/fastmcp/pull/5925)
+
+## New Contributors
+* @dailyun made their first contribution in [#5961](https://github.com/PrefectHQ/fastmcp/pull/5961)
+* @Vittuu made their first contribution in [#5959](https://github.com/PrefectHQ/fastmcp/pull/5959)
+* @leopranzl made their first contribution in [#5966](https://github.com/PrefectHQ/fastmcp/pull/5966)
+* @nazarii-plebanskyi-rf made their first contribution in [#5970](https://github.com/PrefectHQ/fastmcp/pull/5970)
+* @tom42-otera made their first contribution in [#5987](https://github.com/PrefectHQ/fastmcp/pull/5987)
+* @computeaholic made their first contribution in [#6006](https://github.com/PrefectHQ/fastmcp/pull/6006)
+* @jonaseck2 made their first contribution in [#6006](https://github.com/PrefectHQ/fastmcp/pull/6006)
+* @PrathmeshPawar2110 made their first contribution in [#6016](https://github.com/PrefectHQ/fastmcp/pull/6016)
+* @Lokeshrao69 made their first contribution in [#6014](https://github.com/PrefectHQ/fastmcp/pull/6014)
+
+**Full Changelog**: [v4.1.3...v4.1.4](https://github.com/PrefectHQ/fastmcp/compare/v4.1.3...v4.1.4)
+
+</Update>
+
+<Update label="v4.1.3" description="2026-10-20">
+
+**[v4.1.3: Root Awakening](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.3)**
+
+This release updates certifi-backed dependencies following the eMudhra CA compromise and fixes public-client OAuth authentication, empty visibility selections, generator transforms, and per-server timeouts for ordinary requests. FastMCP 4 uses system trust by default: follow the [security notice](https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026) to update operating-system, container, custom, and installer trust stores; upgrading FastMCP alone is insufficient. Thanks to our 11 contributors, including 6 first-time contributors.
+
+### Security 🔒
+* Require certifi 2026.10.19 or later for certifi-backed server dependencies and optional SDK integrations, and document system, custom, and installer trust-store updates by [@zzstoatzz](https://github.com/zzstoatzz) in [#5945](https://github.com/PrefectHQ/fastmcp/pull/5945).
+### Enhancements ✨
+* Chart public backlog counts and closure outcomes by [@zzstoatzz](https://github.com/zzstoatzz) in [#5942](https://github.com/PrefectHQ/fastmcp/pull/5942)
+### Fixes 🐞
+* Default the upstream token auth method to none without a client secret by [@asasemahmed](https://github.com/asasemahmed) in [#5879](https://github.com/PrefectHQ/fastmcp/pull/5879)
+* fix: preserve empty session visibility selections by [@himanshuchawla0807-gif](https://github.com/himanshuchawla0807-gif) in [#5944](https://github.com/PrefectHQ/fastmcp/pull/5944)
+* test(mount): make unreachable proxy failures deterministic by [@CharlesYXW](https://github.com/CharlesYXW) and [@ch-z-hc](https://github.com/ch-z-hc) in [#5584](https://github.com/PrefectHQ/fastmcp/pull/5584)
+* fix(tools): materialize generator transform_fn results in TransformedTool.run by [@BlueX888](https://github.com/BlueX888) and [@nandanadileep](https://github.com/nandanadileep) in [#5672](https://github.com/PrefectHQ/fastmcp/pull/5672)
+* Honor per-server MCP config timeouts by [@atty57](https://github.com/atty57), [@phnmn](https://github.com/phnmn), and [@CRYPTONIKAV](https://github.com/CRYPTONIKAV) in [#5758](https://github.com/PrefectHQ/fastmcp/pull/5758)
+* fix: don't classify a tool body's own TimeoutError as the tool timeout by [@Wilson0511](https://github.com/Wilson0511) in [#5940](https://github.com/PrefectHQ/fastmcp/pull/5940)
+
+## New Contributors
+* @phnmn made their first contribution in [#5758](https://github.com/PrefectHQ/fastmcp/pull/5758)
+* @CRYPTONIKAV made their first contribution in [#5758](https://github.com/PrefectHQ/fastmcp/pull/5758)
+* @himanshuchawla0807-gif made their first contribution in [#5944](https://github.com/PrefectHQ/fastmcp/pull/5944)
+* @CharlesYXW made their first contribution in [#5584](https://github.com/PrefectHQ/fastmcp/pull/5584)
+* @atty57 made their first contribution in [#5758](https://github.com/PrefectHQ/fastmcp/pull/5758)
+* @Wilson0511 made their first contribution in [#5940](https://github.com/PrefectHQ/fastmcp/pull/5940)
+
+**Full Changelog**: [v4.1.2...v4.1.3](https://github.com/PrefectHQ/fastmcp/compare/v4.1.2...v4.1.3)
+
+</Update>
+
+<Update label="v4.1.2" description="2026-10-20">
+
+**[v4.1.2: License to Deny](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.2)**
+
+Component authorization now applies after transforms, denied resources cannot fall through matching templates, and OAuth client credentials providers support issuer binding across fresh and cached-token flows. Existing configurations remain compatible, but users of `ClientCredentialsOAuthProvider` or `PrivateKeyJWTOAuthProvider` must set `issuer` to enable this protection; upgrading alone is insufficient. Thanks to our 18 contributors, including 9 first-time contributors.
+
+### Security 🔒
+* Authorize transformed components and prevent denied-resource template fallback by [@zzstoatzz](https://github.com/zzstoatzz) and [@rishid](https://github.com/rishid) in [#5933](https://github.com/PrefectHQ/fastmcp/pull/5933)
+* Bind OAuth client credentials to a configured issuer, including cached-token renewal, by [@zzstoatzz](https://github.com/zzstoatzz) and [@LHMisme420](https://github.com/LHMisme420) in [#5933](https://github.com/PrefectHQ/fastmcp/pull/5933)
+### Enhancements ✨
+* Add SEP-2640 Skills extension foundation by [@strawgate](https://github.com/strawgate) in [#5057](https://github.com/PrefectHQ/fastmcp/pull/5057)
+* Write down triage and merge norms in docs/development by [@zzstoatzz](https://github.com/zzstoatzz) in [#5872](https://github.com/PrefectHQ/fastmcp/pull/5872)
+* Add experimental Skills discovery to SkillsDirectoryProvider by [@zzstoatzz](https://github.com/zzstoatzz) in [#5704](https://github.com/PrefectHQ/fastmcp/pull/5704)
+### Fixes 🐞
+* Do not require websockets for the OAuth callback server by [@asasemahmed](https://github.com/asasemahmed) in [#5693](https://github.com/PrefectHQ/fastmcp/pull/5693)
+* Keep fastmcp.json resolvable when deployment.cwd changes the working directory by [@asasemahmed](https://github.com/asasemahmed) in [#5700](https://github.com/PrefectHQ/fastmcp/pull/5700)
+* Fix ctx.log() failing when extra contains LogRecord attribute names by [@asasemahmed](https://github.com/asasemahmed) in [#5688](https://github.com/PrefectHQ/fastmcp/pull/5688)
+* Use a monotonic clock in the rate limiters by [@asasemahmed](https://github.com/asasemahmed) in [#5689](https://github.com/PrefectHQ/fastmcp/pull/5689)
+* Escape server metadata in the fastmcp inspect text summary by [@asasemahmed](https://github.com/asasemahmed) in [#5701](https://github.com/PrefectHQ/fastmcp/pull/5701)
+* Respect an explicit is_binary=False on FileResource by [@asasemahmed](https://github.com/asasemahmed) in [#5696](https://github.com/PrefectHQ/fastmcp/pull/5696)
+* Follow pagination in the MCP format of fastmcp inspect by [@asasemahmed](https://github.com/asasemahmed) in [#5691](https://github.com/PrefectHQ/fastmcp/pull/5691)
+* Visit each reference once when finding access-restricted properties by [@AarnavNoble](https://github.com/AarnavNoble) in [#5751](https://github.com/PrefectHQ/fastmcp/pull/5751)
+* Run sync resource templates in the threadpool by [@hardness1020](https://github.com/hardness1020) in [#5742](https://github.com/PrefectHQ/fastmcp/pull/5742)
+* Require openapi-pydantic 0.6.0 so OpenAPI 3.1.2 specs load by [@jsphbtst](https://github.com/jsphbtst) in [#5647](https://github.com/PrefectHQ/fastmcp/pull/5647)
+* Scope FileUpload and session visibility to a stable client on MCP 2026-07-28 by [@zzstoatzz](https://github.com/zzstoatzz) in [#5651](https://github.com/PrefectHQ/fastmcp/pull/5651)
+* fix(auth): accept private_key_jwt without form client_id by [@HootRock](https://github.com/HootRock) and [@imranq2](https://github.com/imranq2) in [#5832](https://github.com/PrefectHQ/fastmcp/pull/5832)
+* fix(cli): honor explicit URL transport by [@mikamikasuki](https://github.com/mikamikasuki) in [#5529](https://github.com/PrefectHQ/fastmcp/pull/5529)
+* Remove legacy logging state when HTTP sessions close by [@mikamikasuki](https://github.com/mikamikasuki) in [#5539](https://github.com/PrefectHQ/fastmcp/pull/5539)
+* Name data-backed File resources consistently with their MIME subtype by [@nandanadileep](https://github.com/nandanadileep) in [#5568](https://github.com/PrefectHQ/fastmcp/pull/5568)
+* fix(client): run Python stdio children in UTF-8 mode by [@ningmao-hlyz](https://github.com/ningmao-hlyz) in [#5642](https://github.com/PrefectHQ/fastmcp/pull/5642)
+* Report an unbindable OAuth callback port instead of SystemExit by [@asasemahmed](https://github.com/asasemahmed) in [#5692](https://github.com/PrefectHQ/fastmcp/pull/5692)
+* Accept ES256 and other RSA/EC algorithms for CIMD private_key_jwt assertions by [@asasemahmed](https://github.com/asasemahmed) in [#5695](https://github.com/PrefectHQ/fastmcp/pull/5695)
+* Preserve icons on transformed tools by [@asasemahmed](https://github.com/asasemahmed) in [#5702](https://github.com/PrefectHQ/fastmcp/pull/5702)
+* Hydrate valid schema defaults while preserving invalid defaults by [@nandanadileep](https://github.com/nandanadileep) in [#5738](https://github.com/PrefectHQ/fastmcp/pull/5738)
+* fix(resources): preserve public metadata in built-in read contents by [@HootRock](https://github.com/HootRock) in [#5778](https://github.com/PrefectHQ/fastmcp/pull/5778)
+* Preserve shared dependency scopes without optional task dependencies by [@HootRock](https://github.com/HootRock) and [@BlueX888](https://github.com/BlueX888) in [#5817](https://github.com/PrefectHQ/fastmcp/pull/5817)
+* fix: treat non-string skill frontmatter descriptions as absent by [@BlueX888](https://github.com/BlueX888) in [#5823](https://github.com/PrefectHQ/fastmcp/pull/5823)
+* fix(resources): preserve component meta for list[ResourceContent] returns by [@BlueX888](https://github.com/BlueX888) in [#5843](https://github.com/PrefectHQ/fastmcp/pull/5843)
+* Fall back to the client timeout when resolving claimed results by [@marcinbelczewski](https://github.com/marcinbelczewski) in [#5190](https://github.com/PrefectHQ/fastmcp/pull/5190)
+* Discover Goose Streamable HTTP extensions by [@jiuyueQ](https://github.com/jiuyueQ) and [@ch-z-hc](https://github.com/ch-z-hc) in [#5582](https://github.com/PrefectHQ/fastmcp/pull/5582)
+* Raise ToolError when a tool with an output schema returns an unserializable value by [@massimiliano1991](https://github.com/massimiliano1991) in [#5063](https://github.com/PrefectHQ/fastmcp/pull/5063)
+* Stop deploy tests from spawning PowerShell on every state access by [@zzstoatzz](https://github.com/zzstoatzz) in [#5874](https://github.com/PrefectHQ/fastmcp/pull/5874)
+* Give the timeout-override test headroom for the follow-up tools/list by [@zzstoatzz](https://github.com/zzstoatzz) in [#5875](https://github.com/PrefectHQ/fastmcp/pull/5875)
+* Keep disabled resources from being served by matching templates by [@zzstoatzz](https://github.com/zzstoatzz) in [#5876](https://github.com/PrefectHQ/fastmcp/pull/5876)
+### Docs 📚
+* Fix codespell typo in v4.1.1 changelog by [@zzstoatzz](https://github.com/zzstoatzz) in [#5818](https://github.com/PrefectHQ/fastmcp/pull/5818)
+* context: stop documenting session_id as a cross-request key by [@zzstoatzz](https://github.com/zzstoatzz) in [#5862](https://github.com/PrefectHQ/fastmcp/pull/5862)
+### Examples & Contrib 💡
+* fix(contrib): preserve BulkToolCaller tool prefixes by [@mikamikasuki](https://github.com/mikamikasuki) in [#5555](https://github.com/PrefectHQ/fastmcp/pull/5555)
+### Other Changes 🦾
+* chore(deps): Update github actions by @prefect-renovate[bot] in https://github.com/PrefectHQ/fastmcp/pull/5707
+
+## New Contributors
+* @AarnavNoble made their first contribution in [#5751](https://github.com/PrefectHQ/fastmcp/pull/5751)
+* @hardness1020 made their first contribution in [#5742](https://github.com/PrefectHQ/fastmcp/pull/5742)
+* @jsphbtst made their first contribution in [#5647](https://github.com/PrefectHQ/fastmcp/pull/5647)
+* @marcinbelczewski made their first contribution in [#5190](https://github.com/PrefectHQ/fastmcp/pull/5190)
+* @jiuyueQ made their first contribution in [#5582](https://github.com/PrefectHQ/fastmcp/pull/5582)
+* @massimiliano1991 made their first contribution in [#5063](https://github.com/PrefectHQ/fastmcp/pull/5063)
+
+* @imranq2 made their first contribution in [#5832](https://github.com/PrefectHQ/fastmcp/pull/5832)
+* @rishid made their first contribution in [#5933](https://github.com/PrefectHQ/fastmcp/pull/5933)
+* @LHMisme420 made their first contribution in [#5933](https://github.com/PrefectHQ/fastmcp/pull/5933)
+
+**Full Changelog**: [v4.1.1...v4.1.2](https://github.com/PrefectHQ/fastmcp/compare/v4.1.1...v4.1.2)
+
+</Update>
+
+<Update label="v4.1.1" description="2026-10-17">
+
+**[v4.1.1: Regex Marks the Spot](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.1)**
+
+Regex tool search now rejects patterns over 1,000 characters and stops after about a second, and `SkillsDirectoryProvider` discovers skill folders that are links again, including links to folders outside the skills root; a skill's own files must still resolve inside the folder it links to. All 4.x users are encouraged to upgrade. Thanks to our 4 contributors, including 1 first-time contributor.
+
+### Security 🔒
+* Keep linked skill folders discoverable by [@zzstoatzz](https://github.com/zzstoatzz) in [#5766](https://github.com/PrefectHQ/fastmcp/pull/5766)
+* Bound regex tool search by pattern length and time by [@zzstoatzz](https://github.com/zzstoatzz) and [@SAYUTIM](https://github.com/SAYUTIM) in [#5771](https://github.com/PrefectHQ/fastmcp/pull/5771)
+### Fixes 🐞
+* Keep an unparsable proxy setting from aborting the update check by [@zzstoatzz](https://github.com/zzstoatzz) and [@ker2xu](https://github.com/ker2xu) in [#5639](https://github.com/PrefectHQ/fastmcp/pull/5639)
+* Keep the JWKS refresh lock clear of subclass attributes by [@zzstoatzz](https://github.com/zzstoatzz) in [#5770](https://github.com/PrefectHQ/fastmcp/pull/5770)
+### Examples & Contrib 💡
+* fix: convert version query param to VersionSpec in component manager routes by [@BlueX888](https://github.com/BlueX888) in [#5575](https://github.com/PrefectHQ/fastmcp/pull/5575)
+
+
+## New Contributors
+* @ker2xu made their first contribution in [#5639](https://github.com/PrefectHQ/fastmcp/pull/5639)
+
+**Full Changelog**: [v4.1.0...v4.1.1](https://github.com/PrefectHQ/fastmcp/compare/v4.1.0...v4.1.1)
+
+</Update>
+
+<Update label="v4.1.0" description="2026-10-08">
+
+**[v4.1.0: Fourth and One](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.0)**
+
+FastMCP 4.1.0 is a maintenance release at heart: a broad sweep of fixes across OpenAPI, proxies, auth, tasks, and the CLI, plus full Python 3.15 support. It doesn't change how most servers behave. A few security fixes do tighten inputs that FastMCP previously accepted, though, and our versioning policy keeps breaking changes out of patch releases, so this ships as a point-one release.
+
+Check these before upgrading:
+
+- **MultiAuth** now qualifies client IDs by source, so existing MultiAuth sessions and tasks start new ownership scopes. Finish pending tasks before upgrading.
+- **Regex tool search** uses Pydantic's regex engine, which doesn't support lookarounds or backreferences.
+- **Skill files** must resolve inside their configured directories.
+- **OpenAPI path parameters** reject `.` and `..` segments.
+- **HTTP sessions** now expire after the MCP SDK's 30-minute idle default instead of never.
+- **CodeMode** requires Monty 1.1, which renames `max_duration_secs` to `max_feed_duration_secs`.
+
+Thanks to our 48 contributors, including 21 first-time contributors!
+
+### Breaking Changes ⚠️
+* fix(http): preserve the SDK's default session idle timeout by [@asts-top](https://github.com/asts-top) in [#5229](https://github.com/PrefectHQ/fastmcp/pull/5229)
+* Restore full Python 3.15 support by [@Kludex](https://github.com/Kludex) in [#5558](https://github.com/PrefectHQ/fastmcp/pull/5558)
+### Enhancements ✨
+* enhancement: Configure token introspection audiences by [@jlowin](https://github.com/jlowin) and [@sajdakabir](https://github.com/sajdakabir) in [#5461](https://github.com/PrefectHQ/fastmcp/pull/5461)
+* fix: Make proxy HTTP header forwarding configurable by [@jlowin](https://github.com/jlowin) in [#5462](https://github.com/PrefectHQ/fastmcp/pull/5462)
+* enhancement: Configure upload retention in memory by [@jlowin](https://github.com/jlowin) and [@warlocksmurf](https://github.com/warlocksmurf) in [#5463](https://github.com/PrefectHQ/fastmcp/pull/5463)
+* Clarify maintainer review decisions by [@jlowin](https://github.com/jlowin) in [#5466](https://github.com/PrefectHQ/fastmcp/pull/5466)
+* feat: persist encrypted CLI OAuth tokens by [@andreivince](https://github.com/andreivince) in [#5405](https://github.com/PrefectHQ/fastmcp/pull/5405)
+* feat(auth): add TokenCache support to GoogleTokenVerifier and GoogleProvider by [@jerive](https://github.com/jerive) in [#5366](https://github.com/PrefectHQ/fastmcp/pull/5366)
+* Add gitleaks secret scanning to prek by [@strawgate](https://github.com/strawgate) in [#5355](https://github.com/PrefectHQ/fastmcp/pull/5355)
+* Keep review design decisions with maintainers by [@jlowin](https://github.com/jlowin) in [#5468](https://github.com/PrefectHQ/fastmcp/pull/5468)
+### Security 🔒
+* fix!: Qualify MultiAuth client identities by [@jlowin](https://github.com/jlowin) in [#5455](https://github.com/PrefectHQ/fastmcp/pull/5455)
+* fix!: Validate OpenAPI path parameter segments by [@jlowin](https://github.com/jlowin) in [#5457](https://github.com/PrefectHQ/fastmcp/pull/5457)
+* fix!: Resolve skill files within their configured directories by [@jlowin](https://github.com/jlowin) and [@GEONWOOHAN](https://github.com/GEONWOOHAN) in [#5459](https://github.com/PrefectHQ/fastmcp/pull/5459)
+* fix!: Use Pydantic’s regex engine for tool search by [@jlowin](https://github.com/jlowin) in [#5467](https://github.com/PrefectHQ/fastmcp/pull/5467)
+### Fixes 🐞
+* fix: Share JWKS refreshes across key lookups by [@jlowin](https://github.com/jlowin) in [#5456](https://github.com/PrefectHQ/fastmcp/pull/5456)
+* fix: Reuse shared OpenAPI composition members by [@jlowin](https://github.com/jlowin) in [#5460](https://github.com/PrefectHQ/fastmcp/pull/5460)
+* Resolve app tool names against the transformed catalog by [@jlowin](https://github.com/jlowin) in [#5464](https://github.com/PrefectHQ/fastmcp/pull/5464)
+* fix: keep generator iteration inside dependency lifetime by [@mikamikasuki](https://github.com/mikamikasuki) in [#5438](https://github.com/PrefectHQ/fastmcp/pull/5438)
+* fix(tools): consume synchronous generators within dispatched invocation by [@HootRock](https://github.com/HootRock) in [#5376](https://github.com/PrefectHQ/fastmcp/pull/5376)
+* fix(tools): reject results returned after timeout deadlines by [@HootRock](https://github.com/HootRock) in [#5379](https://github.com/PrefectHQ/fastmcp/pull/5379)
+* Fix #5368: Tool.from_tool: a transform_fn that declares ctx: Context fails on eve by [@nandanadileep](https://github.com/nandanadileep) and [@chrikrah](https://github.com/chrikrah) in [#5371](https://github.com/PrefectHQ/fastmcp/pull/5371)
+* fix(auth): preserve AuthKit issuer identity by [@mikamikasuki](https://github.com/mikamikasuki) and [@paddynatte](https://github.com/paddynatte) in [#5452](https://github.com/PrefectHQ/fastmcp/pull/5452)
+* fix(auth): advertise resource_metadata only when a route serves it by [@alex-feel](https://github.com/alex-feel) in [#5363](https://github.com/PrefectHQ/fastmcp/pull/5363)
+* fix: decode escaped JSON Pointer tokens during hydration by [@HuaTNA](https://github.com/HuaTNA) in [#5407](https://github.com/PrefectHQ/fastmcp/pull/5407)
+* fix: read MCP config files as UTF-8 in the install commands by [@ch-z-hc](https://github.com/ch-z-hc) in [#5359](https://github.com/PrefectHQ/fastmcp/pull/5359)
+* Add regression coverage for root-context schema caching by [@hulkbig](https://github.com/hulkbig) in [#5397](https://github.com/PrefectHQ/fastmcp/pull/5397)
+* Keep the original cause when ErrorHandlingMiddleware re-raises an error unchanged by [@asasemahmed](https://github.com/asasemahmed) in [#5344](https://github.com/PrefectHQ/fastmcp/pull/5344)
+* Resolve ASGIServer.http_client relative URLs against the server origin by [@asasemahmed](https://github.com/asasemahmed) in [#5341](https://github.com/PrefectHQ/fastmcp/pull/5341)
+* Raise startup failures from run_server_async instead of hanging by [@asasemahmed](https://github.com/asasemahmed) in [#5340](https://github.com/PrefectHQ/fastmcp/pull/5340)
+* Restrict Windows CLI state access without requiring SeSecurityPrivilege by [@asasemahmed](https://github.com/asasemahmed) in [#5312](https://github.com/PrefectHQ/fastmcp/pull/5312)
+* Advertise the same list_changed capabilities over stdio as other transports by [@asasemahmed](https://github.com/asasemahmed) in [#5311](https://github.com/PrefectHQ/fastmcp/pull/5311)
+* Validate responses to dict and nested-list elicitation choices by [@asasemahmed](https://github.com/asasemahmed) in [#5343](https://github.com/PrefectHQ/fastmcp/pull/5343)
+* Inline enums shared by several fields in elicitation schemas by [@asasemahmed](https://github.com/asasemahmed) in [#5342](https://github.com/PrefectHQ/fastmcp/pull/5342)
+* Honor the SDK ElicitResult returned by an elicitation handler by [@asasemahmed](https://github.com/asasemahmed) in [#5339](https://github.com/PrefectHQ/fastmcp/pull/5339)
+* Look up call_tool output schemas across all tools/list pages by [@asasemahmed](https://github.com/asasemahmed) in [#5338](https://github.com/PrefectHQ/fastmcp/pull/5338)
+* Deduplicate versions in PromptsAsTools and ResourcesAsTools list tools by [@asasemahmed](https://github.com/asasemahmed) in [#5331](https://github.com/PrefectHQ/fastmcp/pull/5331)
+* Map File text formats to canonical text MIME types by [@asasemahmed](https://github.com/asasemahmed) in [#5334](https://github.com/PrefectHQ/fastmcp/pull/5334)
+* Keep generated OpenAPI component names unique when a suffixed name is taken by [@asasemahmed](https://github.com/asasemahmed) in [#5337](https://github.com/PrefectHQ/fastmcp/pull/5337)
+* Keep is_error when ResponseLimitingMiddleware truncates a result by [@asasemahmed](https://github.com/asasemahmed) in [#5309](https://github.com/PrefectHQ/fastmcp/pull/5309)
+* Read +json OpenAPI resource responses as JSON text by [@asasemahmed](https://github.com/asasemahmed) in [#5310](https://github.com/PrefectHQ/fastmcp/pull/5310)
+* Preserve provider challenge defaults through MultiAuth by [@taylorwilsdon](https://github.com/taylorwilsdon) in [#5454](https://github.com/PrefectHQ/fastmcp/pull/5454)
+* Write generate-cli output as UTF-8 by [@asasemahmed](https://github.com/asasemahmed) and [@ch-z-hc](https://github.com/ch-z-hc) in [#5335](https://github.com/PrefectHQ/fastmcp/pull/5335)
+* Strip internal visibility meta from prompt results and static resources by [@asasemahmed](https://github.com/asasemahmed) in [#5330](https://github.com/PrefectHQ/fastmcp/pull/5330)
+* Register browser OAuth clients as public clients by [@goran-revops](https://github.com/goran-revops) in [#5231](https://github.com/PrefectHQ/fastmcp/pull/5231)
+* fix(client): preserve unique JSON arrays by [@lzyruc](https://github.com/lzyruc) in [#5270](https://github.com/PrefectHQ/fastmcp/pull/5270)
+* Keep filesystem reloads serialized during cancellation by [@sherxlg-gif](https://github.com/sherxlg-gif) in [#5184](https://github.com/PrefectHQ/fastmcp/pull/5184)
+* Treat upstream HTTP errors from OpenAPI tools as HTTP status errors by [@asasemahmed](https://github.com/asasemahmed) in [#5308](https://github.com/PrefectHQ/fastmcp/pull/5308)
+* chore(ty): pin the checked platform to the one CI uses (#5302) by [@sclfcz](https://github.com/sclfcz) in [#5303](https://github.com/PrefectHQ/fastmcp/pull/5303)
+* fix(tools): take partial tool names and docstrings from the wrapped function by [@BlueX888](https://github.com/BlueX888) and [@Ares16x16](https://github.com/Ares16x16) in [#5269](https://github.com/PrefectHQ/fastmcp/pull/5269)
+* fix(tools): keep structured content for object schemas without explicit type by [@BlueX888](https://github.com/BlueX888) in [#5271](https://github.com/PrefectHQ/fastmcp/pull/5271)
+* fix: return current tool schemas from cached BM25 searches by [@baba9811](https://github.com/baba9811) in [#5153](https://github.com/PrefectHQ/fastmcp/pull/5153)
+* fix(azure): send prompt=select_account to Entra instead of the consent URL by [@mayankkumar-cmd](https://github.com/mayankkumar-cmd) in [#5162](https://github.com/PrefectHQ/fastmcp/pull/5162)
+* fix(auth): preserve upstream refresh error semantics by [@77cjj](https://github.com/77cjj) in [#5011](https://github.com/PrefectHQ/fastmcp/pull/5011)
+* Clean up run_server_async when startup exits early by [@syf2211](https://github.com/syf2211) and [@asasemahmed](https://github.com/asasemahmed) in [#5469](https://github.com/PrefectHQ/fastmcp/pull/5469)
+* Pass resource security policy through FileSystemProvider discovery by [@asasemahmed](https://github.com/asasemahmed) in [#5498](https://github.com/PrefectHQ/fastmcp/pull/5498)
+* Forward annotations on proxied resources and resource templates by [@asasemahmed](https://github.com/asasemahmed) in [#5499](https://github.com/PrefectHQ/fastmcp/pull/5499)
+* Forward the resources/read result meta through proxies by [@asasemahmed](https://github.com/asasemahmed) in [#5500](https://github.com/PrefectHQ/fastmcp/pull/5500)
+* Fix proxy dropping log messages whose data is not a msg/extra dict by [@asasemahmed](https://github.com/asasemahmed) in [#5501](https://github.com/PrefectHQ/fastmcp/pull/5501)
+* Forward stop_sequences in the proxy's sampling relay by [@asasemahmed](https://github.com/asasemahmed) in [#5502](https://github.com/PrefectHQ/fastmcp/pull/5502)
+* Treat non-Bearer Authorization schemes as missing authentication by [@asasemahmed](https://github.com/asasemahmed) in [#5503](https://github.com/PrefectHQ/fastmcp/pull/5503)
+* Reject positional-only parameters in prompts and resource templates by [@asasemahmed](https://github.com/asasemahmed) in [#5505](https://github.com/PrefectHQ/fastmcp/pull/5505)
+* Carry domain and prefers_border onto the Prefab renderer resource by [@asasemahmed](https://github.com/asasemahmed) in [#5611](https://github.com/PrefectHQ/fastmcp/pull/5611)
+* Keep GenerativeUI CSP on the renderer resource only by [@asasemahmed](https://github.com/asasemahmed) in [#5612](https://github.com/PrefectHQ/fastmcp/pull/5612)
+* Keep OpenAPI path segments that contain a colon by [@asasemahmed](https://github.com/asasemahmed) in [#5613](https://github.com/PrefectHQ/fastmcp/pull/5613)
+* Print install mcp-json and inspect JSON without Rich wrapping by [@asasemahmed](https://github.com/asasemahmed) in [#5615](https://github.com/PrefectHQ/fastmcp/pull/5615)
+* Coerce optional parameters in fastmcp call by their non-null type by [@asasemahmed](https://github.com/asasemahmed) in [#5616](https://github.com/PrefectHQ/fastmcp/pull/5616)
+* Return the existing component when an ignored duplicate is added by [@asasemahmed](https://github.com/asasemahmed) in [#5617](https://github.com/PrefectHQ/fastmcp/pull/5617)
+* Keep a config client's servers connected when a new() clone connects by [@asasemahmed](https://github.com/asasemahmed) in [#5618](https://github.com/PrefectHQ/fastmcp/pull/5618)
+* Strip discriminator under properties named default, const, enum or examples by [@asasemahmed](https://github.com/asasemahmed) in [#5619](https://github.com/PrefectHQ/fastmcp/pull/5619)
+* Keep a finished task's status when it is cancelled by [@asasemahmed](https://github.com/asasemahmed) in [#5621](https://github.com/PrefectHQ/fastmcp/pull/5621)
+* Forward --skip-source to the uv run subprocess in fastmcp run by [@asasemahmed](https://github.com/asasemahmed) in [#5623](https://github.com/PrefectHQ/fastmcp/pull/5623)
+* Send numeric and boolean OpenAPI raw bodies as text by [@asasemahmed](https://github.com/asasemahmed) in [#5624](https://github.com/PrefectHQ/fastmcp/pull/5624)
+* Map Anthropic stop_sequence to the MCP stopSequence stop reason by [@asasemahmed](https://github.com/asasemahmed) in [#5625](https://github.com/PrefectHQ/fastmcp/pull/5625)
+* Escape the server spec and name in the generate-cli header docstring by [@asasemahmed](https://github.com/asasemahmed) in [#5626](https://github.com/PrefectHQ/fastmcp/pull/5626)
+* Fix context docs: request_context.meta is a dict, not an attribute object by [@asasemahmed](https://github.com/asasemahmed) in [#5631](https://github.com/PrefectHQ/fastmcp/pull/5631)
+* Validate strict tool input in JSON mode by [@asasemahmed](https://github.com/asasemahmed) in [#5504](https://github.com/PrefectHQ/fastmcp/pull/5504)
+* Raise when a required OpenAPI path parameter is missing by [@asasemahmed](https://github.com/asasemahmed) in [#5614](https://github.com/PrefectHQ/fastmcp/pull/5614)
+* Omit writeOnly properties from OpenAPI tool output schemas by [@asasemahmed](https://github.com/asasemahmed) in [#5336](https://github.com/PrefectHQ/fastmcp/pull/5336)
+* fix(tasks): keep stored arguments alive with the other per-task keys by [@sclfcz](https://github.com/sclfcz) in [#5144](https://github.com/PrefectHQ/fastmcp/pull/5144)
+* fix(auth): omit scopes from generic authorization code exchange by [@liang0417](https://github.com/liang0417) and [@kiranthakkar](https://github.com/kiranthakkar) in [#5183](https://github.com/PrefectHQ/fastmcp/pull/5183)
+* Reject missing and unexpected arguments at task submission by [@asasemahmed](https://github.com/asasemahmed) in [#5622](https://github.com/PrefectHQ/fastmcp/pull/5622)
+* fix(auth): preserve verifier-defined challenge scopes through wrappers by [@mikamikasuki](https://github.com/mikamikasuki) in [#5478](https://github.com/PrefectHQ/fastmcp/pull/5478)
+* fix(server): VersionFilter get_tool/get_resource/get_prompt respect include_unversioned=False by [@Ashfaqbs](https://github.com/Ashfaqbs) and [@Purin1410](https://github.com/Purin1410) in [#4949](https://github.com/PrefectHQ/fastmcp/pull/4949)
+* Stop asserting that the GitHub remote server lacks structured content by [@jlowin](https://github.com/jlowin) in [#5634](https://github.com/PrefectHQ/fastmcp/pull/5634)
+* Skip skills whose SKILL.md is not valid UTF-8 during directory discovery by [@asasemahmed](https://github.com/asasemahmed) in [#5497](https://github.com/PrefectHQ/fastmcp/pull/5497)
+* Fix tool body validation errors at the MCP boundary by [@qingshungLI](https://github.com/qingshungLI) and [@alastair](https://github.com/alastair) in [#5485](https://github.com/PrefectHQ/fastmcp/pull/5485)
+* Detect client extensions without requiring clientInfo by [@alex-feel](https://github.com/alex-feel) in [#5196](https://github.com/PrefectHQ/fastmcp/pull/5196)
+* Propagate child cancellation from gather by [@dennisimoo](https://github.com/dennisimoo) and [@lokesh0186](https://github.com/lokesh0186) in [#5161](https://github.com/PrefectHQ/fastmcp/pull/5161)
+* fix(resources): separate URI fragments from query values by [@Harsh23Kashyap](https://github.com/Harsh23Kashyap) in [#5132](https://github.com/PrefectHQ/fastmcp/pull/5132)
+* fix: preserve input requests in resource and prompt tools by [@HootRock](https://github.com/HootRock) and [@andreivince](https://github.com/andreivince) in [#5476](https://github.com/PrefectHQ/fastmcp/pull/5476)
+* fix(docstrings): don't leak Returns/Raises into description for parameterless functions by [@Ashfaqbs](https://github.com/Ashfaqbs) and [@pvliesdonk](https://github.com/pvliesdonk) in [#5067](https://github.com/PrefectHQ/fastmcp/pull/5067)
+* fix(client): hydrate formatted scalars and positional array items by [@FanouZeng-TT](https://github.com/FanouZeng-TT), [@MarcHuang168](https://github.com/MarcHuang168), [@lzyruc](https://github.com/lzyruc), and [@onk3sh](https://github.com/onk3sh) in [#5203](https://github.com/PrefectHQ/fastmcp/pull/5203)
+### Docs 📚
+* docs: credit contributors in v4.0.11 changelog entries by [@jlowin](https://github.com/jlowin) in [#5449](https://github.com/PrefectHQ/fastmcp/pull/5449)
+* Clarify CodeMode execution context by [@jlowin](https://github.com/jlowin) in [#5458](https://github.com/PrefectHQ/fastmcp/pull/5458)
+* docs: explain Inspector entrypoint initialization by [@andreivince](https://github.com/andreivince) and [@nick-youngblut](https://github.com/nick-youngblut) in [#5404](https://github.com/PrefectHQ/fastmcp/pull/5404)
+* Docs: show post-call inspection of tool text results by [@Amazinghorseli](https://github.com/Amazinghorseli) and [@roli-lpci](https://github.com/roli-lpci) in [#5385](https://github.com/PrefectHQ/fastmcp/pull/5385)
+* Document FastMCP Client use cases by [@andreivince](https://github.com/andreivince) in [#5482](https://github.com/PrefectHQ/fastmcp/pull/5482)
+* docs: show tests for MCP mounted in FastAPI by [@andreivince](https://github.com/andreivince) and [@DeoLeung](https://github.com/DeoLeung) in [#5471](https://github.com/PrefectHQ/fastmcp/pull/5471)
+* Document OpenTelemetry log export by [@andreivince](https://github.com/andreivince) in [#5483](https://github.com/PrefectHQ/fastmcp/pull/5483)
+* docs: explain OpenAPI client timeouts by [@andreivince](https://github.com/andreivince) and [@dimitribarbot](https://github.com/dimitribarbot) in [#5470](https://github.com/PrefectHQ/fastmcp/pull/5470)
+* Clarify Python projects and Cursor workspaces in install docs by [@andreivince](https://github.com/andreivince) and [@nick-youngblut](https://github.com/nick-youngblut) in [#5475](https://github.com/PrefectHQ/fastmcp/pull/5475)
+* Remove comments from fastmcp.json docs examples by [@asasemahmed](https://github.com/asasemahmed) in [#5627](https://github.com/PrefectHQ/fastmcp/pull/5627)
+* Fix mcp-json Advanced Configuration example output by [@asasemahmed](https://github.com/asasemahmed) in [#5628](https://github.com/PrefectHQ/fastmcp/pull/5628)
+* Remove FASTMCP_SERVER_DEPENDENCIES from the settings reference by [@asasemahmed](https://github.com/asasemahmed) in [#5629](https://github.com/PrefectHQ/fastmcp/pull/5629)
+* Fix versioning docs: get_tool takes a VersionSpec and returns None for a missing version by [@asasemahmed](https://github.com/asasemahmed) in [#5630](https://github.com/PrefectHQ/fastmcp/pull/5630)
+* Fix authorization docs: AccessToken field types and built-in check count by [@asasemahmed](https://github.com/asasemahmed) in [#5632](https://github.com/PrefectHQ/fastmcp/pull/5632)
+### Examples & Contrib 💡
+* Don't evaluate properties when registering MCPMixin methods by [@asasemahmed](https://github.com/asasemahmed) in [#5620](https://github.com/PrefectHQ/fastmcp/pull/5620)
+### Dependencies 📦
+* chore(deps): bump the uv group across 2 directories with 2 updates by @dependabot[bot] in https://github.com/PrefectHQ/fastmcp/pull/5393
+
+## New Contributors
+* @mikamikasuki made their first contribution in [#5438](https://github.com/PrefectHQ/fastmcp/pull/5438)
+* @HootRock made their first contribution in [#5376](https://github.com/PrefectHQ/fastmcp/pull/5376)
+* @alex-feel made their first contribution in [#5363](https://github.com/PrefectHQ/fastmcp/pull/5363)
+* @HuaTNA made their first contribution in [#5407](https://github.com/PrefectHQ/fastmcp/pull/5407)
+* @andreivince made their first contribution in [#5404](https://github.com/PrefectHQ/fastmcp/pull/5404)
+* @ch-z-hc made their first contribution in [#5359](https://github.com/PrefectHQ/fastmcp/pull/5359)
+* @Amazinghorseli made their first contribution in [#5385](https://github.com/PrefectHQ/fastmcp/pull/5385)
+* @hulkbig made their first contribution in [#5397](https://github.com/PrefectHQ/fastmcp/pull/5397)
+* @jerive made their first contribution in [#5366](https://github.com/PrefectHQ/fastmcp/pull/5366)
+* @goran-revops made their first contribution in [#5231](https://github.com/PrefectHQ/fastmcp/pull/5231)
+* @lzyruc made their first contribution in [#5270](https://github.com/PrefectHQ/fastmcp/pull/5270)
+* @sherxlg-gif made their first contribution in [#5184](https://github.com/PrefectHQ/fastmcp/pull/5184)
+* @baba9811 made their first contribution in [#5153](https://github.com/PrefectHQ/fastmcp/pull/5153)
+* @mayankkumar-cmd made their first contribution in [#5162](https://github.com/PrefectHQ/fastmcp/pull/5162)
+* @77cjj made their first contribution in [#5011](https://github.com/PrefectHQ/fastmcp/pull/5011)
+* @liang0417 made their first contribution in [#5183](https://github.com/PrefectHQ/fastmcp/pull/5183)
+* @Ashfaqbs made their first contribution in [#4949](https://github.com/PrefectHQ/fastmcp/pull/4949)
+* @qingshungLI made their first contribution in [#5485](https://github.com/PrefectHQ/fastmcp/pull/5485)
+* @dennisimoo made their first contribution in [#5161](https://github.com/PrefectHQ/fastmcp/pull/5161)
+* @FanouZeng-TT made their first contribution in [#5203](https://github.com/PrefectHQ/fastmcp/pull/5203)
+* @GEONWOOHAN made their first contribution in [#5459](https://github.com/PrefectHQ/fastmcp/pull/5459)
+
+**Full Changelog**: [v4.0.11...v4.1.0](https://github.com/PrefectHQ/fastmcp/compare/v4.0.11...v4.1.0)
+
+</Update>
 
 <Update label="v4.0.11" description="2026-10-04">
 

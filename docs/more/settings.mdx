@@ -29,6 +29,17 @@ You can change which `.env` file is loaded by setting the `FASTMCP_ENV_FILE` env
 | `FASTMCP_DEPRECATION_WARNINGS` | `bool` | `true` | Show deprecation warnings. |
 | `FASTMCP_MCP_CAMELCASE_COMPAT` | `bool` | `true` | Bridge legacy camelCase reads on MCP SDK objects (e.g. `tool.inputSchema`, `result.isError`) to their snake_case fields after the SDK v2 rename. Each bridged read emits a `FastMCPDeprecationWarning`. Set to `false` to disable the shims, in which case only the snake_case names resolve. |
 
+To turn on debug logging from your own entry point, for example behind a `--debug` flag, pass `log_level` to `run()` instead of reconfiguring logging yourself. It applies to every transport for as long as the server runs:
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("my-server")
+
+if __name__ == "__main__":
+    mcp.run(log_level="DEBUG")
+```
+
 ## Transport & HTTP
 
 These control how the server listens when running with an HTTP transport.
@@ -47,7 +58,7 @@ These control how the server listens when running with an HTTP transport.
 | `FASTMCP_HTTP_ALLOWED_HOSTS` | `list[str] \| null` | `null` | Additional trusted hostnames when Host and Origin protection is enabled. Use a JSON array, such as `["mcp.example.com"]`. |
 | `FASTMCP_HTTP_ALLOWED_ORIGINS` | `list[str] \| null` | `null` | Browser origins trusted when Host and Origin protection is enabled. Configure CORS separately for cross-origin browser reads. Use a JSON array, such as `["https://app.example.com"]`. |
 | `FASTMCP_HTTP_SESSION_IDLE_TIMEOUT` | `float \| "auto" \| "none"` | `"auto"` | Seconds a stateful Streamable HTTP session may remain idle before it is terminated. `"auto"` uses the MCP SDK's default: 1800 seconds (30 minutes) in SDK 2.2, no timeout in earlier versions. Set a positive number to override it, or `none` to disable it. |
-| `FASTMCP_DEBUG` | `bool` | `false` | Enable debug mode. |
+| `FASTMCP_DEBUG` | `bool` | `false` | Pass `debug=True` to the Starlette app behind the Streamable HTTP and SSE transports, so unhandled errors in the HTTP layer return tracebacks in the response. It has no effect on stdio and does not change FastMCP's log level; use `FASTMCP_LOG_LEVEL=DEBUG` for debug logs. Don't enable it in production, since tracebacks can expose internals. |
 
 MCP SDK 2.2 also limits concurrent stateful HTTP sessions to 10,000. Keeping
 the default idle timeout lets abandoned sessions expire and frees capacity for
@@ -117,5 +128,4 @@ FastMCP reads the proxy URL from the environment and passes it to the HTTP clien
 |---|---|---|---|
 | `FASTMCP_HOME` | `Path` | Platform default | Data directory for FastMCP. Defaults to the platform-specific user data directory. |
 | `FASTMCP_ENV_FILE` | `str` | `.env` | Path to the `.env` file to load settings from. Must be set as an environment variable (see above). |
-| `FASTMCP_SERVER_DEPENDENCIES` | `list[str]` | `[]` | Additional dependencies to install in the server environment. |
 | `FASTMCP_TEST_MODE` | `bool` | `false` | Enable test mode. |

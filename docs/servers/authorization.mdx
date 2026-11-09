@@ -34,7 +34,7 @@ def my_custom_check(ctx: AuthContext) -> bool:
     return ctx.token is not None and "special" in ctx.token.scopes
 ```
 
-FastMCP provides two built-in auth checks that cover common authorization patterns.
+FastMCP provides three built-in auth checks that cover common authorization patterns: `require_scopes`, `require_roles`, and `restrict_tag`.
 
 ### require_scopes
 
@@ -452,9 +452,9 @@ The `AccessToken` object contains information extracted from the OAuth token.
 | Property | Type | Description |
 |----------|------|-------------|
 | `token` | `str` | The raw token string |
-| `client_id` | `str \| None` | OAuth client identifier |
+| `client_id` | `str` | OAuth client identifier |
 | `scopes` | `list[str]` | Granted OAuth scopes |
-| `expires_at` | `datetime \| None` | Token expiration time |
+| `expires_at` | `int \| None` | Token expiration as a Unix timestamp in seconds |
 | `claims` | `dict[str, Any]` | All JWT claims or custom token data |
 
 ### AuthContext

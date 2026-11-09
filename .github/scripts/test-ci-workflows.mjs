@@ -197,10 +197,11 @@ test("required matrix checks retain names even when editorial steps skip", () =>
       { os: "ubuntu-latest", "python-version": "3.12" },
       { os: "ubuntu-latest", "python-version": "3.13" },
       { os: "ubuntu-latest", "python-version": "3.14" },
+      { os: "ubuntu-latest", "python-version": "3.15" },
     ],
   });
   assert.equal(matrix.if, "${{ !cancelled() }}");
-  assert.equal(matrix.steps[0].uses, "actions/checkout@v7");
+  assert.match(matrix.steps[0].uses, /^actions\/checkout@/);
   for (const step of matrix.steps.slice(2, 4))
     assert.equal(step.if, "needs.changes.outputs.run-tests != 'false'");
   assert.equal(

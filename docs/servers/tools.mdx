@@ -304,6 +304,7 @@ def add_numbers(a: int, b: int) -> int:
 | Lists with string elements (`["1", "2"]` for `list[int]`) | ✅ Elements coerced | ❌ Validation error |
 | Pydantic model fields with type mismatches | ✅ Fields coerced | ❌ Validation error |
 | Invalid values (`"abc"` for `int`) | ❌ Validation error | ❌ Validation error |
+| Undeclared arguments to OpenAPI tools | ⚠️ Dropped with a warning | ❌ Validation error |
 
 <Note>
 **Note on Pydantic Models:** Even with `strict_input_validation=False`, Pydantic model parameters must be provided as JSON objects (dicts), not as stringified JSON. For example, `{"user": {"name": "Alice"}}` works, but `{"user": '{"name": "Alice"}'}` does not.
@@ -319,7 +320,7 @@ You can provide additional metadata about parameters in several ways:
 
 <VersionBadge version="3.2.4" />
 
-FastMCP parses your function's docstring to extract both the tool description and per-parameter descriptions. Google, NumPy, and Sphinx docstring styles are all supported — the parser tries each and uses whichever finds parameter descriptions:
+FastMCP parses your function's docstring to extract both the tool description and per-parameter descriptions. Google, NumPy, and Sphinx docstring styles are all supported — the parser tries each and uses the first one that recognizes a structured section such as `Args`, `Returns`, or `Raises`:
 
 ```python
 @mcp.tool
@@ -338,7 +339,7 @@ def process_image(
     # Implementation...
 ```
 
-The free-form text above the `Args` section — whether a single line or multiple paragraphs — becomes the tool description, and each parameter's docstring entry becomes the description for that parameter in the generated schema. Sections like `Returns`, `Raises`, and `Example` are excluded from the description but otherwise ignored.
+The free-form text above the `Args` section — whether a single line or multiple paragraphs — becomes the tool description, and each parameter's docstring entry becomes the description for that parameter in the generated schema. Sections like `Returns`, `Raises`, and `Example` are excluded from the description but otherwise ignored. This applies to functions without parameters as well: a docstring with only a `Returns` section yields just the free-form text above it.
 
 If a parameter already has an explicit description — via `Annotated[x, "..."]` or `Field(description=...)` — that description takes precedence over the docstring. This makes it safe to adopt docstring-based descriptions incrementally: existing annotations keep working, and docstrings fill in the gaps.
 
@@ -452,7 +453,7 @@ The following sections explain each concept in detail.
 FastMCP automatically converts tool return values into appropriate MCP content blocks:
 
 - **`str`**: Sent as `TextContent`
-- **`bytes`**: Base64 encoded and sent as `BlobResourceContents` (within an `EmbeddedResource`)
+- **`bytes`**: Sent as `TextContent`, decoded as UTF-8 when possible and base64-encoded otherwise. To send binary data as an embedded resource with a MIME type, return a `File` instead
 - **`fastmcp.utilities.types.Image`**: Sent as `ImageContent`
 - **`fastmcp.utilities.types.Audio`**: Sent as `AudioContent`
 - **`fastmcp.utilities.types.File`**: Sent as base64-encoded `EmbeddedResource`

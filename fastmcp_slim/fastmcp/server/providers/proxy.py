@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import inspect
+import json
 import time
 import warnings
 from collections.abc import Awaitable, Callable, Sequence
@@ -72,6 +73,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from fastmcp.client.transports import ClientTransport
+    from fastmcp.server.extensions import ServerExtension
 
 logger = get_logger(__name__)
 
@@ -213,10 +215,7 @@ def _session_request_meta(
 
 async def _relay_read_resource(
     client: Client, uri: str, ctx: Context | None
-) -> (
-    list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]
-    | mcp_types.InputRequiredResult
-):
+) -> mcp_types.ReadResourceResult | mcp_types.InputRequiredResult:
     """Read a backend resource, surfacing a guard ask rather than driving it.
 
     Mirrors `ProxyTool.run`: on a modern backend the low-level session is used
@@ -228,8 +227,8 @@ async def _relay_read_resource(
     """
     meta = _forwardable_request_meta(ctx)
     if client.protocol_version not in MODERN_PROTOCOL_VERSIONS:
-        return await client.read_resource(uri, meta=meta)
-    result = await client._await_with_session_monitoring(
+        return await client.read_resource_mcp(uri, meta=meta)
+    return await client._await_with_session_monitoring(
         client.session.read_resource(
             uri,
             meta=_session_request_meta(meta),
@@ -238,9 +237,6 @@ async def _relay_read_resource(
             allow_input_required=True,
         )
     )
-    if isinstance(result, mcp_types.InputRequiredResult):
-        return result
-    return list(result.contents)
 
 
 def _stash_proxy_request_context(client: Client, ctx: Context) -> None:
@@ -526,6 +522,7 @@ class ProxyResource(Resource):
             description=mcp_resource.description,
             mime_type=mcp_resource.mime_type or "text/plain",
             icons=mcp_resource.icons,
+            annotations=mcp_resource.annotations,
             meta=mcp_resource.meta,
             tags=get_fastmcp_metadata(mcp_resource.meta).get("tags", []),
             task_config=TaskConfig(mode="forbidden"),
@@ -551,14 +548,14 @@ class ProxyResource(Resource):
                 result = await _relay_read_resource(client, backend_uri, ctx)
             if isinstance(result, mcp_types.InputRequiredResult):
                 return InputRequiredResourceResult(result)
-            if not result:
+            if not result.contents:
                 raise ResourceError(
                     f"Remote server returned empty content for {backend_uri}"
                 )
 
             # Process all items in the result list, not just the first one
             contents: list[ResourceContent] = []
-            for item in result:
+            for item in result.contents:
                 if isinstance(item, TextResourceContents):
                     contents.append(
                         ResourceContent(
@@ -578,7 +575,9 @@ class ProxyResource(Resource):
                 else:
                     raise ResourceError(f"Unsupported content type: {type(item)}")
 
-            return ResourceResult(contents=contents)
+            return ResourceResult(
+                contents=contents, meta=_forwardable_server_meta(result.meta) or None
+            )
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
@@ -627,6 +626,7 @@ class ProxyTemplate(ResourceTemplate):
             description=mcp_template.description,
             mime_type=mcp_template.mime_type or "text/plain",
             icons=mcp_template.icons,
+            annotations=mcp_template.annotations,
             parameters={},  # Remote templates don't have local parameters
             meta=mcp_template.meta,
             tags=get_fastmcp_metadata(mcp_template.meta).get("tags", []),
@@ -668,14 +668,14 @@ class ProxyTemplate(ResourceTemplate):
                 _cached_content=InputRequiredResourceResult(result),
             )
 
-        if not result:
+        if not result.contents:
             raise ResourceError(
                 f"Remote server returned empty content for {parameterized_uri}"
             )
 
         # Process all items in the result list, not just the first one
         contents: list[ResourceContent] = []
-        for item in result:
+        for item in result.contents:
             if isinstance(item, TextResourceContents):
                 contents.append(
                     ResourceContent(
@@ -695,7 +695,9 @@ class ProxyTemplate(ResourceTemplate):
             else:
                 raise ResourceError(f"Unsupported content type: {type(item)}")
 
-        cached_content = ResourceResult(contents=contents)
+        cached_content = ResourceResult(
+            contents=contents, meta=_forwardable_server_meta(result.meta) or None
+        )
 
         return ProxyResource(
             client_factory=self._client_factory,
@@ -703,7 +705,7 @@ class ProxyTemplate(ResourceTemplate):
             name=self.name,
             title=self.title,
             description=self.description,
-            mime_type=result[
+            mime_type=result.contents[
                 0
             ].mime_type,  # Use first item's mimeType for backward compatibility
             icons=self.icons,
@@ -887,6 +889,8 @@ class ProxyProvider(Provider):
         self,
         client_factory: ClientFactoryT,
         cache_ttl: float | None = None,
+        *,
+        skills: bool = False,
     ):
         """Initialize a ProxyProvider.
 
@@ -897,14 +901,31 @@ class ProxyProvider(Provider):
             cache_ttl: How long (in seconds) to cache component lists for
                       individual lookups.  Defaults to 300.  Set to 0 to
                       disable caching.
+            skills: Forward the backend's Skills discovery (`skills/list` and
+                `skills/get`). Registers `SkillsExtension` on the server
+                this provider is added to.
         """
         super().__init__()
         self.client_factory = client_factory
+        self._skills = skills
         self._cache_ttl = cache_ttl if cache_ttl is not None else _DEFAULT_CACHE_TTL
         self._tools_cache: _CacheEntry[Tool] | None = None
         self._resources_cache: _CacheEntry[Resource] | None = None
         self._templates_cache: _CacheEntry[ResourceTemplate] | None = None
         self._prompts_cache: _CacheEntry[Prompt] | None = None
+        # Generations advance before I/O so older completions cannot roll back
+        # a newer refresh attempt.
+        self._tools_generation = 0
+        self._resources_generation = 0
+        self._templates_generation = 0
+        self._prompts_generation = 0
+
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        if not self._skills:
+            return ()
+        from fastmcp.skills.extension import SkillsExtension
+
+        return (SkillsExtension(),)
 
     async def _get_client(self) -> Client:
         """Gets a client instance by calling the sync or async factory."""
@@ -919,6 +940,8 @@ class ProxyProvider(Provider):
 
     async def _list_tools(self) -> Sequence[Tool]:
         """List all tools from the remote server."""
+        self._tools_generation += 1
+        generation = self._tools_generation
         try:
             client = await self._get_client()
             async with client:
@@ -933,7 +956,8 @@ class ProxyProvider(Provider):
                 raise
         except _PROXY_TRANSPORT_ERRORS as error:
             raise _proxy_upstream_error(error) from error
-        self._tools_cache = _CacheEntry(tools, time.monotonic())
+        if generation == self._tools_generation:
+            self._tools_cache = _CacheEntry(tools, time.monotonic())
         return tools
 
     async def _get_tool(
@@ -941,10 +965,10 @@ class ProxyProvider(Provider):
     ) -> Tool | None:
         cache = self._tools_cache
         if cache is None or not cache.is_fresh(self._cache_ttl):
-            await self._list_tools()
-            cache = self._tools_cache
-        assert cache is not None
-        matching = [t for t in cache.items if t.name == name]
+            tools = await self._list_tools()
+        else:
+            tools = cache.items
+        matching = [t for t in tools if t.name == name]
         if version:
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
@@ -967,13 +991,11 @@ class ProxyProvider(Provider):
         """
         cache = self._tools_cache
         if cache is None or not cache.is_fresh(self._cache_ttl):
-            await self._list_tools()
-            cache = self._tools_cache
-        assert cache is not None
+            tools = await self._list_tools()
+        else:
+            tools = cache.items
 
-        matches = [
-            tool for tool in cache.items if is_app_tool_with_identity(tool, tool_hash)
-        ]
+        matches = [tool for tool in tools if is_app_tool_with_identity(tool, tool_hash)]
 
         if not matches:
             return None
@@ -992,6 +1014,8 @@ class ProxyProvider(Provider):
 
     async def _list_resources(self) -> Sequence[Resource]:
         """List all resources from the remote server."""
+        self._resources_generation += 1
+        generation = self._resources_generation
         try:
             client = await self._get_client()
             async with client:
@@ -1007,7 +1031,8 @@ class ProxyProvider(Provider):
                 raise
         except _PROXY_TRANSPORT_ERRORS as error:
             raise _proxy_upstream_error(error) from error
-        self._resources_cache = _CacheEntry(resources, time.monotonic())
+        if generation == self._resources_generation:
+            self._resources_cache = _CacheEntry(resources, time.monotonic())
         return resources
 
     async def _get_resource(
@@ -1015,10 +1040,10 @@ class ProxyProvider(Provider):
     ) -> Resource | None:
         cache = self._resources_cache
         if cache is None or not cache.is_fresh(self._cache_ttl):
-            await self._list_resources()
-            cache = self._resources_cache
-        assert cache is not None
-        matching = [r for r in cache.items if str(r.uri) == uri]
+            resources = await self._list_resources()
+        else:
+            resources = cache.items
+        matching = [r for r in resources if str(r.uri) == uri]
         if version:
             matching = [r for r in matching if version.matches(r.version)]
         if not matching:
@@ -1031,6 +1056,8 @@ class ProxyProvider(Provider):
 
     async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """List all resource templates from the remote server."""
+        self._templates_generation += 1
+        generation = self._templates_generation
         try:
             client = await self._get_client()
             async with client:
@@ -1046,7 +1073,8 @@ class ProxyProvider(Provider):
                 raise
         except _PROXY_TRANSPORT_ERRORS as error:
             raise _proxy_upstream_error(error) from error
-        self._templates_cache = _CacheEntry(templates, time.monotonic())
+        if generation == self._templates_generation:
+            self._templates_cache = _CacheEntry(templates, time.monotonic())
         return templates
 
     async def _get_resource_template(
@@ -1054,10 +1082,10 @@ class ProxyProvider(Provider):
     ) -> ResourceTemplate | None:
         cache = self._templates_cache
         if cache is None or not cache.is_fresh(self._cache_ttl):
-            await self._list_resource_templates()
-            cache = self._templates_cache
-        assert cache is not None
-        matching = [t for t in cache.items if t.matches(uri) is not None]
+            templates = await self._list_resource_templates()
+        else:
+            templates = cache.items
+        matching = [t for t in templates if t.matches(uri) is not None]
         if version:
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
@@ -1070,6 +1098,8 @@ class ProxyProvider(Provider):
 
     async def _list_prompts(self) -> Sequence[Prompt]:
         """List all prompts from the remote server."""
+        self._prompts_generation += 1
+        generation = self._prompts_generation
         try:
             client = await self._get_client()
             async with client:
@@ -1085,7 +1115,8 @@ class ProxyProvider(Provider):
                 raise
         except _PROXY_TRANSPORT_ERRORS as error:
             raise _proxy_upstream_error(error) from error
-        self._prompts_cache = _CacheEntry(prompts, time.monotonic())
+        if generation == self._prompts_generation:
+            self._prompts_cache = _CacheEntry(prompts, time.monotonic())
         return prompts
 
     async def _get_prompt(
@@ -1093,10 +1124,10 @@ class ProxyProvider(Provider):
     ) -> Prompt | None:
         cache = self._prompts_cache
         if cache is None or not cache.is_fresh(self._cache_ttl):
-            await self._list_prompts()
-            cache = self._prompts_cache
-        assert cache is not None
-        matching = [p for p in cache.items if p.name == name]
+            prompts = await self._list_prompts()
+        else:
+            prompts = cache.items
+        matching = [p for p in prompts if p.name == name]
         if version:
             matching = [p for p in matching if version.matches(p.version)]
         if not matching:
@@ -1459,6 +1490,7 @@ class FastMCPProxy(FastMCP):
         client_factory: ClientFactoryT,
         provider_error_strategy: ProviderErrorStrategy = "warn",
         identity: ProxyIdentity = "proxy",
+        skills: bool = False,
         **kwargs,
     ):
         """Initialize the proxy server.
@@ -1476,12 +1508,13 @@ class FastMCPProxy(FastMCP):
             identity: Whether clients see the proxy's server identity or the
                 upstream server's when available. Defaults to ``"proxy"``
                 for compatibility.
+            skills: Forward the backend's Skills discovery.
             **kwargs: Additional settings for the FastMCP server.
         """
         super().__init__(**kwargs)
         self.provider_error_strategy = provider_error_strategy
         self.client_factory = client_factory
-        provider = ProxyProvider(client_factory)
+        provider = ProxyProvider(client_factory, skills=skills)
         self.add_provider(provider)
         self.middleware.append(ProxyMetadataMiddleware(provider, identity=identity))
         self._setup_proxy_ping_handler()
@@ -1549,6 +1582,7 @@ async def default_proxy_sampling_handler(
         system_prompt=params.system_prompt,
         temperature=params.temperature,
         max_tokens=params.max_tokens,
+        stop_sequences=params.stop_sequences,
         model_preferences=params.model_preferences,
         related_request_id=ctx.origin_request_id,
     )
@@ -1589,8 +1623,13 @@ async def default_proxy_elicitation_handler(
 async def default_proxy_log_handler(message: LogMessage) -> None:
     """Forward log notification from remote server to proxy's connected clients."""
     ctx = get_context()
-    msg = message.data.get("msg")
-    extra = message.data.get("extra")
+    data = message.data
+    # FastMCP servers send {"msg": ..., "extra": ...}; any other MCP server may
+    # send any JSON value, which is forwarded as the message text.
+    if isinstance(data, dict) and isinstance(data.get("msg"), str):
+        msg, extra = data["msg"], data.get("extra")
+    else:
+        msg, extra = (data if isinstance(data, str) else json.dumps(data)), None
     await ctx.log(msg, level=message.level, logger_name=message.logger, extra=extra)
 
 
