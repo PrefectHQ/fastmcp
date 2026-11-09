@@ -224,10 +224,7 @@ class TestBuildClientRedirect:
             iss="https://as.example/",
         )
 
-        assert result == (
-            f"{expected_prefix}code=abc&iss=https%3A%2F%2Fas.example%2F"
-        )
-
+        assert result == (f"{expected_prefix}code=abc&iss=https%3A%2F%2Fas.example%2F")
 
 
 class TestNoHandSpecifiedIssOutsideHelper:
