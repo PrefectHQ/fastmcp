@@ -1,8 +1,10 @@
 import httpx2
+import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.server.transforms import ToolTransform
+from fastmcp.exceptions import ToolError
+from fastmcp.server.transforms import ToolTransform, VersionFilter
 from fastmcp.tools.tool_transform import (
     ArgTransformConfig,
     ToolTransformConfig,
@@ -213,6 +215,72 @@ async def test_tool_transform_config_enabled_true_overrides_earlier_disable():
 
     # Tool should now be visible
     assert "my_tool" in tool_names
+
+
+def _reversioned_server() -> FastMCP:
+    mcp = FastMCP("Test Server")
+
+    @mcp.tool(version="1.0")
+    def calc(x: int) -> int:
+        return x
+
+    mcp.add_transform(ToolTransform({"calc": ToolTransformConfig(version="2.0")}))
+    return mcp
+
+
+async def test_tool_transform_config_version_is_callable_by_new_version():
+    """A tool re-versioned by a transform is fetched by the version it is listed under."""
+    mcp = _reversioned_server()
+
+    async with Client(mcp) as client:
+        tools = await client.list_tools()
+        assert [t.meta["fastmcp"]["version"] for t in tools] == ["2.0"]
+
+        result = await client.call_tool("calc", {"x": 3}, version="2.0")
+        assert result.data == 3
+
+        with pytest.raises(ToolError, match="Unknown tool"):
+            await client.call_tool("calc", {"x": 3}, version="1.0")
+
+
+async def test_tool_transform_config_version_satisfies_outer_version_filter():
+    """A VersionFilter above the transform sees the transformed version."""
+    mcp = _reversioned_server()
+    mcp.add_transform(VersionFilter(version_gte="2.0"))
+
+    async with Client(mcp) as client:
+        tools = await client.list_tools()
+        assert [t.name for t in tools] == ["calc"]
+
+        result = await client.call_tool("calc", {"x": 3})
+        assert result.data == 3
+
+
+async def test_tool_transform_without_version_keeps_caller_version_constraint():
+    """A transform that doesn't set a version still resolves the requested version."""
+    mcp = FastMCP("Test Server")
+
+    @mcp.tool(version="1.0")
+    def calc(x: int) -> int:
+        return x
+
+    @mcp.tool(name="calc", version="2.0")
+    def calc_v2(x: int) -> int:
+        return x * 10
+
+    mcp.add_transform(
+        ToolTransform({"calc": ToolTransformConfig(description="Calculate")})
+    )
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("calc", {"x": 3}, version="1.0")
+        assert result.data == 3
+
+        result = await client.call_tool("calc", {"x": 3}, version="2.0")
+        assert result.data == 30
+
+        with pytest.raises(ToolError, match="Unknown tool"):
+            await client.call_tool("calc", {"x": 3}, version="3.0")
 
 
 async def test_openapi_path_params_not_duplicated_in_description():
