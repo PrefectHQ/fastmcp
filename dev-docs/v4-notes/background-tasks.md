@@ -2,7 +2,7 @@
 title: Background Tasks (SEP-2663)
 ---
 
-**Status: Shipped (#4602, #4603).** This page is the approved design for rebuilding FastMCP's background-task support on the `io.modelcontextprotocol/tasks` extension. It supersedes the earlier "delete the task machinery" direction recorded during the SDK v2 migration. The [Feature Program](feature-program.md#background-tasks-sep-2663) carries the one-line status; user-facing usage is documented at [Background Tasks](https://gofastmcp.com/servers/tasks) and [Background Tasks (client)](https://gofastmcp.com/clients/tasks).
+**Status: Shipped (#4602, #4603).** This page is the approved design for rebuilding FastMCP's background-task support on the `io.modelcontextprotocol/tasks` extension. It supersedes the earlier "delete the task machinery" direction recorded during the SDK v2 migration. The [Feature Program](feature-program.md#background-tasks-sep-2663) carries the one-line status; user-facing usage is documented at [Background Tasks](https://gofastmcp.com/docs/servers/tasks) and [Background Tasks (client)](https://gofastmcp.com/docs/clients/tasks).
 
 ## TL;DR
 
@@ -107,7 +107,7 @@ async def crunch(dataset: str) -> str:
 
 The extension API contributes a negotiated capability, additive request methods, and a `tools/call` interceptor — with access to FastMCP-level constructs the SDK's `Extension` withholds (the component registry, `Context`, auth scope). It is **designed against tasks** because tasks exercises the full surface (capability + methods + interception + client claims + notifications), where Apps exercises only a subset. Apps migrates onto the extension API as a fast-follow, deleting the hand-rolled splices and confirming the design generalizes.
 
-**Extension vs. middleware** — the discriminator, so we do not over-apply this: an extension is a *negotiated contract change the client must understand*; middleware is *unilateral server behavior the client never sees*. PII detection, auth, rate limiting → [middleware](https://gofastmcp.com/servers/middleware). Tasks, Apps → extensions. Litmus test: delete the capability advertisement — if nothing about the client's behavior changes, it was middleware.
+**Extension vs. middleware** — the discriminator, so we do not over-apply this: an extension is a *negotiated contract change the client must understand*; middleware is *unilateral server behavior the client never sees*. PII detection, auth, rate limiting → [middleware](https://gofastmcp.com/docs/servers/middleware). Tasks, Apps → extensions. Litmus test: delete the capability advertisement — if nothing about the client's behavior changes, it was middleware.
 
 ### Client experience
 

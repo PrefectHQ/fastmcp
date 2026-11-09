@@ -53,21 +53,21 @@ FastMCP has three pillars:
 <table>
 <tr>
 <td align="center" valign="top" width="33%">
-<a href="https://gofastmcp.com/servers/server">
+<a href="https://gofastmcp.com/docs/servers/server">
 <img src="https://raw.githubusercontent.com/PrefectHQ/fastmcp/main/docs/assets/images/servers-card.png" alt="Servers" />
 <br /><strong>Servers</strong>
 </a>
 <br />Expose tools, resources, and prompts to LLMs.
 </td>
 <td align="center" valign="top" width="33%">
-<a href="https://gofastmcp.com/apps/overview">
+<a href="https://gofastmcp.com/docs/apps/overview">
 <img src="https://raw.githubusercontent.com/PrefectHQ/fastmcp/main/docs/assets/images/apps-card.png" alt="Apps" />
 <br /><strong>Apps</strong>
 </a>
 <br />Give your tools interactive UIs rendered directly in the conversation.
 </td>
 <td align="center" valign="top" width="33%">
-<a href="https://gofastmcp.com/clients/client">
+<a href="https://gofastmcp.com/docs/clients/client">
 <img src="https://raw.githubusercontent.com/PrefectHQ/fastmcp/main/docs/assets/images/clients-card.png" alt="Clients" />
 <br /><strong>Clients</strong>
 </a>
@@ -76,11 +76,11 @@ FastMCP has three pillars:
 </tr>
 </table>
 
-**[Servers](https://gofastmcp.com/servers/server)** wrap your Python functions into MCP-compliant tools, resources, and prompts. **[Clients](https://gofastmcp.com/clients/client)** connect to any server with full protocol support. And **[Apps](https://gofastmcp.com/apps/overview)** give your tools interactive UIs rendered directly in the conversation.
+**[Servers](https://gofastmcp.com/docs/servers/server)** wrap your Python functions into MCP-compliant tools, resources, and prompts. **[Clients](https://gofastmcp.com/docs/clients/client)** connect to any server with full protocol support. And **[Apps](https://gofastmcp.com/docs/apps/overview)** give your tools interactive UIs rendered directly in the conversation.
 
 **Building in TypeScript?** [FastMCP for TypeScript](https://github.com/PrefectHQ/fastmcp-ts) is the official counterpart, built and maintained by the same team. Same pillars, same ideas, `npm install @prefecthq/fastmcp-ts`.
 
-Ready to build? Start with the [installation guide](https://gofastmcp.com/getting-started/installation) or jump straight to the [quickstart](https://gofastmcp.com/getting-started/quickstart).
+Ready to build? Start with the [installation guide](https://gofastmcp.com/docs/getting-started/installation) or jump straight to the [quickstart](https://gofastmcp.com/docs/getting-started/quickstart).
 
 <a id="scale-mcp-with-horizon"></a>
 
@@ -102,13 +102,13 @@ We recommend adding FastMCP to your project with [uv](https://docs.astral.sh/uv/
 uv add fastmcp
 ```
 
-For full installation instructions, including verification and upgrading, see the [**Installation Guide**](https://gofastmcp.com/getting-started/installation).
+For full installation instructions, including verification and upgrading, see the [**Installation Guide**](https://gofastmcp.com/docs/getting-started/installation).
 
 **Upgrading?** We have guides for:
-- [Upgrading from FastMCP 3](https://gofastmcp.com/getting-started/upgrading/from-fastmcp-3)
-- [Upgrading from FastMCP 2](https://gofastmcp.com/getting-started/upgrading/from-fastmcp-2)
-- [Upgrading from MCP SDK v1](https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk-v1) or [v2](https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk-v2)
-- [Upgrading from the low-level SDK v1](https://gofastmcp.com/getting-started/upgrading/from-low-level-sdk-v1) or [v2](https://gofastmcp.com/getting-started/upgrading/from-low-level-sdk-v2)
+- [Upgrading from FastMCP 3](https://gofastmcp.com/docs/getting-started/upgrading/from-fastmcp-3)
+- [Upgrading from FastMCP 2](https://gofastmcp.com/docs/getting-started/upgrading/from-fastmcp-2)
+- [Upgrading from MCP SDK v1](https://gofastmcp.com/docs/getting-started/upgrading/from-mcp-sdk-v1) or [v2](https://gofastmcp.com/docs/getting-started/upgrading/from-mcp-sdk-v2)
+- [Upgrading from the low-level SDK v1](https://gofastmcp.com/docs/getting-started/upgrading/from-low-level-sdk-v1) or [v2](https://gofastmcp.com/docs/getting-started/upgrading/from-low-level-sdk-v2)
 
 ## 📚 Documentation
 
@@ -119,10 +119,10 @@ Documentation is also available in [llms.txt format](https://llmstxt.org/), whic
 - [`llms.txt`](https://gofastmcp.com/llms.txt) is essentially a sitemap, listing all the pages in the documentation.
 - [`llms-full.txt`](https://gofastmcp.com/llms-full.txt) contains the entire documentation. Note this may exceed the context window of your LLM.
 
-Give your coding agent [`llms.txt`](https://gofastmcp.com/llms.txt) as its starting point. See [Coding Agents](https://gofastmcp.com/getting-started/ai-assisted-development) for version-matched documentation and the optional server authoring skill.
+Give your coding agent [`llms.txt`](https://gofastmcp.com/llms.txt) as its starting point. See [Coding Agents](https://gofastmcp.com/docs/getting-started/ai-assisted-development) for version-matched documentation and the optional server authoring skill.
 
 **Community:** Join our [Discord server](https://discord.gg/uu8dJCgttd) to connect with other FastMCP developers and share what you're building.
 
 ## Contributing
 
-Start with [CONTRIBUTING.md](CONTRIBUTING.md) for accepted contributions and the issue-assignment workflow, then follow the [Contributing Guide](https://gofastmcp.com/development/contributing) for setup and validation. Agents should read [AGENTS.md](AGENTS.md).
+Start with [CONTRIBUTING.md](CONTRIBUTING.md) for accepted contributions and the issue-assignment workflow, then follow the [Contributing Guide](https://gofastmcp.com/docs/development/contributing) for setup and validation. Agents should read [AGENTS.md](AGENTS.md).

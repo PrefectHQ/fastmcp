@@ -185,7 +185,7 @@ Key features:
 - Fuzzy tool name matching suggests alternatives on typos
 - Interactive terminal elicitation for tools that request user input mid-execution
 
-Documentation: [CLI Querying](https://gofastmcp.com/v3/cli/client)
+Documentation: [CLI Querying](https://gofastmcp.com/docs/v3/cli/client)
 
 ### CLI: `fastmcp discover` and name-based resolution
 
@@ -207,7 +207,7 @@ fastmcp call cursor:weather get_forecast city=London
 fastmcp discover --source claude-code --source cursor
 ```
 
-Documentation: [CLI Querying](https://gofastmcp.com/v3/cli/client)
+Documentation: [CLI Querying](https://gofastmcp.com/docs/v3/cli/client)
 
 ### CLI: Expanded Reload File Watching
 
@@ -272,7 +272,7 @@ Key details:
 - Servers fetch and cache documents with standard HTTP caching (ETag, Last-Modified, Cache-Control)
 - CIMD is a protocol-level feature — any auth provider implementing the spec can support it
 
-Documentation: [CIMD Authentication](https://gofastmcp.com/v3/clients/auth/cimd), [OAuth Proxy CIMD config](https://gofastmcp.com/v3/servers/auth/oauth-proxy#cimd-support)
+Documentation: [CIMD Authentication](https://gofastmcp.com/docs/v3/clients/auth/cimd), [OAuth Proxy CIMD config](https://gofastmcp.com/docs/v3/servers/auth/oauth-proxy#cimd-support)
 
 ### Pre-Registered OAuth Clients
 
@@ -295,7 +295,7 @@ async with Client(
 
 The static credentials are injected before the OAuth flow begins, so the client never attempts DCR. If the server rejects the credentials, the error surfaces immediately rather than retrying with fresh registration (which can't help for fixed credentials). Public clients can omit `client_secret`.
 
-Documentation: [Pre-Registered Clients](https://gofastmcp.com/v3/clients/auth/oauth#pre-registered-clients)
+Documentation: [Pre-Registered Clients](https://gofastmcp.com/docs/v3/clients/auth/oauth#pre-registered-clients)
 
 ### CLI: `fastmcp generate-cli`
 
@@ -315,7 +315,7 @@ python my_weather_cli.py read-resource docs://readme
 
 The generated script embeds the resolved transport (URL or stdio command), so it's self-contained — users don't need to know about MCP or FastMCP to use it. Supports `-f` to overwrite existing files, and name-based resolution via `fastmcp discover`.
 
-Documentation: [Generate CLI](https://gofastmcp.com/v3/cli/generate-cli)
+Documentation: [Generate CLI](https://gofastmcp.com/docs/v3/cli/generate-cli)
 
 ### CLI: Goose Integration
 
@@ -326,7 +326,7 @@ fastmcp install goose server.py
 fastmcp install goose server.py --with pandas --python 3.11
 ```
 
-Also adds a full integration guide at [Goose Integration](https://gofastmcp.com/v3/integrations/goose).
+Also adds a full integration guide at [Goose Integration](https://gofastmcp.com/docs/v3/integrations/goose).
 
 ### ResponseLimitingMiddleware
 
@@ -352,7 +352,7 @@ Key features:
 - Size metadata added to result's `meta` field for monitoring
 - Configurable `raise_on_structured` and `raise_on_unstructured` behavior
 
-Documentation: [Middleware](https://gofastmcp.com/v3/servers/middleware)
+Documentation: [Middleware](https://gofastmcp.com/docs/v3/servers/middleware)
 
 ### Background Task Context (SEP-1686)
 
@@ -1112,7 +1112,7 @@ Features:
 - **Package support**: Directories with `__init__.py` support relative imports
 - **Warning deduplication**: Broken imports warn once per file modification
 
-Documentation: [FileSystemProvider](https://gofastmcp.com/v3/servers/providers/filesystem)
+Documentation: [FileSystemProvider](https://gofastmcp.com/docs/v3/servers/providers/filesystem)
 
 ---
 
@@ -1155,7 +1155,7 @@ Each subdirectory with a `SKILL.md` file becomes a discoverable skill. Clients s
 
 **Progressive disclosure**: By default, supporting files are hidden from `list_resources()` and accessed via template. Set `supporting_files="resources"` for full enumeration.
 
-Documentation: [Skills Provider](https://gofastmcp.com/v3/servers/providers/skills)
+Documentation: [Skills Provider](https://gofastmcp.com/docs/v3/servers/providers/skills)
 
 ---
 
@@ -1183,7 +1183,7 @@ trace.set_tracer_provider(provider)
 
 Components provide their own span attributes through a `get_span_attributes()` method that subclasses override—this lets LocalProvider, FastMCPProvider, and ProxyProvider each include relevant context (original names, backend URIs, etc.).
 
-Documentation: [Telemetry](https://gofastmcp.com/v3/servers/telemetry)
+Documentation: [Telemetry](https://gofastmcp.com/docs/v3/servers/telemetry)
 
 ---
 
@@ -1209,7 +1209,7 @@ async with Client(server) as client:
         result = await client.list_tools_mcp(cursor=result.next_cursor)
 ```
 
-Documentation: [Pagination](https://gofastmcp.com/v3/servers/pagination)
+Documentation: [Pagination](https://gofastmcp.com/docs/v3/servers/pagination)
 
 ---
 
@@ -1250,7 +1250,7 @@ from fastmcp.utilities.lifespan import combine_lifespans
 app = FastAPI(lifespan=combine_lifespans(app_lifespan, mcp_app.lifespan))
 ```
 
-Documentation: [Lifespan](https://gofastmcp.com/v3/servers/lifespan)
+Documentation: [Lifespan](https://gofastmcp.com/docs/v3/servers/lifespan)
 
 ---
 

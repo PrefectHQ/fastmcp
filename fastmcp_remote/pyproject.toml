@@ -32,7 +32,7 @@ classifiers = [
 [project.urls]
 Homepage = "https://gofastmcp.com"
 Repository = "https://github.com/PrefectHQ/fastmcp"
-Documentation = "https://gofastmcp.com"
+Documentation = "https://gofastmcp.com/docs"
 "Original npm project" = "https://github.com/geelen/mcp-remote"
 
 [project.scripts]

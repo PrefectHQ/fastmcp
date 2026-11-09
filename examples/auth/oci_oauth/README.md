@@ -23,7 +23,7 @@ This example demonstrates how to use the OCI IAM OAuth provider with FastMCP ser
 15. Make sure to Activate the client application.
 16. Note down client ID and client secret for the application. You'll use these values when configuring the OCIProvider in the MCP server.
 
-For details instructions with screenshots, please refer to [FastMCP OCI Provider Documentation](https://gofastmcp.com/integrations/oci).
+For details instructions with screenshots, please refer to [FastMCP OCI Provider Documentation](https://gofastmcp.com/docs/integrations/oci).
 
 ### 2. Set Environment Variables
 

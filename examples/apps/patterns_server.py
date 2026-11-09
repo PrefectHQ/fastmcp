@@ -1,6 +1,6 @@
 """Patterns showcase — every Prefab pattern from the docs in one server.
 
-A runnable collection of the patterns from https://gofastmcp.com/apps/patterns.
+A runnable collection of the patterns from https://gofastmcp.com/docs/apps/patterns.
 Each tool demonstrates a different Prefab UI pattern: charts, tables, forms,
 status displays, conditional content, tabs, and accordions.
 

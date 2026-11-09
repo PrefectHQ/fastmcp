@@ -418,7 +418,7 @@ def prompt(
     if isinstance(name_or_fn, classmethod):
         raise TypeError(
             "To decorate a classmethod, use @classmethod above @prompt. "
-            "See https://gofastmcp.com/servers/prompts#using-with-methods"
+            "See https://gofastmcp.com/docs/servers/prompts#using-with-methods"
         )
 
     def attach_metadata(fn: F, prompt_name: str | None) -> F:
