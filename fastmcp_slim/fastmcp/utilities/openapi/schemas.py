@@ -74,6 +74,20 @@ def clean_schema_for_display(schema: JsonSchema | None) -> JsonSchema | None:
     return cleaned
 
 
+# Keywords whose value is a single subschema
+_SUBSCHEMA_KEYWORDS = (
+    "propertyNames",
+    "contentSchema",
+    "not",
+    "if",
+    "then",
+    "else",
+    "contains",
+    "unevaluatedItems",
+    "unevaluatedProperties",
+)
+
+
 def _replace_ref_with_defs(
     info: dict[str, Any], description: str | None = None
 ) -> dict[str, Any]:
@@ -131,18 +145,18 @@ def _replace_ref_with_defs(
             schema["additionalProperties"] = _replace_ref_with_defs(
                 additionalProperties
             )
-    # Handle propertyNames
-    if property_names := schema.get("propertyNames"):
-        if isinstance(property_names, dict):
-            schema["propertyNames"] = _replace_ref_with_defs(property_names)
-    # Handle patternProperties
-    if pattern_properties := schema.get("patternProperties"):
-        if isinstance(pattern_properties, dict):
-            schema["patternProperties"] = {
-                pattern: _replace_ref_with_defs(subschema)
+    # Handle single-schema keywords
+    for keyword in _SUBSCHEMA_KEYWORDS:
+        if isinstance(schema.get(keyword), dict):
+            schema[keyword] = _replace_ref_with_defs(schema[keyword])
+    # Handle patternProperties and dependentSchemas
+    for keyword in ("patternProperties", "dependentSchemas"):
+        if isinstance(schema.get(keyword), dict):
+            schema[keyword] = {
+                name: _replace_ref_with_defs(subschema)
                 if isinstance(subschema, dict)
                 else subschema
-                for pattern, subschema in pattern_properties.items()
+                for name, subschema in schema[keyword].items()
             }
     if info.get("description", description) and not schema.get("description"):
         schema["description"] = description
@@ -517,6 +531,7 @@ def _combine_schemas_and_map_params(
     }
     body_schema: dict[str, Any] = {}
     body_props: dict[str, Any] = {}
+    body_defs: dict[str, Any] = {}
 
     for param in route.parameters:
         param_names_by_location[param.location].add(param.name)
@@ -531,6 +546,15 @@ def _combine_schemas_and_map_params(
             )
         else:
             body_schema = route.request_body.content_schema[content_type]
+        # The body schema's own $defs resolve its #/$defs/... references
+        # alongside the component schemas, so refs inside them are rewritten
+        # to #/$defs/... as well.
+        body_defs = {
+            name: _replace_ref_with_defs(def_schema)
+            if isinstance(def_schema, dict)
+            else def_schema
+            for name, def_schema in (body_schema.get("$defs") or {}).items()
+        }
 
         if route.request_body.description and not body_schema.get("description"):
             body_schema["description"] = route.request_body.description
@@ -713,7 +737,7 @@ def _combine_schemas_and_map_params(
         "required": required,
     }
     # Add schema definitions if available
-    schema_defs = route.request_schemas
+    schema_defs = {**route.request_schemas, **body_defs}
     if schema_defs:
         if convert_refs:
             # Need to convert refs and prune
@@ -894,6 +918,16 @@ def extract_output_schema_from_responses(
             definitions=definitions,
         )
 
+    # The schema's own $defs must be caught before wrapping hides them one
+    # level down; its #/$defs/... references keep resolving against the root,
+    # so refs inside them are rewritten to #/$defs/... as well.
+    inline_defs = {
+        name: _replace_ref_with_defs(def_schema)
+        if isinstance(def_schema, dict)
+        else def_schema
+        for name, def_schema in (output_schema.get("$defs") or {}).items()
+    }
+
     # MCP requires output schemas to be objects. If this schema is not an object,
     # we need to wrap it similar to how ParsedFunction.from_function() does it
     if output_schema.get("type") != "object":
@@ -906,7 +940,10 @@ def extract_output_schema_from_responses(
         }
         output_schema = wrapped_schema
 
-    # Add schema definitions if available
+    # Reattach the definitions at the root even when there are no component
+    # schemas: the non-object wrap moves the schema's own $defs one level down,
+    # while its #/$defs/... references keep resolving against the root.
+    processed_defs: dict[str, Any] = {}
     if schema_definitions:
         processed_defs = definitions.copy()
 
@@ -920,7 +957,10 @@ def extract_output_schema_from_responses(
                     definitions=definitions,
                 )
 
-        output_schema["$defs"] = processed_defs
+    if processed_defs or inline_defs:
+        # Same-named inline $defs win: the schema's #/$defs/... references
+        # are local to it, not to the component schemas.
+        output_schema["$defs"] = {**processed_defs, **inline_defs}
 
     return output_schema
 

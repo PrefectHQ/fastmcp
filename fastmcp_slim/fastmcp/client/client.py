@@ -668,6 +668,19 @@ class Client(
     def session(self) -> ClientSession:
         """Get the current active session. Raises RuntimeError if not connected."""
         if self._session_state.session is None:
+            # Inside a held context, a missing session means the connection was
+            # lost, not that the caller forgot to connect. Report that failure:
+            # the transport's own error once the session task has finished, and
+            # the SDK's closed-connection error while it is still unwinding.
+            session_task = self._session_state.session_task
+            if self._session_state.nesting_counter > 0 and session_task is not None:
+                if session_task.done() and not session_task.cancelled():
+                    exc = session_task.exception()
+                    if exc is not None:
+                        raise exc
+                raise MCPError(
+                    code=mcp_types.CONNECTION_CLOSED, message="Connection closed"
+                )
             raise RuntimeError(
                 "Client is not connected. Use the 'async with client:' context manager first."
             )
@@ -1338,6 +1351,8 @@ class Client(
             return await send()
         # A closed (or never-entered) client must raise, never serve cached entries.
         _ = self.session
+        if self.protocol_version not in MODERN_PROTOCOL_VERSIONS:
+            return await send()
         if cursor is not None:
             # Continuation pages skip the cache; an expired cursor means the listing
             # changed, so evict (spec SHOULD) and re-raise.
