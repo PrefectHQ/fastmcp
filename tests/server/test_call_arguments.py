@@ -5,6 +5,7 @@ from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import CallArgument, CycleError, Depends
+from fastmcp.exceptions import ValidationError
 from fastmcp.server.dependencies import resolve_dependencies
 
 
@@ -187,3 +188,209 @@ async def test_colliding_argument_never_reaches_call_argument(mcp: FastMCP):
     assert isinstance(content, TextContent)
     assert "role=user" in content.text
     assert "admin" not in content.text
+
+
+class TestLiftedCallArguments:
+    """A CallArgument naming no tool parameter becomes a tool argument."""
+
+    async def test_required_argument_joins_schema(self, mcp: FastMCP):
+        def current_workspace(workspace: str = CallArgument()) -> str:
+            return workspace
+
+        @mcp.tool()
+        async def list_items(resolved: str = Depends(current_workspace)) -> str:
+            return resolved
+
+        tool = await mcp.get_tool("list_items")
+        assert tool is not None
+        assert tool.parameters["properties"] == {"workspace": {"type": "string"}}
+        assert tool.parameters["required"] == ["workspace"]
+
+    async def test_optional_argument_is_nullable_with_none_default(self, mcp: FastMCP):
+        def current_workspace(
+            workspace: str | None = CallArgument(optional=True),
+        ) -> str:
+            return workspace or "default"
+
+        @mcp.tool()
+        async def list_items(resolved: str = Depends(current_workspace)) -> str:
+            return resolved
+
+        tool = await mcp.get_tool("list_items")
+        assert tool is not None
+        assert tool.parameters["properties"] == {
+            "workspace": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+            }
+        }
+        assert "required" not in tool.parameters
+
+        result = await mcp.call_tool("list_items", {})
+        assert result.structured_content == {"result": "default"}
+        result = await mcp.call_tool("list_items", {"workspace": "acme"})
+        assert result.structured_content == {"result": "acme"}
+
+    async def test_value_reaches_dependency_not_tool(self, mcp: FastMCP):
+        """The tool function has no `workspace` parameter, so receiving it would raise."""
+
+        def current_workspace(workspace: str = CallArgument()) -> str:
+            return f"ws:{workspace}"
+
+        @mcp.tool()
+        async def list_items(
+            limit: int, resolved: str = Depends(current_workspace)
+        ) -> str:
+            return f"{resolved}:{limit}"
+
+        result = await mcp.call_tool("list_items", {"limit": 3, "workspace": "acme"})
+        assert result.structured_content == {"result": "ws:acme:3"}
+
+    async def test_lifted_argument_is_validated(self, mcp: FastMCP):
+        def page(size: int = CallArgument()) -> int:
+            return size
+
+        @mcp.tool()
+        async def items(size_value: int = Depends(page)) -> int:
+            return size_value
+
+        result = await mcp.call_tool("items", {"size": "7"})
+        assert result.structured_content == {"result": 7}
+        with pytest.raises(ValidationError, match="size"):
+            await mcp.call_tool("items", {"size": "seven"})
+
+    async def test_tool_parameter_of_same_name_wins(self, mcp: FastMCP):
+        def current_workspace(workspace: int = CallArgument()) -> str:
+            return f"ws:{workspace}"
+
+        @mcp.tool()
+        async def list_items(
+            workspace: str, resolved: str = Depends(current_workspace)
+        ) -> str:
+            return f"{workspace}|{resolved}"
+
+        tool = await mcp.get_tool("list_items")
+        assert tool is not None
+        # The tool's own annotation, not the dependency's, types the argument.
+        assert tool.parameters["properties"] == {"workspace": {"type": "string"}}
+
+        result = await mcp.call_tool("list_items", {"workspace": "acme"})
+        assert result.structured_content == {"result": "acme|ws:acme"}
+
+    async def test_nested_dependency_lifts_argument(self, mcp: FastMCP):
+        def current_workspace(workspace: str = CallArgument()) -> str:
+            return workspace
+
+        def workspace_client(ws: str = Depends(current_workspace)) -> str:
+            return f"client({ws})"
+
+        @mcp.tool()
+        async def list_items(client: str = Depends(workspace_client)) -> str:
+            return client
+
+        tool = await mcp.get_tool("list_items")
+        assert tool is not None
+        assert tool.parameters["required"] == ["workspace"]
+
+        result = await mcp.call_tool("list_items", {"workspace": "acme"})
+        assert result.structured_content == {"result": "client(acme)"}
+
+    async def test_binding_lifts_argument(self, mcp: FastMCP):
+        def get_account(user_id: str) -> str:
+            return f"account:{user_id}"
+
+        @mcp.tool()
+        async def show(
+            account: str = Depends(get_account, user_id=CallArgument("owner")),
+        ) -> str:
+            return account
+
+        tool = await mcp.get_tool("show")
+        assert tool is not None
+        assert tool.parameters["properties"] == {"owner": {"type": "string"}}
+
+        result = await mcp.call_tool("show", {"owner": "alice"})
+        assert result.structured_content == {"result": "account:alice"}
+
+    async def test_dependencies_share_one_argument(self, mcp: FastMCP):
+        """One required reference makes the shared argument required."""
+
+        def current_workspace(workspace: str = CallArgument()) -> str:
+            return workspace
+
+        def maybe_workspace(
+            ws: str = CallArgument("workspace", optional=True),
+        ) -> str:
+            return ws.upper()
+
+        @mcp.tool()
+        async def list_items(
+            a: str = Depends(current_workspace), b: str = Depends(maybe_workspace)
+        ) -> str:
+            return f"{a}|{b}"
+
+        tool = await mcp.get_tool("list_items")
+        assert tool is not None
+        assert tool.parameters["properties"] == {"workspace": {"type": "string"}}
+        assert tool.parameters["required"] == ["workspace"]
+
+        result = await mcp.call_tool("list_items", {"workspace": "acme"})
+        assert result.structured_content == {"result": "acme|ACME"}
+
+    def test_conflicting_annotations_raise_at_registration(self, mcp: FastMCP):
+        def as_text(workspace: str = CallArgument()) -> str:
+            return workspace
+
+        def as_number(workspace: int = CallArgument()) -> int:
+            return workspace
+
+        async def list_items(
+            a: str = Depends(as_text), b: int = Depends(as_number)
+        ) -> str:
+            return a
+
+        with pytest.raises(ValueError, match="conflicting types"):
+            mcp.tool(list_items)
+
+    async def test_unmarked_dependency_parameters_are_not_lifted(self, mcp: FastMCP):
+        def current_workspace(workspace: str = "default") -> str:
+            return workspace
+
+        @mcp.tool()
+        async def list_items(resolved: str = Depends(current_workspace)) -> str:
+            return resolved
+
+        tool = await mcp.get_tool("list_items")
+        assert tool is not None
+        assert tool.parameters["properties"] == {}
+
+    async def test_prompt_lifts_argument(self, mcp: FastMCP):
+        def current_workspace(workspace: str = CallArgument()) -> str:
+            return f"ws:{workspace}"
+
+        @mcp.prompt()
+        def summary(topic: str, ws: str = Depends(current_workspace)) -> str:
+            return f"{topic}|{ws}"
+
+        prompt = await mcp.get_prompt("summary")
+        assert prompt is not None
+        assert [a.name for a in prompt.arguments or []] == ["topic", "workspace"]
+
+        result = await mcp.render_prompt(
+            "summary", {"topic": "sales", "workspace": "acme"}
+        )
+        content = result.messages[0].content
+        assert isinstance(content, TextContent)
+        assert content.text == "sales|ws:acme"
+
+    async def test_optional_reference_keeps_static_resource_static(self, mcp: FastMCP):
+        def get_note(tenant: str | None = CallArgument("tenant", optional=True)) -> str:
+            return f"tenant={tenant}"
+
+        @mcp.resource("notes://static")
+        def note(text: str = Depends(get_note)) -> str:
+            return text
+
+        assert [str(r.uri) for r in await mcp.list_resources()] == ["notes://static"]
+        result = await mcp.read_resource("notes://static")
+        assert result.contents[0].content == "tenant=None"

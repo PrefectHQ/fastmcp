@@ -463,6 +463,30 @@ When a client calls `show_account`, the factory receives the same `user_id` valu
 
 Clients still cannot override dependencies this way: an argument whose name collides with a dependency parameter is stripped before resolution, so a `CallArgument` reference to that parameter resolves the dependency itself.
 
+#### Arguments owned by a dependency
+
+A `CallArgument` can also name an argument the function doesn't declare. FastMCP then adds that argument to the function's arguments for the dependency alone. This lets a dependency own an argument that every tool using it should accept, without each tool declaring a parameter it never reads:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.dependencies import CallArgument, Depends
+
+mcp = FastMCP("Workspace Demo")
+
+
+async def current_workspace(workspace: str | None = CallArgument(optional=True)) -> str:
+    return workspace or "default"
+
+
+@mcp.tool
+async def list_items(resolved: str = Depends(current_workspace)) -> str:
+    return resolved
+```
+
+The input schema of `list_items` has a `workspace` argument, typed from the dependency parameter's annotation. FastMCP validates it with the tool's other arguments and passes it to `current_workspace`, never to `list_items`. The argument is required unless the reference is `optional=True`, which makes it nullable with a default of `None`. FastMCP finds these references in nested dependencies and in bindings too. Several dependencies can read the same argument as long as they annotate it the same way; conflicting annotations raise an error when the tool is registered. A function parameter with the same name always takes precedence, so a dependency reads it as before.
+
+Only parameters marked with `CallArgument` become arguments. A dependency's plain parameters keep their defaults and never appear in the schema.
+
 ### Bindings
 
 <VersionBadge version="4.0.0" />

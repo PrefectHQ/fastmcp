@@ -309,7 +309,10 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
     from fastmcp.resources.base import Resource
     from fastmcp.resources.function_resource import ResourceMeta
     from fastmcp.resources.template import ResourceTemplate
-    from fastmcp.server.dependencies import without_injected_parameters
+    from fastmcp.server.dependencies import (
+        lifted_call_arguments,
+        without_injected_parameters,
+    )
     from fastmcp.tools.base import Tool
     from fastmcp.tools.function_tool import ToolMeta
 
@@ -356,7 +359,11 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
             elif isinstance(meta, ResourceMeta):
                 has_uri_params = "{" in meta.uri and "}" in meta.uri
                 wrapper_fn = without_injected_parameters(obj)
-                has_func_params = bool(inspect.signature(wrapper_fn).parameters)
+                lifted = lifted_call_arguments(obj)
+                has_func_params = any(
+                    name not in lifted
+                    for name in inspect.signature(wrapper_fn).parameters
+                )
 
                 if has_uri_params or has_func_params:
                     resource = ResourceTemplate.from_function(

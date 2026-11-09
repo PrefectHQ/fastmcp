@@ -17,7 +17,15 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import lru_cache
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Protocol, cast, get_type_hints, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Optional,
+    Protocol,
+    cast,
+    get_type_hints,
+    runtime_checkable,
+)
 
 from mcp.server.auth.middleware.auth_context import (
     get_access_token as _sdk_get_access_token,
@@ -35,7 +43,9 @@ from uncalled_for import (
     Dependency,
     frame_scope,
     get_dependency_parameters,
+    get_signature,
 )
+from uncalled_for.frames import _CallArgument
 from uncalled_for.resolution import _Depends
 
 from fastmcp.exceptions import FastMCPError
@@ -720,6 +730,123 @@ def get_access_token() -> AccessToken | None:
 # --- Schema generation helper ---
 
 
+@dataclass
+class _LiftedArgument:
+    annotation: Any
+    optional: bool
+    owner: Callable[..., Any]
+
+
+def _qualname(obj: Any) -> str:
+    return getattr(obj, "__qualname__", repr(obj))
+
+
+def _parameter_hints(factory: Callable[..., Any]) -> dict[str, Any]:
+    """Resolve a dependency factory's parameter annotations, best effort."""
+    target = factory.__init__ if isinstance(factory, type) else factory
+    try:
+        return get_function_type_hints(target)
+    except Exception:
+        return getattr(target, "__annotations__", {})
+
+
+def lifted_call_arguments(fn: Callable[..., Any]) -> dict[str, inspect.Parameter]:
+    """Find the arguments that `fn`'s dependencies read but `fn` doesn't declare.
+
+    Walks the `Depends()` graph on `fn`'s signature, including bindings and
+    nested dependencies, for `CallArgument()` references. A reference that
+    names a parameter of `fn` reads that parameter as usual. Any other
+    reference becomes an argument of the call that only the dependencies see:
+    it is typed from the dependency parameter's annotation, and it is required
+    unless the reference is `optional`, in which case it is nullable and
+    defaults to `None`. References from several dependencies to one name share
+    one argument, so their annotations must match.
+
+    Returns keyword-only parameters, keyed by argument name.
+    """
+    own_parameters = set(get_signature(fn).parameters)
+    found: dict[str, _LiftedArgument] = {}
+    visiting: list[Callable[..., Any]] = []
+
+    def record(
+        name: str, annotation: Any, optional: bool, owner: Callable[..., Any]
+    ) -> None:
+        if name in own_parameters:
+            return
+        existing = found.get(name)
+        if existing is None:
+            found[name] = _LiftedArgument(annotation, optional, owner)
+            return
+        if existing.annotation != annotation:
+            raise ValueError(
+                f"Dependencies of {_qualname(fn)!r} read the call argument "
+                f"{name!r} with conflicting types: {_qualname(existing.owner)!r} "
+                f"declares {existing.annotation!r} and {_qualname(owner)!r} "
+                f"declares {annotation!r}. Use the same annotation in both."
+            )
+        # A required reference raises when the argument is missing, so one
+        # required reference makes the shared argument required.
+        existing.optional = existing.optional and optional
+
+    def visit(
+        dependency: Any, parameter: str, annotation: Any, owner: Callable[..., Any]
+    ) -> None:
+        if isinstance(dependency, _CallArgument):
+            record(
+                dependency.parameter or parameter,
+                annotation,
+                dependency.optional,
+                owner,
+            )
+        elif isinstance(dependency, _Depends):
+            depends = cast("_Depends[Any]", dependency)
+            visit_factory(depends.factory, depends.bindings)
+
+    def visit_factory(factory: Callable[..., Any], bindings: Mapping[str, Any]) -> None:
+        if factory in visiting:
+            return
+        visiting.append(factory)
+        try:
+            hints = _parameter_hints(factory)
+            for name, parameter in get_signature(factory).parameters.items():
+                dependency = bindings.get(name, parameter.default)
+                default_annotation = (
+                    Any
+                    if parameter.annotation is inspect.Parameter.empty
+                    else parameter.annotation
+                )
+                visit(dependency, name, hints.get(name, default_annotation), factory)
+        finally:
+            visiting.pop()
+
+    visit_factory(fn, {})
+
+    return {
+        name: inspect.Parameter(
+            name,
+            inspect.Parameter.KEYWORD_ONLY,
+            annotation=(
+                Optional[lifted.annotation]  # noqa: UP045
+                if lifted.optional
+                else lifted.annotation
+            ),
+            default=None if lifted.optional else inspect.Parameter.empty,
+        )
+        for name, lifted in found.items()
+    }
+
+
+def with_keyword_parameters(
+    parameters: list[inspect.Parameter], extra: list[inspect.Parameter]
+) -> list[inspect.Parameter]:
+    """Append keyword-only `extra` parameters, keeping `**kwargs` last."""
+    if not extra:
+        return parameters
+    if parameters and parameters[-1].kind is inspect.Parameter.VAR_KEYWORD:
+        return [*parameters[:-1], *extra, parameters[-1]]
+    return [*parameters, *extra]
+
+
 @lru_cache(maxsize=5000)
 def without_injected_parameters(
     fn: Callable[..., Any], *, run_in_thread: bool = True
@@ -760,18 +887,30 @@ def without_injected_parameters(
     if not exclude:
         return fn
 
+    # Arguments the dependencies read with CallArgument() but fn doesn't
+    # declare join the signature, so they are validated and appear in the
+    # schema, but they only feed dependency resolution.
+    lifted = lifted_call_arguments(fn)
+
     # Build new signature with only user parameters
     sig = inspect.signature(fn)
     user_params = [
         param for name, param in sig.parameters.items() if name not in exclude
     ]
-    new_sig = inspect.Signature(user_params)
+    new_sig = inspect.Signature(
+        with_keyword_parameters(user_params, list(lifted.values()))
+    )
 
     # Create async wrapper that handles dependency resolution
     fn_is_async = is_coroutine_function(fn)
 
     async def wrapper(**user_kwargs: Any) -> Any:
-        async with resolve_dependencies(fn, user_kwargs) as resolved_kwargs:
+        call_arguments = {
+            name: user_kwargs.pop(name) for name in lifted if name in user_kwargs
+        }
+        async with resolve_dependencies(
+            fn, user_kwargs, call_arguments=call_arguments
+        ) as resolved_kwargs:
             if fn_is_async:
                 result = await fn(**resolved_kwargs)
             elif run_in_thread:
@@ -806,6 +945,9 @@ def without_injected_parameters(
     wrapper.__annotations__ = {
         k: v for k, v in resolved_hints.items() if k not in exclude and k != "return"
     }
+    wrapper.__annotations__.update(
+        {name: param.annotation for name, param in lifted.items()}
+    )
     wrapper.__name__ = getattr(fn, "__name__", "wrapper")
     wrapper.__doc__ = getattr(fn, "__doc__", None)
     wrapper.__module__ = fn.__module__
@@ -819,7 +961,9 @@ def without_injected_parameters(
 
 @asynccontextmanager
 async def _resolve_fastmcp_dependencies(
-    fn: Callable[..., Any], arguments: dict[str, Any]
+    fn: Callable[..., Any],
+    arguments: dict[str, Any],
+    call_arguments: Mapping[str, Any] | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Resolve uncalled-for dependencies for a FastMCP function.
 
@@ -838,6 +982,8 @@ async def _resolve_fastmcp_dependencies(
     Args:
         fn: The function to resolve dependencies for
         arguments: The arguments passed to the function
+        call_arguments: Arguments only the resolution frame sees, for
+            `CallArgument()` references to names `fn` doesn't declare
 
     Yields:
         Dictionary of resolved dependencies merged with provided arguments
@@ -857,7 +1003,7 @@ async def _resolve_fastmcp_dependencies(
                 # The frame memoizes each parameter per call, so a
                 # CallArgument() that references a sibling dependency gets
                 # the same value the function receives for it.
-                with frame_scope(fn, arguments) as frame:
+                with frame_scope(fn, {**(call_arguments or {}), **arguments}) as frame:
                     resolved: dict[str, Any] = {}
 
                     for parameter in dependency_params:
@@ -891,7 +1037,10 @@ async def _resolve_fastmcp_dependencies(
 
 @asynccontextmanager
 async def resolve_dependencies(
-    fn: Callable[..., Any], arguments: dict[str, Any]
+    fn: Callable[..., Any],
+    arguments: dict[str, Any],
+    *,
+    call_arguments: Mapping[str, Any] | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Resolve dependencies for a FastMCP function.
 
@@ -913,6 +1062,9 @@ async def resolve_dependencies(
         fn: The function to resolve dependencies for
         arguments: User arguments (may contain keys that match dependency names,
                   which will be filtered out)
+        call_arguments: Arguments that only `CallArgument()` references read
+                  (see `lifted_call_arguments`). They feed the resolution
+                  frame but are not passed to `fn`.
 
     Yields:
         Dictionary of filtered user args + resolved dependencies
@@ -930,8 +1082,13 @@ async def resolve_dependencies(
     # provide values for injected parameters
     dependency_params = get_dependency_parameters(fn)
     user_args = {k: v for k, v in arguments.items() if k not in dependency_params}
+    extra_args = {
+        k: v for k, v in (call_arguments or {}).items() if k not in dependency_params
+    }
 
-    async with _resolve_fastmcp_dependencies(fn, user_args) as resolved_kwargs:
+    async with _resolve_fastmcp_dependencies(
+        fn, user_args, extra_args
+    ) as resolved_kwargs:
         yield resolved_kwargs
 
 

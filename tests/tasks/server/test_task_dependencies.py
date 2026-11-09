@@ -325,3 +325,23 @@ async def test_background_tool_resolves_call_argument_binding():
     assert final.status == "completed"
     assert final.result is not None
     assert final.result["structuredContent"] == {"result": "alice:pro"}
+
+
+async def test_background_tool_resolves_lifted_call_argument():
+    """A CallArgument naming no tool parameter reaches the dependency in a worker."""
+    mcp = FastMCP("lifted-call-argument-task")
+    mcp.add_extension(TasksExtension())
+
+    def current_workspace(workspace: str = CallArgument()) -> str:
+        return f"ws:{workspace}"
+
+    @mcp.tool(task=True)
+    async def list_items(limit: int, resolved: str = Depends(current_workspace)) -> str:
+        return f"{resolved}:{limit}"
+
+    async with running_task_server(mcp):
+        final = await run_task(mcp, "list_items", {"limit": 3, "workspace": "acme"})
+
+    assert final.status == "completed"
+    assert final.result is not None
+    assert final.result["structuredContent"] == {"result": "ws:acme:3"}

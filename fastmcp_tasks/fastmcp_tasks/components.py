@@ -22,6 +22,7 @@ because core still declares them.
 
 from __future__ import annotations
 
+import functools
 import inspect
 import logging
 from typing import TYPE_CHECKING, Any
@@ -67,7 +68,8 @@ def register_component_with_docket(component: FastMCPComponent, docket: Docket) 
         # wrapper is signature-preserving, so Docket's dependency injection is
         # unchanged for a body that never asks for input.
         docket.register(
-            reentrant_task_fn(component.fn, component.name), names=[component.key]
+            reentrant_task_fn(_accept_call_arguments(component.fn), component.name),
+            names=[component.key],
         )
     elif isinstance(component, Tool):
         # Custom Tool subclasses route through the same wrapper so a raised
@@ -93,6 +95,41 @@ def register_component_with_docket(component: FastMCPComponent, docket: Docket) 
         raise NotImplementedError(
             f"{type(component).__name__} does not support Docket registration"
         )
+
+
+def _accept_call_arguments(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """Accept the arguments only `fn`'s dependencies read, without passing them on.
+
+    Docket binds a task's arguments to the registered function's signature to
+    build the resolution frame, then calls it with them. An argument lifted
+    from a `CallArgument()` reference must reach that frame, but `fn` itself
+    doesn't accept it.
+    """
+    from fastmcp.server.dependencies import (
+        lifted_call_arguments,
+        with_keyword_parameters,
+    )
+
+    lifted = lifted_call_arguments(fn)
+    if not lifted:
+        return fn
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        for name in lifted:
+            kwargs.pop(name, None)
+        result = fn(*args, **kwargs)
+        if inspect.isawaitable(result):
+            result = await result
+        return result
+
+    signature = inspect.signature(fn)
+    wrapper.__signature__ = signature.replace(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        parameters=with_keyword_parameters(
+            list(signature.parameters.values()), list(lifted.values())
+        )
+    )
+    return wrapper
 
 
 async def add_component_to_docket(

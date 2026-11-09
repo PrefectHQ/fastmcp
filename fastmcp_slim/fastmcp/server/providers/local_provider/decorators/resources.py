@@ -49,14 +49,23 @@ class ResourceDecoratorMixin:
         if not isinstance(resource, (Resource, ResourceTemplate)):
             from fastmcp.decorators import get_fastmcp_meta
             from fastmcp.resources.function_resource import ResourceMeta
-            from fastmcp.server.dependencies import without_injected_parameters
+            from fastmcp.server.dependencies import (
+                lifted_call_arguments,
+                without_injected_parameters,
+            )
 
             meta = get_fastmcp_meta(resource)
             if meta is not None and isinstance(meta, ResourceMeta):
                 enabled = meta.enabled
                 has_uri_params = "{" in meta.uri and "}" in meta.uri
                 wrapper_fn = without_injected_parameters(resource)
-                has_func_params = bool(inspect.signature(wrapper_fn).parameters)
+                # Arguments lifted from CallArgument() references don't make
+                # a static resource a template; they're optional there.
+                lifted = lifted_call_arguments(resource)
+                has_func_params = any(
+                    name not in lifted
+                    for name in inspect.signature(wrapper_fn).parameters
+                )
 
                 if has_uri_params or has_func_params:
                     resource = ResourceTemplate.from_function(
