@@ -25,14 +25,21 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: .github/agentic
+        working-directory: source/.github/agentic
     env:
       # prefect-technologies/marvin-bot
       PREFECT_WORKSPACE_ID: cafa2ffa-f6cc-4ed6-ab76-eaa4ba1ad40e
       PREFECT_WORKSPACE_HANDLE: prefect-technologies/marvin-bot
     steps:
+      # The driver always comes from main's tip so older targets can be deployed
+      # (rollback) even when they predate it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          path: driver
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: source
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0
           persist-credentials: false
@@ -42,7 +49,7 @@ jobs:
         with:
           python-version: "3.12"
           enable-cache: true
-          cache-dependency-glob: ".github/agentic/uv.lock"
+          cache-dependency-glob: "source/.github/agentic/uv.lock"
       - run: uv sync --locked
       - name: Resolve workspace API URL
         env:
@@ -61,4 +68,4 @@ jobs:
         env:
           PREFECT_API_KEY: ${{ secrets.PREFECT_API_KEY }}
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/agentic_stack.sh deploy
+        run: FASTMCP_AGENTIC_DIR="$PWD" bash "$GITHUB_WORKSPACE/driver/.github/agentic/scripts/agentic_stack.sh" deploy

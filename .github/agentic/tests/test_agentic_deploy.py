@@ -94,8 +94,9 @@ def stack(tmp_path):
     repo = tmp_path / "repo"
     agentic = repo / ".github/agentic"
     agentic.mkdir(parents=True)
-    for part in ("scripts", "workflows"):
-        shutil.copytree(ROOT / part, agentic / part)
+    # The checkout under deploy has no copy of the driver, like a rollback target
+    # that predates it.
+    shutil.copytree(ROOT / "workflows", agentic / "workflows")
     shutil.copy(ROOT / "prefect.yaml", agentic)
     git(repo, "init", "-q")
     git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "add", ".")
@@ -128,9 +129,10 @@ def stack(tmp_path):
 
     def deploy(active_runs: list | None = None) -> subprocess.CompletedProcess:
         return subprocess.run(
-            ["bash", str(agentic / "scripts/agentic_stack.sh"), "deploy"],
+            ["bash", str(ROOT / "scripts/agentic_stack.sh"), "deploy"],
             env={
                 **os.environ,
+                "FASTMCP_AGENTIC_DIR": str(agentic),
                 "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
                 "STATE": str(state),
                 "ACTIVE_RUNS": json.dumps(active_runs or []),

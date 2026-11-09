@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")/.."
+# FASTMCP_AGENTIC_DIR lets a newer driver operate on an older checkout (rollback).
+cd "${FASTMCP_AGENTIC_DIR:-$(dirname "$0")/..}"
 : "${PREFECT_API_URL:?Set the Prefect Cloud workspace API URL}"
 [[ $PREFECT_API_URL == https://api.prefect.cloud/api/accounts/*/workspaces/* ]] || {
   echo "Expected a Prefect Cloud workspace API URL" >&2; exit 2;
