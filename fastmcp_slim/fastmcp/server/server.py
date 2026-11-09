@@ -942,13 +942,15 @@ class FastMCP(
         if tools and is_enabled(tools[0]) and await _component_auth_allows(tools[0]):
             return tools[0]
 
-        # The highest version is disabled. If an explicit version was
-        # requested, respect that. Otherwise fall back to the next-highest
-        # enabled version.
-        if version is not None:
-            return None
-
         all_tools = [t for t in await super().list_tools() if t.name == name]
+        if version is not None:
+            # A transform can map several source versions to the same public
+            # version. Allow another enabled source, but not a different version.
+            all_tools = [
+                t
+                for t in all_tools
+                if t.version == tool.version and version.matches(t.version)
+            ]
         # During a hashed lookup, only versions of the identity being looked
         # up qualify; another tool listed under the same name does not.
         found = hashed_lookup_target(self)

@@ -79,8 +79,16 @@ class ToolTransform(Transform):
         # Check if this name is a transformed name
         original_name = self._name_reverse.get(name, name)
 
+        config = self._transforms.get(original_name)
+        source_version = version
+        if config is not None and "version" in config.model_fields_set:
+            if version is not None and not version.matches(config.version):
+                return None
+            # The requested version describes the transformed tool, not its source.
+            source_version = None
+
         # Get the original tool
-        tool = await call_next(original_name, version=version)
+        tool = await call_next(original_name, version=source_version)
         if tool is None:
             return None
 
