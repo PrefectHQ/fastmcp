@@ -33,9 +33,7 @@ from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import partial
-from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
-
-from typing_extensions import Self
+from typing import TYPE_CHECKING, Any, Literal, Self, TypeVar, cast
 
 from fastmcp.server.providers.addressing import (
     is_app_tool_with_identity,

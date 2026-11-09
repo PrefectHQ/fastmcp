@@ -73,6 +73,7 @@ from typing import (
     ForwardRef,
     Generic,
     Literal,
+    NotRequired,
     TypeVar,
     Union,
     cast,
@@ -95,7 +96,7 @@ from pydantic import (
 )
 from pydantic.fields import FieldInfo
 from pydantic_core import SchemaError as _PydanticSchemaError
-from typing_extensions import NotRequired, TypedDict
+from typing_extensions import TypedDict
 
 __all__ = ["JSONSchema", "json_schema_to_type"]
 

@@ -27,7 +27,7 @@ from __future__ import annotations
 import datetime
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Self, cast
 from urllib.parse import urlparse
 
 import httpx2
@@ -39,7 +39,7 @@ from pydantic import (
     PrivateAttr,
     model_validator,
 )
-from typing_extensions import Self, override
+from typing_extensions import override
 
 from fastmcp import _install_hints
 
