@@ -1,5 +1,6 @@
 """Main files and directory entries in skill providers."""
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -11,9 +12,10 @@ from fastmcp.server.providers.skills import SkillProvider, SkillsDirectoryProvid
 
 # These providers are deprecated; tests/skills/test_deprecated_paths.py checks
 # the warnings.
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::fastmcp._warnings.FastMCPDeprecationWarning"
-)
+pytestmark = [
+    pytest.mark.filterwarnings("ignore::fastmcp._warnings.FastMCPDeprecationWarning"),
+    pytest.mark.skipif(sys.platform == "win32", reason="Symlinks need privileges"),
+]
 
 
 def make_skill(path: Path, content: str = "# Instructions") -> Path:

@@ -1,6 +1,7 @@
 """Tests for SkillProvider, SkillsDirectoryProvider, and ClaudeSkillsProvider."""
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -359,6 +360,7 @@ This is my skill content.
             assert "reference.md" in paths
             assert "scripts/helper.py" in paths
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Symlinks need privileges")
     async def test_manifest_ignores_symlink_target_outside_skill(self, tmp_path: Path):
         skill_dir = tmp_path / "symlinked-skill"
         skill_dir.mkdir()
