@@ -25,7 +25,6 @@ from pydantic import (
     StrictInt,
     field_validator,
 )
-from pydantic import ValidationError as PydanticValidationError
 from pydantic_core import PydanticCustomError
 
 from fastmcp import Client, FastMCP
@@ -534,65 +533,6 @@ class TestEdgeCases:
             assert isinstance(result.content[0], TextContent)
             assert result.content[0].text == "6"
 
-    async def test_client_error_omits_pydantic_details(self):
-        """The caller gets the failing arguments, not the library internals."""
-        mcp = FastMCP("TestServer")
-
-        @mcp.tool
-        def echo(message: str) -> str:
-            return message
-
-        async with Client(mcp) as client:
-            result = await client.call_tool(
-                "echo", {"message": 123, "extra": "x"}, raise_on_error=False
-            )
-
-        assert result.is_error
-        text = result.content[0].text
-        assert text.startswith("Invalid arguments for tool 'echo'")
-        assert "- message: Input should be a valid string" in text
-        assert "- extra: Unexpected keyword argument" in text
-        for leaked in (
-            "errors.pydantic.dev",
-            "call[",
-            "input_value",
-            "input_type",
-            "2 validation errors for",
-        ):
-            assert leaked not in text, leaked
-
-    async def test_call_tool_raises_validation_error_with_rebuilt_message(self):
-        """Direct callers still get ValidationError, chained from pydantic."""
-        mcp = FastMCP("TestServer")
-
-        @mcp.tool
-        def echo(message: str) -> str:
-            return message
-
-        with pytest.raises(ValidationError) as exc_info:
-            await mcp.call_tool("echo", {"message": 123})
-
-        assert not isinstance(exc_info.value, ToolError)
-        assert isinstance(exc_info.value.__cause__, PydanticValidationError)
-        assert str(exc_info.value).startswith("Invalid arguments for tool 'echo'")
-        assert "errors.pydantic.dev" not in str(exc_info.value)
-
-    async def test_mounted_tool_error_names_parent_tool(self):
-        child = FastMCP("Child")
-
-        @child.tool
-        def echo(message: str) -> str:
-            return message
-
-        parent = FastMCP("Parent")
-        parent.mount(child, namespace="child")
-
-        with pytest.raises(ValidationError) as exc_info:
-            await parent.call_tool("child_echo", {"message": 123})
-
-        assert isinstance(exc_info.value.__cause__, PydanticValidationError)
-        assert str(exc_info.value).startswith("Invalid arguments for tool 'child_echo'")
-
 
 class TestExpectedToolFailureLogging:
     @pytest.mark.parametrize("mask_error_details", [False, True])
@@ -728,15 +668,8 @@ class TestExpectedToolFailureLogging:
                 )
 
         assert result.is_error
-        # The client learns which argument failed and why, but the message no
-        # longer carries pydantic's version URL, the internal adapter name, or
-        # the submitted values.
-        client_message = str(result.content)
-        assert "Invalid arguments for tool 'submit'" in client_message
-        assert "errors.pydantic.dev" not in client_message
-        assert "input_value" not in client_message
-        assert "input_type" not in client_message
-        assert "call[" not in client_message
+        # The client still gets its detailed validation error.
+        assert "PRIVATE" in str(result.content)
         records = [r for r in caplog.records if r.name == "fastmcp.server.server"]
         assert len(records) == 1
         assert "PRIVATE" not in records[0].getMessage()

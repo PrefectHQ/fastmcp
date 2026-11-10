@@ -7,6 +7,7 @@ import inspect
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import lru_cache
 from types import MethodType
 from typing import (
     Annotated,
@@ -37,7 +38,6 @@ from fastmcp.tools.base import (
     ToolResult,
 )
 from fastmcp.tools.function_parsing import ParsedFunction
-from fastmcp.utilities._callable_cache import cache_on_callable
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -81,7 +81,7 @@ def _materialize_sync_generator(result: Any) -> Any:
     return result
 
 
-@cache_on_callable
+@lru_cache(maxsize=5000)
 def _wrap_body_errors(
     fn: Callable[..., Any], *, materialize_generators: bool = False
 ) -> Callable[..., Any]:
