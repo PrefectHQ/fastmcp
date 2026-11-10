@@ -1,11 +1,13 @@
+from collections.abc import Callable
 from typing import Annotated, Any
 
 import pytest
 from dirty_equals import IsList
 from inline_snapshot import snapshot
-from mcp_types import TextContent
+from mcp_types import InputRequiredResult, TextContent
 from pydantic import BaseModel, Field, TypeAdapter
 
+from fastmcp import Client, FastMCP
 from fastmcp.tools import Tool, forward
 from fastmcp.tools.base import ToolResult
 from fastmcp.tools.function_tool import FunctionTool
@@ -13,6 +15,20 @@ from fastmcp.tools.tool_transform import (
     ArgTransform,
     TransformedTool,
 )
+from tests.tools.tool._pep563_none_fixture import (
+    do_nothing,
+    do_nothing_async,
+    do_nothing_guarded_async,
+    give_int,
+)
+
+
+def do_nothing_without_future() -> None:
+    return None
+
+
+def do_nothing_guarded_without_future() -> InputRequiredResult | None:
+    return None
 
 
 def get_property(tool: Tool, name: str) -> dict[str, Any]:
@@ -238,6 +254,80 @@ class TestTransformToolOutputSchema:
 
         # Should use parent's schema since custom function has no annotation
         assert new_tool.output_schema == base_string_tool.output_schema
+
+    @pytest.mark.parametrize(
+        "func",
+        [
+            do_nothing,
+            do_nothing_async,
+            do_nothing_without_future,
+            do_nothing_guarded_async,
+            do_nothing_guarded_without_future,
+        ],
+    )
+    async def test_none_transform_does_not_inherit_schema(
+        self, func: Callable[..., Any]
+    ) -> None:
+        transformed = Tool.from_tool(give_int, name="discard", transform_fn=func)
+        server = FastMCP("none-transform")
+        server.add_tool(transformed)
+
+        async with Client(server) as client:
+            result = await client.call_tool("discard", {})
+            tools = await client.list_tools()
+            assert tools[0].output_schema is None
+            assert result.content == []
+            assert result.structured_content is None
+
+    @pytest.mark.parametrize("annotated", [False, True])
+    async def test_unspecified_transform_retains_parent_schema(
+        self, annotated: bool
+    ) -> None:
+        async def unannotated():
+            return await forward()
+
+        async def any_return() -> Any:
+            return await forward()
+
+        parent = Tool.from_function(give_int)
+        transformed = Tool.from_tool(
+            parent,
+            name="forward_int",
+            transform_fn=any_return if annotated else unannotated,
+        )
+        server = FastMCP("forward-transform")
+        server.add_tool(transformed)
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            assert tools[0].output_schema == parent.output_schema
+            result = await client.call_tool("forward_int", {})
+            assert result.structured_content == {"result": 42}
+
+    @pytest.mark.parametrize("func", [do_nothing_async, do_nothing_guarded_async])
+    async def test_none_transform_explicit_schema_takes_precedence(
+        self, func: Callable[..., Any]
+    ) -> None:
+        schema = {
+            "type": "object",
+            "properties": {"result": {"type": "null"}},
+            "required": ["result"],
+            "x-fastmcp-wrap-result": True,
+        }
+        transformed = Tool.from_tool(
+            give_int,
+            name="explicit_null",
+            transform_fn=func,
+            output_schema=schema,
+        )
+        server = FastMCP("explicit-transform")
+        server.add_tool(transformed)
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            assert tools[0].output_schema == schema
+            result = await client.call_tool("explicit_null", {})
+            assert result.structured_content == {"result": None}
 
     def test_transform_custom_function_explicit_overrides(self, base_string_tool):
         """Test that explicit output_schema overrides both custom function and parent."""

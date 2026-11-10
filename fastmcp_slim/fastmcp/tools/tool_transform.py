@@ -20,7 +20,11 @@ from fastmcp.tools.base import (
     Tool,
     ToolResult,
 )
-from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
+from fastmcp.tools.function_parsing import (
+    ParsedFunction,
+    _is_object_schema,
+    _strip_input_required,
+)
 from fastmcp.tools.function_tool import FunctionTool, _ToolBodyError, _wrap_body_errors
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
@@ -609,11 +613,14 @@ class TransformedTool(Tool):
                 # parsed fn is not none here
                 final_output_schema = cast(ParsedFunction, parsed_fn).output_schema
                 if final_output_schema is None:
-                    # Check if function returns ToolResult (or subclass) - if so, don't fall back to parent.
-                    # Use parsed_fn.return_type (resolved via get_type_hints) instead of
-                    # inspect.signature, which returns strings under `from __future__ import annotations`.
-                    return_type = cast(ParsedFunction, parsed_fn).return_type
-                    if issubclass_safe(return_type, ToolResult):
+                    # Explicit no-data returns must not inherit the parent schema.
+                    # Use resolved hints so postponed annotations behave the same way.
+                    return_type = _strip_input_required(
+                        cast(ParsedFunction, parsed_fn).return_type
+                    )
+                    if return_type in (None, type(None)) or issubclass_safe(
+                        return_type, ToolResult
+                    ):
                         final_output_schema = None
                     else:
                         final_output_schema = tool.output_schema

@@ -21,6 +21,11 @@ from fastmcp import Client, FastMCP
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import Audio, File, Image
+from tests.tools.tool._pep563_none_fixture import (
+    do_nothing,
+    do_nothing_async,
+    give_int,
+)
 
 
 class TestToolFromFunctionOutputSchema:
@@ -39,6 +44,7 @@ class TestToolFromFunctionOutputSchema:
             bool,
             str,
             int | float,
+            int | None,
             list[int],
             list[int | float],
             dict,
@@ -104,6 +110,32 @@ class TestToolFromFunctionOutputSchema:
 
         tool = Tool.from_function(func)
         assert tool.output_schema is None
+
+    @pytest.mark.parametrize("func", [do_nothing, do_nothing_async])
+    async def test_none_return_annotation_under_pep563(self, func):
+        tool = Tool.from_function(func)
+        assert tool.output_schema is None
+
+        result = await tool.run({})
+        assert result.structured_content is None
+        assert result.content == []
+
+    async def test_none_return_annotation_under_pep563_via_client(self):
+        mcp = FastMCP("pep563-none")
+        mcp.add_tool(do_nothing)
+        mcp.add_tool(give_int)
+
+        async with Client(mcp) as c:
+            tools = await c.list_tools()
+            by_name = {t.name: t for t in tools}
+            assert by_name["do_nothing"].output_schema is None
+
+            result = await c.call_tool("do_nothing", {})
+            assert result.structured_content is None
+            assert result.content == []
+            assert by_name["give_int"].output_schema is not None
+            typed_result = await c.call_tool("give_int", {})
+            assert typed_result.structured_content == {"result": 42}
 
     async def test_any_return_annotation(self):
         from typing import Any

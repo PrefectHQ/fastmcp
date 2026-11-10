@@ -437,7 +437,8 @@ class ParsedFunction:
         # to the wire without touching the output schema.
         output_type = _strip_input_required(output_type)
 
-        if output_type not in (inspect._empty, None, Any, ...):
+        # Resolving a postponed ``-> None`` annotation produces ``type(None)``.
+        if output_type not in (inspect._empty, None, type(None), Any, ...):
             # bytes can't be represented as structured JSON output — skip schema
             if _contains_bytes_type(output_type):
                 output_type = _UnserializableType
