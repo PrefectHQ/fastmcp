@@ -171,6 +171,10 @@ def fastmcp_server():
             )
         return 100
 
+    @mcp.tool
+    async def hide_echo(context: Context) -> None:
+        await context.disable_components(names={"echo"})
+
     return mcp
 
 
@@ -450,6 +454,24 @@ class TestProxyClient:
             await client.call_tool("report_progress", {})
 
         assert PROGRESS_MESSAGES == EXPECTED_PROGRESS_MESSAGES
+
+    async def test_forward_list_changed_notifications(self, proxy_server: FastMCP):
+        received: list[str] = []
+
+        async def message_handler(message: Any) -> None:
+            if not isinstance(message, Exception):
+                received.append(message.method)
+
+        async with Client(
+            proxy_server, mode="legacy", message_handler=message_handler
+        ) as client:
+            await client.call_tool("hide_echo", {})
+
+        assert received == [
+            "notifications/tools/list_changed",
+            "notifications/resources/list_changed",
+            "notifications/prompts/list_changed",
+        ]
 
     async def test_concurrent_log_requests_no_mixing(self, proxy_server: FastMCP):
         """Test that concurrent log requests don't mix handlers (fixes #1068)."""

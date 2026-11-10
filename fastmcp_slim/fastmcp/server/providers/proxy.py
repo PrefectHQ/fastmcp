@@ -21,6 +21,7 @@ import anyio
 import httpx2
 import mcp_types
 from mcp import ClientSession
+from mcp.client.client import _evicting_message_handler
 from mcp.server.connection import Connection
 from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
@@ -1638,6 +1639,26 @@ async def default_proxy_progress_handler(
     await ctx.report_progress(progress, total, message)
 
 
+_FORWARDED_LIST_CHANGED_NOTIFICATIONS = (
+    mcp_types.ToolListChangedNotification,
+    mcp_types.ResourceListChangedNotification,
+    mcp_types.PromptListChangedNotification,
+)
+
+
+async def default_proxy_message_handler(
+    message: mcp_types.ServerNotification | Exception,
+) -> None:
+    """Forward list-changed notifications from remote server to proxy's connected clients.
+
+    Logging and progress have dedicated handlers; the tool, resource, and prompt
+    list-changed notifications only arrive through the message handler.
+    """
+    if isinstance(message, _FORWARDED_LIST_CHANGED_NOTIFICATIONS):
+        ctx = get_context()
+        await ctx.send_notification(message)
+
+
 def _restore_request_context(
     rc_ref: list[Any],
 ) -> None:
@@ -1702,7 +1723,8 @@ def _make_restoring_handler(handler: Callable, rc_ref: list[Any]) -> Callable:
 class ProxyClient(Client[ClientTransportT]):
     """A proxy client that forwards advanced interactions between a remote MCP server and the proxy's connected clients.
 
-    Supports forwarding roots, sampling, elicitation, logging, and progress.
+    Supports forwarding roots, sampling, elicitation, logging, progress, and
+    tool, resource, and prompt list-changed notifications.
     Eligible inbound HTTP headers are forwarded by default; set
     `forward_incoming_headers=False` to use only the backend transport's
     configured headers and authentication. Applies to HTTP and SSE backends,
@@ -1777,6 +1799,7 @@ class ProxyClient(Client[ClientTransportT]):
             ("elicitation_handler", default_proxy_elicitation_handler),
             ("log_handler", default_proxy_log_handler),
             ("progress_handler", default_proxy_progress_handler),
+            ("message_handler", default_proxy_message_handler),
         ):
             if key not in kwargs:
                 kwargs[key] = _make_restoring_handler(default_fn, self._proxy_rc_ref)
@@ -1812,6 +1835,16 @@ class ProxyClient(Client[ClientTransportT]):
         if "progress_handler" in self._proxy_restoring_handler_keys:
             self._progress_handler = _make_restoring_handler(
                 default_proxy_progress_handler, self._proxy_rc_ref
+            )
+        if "message_handler" in self._proxy_restoring_handler_keys:
+            message_handler = _make_restoring_handler(
+                default_proxy_message_handler, self._proxy_rc_ref
+            )
+            self._base_message_handler = message_handler
+            self._session_kwargs["message_handler"] = (
+                _evicting_message_handler(self._response_cache, message_handler)
+                if self._response_cache is not None
+                else message_handler
             )
 
     def new(self) -> ProxyClient[ClientTransportT]:
