@@ -36,7 +36,17 @@ class CursorState:
         """
         try:
             data = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
-            return cls(offset=data["o"])
+            offset = data["o"]
+            # The offset reaches a slice and an addition, so a string or a float
+            # surfaces as a TypeError the caller reports as an internal error, and
+            # a negative one slices from the end and returns a valid-looking page
+            # the client never asked for. A cursor is ours to produce, so anything
+            # but a whole non-negative count means it was tampered with.
+            if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+                raise ValueError(
+                    f"cursor offset must be a non-negative integer: {offset!r}"
+                )
+            return cls(offset=offset)
         except (
             json.JSONDecodeError,
             KeyError,

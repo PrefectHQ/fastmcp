@@ -1,8 +1,9 @@
 import socket
 
 
-def find_available_port() -> int:
+def find_available_port(host: str = "127.0.0.1") -> int:
     """Find an available port by letting the OS assign one."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    with socket.socket(family, socket.SOCK_STREAM) as s:
+        s.bind((host, 0))
         return s.getsockname()[1]

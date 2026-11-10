@@ -1,12 +1,13 @@
 import abc
 import contextlib
-import datetime
-from collections.abc import AsyncIterator
-from typing import Literal, TypeVar
+from collections.abc import AsyncGenerator, Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any, Literal, TypeVar
 
-import httpx
-import mcp.types
+import httpx2
+import mcp_types
 from mcp import ClientSession
+from mcp.client.extension import NotificationBinding, ResultClaim
 from mcp.client.session import (
     ElicitationFnT,
     ListRootsFnT,
@@ -14,23 +15,93 @@ from mcp.client.session import (
     MessageHandlerFnT,
     SamplingFnT,
 )
+from mcp.shared._httpx_utils import McpHttpClientFactory
 from typing_extensions import TypedDict, Unpack
 
 # TypeVar for preserving specific ClientTransport subclass types
 ClientTransportT = TypeVar("ClientTransportT", bound="ClientTransport")
 
+#: Attribute set on factories generated from a transport's ``verify`` setting.
+#: A non-default factory without this marker was supplied by the caller (for
+#: proxies, mTLS, custom headers, ...) and takes precedence over ``verify``.
+#: The value is exactly ``True``; dynamic attribute lookup (proxies, mocks)
+#: must not be mistaken for the marker.
+_VERIFY_FACTORY_MARKER = "_fastmcp_verify_factory"
 
-class SessionKwargs(TypedDict, total=False):
+
+def _mark_verify_factory(factory: McpHttpClientFactory) -> McpHttpClientFactory:
+    """Tag a factory generated from ``verify`` so it can be told apart from a
+    caller-supplied factory."""
+    setattr(factory, _VERIFY_FACTORY_MARKER, True)
+    return factory
+
+
+def _is_verify_replaceable_factory(factory: object) -> bool:
+    """Whether a Client-level ``verify`` may replace this OAuth factory.
+
+    Only the bare ``httpx2.AsyncClient`` default and factories generated from
+    a transport's own ``verify`` setting are replaceable. A caller-supplied
+    factory must be preserved.
+    """
+    if factory is httpx2.AsyncClient:
+        return True
+    return getattr(factory, _VERIFY_FACTORY_MARKER, False) is True
+
+
+class ClientSessionKwargs(TypedDict, total=False):
     """Keyword arguments for the MCP ClientSession constructor."""
 
-    read_timeout_seconds: datetime.timedelta | None
+    read_timeout_seconds: float | None
     sampling_callback: SamplingFnT | None
-    sampling_capabilities: mcp.types.SamplingCapability | None
+    sampling_capabilities: mcp_types.SamplingCapability | None
     list_roots_callback: ListRootsFnT | None
     logging_callback: LoggingFnT | None
+    log_level: mcp_types.LoggingLevel | None
     elicitation_callback: ElicitationFnT | None
     message_handler: MessageHandlerFnT | None
-    client_info: mcp.types.Implementation | None
+    client_info: mcp_types.Implementation | None
+    notification_bindings: Sequence[NotificationBinding[Any]] | None
+    extensions: dict[str, dict[str, Any]] | None
+    result_claims: Mapping[str, Sequence[ResultClaim[Any]]] | None
+
+
+@dataclass(frozen=True)
+class TransportOptions:
+    """How one client wants its connection built.
+
+    These belong to the client rather than to the transport, so a transport
+    shared between clients doesn't leak one client's settings to another.
+    Different client layers may own different fields; a layer that adds its
+    settings must preserve the existing options rather than replace the bundle.
+
+    Attributes:
+        session_class: The ClientSession class to instantiate. Proxies supply a
+            session that skips output-schema validation, since they relay
+            results rather than consume them.
+        forward_incoming_headers: Whether to forward eligible inbound HTTP
+            headers upstream, including authorization. Hop-specific HTTP headers
+            and MCP transport, routing, and event-stream state are excluded
+            because each backend connection owns that state. Only appropriate
+            for proxies; honored by the HTTP and SSE transports and ignored by
+            the others.
+        backend_mode: The connect `mode` to give backend clients that a wrapping
+            transport builds on this client's behalf, so a chain of connections
+            speaks one protocol era end to end. `None` leaves each backend
+            client at its own default. Honored by `MCPConfigTransport`, whose
+            multi-server form mounts a proxy per configured server and resolves
+            one shared era for the aggregate; ignored by transports that connect
+            to a single backend directly, since those carry the connecting
+            client's own session and era.
+    """
+
+    session_class: type[ClientSession] = ClientSession
+    forward_incoming_headers: bool = False
+    backend_mode: str | None = None
+
+
+# SessionKwargs stays exactly the ClientSession constructor's parameters, so a
+# transport can splat it into ClientSession without filtering.
+SessionKwargs = ClientSessionKwargs
 
 
 class ClientTransport(abc.ABC):
@@ -42,11 +113,21 @@ class ClientTransport(abc.ABC):
 
     """
 
+    #: Whether this transport can only carry the legacy (handshake) protocol era.
+    #: The modern `2026-07-28` era is sessionless and served over Streamable HTTP;
+    #: the SSE transport predates it and cannot serve it. When True, a client with
+    #: `mode="auto"` negotiates the legacy handshake directly rather than probing
+    #: `server/discover` (which some servers answer over SSE but then cannot serve).
+    legacy_only: bool = False
+
     @abc.abstractmethod
     @contextlib.asynccontextmanager
     async def connect_session(
-        self, **session_kwargs: Unpack[SessionKwargs]
-    ) -> AsyncIterator[ClientSession]:
+        self,
+        *,
+        transport_options: TransportOptions | None = None,
+        **session_kwargs: Unpack[SessionKwargs],
+    ) -> AsyncGenerator[ClientSession, None]:
         """
         Establishes a connection and yields an active ClientSession.
 
@@ -57,6 +138,9 @@ class ClientTransport(abc.ABC):
         within this context.
 
         Args:
+            transport_options: How the connecting client wants this connection
+                               built. Defaults apply when omitted. A transport
+                               that wraps others must pass this along.
             **session_kwargs: Keyword arguments to pass to the ClientSession
                               constructor (e.g., callbacks, timeouts).
 
@@ -77,6 +161,6 @@ class ClientTransport(abc.ABC):
         """Get the session ID for this transport, if available."""
         return None
 
-    def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
+    def _set_auth(self, auth: httpx2.Auth | Literal["oauth"] | str | None):
         if auth is not None:
             raise ValueError("This transport does not support auth")

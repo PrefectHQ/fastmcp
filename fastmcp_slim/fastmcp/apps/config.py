@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.mime import UI_MIME_TYPE as UI_MIME_TYPE
 from fastmcp.utilities.mime import resolve_ui_mime_type as resolve_ui_mime_type
 
@@ -27,22 +28,26 @@ class ResourceCSP(BaseModel):
 
     connect_domains: list[str] | None = Field(
         default=None,
-        alias="connectDomains",
+        validation_alias="connectDomains",
+        serialization_alias="connectDomains",
         description="Origins allowed for fetch/XHR/WebSocket (connect-src)",
     )
     resource_domains: list[str] | None = Field(
         default=None,
-        alias="resourceDomains",
+        validation_alias="resourceDomains",
+        serialization_alias="resourceDomains",
         description="Origins allowed for scripts, images, styles, fonts (script-src etc.)",
     )
     frame_domains: list[str] | None = Field(
         default=None,
-        alias="frameDomains",
+        validation_alias="frameDomains",
+        serialization_alias="frameDomains",
         description="Origins allowed for nested iframes (frame-src)",
     )
     base_uri_domains: list[str] | None = Field(
         default=None,
-        alias="baseUriDomains",
+        validation_alias="baseUriDomains",
+        serialization_alias="baseUriDomains",
         description="Allowed base URIs for the document (base-uri)",
     )
 
@@ -69,7 +74,8 @@ class ResourcePermissions(BaseModel):
     )
     clipboard_write: dict[str, Any] | None = Field(
         default=None,
-        alias="clipboardWrite",
+        validation_alias="clipboardWrite",
+        serialization_alias="clipboardWrite",
         description="Request clipboard-write access",
     )
 
@@ -84,6 +90,11 @@ class AppConfig(BaseModel):
     to render and where the tool appears.  On resources, those fields must
     be left unset (the resource itself is the UI).
 
+    `visibility` declares the intended audience; it is not a security boundary.
+    Direct MCP calls remain subject to authentication and authorization,
+    regardless of visibility. The server cannot distinguish model and app
+    callers on the same connection.
+
     All fields use ``exclude_none`` serialization so only explicitly-set
     values appear on the wire.  Aliases match the MCP Apps wire format
     (camelCase).
@@ -91,12 +102,17 @@ class AppConfig(BaseModel):
 
     resource_uri: str | None = Field(
         default=None,
-        alias="resourceUri",
+        validation_alias="resourceUri",
+        serialization_alias="resourceUri",
         description="URI of the UI resource (typically ui:// scheme). Tools only.",
     )
+    # Audience metadata, not access control: direct tools/call remains possible.
     visibility: list[Literal["app", "model"]] | None = Field(
         default=None,
-        description="Where this tool is visible: 'app', 'model', or both. Tools only.",
+        description=(
+            "Intended audience: 'app', 'model', or both. Tools only. "
+            "Not a security boundary; direct calls use the server's authorization rules."
+        ),
     )
     csp: ResourceCSP | None = Field(
         default=None, description="Content Security Policy for the app iframe"
@@ -107,7 +123,8 @@ class AppConfig(BaseModel):
     domain: str | None = Field(default=None, description="Domain for the iframe")
     prefers_border: bool | None = Field(
         default=None,
-        alias="prefersBorder",
+        validation_alias="prefersBorder",
+        serialization_alias="prefersBorder",
         description="Whether the UI prefers a visible border",
     )
 
@@ -175,3 +192,34 @@ def app_config_to_meta_dict(app: AppConfig | dict[str, Any]) -> dict[str, Any]:
     if isinstance(app, AppConfig):
         return app.model_dump(by_alias=True, exclude_none=True)
     return app
+
+
+def is_model_visible(component: FastMCPComponent) -> bool:
+    """Whether a component belongs on model-facing discovery and proxy surfaces.
+
+    This is audience filtering, not authorization. Direct MCP calls do not
+    use this predicate and cannot identify model versus app callers.
+
+    Visibility is a declaration, and the MCP Apps spec puts the filtering on
+    the host — so ``tools/list`` carries app-only tools and the host keeps
+    them from the model. That division only works where a host stands between
+    the server and the model.
+
+    It does not hold for surfaces a server drives itself. A search result or
+    a code-mode catalog reaches the model as ordinary tool output, and a
+    call-tool proxy invokes on a name the model supplies; nothing downstream
+    can filter either. Those surfaces have to apply the declaration here.
+
+    A component with no ``visibility`` is visible: the field marks the
+    exception, and the spec's default is both audiences.
+    """
+    meta = component.meta
+    if not meta:
+        return True
+    ui_meta = meta.get("ui")
+    if not isinstance(ui_meta, dict):
+        return True
+    visibility = ui_meta.get("visibility")
+    if not isinstance(visibility, list):
+        return True
+    return "model" in visibility

@@ -1,0 +1,140 @@
+---
+title: FAQ
+description: Direct answers to the questions that come up most often about FastMCP 4, the protocol eras, and installation
+icon: circle-question
+---
+
+## Do I need to change my server code for FastMCP 4?
+
+Most servers run untouched. The defining change in FastMCP 4 is its engine — the MCP Python SDK v2 — and FastMCP absorbs nearly all of it for you, including the wire-wide rename from camelCase to snake_case, which is bridged so your existing reads keep working.
+
+Most of what does reach your code fails loudly at import or call time, and the fix is mechanical: `McpError(ErrorData(...))` becomes `McpError(code=..., message=...)`, custom `httpx` clients handed to a transport become `httpx2`, and `ctx.sample()` and `ctx.list_roots()` are gone.
+
+One change is silent, so go looking for it: an `except httpx.ConnectError:` around a FastMCP call still imports and still type-checks, because `httpx` usually remains installed through some other dependency — but FastMCP now raises the `httpx2` exception, so the handler simply stops matching and your fallback quietly never runs. Grep for `except httpx.` and move those to `httpx2`. [Upgrading from FastMCP 3](/getting-started/upgrading/from-fastmcp-3) covers each one and ends with a checklist.
+
+## Why does my client connect with a different protocol version than before?
+
+`fastmcp.Client` defaults to `mode="auto"` as of FastMCP 4, so it negotiates the newest era both sides speak rather than pinning the handshake. Over streamable HTTP or stdio to a FastMCP server that means the sessionless `2026-07-28` protocol, where FastMCP 3 connected at `2025-11-25`.
+
+SSE is the transport exception: it predates the sessionless era and cannot carry it. Under `mode="auto"` the client recognizes SSE and settles on the handshake without probing, so seeing `2025-11-25` there is correct rather than a negotiation failure. A multi-server `MCPConfigTransport` resolves one era for the entire aggregate: all-modern backends negotiate `2026-07-28`, while any legacy backend moves the composite and every backend leg to the handshake era. Pinning a mode applies it to every backend in the configuration. All-modern configurations follow normal modern semantics; applications that rely on handshake-era server-initiated sampling or elicitation should pin `mode="legacy"`.
+
+The client probes `server/discover` and adopts the modern protocol when the server answers, falling back to the `initialize` handshake for anything that is not positive evidence of a modern peer — so a mixed fleet of servers still connects. Pin the old behavior per client with `Client(url, mode="legacy")`. See [Protocol negotiation](/clients/client#protocol-negotiation).
+
+## What are the two protocol eras, and which one does my server speak?
+
+Both. A FastMCP 4 server supports the handshake revisions `2024-11-05`, `2025-03-26`, `2025-06-18`, and `2025-11-25`, plus the modern `2026-07-28` protocol. It serves all of them from one deployment and one URL, and the SDK negotiates per connection — the client picks, not the server.
+
+The *handshake* era (`2025-11-25` and earlier) opens each connection with `initialize` and holds a session, which gives the server a back-channel it can push requests down. The *modern* era (`2026-07-28`) is sessionless: the client learns what the server offers through `server/discover`, every request stands alone, and there is no back-channel. Inside a tool, `ctx.request_context.protocol_version` tells you which era the current call arrived on; on the client, `client.protocol_version` reports it after connecting.
+
+A protocol version establishes the wire format, while capabilities describe which optional operations a particular server provides. The capabilities returned by `server/discover` or `initialize` are therefore the authoritative way for a client to determine what is available.
+
+## Can FastMCP 4 talk to older clients and servers?
+
+Yes, in both directions, with no configuration. A FastMCP 4 server answers a handshake-era client and a modern one from the same process: the old client sends `initialize` and gets a session id, the modern client discovers and stays stateless.
+
+A FastMCP 4 client is equally happy against an old server, because `mode="auto"` falls back to the handshake when discovery finds no modern peer. The client-side handlers for server-initiated capabilities are all still there too — passing `sampling_handler=` or `roots=` answers a legacy server's requests exactly as before, which is what a modern client needs in order to interoperate. See [client sampling](/clients/sampling) and [client roots](/clients/roots).
+
+## How does FastMCP verify protocol conformance?
+
+FastMCP runs the [official MCP conformance suite](https://github.com/modelcontextprotocol/conformance) in CI against a pinned suite release. A failing scenario for a released capability that FastMCP advertises as supported is treated as a regression.
+
+The suite's `all` mode also exercises draft, pending, retired, and deliberately unsupported capabilities, so its raw pass count is broader than FastMCP's support contract. Known exceptions are recorded in [`expected-failures.yml`](https://github.com/PrefectHQ/fastmcp/blob/main/tests/conformance/expected-failures.yml) with their rationale, and new upstream scenarios arrive through deliberate suite-version updates rather than silently changing CI.
+
+## When should I pin `mode="legacy"`?
+
+Pin it when your code depends on the session the handshake creates: `client.ping()` and `transport.get_session_id()` have no modern equivalent, since a sessionless connection has neither a live back-channel to ping nor an id to hold. It is also the escape hatch when a server misbehaves under discovery or you need the classic `initialize` result object.
+
+You do not need to pin it just because you registered a `sampling_handler`, `roots=`, or an `elicitation_handler`. None of the three require the handshake on their own: `mode="auto"` reaches whichever era the connection negotiates, and on a modern connection a tool can still exercise any of them through the guard pattern — it manually returns an `InputRequiredResult` embedding the request, and the same handler you already registered answers it. [Roots](/clients/roots) and [elicitation](/clients/elicitation) document this pattern directly; [sampling](/clients/sampling) works through the identical mechanism, though calling an LLM directly from the server is the recommended path there rather than a round trip for it.
+
+Pinning is per client, not a deployment setting: `Client(url, mode="legacy")`. The trade runs the other way as well — [background tasks](/clients/tasks) are modern-only, so a legacy client never triggers one and a task-enabled tool simply runs synchronously.
+
+## Why did my `ctx.sample()` code stop working?
+
+`ctx.sample()` and `ctx.sample_step()` are not part of FastMCP 4. Calling either raises `AttributeError` on every protocol era, and `FastMCP(sampling_handler=...)` raises `TypeError` naming the migration.
+
+Sampling was a server-to-client *request*: the server sent `sampling/createMessage` and blocked until an answer came back down the session. The modern protocol has no server-to-client request direction at all, so the pushed form has nowhere to go.
+
+The asking survives in a different shape. A tool can return an `InputRequiredResult` carrying a `CreateMessageRequest`; the client answers it through the same `sampling_handler` it already registers, and your tool runs again with the completion. Reach for that when using *the caller's* model is the point. Otherwise put generation in your server — hold a provider API key and call the model directly, which has the side benefit that your tool behaves identically for every client, including the many that never implemented sampling. [Sampling](/servers/sampling) shows both.
+
+## What happened to `ctx.list_roots()`?
+
+Removed, for the same reason as sampling: `roots/list` was a server-to-client request, and the modern protocol has no channel to send one.
+
+Take the paths you need as ordinary tool arguments. The agent already knows which directory it is working in, and an explicit argument is visible in the tool's schema instead of hidden in a protocol round-trip. When the caller genuinely has to be asked mid-run, the [guard pattern](/servers/elicitation#elicitation-on-the-modern-protocol) carries a roots request in its `input_requests` map alongside elicitation, and `fastmcp.Client` answers it from the `roots=` you already configured.
+
+## Why does `ctx.info()` still work when sampling doesn't?
+
+Because logging is a *notification* and sampling was a *request*. A notification is fire-and-forget: your server emits it down the response stream the caller already opened, and nothing has to be held open on the server's behalf. A request needs an answer to come back the other way, which requires a live connection the server can reach into.
+
+The modern protocol kept every server notification — `notifications/message`, `notifications/progress`, and the list-changed family — and removed the server-to-client request direction entirely. So `ctx.info()`, `ctx.debug()`, and `ctx.report_progress()` reach the client mid-call on every era, while sampling and roots have no era-agnostic form and were dropped. [Sampling](/servers/sampling#the-removed-methods) works through the distinction in full.
+
+You may see an `MCPDeprecationWarning` from the SDK about the logging capability being deprecated as of `2026-07-28`. It refers to the capability declaration, not to the notification, and delivery is unaffected.
+
+## Why can't I call `client.set_logging_level()` anymore?
+
+On a modern connection it raises, because `logging/setLevel` is not in the `2026-07-28` protocol. The method asked the server to remember a level for the rest of the session, and a sessionless protocol has nowhere to keep that.
+
+The messages themselves are unaffected — the server still sends whatever its own configuration allows. Filter on the receiving side in your `log_handler`, which sees each message's `level` field. See [Client Logging](/clients/logging). On a handshake-era connection (`Client(url, mode="legacy")`) the call works as before.
+
+Receiving-side filtering only narrows what already arrives. A server that sets `FastMCP(client_log_level="error")` drops anything below that threshold before it reaches the wire, and a modern client has no way to ask for the missing levels — the server operator has to lower `client_log_level` for them to be sent at all.
+
+## What replaces elicitation on the modern protocol?
+
+The guard pattern. Rather than pausing mid-execution to ask, a tool *returns* an `InputRequiredResult` describing what it needs. That round completes normally, the client collects the answer, and it calls the tool again with the answer attached. Any state you carry between rounds is sealed by the framework before it reaches the wire, so the client holds an opaque token it cannot read or forge.
+
+`ctx.elicit()` still works on handshake-era connections and raises on modern ones, so a server that must serve both eras needs both paths. `fastmcp.Client` drives whichever the connection negotiated with no extra wiring on your side. See [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol).
+
+## Why doesn't my middleware's `on_initialize` hook run?
+
+Because the modern protocol has no `initialize` request. The hook fires on handshake-era connections and never on modern ones, and since `Client` now defaults to `mode="auto"`, that is the common case against a FastMCP 4 server.
+
+Work that must happen once per process belongs in the server [lifespan](/servers/lifespan). Per-request work such as an auth check belongs in `on_request` or a specific operation hook, both of which run on every era — on a modern connection `on_request` sees `server/discover` where a handshake connection sees `initialize`. See [Middleware](/servers/middleware).
+
+## Why doesn't state I set in one tool call show up in the next?
+
+On a modern connection every request is a fresh connection, so `ctx.set_state` lives only for the duration of the call that wrote it. The same code persists state across calls on a handshake-era connection, which is why it appears to break the moment a client negotiates `2026-07-28`.
+
+[Session state](/servers/sessions) is the durable answer, following MCP's own decision to move session semantics up into the application. Declare a `UserSession` parameter and FastMCP injects one bucket of stored state keyed to the authenticated user, with nothing to pass around. Declare a `SessionId` argument when a single user needs several independent sessions, and the caller mints an id with `create_session` and supplies it on each call — register `mcp.add_provider(SessionProvider())` first, since `create_session` doesn't exist until a `SessionProvider` contributes it. Both store server-side and key to the authenticated caller's identity, so a handle is inert in anyone else's hands.
+
+That isolation comes from authentication, not from the id. On an unauthenticated server there is no principal to key on, so every session shares one anonymous namespace and a `SessionId` becomes a bearer capability — anyone holding it can read and write that state. Treat unauthenticated sessions as single-tenant or trusted-network only; `UserSession` sidesteps the question by requiring an authenticated principal outright.
+
+## How do I run background tasks now?
+
+The same way, plus one registration. `@mcp.tool(task=True)` is still the authoring surface and [Docket](https://github.com/chrisguidry/docket) still runs the work. What changed is underneath: tasks left the core MCP spec and returned as the `io.modelcontextprotocol/tasks` extension (SEP-2663), which FastMCP implements in the optional `fastmcp-tasks` package.
+
+Install `fastmcp[tasks]` and register the extension on your server. A `task=True` tool on a server with no tasks extension refuses to start and names the fix, so a missing registration is impossible to ship by accident.
+
+```python
+from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
+
+mcp = FastMCP("MyServer")
+mcp.add_extension(TasksExtension())
+
+
+@mcp.tool(task=True)
+async def slow_computation(duration: int) -> str:
+    return "done"
+```
+
+Tasks are modern-only: the capability is negotiated over `2026-07-28`, so a `mode="legacy"` client never triggers one. A tool marked `task=True` (equivalently `mode="optional"`) then just runs synchronously. A tool that sets `TaskConfig(mode="required")` has no synchronous form to fall back to, so the call fails with a missing-required-capability error instead. See [Background Tasks](/servers/tasks).
+
+## `import fastmcp` stopped working after I upgraded with pip
+
+This can happen when you upgrade to FastMCP 3.3 or later from FastMCP 3.2 or earlier with `pip`. The quick fix is `pip install --force-reinstall fastmcp`. See [Troubleshooting](/getting-started/installation#troubleshooting) for the clean-reinstall fallback and an explanation of why it happens.
+
+## What's the difference between `fastmcp` and `fastmcp-slim`?
+
+`fastmcp` is the full distribution. Installing it gives you the complete framework — server, client, CLI, and the common integrations — and is the right choice for most users:
+
+```bash
+pip install fastmcp
+```
+
+`fastmcp-slim` ships the same importable `fastmcp` package with a minimal set of required dependencies. You opt into the pieces you need through extras, which keeps environments lean when you only use part of the framework:
+
+```bash
+pip install "fastmcp-slim[client]"
+```
+
+Both distributions expose the same `import fastmcp`, so application code is identical regardless of which one you install.

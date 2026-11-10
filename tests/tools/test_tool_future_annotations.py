@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal, cast
 
-import mcp.types
+import mcp_types
 from pydantic import Field
 
 from fastmcp import Context, FastMCP
@@ -73,7 +73,7 @@ class TestFutureAnnotations:
     async def test_simple_with_context(self):
         async with Client(fastmcp_server) as client:
             result = await client.call_tool("simple_with_context", {})
-            assert "Request ID:" in cast(mcp.types.TextContent, result.content[0]).text
+            assert "Request ID:" in cast(mcp_types.TextContent, result.content[0]).text
 
     async def test_complex_types(self):
         async with Client(fastmcp_server) as client:
@@ -83,7 +83,7 @@ class TestFutureAnnotations:
             # Check the result is valid JSON with expected values
             import json
 
-            data = json.loads(cast(mcp.types.TextContent, result.content[0]).text)
+            data = json.loads(cast(mcp_types.TextContent, result.content[0]).text)
             assert data["count"] == 3
             assert "request_id" in data
 
@@ -92,7 +92,7 @@ class TestFutureAnnotations:
             result = await client.call_tool("optional_context", {"name": "World"})
             assert (
                 "Hello World from request"
-                in cast(mcp.types.TextContent, result.content[0]).text
+                in cast(mcp_types.TextContent, result.content[0]).text
             )
 
     async def test_union_with_context(self):
@@ -100,20 +100,20 @@ class TestFutureAnnotations:
             result = await client.call_tool("union_with_context", {"value": 42})
             assert (
                 "Value: 42, Request:"
-                in cast(mcp.types.TextContent, result.content[0]).text
+                in cast(mcp_types.TextContent, result.content[0]).text
             )
 
     async def test_returns_image(self):
         async with Client(fastmcp_server) as client:
             result = await client.call_tool("returns_image", {})
             assert result.content[0].type == "image"
-            assert result.content[0].mimeType == "image/png"
+            assert result.content[0].mime_type == "image/png"
 
     async def test_async_with_context(self):
         async with Client(fastmcp_server) as client:
             result = await client.call_tool("async_with_context", {})
             assert (
-                "Async request:" in cast(mcp.types.TextContent, result.content[0]).text
+                "Async request:" in cast(mcp_types.TextContent, result.content[0]).text
             )
 
     async def test_annotated_with_context(self):
@@ -124,14 +124,14 @@ class TestFutureAnnotations:
             )
             assert (
                 "Result for: hello"
-                in cast(mcp.types.TextContent, result.content[0]).text
+                in cast(mcp_types.TextContent, result.content[0]).text
             )
 
     async def test_literal_with_context(self):
         """Test Literal types work with Context and future annotations."""
         async with Client(fastmcp_server) as client:
             result = await client.call_tool("literal_with_context", {"mode": "fast"})
-            assert "Mode: fast" in cast(mcp.types.TextContent, result.content[0]).text
+            assert "Mode: fast" in cast(mcp_types.TextContent, result.content[0]).text
 
     async def test_modern_union_syntax_works(self):
         """Test that modern | union syntax works with future annotations."""
@@ -151,13 +151,13 @@ class TestFutureAnnotations:
             result = await client.call_tool("modern_union_tool", {"value": "hello"})
             assert (
                 "processed: hello"
-                in cast(mcp.types.TextContent, result.content[0]).text
+                in cast(mcp_types.TextContent, result.content[0]).text
             )
 
             # Test with int
             result = await client.call_tool("modern_union_tool", {"value": 42})
             assert (
-                "processed: 42" in cast(mcp.types.TextContent, result.content[0]).text
+                "processed: 42" in cast(mcp_types.TextContent, result.content[0]).text
             )
 
             # Test with None
@@ -165,7 +165,7 @@ class TestFutureAnnotations:
             # When function returns None, FastMCP returns empty content
             assert (
                 len(result.content) == 0
-                or cast(mcp.types.TextContent, result.content[0]).text == "null"
+                or cast(mcp_types.TextContent, result.content[0]).text == "null"
             )
 
 

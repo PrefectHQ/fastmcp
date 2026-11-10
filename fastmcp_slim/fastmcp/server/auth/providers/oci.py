@@ -82,7 +82,11 @@ from typing import Literal
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
 
-from fastmcp.server.auth.oidc_proxy import OIDCProxy
+from fastmcp.server.auth.identity_assertion import IdentityAssertion
+from fastmcp.server.auth.oidc_proxy import (
+    DEFAULT_OIDC_DISCOVERY_TIMEOUT_SECONDS,
+    OIDCProxy,
+)
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
@@ -122,6 +126,7 @@ class OCIProvider(OIDCProxy):
         config_url: AnyHttpUrl | str,
         client_id: str,
         client_secret: str,
+        timeout_seconds: int | None = DEFAULT_OIDC_DISCOVERY_TIMEOUT_SECONDS,
         base_url: AnyHttpUrl | str,
         resource_base_url: AnyHttpUrl | str | None = None,
         audience: str | None = None,
@@ -135,6 +140,10 @@ class OCIProvider(OIDCProxy):
         consent_csp_policy: str | None = None,
         forward_resource: bool = True,
         fallback_refresh_token_expiry_seconds: int | None = None,
+        fastmcp_access_token_expiry_seconds: int | None = None,
+        token_expiry_threshold_seconds: int = 0,
+        enable_cimd: bool = True,
+        identity_assertion: IdentityAssertion | None = None,
     ) -> None:
         """Initialize OCI OIDC provider.
 
@@ -142,14 +151,36 @@ class OCIProvider(OIDCProxy):
             config_url: OCI OIDC Discovery URL
             client_id: OCI IAM Domain Integrated Application client id
             client_secret: OCI Integrated Application client secret
+            timeout_seconds: Timeout, in seconds, for the OIDC discovery request
+                made during construction. Defaults to 10 seconds so a slow or
+                unreachable issuer cannot block server startup indefinitely. Pass
+                None to fall back to the HTTP client's own default timeout.
             base_url: Public URL where OIDC endpoints will be accessible (includes any mount path)
             resource_base_url: Optional public base URL for the protected resource metadata
                 and token audience. Defaults to ``base_url``.
             audience: OCI API audience (optional)
-            issuer_url: Issuer URL for OCI IAM Domain metadata. This will override issuer URL from the discovery URL.
+            issuer_url: Issuer URL for OAuth metadata (defaults to base_url). This is
+                this server's own OAuth identity, not the OCI IAM Domain's — it has no
+                effect on the upstream issuer taken from the discovery URL. Use a
+                root-level URL to avoid 404s during discovery when mounting under a path.
             required_scopes: Required OCI scopes (defaults to ["openid"])
             redirect_path: Redirect path configured in OCI IAM Domain Integrated Application. The default is "/auth/callback".
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
+            fallback_refresh_token_expiry_seconds: Lifetime for the FastMCP-issued
+                refresh token when the upstream provider omits `refresh_expires_in`
+                (e.g. Cognito, GitHub, many OIDC IdPs). Defaults to 1 year. The upstream
+                refresh remains the source of truth. See `OAuthProxy` for details.
+            fastmcp_access_token_expiry_seconds: Lifetime for the FastMCP-issued access
+                token, decoupling it from the upstream provider's `expires_in`. Defaults
+                to None (mirror the upstream lifetime). Set this for bridges whose
+                upstream issues short-lived access tokens that some MCP clients can't
+                refresh gracefully (e.g. `mcp-remote`). See `OAuthProxy` for details.
+            token_expiry_threshold_seconds: Number of seconds before actual expiry to
+                treat a token as expired, refreshing early to avoid races. Defaults to 0.
+            enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
+                client IDs (default True). Set to False to disable.
+            identity_assertion: Optional SEP-990 ID-JAG configuration for
+                identity-bound token exchange. Disabled by default.
         """
         # Parse scopes if provided as string
         oci_required_scopes = (
@@ -161,6 +192,7 @@ class OCIProvider(OIDCProxy):
             client_id=client_id,
             client_secret=client_secret,
             audience=audience,
+            timeout_seconds=timeout_seconds,
             base_url=base_url,
             resource_base_url=resource_base_url,
             issuer_url=issuer_url,
@@ -173,6 +205,10 @@ class OCIProvider(OIDCProxy):
             consent_csp_policy=consent_csp_policy,
             forward_resource=forward_resource,
             fallback_refresh_token_expiry_seconds=fallback_refresh_token_expiry_seconds,
+            fastmcp_access_token_expiry_seconds=fastmcp_access_token_expiry_seconds,
+            token_expiry_threshold_seconds=token_expiry_threshold_seconds,
+            enable_cimd=enable_cimd,
+            identity_assertion=identity_assertion,
         )
 
         logger.debug(

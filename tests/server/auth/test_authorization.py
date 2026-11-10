@@ -1,39 +1,55 @@
 """Tests for authorization checks and AuthMiddleware."""
 
+from collections.abc import Sequence
 from unittest.mock import Mock
 
-import mcp.types as mcp_types
 import pytest
+from mcp import MCPError
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.exceptions import AuthorizationError
+from fastmcp.exceptions import AuthorizationError, InsufficientScopeError, ToolError
+from fastmcp.prompts import Prompt
+from fastmcp.resources.base import Resource
+from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import (
     AccessToken,
     AuthContext,
+    require_roles,
     require_scopes,
     restrict_tag,
     run_auth_checks,
 )
 from fastmcp.server.middleware import AuthMiddleware
-from fastmcp.server.transforms import ToolTransform
+from fastmcp.server.transforms import (
+    GetPromptNext,
+    GetResourceNext,
+    GetResourceTemplateNext,
+    ToolTransform,
+    Transform,
+)
 from fastmcp.tools.tool_transform import ToolTransformConfig, TransformedTool
+from fastmcp.utilities.authorization import scope_requirements
+from fastmcp.utilities.versions import VersionSpec
 
 # =============================================================================
 # Test helpers
 # =============================================================================
 
 
-def make_token(scopes: list[str] | None = None) -> AccessToken:
+def make_token(
+    scopes: list[str] | None = None,
+    claims: dict | None = None,
+) -> AccessToken:
     """Create a test access token."""
     return AccessToken(
         token="test-token",
         client_id="test-client",
         scopes=scopes or [],
         expires_at=None,
-        claims={},
+        claims=claims or {},
     )
 
 
@@ -42,6 +58,12 @@ def make_tool() -> Mock:
     tool = Mock()
     tool.tags = set()
     return tool
+
+
+def make_restricted_tag_server() -> FastMCP:
+    return FastMCP(
+        middleware=[AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"]))]
+    )
 
 
 # =============================================================================
@@ -78,6 +100,155 @@ class TestRequireScopes:
         ctx = AuthContext(token=None, component=make_tool())
         check = require_scopes("admin")
         assert check(ctx) is False
+
+
+# =============================================================================
+# Tests for require_roles
+# =============================================================================
+
+
+KEYCLOAK = {"realm_access": {"roles": ["admin", "viewer"]}}
+
+
+def keycloak_roles(claims: dict) -> list[str]:
+    return claims["realm_access"]["roles"]
+
+
+class TestRequireRoles:
+    @pytest.mark.parametrize(
+        "claims, extract",
+        [
+            (KEYCLOAK, keycloak_roles),
+            ({"roles": ["admin"]}, lambda c: c["roles"]),
+            ({"cognito:groups": ["admin"]}, lambda c: c["cognito:groups"]),
+            ({"permissions": ["admin"]}, lambda c: c["permissions"]),
+            (
+                {"https://app.example.com/roles": ["admin"]},
+                lambda c: c["https://app.example.com/roles"],
+            ),
+        ],
+    )
+    def test_reads_roles_from_provider_specific_claim(self, claims, extract):
+        ctx = AuthContext(token=make_token(claims=claims), component=make_tool())
+        assert require_roles("admin", extract=extract)(ctx) is True
+
+    def test_requires_all_roles(self):
+        ctx = AuthContext(token=make_token(claims=KEYCLOAK), component=make_tool())
+        check = require_roles("admin", "viewer", extract=keycloak_roles)
+        assert check(ctx) is True
+
+    def test_denies_when_one_role_missing(self):
+        ctx = AuthContext(token=make_token(claims=KEYCLOAK), component=make_tool())
+        check = require_roles("admin", "auditor", extract=keycloak_roles)
+        assert check(ctx) is False
+
+    def test_denies_without_token(self):
+        ctx = AuthContext(token=None, component=make_tool())
+        assert require_roles("admin", extract=keycloak_roles)(ctx) is False
+
+    @pytest.mark.parametrize(
+        "claims",
+        [{}, {"realm_access": {}}, {"realm_access": None}, {"realm_access": []}],
+    )
+    def test_denies_when_claim_absent_or_malformed(self, claims):
+        """A token without the claim is an ordinary denial, not a broken check."""
+        ctx = AuthContext(token=make_token(claims=claims), component=make_tool())
+        assert require_roles("admin", extract=keycloak_roles)(ctx) is False
+
+    def test_rejects_empty_role_list(self):
+        """A check with no roles would admit any authenticated caller."""
+        with pytest.raises(ValueError, match="at least one role"):
+            require_roles(extract=keycloak_roles)
+
+    def test_is_opaque_to_scope_shortfall(self):
+        """Roles cannot be requested via OAuth, so they yield no step-up."""
+        ctx = AuthContext(token=make_token(claims=KEYCLOAK), component=make_tool())
+        check = require_roles("auditor", extract=keycloak_roles)
+        assert scope_requirements(check, ctx) is None
+
+    def test_suppresses_shortfall_disclosure_of_sibling_scope_checks(self):
+        """One opaque check withholds the whole list's scope requirements."""
+        token = make_token(scopes=["read"], claims=KEYCLOAK)
+        ctx = AuthContext(token=token, component=make_tool())
+        checks = [
+            require_scopes("write"),
+            require_roles("admin", extract=keycloak_roles),
+        ]
+        assert scope_requirements(checks, ctx) is None
+        assert scope_requirements([require_scopes("write")], ctx) == ["write"]
+
+    @pytest.mark.parametrize(
+        "required, expected",
+        [("admin", True), ("a", False), ("dmin", False)],
+    )
+    def test_scalar_role_claim_is_one_role(self, required: str, expected: bool):
+        """A provider storing one role as a string must not be iterated.
+
+        `str` satisfies `Iterable[str]`, so a bare "admin" would otherwise
+        become the character set {a, d, m, i, n} — denying the "admin" it
+        plainly grants and granting any single character it contains.
+        """
+        ctx = AuthContext(
+            token=make_token(claims={"role": "admin"}), component=make_tool()
+        )
+        check = require_roles(required, extract=lambda c: c["role"])
+        assert check(ctx) is expected
+
+    async def test_role_denial_suppresses_scope_challenge(self):
+        """A caller blocked by their role is not told to obtain a scope."""
+        mcp = FastMCP(
+            middleware=[
+                AuthMiddleware(
+                    auth=[
+                        require_scopes("api"),
+                        require_roles("admin", extract=keycloak_roles),
+                    ]
+                )
+            ]
+        )
+
+        @mcp.tool
+        def t() -> str:
+            return "ok"
+
+        token = make_token(scopes=["read"], claims={"realm_access": {"roles": ["v"]}})
+        tok = set_token(token)
+        try:
+            with pytest.raises(AuthorizationError) as exc_info:
+                await mcp.call_tool("t", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert not isinstance(exc_info.value, InsufficientScopeError)
+
+    async def test_passing_role_still_allows_scope_challenge(self):
+        """Mixing the two checks does not disable step-up on its own."""
+        mcp = FastMCP(
+            middleware=[
+                AuthMiddleware(
+                    auth=[
+                        require_scopes("api"),
+                        require_roles("admin", extract=keycloak_roles),
+                    ]
+                )
+            ]
+        )
+
+        @mcp.tool
+        def t() -> str:
+            return "ok"
+
+        token = make_token(
+            scopes=["read"], claims={"realm_access": {"roles": ["admin"]}}
+        )
+        tok = set_token(token)
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("t", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["api"]
 
 
 # =============================================================================
@@ -371,10 +542,10 @@ class TestToolLevelAuth:
 
 
 class TestAuthMiddleware:
-    """Tests for middleware filtering via MCP handler layer.
+    """Tests for middleware filtering via the MCP handler layer.
 
-    These tests call _list_tools_mcp() which applies middleware during list,
-    simulating what happens when a client calls list_tools over MCP.
+    These tests drive an in-memory client so the middleware runs in the dispatch
+    chain, exactly as it does when a real client calls list_tools over MCP.
     """
 
     async def test_middleware_filters_tools_without_token(self):
@@ -385,8 +556,9 @@ class TestAuthMiddleware:
             return "public"
 
         # No token - all tools filtered by middleware
-        result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
-        assert len(result.tools) == 0
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+        assert len(tools) == 0
 
     async def test_middleware_allows_tools_with_token(self):
         mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("test"))])
@@ -398,8 +570,9 @@ class TestAuthMiddleware:
         token = make_token(scopes=["test"])
         tok = set_token(token)
         try:
-            result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
-            assert len(result.tools) == 1
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+            assert len(tools) == 1
         finally:
             auth_context_var.reset(tok)
 
@@ -414,8 +587,9 @@ class TestAuthMiddleware:
         token = make_token(scopes=["read"])
         tok = set_token(token)
         try:
-            result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
-            assert len(result.tools) == 0
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+            assert len(tools) == 0
         finally:
             auth_context_var.reset(tok)
 
@@ -423,8 +597,9 @@ class TestAuthMiddleware:
         token = make_token(scopes=["api"])
         tok = set_token(token)
         try:
-            result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
-            assert len(result.tools) == 1
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+            assert len(tools) == 1
         finally:
             auth_context_var.reset(tok)
 
@@ -442,16 +617,18 @@ class TestAuthMiddleware:
             return "admin"
 
         # No token - public tool allowed, admin tool blocked
-        result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
-        assert len(result.tools) == 1
-        assert result.tools[0].name == "public_tool"
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+        assert len(tools) == 1
+        assert tools[0].name == "public_tool"
 
         # Token with admin scope - both allowed
         token = make_token(scopes=["admin"])
         tok = set_token(token)
         try:
-            result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
-            assert len(result.tools) == 2
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+            assert len(tools) == 2
         finally:
             auth_context_var.reset(tok)
 
@@ -471,8 +648,9 @@ class TestAuthMiddleware:
         def allowed_tool() -> str:
             return "allowed"
 
-        result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
-        assert [tool.name for tool in result.tools] == ["allowed_tool"]
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+        assert [tool.name for tool in tools] == ["allowed_tool"]
 
     async def test_middleware_skips_resource_on_authorization_error(self):
         def deny_blocked_resource(ctx: AuthContext) -> bool:
@@ -490,10 +668,9 @@ class TestAuthMiddleware:
         def allowed_resource() -> str:
             return "allowed"
 
-        result = await mcp._list_resources_mcp(mcp_types.ListResourcesRequest())
-        assert [str(resource.uri) for resource in result.resources] == [
-            "resource://allowed"
-        ]
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+        assert [str(resource.uri) for resource in resources] == ["resource://allowed"]
 
     async def test_middleware_skips_resource_template_on_authorization_error(self):
         def deny_blocked_resource_template(ctx: AuthContext) -> bool:
@@ -511,10 +688,9 @@ class TestAuthMiddleware:
         def allowed_resource_template(item: str) -> str:
             return item
 
-        result = await mcp._list_resource_templates_mcp(
-            mcp_types.ListResourceTemplatesRequest()
-        )
-        assert [template.uriTemplate for template in result.resourceTemplates] == [
+        async with Client(mcp) as client:
+            templates = await client.list_resource_templates()
+        assert [template.uri_template for template in templates] == [
             "resource://allowed/{item}"
         ]
 
@@ -534,8 +710,9 @@ class TestAuthMiddleware:
         def allowed_prompt() -> str:
             return "allowed"
 
-        result = await mcp._list_prompts_mcp(mcp_types.ListPromptsRequest())
-        assert [prompt.name for prompt in result.prompts] == ["allowed_prompt"]
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+        assert [prompt.name for prompt in prompts] == ["allowed_prompt"]
 
 
 # =============================================================================
@@ -656,17 +833,17 @@ class TestAsyncAuthIntegration:
             return "api"
 
         # Without token, tool is hidden
-        result = await mcp._list_tools_mcp(__import__("mcp").types.ListToolsRequest())
-        assert len(result.tools) == 0
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+        assert len(tools) == 0
 
         # With token containing "api" scope, tool is visible
         token = make_token(scopes=["api"])
         tok = set_token(token)
         try:
-            result = await mcp._list_tools_mcp(
-                __import__("mcp").types.ListToolsRequest()
-            )
-            assert len(result.tools) == 1
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+            assert len(tools) == 1
         finally:
             auth_context_var.reset(tok)
 
@@ -808,5 +985,659 @@ class TestAuthMiddlewareCallTool:
                     "authorization" in str(exc_info.value).lower()
                     or "insufficient" in str(exc_info.value).lower()
                 )
+        finally:
+            auth_context_var.reset(tok)
+
+
+class TestAuthMiddlewareVersionedRequests:
+    # The resource/template/prompt denial cases are pinned to legacy: the
+    # authorization error message is surfaced to the client on the handshake
+    # era, but the modern server runner masks the raised denial as a generic
+    # "Internal server error". The tool case surfaces via an isError result and
+    # stays era-neutral.
+    async def test_middleware_blocks_explicit_restricted_tool_version(self):
+        """AuthMiddleware should check the requested tool version."""
+        mcp = make_restricted_tag_server()
+
+        @mcp.tool(name="calc", version="1.0", tags={"admin"})
+        def calc_v1() -> str:
+            return "restricted"
+
+        @mcp.tool(name="calc", version="2.0")
+        def calc_v2() -> str:
+            return "public"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            async with Client(mcp) as client:
+                with pytest.raises(Exception, match="authorization|insufficient"):
+                    await client.call_tool("calc", {}, version="1.0")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_middleware_blocks_restricted_tool_version_selected_by_range(self):
+        """AuthMiddleware should check non-exact direct server version specs."""
+        mcp = make_restricted_tag_server()
+
+        @mcp.tool(name="calc", version="1.0", tags={"admin"})
+        def calc_v1() -> str:
+            return "restricted"
+
+        @mcp.tool(name="calc", version="2.0")
+        def calc_v2() -> str:
+            return "public"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(AuthorizationError):
+                await mcp.call_tool("calc", {}, version=VersionSpec(lt="2.0"))
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_middleware_blocks_explicit_restricted_resource_version(self):
+        """AuthMiddleware should check the requested resource version."""
+        mcp = make_restricted_tag_server()
+
+        @mcp.resource("data://info", version="1.0", tags={"admin"})
+        def info_v1() -> str:
+            return "restricted"
+
+        @mcp.resource("data://info", version="2.0")
+        def info_v2() -> str:
+            return "public"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            async with Client(mcp, mode="legacy") as client:
+                with pytest.raises(Exception, match="authorization|insufficient"):
+                    await client.read_resource("data://info", version="1.0")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_middleware_blocks_explicit_restricted_template_version(self):
+        """AuthMiddleware should check the requested resource template version."""
+        mcp = make_restricted_tag_server()
+
+        @mcp.resource("data://items/{item_id}", version="1.0", tags={"admin"})
+        def item_v1(item_id: str) -> str:
+            return f"restricted {item_id}"
+
+        @mcp.resource("data://items/{item_id}", version="2.0")
+        def item_v2(item_id: str) -> str:
+            return f"public {item_id}"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            async with Client(mcp, mode="legacy") as client:
+                with pytest.raises(Exception, match="authorization|insufficient"):
+                    await client.read_resource("data://items/123", version="1.0")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_middleware_blocks_explicit_restricted_prompt_version(self):
+        """AuthMiddleware should check the requested prompt version."""
+        mcp = make_restricted_tag_server()
+
+        @mcp.prompt(name="greet", version="1.0", tags={"admin"})
+        def greet_v1() -> str:
+            return "restricted"
+
+        @mcp.prompt(name="greet", version="2.0")
+        def greet_v2() -> str:
+            return "public"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            async with Client(mcp, mode="legacy") as client:
+                with pytest.raises(Exception, match="authorization|insufficient"):
+                    await client.get_prompt("greet", version="1.0")
+        finally:
+            auth_context_var.reset(tok)
+
+
+# =============================================================================
+# Tests for component-level auth denial messaging (issue #4054 bug 1)
+# =============================================================================
+
+
+def _allow_all(ctx: AuthContext) -> bool:
+    """Global auth check that always passes (component-level auth still applies)."""
+    return True
+
+
+class TestComponentAuthDenialMessage:
+    """When component-level auth denies access, get_tool/get_resource/get_prompt
+    return None, so the middleware cannot distinguish "missing" from "denied".
+
+    The message must stay ambiguous ("not found or not authorized") rather than
+    asserting the component does not exist (misleading) or that it exists but is
+    forbidden (leaks existence to unauthorized callers).
+
+    The resource/prompt cases are pinned to legacy: their denial message is
+    surfaced only on the handshake era, where the read/get path converts the
+    error to a client-visible message; the modern server runner masks it as a
+    generic "Internal server error". The tool case surfaces via an isError
+    result and stays era-neutral.
+    """
+
+    async def test_call_tool_denied_by_component_auth(self):
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=_allow_all)])
+
+        @mcp.tool(auth=require_scopes("admin"))
+        def secret_tool() -> str:
+            return "secret"
+
+        token = make_token(scopes=["read"])
+        tok = set_token(token)
+        try:
+            async with Client(mcp) as client:
+                with pytest.raises(Exception) as exc_info:
+                    await client.call_tool("secret_tool", {})
+            message = str(exc_info.value)
+            assert "not found or not authorized" in message
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_read_resource_denied_by_component_auth(self):
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=_allow_all)])
+
+        @mcp.resource("data://secret", auth=require_scopes("admin"))
+        def secret_resource() -> str:
+            return "secret"
+
+        token = make_token(scopes=["read"])
+        tok = set_token(token)
+        try:
+            async with Client(mcp, mode="legacy") as client:
+                with pytest.raises(Exception) as exc_info:
+                    await client.read_resource("data://secret")
+            message = str(exc_info.value)
+            assert "not found or not authorized" in message
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_get_prompt_denied_by_component_auth(self):
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=_allow_all)])
+
+        @mcp.prompt(auth=require_scopes("admin"))
+        def secret_prompt() -> str:
+            return "secret"
+
+        token = make_token(scopes=["read"])
+        tok = set_token(token)
+        try:
+            async with Client(mcp, mode="legacy") as client:
+                with pytest.raises(Exception) as exc_info:
+                    await client.get_prompt("secret_prompt")
+            message = str(exc_info.value)
+            assert "not found or not authorized" in message
+        finally:
+            auth_context_var.reset(tok)
+
+
+# =============================================================================
+# Tests for component-level scope step-up signalling (SEP-2350)
+# =============================================================================
+
+
+class TestInsufficientScopeSignal:
+    """A scope shortfall on a globally-authorized component is surfaced as an
+    ``InsufficientScopeError`` naming the unmet scopes, the component-level
+    analog of the transport-level ``insufficient_scope`` challenge. The named
+    scopes are only those the token lacks, so an existing grant accumulates
+    rather than being replaced when the caller re-authorizes.
+    """
+
+    async def test_call_tool_missing_scope_names_required_scope(self):
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("api"))])
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["api"]
+        assert "api" in str(exc_info.value)
+
+    async def test_insufficient_scope_error_is_authorization_error(self):
+        # Existing `except AuthorizationError` sites must still catch it.
+        assert issubclass(InsufficientScopeError, AuthorizationError)
+
+    async def test_call_tool_sufficient_scope_passes(self):
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("api"))])
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=["api", "read"]))
+        try:
+            result = await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert result.content[0].text == "ok"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+
+    async def test_shortfall_names_only_unmet_scopes(self):
+        # The token already carries "read"; only the missing "api" is named, so a
+        # re-authorization accumulates scopes rather than dropping "read".
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("read", "api"))])
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["api"]
+
+    async def test_missing_token_is_not_insufficient_scope(self):
+        # No token is an authentication failure (RFC 6750 §3.1), not a scope
+        # shortfall: it must not be turned into an insufficient_scope signal.
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("api"))])
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        with pytest.raises(AuthorizationError) as exc_info:
+            await mcp.call_tool("api_tool", {})
+
+        assert not isinstance(exc_info.value, InsufficientScopeError)
+
+    async def test_non_scope_denial_stays_opaque_and_names_no_scope(self):
+        # A non-scope check (e.g. a custom tenant policy) fails first and
+        # short-circuits before the scope check runs. The denial must stay a
+        # plain AuthorizationError and must NOT disclose or request the "admin"
+        # scope for a component the caller could not otherwise reach.
+        def deny_tenant(ctx: AuthContext) -> bool:
+            return False
+
+        mcp = FastMCP(
+            middleware=[
+                AuthMiddleware(auth=[deny_tenant, require_scopes("admin")]),
+            ]
+        )
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(AuthorizationError) as exc_info:
+                await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert not isinstance(exc_info.value, InsufficientScopeError)
+        assert "admin" not in str(exc_info.value)
+
+    async def test_shortfall_unions_every_unmet_scope_check(self):
+        # Naming only the first failing check would strand the caller in a
+        # step-up loop: they obtain "read", retry, and are denied for "write".
+        mcp = FastMCP(
+            middleware=[
+                AuthMiddleware(auth=[require_scopes("read"), require_scopes("write")]),
+            ]
+        )
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=[]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["read", "write"]
+
+    async def test_shortfall_union_drops_already_granted_scope(self):
+        mcp = FastMCP(
+            middleware=[
+                AuthMiddleware(auth=[require_scopes("read"), require_scopes("write")]),
+            ]
+        )
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["write"]
+
+    async def test_shortfall_unions_across_middleware_chain(self):
+        # Scope requirements split across two AuthMiddleware instances. The
+        # outer one raises before the inner ever runs, so its shortfall has to
+        # account for the inner requirement or the caller loops.
+        mcp = FastMCP(
+            middleware=[
+                AuthMiddleware(auth=require_scopes("admin")),
+                AuthMiddleware(auth=require_scopes("write")),
+            ]
+        )
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=[]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["admin", "write"]
+
+    async def test_chain_shortfall_drops_already_granted_scope(self):
+        mcp = FastMCP(
+            middleware=[
+                AuthMiddleware(auth=require_scopes("admin")),
+                AuthMiddleware(auth=require_scopes("write")),
+            ]
+        )
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=["admin"]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["write"]
+
+    async def test_opaque_denial_in_chain_stays_opaque(self):
+        # An opaque check denies in the outer middleware; the inner middleware's
+        # scope requirement must not be disclosed.
+        def deny_tenant(ctx: AuthContext) -> bool:
+            return False
+
+        mcp = FastMCP(
+            middleware=[
+                AuthMiddleware(auth=deny_tenant),
+                AuthMiddleware(auth=require_scopes("write")),
+            ]
+        )
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=[]))
+        try:
+            with pytest.raises(AuthorizationError) as exc_info:
+                await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert not isinstance(exc_info.value, InsufficientScopeError)
+        assert "write" not in str(exc_info.value)
+
+    async def test_chain_shortfall_withholds_scopes_of_opaque_sibling(self):
+        # The outer middleware has a real scope shortfall, but the inner one
+        # pairs its scope requirement with an opaque check whose verdict is
+        # unknown. That layer's scope must not be disclosed.
+        def opaque_policy(ctx: AuthContext) -> bool:
+            return True
+
+        mcp = FastMCP(
+            middleware=[
+                AuthMiddleware(auth=require_scopes("admin")),
+                AuthMiddleware(auth=[opaque_policy, require_scopes("write")]),
+            ]
+        )
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=[]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["admin"]
+
+    async def test_chain_shortfall_stops_at_unevaluated_opaque_layer(self):
+        # The opaque middleware sits between two scope layers. The outer one
+        # raises before it ever runs, so whether it would admit the caller is
+        # unknown — and the scope behind it must not be disclosed. It returns
+        # True here to show the walk stops regardless of what the verdict
+        # would have been.
+        def tenant_check(ctx: AuthContext) -> bool:
+            return True
+
+        mcp = FastMCP(
+            middleware=[
+                AuthMiddleware(auth=require_scopes("admin")),
+                AuthMiddleware(auth=tenant_check),
+                AuthMiddleware(auth=require_scopes("write")),
+            ]
+        )
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=[]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["admin"]
+
+    async def test_chain_shortfall_spans_consecutive_scope_only_layers(self):
+        # The same chain without the opaque layer aggregates all of it, proving
+        # the reachability bound does not over-correct.
+        mcp = FastMCP(
+            middleware=[
+                AuthMiddleware(auth=require_scopes("admin")),
+                AuthMiddleware(auth=require_scopes("write")),
+                AuthMiddleware(auth=require_scopes("delete")),
+            ]
+        )
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=[]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["admin", "delete", "write"]
+
+    async def test_restrict_tag_shortfall_names_scope(self):
+        mcp = make_restricted_tag_server()
+
+        @mcp.tool(tags={"admin"})
+        def admin_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("admin_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["admin"]
+
+
+# =============================================================================
+# Tests that component auth sees the transformed component on direct lookups
+# =============================================================================
+
+
+class TagAdmin(Transform):
+    """Tag every resource, template, and prompt `admin`, on list and get alike."""
+
+    async def list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]:
+        return [r.model_copy(update={"tags": {"admin"}}) for r in resources]
+
+    async def get_resource(
+        self,
+        uri: str,
+        call_next: GetResourceNext,
+        *,
+        version: VersionSpec | None = None,
+    ) -> Resource | None:
+        resource = await call_next(uri, version=version)
+        return resource and resource.model_copy(update={"tags": {"admin"}})
+
+    async def list_resource_templates(
+        self, templates: Sequence[ResourceTemplate]
+    ) -> Sequence[ResourceTemplate]:
+        return [t.model_copy(update={"tags": {"admin"}}) for t in templates]
+
+    async def get_resource_template(
+        self,
+        uri: str,
+        call_next: GetResourceTemplateNext,
+        *,
+        version: VersionSpec | None = None,
+    ) -> ResourceTemplate | None:
+        template = await call_next(uri, version=version)
+        return template and template.model_copy(update={"tags": {"admin"}})
+
+    async def list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]:
+        return [p.model_copy(update={"tags": {"admin"}}) for p in prompts]
+
+    async def get_prompt(
+        self, name: str, call_next: GetPromptNext, *, version: VersionSpec | None = None
+    ) -> Prompt | None:
+        prompt = await call_next(name, version=version)
+        return prompt and prompt.model_copy(update={"tags": {"admin"}})
+
+
+class TestAuthSeesTransformedComponent:
+    """A transform that tags a component `admin` must gate direct access, not just listing."""
+
+    def make_tool_server(self) -> FastMCP:
+        mcp = FastMCP()
+
+        @mcp.tool(tags={"public"}, auth=restrict_tag("admin", scopes=["admin"]))
+        def secret() -> str:
+            return "secret"
+
+        mcp.add_transform(
+            ToolTransform({"secret": ToolTransformConfig(tags={"admin"})})
+        )
+        return mcp
+
+    async def test_tool_tagged_by_transform_is_denied_without_scope(self):
+        mcp = self.make_tool_server()
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert await mcp.list_tools() == []
+            assert await mcp.get_tool("secret") is None
+            async with Client(mcp) as client:
+                with pytest.raises(ToolError):
+                    await client.call_tool("secret")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_tool_tagged_by_transform_is_allowed_with_scope(self):
+        mcp = self.make_tool_server()
+        tok = set_token(make_token(scopes=["admin"]))
+        try:
+            assert [t.name for t in await mcp.list_tools()] == ["secret"]
+            async with Client(mcp) as client:
+                result = await client.call_tool("secret")
+            assert result.data == "secret"
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_resource_tagged_by_transform_is_denied_without_scope(self):
+        mcp = FastMCP()
+
+        @mcp.resource(
+            "secret://data",
+            tags={"public"},
+            auth=restrict_tag("admin", scopes=["admin"]),
+        )
+        def secret() -> str:
+            return "secret"
+
+        mcp.add_transform(TagAdmin())
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert await mcp.list_resources() == []
+            assert await mcp.get_resource("secret://data") is None
+            async with Client(mcp) as client:
+                with pytest.raises(MCPError):
+                    await client.read_resource("secret://data")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_template_tagged_by_transform_is_denied_without_scope(self):
+        mcp = FastMCP()
+
+        @mcp.resource(
+            "secret://{name}",
+            tags={"public"},
+            auth=restrict_tag("admin", scopes=["admin"]),
+        )
+        def secret(name: str) -> str:
+            return f"secret {name}"
+
+        mcp.add_transform(TagAdmin())
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert await mcp.list_resource_templates() == []
+            assert await mcp.get_resource_template("secret://{name}") is None
+            async with Client(mcp) as client:
+                with pytest.raises(MCPError):
+                    await client.read_resource("secret://x")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_prompt_tagged_by_transform_is_denied_without_scope(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(tags={"public"}, auth=restrict_tag("admin", scopes=["admin"]))
+        def secret() -> str:
+            return "secret"
+
+        mcp.add_transform(TagAdmin())
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert await mcp.list_prompts() == []
+            assert await mcp.get_prompt("secret") is None
+            async with Client(mcp) as client:
+                with pytest.raises(MCPError):
+                    await client.get_prompt("secret")
         finally:
             auth_context_var.reset(tok)

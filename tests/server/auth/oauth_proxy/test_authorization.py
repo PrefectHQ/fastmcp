@@ -1,5 +1,6 @@
 """Tests for OAuth proxy authorization flow."""
 
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -7,6 +8,8 @@ from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
+from starlette.applications import Starlette
+from starlette.testclient import TestClient
 
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 
@@ -16,11 +19,13 @@ class TestOAuthProxyAuthorization:
 
     async def test_authorize_creates_transaction(self, oauth_proxy):
         """Test that authorize creates transaction and redirects to consent."""
-        client = OAuthClientInformationFull(
-            client_id="test-client",
-            client_secret="test-secret",
-            redirect_uris=[AnyUrl("http://localhost:54321/callback")],
-            jwt_signing_key="test-secret",  # type: ignore[call-arg]  # Optional field in MCP SDK  # ty:ignore[unknown-argument]
+        client = OAuthClientInformationFull.model_validate(
+            {
+                "client_id": "test-client",
+                "client_secret": "test-secret",
+                "redirect_uris": ["http://localhost:54321/callback"],
+                "jwt_signing_key": "test-secret",
+            }
         )
 
         # Register client first (required for consent flow)
@@ -52,6 +57,67 @@ class TestOAuthProxyAuthorization:
         assert transaction.code_challenge == "challenge-abc"
         assert transaction.client_state == "client-state-123"
         assert transaction.scopes == ["read", "write"]
+
+    async def test_authorize_records_configured_scopes_when_client_omits_scope(
+        self, oauth_proxy
+    ):
+        """A client that omits `scope` has the configured default recorded.
+
+        The transaction is the single source of truth for what is being
+        authorized, so it must hold the effective scopes rather than an empty
+        list that each downstream consumer patches up on its own.
+        """
+        client = OAuthClientInformationFull.model_validate(
+            {
+                "client_id": "test-client",
+                "client_secret": "test-secret",
+                "redirect_uris": ["http://localhost:54321/callback"],
+                "jwt_signing_key": "test-secret",
+            }
+        )
+        await oauth_proxy.register_client(client)
+
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:54321/callback"),
+            redirect_uri_provided_explicitly=True,
+            state="client-state-123",
+            code_challenge="challenge-abc",
+            scopes=None,
+        )
+
+        redirect_url = await oauth_proxy.authorize(client, params)
+        txn_id = parse_qs(urlparse(redirect_url).query)["txn_id"][0]
+
+        transaction = await oauth_proxy._transaction_store.get(key=txn_id)
+        assert transaction is not None
+        assert transaction.scopes == ["read", "write"]
+
+    async def test_authorize_does_not_widen_explicit_client_scopes(self, oauth_proxy):
+        """An explicit narrow scope request is never widened to the configured set."""
+        client = OAuthClientInformationFull.model_validate(
+            {
+                "client_id": "test-client",
+                "client_secret": "test-secret",
+                "redirect_uris": ["http://localhost:54321/callback"],
+                "jwt_signing_key": "test-secret",
+            }
+        )
+        await oauth_proxy.register_client(client)
+
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:54321/callback"),
+            redirect_uri_provided_explicitly=True,
+            state="client-state-123",
+            code_challenge="challenge-abc",
+            scopes=["read"],
+        )
+
+        redirect_url = await oauth_proxy.authorize(client, params)
+        txn_id = parse_qs(urlparse(redirect_url).query)["txn_id"][0]
+
+        transaction = await oauth_proxy._transaction_store.get(key=txn_id)
+        assert transaction is not None
+        assert transaction.scopes == ["read"]
 
 
 class TestOAuthProxyPKCE:
@@ -198,3 +264,72 @@ class TestParameterForwarding:
         # Should succeed (no resource check needed)
         redirect_url = await proxy.authorize(client, params)
         assert "/consent" in redirect_url
+
+
+class TestCIMDPrivateUseSchemeAuthorize:
+    """/authorize for a CIMD client whose redirect_uris use private-use schemes."""
+
+    CLIENT_ID = "https://example.com/client.json"
+
+    @pytest.fixture(autouse=True)
+    def mock_dns(self):
+        with patch(
+            "fastmcp.server.auth.ssrf.resolve_hostname",
+            return_value=["93.184.216.34"],
+        ):
+            yield
+
+    @pytest.fixture
+    def declare_client(self, httpx_mock):
+        httpx_mock.add_response(
+            json={
+                "client_id": self.CLIENT_ID,
+                "client_name": "Native App",
+                "redirect_uris": ["com.example.app:/oauth", "myapp://callback"],
+                "token_endpoint_auth_method": "none",
+            },
+            headers={"content-length": "200"},
+        )
+
+    def _authorize(self, oauth_proxy: OAuthProxy, redirect_uri: str):
+        app = Starlette(routes=oauth_proxy.get_routes(mcp_path="/mcp"))
+        with TestClient(
+            app, base_url="https://myserver.com", follow_redirects=False
+        ) as client:
+            return client.get(
+                "/authorize",
+                params={
+                    "response_type": "code",
+                    "client_id": self.CLIENT_ID,
+                    "redirect_uri": redirect_uri,
+                    "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+                    "code_challenge_method": "S256",
+                    "state": "client-state",
+                },
+            )
+
+    @pytest.mark.parametrize(
+        "redirect_uri", ["com.example.app:/oauth", "myapp://callback"]
+    )
+    def test_declared_private_use_redirect_reaches_consent(
+        self, oauth_proxy, declare_client, redirect_uri
+    ):
+        response = self._authorize(oauth_proxy, redirect_uri)
+
+        assert response.status_code == 302
+        assert urlparse(response.headers["location"]).path == "/consent"
+
+    @pytest.mark.parametrize(
+        "redirect_uri",
+        ["com.evil.app:/oauth", "com.example.app://evil.example/oauth"],
+    )
+    def test_undeclared_private_use_redirect_is_rejected(
+        self, oauth_proxy, declare_client, redirect_uri
+    ):
+        response = self._authorize(oauth_proxy, redirect_uri)
+
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_request"
+        assert (
+            "does not match CIMD redirect_uris" in response.json()["error_description"]
+        )

@@ -7,7 +7,7 @@ sidebarTitle: context
 
 ## Functions
 
-### `set_transport` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L91" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `set_transport` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L97" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_transport(transport: TransportType) -> Token[TransportType | None]
@@ -17,7 +17,7 @@ set_transport(transport: TransportType) -> Token[TransportType | None]
 Set the current transport type. Returns token for reset.
 
 
-### `reset_transport` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L98" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `reset_transport` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L104" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 reset_transport(token: Token[TransportType | None]) -> None
@@ -27,7 +27,7 @@ reset_transport(token: Token[TransportType | None]) -> None
 Reset transport to previous value.
 
 
-### `set_context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L128" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `set_context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L141" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_context(context: Context) -> Generator[Context, None, None]
@@ -35,7 +35,7 @@ set_context(context: Context) -> Generator[Context, None, None]
 
 ## Classes
 
-### `LogData` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L104" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `LogData` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Data object for passing log arguments to client-side handlers.
@@ -44,7 +44,7 @@ This provides an interface to match the Python standard library logging,
 for compatibility with structured logging.
 
 
-### `Context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L137" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L150" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Context object providing access to MCP capabilities.
@@ -73,7 +73,7 @@ async def my_tool(x: int, ctx: Context) -> str:
     request_id = ctx.request_id
     client_id = ctx.client_id
 
-    # Manage state across the session (persists across requests)
+    # Manage state (persists across requests on handshake-era sessions)
     await ctx.set_state("key", "value")
     value = await ctx.get_state("key")
 
@@ -84,14 +84,12 @@ async def my_tool(x: int, ctx: Context) -> str:
 ```
 
 State Management:
-Context provides session-scoped state that persists across requests within
-the same MCP session. State is automatically keyed by session, ensuring
-isolation between different clients.
-
-State set during `on_initialize` middleware will persist to subsequent tool
-calls when using the same session object (STDIO, SSE, single-server HTTP).
-For distributed/serverless HTTP deployments where different machines handle
-the init and tool calls, state is isolated by the mcp-session-id header.
+Context state is keyed by `session_id`. On handshake-era (legacy)
+connections that identifier lasts for the MCP session, so state persists
+across requests and is isolated between clients. On 2026-07-28 connections,
+which `Client` negotiates by default, every request is a fresh connection,
+so state does not carry over to the next request. Use
+[Session State](/servers/sessions) for data that must outlive a request.
 
 The context parameter name can be anything as long as it's annotated with Context.
 The context is optional - tools that don't need it can omit the parameter.
@@ -99,7 +97,7 @@ The context is optional - tools that don't need it can omit the parameter.
 
 **Methods:**
 
-#### `is_background_task` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L210" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `is_background_task` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L229" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_background_task(self) -> bool
@@ -107,12 +105,11 @@ is_background_task(self) -> bool
 
 True when this context is running in a background task (Docket worker).
 
-When True, certain operations like elicit() and sample() will use
-task-aware implementations that can pause the task and wait for
-client input.
+When True, certain operations like elicit() will use task-aware
+implementations that can pause the task and wait for client input.
 
 
-#### `task_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L229" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `task_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L247" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 task_id(self) -> str | None
@@ -123,7 +120,7 @@ Get the background task ID if running in a background task.
 Returns None if not running in a background task context.
 
 
-#### `origin_request_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L237" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `origin_request_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L255" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 origin_request_id(self) -> str | None
@@ -136,7 +133,7 @@ In background task mode, this is the request_id captured when the task
 was submitted, if one was available.
 
 
-#### `fastmcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L249" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `fastmcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L267" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 fastmcp(self) -> FastMCP
@@ -145,16 +142,16 @@ fastmcp(self) -> FastMCP
 Get the FastMCP instance.
 
 
-#### `request_context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L325" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `request_context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L319" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-request_context(self) -> RequestContext[ServerSession, Any, Request] | None
+request_context(self) -> FastMCPRequestContext | None
 ```
 
 Access to the underlying request context.
 
 Returns None when the MCP session has not been established yet.
-Returns the full RequestContext once the MCP session is available.
+Returns the FastMCPRequestContext wrapper once the MCP session is available.
 
 For HTTP request access in middleware, use `get_http_request()` from fastmcp.server.dependencies,
 which works whether or not the MCP session is available.
@@ -174,7 +171,65 @@ async def on_request(self, context, call_next):
 ```
 
 
-#### `lifespan_context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L354" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `client_extension_settings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L344" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+client_extension_settings(self, identifier: str) -> dict[str, Any] | None
+```
+
+This request's per-request opt-in settings for an MCP extension.
+
+SEP-2133 extensions negotiate per request: the client repeats its
+extension capabilities in each request's ``_meta`` under
+``io.modelcontextprotocol/clientCapabilities`` → ``extensions`` →
+``identifier``. Returns the declared settings dict (possibly empty) when
+the extension was opted in for this request, or ``None`` when it was
+not (or there is no active request). This bridges an extension's
+``tools/call`` interceptor — which receives a FastMCP ``Context`` — to
+the request's declared client capabilities.
+
+
+#### `input_responses` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L385" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+input_responses(self) -> mcp_types.InputResponses | None
+```
+
+Client responses to a prior `InputRequiredResult.input_requests`.
+
+The multi-round-trip guard channel (SEP-2322). A guard tool inspects
+this to decide what to do on each round: `None` on the initial round
+(nothing has been asked yet, or the client retried without responses),
+so the tool returns an `InputRequiredResult` to ask; present on a later
+round, so the tool reads the answers and proceeds. It is a mapping whose
+keys match the `input_requests` map the tool minted; each value is the
+client's result for that request (an `ElicitResult`, `CreateMessageResult`,
+or `ListRootsResult`).
+
+In a background task there is no wire request, so this falls back to the
+responses the in-task guard loop delivered (see the tasks extension).
+
+
+#### `request_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L406" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+request_state(self) -> str | None
+```
+
+Opaque state echoed from a prior `InputRequiredResult.request_state`.
+
+The multi-round-trip guard channel (SEP-2322): whatever a tool put in
+`InputRequiredResult.request_state` on an earlier round is handed back
+here (as plaintext — the framework seals it on the wire and unseals it
+before the tool runs, so tampering is rejected before this is read).
+`None` on the initial round. Use it to carry a small amount of computed
+state across rounds without re-deriving it.
+
+In a background task there is no wire request, so this falls back to the
+state the in-task guard loop re-injected (see the tasks extension).
+
+
+#### `lifespan_context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L425" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 lifespan_context(self) -> dict[str, Any]
@@ -182,13 +237,14 @@ lifespan_context(self) -> dict[str, Any]
 
 Access the server's lifespan context.
 
-Returns the context dict yielded by the server's lifespan function.
-Returns an empty dict if no lifespan was configured or if the MCP
-session is not yet established.
+Returns the context dict yielded by *this* server's lifespan function.
+For a mounted child this is the child's own lifespan, not the parent's
+— the MCP session always belongs to the parent, so reading from the
+request context would return the parent's. We read directly from the
+server's cached lifespan result instead, which is set by the
+per-server ``_lifespan_manager`` regardless of mount position.
 
-In background tasks (Docket workers), where request_context is not
-available, falls back to reading from the FastMCP server's lifespan
-result directly.
+Returns an empty dict if no lifespan was configured.
 
 Example:
 ```python
@@ -201,7 +257,7 @@ def my_tool(ctx: Context) -> str:
 ```
 
 
-#### `report_progress` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L385" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `report_progress` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L460" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 report_progress(self, progress: float, total: float | None = None, message: str | None = None) -> None
@@ -218,7 +274,7 @@ Works in both foreground (MCP progress notifications) and background
 - `message`: Optional status message describing current progress
 
 
-#### `list_resources` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L478" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resources` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L559" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resources(self) -> list[SDKResource]
@@ -230,7 +286,7 @@ List all available resources from the server.
 - List of Resource objects available on the server
 
 
-#### `list_prompts` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L494" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L570" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_prompts(self) -> list[SDKPrompt]
@@ -242,7 +298,7 @@ List all available prompts from the server.
 - List of Prompt objects available on the server
 
 
-#### `get_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L510" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L581" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self, name: str, arguments: dict[str, Any] | None = None) -> GetPromptResult
@@ -258,7 +314,7 @@ Get a prompt by name with optional arguments.
 - The prompt result
 
 
-#### `read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L529" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L600" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_resource(self, uri: str | AnyUrl) -> ResourceResult
@@ -273,7 +329,7 @@ Read a resource by URI.
 - ResourceResult with contents
 
 
-#### `log` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L545" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `log` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L616" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 log(self, message: str, level: LoggingLevel | None = None, logger_name: str | None = None, extra: Mapping[str, Any] | None = None) -> None
@@ -291,7 +347,7 @@ Messages sent to Clients are also logged to the `fastmcp.server.context.to_clien
 - `extra`: Optional mapping for additional arguments
 
 
-#### `transport` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L575" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `transport` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L657" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 transport(self) -> TransportType | None
@@ -303,7 +359,7 @@ Returns the transport type used to run this server: "stdio", "sse",
 or "streamable-http". Returns None if called outside of a server context.
 
 
-#### `client_supports_extension` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L583" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `client_supports_extension` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L665" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 client_supports_extension(self, extension_id: str) -> bool
@@ -311,11 +367,13 @@ client_supports_extension(self, extension_id: str) -> bool
 
 Check whether the connected client supports a given MCP extension.
 
-Inspects the ``extensions`` extra field on ``ClientCapabilities``
-sent by the client during initialization.
-
-Returns ``False`` when no session is available (e.g., outside a
-request context) or when the client did not advertise the extension.
+Inspects the ``extensions`` capability the client declared, read from
+the session's ``client_capabilities``. The session is available in
+request mode and in background-task mode, where the snapshot session
+preserves the declared capabilities. Returns ``False`` when no session
+is available (e.g., a distributed worker with no live session, or
+outside any context) or when the client did not advertise the
+extension.
 
 Example::
 
@@ -328,7 +386,7 @@ Example::
         return "text-only client"
 
 
-#### `client_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L611" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `client_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L693" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 client_id(self) -> str | None
@@ -337,7 +395,7 @@ client_id(self) -> str | None
 Get the client ID if available.
 
 
-#### `request_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L620" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `request_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L701" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 request_id(self) -> str
@@ -348,24 +406,28 @@ Get the unique ID for this request.
 Raises RuntimeError if MCP request context is not available.
 
 
-#### `session_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L633" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `session_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L714" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 session_id(self) -> str
 ```
 
-Get the MCP session ID for ALL transports.
+Get the identifier of the current MCP connection.
 
-Returns the session ID that can be used as a key for session-based
-data storage (e.g., Redis) to share data between tool calls within
-the same client session.
+On handshake-era (legacy) connections this is stable for the whole MCP
+session: the negotiated session ID over streamable HTTP, or an ID
+generated once per session on other transports. On 2026-07-28
+connections, which `Client` negotiates by default, every request is its
+own connection and gets a new identifier, so it can't be used to share
+data between tool calls. Use [Session State](/servers/sessions) for
+that.
 
 **Returns:**
-- The session ID for StreamableHTTP transports, or a generated ID
-- for other transports.
+- The negotiated session ID when there is one, otherwise a generated
+- ID for the current connection.
 
 
-#### `session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L690" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L819" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 session(self) -> ServerSession
@@ -379,7 +441,7 @@ In background task mode: Returns the session stored at Context creation.
 Raises RuntimeError if no session is available.
 
 
-#### `debug` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L716" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `debug` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L845" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 debug(self, message: str, logger_name: str | None = None, extra: Mapping[str, Any] | None = None) -> None
@@ -390,7 +452,7 @@ Send a `DEBUG`-level message to the connected MCP Client.
 Messages sent to Clients are also logged to the `fastmcp.server.context.to_client` logger with a level of `DEBUG`.
 
 
-#### `info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L732" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L861" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 info(self, message: str, logger_name: str | None = None, extra: Mapping[str, Any] | None = None) -> None
@@ -401,7 +463,7 @@ Send a `INFO`-level message to the connected MCP Client.
 Messages sent to Clients are also logged to the `fastmcp.server.context.to_client` logger with a level of `DEBUG`.
 
 
-#### `warning` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L748" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `warning` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L877" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 warning(self, message: str, logger_name: str | None = None, extra: Mapping[str, Any] | None = None) -> None
@@ -412,7 +474,7 @@ Send a `WARNING`-level message to the connected MCP Client.
 Messages sent to Clients are also logged to the `fastmcp.server.context.to_client` logger with a level of `DEBUG`.
 
 
-#### `error` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L764" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `error` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L893" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 error(self, message: str, logger_name: str | None = None, extra: Mapping[str, Any] | None = None) -> None
@@ -423,19 +485,10 @@ Send a `ERROR`-level message to the connected MCP Client.
 Messages sent to Clients are also logged to the `fastmcp.server.context.to_client` logger with a level of `DEBUG`.
 
 
-#### `list_roots` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L780" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `send_notification` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L909" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-list_roots(self) -> list[Root]
-```
-
-List the roots available to the server, as indicated by the client.
-
-
-#### `send_notification` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L785" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-send_notification(self, notification: mcp.types.ServerNotificationType) -> None
+send_notification(self, notification: mcp_types.ServerNotification) -> None
 ```
 
 Send a notification to the client immediately.
@@ -444,7 +497,7 @@ Send a notification to the client immediately.
 - `notification`: An MCP notification instance (e.g., ToolListChangedNotification())
 
 
-#### `close_sse_stream` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L795" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `close_sse_stream` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L929" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 close_sse_stream(self) -> None
@@ -462,155 +515,60 @@ Instead of holding a connection open for minutes, you can periodically close
 and let the client reconnect.
 
 
-#### `sample_step` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L834" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-sample_step(self, messages: str | Sequence[str | SamplingMessage]) -> SampleStep
-```
-
-Make a single LLM sampling call.
-
-This is a stateless function that makes exactly one LLM call and optionally
-executes any requested tools. Use this for fine-grained control over the
-sampling loop.
-
-**Args:**
-- `messages`: The message(s) to send. Can be a string, list of strings,
-or list of SamplingMessage objects.
-- `system_prompt`: Optional system prompt for the LLM.
-- `temperature`: Optional sampling temperature.
-- `max_tokens`: Maximum tokens to generate. Defaults to 512.
-- `model_preferences`: Optional model preferences.
-- `tools`: Optional list of tools the LLM can use.
-- `tool_choice`: Tool choice mode ("auto", "required", or "none").
-- `execute_tools`: If True (default), execute tool calls and append results
-to history. If False, return immediately with tool_calls available
-in the step for manual execution.
-- `mask_error_details`: If True, mask detailed error messages from tool
-execution. When None (default), uses the global settings value.
-Tools can raise ToolError to bypass masking.
-- `tool_concurrency`: Controls parallel execution of tools\:
-- None (default)\: Sequential execution (one at a time)
-- 0\: Unlimited parallel execution
-- N > 0\: Execute at most N tools concurrently
-If any tool has sequential=True, all tools execute sequentially
-regardless of this setting.
-
-**Returns:**
-- SampleStep containing:
-- - .response: The raw LLM response
-- - .history: Messages including input, assistant response, and tool results
-- - .is_tool_use: True if the LLM requested tool execution
-- - .tool_calls: List of tool calls (if any)
-- - .text: The text content (if any)
-
-
-#### `sample` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L913" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-sample(self, messages: str | Sequence[str | SamplingMessage]) -> SamplingResult[ResultT]
-```
-
-Overload: With result_type, returns SamplingResult[ResultT].
-
-
-#### `sample` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L929" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-sample(self, messages: str | Sequence[str | SamplingMessage]) -> SamplingResult[str]
-```
-
-Overload: Without result_type, returns SamplingResult[str].
-
-
-#### `sample` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L944" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-sample(self, messages: str | Sequence[str | SamplingMessage]) -> SamplingResult[ResultT] | SamplingResult[str]
-```
-
-Send a sampling request to the client and await the response.
-
-This method runs to completion automatically. When tools are provided,
-it executes a tool loop: if the LLM returns a tool use request, the tools
-are executed and the results are sent back to the LLM. This continues
-until the LLM provides a final text response.
-
-When result_type is specified, a synthetic `final_response` tool is
-created. The LLM calls this tool to provide the structured response,
-which is validated against the result_type and returned as `.result`.
-
-For fine-grained control over the sampling loop, use sample_step() instead.
-
-**Args:**
-- `messages`: The message(s) to send. Can be a string, list of strings,
-or list of SamplingMessage objects.
-- `system_prompt`: Optional system prompt for the LLM.
-- `temperature`: Optional sampling temperature.
-- `max_tokens`: Maximum tokens to generate. Defaults to 512.
-- `model_preferences`: Optional model preferences.
-- `tools`: Optional list of tools the LLM can use. Accepts plain
-functions or SamplingTools.
-- `result_type`: Optional type for structured output. When specified,
-a synthetic `final_response` tool is created and the LLM's
-response is validated against this type.
-- `mask_error_details`: If True, mask detailed error messages from tool
-execution. When None (default), uses the global settings value.
-Tools can raise ToolError to bypass masking.
-- `tool_concurrency`: Controls parallel execution of tools\:
-- None (default)\: Sequential execution (one at a time)
-- 0\: Unlimited parallel execution
-- N > 0\: Execute at most N tools concurrently
-If any tool has sequential=True, all tools execute sequentially
-regardless of this setting.
-
-**Returns:**
-- SamplingResult[T] containing:
-- - .text: The text representation (raw text or JSON for structured)
-- - .result: The typed result (str for text, parsed object for structured)
-- - .history: All messages exchanged during sampling
-
-
-#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1019" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-elicit(self, message: str, response_type: None) -> AcceptedElicitation[dict[str, Any]] | DeclinedElicitation | CancelledElicitation
-```
-
-#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1034" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L983" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: type[T]) -> AcceptedElicitation[T] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1047" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+The accepted elicitation will contain the response data
+
+
+#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L994" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: list[str]) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1060" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+When response_type is a list of strings, the accepted elicitation will
+contain the selected string response
+
+
+#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L1006" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: dict[str, dict[str, str]]) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1073" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+When response_type is a dict mapping keys to title dicts, the accepted
+elicitation will contain the selected key
+
+
+#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L1018" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: list[list[str]]) -> AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1088" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+When response_type is a list containing a list of strings (multi-select),
+the accepted elicitation will contain a list of selected strings
+
+
+#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L1030" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit(self, message: str, response_type: list[dict[str, dict[str, str]]]) -> AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
 ```
 
-#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1103" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+When response_type is a list containing a dict mapping keys to title dicts
+(multi-select with titles), the accepted elicitation will contain a list of
+selected keys
+
+
+#### `elicit` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L1042" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-elicit(self, message: str, response_type: type[T] | list[str] | dict[str, dict[str, str]] | list[list[str]] | list[dict[str, dict[str, str]]] | None = None) -> AcceptedElicitation[T] | AcceptedElicitation[dict[str, Any]] | AcceptedElicitation[str] | AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
+elicit(self, message: str, response_type: type[T] | list[str] | dict[str, dict[str, str]] | list[list[str]] | list[dict[str, dict[str, str]]]) -> AcceptedElicitation[T] | AcceptedElicitation[dict[str, Any]] | AcceptedElicitation[str] | AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
 ```
 
 Send an elicitation request to the client and await the response.
@@ -625,11 +583,9 @@ comply. If you provide a primitive type, an object schema with a single
 "value" field will be generated for the MCP interaction and
 automatically deconstructed into the primitive type upon response.
 
-Passing ``response_type=None`` (or omitting it) is deprecated and will
-be removed in a future version. The resulting empty-schema form-mode
-request is ambiguous and causes some clients (e.g. VS Code) to hang on
-an empty form. Pass an explicit ``response_type`` describing the data
-you want back.
+``response_type`` is required. Pass ``bool`` when all you need is a
+confirmation; an empty schema leaves some clients rendering an empty,
+non-functional form.
 
 **Args:**
 - `message`: A human-readable message explaining what information is needed
@@ -646,7 +602,7 @@ on the model instead).
 ``value`` field. Same scope rules as ``response_title``.
 
 
-#### `set_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1245" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L1135" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_state(self, key: str, value: Any) -> None
@@ -654,8 +610,10 @@ set_state(self, key: str, value: Any) -> None
 
 Set a value in the state store.
 
-By default, values are stored in the session-scoped state store and
-persist across requests within the same MCP session. Values must be
+By default, values are stored in the state store under `session_id`.
+They persist across requests on handshake-era (legacy) connections, but
+not on 2026-07-28 connections, where `session_id` is per-request; use
+[Session State](/servers/sessions) for those. Values must be
 JSON-serializable (dicts, lists, strings, numbers, etc.).
 
 For non-serializable values (e.g., HTTP clients, database connections),
@@ -667,7 +625,7 @@ requests.
 The key is automatically prefixed with the session identifier.
 
 
-#### `get_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1287" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L1191" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_state(self, key: str) -> Any
@@ -681,7 +639,7 @@ then falls back to the session-scoped state store.
 Returns None if the key is not found.
 
 
-#### `delete_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1301" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `delete_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L1205" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 delete_state(self, key: str) -> None
@@ -692,7 +650,7 @@ Delete a value from the state store.
 Removes from both request-scoped and session-scoped stores.
 
 
-#### `enable_components` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1322" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `enable_components` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L1226" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 enable_components(self) -> None
@@ -716,7 +674,7 @@ ResourceListChangedNotification, and PromptListChangedNotification.
 - `match_all`: If True, matches all components regardless of other criteria.
 
 
-#### `disable_components` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1360" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `disable_components` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L1264" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 disable_components(self) -> None
@@ -740,7 +698,7 @@ ResourceListChangedNotification, and PromptListChangedNotification.
 - `match_all`: If True, matches all components regardless of other criteria.
 
 
-#### `reset_visibility` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/context.py#L1398" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `reset_visibility` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/context.py#L1302" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 reset_visibility(self) -> None

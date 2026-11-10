@@ -1,7 +1,13 @@
-import pytest
-from mcp.types import EmbeddedResource, TextResourceContents
-from pydantic import FileUrl
+from pathlib import Path
+from typing import Annotated, Any
 
+import pytest
+from mcp import MCPError
+from mcp_types import INVALID_PARAMS, EmbeddedResource, TextResourceContents
+from pydantic import Field
+
+from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ValidationError
 from fastmcp.prompts.base import (
     Message,
     Prompt,
@@ -10,6 +16,23 @@ from fastmcp.prompts.base import (
 
 
 class TestRenderPrompt:
+    async def test_fn_with_postponed_annotations(self):
+        namespace = {}
+        exec(
+            "from __future__ import annotations\n"
+            "from pydantic import BaseModel\n"
+            "class Config(BaseModel):\n"
+            "    key: str\n"
+            "def show_config(cfg: Config) -> str:\n"
+            "    return f'config={cfg.key}'\n",
+            namespace,
+        )
+
+        prompt = Prompt.from_function(namespace["show_config"])
+        result = await prompt.render({"cfg": '{"key": "v"}'})
+
+        assert result.messages == [Message("config=v")]
+
     async def test_basic_fn(self):
         def fn() -> str:
             return "Hello, world!"
@@ -57,8 +80,31 @@ class TestRenderPrompt:
             return f"Hello, {name}! You're {age} years old."
 
         prompt = Prompt.from_function(fn)
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValidationError, match="Missing required arguments: {'name'}"
+        ):
             await prompt.render(arguments=dict(age=40))
+
+    async def test_fn_with_positional_only_parameters_not_allowed(self):
+        def fn(name: str, /, age: int = 30) -> str:
+            return f"Hello, {name}! You're {age} years old."
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                "Functions with positional-only parameters are not supported as "
+                "prompts.*standard parameters"
+            ),
+        ):
+            Prompt.from_function(fn)
+
+    async def test_fn_with_keyword_only_parameters(self):
+        def fn(name: str, *, age: int = 30) -> str:
+            return f"Hello, {name}! You're {age} years old."
+
+        prompt = Prompt.from_function(fn)
+        result = await prompt.render(arguments=dict(name="World", age=40))
+        assert result.messages == [Message("Hello, World! You're 40 years old.")]
 
     async def test_fn_returns_message_list(self):
         async def fn() -> list[Message]:
@@ -112,9 +158,9 @@ class TestRenderPrompt:
                     content=EmbeddedResource(
                         type="resource",
                         resource=TextResourceContents(
-                            uri=FileUrl("file://file.txt"),
+                            uri="file://file.txt",
                             text="File contents",
-                            mimeType="text/plain",
+                            mime_type="text/plain",
                         ),
                     ),
                     role="user",
@@ -128,9 +174,9 @@ class TestRenderPrompt:
                 content=EmbeddedResource(
                     type="resource",
                     resource=TextResourceContents(
-                        uri=FileUrl("file://file.txt"),
+                        uri="file://file.txt",
                         text="File contents",
-                        mimeType="text/plain",
+                        mime_type="text/plain",
                     ),
                 ),
                 role="user",
@@ -147,9 +193,9 @@ class TestRenderPrompt:
                     content=EmbeddedResource(
                         type="resource",
                         resource=TextResourceContents(
-                            uri=FileUrl("file://file.txt"),
+                            uri="file://file.txt",
                             text="File contents",
-                            mimeType="text/plain",
+                            mime_type="text/plain",
                         ),
                     ),
                     role="user",
@@ -165,9 +211,9 @@ class TestRenderPrompt:
                 content=EmbeddedResource(
                     type="resource",
                     resource=TextResourceContents(
-                        uri=FileUrl("file://file.txt"),
+                        uri="file://file.txt",
                         text="File contents",
-                        mimeType="text/plain",
+                        mime_type="text/plain",
                     ),
                 ),
                 role="user",
@@ -184,9 +230,9 @@ class TestRenderPrompt:
                     content=EmbeddedResource(
                         type="resource",
                         resource=TextResourceContents(
-                            uri=FileUrl("file://file.txt"),
+                            uri="file://file.txt",
                             text="File contents",
-                            mimeType="text/plain",
+                            mime_type="text/plain",
                         ),
                     ),
                     role="user",
@@ -200,9 +246,9 @@ class TestRenderPrompt:
                 content=EmbeddedResource(
                     type="resource",
                     resource=TextResourceContents(
-                        uri=FileUrl("file://file.txt"),
+                        uri="file://file.txt",
                         text="File contents",
-                        mimeType="text/plain",
+                        mime_type="text/plain",
                     ),
                 ),
                 role="user",
@@ -314,8 +360,75 @@ class TestPromptTypeConversion:
 
         assert result.messages == [Message("Hello world (repeated 3 times)")]
 
+    @pytest.mark.parametrize(
+        ("annotation", "value"),
+        [
+            (Annotated[str, Field(description="Text")], '"hello"'),
+            (str | None, "null"),
+            (Any, "123"),
+            (object, "true"),
+            (int | str, "42"),
+        ],
+    )
+    async def test_string_compatible_annotations_preserve_wire_strings(
+        self, annotation: Any, value: str
+    ):
+        def typed_prompt(value):
+            return f"{type(value).__name__}:{value!r}"
+
+        typed_prompt.__annotations__ = {"value": annotation, "return": str}
+        prompt = Prompt.from_function(typed_prompt)
+
+        result = await prompt.render(arguments={"value": value})
+
+        assert result.messages == [Message(f"str:{value!r}")]
+
+    async def test_optional_non_string_still_decodes_json_null(self):
+        def optional_integer_prompt(value: int | None) -> str:
+            return f"{type(value).__name__}:{value!r}"
+
+        prompt = Prompt.from_function(optional_integer_prompt)
+
+        result = await prompt.render(arguments={"value": "null"})
+
+        assert result.messages == [Message("NoneType:None")]
+
+    @pytest.mark.parametrize(
+        ("annotation", "value", "expected"),
+        [
+            (bytes, '"hello"', b"hello"),
+            (Path, '"folder/file.txt"', Path("folder/file.txt")),
+        ],
+    )
+    async def test_string_coercible_non_string_annotations_decode_json(
+        self, annotation: Any, value: str, expected: Any
+    ):
+        def typed_prompt(value):
+            return f"{type(value).__name__}:{value!r}"
+
+        typed_prompt.__annotations__ = {"value": annotation, "return": str}
+        prompt = Prompt.from_function(typed_prompt)
+
+        result = await prompt.render(arguments={"value": value})
+
+        assert result.messages == [Message(f"{type(expected).__name__}:{expected!r}")]
+
 
 class TestPromptArgumentDescriptions:
+    def test_string_compatible_annotation_guidance_preserves_raw_strings(self):
+        def documented_prompt(
+            text: Annotated[str, Field(description="Text")],
+        ) -> str:
+            return text
+
+        prompt = Prompt.from_function(documented_prompt)
+
+        assert prompt.arguments is not None
+        text_arg = next(arg for arg in prompt.arguments if arg.name == "text")
+        assert text_arg.description is not None
+        assert "Provide as a JSON string" not in text_arg.description
+        assert "Encode non-string values as JSON." in text_arg.description
+
     def test_enhanced_descriptions_for_non_string_types(self):
         """Test that non-string argument types get enhanced descriptions with JSON schema."""
 
@@ -344,7 +457,7 @@ class TestPromptArgumentDescriptions:
         assert numbers_arg is not None
         assert numbers_arg.description is not None
         assert (
-            "Provide as a JSON string matching the following schema:"
+            "Provide a value matching the following JSON schema:"
             in numbers_arg.description
         )
         assert '{"items":{"type":"integer"},"type":"array"}' in numbers_arg.description
@@ -355,7 +468,7 @@ class TestPromptArgumentDescriptions:
         assert metadata_arg is not None
         assert metadata_arg.description is not None
         assert (
-            "Provide as a JSON string matching the following schema:"
+            "Provide a value matching the following JSON schema:"
             in metadata_arg.description
         )
         assert (
@@ -369,7 +482,7 @@ class TestPromptArgumentDescriptions:
         assert threshold_arg is not None
         assert threshold_arg.description is not None
         assert (
-            "Provide as a JSON string matching the following schema:"
+            "Provide a value matching the following JSON schema:"
             in threshold_arg.description
         )
         assert '{"type":"number"}' in threshold_arg.description
@@ -380,7 +493,7 @@ class TestPromptArgumentDescriptions:
         assert active_arg is not None
         assert active_arg.description is not None
         assert (
-            "Provide as a JSON string matching the following schema:"
+            "Provide a value matching the following JSON schema:"
             in active_arg.description
         )
         assert '{"type":"boolean"}' in active_arg.description
@@ -411,7 +524,7 @@ class TestPromptArgumentDescriptions:
         assert "A list of integers to process" in numbers_arg.description
         assert "\n\n" in numbers_arg.description  # Should have newline separator
         assert (
-            "Provide as a JSON string matching the following schema:"
+            "Provide a value matching the following JSON schema:"
             in numbers_arg.description
         )
 
@@ -428,7 +541,7 @@ class TestPromptArgumentDescriptions:
             # String parameters should not have schema enhancement
             if arg.description is not None:
                 assert (
-                    "Provide as a JSON string matching the following schema:"
+                    "Provide a value matching the following JSON schema:"
                     not in arg.description
                 )
 
@@ -576,11 +689,29 @@ class TestPromptArgumentDescriptions:
         assert mcp_prompt.meta is not None
         assert meta_data.items() <= mcp_prompt.meta.items()
 
+    def test_argument_titles_from_field(self):
+        """An explicit Field(title=...) becomes the argument's MCP title."""
+        from pydantic import Field
+
+        def test_prompt(
+            name: Annotated[str, Field(title="Your name")],
+            tone: str = Field(default="playful", title="Tone of voice"),
+            topic: str = "dogs",
+        ) -> str:
+            return f"Hello, {name}!"
+
+        arguments = Prompt.from_function(test_prompt).to_mcp_prompt().arguments or []
+        assert {arg.name: arg.title for arg in arguments} == {
+            "name": "Your name",
+            "tone": "Tone of voice",
+            "topic": None,
+        }
+
 
 class TestMessage:
     def test_message_string_content(self):
         """Test Message with string content."""
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         msg = Message("Hello, world!")
         assert msg.role == "user"
@@ -589,7 +720,7 @@ class TestMessage:
 
     def test_message_with_role(self):
         """Test Message with explicit role."""
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         msg = Message("I can help.", role="assistant")
         assert msg.role == "assistant"
@@ -598,7 +729,7 @@ class TestMessage:
 
     def test_message_auto_serializes_dict(self):
         """Test Message auto-serializes dicts to JSON."""
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         msg = Message({"key": "value", "nested": {"a": 1}})
         assert msg.role == "user"
@@ -608,7 +739,7 @@ class TestMessage:
 
     def test_message_auto_serializes_list(self):
         """Test Message auto-serializes lists to JSON."""
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         msg = Message(["item1", "item2", "item3"])
         assert isinstance(msg.content, TextContent)
@@ -616,7 +747,7 @@ class TestMessage:
 
     def test_message_to_mcp_prompt_message(self):
         """Test conversion to MCP PromptMessage."""
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         msg = Message("Hello", role="assistant")
         mcp_msg = msg.to_mcp_prompt_message()
@@ -626,29 +757,29 @@ class TestMessage:
 
     def test_message_passthrough_image_content(self):
         """Test Message passes through ImageContent without JSON serialization."""
-        from mcp.types import ImageContent
+        from mcp_types import ImageContent
 
-        img = ImageContent(type="image", data="base64data", mimeType="image/png")
+        img = ImageContent(type="image", data="base64data", mime_type="image/png")
         msg = Message(img, role="user")
         assert isinstance(msg.content, ImageContent)
         assert msg.content.data == "base64data"
-        assert msg.content.mimeType == "image/png"
+        assert msg.content.mime_type == "image/png"
 
     def test_message_passthrough_audio_content(self):
         """Test Message passes through AudioContent without JSON serialization."""
-        from mcp.types import AudioContent
+        from mcp_types import AudioContent
 
-        audio = AudioContent(type="audio", data="base64audio", mimeType="audio/wav")
+        audio = AudioContent(type="audio", data="base64audio", mime_type="audio/wav")
         msg = Message(audio, role="user")
         assert isinstance(msg.content, AudioContent)
         assert msg.content.data == "base64audio"
-        assert msg.content.mimeType == "audio/wav"
+        assert msg.content.mime_type == "audio/wav"
 
     def test_message_image_content_to_mcp_prompt_message(self):
         """Test that ImageContent round-trips through to_mcp_prompt_message."""
-        from mcp.types import ImageContent
+        from mcp_types import ImageContent
 
-        img = ImageContent(type="image", data="base64data", mimeType="image/png")
+        img = ImageContent(type="image", data="base64data", mime_type="image/png")
         msg = Message(img, role="user")
         mcp_msg = msg.to_mcp_prompt_message()
         assert isinstance(mcp_msg.content, ImageContent)
@@ -658,7 +789,7 @@ class TestMessage:
 class TestPromptResult:
     def test_promptresult_from_string(self):
         """Test PromptResult accepts string and wraps as Message."""
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         result = PromptResult("Hello!")
         assert len(result.messages) == 1
@@ -711,6 +842,48 @@ class TestPromptResult:
         assert len(mcp_result.messages) == 2
         assert mcp_result.description == "Test"
         assert mcp_result.meta == {"key": "value"}
+
+
+class TestInternalMetaNotLeaked:
+    """FastMCP's private visibility marker must never reach the wire."""
+
+    async def test_visibility_marker_stripped_from_result_meta(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(meta={"team": "infra", "fastmcp": {"owner": "docs"}})
+        def greet(name: str) -> str:
+            return f"Hello {name}"
+
+        # Applying any visibility rule stamps the internal marker on meta
+        mcp.enable(names={"greet"})
+
+        async with Client(mcp) as client:
+            result = await client.get_prompt("greet", {"name": "Ada"})
+
+        assert result.meta is not None
+        assert result.meta["team"] == "infra"
+        assert result.meta["fastmcp"] == {"owner": "docs"}
+
+
+class TestMissingRequiredArguments:
+    """Omitting a required argument is a client error, not a server fault."""
+
+    @pytest.mark.parametrize("mask_error_details", [False, True])
+    async def test_get_prompt_missing_required_argument_is_invalid_params(
+        self, mask_error_details: bool
+    ):
+        mcp = FastMCP(mask_error_details=mask_error_details)
+
+        @mcp.prompt
+        def summarize(topic: str) -> str:
+            return f"Summarize {topic}"
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError) as exc_info:
+                await client.get_prompt("summarize", {})
+
+        assert exc_info.value.error.code == INVALID_PARAMS
+        assert exc_info.value.error.message == "Missing required arguments: {'topic'}"
 
 
 class TestPromptFieldDefaults:

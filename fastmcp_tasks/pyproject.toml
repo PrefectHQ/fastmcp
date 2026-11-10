@@ -1,0 +1,78 @@
+[project]
+name = "fastmcp-tasks"
+dynamic = ["version", "dependencies"]
+description = "Background task execution for FastMCP servers via the io.modelcontextprotocol/tasks extension (SEP-2663)."
+authors = [{ name = "Jeremiah Lowin" }, { name = "Nate Nowack" }]
+
+requires-python = ">=3.11"
+readme = "README.md"
+license = "Apache-2.0"
+
+keywords = [
+    "mcp",
+    "fastmcp tasks",
+    "background tasks",
+    "model context protocol",
+    "fastmcp",
+]
+classifiers = [
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://gofastmcp.com"
+Repository = "https://github.com/PrefectHQ/fastmcp"
+Documentation = "https://gofastmcp.com"
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["fastmcp_tasks"]
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "pep440"
+bump = true
+fallback-version = "0.0.0"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
+dependencies = [
+    "fastmcp-slim[server]=={{ version }}",
+    # Fernet and the PBKDF2 key derivation behind FASTMCP_TASKS_ENCRYPTION_KEY,
+    # which encrypts task context snapshots at rest.
+    "cryptography>=43.0.0",
+    # pydocket 0.24.1 resolves CallArgument references through uncalled-for's
+    # call-scoped frames and shuts its worker down reliably when run_forever
+    # is cancelled on Python 3.10 and 3.11, which our lifespan does on every
+    # server shutdown. Without that fix a worker cancelled during teardown
+    # hangs; on Windows, pytest-timeout's hard kill of the hung xdist worker
+    # was misread as a burner-redis 0.1.7 interpreter crash, which is why a
+    # burner-redis pin and a platform-split floor used to live here
+    # (prefectlabs/burner-redis#7 has the exoneration).
+    #
+    # pydocket 0.26.0 keeps the worker running when a task is cancelled before
+    # it starts. Earlier versions treated that cancellation as a shutdown
+    # request, so the worker stopped reading tasks and every later task stayed
+    # in `working` forever.
+    # pydocket 0.26.1 supports Redis credential providers and token rotation.
+    "pydocket>=0.26.1",
+    # Redis 8.1.0 reuses server-closed connections instead of reconnecting.
+    # Remove after the fix in redis/redis-py#4260 is released.
+    "redis!=8.1.0",
+]

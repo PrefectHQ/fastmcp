@@ -4,29 +4,38 @@ import time
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
-import mcp.types as mcp_types
+import httpx2
+import mcp_types
 import pytest
 from anyio import create_task_group
 from dirty_equals import Contains
-from mcp import McpError
-from mcp.types import Icon, TextContent, TextResourceContents
+from mcp import MCPError
+from mcp_types import Annotations, Icon, TextContent, TextResourceContents
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic import AnyUrl
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport, StreamableHttpTransport
+from fastmcp.client.transports.base import TransportOptions
 from fastmcp.exceptions import ToolError
+from fastmcp.mcp_config import MCPConfig
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server import create_proxy
+from fastmcp.server.middleware import Middleware
 from fastmcp.server.providers.proxy import (
     FastMCPProxy,
     ProxyClient,
     ProxyProvider,
+    _ForwardingClientSession,
 )
 from fastmcp.tools.base import ToolResult
 from fastmcp.tools.tool_transform import (
     ToolTransformConfig,
 )
+from fastmcp.utilities.http import find_available_port
+from fastmcp.utilities.tests import run_server_async
+from tests.conftest import user_meta
 
 USERS = [
     {"id": "1", "name": "Alice", "active": True},
@@ -71,6 +80,7 @@ def fastmcp_server():
         tags={"wave"},
         title="Wave",
         icons=[Icon(src="https://example.com/wave-icon.png")],
+        annotations=Annotations(audience=["user"], priority=0.5),
     )
     def wave() -> str:
         return "👋"
@@ -86,6 +96,7 @@ def fastmcp_server():
         tags={"users"},
         title="User Template",
         icons=[Icon(src="https://example.com/user-icon.png")],
+        annotations=Annotations(audience=["assistant"], priority=0.8),
     )
     async def get_user(user_id: str) -> str:
         import json
@@ -145,7 +156,7 @@ def fastmcp_server():
                     content=mcp_types.ImageContent(
                         type="image",
                         data="iVBORw0KGgoAAAANSUhEUg==",
-                        mimeType="image/png",
+                        mime_type="image/png",
                     ),
                     role="user",
                 ),
@@ -157,7 +168,14 @@ def fastmcp_server():
 
 @pytest.fixture
 async def proxy_server(fastmcp_server):
-    """Fixture that creates a FastMCP proxy server."""
+    """Fixture that creates a FastMCP proxy server.
+
+    Passing an already-constructed `ProxyClient` as the target (rather than a
+    raw `FastMCP`/URL/etc.) means `create_proxy` reuses that client as-is
+    instead of building one through the era-mirroring factory — so this
+    backend stays pinned to `ProxyClient`'s own default of `mode="legacy"`
+    regardless of what era the front client negotiates.
+    """
     return create_proxy(ProxyClient(transport=FastMCPTransport(fastmcp_server)))
 
 
@@ -187,6 +205,33 @@ async def test_create_proxy_with_transport(fastmcp_server):
         assert result.data == "Hello, Test!"
 
 
+async def test_proxy_forwards_upstream_instructions():
+    """The metadata middleware forwards upstream instructions."""
+    upstream = FastMCP(name="upstream", instructions="USE_THIS_MARKER_123")
+    proxy = create_proxy(upstream, name="proxy")
+
+    async with Client(proxy) as client:
+        assert client.session.instructions == "USE_THIS_MARKER_123"
+
+
+async def test_proxy_own_instructions_take_precedence():
+    """Instructions explicitly set on the proxy override the upstream's."""
+    upstream = FastMCP(name="upstream", instructions="upstream instructions")
+    proxy = create_proxy(upstream, name="proxy", instructions="proxy instructions")
+
+    async with Client(proxy) as client:
+        assert client.session.instructions == "proxy instructions"
+
+
+async def test_proxy_instructions_none_when_upstream_has_none():
+    """A proxy over an upstream without instructions reports no instructions."""
+    upstream = FastMCP(name="upstream")
+    proxy = create_proxy(upstream, name="proxy")
+
+    async with Client(proxy) as client:
+        assert client.session.instructions is None
+
+
 def test_create_proxy_with_url():
     """create_proxy should accept a URL without connecting."""
     proxy = create_proxy("http://example.com/mcp/")
@@ -194,38 +239,6 @@ def test_create_proxy_with_url():
     client = cast(Client, proxy.client_factory())
     assert isinstance(client.transport, StreamableHttpTransport)
     assert client.transport.url == "http://example.com/mcp/"
-
-
-# --- Deprecated as_proxy tests (verify backwards compatibility) ---
-
-
-async def test_as_proxy_deprecated_with_server(fastmcp_server):
-    """FastMCP.as_proxy should work but emit deprecation warning."""
-    import warnings
-
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        proxy = FastMCP.as_proxy(fastmcp_server)
-        assert len(w) == 1
-        assert issubclass(w[0].category, DeprecationWarning)
-        assert "create_proxy" in str(w[0].message)
-
-    async with Client(proxy) as client:
-        result = await client.call_tool("greet", {"name": "Test"})
-        assert result.data == "Hello, Test!"
-
-
-def test_as_proxy_deprecated_with_url():
-    """FastMCP.as_proxy should work but emit deprecation warning."""
-    import warnings
-
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        proxy = FastMCP.as_proxy("http://example.com/mcp/")
-        assert len(w) == 1
-        assert issubclass(w[0].category, DeprecationWarning)
-
-    assert isinstance(proxy, FastMCPProxy)
 
 
 async def test_proxy_with_async_client_factory():
@@ -243,6 +256,74 @@ async def test_proxy_with_async_client_factory():
     assert isinstance(client, Client)
     assert isinstance(client.transport, StreamableHttpTransport)
     assert client.transport.url == "http://example.com/mcp/"
+
+
+async def test_proxy_ping_forwards_to_remote_server(fastmcp_server):
+    proxy = create_proxy(fastmcp_server)
+
+    async with Client(proxy, mode="legacy") as client:
+        assert await client.ping() is True
+
+
+async def test_proxy_ping_surfaces_wrong_remote_path():
+    remote = FastMCP("remote")
+    async with run_server_async(remote, transport="http") as url:
+        proxy = create_proxy(StreamableHttpTransport(url.removesuffix("/mcp")))
+
+        # Optional metadata lookup is best-effort, so the client can connect. The
+        # first real proxied operation reports the bad backend path instead.
+        async with Client(proxy, mode="legacy") as client:
+            with pytest.raises(MCPError, match="Not Found"):
+                await client.ping()
+
+
+async def test_proxy_initialize_defers_remote_connection_error():
+    port = find_available_port()
+    proxy = create_proxy(
+        StreamableHttpTransport(f"http://127.0.0.1:{port}/mcp"),
+        provider_error_strategy="raise",
+    )
+
+    # The client can connect without optional backend metadata; the first
+    # component operation reports the unavailable backend.
+    async with Client(proxy, mode="legacy") as client:
+        with pytest.raises(MCPError, match="Client failed to connect"):
+            await client.list_tools()
+
+
+async def test_proxy_list_tools_surfaces_remote_connection_error():
+    """A dead backend surfaces as an MCPError naming the connection failure.
+
+    The provider normalizes transport failures into `MCPError` (rather than
+    letting the client's `RuntimeError` escape) so the error survives the
+    modern era's wire boundary, which masks any non-MCPError as a generic
+    "Internal server error".
+    """
+    port = find_available_port()
+    proxy = create_proxy(
+        StreamableHttpTransport(f"http://127.0.0.1:{port}/mcp"),
+        provider_error_strategy="raise",
+    )
+
+    with pytest.raises(MCPError, match="Client failed to connect"):
+        await proxy.list_tools()
+
+
+async def test_proxy_list_tools_client_surfaces_remote_connection_error():
+    """Connecting succeeds and the first component operation reports the backend.
+
+    `ProxyProvider._list_tools` normalizes the raw transport failure into the
+    `MCPError("Client failed to connect...")` this test expects.
+    """
+    port = find_available_port()
+    proxy = create_proxy(
+        StreamableHttpTransport(f"http://127.0.0.1:{port}/mcp"),
+        provider_error_strategy="raise",
+    )
+
+    with pytest.raises(MCPError, match="Client failed to connect"):
+        async with Client(proxy) as client:
+            await client.list_tools()
 
 
 class TestTools:
@@ -308,26 +389,35 @@ class TestTools:
         assert tool.description is None
 
     async def test_list_tools_same_as_original(self, fastmcp_server, proxy_server):
-        assert await proxy_server._list_tools_mcp(
-            mcp_types.ListToolsRequest()
-        ) == await fastmcp_server._list_tools_mcp(mcp_types.ListToolsRequest())
+        async with Client(fastmcp_server) as original_client:
+            original = await original_client.list_tools()
+        async with Client(proxy_server) as proxy_client:
+            proxied = await proxy_client.list_tools()
+        assert proxied == original
 
     async def test_call_tool_result_same_as_original(
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
     ):
-        result = await fastmcp_server._call_tool_mcp("greet", {"name": "Alice"})
-        proxy_result = await proxy_server._call_tool_mcp("greet", {"name": "Alice"})
+        # proxy_server's backend is pinned to legacy (see its fixture docstring);
+        # match the front so a real tool call doesn't cross eras.
+        async with Client(fastmcp_server) as original_client:
+            result = await original_client.call_tool("greet", {"name": "Alice"})
+        async with Client(proxy_server, mode="legacy") as proxy_client:
+            proxy_result = await proxy_client.call_tool("greet", {"name": "Alice"})
 
-        assert result == proxy_result
+        assert result.content == proxy_result.content
+        assert result.data == proxy_result.data
 
     async def test_call_tool_calls_tool(self, proxy_server):
-        async with Client(proxy_server) as client:
+        # See proxy_server fixture docstring: its backend is pinned to legacy.
+        async with Client(proxy_server, mode="legacy") as client:
             proxy_result = await client.call_tool("add", {"a": 1, "b": 2})
         assert proxy_result.data == 3
 
     async def test_error_tool_raises_error(self, proxy_server):
+        # See proxy_server fixture docstring: its backend is pinned to legacy.
         with pytest.raises(ToolError, match="This is a test error"):
-            async with Client(proxy_server) as client:
+            async with Client(proxy_server, mode="legacy") as client:
                 await client.call_tool("error_tool", {})
 
     async def test_error_tool_with_image_content(self, proxy_server):
@@ -335,10 +425,10 @@ class TestTools:
         error_result = mcp_types.CallToolResult(
             content=[
                 mcp_types.ImageContent(
-                    type="image", data="abc123", mimeType="image/png"
+                    type="image", data="abc123", mime_type="image/png"
                 )
             ],
-            isError=True,
+            is_error=True,
         )
         with patch.object(
             Client, "call_tool_mcp", new_callable=AsyncMock, return_value=error_result
@@ -351,7 +441,7 @@ class TestTools:
         """Error responses with empty content should not crash."""
         error_result = mcp_types.CallToolResult(
             content=[],
-            isError=True,
+            is_error=True,
         )
         with patch.object(
             Client, "call_tool_mcp", new_callable=AsyncMock, return_value=error_result
@@ -359,6 +449,28 @@ class TestTools:
             with pytest.raises(ToolError):
                 async with Client(proxy_server) as client:
                     await client.call_tool("error_tool", {})
+
+    async def test_error_tool_passthrough_preserves_content(self, proxy_server):
+        """Upstream error results pass through with content intact, not flattened."""
+        error_result = mcp_types.CallToolResult(
+            content=[
+                mcp_types.ImageContent(
+                    type="image", data="abc123", mime_type="image/png"
+                )
+            ],
+            structured_content={"detail": "boom"},
+            is_error=True,
+        )
+        with patch.object(
+            Client, "call_tool_mcp", new_callable=AsyncMock, return_value=error_result
+        ):
+            async with Client(proxy_server) as client:
+                result = await client.call_tool("error_tool", {}, raise_on_error=False)
+
+        assert result.is_error is True
+        assert isinstance(result.content[0], mcp_types.ImageContent)
+        assert result.content[0].data == "abc123"
+        assert result.structured_content == {"detail": "boom"}
 
     async def test_call_tool_forwards_meta(self, fastmcp_server, proxy_server):
         """Test that metadata from proxied tool results is properly forwarded."""
@@ -371,7 +483,8 @@ class TestTools:
                 meta={"custom_key": "custom_value", "processed": True},
             )
 
-        async with Client(proxy_server) as client:
+        # See proxy_server fixture docstring: its backend is pinned to legacy.
+        async with Client(proxy_server, mode="legacy") as client:
             result = await client.call_tool("tool_with_meta", {"value": "test"})
 
         assert isinstance(result.content[0], TextContent)
@@ -403,7 +516,7 @@ class TestTools:
         async with Client(proxy_server) as client:
             tools = await client.list_tools()
             greet_tool = next(t for t in tools if t.name == "greet")
-            assert "extra" in greet_tool.inputSchema["properties"]
+            assert "extra" in greet_tool.input_schema["properties"]
 
 
 class TestResources:
@@ -421,11 +534,14 @@ class TestResources:
         assert wave_resource.title == "Wave"
         assert wave_resource.meta == {"fastmcp": {"tags": ["wave"]}}
         assert wave_resource.icons == [Icon(src="https://example.com/wave-icon.png")]
+        assert wave_resource.annotations == Annotations(audience=["user"], priority=0.5)
 
     async def test_list_resources_same_as_original(self, fastmcp_server, proxy_server):
-        assert await proxy_server._list_resources_mcp(
-            mcp_types.ListResourcesRequest()
-        ) == await fastmcp_server._list_resources_mcp(mcp_types.ListResourcesRequest())
+        async with Client(fastmcp_server) as original_client:
+            original = await original_client.list_resources()
+        async with Client(proxy_server) as proxy_client:
+            proxied = await proxy_client.list_resources()
+        assert proxied == original
 
     async def test_read_resource(self, proxy_server: FastMCPProxy):
         async with Client(proxy_server) as client:
@@ -470,22 +586,32 @@ class TestResources:
             assert isinstance(original, TextResourceContents)
             assert isinstance(proxied, TextResourceContents)
             assert original.text == proxied.text, f"Content {i} text mismatch"
-            assert original.mimeType == proxied.mimeType, (
+            assert original.mime_type == proxied.mime_type, (
                 f"Content {i} mimeType mismatch"
             )
             assert original.meta == proxied.meta, f"Content {i} meta mismatch"
 
         # Verify the contents are what we expect
         assert original_result[0].text == "First item"
-        assert original_result[0].mimeType == "text/plain"
+        assert original_result[0].mime_type == "text/plain"
         assert original_result[1].text == '{"key": "value"}'
-        assert original_result[1].mimeType == "application/json"
+        assert original_result[1].mime_type == "application/json"
         assert original_result[2].text == "# Markdown\nContent"
-        assert original_result[2].mimeType == "text/markdown"
+        assert original_result[2].mime_type == "text/markdown"
+
+    @pytest.mark.parametrize("mode", ["legacy", "auto"])
+    async def test_proxy_forwards_read_result_meta(self, fastmcp_server, mode):
+        """The `_meta` of the resources/read result, not just of each content item."""
+        proxy = create_proxy(fastmcp_server)
+        async with Client(proxy, mode=mode) as client:
+            result = await client.read_resource_mcp("data://multi")
+
+        assert result.meta is not None
+        assert result.meta["count"] == 3
 
     async def test_read_resource_returns_none_if_not_found(self, proxy_server):
         with pytest.raises(
-            McpError, match="Unknown resource: 'resource://nonexistent'"
+            MCPError, match="Resource not found: 'resource://nonexistent'"
         ):
             async with Client(proxy_server) as client:
                 await client.read_resource("resource://nonexistent")
@@ -536,16 +662,17 @@ class TestResourceTemplates:
         assert get_user_template.icons == [
             Icon(src="https://example.com/user-icon.png")
         ]
+        assert get_user_template.annotations == Annotations(
+            audience=["assistant"], priority=0.8
+        )
 
     async def test_list_resource_templates_same_as_original(
         self, fastmcp_server, proxy_server
     ):
-        result = await fastmcp_server._list_resource_templates_mcp(
-            mcp_types.ListResourceTemplatesRequest()
-        )
-        proxy_result = await proxy_server._list_resource_templates_mcp(
-            mcp_types.ListResourceTemplatesRequest()
-        )
+        async with Client(fastmcp_server) as original_client:
+            result = await original_client.list_resource_templates()
+        async with Client(proxy_server) as proxy_client:
+            proxy_result = await proxy_client.list_resource_templates()
         assert proxy_result == result
 
     @pytest.mark.parametrize("id", [1, 2, 3])
@@ -585,15 +712,25 @@ class TestResourceTemplates:
             assert isinstance(original, TextResourceContents)
             assert isinstance(proxied, TextResourceContents)
             assert original.text == proxied.text, f"Content {i} text mismatch"
-            assert original.mimeType == proxied.mimeType, (
+            assert original.mime_type == proxied.mime_type, (
                 f"Content {i} mimeType mismatch"
             )
 
         # Verify the contents are what we expect
         assert original_result[0].text == "Item test123 - First"
-        assert original_result[0].mimeType == "text/plain"
+        assert original_result[0].mime_type == "text/plain"
         assert original_result[1].text == '{"id": "test123", "status": "active"}'
-        assert original_result[1].mimeType == "application/json"
+        assert original_result[1].mime_type == "application/json"
+
+    @pytest.mark.parametrize("mode", ["legacy", "auto"])
+    async def test_proxy_template_forwards_read_result_meta(self, fastmcp_server, mode):
+        """The `_meta` of the resources/read result, not just of each content item."""
+        proxy = create_proxy(fastmcp_server)
+        async with Client(proxy, mode=mode) as client:
+            result = await client.read_resource_mcp("data://multi/test123")
+
+        assert result.meta is not None
+        assert result.meta["id"] == "test123"
 
     async def test_proxy_can_overwrite_proxied_resource_template(self, proxy_server):
         """
@@ -630,9 +767,99 @@ class TestResourceTemplates:
         async with Client(proxy_server) as client:
             templates = await client.list_resource_templates()
             user_template = next(
-                t for t in templates if t.uriTemplate == "data://user/{user_id}"
+                t for t in templates if t.uri_template == "data://user/{user_id}"
             )
             assert user_template.name == "overwritten_get_user"
+
+
+class TestResourceTemplateQueryParams:
+    """Resource templates with RFC 6570 {?param} query params work through proxy."""
+
+    async def test_query_param_forwarded(self):
+        remote = FastMCP("Remote")
+
+        @remote.resource("data://{id}{?format}")
+        def get_data(id: str, format: str = "json") -> str:
+            return f"id={id} format={format}"
+
+        proxy = create_proxy(Client(remote))
+        async with Client(proxy) as client:
+            result = await client.read_resource("data://123?format=xml")
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "id=123 format=xml"
+
+    async def test_query_param_default_used_when_omitted(self):
+        remote = FastMCP("Remote")
+
+        @remote.resource("data://{id}{?format}")
+        def get_data(id: str, format: str = "json") -> str:
+            return f"id={id} format={format}"
+
+        proxy = create_proxy(Client(remote))
+        async with Client(proxy) as client:
+            result = await client.read_resource("data://123")
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "id=123 format=json"
+
+    async def test_multiple_query_params_forwarded(self):
+        remote = FastMCP("Remote")
+
+        @remote.resource("data://{id}{?limit,offset}")
+        def get_data(id: str, limit: int = 10, offset: int = 0) -> str:
+            return f"id={id} limit={limit} offset={offset}"
+
+        proxy = create_proxy(Client(remote))
+        async with Client(proxy) as client:
+            result = await client.read_resource("data://abc?limit=5&offset=20")
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "id=abc limit=5 offset=20"
+
+    async def test_encoded_path_param_preserved(self):
+        remote = FastMCP("Remote")
+
+        @remote.resource("data://{id}")
+        def get_data(id: str) -> str:
+            return f"id={id}"
+
+        proxy = create_proxy(Client(remote))
+        async with Client(proxy) as client:
+            result = await client.read_resource("data://a%2Fb")
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "id=a/b"
+
+    async def test_hyphenated_query_param_forwarded(self):
+        remote = FastMCP("Remote")
+
+        @remote.resource("data://{id}{?api-version}")
+        def get_data(id: str, api_version: str = "v1") -> str:
+            return f"id={id} api_version={api_version}"
+
+        proxy = create_proxy(Client(remote))
+        async with Client(proxy) as client:
+            result = await client.read_resource("data://123?api-version=v2")
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "id=123 api_version=v2"
+
+    def test_same_name_in_path_and_query_is_rejected(self):
+        remote = FastMCP("Remote")
+        with pytest.raises(ValueError, match="must be optional"):
+
+            @remote.resource("data://{id}{?id}")
+            def get_data(id: str) -> str:
+                return id
+
+    async def test_hyphenated_query_param_not_double_encoded(self):
+        remote = FastMCP("Remote")
+
+        @remote.resource("data://{id}{?api-version}")
+        def get_data(id: str, api_version: str = "v1") -> str:
+            return f"id={id} api_version={api_version}"
+
+        proxy = create_proxy(Client(remote))
+        async with Client(proxy) as client:
+            result = await client.read_resource("data://123?api-version=a%2Fb")
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "id=123 api_version=a/b"
 
 
 class TestPrompts:
@@ -656,6 +883,31 @@ class TestPrompts:
             proxy_result = await client.list_prompts()
         assert proxy_result == result
 
+    async def test_list_prompts_keeps_argument_titles(self):
+        """A backend's argument titles reach the proxy's clients."""
+        from fastmcp.prompts import Prompt
+        from fastmcp.prompts.base import PromptArgument
+
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        prompt = Prompt.from_function(greet)
+        prompt = prompt.model_copy(
+            update={
+                "arguments": [
+                    PromptArgument(name="name", title="Your name", required=True)
+                ]
+            }
+        )
+        backend = FastMCP("Backend")
+        backend.add_prompt(prompt)
+
+        async with Client(create_proxy(backend)) as client:
+            (listed,) = await client.list_prompts()
+        assert listed.arguments == [
+            mcp_types.PromptArgument(name="name", title="Your name", required=True)
+        ]
+
     async def test_render_prompt_same_as_original(
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
     ):
@@ -663,7 +915,12 @@ class TestPrompts:
             result = await client.get_prompt("welcome", {"name": "Alice"})
         async with Client(proxy_server) as client:
             proxy_result = await client.get_prompt("welcome", {"name": "Alice"})
-        assert proxy_result == result
+        # Each server stamps its own `serverInfo` into `_meta` (spec #3002), so
+        # the proxy's stamp naturally differs from the origin's. Compare the
+        # relayed payload.
+        assert proxy_result.model_copy(
+            update={"meta": user_meta(proxy_result.meta)}
+        ) == result.model_copy(update={"meta": user_meta(result.meta)})
 
     async def test_render_prompt_calls_prompt(self, proxy_server):
         async with Client(proxy_server) as client:
@@ -717,12 +974,15 @@ class TestPrompts:
         async with Client(proxy_server) as client:
             proxy_result = await client.get_prompt("image_prompt")
 
-        # The proxy result should match the original exactly
-        assert proxy_result == result
+        # The proxy relays the original payload; only the per-server
+        # `serverInfo` `_meta` stamp differs.
+        assert proxy_result.model_copy(
+            update={"meta": user_meta(proxy_result.meta)}
+        ) == result.model_copy(update={"meta": user_meta(result.meta)})
         # Verify the image content is preserved as ImageContent, not JSON text
         assert isinstance(proxy_result.messages[1].content, mcp_types.ImageContent)
         assert proxy_result.messages[1].content.data == "iVBORw0KGgoAAAANSUhEUg=="
-        assert proxy_result.messages[1].content.mimeType == "image/png"
+        assert proxy_result.messages[1].content.mime_type == "image/png"
 
 
 async def test_proxy_handles_multiple_concurrent_tasks_correctly(
@@ -981,3 +1241,393 @@ class TestProxySpanAttributes:
             assert all(v is not None for v in attrs.values()), (
                 f"OpenTelemetry rejects None attribute values; got {attrs!r}"
             )
+
+
+class TestProxyOutputSchemaEnforcement:
+    """A proxy relays tool results; it does not police the backend's schema.
+
+    `ClientSession.call_tool` validates structured content against the output
+    schema the backend advertised. For a proxy that check is misplaced: it
+    turns a backend's schema bug into a proxy error and hides the real
+    response from the client that actually consumes it.
+    """
+
+    @pytest.fixture
+    def backend_violating_its_schema(self) -> FastMCP:
+        mcp = FastMCP("SchemaViolator")
+        schema = {
+            "type": "object",
+            "properties": {"status": {"enum": ["ok", "error"]}},
+            "required": ["status"],
+        }
+
+        @mcp.tool(output_schema=schema)
+        def undeclared_status() -> dict:
+            return {"status": "weird"}
+
+        @mcp.tool(output_schema=schema)
+        def declared_status() -> dict:
+            return {"status": "ok"}
+
+        return mcp
+
+    async def _call_without_validating(self, server: FastMCP, tool: str):
+        """Call through a client that does not enforce the schema itself."""
+        # This proxy's backend is built via `ProxyProvider(lambda: ProxyClient(...))`
+        # directly rather than through `create_proxy`'s era-mirroring factory, so it
+        # stays pinned to `ProxyClient`'s own default of `mode="legacy"` regardless
+        # of the front era (see the `proxy_server` fixture docstring above).
+        client = Client(server, mode="legacy")
+        client._transport_options = TransportOptions(
+            session_class=_ForwardingClientSession
+        )
+        async with client:
+            return await client.call_tool_mcp(tool, {})
+
+    async def test_proxy_forwards_result_violating_backend_schema(
+        self, backend_violating_its_schema
+    ):
+        proxy = FastMCP("Proxy")
+        proxy.add_provider(
+            ProxyProvider(lambda: ProxyClient(backend_violating_its_schema))
+        )
+
+        result = await self._call_without_validating(proxy, "undeclared_status")
+
+        assert result.is_error is False
+        assert result.structured_content == {"status": "weird"}
+
+    async def test_proxy_forwards_conforming_result_unchanged(
+        self, backend_violating_its_schema
+    ):
+        proxy = FastMCP("Proxy")
+        proxy.add_provider(
+            ProxyProvider(lambda: ProxyClient(backend_violating_its_schema))
+        )
+
+        result = await self._call_without_validating(proxy, "declared_status")
+
+        assert result.is_error is False
+        assert result.structured_content == {"status": "ok"}
+
+    async def test_end_client_still_enforces_the_schema(
+        self, backend_violating_its_schema
+    ):
+        """Skipping validation in the proxy doesn't disarm the real client."""
+        proxy = FastMCP("Proxy")
+        proxy.add_provider(
+            ProxyProvider(lambda: ProxyClient(backend_violating_its_schema))
+        )
+
+        # `ProxyClient(backend_violating_its_schema)` above is pinned to legacy
+        # (see `_call_without_validating`'s comment); match the front here too.
+        async with Client(proxy, mode="legacy") as client:
+            with pytest.raises(RuntimeError, match="Invalid structured content"):
+                await client.call_tool_mcp("undeclared_status", {})
+
+    async def test_direct_client_still_enforces_the_schema(
+        self, backend_violating_its_schema
+    ):
+        """The behavior change is scoped to proxies, not clients generally."""
+        async with Client(backend_violating_its_schema) as client:
+            with pytest.raises(RuntimeError, match="Invalid structured content"):
+                await client.call_tool_mcp("undeclared_status", {})
+
+    async def test_proxied_calls_do_not_refetch_the_backend_tool_list(self):
+        """Validation used to force a `tools/list` on every proxied call.
+
+        The proxy builds a fresh client per request, so the SDK's output-schema
+        cache was always cold and each call paid an extra backend round trip.
+        """
+        counts = {"list": 0, "call": 0}
+
+        class CountingMiddleware(Middleware):
+            async def on_list_tools(self, context, call_next):
+                counts["list"] += 1
+                return await call_next(context)
+
+            async def on_call_tool(self, context, call_next):
+                counts["call"] += 1
+                return await call_next(context)
+
+        backend = FastMCP("Backend")
+        backend.add_middleware(CountingMiddleware())
+
+        @backend.tool(
+            output_schema={
+                "type": "object",
+                "properties": {"n": {"type": "integer"}},
+                "required": ["n"],
+            }
+        )
+        def echo(n: int) -> dict:
+            return {"n": n}
+
+        proxy = FastMCP("Proxy")
+        proxy.add_provider(ProxyProvider(lambda: ProxyClient(backend)))
+
+        # `ProxyClient(backend)` above is pinned to legacy (see
+        # `_call_without_validating`'s comment); match the front here too.
+        async with Client(proxy, mode="legacy") as client:
+            await client.call_tool("echo", {"n": 1})
+            lists_after_first = counts["list"]
+
+            for n in range(2, 5):
+                await client.call_tool("echo", {"n": n})
+
+        assert counts["call"] == 4
+        assert counts["list"] == lists_after_first
+
+
+class TestProxySettingsAreNotSharedBetweenClients:
+    """Proxy connection settings belong to the client, not to the transport.
+
+    Configuring a shared transport in place used to leak proxy behavior into
+    unrelated clients — including header forwarding, which would send the
+    caller's credentials to a server the user never meant to authorize.
+    """
+
+    def test_building_a_proxy_client_does_not_reconfigure_a_shared_transport(self):
+        shared = StreamableHttpTransport("http://example.com/mcp/")
+        plain = Client(shared)
+
+        ProxyClient(shared)
+
+        assert plain._transport_options is None
+
+    def test_proxy_client_carries_its_own_options(self):
+        proxy_client = ProxyClient(StreamableHttpTransport("http://example.com/mcp/"))
+
+        options = proxy_client._transport_options
+        assert options is not None
+        assert options.forward_incoming_headers is True
+        assert options.session_class is _ForwardingClientSession
+
+    def test_options_survive_the_per_request_client_copy(self):
+        """The proxy builds a fresh client per request via `new()`."""
+        proxy_client = ProxyClient(StreamableHttpTransport("http://example.com/mcp/"))
+
+        assert proxy_client.new()._transport_options is proxy_client._transport_options
+
+    def test_a_user_supplied_client_is_not_reconfigured(self):
+        """`create_proxy(client)` must not change how the caller's client behaves."""
+        user_client = Client(StreamableHttpTransport("http://example.com/mcp/"))
+
+        create_proxy(user_client)
+
+        assert user_client._transport_options is None
+
+
+class TestProxyForwardingAppliesToEveryBackendClient:
+    """Every path that builds a proxy backend gets the forwarding session.
+
+    `create_proxy` accepts plain Clients and MCPConfigs, none of which route
+    through `ProxyClient.__init__`, so configuring only that constructor would
+    leave those forms still rejecting backend results.
+    """
+
+    @pytest.fixture
+    def backend(self) -> FastMCP:
+        mcp = FastMCP("SchemaViolator")
+
+        @mcp.tool(
+            output_schema={
+                "type": "object",
+                "properties": {"status": {"enum": ["ok", "error"]}},
+                "required": ["status"],
+            }
+        )
+        def status() -> dict:
+            return {"status": "weird"}
+
+        return mcp
+
+    async def _forwarded(
+        self, server: FastMCP, tool: str = "status", mode: str = "auto"
+    ):
+        # `mode` follows the proxy backend's era: a plain Client or single-server
+        # config connects the backend directly, so it mirrors the front's auto
+        # era. A multi-server config instead mounts a router with a
+        # StatefulProxyClient per configured server leg — an already-constructed
+        # ProxyClient subclass, same as the `proxy_server` fixture above, pinned
+        # to `mode="legacy"` regardless of the front.
+        client = Client(server, mode=mode)
+        client._transport_options = TransportOptions(
+            session_class=_ForwardingClientSession
+        )
+        async with client:
+            return await client.call_tool_mcp(tool, {})
+
+    async def test_plain_client_target_forwards(self, backend):
+        result = await self._forwarded(create_proxy(Client(backend)))
+
+        assert result.is_error is False
+        assert result.structured_content == {"status": "weird"}
+
+    async def test_single_server_config_target_forwards(self, backend):
+        port = find_available_port()
+        async with run_server_async(backend, port=port):
+            config = MCPConfig.from_dict(
+                {"mcpServers": {"a": {"url": f"http://127.0.0.1:{port}/mcp/"}}}
+            )
+            result = await self._forwarded(create_proxy(Client(config)))
+
+        assert result.is_error is False
+        assert result.structured_content == {"status": "weird"}
+
+    async def test_multi_server_config_target_forwards(self, backend):
+        port = find_available_port()
+        async with run_server_async(backend, port=port):
+            url = f"http://127.0.0.1:{port}/mcp/"
+            config = MCPConfig.from_dict(
+                {"mcpServers": {"a": {"url": url}, "b": {"url": url}}}
+            )
+            result = await self._forwarded(
+                create_proxy(Client(config)), "a_status", mode="legacy"
+            )
+
+        assert result.is_error is False
+        assert result.structured_content == {"status": "weird"}
+
+
+class TestProxyModernEraInstructions:
+    """Upstream instructions must reach a client on the modern era too."""
+
+    async def test_proxy_forwards_upstream_instructions_on_modern_era(self):
+        upstream = FastMCP(name="upstream", instructions="USE_THIS_MARKER_123")
+        proxy = create_proxy(upstream, name="proxy")
+
+        async with Client(proxy, mode="auto") as client:
+            assert client.protocol_version in MODERN_PROTOCOL_VERSIONS
+            assert client.session.instructions == "USE_THIS_MARKER_123"
+
+    async def test_proxy_own_instructions_take_precedence_on_modern_era(self):
+        upstream = FastMCP(name="upstream", instructions="upstream instructions")
+        proxy = create_proxy(upstream, name="proxy", instructions="proxy instructions")
+
+        async with Client(proxy, mode="auto") as client:
+            assert client.session.instructions == "proxy instructions"
+
+    async def test_proxy_instructions_none_when_upstream_has_none_on_modern_era(self):
+        upstream = FastMCP(name="upstream")
+        proxy = create_proxy(upstream, name="proxy")
+
+        async with Client(proxy, mode="auto") as client:
+            assert client.session.instructions is None
+
+
+class TestProxyProviderTransportErrors:
+    """A dead backend must surface as an MCPError, not a raw transport error."""
+
+    @pytest.fixture
+    def unreachable_provider(self) -> ProxyProvider:
+        port = find_available_port()
+        return ProxyProvider(
+            lambda: ProxyClient(f"http://127.0.0.1:{port}/mcp/"),
+            cache_ttl=0,
+        )
+
+    @pytest.mark.parametrize(
+        "method",
+        ["_list_tools", "_list_resources", "_list_resource_templates", "_list_prompts"],
+    )
+    async def test_list_method_wraps_connection_failure(
+        self, unreachable_provider: ProxyProvider, method: str
+    ):
+        with pytest.raises(MCPError):
+            await getattr(unreachable_provider, method)()
+
+    @pytest.mark.parametrize(
+        "method",
+        ["_list_tools", "_list_resources", "_list_resource_templates", "_list_prompts"],
+    )
+    async def test_list_method_wraps_raw_transport_error(self, method: str):
+        """A raw transport error raised mid-call is normalized, not leaked."""
+
+        def exploding_factory() -> Client:
+            raise httpx2.ConnectError("backend refused the connection")
+
+        provider = ProxyProvider(exploding_factory, cache_ttl=0)
+        with pytest.raises(MCPError, match="backend refused the connection"):
+            await getattr(provider, method)()
+
+    @pytest.mark.parametrize("mode", ["legacy", "auto"])
+    async def test_connection_error_reaches_client_on_both_eras(self, mode: str):
+        """The actual defect: the modern era masked the connection failure.
+
+        An unwrapped `RuntimeError` reaching the modern wire boundary is
+        replaced with a generic "Internal server error", so a client on the
+        newer protocol could not tell a dead backend from a server bug. On the
+        legacy era the same exception reached the wire as `str(exc)`, which is
+        why nothing caught this while tests pinned the older version.
+        """
+        port = find_available_port()
+        proxy = create_proxy(
+            StreamableHttpTransport(f"http://127.0.0.1:{port}/mcp"),
+            provider_error_strategy="raise",
+        )
+
+        with pytest.raises(MCPError, match="Client failed to connect"):
+            async with Client(proxy, mode=mode) as client:
+                await client.list_tools()
+
+
+async def test_proxy_preserves_x_mcp_header_annotation():
+    """A proxy re-advertises a backend tool's `x-mcp-header` annotation (SEP-2243).
+
+    The routing headers are per-hop: the SDK client regenerates them on each
+    HTTP request. For `Mcp-Param-*` to be emitted on the proxy->backend hop (and
+    on the caller->proxy hop), the proxy must carry the backend's `x-mcp-header`
+    schema annotation through to its own advertised tool schema.
+    """
+    from typing import Annotated
+
+    from pydantic import Field
+
+    backend = FastMCP("Backend")
+
+    @backend.tool
+    def route(
+        tenant: Annotated[str, Field(json_schema_extra={"x-mcp-header": "Tenant"})],
+    ) -> str:
+        return tenant
+
+    proxy = create_proxy(backend)
+    async with Client(proxy) as client:
+        tools = await client.list_tools()
+
+    (tool,) = [t for t in tools if t.name == "route"]
+    assert tool.input_schema["properties"]["tenant"]["x-mcp-header"] == "Tenant"
+
+
+async def test_proxy_forwards_mcp_param_header_to_modern_http_backend():
+    """A proxy in front of a modern Streamable-HTTP backend routes an annotated call (SEP-2243).
+
+    A modern backend validates that an `x-mcp-header` argument is mirrored into an
+    `Mcp-Param-*` header and rejects the call with `HEADER_MISMATCH` when it is
+    missing. The SDK client caches the annotation map on `list_tools`, but a
+    proxied `tools/call` goes straight to `call_tool` on a fresh backend session,
+    so the proxy must seed the map itself. This exercises the real validating HTTP
+    hop end to end.
+    """
+    from typing import Annotated
+
+    from pydantic import Field
+
+    backend = FastMCP("Backend")
+
+    @backend.tool
+    def route(
+        tenant: Annotated[str, Field(json_schema_extra={"x-mcp-header": "Tenant"})],
+    ) -> str:
+        return f"routed:{tenant}"
+
+    async with run_server_async(backend, transport="http") as url:
+        # mode="auto" negotiates the modern protocol with the HTTP backend, so
+        # the proxy->backend hop is the validating one. (ProxyClient defaults to
+        # legacy, which neither emits nor validates these headers.)
+        proxy = create_proxy(ProxyClient(StreamableHttpTransport(url), mode="auto"))
+        async with Client(proxy) as client:
+            result = await client.call_tool("route", {"tenant": "acme"})
+
+    assert result.data == "routed:acme"

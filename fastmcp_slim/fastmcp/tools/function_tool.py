@@ -2,44 +2,49 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
-import warnings
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import lru_cache
+from types import MethodType
 from typing import (
-    TYPE_CHECKING,
     Annotated,
     Any,
     Literal,
     Protocol,
     TypeVar,
+    cast,
+    get_type_hints,
     overload,
     runtime_checkable,
 )
 
 import anyio
-from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData, Icon, ToolAnnotations
-from pydantic import Field
+import mcp_types
+from mcp.shared.exceptions import MCPError
+from mcp_types import Icon, ToolAnnotations
+from pydantic import Field, TypeAdapter
+from pydantic import ValidationError as PydanticValidationError
 from pydantic.json_schema import SkipJsonSchema
+from pydantic_core import to_json
 
-import fastmcp
-from fastmcp.decorators import get_fastmcp_meta, resolve_task_config
-from fastmcp.exceptions import FastMCPDeprecationWarning
-from fastmcp.server.auth.authorization import AuthCheck
-from fastmcp.server.dependencies import without_injected_parameters
-from fastmcp.server.tasks.config import TaskConfig
+from fastmcp.decorators import get_fastmcp_meta
+from fastmcp.exceptions import ValidationError
 from fastmcp.tools.base import (
+    InputRequiredToolResult,
     Tool,
     ToolResult,
-    ToolResultSerializerType,
 )
 from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
+from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.tasks import TaskConfig
 from fastmcp.utilities.types import (
     NotSet,
     NotSetT,
@@ -48,9 +53,144 @@ from fastmcp.utilities.types import (
 
 logger = get_logger(__name__)
 
-if TYPE_CHECKING:
-    from docket import Docket
-    from docket.execution import Execution
+
+class _ToolBodyError(Exception):
+    """Marks a ``pydantic.ValidationError`` raised while executing a tool's body.
+
+    Pydantic validates a tool's arguments *before* invoking the body, so a bare
+    ``pydantic.ValidationError`` surfacing from the call adapter is unambiguously
+    an argument-validation failure (a bad call). Errors a tool raises from its
+    own body — e.g. constructing a model from upstream data — are a different
+    class of problem (a server-side bug) that must not be reclassified as a bad
+    call. We wrap the body so those are tagged and can be told apart. The tagged
+    error propagates out of the tool like any other body exception, so
+    `FastMCP.call_tool` masks, logs, and converts it to a `ToolError`. See #4128.
+    """
+
+
+def _materialize_sync_generator(result: Any) -> Any:
+    """Consume a sync generator into a list, passing any other value through.
+
+    A generator body runs during iteration, not creation, so this must be
+    called inside the same invocation the generator was created in — ideally
+    on a worker thread, so a blocking body cannot stall the event loop.
+    """
+    if inspect.isgenerator(result):
+        return list(result)
+    return result
+
+
+@lru_cache(maxsize=5000)
+def _wrap_body_errors(
+    fn: Callable[..., Any], *, materialize_generators: bool = False
+) -> Callable[..., Any]:
+    """Wrap ``fn`` so a ``pydantic.ValidationError`` raised by its body is
+    re-raised as ``_ToolBodyError``.
+
+    The wrapper preserves ``fn``'s signature and annotations so the cached
+    ``TypeAdapter`` validates arguments identically — only body execution is
+    affected. When requested, sync generators are consumed during this same
+    invocation so dispatch and dependency lifetimes cover their bodies too.
+    Argument validation happens before the wrapper is called, so it
+    keeps raising a bare ``pydantic.ValidationError``.
+    """
+    if is_coroutine_function(fn):
+
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return await fn(*args, **kwargs)
+            except PydanticValidationError as e:
+                raise _ToolBodyError(str(e)) from e
+    else:
+
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                result = fn(*args, **kwargs)
+                if materialize_generators:
+                    return _materialize_sync_generator(result)
+                return result
+            except PydanticValidationError as e:
+                raise _ToolBodyError(str(e)) from e
+
+    # Mirror the original callable so TypeAdapter builds the identical schema and
+    # binds arguments the same way. Annotations must cover every signature
+    # parameter or pydantic's call-schema generation raises KeyError — so prefer
+    # resolved type hints (handles string/forward refs) but fall back to the
+    # signature's own annotations, which is the only source for callables like
+    # functools.partial that carry no __annotations__.
+    try:
+        resolved_hints = get_type_hints(fn, include_extras=True)
+    except Exception:
+        resolved_hints = {}
+    sig = inspect.signature(fn)
+    annotations: dict[str, Any] = {}
+    for param_name, param in sig.parameters.items():
+        if param_name in resolved_hints:
+            annotations[param_name] = resolved_hints[param_name]
+        elif param.annotation is not inspect.Parameter.empty:
+            annotations[param_name] = param.annotation
+    if "return" in resolved_hints:
+        annotations["return"] = resolved_hints["return"]
+    elif sig.return_annotation is not inspect.Signature.empty:
+        annotations["return"] = sig.return_annotation
+
+    wrapper.__signature__ = sig  # type: ignore[attr-defined]  # ty: ignore[invalid-assignment]
+    wrapper.__annotations__ = annotations
+    wrapper.__name__ = getattr(fn, "__name__", "wrapper")
+    wrapper.__doc__ = getattr(fn, "__doc__", None)
+    wrapper.__module__ = getattr(fn, "__module__", wrapper.__module__)
+    wrapper.__qualname__ = getattr(fn, "__qualname__", wrapper.__qualname__)
+    return wrapper
+
+
+def _strict_input_validation() -> Literal[True] | None:
+    """The ``strict`` value to pass to pydantic for the running server.
+
+    Reads ``strict_input_validation`` off the active request's ``FastMCP``
+    instance. Returns ``None`` when the server is lax or outside a request
+    context (e.g. a tool invoked directly in tests): pydantic then keeps any
+    strictness declared on the parameters themselves, whereas an explicit
+    ``False`` would override it.
+    """
+    from fastmcp.server.context import _current_context
+
+    context = _current_context.get(None)
+    if context is None or not context.fastmcp.strict_input_validation:
+        return None
+    return True
+
+
+def _is_json_data(value: Any) -> bool:
+    """Whether *value* is built only from types a JSON parser produces."""
+    if value is None or isinstance(value, (str, int, float)):
+        return True
+    if isinstance(value, list):
+        return all(_is_json_data(item) for item in value)
+    if isinstance(value, dict):
+        return all(
+            isinstance(key, str) and _is_json_data(item) for key, item in value.items()
+        )
+    return False
+
+
+def _validate_input(
+    type_adapter: TypeAdapter[Any], value: Any, *, strict: bool | None
+) -> Any:
+    """Validate tool input with *type_adapter*, honoring ``strict``.
+
+    Tool arguments are JSON, but pydantic's strict mode on Python input only
+    accepts already-built objects: an enum member, a ``datetime``, a ``UUID``, a
+    dataclass instance, a ``tuple`` or ``set``. Their JSON spellings, which the
+    input schema tells clients to send, would never validate. Strict validation
+    of JSON data therefore runs in JSON mode, which still rejects lax coercions
+    such as the string ``"10"`` for an ``int``. Python objects passed by an
+    in-process caller are validated as Python, since serializing them can lose
+    information (a ``SecretStr`` serializes masked).
+    """
+    if not strict or not _is_json_data(value):
+        return type_adapter.validate_python(value, strict=strict)
+    return type_adapter.validate_json(to_json(value), strict=True)
+
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -80,17 +220,39 @@ class ToolMeta:
     meta: dict[str, Any] | None = None
     app: Any = None
     task: bool | TaskConfig | None = None
-    exclude_args: list[str] | None = None
-    serializer: Any | None = None
     timeout: float | None = None
     auth: AuthCheck | list[AuthCheck] | None = None
     enabled: bool = True
     run_in_thread: bool = True
 
 
+def _resolve_param_hints(fn: Callable[..., Any]) -> dict[str, Any]:
+    """Resolve a callable's parameter type hints, tolerating partials.
+
+    Depending on the Python version, ``get_type_hints`` either rejects
+    ``functools.partial`` objects or returns no hints for them. The synchronous
+    TypeAdapter path handles partials natively. Resolve their hints against the
+    underlying function and keep only parameters in the partially-bound
+    signature.
+    """
+    target = fn
+    while isinstance(target, functools.partial):
+        target = target.func
+    try:
+        resolved = get_type_hints(target, include_extras=True)
+    except TypeError:
+        return {}
+    if target is fn:
+        return resolved
+    return {
+        name: resolved[name]
+        for name in inspect.signature(fn).parameters
+        if name in resolved
+    }
+
+
 class FunctionTool(Tool):
     fn: SkipJsonSchema[Callable[..., Any]]
-    return_type: Annotated[SkipJsonSchema[Any], Field(exclude=True)] = None
     run_in_thread: Annotated[
         bool,
         Field(
@@ -121,9 +283,7 @@ class FunctionTool(Tool):
         icons: list[Icon] | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
-        exclude_args: list[str] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
-        serializer: ToolResultSerializerType | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
@@ -153,14 +313,12 @@ class FunctionTool(Tool):
                     annotations,
                     meta,
                     task,
-                    serializer,
                     timeout,
                     auth,
                     run_in_thread,
                 ]
             )
             or output_schema is not NotSet
-            or exclude_args is not None
         )
 
         if metadata is not None and individual_params_provided:
@@ -187,31 +345,12 @@ class FunctionTool(Tool):
                 annotations=annotations,
                 meta=meta,
                 task=task,
-                exclude_args=exclude_args,
-                serializer=serializer,
                 timeout=timeout,
                 auth=auth,
                 run_in_thread=True if run_in_thread is None else run_in_thread,
             )
 
-        if metadata.serializer is not None and fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "The `serializer` parameter is deprecated. "
-                "Return ToolResult from your tools for full control over serialization. "
-                "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-        if metadata.exclude_args and fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "The `exclude_args` parameter is deprecated as of FastMCP 2.14. "
-                "Use dependency injection with `Depends()` instead for better lifecycle management. "
-                "See https://gofastmcp.com/servers/dependency-injection#using-depends for examples.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-
-        parsed_fn = ParsedFunction.from_function(fn, exclude_args=metadata.exclude_args)
+        parsed_fn = ParsedFunction.from_function(fn)
         func_name = metadata.name or parsed_fn.name
 
         if func_name == "<lambda>":
@@ -274,7 +413,6 @@ class FunctionTool(Tool):
             output_schema=final_output_schema,
             annotations=metadata.annotations,
             tags=metadata.tags or set(),
-            serializer=metadata.serializer,
             meta=metadata.meta,
             task_config=task_config,
             timeout=metadata.timeout,
@@ -283,62 +421,137 @@ class FunctionTool(Tool):
         )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
-        """Run the tool with arguments."""
-        wrapper_fn = without_injected_parameters(
-            self.fn, run_in_thread=self.run_in_thread
-        )
-        type_adapter = get_cached_typeadapter(wrapper_fn)
+        """Run the tool with arguments.
 
-        # Apply timeout if configured. Combining timeout with
-        # run_in_thread=False on a sync function is rejected at
-        # registration (see FunctionTool.from_function), so the timeout
-        # path here only needs to handle async and threadpool-sync.
-        if self.timeout is not None:
-            try:
-                with anyio.fail_after(self.timeout):
-                    # Thread pool execution for sync functions, direct await for async
-                    if is_coroutine_function(wrapper_fn):
-                        result = await type_adapter.validate_python(arguments)
-                    else:
-                        # Sync function: run in threadpool to avoid blocking
-                        result = await call_sync_fn_in_threadpool(
-                            type_adapter.validate_python, arguments
-                        )
-                        # Handle sync wrappers that return awaitables
-                        if inspect.isawaitable(result):
-                            result = await result
-                    # Materialize generators inside timeout scope so slow
-                    # generators don't run past the configured timeout
-                    result = await self._materialize_generator(result)
-            except TimeoutError:
-                logger.warning(
-                    f"Tool '{self.name}' timed out after {self.timeout}s. "
-                    f"Consider using task=True for long-running operations. "
-                    f"See https://gofastmcp.com/servers/tasks"
-                )
-                raise McpError(
-                    ErrorData(
-                        code=-32000,
-                        message=f"Tool '{self.name}' execution timed out after {self.timeout}s",
-                    )
-                ) from None
-        else:
-            # No timeout: use existing execution path
-            if is_coroutine_function(wrapper_fn):
-                result = await type_adapter.validate_python(arguments)
-            elif self.run_in_thread:
-                result = await call_sync_fn_in_threadpool(
-                    type_adapter.validate_python, arguments
-                )
-                if inspect.isawaitable(result):
-                    result = await result
-            else:
-                result = type_adapter.validate_python(arguments)
-                if inspect.isawaitable(result):
-                    result = await result
-            result = await self._materialize_generator(result)
+        A tool body may return an `InputRequiredResult` (SEP-2322) to ask the
+        client for input. Under the stateless multi-round-trip protocol that ask
+        is the full result of this leg, so it is wrapped in an
+        `InputRequiredToolResult` (a `ToolResult` subclass) rather than
+        serialized as content; the ask flows through the middleware chain as an
+        ordinary result and the wire handler returns it to the client unmodified.
+        """
+        from fastmcp.server.dependencies import without_injected_parameters
+
+        # A sync generator's body runs during iteration, not creation. Consume
+        # it inside the original invocation, before dispatch/DI can finish.
+        body_fn = _wrap_body_errors(self.fn, materialize_generators=True)
+        wrapper_fn = without_injected_parameters(
+            body_fn, run_in_thread=self.run_in_thread
+        )
+        # Tag pydantic errors raised by the body so they can be distinguished
+        # from argument-validation errors (which pydantic raises first). See #4128.
+        exec_fn = _wrap_body_errors(wrapper_fn)
+        type_adapter = get_cached_typeadapter(exec_fn)
+        exec_is_async = is_coroutine_function(wrapper_fn)
+        strict = _strict_input_validation()
+
+        result = await self._run_body(
+            type_adapter, exec_is_async, arguments, strict=strict
+        )
+
+        # An `InputRequiredResult` is the full result of this multi-round-trip
+        # leg (SEP-2322), not tool-output data: wrap it in an
+        # `InputRequiredToolResult` so it flows through the middleware chain as
+        # an ordinary result instead of being serialized as content. The wire
+        # handler reads it back out (see `_on_call_tool`).
+        if isinstance(result, mcp_types.InputRequiredResult):
+            return InputRequiredToolResult(result)
 
         return self.convert_result(result)
+
+    async def _run_body(
+        self,
+        type_adapter: TypeAdapter[Any],
+        exec_is_async: bool,
+        arguments: dict[str, Any],
+        *,
+        strict: bool | None,
+    ) -> Any:
+        """Validate arguments and execute the body, applying any timeout."""
+        try:
+            if self.timeout is not None:
+                scope = None
+                try:
+                    with anyio.fail_after(self.timeout) as scope:
+                        result = await self._execute(
+                            type_adapter, exec_is_async, arguments, strict=strict
+                        )
+                        # Worker threads shield cancellation until they finish.
+                        # Reject their result if execution outlasted the deadline.
+                        if anyio.current_time() >= scope.deadline:
+                            raise TimeoutError
+                except TimeoutError:
+                    if scope is None or (
+                        not scope.cancelled_caught
+                        and anyio.current_time() < scope.deadline
+                    ):
+                        raise
+                    logger.warning(
+                        f"Tool '{self.name}' timed out after {self.timeout}s. "
+                        f"Consider using task=True for long-running operations. "
+                        f"See https://gofastmcp.com/servers/tasks"
+                    )
+                    raise MCPError(
+                        code=-32000,
+                        message=f"Tool '{self.name}' execution timed out after {self.timeout}s",
+                    ) from None
+            else:
+                result = await self._execute(
+                    type_adapter, exec_is_async, arguments, strict=strict
+                )
+        except PydanticValidationError as e:
+            # Body errors are re-raised as _ToolBodyError, so a bare pydantic
+            # ValidationError here is an argument-validation failure (a bad call).
+            # Convert it to fastmcp's ValidationError so the middleware chain and
+            # downstream error taxonomy (e.g. Sentry filters) can treat it as a
+            # client error rather than a server bug.
+            raise ValidationError(str(e), log_level=logging.WARNING) from e
+
+        return result
+
+    async def _execute(
+        self,
+        type_adapter: TypeAdapter[Any],
+        exec_is_async: bool,
+        arguments: dict[str, Any],
+        *,
+        strict: bool | None = None,
+    ) -> Any:
+        """Validate arguments and execute the tool body.
+
+        Argument validation runs first and raises a bare
+        ``pydantic.ValidationError`` on bad input. Body execution (awaiting the
+        result and materializing generators) is wrapped so any pydantic error it
+        raises is tagged as ``_ToolBodyError``.
+
+        When ``strict`` is set (server-level ``strict_input_validation``),
+        pydantic validates in strict mode, so lax coercions such as the JSON
+        string ``"10"`` into an ``int`` are rejected rather than coerced.
+        """
+        # Combining timeout with run_in_thread=False on a sync function is
+        # rejected at registration (see FunctionTool.from_function), so this only
+        # needs to handle async and threadpool-sync under a timeout.
+        if exec_is_async:
+            # Argument validation is synchronous; the body runs on await below.
+            result = _validate_input(type_adapter, arguments, strict=strict)
+        elif self.run_in_thread:
+            # Sync function: run in threadpool to avoid blocking the event loop.
+            result = await call_sync_fn_in_threadpool(
+                _validate_input, type_adapter, arguments, strict=strict
+            )
+        else:
+            result = _validate_input(type_adapter, arguments, strict=strict)
+
+        try:
+            if inspect.isawaitable(result):
+                result = await result
+            # Materialize generators (here, so slow generators are still bound by
+            # any configured timeout scope).
+            return await self._materialize_generator(result)
+        except PydanticValidationError as e:
+            # A pydantic error from awaiting the result or materializing a
+            # generator is body execution, not argument validation.
+            raise _ToolBodyError(str(e)) from e
 
     @staticmethod
     async def _materialize_generator(result: Any) -> Any:
@@ -350,45 +563,7 @@ class FunctionTool(Tool):
         """
         if inspect.isasyncgen(result):
             return [item async for item in result]
-        if inspect.isgenerator(result):
-            return list(result)
-        return result
-
-    def register_with_docket(self, docket: Docket) -> None:
-        """Register this tool with docket for background execution.
-
-        Registers the raw function so Docket sees and resolves ALL
-        dependencies — both FastMCP's (CurrentContext, Progress) and
-        Docket-native ones (Retry, Timeout, ConcurrencyLimit).
-        """
-        if not self.task_config.supports_tasks():
-            return
-        docket.register(self.fn, names=[self.key])
-
-    async def add_to_docket(
-        self,
-        docket: Docket,
-        arguments: dict[str, Any],
-        *,
-        fn_key: str | None = None,
-        task_key: str | None = None,
-        **kwargs: Any,
-    ) -> Execution:
-        """Schedule this tool for background execution via docket.
-
-        FunctionTool splats the arguments dict since .fn expects **kwargs.
-
-        Args:
-            docket: The Docket instance
-            arguments: Tool arguments
-            fn_key: Function lookup key in Docket registry (defaults to self.key)
-            task_key: Redis storage key for the result
-            **kwargs: Additional kwargs passed to docket.add()
-        """
-        lookup_key = fn_key or self.key
-        if task_key:
-            kwargs["key"] = task_key
-        return await docket.add(lookup_key, **kwargs)(**arguments)
+        return _materialize_sync_generator(result)
 
 
 @overload
@@ -406,8 +581,6 @@ def tool(
     annotations: ToolAnnotations | dict[str, Any] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
-    exclude_args: list[str] | None = None,
-    serializer: Any | None = None,
     timeout: float | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
     run_in_thread: bool = True,
@@ -426,8 +599,6 @@ def tool(
     annotations: ToolAnnotations | dict[str, Any] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
-    exclude_args: list[str] | None = None,
-    serializer: Any | None = None,
     timeout: float | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
     run_in_thread: bool = True,
@@ -447,8 +618,6 @@ def tool(
     annotations: ToolAnnotations | dict[str, Any] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
-    exclude_args: list[str] | None = None,
-    serializer: Any | None = None,
     timeout: float | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
     run_in_thread: bool = True,
@@ -477,27 +646,6 @@ def tool(
             "See https://gofastmcp.com/servers/tools#using-with-methods"
         )
 
-    def create_tool(fn: Callable[..., Any], tool_name: str | None) -> FunctionTool:
-        # Create metadata first, then pass it
-        tool_meta = ToolMeta(
-            name=tool_name,
-            version=version,
-            title=title,
-            description=description,
-            icons=icons,
-            tags=tags,
-            output_schema=output_schema,
-            annotations=annotations,
-            meta=meta,
-            task=resolve_task_config(task),
-            exclude_args=exclude_args,
-            serializer=serializer,
-            timeout=timeout,
-            auth=auth,
-            run_in_thread=run_in_thread,
-        )
-        return FunctionTool.from_function(fn, metadata=tool_meta)
-
     def attach_metadata(fn: F, tool_name: str | None) -> F:
         metadata = ToolMeta(
             name=tool_name,
@@ -510,25 +658,15 @@ def tool(
             annotations=annotations,
             meta=meta,
             task=task,
-            exclude_args=exclude_args,
-            serializer=serializer,
             timeout=timeout,
             auth=auth,
             run_in_thread=run_in_thread,
         )
-        target = fn.__func__ if hasattr(fn, "__func__") else fn
-        target.__fastmcp__ = metadata
+        target = fn.__func__ if isinstance(fn, staticmethod | MethodType) else fn
+        cast(Any, target).__fastmcp__ = metadata
         return fn
 
     def decorator(fn: F, tool_name: str | None) -> F:
-        if fastmcp.settings.decorator_mode == "object":
-            warnings.warn(
-                "decorator_mode='object' is deprecated and will be removed in a future version. "
-                "Decorators now return the original function with metadata attached.",
-                FastMCPDeprecationWarning,
-                stacklevel=4,
-            )
-            return create_tool(fn, tool_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn, tool_name)
 
     if inspect.isroutine(name_or_fn):

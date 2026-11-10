@@ -4,7 +4,7 @@ import secrets
 import time
 from urllib.parse import parse_qs, urlparse
 
-import httpx
+import httpx2
 import pytest
 from mcp.server.auth.provider import (
     AccessToken,
@@ -222,14 +222,14 @@ def auth_app(mock_oauth_provider):
 
 @pytest.fixture
 async def test_client(auth_app):
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=auth_app), base_url="https://mcptest.com"
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=auth_app), base_url="https://mcptest.com"
     ) as client:
         yield client
 
 
 @pytest.fixture
-async def registered_client(test_client: httpx.AsyncClient, request):
+async def registered_client(test_client: httpx2.AsyncClient, request):
     """Create and register a test client.
 
     Parameters can be customized via indirect parameterization:
@@ -272,7 +272,7 @@ class TestAuthorizeEndpointErrors:
     """Test error handling in the OAuth authorization endpoint."""
 
     async def test_authorize_missing_client_id(
-        self, test_client: httpx.AsyncClient, pkce_challenge
+        self, test_client: httpx2.AsyncClient, pkce_challenge
     ):
         """Test authorization endpoint with missing client_id.
 
@@ -297,7 +297,7 @@ class TestAuthorizeEndpointErrors:
         assert "client_id" in response.text.lower()
 
     async def test_authorize_invalid_client_id(
-        self, test_client: httpx.AsyncClient, pkce_challenge
+        self, test_client: httpx2.AsyncClient, pkce_challenge
     ):
         """Test authorization endpoint with invalid client_id.
 
@@ -322,7 +322,7 @@ class TestAuthorizeEndpointErrors:
         assert "client" in response.text.lower()
 
     async def test_authorize_missing_redirect_uri(
-        self, test_client: httpx.AsyncClient, registered_client, pkce_challenge
+        self, test_client: httpx2.AsyncClient, registered_client, pkce_challenge
     ):
         """Test authorization endpoint with missing redirect_uri.
 
@@ -347,7 +347,7 @@ class TestAuthorizeEndpointErrors:
         assert redirect_url.startswith("https://client.example.com/callback")
 
     async def test_authorize_invalid_redirect_uri(
-        self, test_client: httpx.AsyncClient, registered_client, pkce_challenge
+        self, test_client: httpx2.AsyncClient, registered_client, pkce_challenge
     ):
         """Test authorization endpoint with invalid redirect_uri.
 
@@ -386,7 +386,7 @@ class TestAuthorizeEndpointErrors:
         indirect=True,
     )
     async def test_authorize_missing_redirect_uri_multiple_registered(
-        self, test_client: httpx.AsyncClient, registered_client, pkce_challenge
+        self, test_client: httpx2.AsyncClient, registered_client, pkce_challenge
     ):
         """Test endpoint with missing redirect_uri with multiple registered URIs.
 
@@ -411,7 +411,7 @@ class TestAuthorizeEndpointErrors:
         assert "redirect_uri" in response.text.lower()
 
     async def test_authorize_unsupported_response_type(
-        self, test_client: httpx.AsyncClient, registered_client, pkce_challenge
+        self, test_client: httpx2.AsyncClient, registered_client, pkce_challenge
     ):
         """Test authorization endpoint with unsupported response_type.
 
@@ -444,7 +444,7 @@ class TestAuthorizeEndpointErrors:
         assert query_params["state"][0] == "test_state"
 
     async def test_authorize_missing_response_type(
-        self, test_client: httpx.AsyncClient, registered_client, pkce_challenge
+        self, test_client: httpx2.AsyncClient, registered_client, pkce_challenge
     ):
         """Test authorization endpoint with missing response_type.
 
@@ -476,7 +476,7 @@ class TestAuthorizeEndpointErrors:
         assert query_params["state"][0] == "test_state"
 
     async def test_authorize_missing_pkce_challenge(
-        self, test_client: httpx.AsyncClient, registered_client
+        self, test_client: httpx2.AsyncClient, registered_client
     ):
         """Test authorization endpoint with missing PKCE code_challenge.
 
@@ -506,7 +506,7 @@ class TestAuthorizeEndpointErrors:
         assert query_params["state"][0] == "test_state"
 
     async def test_authorize_invalid_scope(
-        self, test_client: httpx.AsyncClient, registered_client, pkce_challenge
+        self, test_client: httpx2.AsyncClient, registered_client, pkce_challenge
     ):
         """Test authorization endpoint with invalid scope.
 

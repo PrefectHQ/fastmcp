@@ -203,7 +203,7 @@ class FormInput(FastMCPApp):
                     if provider._send_message:
                         on_success_actions.insert(
                             0,
-                            SendMessage(RESULT),  # ty:ignore[invalid-argument-type]
+                            SendMessage(RESULT),
                         )
 
                     from_model_kwargs: dict[str, Any] = {

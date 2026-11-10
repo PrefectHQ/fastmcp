@@ -3,14 +3,13 @@ title: Storage Backends
 sidebarTitle: Storage Backends
 description: Configure persistent and distributed storage for caching and OAuth state management
 icon: database
-tag: NEW
 ---
 
 import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.13.0" />
 
-FastMCP uses pluggable storage backends for caching responses and managing OAuth state. By default, all storage is in-memory, which is perfect for development but doesn't persist across restarts. FastMCP includes support for multiple storage backends, and you can easily extend it with custom implementations.
+FastMCP uses pluggable storage backends for caching responses, session state, and OAuth state. By default, all storage is in-memory, which is perfect for development but doesn't persist across restarts. FastMCP includes support for multiple storage backends, and you can easily extend it with custom implementations.
 
 <Tip>
 The storage layer is powered by **[py-key-value-aio](https://github.com/strawgate/py-key-value)**, an async key-value library maintained by a core FastMCP maintainer. This library provides a unified interface for multiple backends, making it easy to swap implementations based on your deployment needs.
@@ -42,7 +41,7 @@ cache_store = MemoryStore()
 
 **Best for:** Single-server production deployments, persistent caching
 
-File storage persists data to the filesystem as one JSON file per key, allowing it to survive server restarts. This is the default backend for OAuth storage on Mac and Windows.
+File storage persists data to the filesystem as one JSON file per key, allowing it to survive server restarts. OAuth providers use an encrypted file store as their default storage on every platform.
 
 ```python
 from pathlib import Path
@@ -54,6 +53,7 @@ from key_value.aio.stores.filetree import (
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 
 storage_dir = Path("/var/cache/fastmcp")
+storage_dir.mkdir(parents=True, exist_ok=True)
 store = FileTreeStore(
     data_directory=storage_dir,
     key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(storage_dir),
@@ -142,6 +142,8 @@ The py-key-value-aio library includes additional implementations for various sto
 - **RocksDB** - Embedded high-performance key-value store
 - **Valkey** - Redis-compatible server
 
+If you use `KeyringStore` for OS keyring storage, install `py-key-value-aio[keyring]` explicitly. FastMCP does not install the keyring dependency or its CLI by default.
+
 For configuration details on these backends, consult the [py-key-value-aio documentation](https://github.com/strawgate/py-key-value).
 
 <Warning>
@@ -156,9 +158,7 @@ The [OAuth Proxy](/servers/auth/oauth-proxy) and OAuth auth providers use storag
 
 **Development (default behavior):**
 
-By default, FastMCP automatically manages keys and storage based on your platform:
-- **Mac/Windows**: Keys are auto-managed via system keyring, storage defaults to disk. Suitable **only** for development and local testing.
-- **Linux**: Keys are ephemeral, storage defaults to memory.
+By default, FastMCP automatically manages keys and storage the same way on every platform: the signing key is deterministically derived from your client secret, and storage defaults to an encrypted disk store in your platform's data directory (derived from `platformdirs`). Suitable **only** for development and local testing.
 
 No configuration needed:
 
@@ -201,7 +201,7 @@ Both parameters are required for production. **Wrap your storage in `FernetEncry
 
 ### Response Caching Middleware
 
-The [Response Caching Middleware](/servers/middleware#caching-middleware) caches tool calls, resource reads, and prompt requests. Storage configuration is passed via the `cache_storage` parameter:
+The [Response Caching Middleware](/servers/middleware#caching) caches tool calls, resource reads, and prompt requests. Storage configuration is passed via the `cache_storage` parameter:
 
 ```python
 from pathlib import Path
@@ -216,6 +216,7 @@ from key_value.aio.stores.filetree import (
 mcp = FastMCP("My Server")
 
 cache_dir = Path("cache")
+cache_dir.mkdir(parents=True, exist_ok=True)
 cache_store = FileTreeStore(
     data_directory=cache_dir,
     key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(cache_dir),
@@ -242,6 +243,19 @@ namespaced_store = PrefixCollectionsWrapper(
 middleware = ResponseCachingMiddleware(cache_storage=namespaced_store)
 ```
 
+### Session State
+
+[Session state](/servers/sessions) and the serializable values that `ctx.set_state()` writes live in the store you pass as `session_state_store`. It defaults to an in-memory store, so use a shared backend when several server instances must see the same sessions:
+
+```python
+from fastmcp import FastMCP
+from key_value.aio.stores.redis import RedisStore
+
+mcp = FastMCP("My Server", session_state_store=RedisStore(host="redis.example.com"))
+```
+
+FastMCP writes session state without a TTL of its own, so its retention is whatever the store applies; `ctx.set_state()` values carry a one-day TTL. See [Storage and lifetime](/servers/sessions#storage-and-lifetime) for setting a default expiry.
+
 ### Client-Side OAuth Token Storage
 
 The [FastMCP Client](/clients/client) uses storage for persisting OAuth tokens locally. By default, tokens are stored in memory:
@@ -257,6 +271,7 @@ from key_value.aio.stores.filetree import (
 
 # Store tokens on disk for persistence across restarts
 token_dir = Path("~/.local/share/fastmcp/tokens").expanduser()
+token_dir.mkdir(parents=True, exist_ok=True)
 token_storage = FileTreeStore(
     data_directory=token_dir,
     key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(token_dir),
@@ -264,7 +279,7 @@ token_storage = FileTreeStore(
 )
 
 oauth_provider = OAuth(
-    mcp_url="https://your-mcp-server.com/mcp/sse",
+    mcp_url="https://your-mcp-server.com/mcp",
     token_storage=token_storage
 )
 ```
@@ -291,6 +306,6 @@ This allows clients to reconnect without re-authenticating after restarts.
 ## More Resources
 
 - [py-key-value-aio GitHub](https://github.com/strawgate/py-key-value) - Full library documentation
-- [Response Caching Middleware](/servers/middleware#caching-middleware) - Using storage for caching
+- [Response Caching Middleware](/servers/middleware#caching) - Using storage for caching
 - [OAuth Token Security](/deployment/http#oauth-token-security) - Production OAuth configuration
 - [HTTP Deployment](/deployment/http) - Complete deployment guide

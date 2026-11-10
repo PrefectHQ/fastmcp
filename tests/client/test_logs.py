@@ -1,10 +1,13 @@
 import logging
+from typing import Literal
 
 import pytest
 from mcp import LoggingLevel
+from mcp_types import LoggingMessageNotificationParams
 
 from fastmcp import Client, Context, FastMCP
-from fastmcp.client.logging import LogMessage
+from fastmcp.client.logging import LogMessage, create_log_callback
+from fastmcp.utilities.tests import asgi_server
 
 
 class LogHandler:
@@ -94,7 +97,11 @@ class TestSetLoggingLevel:
     async def test_set_logging_level(self, fastmcp_server: FastMCP):
         """Client can set the minimum log level and lower-level messages are suppressed."""
         log_handler = LogHandler()
-        async with Client(fastmcp_server, log_handler=log_handler.handle_log) as client:
+        # client.set_logging_level is a legacy-only RPC (deprecated per SEP-2577);
+        # it does not exist on the modern protocol.
+        async with Client(
+            fastmcp_server, mode="legacy", log_handler=log_handler.handle_log
+        ) as client:
             await client.set_logging_level("warning")
             await client.call_tool(
                 "echo_log", {"message": "debug msg", "level": "debug"}
@@ -114,7 +121,9 @@ class TestSetLoggingLevel:
     async def test_set_logging_level_debug_allows_all(self, fastmcp_server: FastMCP):
         """Setting level to debug allows all messages through."""
         log_handler = LogHandler()
-        async with Client(fastmcp_server, log_handler=log_handler.handle_log) as client:
+        async with Client(
+            fastmcp_server, mode="legacy", log_handler=log_handler.handle_log
+        ) as client:
             await client.set_logging_level("debug")
             await client.call_tool(
                 "echo_log", {"message": "debug msg", "level": "debug"}
@@ -168,7 +177,9 @@ class TestSetLoggingLevel:
             await context.log(message=message, level=level)
 
         log_handler = LogHandler()
-        async with Client(mcp, log_handler=log_handler.handle_log) as client:
+        async with Client(
+            mcp, mode="legacy", log_handler=log_handler.handle_log
+        ) as client:
             await client.set_logging_level("warning")
             await client.call_tool("echo_log", {"message": "info msg", "level": "info"})
             await client.call_tool(
@@ -182,6 +193,74 @@ class TestSetLoggingLevel:
         assert log_handler.logs[0].data["msg"] == "warning msg"
         assert log_handler.logs[1].data["msg"] == "error msg"
 
+    async def test_level_applies_only_to_the_connection_that_set_it(
+        self, fastmcp_server: FastMCP
+    ):
+        """setLevel from one client does not filter another client's logs."""
+        setter_handler = LogHandler()
+        other_handler = LogHandler()
+        async with (
+            Client(
+                fastmcp_server, mode="legacy", log_handler=setter_handler.handle_log
+            ) as setter,
+            Client(
+                fastmcp_server, mode="legacy", log_handler=other_handler.handle_log
+            ) as other,
+        ):
+            await setter.set_logging_level("error")
+            for client in (setter, other):
+                await client.call_tool(
+                    "echo_log", {"message": "info msg", "level": "info"}
+                )
+                await client.call_tool(
+                    "echo_log", {"message": "error msg", "level": "error"}
+                )
+
+        assert [log.data["msg"] for log in setter_handler.logs] == ["error msg"]
+        assert [log.data["msg"] for log in other_handler.logs] == [
+            "info msg",
+            "error msg",
+        ]
+
+    async def test_level_does_not_outlive_its_connection(self, fastmcp_server: FastMCP):
+        """A later connection starts from the server default, not a past client's level."""
+        async with Client(fastmcp_server, mode="legacy") as first:
+            await first.set_logging_level("error")
+
+        log_handler = LogHandler()
+        async with Client(
+            fastmcp_server, mode="legacy", log_handler=log_handler.handle_log
+        ) as second:
+            await second.call_tool("echo_log", {"message": "info msg", "level": "info"})
+
+        assert [log.data["msg"] for log in log_handler.logs] == ["info msg"]
+
+    @pytest.mark.parametrize("other_mode", ["legacy", "auto"])
+    async def test_stateless_http_level_does_not_reach_other_clients(
+        self, fastmcp_server: FastMCP, other_mode: Literal["legacy", "auto"]
+    ):
+        """A stateless server has no session to hold a level, so setLevel is not shared."""
+        log_handler = LogHandler()
+        async with asgi_server(fastmcp_server, stateless_http=True) as server:
+            async with (
+                server.client(mode="legacy") as setter,
+                server.client(
+                    mode=other_mode, log_handler=log_handler.handle_log
+                ) as other,
+            ):
+                await setter.set_logging_level("error")
+                await other.call_tool(
+                    "echo_log", {"message": "info msg", "level": "info"}
+                )
+                await other.call_tool(
+                    "echo_log", {"message": "error msg", "level": "error"}
+                )
+
+        assert [log.data["msg"] for log in log_handler.logs] == [
+            "info msg",
+            "error msg",
+        ]
+
 
 class TestDefaultLogHandler:
     """Tests for default_log_handler with data as any JSON-serializable type."""
@@ -190,7 +269,7 @@ class TestDefaultLogHandler:
         """Test that default_log_handler routes server logs to appropriate Python log levels."""
         from unittest.mock import MagicMock, patch
 
-        from mcp.types import LoggingMessageNotificationParams
+        from mcp_types import LoggingMessageNotificationParams
 
         from fastmcp.client.logging import default_log_handler
 
@@ -241,7 +320,7 @@ class TestDefaultLogHandler:
         """Test that default_log_handler works when logger name is None."""
         from unittest.mock import MagicMock, patch
 
-        from mcp.types import LoggingMessageNotificationParams
+        from mcp_types import LoggingMessageNotificationParams
 
         from fastmcp.client.logging import default_log_handler
 
@@ -264,7 +343,7 @@ class TestDefaultLogHandler:
         """Test that default_log_handler handles dict data correctly."""
         from unittest.mock import MagicMock, patch
 
-        from mcp.types import LoggingMessageNotificationParams
+        from mcp_types import LoggingMessageNotificationParams
 
         from fastmcp.client.logging import default_log_handler
 
@@ -290,7 +369,7 @@ class TestDefaultLogHandler:
         """Test that default_log_handler handles list data correctly."""
         from unittest.mock import MagicMock, patch
 
-        from mcp.types import LoggingMessageNotificationParams
+        from mcp_types import LoggingMessageNotificationParams
 
         from fastmcp.client.logging import default_log_handler
 
@@ -315,7 +394,7 @@ class TestDefaultLogHandler:
         """Test that default_log_handler handles numeric data correctly."""
         from unittest.mock import MagicMock, patch
 
-        from mcp.types import LoggingMessageNotificationParams
+        from mcp_types import LoggingMessageNotificationParams
 
         from fastmcp.client.logging import default_log_handler
 
@@ -333,3 +412,38 @@ class TestDefaultLogHandler:
             mock_logger.error.assert_called_once_with(
                 msg="Received ERROR from server: 404"
             )
+
+
+class TestCreateLogCallback:
+    async def test_callback_invokes_custom_handler(self):
+        seen: list[LoggingMessageNotificationParams] = []
+
+        async def handler(message: LoggingMessageNotificationParams) -> None:
+            seen.append(message)
+
+        message = LoggingMessageNotificationParams(
+            level="info",
+            logger="test.logger",
+            data={"msg": "hello"},
+        )
+        callback = create_log_callback(handler)
+
+        await callback(message)
+
+        assert seen == [message]
+
+    async def test_callback_uses_default_handler_when_none_is_provided(self, caplog):
+        caplog.set_level(logging.WARNING, logger="fastmcp.client.from_server")
+        message = LoggingMessageNotificationParams(
+            level="warning",
+            logger=None,
+            data="default",
+        )
+        callback = create_log_callback()
+
+        await callback(message)
+
+        assert len(caplog.records) == 1
+        assert caplog.records[0].name == "fastmcp.client.from_server"
+        assert caplog.records[0].levelname == "WARNING"
+        assert caplog.records[0].msg == "Received WARNING from server: default"

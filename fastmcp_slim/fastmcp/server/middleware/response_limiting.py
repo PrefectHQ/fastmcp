@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
-import mcp.types as mt
+import mcp_types as mt
 import pydantic_core
-from mcp.types import TextContent
+from mcp_types import TextContent
 
-from fastmcp.tools.base import ToolResult
+from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
 
 from .middleware import CallNext, Middleware, MiddlewareContext
 
@@ -68,10 +69,14 @@ class ResponseLimitingMiddleware(Middleware):
         self.truncation_suffix = truncation_suffix
         self.tools = set(tools) if tools is not None else None
 
+    def _limits_tool(self, name: str) -> bool:
+        return self.tools is None or name in self.tools
+
     def _truncate_to_result(
         self,
         text: str,
         meta: dict[str, Any] | None = None,
+        is_error: bool = False,
     ) -> ToolResult:
         """Truncate text to fit within max_size and wrap in ToolResult."""
         suffix_bytes = len(self.truncation_suffix.encode("utf-8"))
@@ -93,14 +98,25 @@ class ResponseLimitingMiddleware(Middleware):
                     + self.truncation_suffix
                 )
 
-        # Preserve original meta, falling back to {} when absent. Having
-        # meta set ensures to_mcp_result() returns a CallToolResult, which
-        # bypasses MCP SDK outputSchema validation — a truncated response
-        # is no longer valid structured output.
         return ToolResult(
             content=[TextContent(type="text", text=truncated)],
-            meta=meta if meta is not None else {},
+            meta=meta,
+            is_error=is_error,
         )
+
+    async def on_list_tools(
+        self,
+        context: MiddlewareContext[mt.ListToolsRequest],
+        call_next: CallNext[mt.ListToolsRequest, Sequence[Tool]],
+    ) -> Sequence[Tool]:
+        """Hide schemas for tools whose response shape may be truncated to text."""
+        tools = await call_next(context)
+        return [
+            tool.model_copy(update={"output_schema": None})
+            if self._limits_tool(tool.name) and tool.output_schema is not None
+            else tool
+            for tool in tools
+        ]
 
     async def on_call_tool(
         self,
@@ -110,8 +126,22 @@ class ResponseLimitingMiddleware(Middleware):
         """Intercept tool calls and limit response size."""
         result = await call_next(context)
 
+        # A multi-round-trip ask (SEP-2322) carries no tool content to measure,
+        # and truncating it would collapse the InputRequiredToolResult into a
+        # plain ToolResult — the wire handler would then serialize the ask as
+        # content instead of returning it as an input-required result. Pass it
+        # through untouched.
+        if isinstance(result, InputRequiredToolResult):
+            return result
+
+        # A task-augmented call returns a CreateTaskResult (the tasks extension)
+        # up through this middleware — a small acknowledgement with no tool
+        # content to measure or truncate. Pass any non-ToolResult through.
+        if not isinstance(result, ToolResult):
+            return result
+
         # Check if we should limit this tool
-        if self.tools is not None and context.message.name not in self.tools:
+        if not self._limits_tool(context.message.name):
             return result
 
         # Measure serialized size
@@ -134,4 +164,6 @@ class ResponseLimitingMiddleware(Middleware):
             else serialized.decode("utf-8", errors="replace")
         )
 
-        return self._truncate_to_result(text, meta=result.meta)
+        return self._truncate_to_result(
+            text, meta=result.meta, is_error=result.is_error
+        )

@@ -1,10 +1,13 @@
 """Tests for OpenAPI feature support in OpenAPIProvider."""
 
+import json
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
-import httpx
+import httpx2
 import pytest
-from httpx import Response
+from httpx2 import Response
+from mcp_types import TextResourceContents
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -15,6 +18,9 @@ from fastmcp.server.providers.openapi.components import (
 )
 from fastmcp.server.providers.openapi.routing import MCPType, RouteMap
 from fastmcp.utilities.openapi.models import HTTPRoute, ResponseInfo
+
+# Real client used only to delegate build_request on mocked clients - never sends.
+_request_builder = httpx2.AsyncClient()
 
 
 def create_openapi_server(
@@ -148,7 +154,7 @@ class TestParameterHandling:
 
     async def test_query_parameters_in_tools(self, parameter_spec):
         """Test that query parameters are properly included in tool parameters."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=parameter_spec, client=client, name="Parameter Test Server"
             )
@@ -163,7 +169,7 @@ class TestParameterHandling:
                 assert search_tool is not None
 
                 # Check that parameters are included in the tool's input schema
-                params = search_tool.inputSchema
+                params = search_tool.input_schema
                 assert params["type"] == "object"
 
                 properties = params["properties"]
@@ -196,7 +202,7 @@ class TestParameterHandling:
 
     async def test_path_parameters_in_tools(self, parameter_spec):
         """Test that path parameters are properly included in tool parameters."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=parameter_spec, client=client, name="Parameter Test Server"
             )
@@ -211,7 +217,7 @@ class TestParameterHandling:
                 assert user_post_tool is not None
 
                 # Check that path parameters are included
-                params = user_post_tool.inputSchema
+                params = user_post_tool.input_schema
                 properties = params["properties"]
 
                 # Check that path parameters are present
@@ -301,7 +307,7 @@ class TestRequestBodyHandling:
 
     async def test_request_body_properties_in_tool(self, request_body_spec):
         """Test that request body properties are included in tool parameters."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=request_body_spec,
                 client=client,
@@ -316,7 +322,7 @@ class TestRequestBodyHandling:
                 assert create_tool is not None
 
                 # Check that request body properties are included
-                params = create_tool.inputSchema
+                params = create_tool.input_schema
                 properties = params["properties"]
 
                 # Check that request body properties are present
@@ -402,7 +408,7 @@ class TestResponseSchemas:
 
     async def test_tool_has_output_schema(self, response_schema_spec):
         """Test that tools have output schemas from response definitions."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=response_schema_spec,
                 client=client,
@@ -628,7 +634,7 @@ class TestResourceTemplateMimeType:
     async def test_resource_template_text_plain_mime_type(self, text_plain_spec):
         """Resource template should reflect text/plain from OpenAPI spec."""
         route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             provider = OpenAPIProvider(
                 openapi_spec=text_plain_spec, client=client, route_maps=route_maps
             )
@@ -637,12 +643,12 @@ class TestResourceTemplateMimeType:
             async with Client(mcp) as mcp_client:
                 templates = await mcp_client.list_resource_templates()
                 assert len(templates) == 1
-                assert templates[0].mimeType == "text/plain"
+                assert templates[0].mime_type == "text/plain"
 
     async def test_resource_template_html_mime_type(self, html_spec):
         """Resource template should reflect text/html from OpenAPI spec."""
         route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             provider = OpenAPIProvider(
                 openapi_spec=html_spec, client=client, route_maps=route_maps
             )
@@ -651,7 +657,7 @@ class TestResourceTemplateMimeType:
             async with Client(mcp) as mcp_client:
                 templates = await mcp_client.list_resource_templates()
                 assert len(templates) == 1
-                assert templates[0].mimeType == "text/html"
+                assert templates[0].mime_type == "text/html"
 
     async def test_resource_template_defaults_json_mime_type(self):
         """Resource template defaults to application/json for JSON responses."""
@@ -693,7 +699,7 @@ class TestResourceTemplateMimeType:
             },
         }
         route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             provider = OpenAPIProvider(
                 openapi_spec=spec, client=client, route_maps=route_maps
             )
@@ -702,7 +708,317 @@ class TestResourceTemplateMimeType:
             async with Client(mcp) as mcp_client:
                 templates = await mcp_client.list_resource_templates()
                 assert len(templates) == 1
-                assert templates[0].mimeType == "application/json"
+                assert templates[0].mime_type == "application/json"
+
+
+class TestResourceTemplateRequestBuilding:
+    @pytest.fixture
+    def path_param_spec(self) -> dict[str, Any]:
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "User API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com/api/v1"}],
+            "paths": {
+                "/users/{id}": {
+                    "get": {
+                        "operationId": "get_user",
+                        "summary": "Get user",
+                        "parameters": [
+                            {
+                                "name": "id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {
+                            "200": {
+                                "description": "User data",
+                                "content": {
+                                    "application/json": {"schema": {"type": "object"}}
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+    async def test_resource_template_encodes_matched_path_params(
+        self, path_param_spec: dict[str, Any]
+    ):
+        seen_urls: list[httpx2.URL] = []
+
+        async def handler(request: httpx2.Request) -> httpx2.Response:
+            seen_urls.append(request.url)
+            return httpx2.Response(200, json={"ok": True})
+
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+        async with httpx2.AsyncClient(
+            base_url="https://api.example.com/api/v1",
+            transport=httpx2.MockTransport(handler),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=path_param_spec,
+                client=client,
+                route_maps=route_maps,
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+
+            async with Client(mcp) as mcp_client:
+                # Reserved characters (encoded slash + space) must be
+                # re-encoded when building the outbound URL. A traversal
+                # payload (`..%2F...`) would be rejected by the default
+                # resource-security screening, so use a benign value that
+                # still exercises reserved-character encoding.
+                await mcp_client.read_resource("resource://get_user/a%2Fb%20c")
+
+        assert seen_urls == [
+            httpx2.URL("https://api.example.com/api/v1/users/a%2Fb%20c")
+        ]
+
+    async def test_resource_template_ignores_unmatched_query_string(
+        self, path_param_spec: dict[str, Any]
+    ):
+        seen_urls: list[httpx2.URL] = []
+
+        async def handler(request: httpx2.Request) -> httpx2.Response:
+            seen_urls.append(request.url)
+            return httpx2.Response(200, json={"ok": True})
+
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+        async with httpx2.AsyncClient(
+            base_url="https://api.example.com/api/v1",
+            transport=httpx2.MockTransport(handler),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=path_param_spec,
+                client=client,
+                route_maps=route_maps,
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+
+            async with Client(mcp) as mcp_client:
+                await mcp_client.read_resource("resource://get_user/alice?admin=true")
+
+        assert seen_urls == [httpx2.URL("https://api.example.com/api/v1/users/alice")]
+
+    async def test_resource_template_preserves_hyphenated_path_params(self):
+        seen_urls: list[httpx2.URL] = []
+
+        async def handler(request: httpx2.Request) -> httpx2.Response:
+            seen_urls.append(request.url)
+            return httpx2.Response(200, json={"ok": True})
+
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "User API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com/api/v1"}],
+            "paths": {
+                "/users/{user-id}": {
+                    "get": {
+                        "operationId": "get_user",
+                        "parameters": [
+                            {
+                                "name": "user-id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {
+                            "200": {
+                                "description": "User data",
+                                "content": {
+                                    "application/json": {"schema": {"type": "object"}}
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+        async with httpx2.AsyncClient(
+            base_url="https://api.example.com/api/v1",
+            transport=httpx2.MockTransport(handler),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=spec,
+                client=client,
+                route_maps=route_maps,
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+
+            async with Client(mcp) as mcp_client:
+                await mcp_client.read_resource("resource://get_user/abc")
+
+        assert seen_urls == [httpx2.URL("https://api.example.com/api/v1/users/abc")]
+
+    async def test_resource_template_preserves_client_defaults(
+        self, path_param_spec: dict[str, Any]
+    ):
+        seen_requests: list[httpx2.Request] = []
+
+        async def handler(request: httpx2.Request) -> httpx2.Response:
+            seen_requests.append(request)
+            return httpx2.Response(200, json={"ok": True})
+
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+        async with httpx2.AsyncClient(
+            base_url="https://api.example.com/api/v1",
+            params={"api-version": "2026-06-29"},
+            cookies={"session": "abc123"},
+            transport=httpx2.MockTransport(handler),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=path_param_spec,
+                client=client,
+                route_maps=route_maps,
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+
+            async with Client(mcp) as mcp_client:
+                await mcp_client.read_resource("resource://get_user/alice")
+
+        assert seen_requests[0].url == httpx2.URL(
+            "https://api.example.com/api/v1/users/alice?api-version=2026-06-29"
+        )
+        assert seen_requests[0].headers["cookie"] == "session=abc123"
+
+    async def test_resource_template_uses_mapped_path_argument_names(self):
+        seen_urls: list[httpx2.URL] = []
+
+        async def handler(request: httpx2.Request) -> httpx2.Response:
+            seen_urls.append(request.url)
+            return httpx2.Response(200, json={"ok": True})
+
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "User API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com/api/v1"}],
+            "paths": {
+                "/users/{id}": {
+                    "get": {
+                        "operationId": "get_user",
+                        "parameters": [
+                            {
+                                "name": "id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {"type": "string"},
+                                            "name": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            }
+                        },
+                        "responses": {
+                            "200": {
+                                "description": "User data",
+                                "content": {
+                                    "application/json": {"schema": {"type": "object"}}
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+        async with httpx2.AsyncClient(
+            base_url="https://api.example.com/api/v1",
+            transport=httpx2.MockTransport(handler),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=spec,
+                client=client,
+                route_maps=route_maps,
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+
+            async with Client(mcp) as mcp_client:
+                await mcp_client.read_resource("resource://get_user/abc")
+
+        assert seen_urls == [httpx2.URL("https://api.example.com/api/v1/users/abc")]
+
+    async def test_resource_template_uses_path_arg_when_query_param_has_same_name(
+        self,
+    ):
+        seen_urls: list[httpx2.URL] = []
+
+        async def handler(request: httpx2.Request) -> httpx2.Response:
+            seen_urls.append(request.url)
+            return httpx2.Response(200, json={"ok": True})
+
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "User API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com/api/v1"}],
+            "paths": {
+                "/users/{id}": {
+                    "get": {
+                        "operationId": "get_user",
+                        "parameters": [
+                            {
+                                "name": "id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "id",
+                                "in": "query",
+                                "required": False,
+                                "schema": {"type": "string"},
+                            },
+                        ],
+                        "responses": {
+                            "200": {
+                                "description": "User data",
+                                "content": {
+                                    "application/json": {"schema": {"type": "object"}}
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+        async with httpx2.AsyncClient(
+            base_url="https://api.example.com/api/v1",
+            transport=httpx2.MockTransport(handler),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=spec,
+                client=client,
+                route_maps=route_maps,
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+
+            async with Client(mcp) as mcp_client:
+                await mcp_client.read_resource("resource://get_user/abc")
+
+        assert seen_urls == [httpx2.URL("https://api.example.com/api/v1/users/abc")]
 
 
 class TestResourceMimeType:
@@ -732,7 +1048,7 @@ class TestResourceMimeType:
             },
         }
         route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE)]
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             provider = OpenAPIProvider(
                 openapi_spec=spec, client=client, route_maps=route_maps
             )
@@ -741,7 +1057,7 @@ class TestResourceMimeType:
             async with Client(mcp) as mcp_client:
                 resources = await mcp_client.list_resources()
                 assert len(resources) == 1
-                assert resources[0].mimeType == "text/plain"
+                assert resources[0].mime_type == "text/plain"
 
     async def test_resource_mime_type_without_schema(self):
         """Resource with media type but no schema still infers MIME type."""
@@ -765,7 +1081,7 @@ class TestResourceMimeType:
             },
         }
         route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE)]
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             provider = OpenAPIProvider(
                 openapi_spec=spec, client=client, route_maps=route_maps
             )
@@ -774,7 +1090,56 @@ class TestResourceMimeType:
             async with Client(mcp) as mcp_client:
                 resources = await mcp_client.list_resources()
                 assert len(resources) == 1
-                assert resources[0].mimeType == "text/plain"
+                assert resources[0].mime_type == "text/plain"
+
+    async def test_resource_plus_json_response_is_text(self):
+        """A +json response is read as JSON text, not a binary blob."""
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Status API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/status": {
+                    "get": {
+                        "operationId": "get_status",
+                        "responses": {
+                            "200": {
+                                "description": "Status",
+                                "content": {
+                                    "application/hal+json": {
+                                        "schema": {"type": "object"}
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        def handler(request: httpx2.Request) -> httpx2.Response:
+            return httpx2.Response(
+                200,
+                content=b'{"ok": true}',
+                headers={"content-type": "application/hal+json; charset=utf-8"},
+            )
+
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE)]
+        async with httpx2.AsyncClient(
+            base_url="https://api.example.com",
+            transport=httpx2.MockTransport(handler),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=spec, client=client, route_maps=route_maps
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+            async with Client(mcp) as mcp_client:
+                [content] = await mcp_client.read_resource("resource://get_status")
+
+        assert isinstance(content, TextResourceContents)
+        assert json.loads(content.text) == {"ok": True}
+        assert content.mime_type == "application/hal+json"
 
 
 class TestValidateOutput:
@@ -850,7 +1215,7 @@ class TestValidateOutput:
         self, spec_with_output_schema
     ):
         """Default validate_output=True uses the real extracted schema."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             provider = OpenAPIProvider(
                 openapi_spec=spec_with_output_schema,
                 client=client,
@@ -866,7 +1231,7 @@ class TestValidateOutput:
         self, spec_with_output_schema
     ):
         """validate_output=False replaces the schema with a permissive one."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             provider = OpenAPIProvider(
                 openapi_spec=spec_with_output_schema,
                 client=client,
@@ -884,7 +1249,7 @@ class TestValidateOutput:
         self, spec_with_output_schema
     ):
         """validate_output=False preserves x-fastmcp-wrap-result for array responses."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             provider = OpenAPIProvider(
                 openapi_spec=spec_with_output_schema,
                 client=client,
@@ -897,14 +1262,56 @@ class TestValidateOutput:
             assert tool.output_schema is not None
             assert tool.output_schema.get("x-fastmcp-wrap-result") is True
             assert tool.output_schema.get("additionalProperties") is True
+            # The permissive schema must keep the wrapper shape: the client
+            # unwraps `result` and validates it against properties.result.
+            assert tool.output_schema.get("properties") == {"result": {}}
+
+    async def test_validate_output_false_wrapped_array_hydrates_data(
+        self, spec_with_output_schema
+    ):
+        """validate_output=False still hydrates result.data for wrapped non-object responses.
+
+        Regression test for https://github.com/PrefectHQ/fastmcp/issues/5781:
+        the permissive schema kept the wrap-result flag but dropped the
+        properties.result wrapper shape, so the client failed to validate the
+        unwrapped value and returned data=None.
+        """
+        mock_client = Mock(spec=httpx2.AsyncClient)
+        mock_client.base_url = "https://api.example.com"
+        mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
+
+        # Backend returns an array conforming to the spec
+        mock_response = Mock(spec=Response)
+        mock_response.status_code = 200
+        mock_response.json.return_value = [1, 2, 3]
+        mock_response.raise_for_status = Mock()
+        mock_client.send = AsyncMock(return_value=mock_response)
+
+        provider = OpenAPIProvider(
+            openapi_spec=spec_with_output_schema,
+            client=mock_client,
+            validate_output=False,
+        )
+        mcp = FastMCP("Test")
+        mcp.add_provider(provider)
+
+        async with Client(mcp) as mcp_client:
+            result = await mcp_client.call_tool("list_items", {})
+            assert result is not None
+            assert result.structured_content is not None
+            assert result.structured_content["result"] == [1, 2, 3]
+            # The unwrapped value must survive client-side parsing
+            assert result.data == [1, 2, 3]
 
     async def test_validate_output_false_allows_nonconforming_response(
         self, spec_with_output_schema
     ):
         """With validate_output=False, responses that don't match the spec succeed."""
-        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         # Return extra fields not in the schema
         mock_response = Mock(spec=Response)
@@ -938,9 +1345,10 @@ class TestValidateOutput:
         self, spec_with_output_schema
     ):
         """Non-dict responses are wrapped even when schema says object and validate_output=False."""
-        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         # Backend returns an array even though schema says object
         mock_response = Mock(spec=Response)
@@ -967,9 +1375,10 @@ class TestValidateOutput:
 
     async def test_from_openapi_threads_validate_output(self, spec_with_output_schema):
         """FastMCP.from_openapi() correctly passes validate_output to the provider."""
-        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         server = FastMCP.from_openapi(
             openapi_spec=spec_with_output_schema,
@@ -981,17 +1390,17 @@ class TestValidateOutput:
             tools = await mcp_client.list_tools()
             get_user = next(t for t in tools if t.name == "get_user")
             # With validate_output=False, the outputSchema should be permissive
-            assert get_user.outputSchema is not None
-            assert get_user.outputSchema.get("additionalProperties") is True
+            assert get_user.output_schema is not None
+            assert get_user.output_schema.get("additionalProperties") is True
             # Should NOT have specific properties from the original schema
-            assert "properties" not in get_user.outputSchema
+            assert "properties" not in get_user.output_schema
 
 
 class TestRedactHeaders:
     """Test that non-safe headers are redacted in debug logging."""
 
     def test_known_sensitive_headers_are_redacted(self):
-        headers = httpx.Headers(
+        headers = httpx2.Headers(
             {
                 "Authorization": "Bearer secret-token",
                 "X-API-Key": "my-api-key",
@@ -1011,7 +1420,7 @@ class TestRedactHeaders:
 
     def test_arbitrary_auth_headers_are_redacted(self):
         """Arbitrary header names (e.g. OpenAPI apiKey-in-header) are redacted."""
-        headers = httpx.Headers(
+        headers = httpx2.Headers(
             {
                 "X-Custom-Token": "secret",
                 "X-My-Service-Key": "also-secret",
@@ -1024,6 +1433,256 @@ class TestRedactHeaders:
         assert redacted["content-type"] == "application/json"
 
     def test_safe_only_headers(self):
-        headers = httpx.Headers({"Content-Type": "application/json"})
+        headers = httpx2.Headers({"Content-Type": "application/json"})
         redacted = _redact_headers(headers)
         assert redacted == {"content-type": "application/json"}
+
+
+class TestMultipartUpload:
+    """Multipart request bodies must survive the build_request rebuild.
+
+    The director constructs multipart bodies with ``files=``, which yields a
+    streaming request body; the rebuild through the user's client must
+    materialize it (``read()``) rather than access ``.content``, which raises
+    ``RequestNotRead`` on unread streams.
+    """
+
+    MULTIPART_SPEC = {
+        "openapi": "3.0.0",
+        "info": {"title": "Upload API", "version": "1.0.0"},
+        "servers": [{"url": "https://api.example.com"}],
+        "paths": {
+            "/upload": {
+                "post": {
+                    "operationId": "upload_file",
+                    "summary": "Upload a file",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "multipart/form-data": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"file": {"type": "string"}},
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Uploaded",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"ok": {"type": "boolean"}},
+                                    }
+                                }
+                            },
+                        }
+                    },
+                }
+            }
+        },
+    }
+
+    async def test_multipart_tool_call_sends_materialized_body(self):
+        received: dict[str, Any] = {}
+
+        def handler(request):
+            received["content_type"] = request.headers.get("content-type", "")
+            received["body"] = request.read()
+            return httpx2.Response(200, json={"ok": True})
+
+        transport = httpx2.MockTransport(handler)
+        async with httpx2.AsyncClient(
+            transport=transport, base_url="https://api.example.com"
+        ) as client:
+            server = create_openapi_server(self.MULTIPART_SPEC, client)
+            async with Client(server) as mcp_client:
+                result = await mcp_client.call_tool("upload_file", {"file": "data"})
+                assert result.structured_content == {"ok": True}
+
+        assert "multipart/form-data" in received["content_type"]
+        assert b"data" in received["body"]
+
+
+class TestAllOfReferenceRequestBodies:
+    """Request bodies keep fields inherited through an allOf reference."""
+
+    SPEC = {
+        "openapi": "3.1.0",
+        "info": {"title": "Pet API", "version": "1.0.0"},
+        "servers": [{"url": "https://api.example.com"}],
+        "paths": {
+            "/pets": {
+                "post": {
+                    "operationId": "create_pet",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Cat"}
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "Created"}},
+                }
+            }
+        },
+        "components": {
+            "schemas": {
+                "Animal": {
+                    "type": "object",
+                    "properties": {"animalId": {"type": "string"}},
+                    "required": ["animalId"],
+                },
+                "Pet": {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/Animal"},
+                        {
+                            "type": "object",
+                            "properties": {"petType": {"type": "string"}},
+                            "required": ["petType"],
+                        },
+                    ]
+                },
+                "Cat": {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/Pet"},
+                        {
+                            "type": "object",
+                            "properties": {"meowVolume": {"type": "integer"}},
+                            "required": ["meowVolume"],
+                        },
+                    ]
+                },
+            }
+        },
+    }
+
+    async def test_allof_reference_fields_reach_tool_schema_and_request_body(self):
+        received: dict[str, object] = {}
+
+        def handler(request):
+            received["body"] = json.loads(request.content)
+            return httpx2.Response(200, json={"ok": True})
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.MockTransport(handler),
+            base_url="https://api.example.com",
+        ) as client:
+            server = create_openapi_server(self.SPEC, client)
+            async with Client(server) as mcp_client:
+                tools = await mcp_client.list_tools()
+                tool = next(tool for tool in tools if tool.name == "create_pet")
+                assert tool.input_schema["properties"].keys() >= {
+                    "animalId",
+                    "petType",
+                    "meowVolume",
+                }
+
+                result = await mcp_client.call_tool(
+                    "create_pet",
+                    {"animalId": "a-1", "petType": "cat", "meowVolume": 11},
+                )
+
+        assert result.structured_content == {"ok": True}
+        assert received["body"] == {
+            "animalId": "a-1",
+            "petType": "cat",
+            "meowVolume": 11,
+        }
+
+    async def test_allof_reference_request_body_does_not_crash(self):
+        """Required fields inherited through a reference can be sent together."""
+        received: dict[str, object] = {}
+
+        def handler(request):
+            received["body"] = json.loads(request.content)
+            return httpx2.Response(200, json={"ok": True})
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.MockTransport(handler),
+            base_url="https://api.example.com",
+        ) as client:
+            server = create_openapi_server(self.SPEC, client)
+            async with Client(server) as mcp_client:
+                result = await mcp_client.call_tool(
+                    "create_pet",
+                    {"animalId": "a-1", "petType": "cat", "meowVolume": 11},
+                )
+
+        assert result.structured_content == {"ok": True}
+        assert received["body"] == {
+            "animalId": "a-1",
+            "petType": "cat",
+            "meowVolume": 11,
+        }
+
+
+class TestNonIdentifierPathParameterNames:
+    """Resource templates for path parameters whose names are not Python
+    identifiers stay readable (#6150). OpenAPI allows names like `{$top}`,
+    `x.y`, or `1id` in path templates."""
+
+    @pytest.fixture
+    def non_identifier_spec(self):
+        def get_op(op_id, param):
+            return {
+                "get": {
+                    "operationId": op_id,
+                    "summary": op_id,
+                    "parameters": [
+                        {
+                            "name": param,
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+
+        return {
+            "openapi": "3.0.3",
+            "info": {"title": "t", "version": "1"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/a/{top}": get_op("plain", "top"),
+                "/b/{$top}": get_op("dollar", "$top"),
+                "/c/{x.y}": get_op("dot", "x.y"),
+                "/d/{1id}": get_op("digit", "1id"),
+            },
+        }
+
+    async def test_non_identifier_path_params_listed_and_readable(
+        self, non_identifier_spec
+    ):
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+
+        def respond(request: httpx2.Request) -> httpx2.Response:
+            return httpx2.Response(200, json={"path": request.url.path})
+
+        async with httpx2.AsyncClient(
+            base_url="https://api.example.com",
+            transport=httpx2.MockTransport(respond),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=non_identifier_spec, client=client, route_maps=route_maps
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+            async with Client(mcp) as mcp_client:
+                templates = await mcp_client.list_resource_templates()
+                assert len(templates) == 4
+
+                expected_paths = {
+                    "resource://plain/x": "/a/x",
+                    "resource://dollar/x": "/b/x",
+                    "resource://dot/x": "/c/x",
+                    "resource://digit/x": "/d/x",
+                }
+                for uri, path in expected_paths.items():
+                    result = (await mcp_client.read_resource(uri))[0]
+                    assert json.loads(result.text) == {"path": path}

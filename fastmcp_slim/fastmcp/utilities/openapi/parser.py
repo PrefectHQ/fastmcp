@@ -1,6 +1,6 @@
 """OpenAPI parsing logic for converting OpenAPI specs to HTTPRoute objects."""
 
-from typing import Any, Generic, TypeVar, cast
+from typing import Any, Generic, TypeVar
 
 from openapi_pydantic import (
     OpenAPI,
@@ -36,6 +36,8 @@ from .models import (
 )
 from .schemas import (
     _combine_schemas_and_map_params,
+    _discriminator_target_name,
+    _ref_component_name,
     _replace_ref_with_defs,
 )
 
@@ -145,10 +147,16 @@ class OpenAPIParser(
 
     def _convert_to_parameter_location(self, param_in: str) -> ParameterLocation:
         """Convert string parameter location to our ParameterLocation type."""
-        if param_in in ["path", "query", "header", "cookie"]:
-            return cast(ParameterLocation, param_in)
+        locations: dict[str, ParameterLocation] = {
+            "path": "path",
+            "query": "query",
+            "header": "header",
+            "cookie": "cookie",
+        }
+        if location := locations.get(param_in):
+            return location
         logger.warning(f"Unknown parameter location: {param_in}, defaulting to 'query'")
-        return cast(ParameterLocation, "query")
+        return "query"
 
     def _resolve_ref(self, item: Any) -> Any:
         """Resolves a reference to its target definition."""
@@ -311,6 +319,12 @@ class OpenAPIParser(
                         ):
                             param_schema_dict["default"] = resolved_media_schema.default
 
+                param_example = getattr(parameter, "example", None)
+                if param_example is not None:
+                    param_schema_dict.pop("example", None)
+                    param_schema_dict.pop("examples", None)
+                    param_schema_dict["example"] = param_example
+
                 # Extract explode and style properties if present
                 explode = getattr(parameter, "explode", None)
                 style = getattr(parameter, "style", None)
@@ -359,6 +373,11 @@ class OpenAPIParser(
             # Extract content schemas
             if hasattr(request_body, "content") and request_body.content:
                 for media_type_str, media_type_obj in request_body.content.items():
+                    if media_type_obj and media_type_obj.encoding:
+                        request_body_info.encoding[media_type_str] = {
+                            name: value.model_dump(by_alias=True, exclude_unset=True)
+                            for name, value in media_type_obj.encoding.items()
+                        }
                     if (
                         media_type_obj
                         and hasattr(media_type_obj, "media_type_schema")
@@ -434,10 +453,39 @@ class OpenAPIParser(
         # If no success codes found, return None (tool will have no output schema)
         return None
 
+    def _extract_bodiless_success_responses(
+        self, operation_responses: dict[str, Any], primary_status_code: str
+    ) -> dict[str, ResponseInfo]:
+        """Extract the success responses, besides the primary one, that declare no body.
+
+        Such a response (e.g. a 204 next to a 201) means the operation may answer
+        without a body, so the tool cannot promise structured output.
+        """
+        bodiless_responses: dict[str, ResponseInfo] = {}
+        for status_code, resp_or_ref in operation_responses.items():
+            if status_code == primary_status_code or not str(status_code).startswith(
+                "2"
+            ):
+                continue
+            try:
+                response = self._resolve_ref(resp_or_ref)
+            except ValueError as e:
+                logger.debug(f"Skipping unresolved response {status_code}: {e}")
+                continue
+            if isinstance(response, self.response_cls) and not response.content:
+                bodiless_responses[str(status_code)] = ResponseInfo(
+                    description=response.description
+                )
+        return bodiless_responses
+
     def _extract_responses(
         self, operation_responses: dict[str, Any] | None
     ) -> dict[str, ResponseInfo]:
-        """Extract and resolve response information. Only includes the primary success response for MCP tools."""
+        """Extract and resolve response information.
+
+        Only includes the primary success response for MCP tools, plus any other
+        success response that has no body.
+        """
         extracted_responses: dict[str, ResponseInfo] = {}
 
         if not operation_responses:
@@ -482,7 +530,13 @@ class OpenAPIParser(
                                 if isinstance(ref_str, str) and ref_str.startswith(
                                     "#/components/schemas/"
                                 ):
-                                    top_level_schema_name = ref_str.split("/")[-1]
+                                    pointer = ref_str.removeprefix(
+                                        "#/components/schemas/"
+                                    )
+                                    # Only a whole component is a top-level
+                                    # schema; a pointer into one is not.
+                                    if "/" not in pointer:
+                                        top_level_schema_name = pointer
 
                             schema_dict = self._extract_schema_as_dict(media_schema)
                             # Add marker for top-level schema if it was a ref
@@ -530,6 +584,9 @@ class OpenAPIParser(
                 exc_info=False,
             )
 
+        extracted_responses.update(
+            self._extract_bodiless_success_responses(operation_responses, status_code)
+        )
         return extracted_responses
 
     def _extract_schema_dependencies(
@@ -537,6 +594,7 @@ class OpenAPIParser(
         schema: dict,
         all_schemas: dict[str, Any],
         collected: set[str] | None = None,
+        follow_discriminator: bool = False,
     ) -> set[str]:
         """
         Extract all schema names referenced by a schema (including transitive dependencies).
@@ -545,6 +603,10 @@ class OpenAPIParser(
             schema: The schema to analyze
             all_schemas: All available schema definitions
             collected: Set of already collected schema names (for recursion)
+            follow_discriminator: Also collect the subtypes named by a
+                `discriminator.mapping`. Those values are bare strings rather
+                than `$ref` objects, so they are invisible to ordinary ref
+                collection.
 
         Returns:
             Set of schema names that are referenced
@@ -552,26 +614,36 @@ class OpenAPIParser(
         if collected is None:
             collected = set()
 
+        def collect(schema_name: str) -> None:
+            """Collect a schema by name and recurse into its dependencies."""
+            if schema_name not in collected and schema_name in all_schemas:
+                collected.add(schema_name)
+                find_refs(all_schemas[schema_name])
+
         def find_refs(obj):
             """Recursively find all $ref references."""
             if isinstance(obj, dict):
                 if "$ref" in obj and isinstance(obj["$ref"], str):
                     ref = obj["$ref"]
                     # Handle both converted and unconverted refs
-                    if ref.startswith(("#/$defs/", "#/components/schemas/")):
-                        schema_name = ref.split("/")[-1]
-                    else:
+                    schema_name = _ref_component_name(ref)
+                    if schema_name is None:
                         return
 
                     # Add this schema and recursively find its dependencies
-                    if (
-                        collected is not None
-                        and schema_name not in collected
-                        and schema_name in all_schemas
-                    ):
-                        collected.add(schema_name)
-                        # Recursively find dependencies of this schema
-                        find_refs(all_schemas[schema_name])
+                    collect(schema_name)
+
+                if follow_discriminator:
+                    discriminator = obj.get("discriminator")
+                    if isinstance(discriminator, dict):
+                        mapping = discriminator.get("mapping")
+                        if isinstance(mapping, dict):
+                            for target in mapping.values():
+                                if not isinstance(target, str):
+                                    continue
+                                name = _discriminator_target_name(target)
+                                if name:
+                                    collect(name)
 
                 # Continue searching in all values
                 for value in obj.values():
@@ -608,10 +680,15 @@ class OpenAPIParser(
                 deps = self._extract_schema_dependencies(param.schema_, all_schemas)
                 needed_schemas.update(deps)
 
-        # Check request body for schema references
+        # Check request body for schema references. Request bodies are flattened
+        # into a single object, so discriminated subtypes need to come along.
         if request_body and request_body.content_schema:
             for content_schema in request_body.content_schema.values():
-                deps = self._extract_schema_dependencies(content_schema, all_schemas)
+                deps = self._extract_schema_dependencies(
+                    content_schema,
+                    all_schemas,
+                    follow_discriminator=True,
+                )
                 needed_schemas.update(deps)
 
         # Return only the needed input schemas

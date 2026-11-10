@@ -17,15 +17,16 @@
 [![Docs](https://img.shields.io/badge/docs-gofastmcp.com-blue)](https://gofastmcp.com)
 [![Discord](https://img.shields.io/badge/community-discord-5865F2?logo=discord&logoColor=white)](https://discord.gg/uu8dJCgttd)
 [![PyPI - Version](https://img.shields.io/pypi/v/fastmcp.svg)](https://pypi.org/project/fastmcp)
+[![TypeScript](https://img.shields.io/npm/v/%40prefecthq%2Ffastmcp-ts?label=typescript&color=3178c6)](https://github.com/PrefectHQ/fastmcp-ts)
 [![Tests](https://github.com/PrefectHQ/fastmcp/actions/workflows/run-tests.yml/badge.svg)](https://github.com/PrefectHQ/fastmcp/actions/workflows/run-tests.yml)
 [![License](https://img.shields.io/github/license/PrefectHQ/fastmcp.svg)](https://github.com/PrefectHQ/fastmcp/blob/main/LICENSE)
 
-<a href="https://trendshift.io/repositories/13266" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13266" alt="prefecthq%2Ffastmcp | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+<a href="https://trendshift.io/repositories/21461" target="_blank"><img src="https://trendshift.io/api/badge/repositories/21461" alt="prefecthq%2Ffastmcp | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </div>
 
 ---
 
-The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) connects LLMs to tools and data. FastMCP gives you everything you need to go from prototype to production:
+The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) connects LLMs to tools and data. FastMCP is a full MCP application framework for servers, clients, and interactive apps. A server starts with ordinary Python:
 
 ```python
 from fastmcp import FastMCP
@@ -77,32 +78,37 @@ FastMCP has three pillars:
 
 **[Servers](https://gofastmcp.com/servers/server)** wrap your Python functions into MCP-compliant tools, resources, and prompts. **[Clients](https://gofastmcp.com/clients/client)** connect to any server with full protocol support. And **[Apps](https://gofastmcp.com/apps/overview)** give your tools interactive UIs rendered directly in the conversation.
 
+**Building in TypeScript?** [FastMCP for TypeScript](https://github.com/PrefectHQ/fastmcp-ts) is the official counterpart, built and maintained by the same team. Same pillars, same ideas, `npm install @prefecthq/fastmcp-ts`.
+
 Ready to build? Start with the [installation guide](https://gofastmcp.com/getting-started/installation) or jump straight to the [quickstart](https://gofastmcp.com/getting-started/quickstart).
 
-## Run FastMCP in production with Horizon
+<a id="scale-mcp-with-horizon"></a>
 
-FastMCP is the standard way to build MCP servers. **[Prefect Horizon](https://www.prefect.io/horizon?utm_source=github&utm_medium=readme&utm_campaign=readme_horizon&utm_content=readme_body)** is the enterprise MCP gateway for running them safely.
+## Scale MCP with FastMCP Gateway
 
-Built by the FastMCP team, Horizon packages the best practices we've learned shipping the world's most popular MCP framework.
+FastMCP handles the MCP application layer. **[FastMCP Gateway](https://www.prefect.io/horizon?utm_source=github&utm_medium=readme&utm_campaign=readme_horizon&utm_content=readme_body)** is the enterprise MCP gateway for scaling servers and tools across teams, with centralized governance over how they are deployed, discovered, secured, and used.
+
+FastMCP and FastMCP Gateway are built by the same team at [Prefect](https://www.prefect.io/).
 
 Deploy FastMCP servers from GitHub with branch previews and instant rollback. Create a private registry of every MCP your company uses. Secure access with SSO and tool-level RBAC. Get audit logs, observability, and governance across your MCP stack. Remix approved tools into purpose-built endpoints for teams and agents.
 
-Start with FastMCP. [Scale with Horizon →](https://www.prefect.io/horizon?utm_source=github&utm_medium=readme&utm_campaign=readme_horizon&utm_content=readme_cta)
+Start with FastMCP. [Scale with FastMCP Gateway →](https://www.prefect.io/horizon?utm_source=github&utm_medium=readme&utm_campaign=readme_horizon&utm_content=readme_cta)
 
 ## Installation
 
-We recommend installing FastMCP with [uv](https://docs.astral.sh/uv/):
+We recommend adding FastMCP to your project with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv pip install fastmcp
+uv add fastmcp
 ```
 
 For full installation instructions, including verification and upgrading, see the [**Installation Guide**](https://gofastmcp.com/getting-started/installation).
 
 **Upgrading?** We have guides for:
-- [Upgrading from FastMCP v2](https://gofastmcp.com/getting-started/upgrading/from-fastmcp-2)
-- [Upgrading from the MCP Python SDK](https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk)
-- [Upgrading from the low-level SDK](https://gofastmcp.com/getting-started/upgrading/from-low-level-sdk)
+- [Upgrading from FastMCP 3](https://gofastmcp.com/getting-started/upgrading/from-fastmcp-3)
+- [Upgrading from FastMCP 2](https://gofastmcp.com/getting-started/upgrading/from-fastmcp-2)
+- [Upgrading from MCP SDK v1](https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk-v1) or [v2](https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk-v2)
+- [Upgrading from the low-level SDK v1](https://gofastmcp.com/getting-started/upgrading/from-low-level-sdk-v1) or [v2](https://gofastmcp.com/getting-started/upgrading/from-low-level-sdk-v2)
 
 ## 📚 Documentation
 
@@ -113,8 +119,10 @@ Documentation is also available in [llms.txt format](https://llmstxt.org/), whic
 - [`llms.txt`](https://gofastmcp.com/llms.txt) is essentially a sitemap, listing all the pages in the documentation.
 - [`llms-full.txt`](https://gofastmcp.com/llms-full.txt) contains the entire documentation. Note this may exceed the context window of your LLM.
 
+Give your coding agent [`llms.txt`](https://gofastmcp.com/llms.txt) as its starting point. See [Coding Agents](https://gofastmcp.com/getting-started/ai-assisted-development) for version-matched documentation and the optional server authoring skill.
+
 **Community:** Join our [Discord server](https://discord.gg/uu8dJCgttd) to connect with other FastMCP developers and share what you're building.
 
 ## Contributing
 
-We welcome contributions! See the [Contributing Guide](https://gofastmcp.com/development/contributing) for setup instructions, testing requirements, and PR guidelines.
+Start with [CONTRIBUTING.md](CONTRIBUTING.md) for accepted contributions and the issue-assignment workflow, then follow the [Contributing Guide](https://gofastmcp.com/development/contributing) for setup and validation. Agents should read [AGENTS.md](AGENTS.md).

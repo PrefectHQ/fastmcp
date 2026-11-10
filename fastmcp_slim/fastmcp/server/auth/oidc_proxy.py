@@ -9,21 +9,49 @@ This implementation is based on:
     OAuth 2.0 Authorization Server Metadata - https://datatracker.ietf.org/doc/html/rfc8414
 """
 
+from collections import OrderedDict
 from collections.abc import Sequence
-from typing import Literal
+from copy import deepcopy
+from threading import Lock
+from time import monotonic
+from typing import Any, Literal, Self
 
-import httpx
+import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, BaseModel, model_validator
-from typing_extensions import Self
 
 from fastmcp.server.auth import TokenVerifier
+from fastmcp.server.auth.identity_assertion import IdentityAssertion
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oauth_proxy.models import UpstreamTokenSet
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+#: Default timeout, in seconds, for the OIDC discovery request made during
+#: provider construction. Bounds how long startup can block on a slow or
+#: unreachable issuer metadata endpoint. Pass ``timeout_seconds=None`` to fall
+#: back to the HTTP client's own default timeout instead.
+DEFAULT_OIDC_DISCOVERY_TIMEOUT_SECONDS = 10
+
+#: Maximum age, in seconds, of a successfully validated OIDC discovery document.
+_OIDC_DISCOVERY_CACHE_TTL_SECONDS = 300
+
+#: Maximum number of distinct discovery configurations cached per process.
+_OIDC_DISCOVERY_CACHE_MAX_SIZE = 128
+
+_OIDCDiscoveryCacheKey = tuple[type[BaseModel], str, bool | None, int | None]
+_OIDCDiscoveryCacheValue = tuple[float, dict[str, Any]]
+_oidc_configuration_cache: OrderedDict[
+    _OIDCDiscoveryCacheKey, _OIDCDiscoveryCacheValue
+] = OrderedDict()
+_oidc_configuration_cache_lock = Lock()
+
+
+def _clear_oidc_configuration_cache() -> None:
+    with _oidc_configuration_cache_lock:
+        _oidc_configuration_cache.clear()
 
 
 class OIDCConfiguration(BaseModel):
@@ -146,29 +174,65 @@ class OIDCConfiguration(BaseModel):
     ) -> Self:
         """Get the OIDC configuration for the specified config URL.
 
+        Successful discovery responses are cached briefly to avoid repeatedly hitting
+        the issuer for identical provider construction. Cached data is copied and
+        revalidated for every caller so mutable model instances are never shared.
+
         Args:
             config_url: The OIDC config URL
             strict: The strict flag for the configuration
             timeout_seconds: HTTP request timeout in seconds
         """
-        get_kwargs = {}
+        cache_key: _OIDCDiscoveryCacheKey = (
+            cls,
+            str(config_url),
+            strict,
+            timeout_seconds,
+        )
+        now = monotonic()
+        cached_data: dict[str, Any] | None = None
+
+        with _oidc_configuration_cache_lock:
+            cached = _oidc_configuration_cache.get(cache_key)
+            if cached is not None:
+                expires_at, cached_snapshot = cached
+                if expires_at > now:
+                    _oidc_configuration_cache.move_to_end(cache_key)
+                    cached_data = deepcopy(cached_snapshot)
+                else:
+                    del _oidc_configuration_cache[cache_key]
+
+        if cached_data is not None:
+            return cls.model_validate(cached_data)
+
+        get_kwargs: dict[str, Any] = {}
         if timeout_seconds is not None:
             get_kwargs["timeout"] = timeout_seconds
 
         try:
-            response = httpx.get(str(config_url), **get_kwargs)
+            response = httpx2.get(str(config_url), **get_kwargs)
             response.raise_for_status()
 
             config_data = response.json()
             if strict is not None:
                 config_data["strict"] = strict
 
-            return cls.model_validate(config_data)
+            config = cls.model_validate(config_data)
         except Exception:
             logger.exception(
                 f"Unable to get OIDC configuration for config url: {config_url}"
             )
             raise
+
+        cached_snapshot = config.model_dump(mode="json")
+        expires_at = monotonic() + _OIDC_DISCOVERY_CACHE_TTL_SECONDS
+        with _oidc_configuration_cache_lock:
+            _oidc_configuration_cache[cache_key] = (expires_at, cached_snapshot)
+            _oidc_configuration_cache.move_to_end(cache_key)
+            while len(_oidc_configuration_cache) > _OIDC_DISCOVERY_CACHE_MAX_SIZE:
+                _oidc_configuration_cache.popitem(last=False)
+
+        return config
 
 
 class OIDCProxy(OAuthProxy):
@@ -206,7 +270,7 @@ class OIDCProxy(OAuthProxy):
         client_id: str,
         client_secret: str | None = None,
         audience: str | None = None,
-        timeout_seconds: int | None = None,
+        timeout_seconds: int | None = DEFAULT_OIDC_DISCOVERY_TIMEOUT_SECONDS,
         # Token verifier
         token_verifier: TokenVerifier | None = None,
         algorithm: str | None = None,
@@ -219,6 +283,7 @@ class OIDCProxy(OAuthProxy):
         redirect_path: str | None = None,
         # Client configuration
         allowed_client_redirect_uris: list[str] | None = None,
+        valid_scopes: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
         # JWT and encryption keys
         jwt_signing_key: str | bytes | None = None,
@@ -234,8 +299,14 @@ class OIDCProxy(OAuthProxy):
         # Token expiry fallback
         fallback_access_token_expiry_seconds: int | None = None,
         fallback_refresh_token_expiry_seconds: int | None = None,
+        # FastMCP-issued access token lifetime (decoupled from upstream)
+        fastmcp_access_token_expiry_seconds: int | None = None,
+        # Token refresh threshold
+        token_expiry_threshold_seconds: int = 0,
         # CIMD configuration
         enable_cimd: bool = True,
+        # Identity assertion (SEP-990 ID-JAG) support
+        identity_assertion: IdentityAssertion | None = None,
     ) -> None:
         """Initialize the OIDC proxy provider.
 
@@ -247,7 +318,10 @@ class OIDCProxy(OAuthProxy):
                 clients or when using alternative credentials. When omitted,
                 jwt_signing_key must be provided.
             audience: Audience for upstream server
-            timeout_seconds: HTTP request timeout in seconds
+            timeout_seconds: Timeout, in seconds, for the OIDC discovery request
+                made during construction. Defaults to 10 seconds so a slow or
+                unreachable issuer cannot block server startup indefinitely. Pass
+                None to fall back to the HTTP client's own default timeout.
             token_verifier: Optional custom token verifier (e.g., IntrospectionTokenVerifier for opaque tokens).
                 If not provided, a JWTVerifier will be created using the OIDC configuration.
                 Cannot be used with algorithm or required_scopes parameters (configure these on your verifier instead).
@@ -264,9 +338,19 @@ class OIDCProxy(OAuthProxy):
             redirect_path: Redirect path configured in upstream OAuth app (defaults to "/auth/callback")
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 Patterns support wildcards (e.g., "http://localhost:*", "https://*.example.com/*").
-                If None (default), all redirect URIs are allowed (for DCR compatibility).
+                If None (default), DCR clients use registered redirect URIs, with loopback
+                ports allowed to vary for MCP compatibility. Unsafe browser schemes are rejected.
                 If empty list, no redirect URIs are allowed.
                 These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
+            valid_scopes: The complete set of scopes clients are allowed to request,
+                advertised to clients via the `/.well-known` endpoints (as
+                `scopes_supported`) and enforced at Dynamic Client Registration: a
+                client that registers requesting a scope outside this set is rejected.
+                This is a superset of `required_scopes`, which is only the floor
+                enforced during token validation. Defaults to `required_scopes` when
+                not provided, so permitting optional scopes beyond the required floor
+                means setting this explicitly. Valid whether or not a custom
+                `token_verifier` is supplied.
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
                 If None, an encrypted file store will be created in the data directory
                 (derived from `platformdirs`).
@@ -275,17 +359,24 @@ class OIDCProxy(OAuthProxy):
                 provided, the upstream client secret will be used to derive a 32-byte key using PBKDF2.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
-                If None, authlib will use its default (typically "client_secret_basic").
+                Defaults to "client_secret_basic" when a client secret is configured
+                and to "none" (public client, no secret sent) otherwise.
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to the upstream IdP.
                 When False, authorization proceeds directly without user confirmation.
-                When "external", the built-in consent screen is skipped but no warning is
-                logged, indicating that consent is handled externally (e.g. by the upstream IdP).
+                When "external", authorization follows the same direct path as False,
+                but the warning is suppressed as an operator acknowledgment that
+                equivalent protections are enforced externally.
+                False and "external" disable FastMCP's consent and browser-binding
+                protections, reducing security unless equivalent checks exist elsewhere.
+                FastMCP does not provide or verify those external checks.
                 SECURITY WARNING: Only set to False for local development or testing environments.
             consent_csp_policy: Content Security Policy for the consent page.
                 If None (default), uses the built-in CSP policy with appropriate directives.
                 If empty string "", disables CSP entirely (no meta tag is rendered).
                 If a non-empty string, uses that as the CSP policy value.
+                Disabling or weakening CSP reduces browser content-injection protections
+                unless the deployment supplies an equivalent CSP header.
             extra_authorize_params: Additional parameters to forward to the upstream authorization endpoint.
                 Useful for provider-specific parameters like prompt=consent or access_type=offline.
                 Example: {"prompt": "consent", "access_type": "offline"}
@@ -300,9 +391,23 @@ class OIDCProxy(OAuthProxy):
                 Defaults to 1 year. The actual upstream refresh remains the source of
                 truth — if upstream rejects the refresh, the client gets `invalid_grant`
                 and re-auths.
+            fastmcp_access_token_expiry_seconds: Lifetime for the FastMCP-issued access
+                token (JWT), decoupling it from the upstream provider's `expires_in`. By
+                default (None) the FastMCP access token mirrors the upstream access token
+                lifetime. The FastMCP JWT is a reference token re-validated against upstream
+                on every request, so a longer FastMCP lifetime does not extend upstream
+                access — a revoked or expired upstream session still fails validation. Set
+                this for bridges whose upstream issues short-lived access tokens that some
+                MCP clients can't refresh gracefully (e.g. `mcp-remote`).
+            token_expiry_threshold_seconds: Number of seconds before actual expiry to consider
+                a token as expired (default 0). Prevents race conditions where a token
+                passes the expiry check but expires before the next operation completes.
             enable_cimd: Whether to enable CIMD (Client ID Metadata Document) client support.
                 When True, clients can use their metadata document URL as client_id instead of
                 Dynamic Client Registration. Default is True.
+            identity_assertion: Optional SEP-990 identity assertion (ID-JAG) configuration.
+                When provided, the token endpoint accepts the RFC 7523 jwt-bearer grant
+                carrying an ID-JAG issued by one of the configured trusted issuers.
         """
         if not config_url:
             raise ValueError("Missing required config URL")
@@ -383,6 +488,7 @@ class OIDCProxy(OAuthProxy):
             "issuer_url": issuer_url or base_url,
             "service_documentation_url": self.oidc_config.service_documentation,
             "allowed_client_redirect_uris": allowed_client_redirect_uris,
+            "valid_scopes": valid_scopes,
             "client_storage": client_storage,
             "jwt_signing_key": jwt_signing_key,
             "token_endpoint_auth_method": token_endpoint_auth_method,
@@ -391,7 +497,10 @@ class OIDCProxy(OAuthProxy):
             "forward_resource": forward_resource,
             "fallback_access_token_expiry_seconds": fallback_access_token_expiry_seconds,
             "fallback_refresh_token_expiry_seconds": fallback_refresh_token_expiry_seconds,
+            "fastmcp_access_token_expiry_seconds": fastmcp_access_token_expiry_seconds,
+            "token_expiry_threshold_seconds": token_expiry_threshold_seconds,
             "enable_cimd": enable_cimd,
+            "identity_assertion": identity_assertion,
         }
 
         if redirect_path:
@@ -420,14 +529,16 @@ class OIDCProxy(OAuthProxy):
 
         self._verify_id_token = verify_id_token
 
-        # When verify_id_token strips scopes from the verifier, restore
-        # them on the provider so they're still advertised to clients
-        # and enforced at the FastMCP token level.  We also need to
-        # recompute derived state that OAuthProxy.__init__ already built
-        # from the (empty) verifier scopes.
-        if verify_id_token and required_scopes:
-            self.required_scopes = required_scopes
-            self.update_default_scopes(required_scopes)
+        # When verify_id_token strips scopes from the verifier, restore the
+        # derived scope state OAuthProxy.__init__ built from the (empty) verifier
+        # scopes. required_scopes is the enforcement floor; the advertised and
+        # registerable set is the broader valid_scopes when one was given.
+        if verify_id_token:
+            if required_scopes:
+                self.required_scopes = required_scopes
+            advertised_scopes = valid_scopes or required_scopes
+            if advertised_scopes:
+                self.update_default_scopes(advertised_scopes)
 
     def _get_verification_token(
         self, upstream_token_set: UpstreamTokenSet

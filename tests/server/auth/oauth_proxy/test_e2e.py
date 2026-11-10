@@ -4,7 +4,7 @@ import time
 from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
-import httpx
+import httpx2
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.provider import AuthorizationCode, AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
@@ -125,7 +125,7 @@ class TestOAuthProxyE2E:
 
             # Configure mock to call real provider for refresh
             async def mock_refresh(*args, **kwargs):
-                async with httpx.AsyncClient() as http:
+                async with httpx2.AsyncClient() as http:
                     response = await http.post(
                         mock_oauth_provider.token_endpoint,
                         data={

@@ -101,7 +101,8 @@ import asyncio
 
 async def main():
     async with Client("http://localhost:8000/mcp", auth="oauth") as client:
-        assert await client.ping()
+        tools = await client.list_tools()
+        print(f"Authenticated. Server exposes {len(tools)} tools.")
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -150,7 +151,7 @@ auth = PropelAuthProvider(
     auth_url=os.environ["PROPELAUTH_AUTH_URL"],
     introspection_client_id=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_ID"],
     introspection_client_secret=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_SECRET"],
-    base_url=os.environ.get("BASE_URL", "https://your-server.com"),
+    base_url=os.environ["SERVER_URL"],
     required_scopes=["read:user_data"],
     resource="https://your-server.com/mcp",              # Restrict to tokens intended for this server (RFC 8707)
     token_introspection_overrides={

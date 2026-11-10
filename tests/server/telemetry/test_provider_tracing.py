@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind
 
-from fastmcp import FastMCP
+from fastmcp import Client, Context, FastMCP
+from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
+from fastmcp.telemetry import TRACE_PARENT_KEY
 
 
 class TestFastMCPProviderTracing:
@@ -131,3 +134,151 @@ class TestProviderSpanHierarchy:
         assert child_span.parent is not None
         assert delegate_span.parent.span_id == parent_span.context.span_id
         assert child_span.parent.span_id == delegate_span.context.span_id
+
+
+class TestModernProxyTracePropagation:
+    """A modern proxy relays resources and prompts through the low-level
+    session so a backend guard's ask can surface (SEP-2322). That path skips
+    the high-level client's trace injection, so the relay must stamp the
+    outgoing `_meta` itself — otherwise every modern proxy read breaks the
+    distributed trace, not only the guard rounds."""
+
+    @staticmethod
+    def _backend(seen: dict[str, dict]) -> FastMCP:
+        backend = FastMCP("trace-backend")
+
+        def record(kind: str, ctx: Context) -> None:
+            rc = ctx.request_context
+            seen[kind] = dict(rc.meta) if rc is not None and rc.meta else {}
+
+        @backend.resource("data://x")
+        async def concrete(ctx: Context) -> str:
+            record("resource", ctx)
+            return "ok"
+
+        @backend.resource("data://{part}/y")
+        async def templated(part: str, ctx: Context) -> str:
+            record("template", ctx)
+            return "ok"
+
+        @backend.prompt
+        async def greet(ctx: Context) -> str:
+            record("prompt", ctx)
+            return "ok"
+
+        return backend
+
+    async def test_traceparent_reaches_backend(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        seen: dict[str, dict] = {}
+        proxy = FastMCPProxy(
+            client_factory=lambda: ProxyClient(self._backend(seen), mode="auto")
+        )
+
+        async with Client(proxy, mode="auto") as client:
+            await client.read_resource("data://x")
+            await client.read_resource("data://p/y")
+            await client.get_prompt("greet")
+
+        assert TRACE_PARENT_KEY in seen["resource"]
+        assert TRACE_PARENT_KEY in seen["template"]
+        assert TRACE_PARENT_KEY in seen["prompt"]
+
+
+class TestOneServerSpanPerRequest:
+    """A request crosses one server boundary, however deep the mounts go."""
+
+    @staticmethod
+    def _server_spans(exporter: InMemorySpanExporter) -> list:
+        return [
+            s
+            for s in exporter.get_finished_spans()
+            if s.kind == SpanKind.SERVER
+            and s.attributes is not None
+            and s.attributes.get("mcp.method.name") == "tools/call"
+        ]
+
+    async def test_mounted_call_over_a_client(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        child = FastMCP("child")
+
+        @child.tool
+        def hello() -> str:
+            return "world"
+
+        parent = FastMCP("parent")
+        parent.mount(child, namespace="sub")
+
+        async with Client(parent) as client:
+            await client.call_tool("sub_hello", {})
+
+        spans = trace_exporter.get_finished_spans()
+        (server,) = self._server_spans(trace_exporter)
+        assert server.name == "tools/call sub_hello"
+        delegate = next(s for s in spans if s.name == "delegate hello")
+        child_span = next(s for s in spans if s.name == "tools/call hello")
+        assert child_span.kind == SpanKind.INTERNAL
+        assert child_span.parent is not None
+        assert child_span.parent.span_id == delegate.context.span_id
+
+    async def test_nested_mounts_in_process(self, trace_exporter: InMemorySpanExporter):
+        leaf = FastMCP("leaf")
+
+        @leaf.tool
+        def hello() -> str:
+            return "world"
+
+        middle = FastMCP("middle")
+        middle.mount(leaf, namespace="leaf")
+        root = FastMCP("root")
+        root.mount(middle, namespace="mid")
+
+        await root.call_tool("mid_leaf_hello", {})
+
+        (server,) = self._server_spans(trace_exporter)
+        assert server.name == "tools/call mid_leaf_hello"
+
+    async def test_tool_calling_a_tool(self, trace_exporter: InMemorySpanExporter):
+        mcp = FastMCP("nested")
+
+        @mcp.tool
+        def inner() -> str:
+            return "inner"
+
+        @mcp.tool
+        async def outer(ctx: Context) -> str:
+            result = await ctx.fastmcp.call_tool("inner", {})
+            return str(result.structured_content)
+
+        async with Client(mcp) as client:
+            await client.call_tool("outer", {})
+
+        (server,) = self._server_spans(trace_exporter)
+        assert server.name == "tools/call outer"
+
+    async def test_proxied_backend_keeps_its_own_server_span(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        backend = FastMCP("backend")
+
+        @backend.tool
+        def hello() -> str:
+            return "world"
+
+        proxy = FastMCPProxy(client_factory=lambda: ProxyClient(backend))
+
+        async with Client(proxy) as client:
+            await client.call_tool("hello", {})
+
+        names = sorted(s.name for s in self._server_spans(trace_exporter))
+        assert names == ["tools/call hello", "tools/call hello"]
+        backend_span = next(
+            s
+            for s in self._server_spans(trace_exporter)
+            if s.attributes is not None
+            and s.attributes.get("fastmcp.server.name") == "backend"
+        )
+        assert backend_span.attributes is not None
+        assert backend_span.attributes.get("fastmcp.component.key") == "tool:hello@"

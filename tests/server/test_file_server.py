@@ -1,10 +1,11 @@
 from pathlib import Path
 
-import mcp.types as mcp_types
+import mcp_types
 import pytest
 
 from fastmcp import FastMCP
 from fastmcp.resources import ResourceContent, ResourceResult
+from tests.conftest import make_server_request_context
 
 
 @pytest.fixture()
@@ -76,7 +77,7 @@ def tools(mcp: FastMCP, test_dir: Path) -> FastMCP:
 
 
 async def test_list_resources(mcp: FastMCP):
-    result = await mcp._list_resources_mcp(mcp_types.ListResourcesRequest())
+    result = await mcp._on_list_resources(make_server_request_context(), None)
     assert len(result.resources) == 4
 
     assert [str(r.uri) for r in result.resources] == [
@@ -88,7 +89,10 @@ async def test_list_resources(mcp: FastMCP):
 
 
 async def test_read_resource_dir(mcp: FastMCP):
-    res_result = await mcp._read_resource_mcp("dir://test_dir")
+    res_result = await mcp._on_read_resource(
+        make_server_request_context(),
+        mcp_types.ReadResourceRequestParams(uri="dir://test_dir"),
+    )
     assert isinstance(res_result, mcp_types.ReadResourceResult)
     # ResourceResult splits lists into multiple contents (one per file path)
     assert len(res_result.contents) == 3
@@ -107,7 +111,10 @@ async def test_read_resource_dir(mcp: FastMCP):
 
 
 async def test_read_resource_file(mcp: FastMCP):
-    res_result = await mcp._read_resource_mcp("file://test_dir/example.py")
+    res_result = await mcp._on_read_resource(
+        make_server_request_context(),
+        mcp_types.ReadResourceRequestParams(uri="file://test_dir/example.py"),
+    )
     assert isinstance(res_result, mcp_types.ReadResourceResult)
     assert len(res_result.contents) == 1
     res = res_result.contents[0]
@@ -116,17 +123,26 @@ async def test_read_resource_file(mcp: FastMCP):
 
 
 async def test_delete_file(mcp: FastMCP, test_dir: Path):
-    await mcp._call_tool_mcp(
-        "delete_file", arguments=dict(path=str(test_dir / "example.py"))
+    await mcp._on_call_tool(
+        make_server_request_context(),
+        mcp_types.CallToolRequestParams(
+            name="delete_file", arguments=dict(path=str(test_dir / "example.py"))
+        ),
     )
     assert not (test_dir / "example.py").exists()
 
 
 async def test_delete_file_and_check_resources(mcp: FastMCP, test_dir: Path):
-    await mcp._call_tool_mcp(
-        "delete_file", arguments=dict(path=str(test_dir / "example.py"))
+    await mcp._on_call_tool(
+        make_server_request_context(),
+        mcp_types.CallToolRequestParams(
+            name="delete_file", arguments=dict(path=str(test_dir / "example.py"))
+        ),
     )
-    res_result = await mcp._read_resource_mcp("file://test_dir/example.py")
+    res_result = await mcp._on_read_resource(
+        make_server_request_context(),
+        mcp_types.ReadResourceRequestParams(uri="file://test_dir/example.py"),
+    )
     assert isinstance(res_result, mcp_types.ReadResourceResult)
     assert len(res_result.contents) == 1
     res = res_result.contents[0]

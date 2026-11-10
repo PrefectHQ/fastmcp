@@ -1,11 +1,15 @@
 ---
 title: Upgrading from FastMCP 2
 sidebarTitle: "From FastMCP 2"
-description: Migration instructions for upgrading between FastMCP versions
+description: What changed in FastMCP 3 for servers written against FastMCP 2
 icon: up
 ---
 
-This guide covers breaking changes and migration steps when upgrading FastMCP.
+This guide covers the breaking changes a FastMCP 2 server meets on its way to FastMCP 3, newest release first.
+
+<Note>
+**Going all the way to FastMCP 4?** You need this page and [Upgrading from FastMCP 3](/getting-started/upgrading/from-fastmcp-3), in that order. The two describe different transitions: this one covers the v3 API changes, while the FastMCP 3 guide covers the MCP Python SDK v2 rebuild underneath v4. Where a v3 deprecation was later removed outright, this page marks it **Removed in v4**.
+</Note>
 
 ## v3.0.0
 
@@ -21,7 +25,7 @@ pip install --upgrade fastmcp
 uv add --upgrade fastmcp
 ```
 
-If you pin versions in a requirements file or `pyproject.toml`, update your pin to `fastmcp>=3.0.0,<4`.
+If you pin versions in a requirements file or `pyproject.toml`, update your pin to `fastmcp>=3.0.0,<4`. Going on to FastMCP 4 is a second hop: finish this page, then work through [Upgrading from FastMCP 3](/getting-started/upgrading/from-fastmcp-3) and move the pin to `fastmcp>=4.0.0` at the end of it.
 
 <Info>
 **New repository home.** As part of the v3 release, FastMCP's GitHub repository has moved from `jlowin/fastmcp` to [`PrefectHQ/fastmcp`](https://github.com/PrefectHQ/fastmcp) under [Prefect](https://prefect.io)'s stewardship. GitHub automatically redirects existing clones and bookmarks, so nothing breaks — but you can update your local remote whenever convenient:
@@ -68,20 +72,20 @@ BREAKING CHANGES (will crash at import or runtime):
 
 6. WSTRANSPORT: Removed. Use StreamableHttpTransport.
 
-7. OPENAPI: timeout parameter removed from OpenAPIProvider. Set timeout on the httpx.AsyncClient instead.
+7. OPENAPI: timeout parameter removed from OpenAPIProvider. Set timeout on the httpx2.AsyncClient instead.
 
 8. METADATA: Namespace changed from "_fastmcp" to "fastmcp" in tool.meta. The include_fastmcp_meta parameter is removed (always included).
 
 9. ENV VAR: FASTMCP_SHOW_CLI_BANNER renamed to FASTMCP_SHOW_SERVER_BANNER.
 
 10. DECORATORS: @mcp.tool, @mcp.resource, @mcp.prompt now return the original function, not a component object. Code that accesses .name, .description, or other component attributes on the decorated result will crash with AttributeError.
-   Fix: set FASTMCP_DECORATOR_MODE=object for v2 compat (itself deprecated).
+   Fix: access component objects via the server (e.g. await mcp.get_tool("name")) instead of the decorated function. The FASTMCP_DECORATOR_MODE=object escape hatch that existed in v3 was removed in FastMCP 4.0.
 
 11. OAUTH STORAGE: Default OAuth client storage changed from DiskStore to FileTreeStore due to pickle deserialization vulnerability in diskcache (CVE-2025-69872). Clients using default storage will re-register automatically on first connection. If using DiskStore explicitly, switch to FileTreeStore (with key/collection sanitization strategies) or add pip install 'py-key-value-aio[disk]'.
 
 12. REPO MOVE: GitHub repository moved from jlowin/fastmcp to PrefectHQ/fastmcp. Update git remotes and dependency URLs that reference the old location.
 
-13. BACKGROUND TASKS: FastMCP's background task system (SEP-1686) is now an optional dependency. If the code uses task=True or TaskConfig, add pip install "fastmcp[tasks]".
+13. BACKGROUND TASKS: FastMCP's background task system is now an optional dependency. If the code uses task=True or TaskConfig, add pip install "fastmcp[tasks]".
 
 DEPRECATIONS (still work but emit warnings):
 
@@ -101,7 +105,7 @@ For each issue found, show the original line, explain why it breaks, and provide
 
 In v2, you could configure transport settings directly in the `FastMCP()` constructor. In v3, `FastMCP()` is purely about your server's identity and behavior — transport configuration happens when you actually start serving. Passing any of the old kwargs now raises `TypeError` with a migration hint.
 
-```python
+```python test="skip"
 # Before
 mcp = FastMCP("server", host="0.0.0.0", port=8080)
 mcp.run()
@@ -140,7 +144,7 @@ Keeping `DiskStore` requires `pip install 'py-key-value-aio[disk]'`, which re-in
 
 In v2, you could enable or disable individual components by calling methods on the component object itself. In v3, visibility is controlled through the server (or provider), which lets you target components by name, tag, or type without needing a reference to the object:
 
-```python
+```python test="skip"
 # Before
 tool = await server.get_tool("my_tool")
 tool.disable()
@@ -155,7 +159,7 @@ Calling `.enable()` or `.disable()` on a component object now raises `NotImpleme
 
 The `get_tools()`, `get_resources()`, `get_prompts()`, and `get_resource_templates()` methods have been renamed to `list_tools()`, `list_resources()`, `list_prompts()`, and `list_resource_templates()`. More importantly, they now return lists instead of dicts — so code that indexes by name needs to change:
 
-```python
+```python test="skip"
 # Before
 tools = await server.get_tools()
 tool = tools["my_tool"]
@@ -169,7 +173,7 @@ tool = next((t for t in tools if t.name == "my_tool"), None)
 
 Prompt functions now use FastMCP's `Message` class instead of `mcp.types.PromptMessage`. The new class is simpler — it accepts a plain string and defaults to `role="user"`, so most prompts become one-liners:
 
-```python
+```python test="skip"
 # Before
 from mcp.types import PromptMessage, TextContent
 
@@ -187,7 +191,7 @@ def my_prompt() -> Message:
 
 If your prompt functions return raw dicts with `role` and `content` keys, those also need to change. v2 silently coerced dicts into prompt messages, but v3 requires typed `Message` objects (or plain strings for single user messages):
 
-```python
+```python test="skip"
 # Before (v2 accepted this)
 @mcp.prompt
 def my_prompt():
@@ -211,7 +215,7 @@ def my_prompt() -> list[Message]:
 
 `ctx.set_state()` and `ctx.get_state()` are now async because state in v3 is session-scoped and backed by a pluggable storage backend (rather than a simple dict). This means state persists across multiple tool calls within the same session:
 
-```python
+```python test="skip"
 # Before
 ctx.set_state("key", "value")
 value = ctx.get_state("key")
@@ -223,7 +227,7 @@ value = await ctx.get_state("key")
 
 State values must also be JSON-serializable by default (dicts, lists, strings, numbers, etc.). If you need to store non-serializable values like an HTTP client, pass `serializable=False` — these values are request-scoped and only available during the current tool call:
 
-```python
+```python test="skip"
 await ctx.set_state("client", my_http_client, serializable=False)
 ```
 
@@ -245,7 +249,7 @@ parent.mount(child, namespace="child")
 
 In v2, auth providers like `GitHubProvider` could auto-load configuration from environment variables with a `FASTMCP_SERVER_AUTH_*` prefix. This magic has been removed — pass values explicitly:
 
-```python
+```python test="skip"
 # Before (v2) — client_id and client_secret loaded automatically
 # from FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID, etc.
 auth = GitHubProvider()
@@ -276,14 +280,14 @@ transport = StreamableHttpTransport("http://localhost:8000/mcp")
 
 **OpenAPI `timeout` parameter removed**
 
-`OpenAPIProvider` no longer accepts a `timeout` parameter. Configure timeout on the httpx client directly. The `client` parameter is also now optional — when omitted, a default client is created from the spec's `servers` URL with a 30-second timeout:
+`OpenAPIProvider` no longer accepts a `timeout` parameter. Configure timeout on the httpx2 client directly. The `client` parameter is also now optional — when omitted, a default client is created from the spec's `servers` URL with a 30-second timeout:
 
-```python
+```python test="skip"
 # Before
 provider = OpenAPIProvider(spec, client, timeout=60)
 
 # After
-client = httpx.AsyncClient(base_url="https://api.example.com", timeout=60)
+client = httpx2.AsyncClient(base_url="https://api.example.com", timeout=60)
 provider = OpenAPIProvider(spec, client)
 ```
 
@@ -291,7 +295,7 @@ provider = OpenAPIProvider(spec, client)
 
 The FastMCP metadata key in component `meta` dicts changed from `_fastmcp` to `fastmcp`. If you read metadata from tool or resource objects, update the key:
 
-```python
+```python test="skip"
 # Before
 tags = tool.meta.get("_fastmcp", {}).get("tags", [])
 
@@ -309,7 +313,7 @@ Metadata is now always included — the `include_fastmcp_meta` parameter has bee
 
 In v2, `@mcp.tool` transformed your function into a `FunctionTool` object. In v3, decorators return your original function unchanged — which means decorated functions stay callable for testing, reuse, and composition:
 
-```python
+```python test="skip"
 @mcp.tool
 def greet(name: str) -> str:
     return f"Hello, {name}!"
@@ -317,11 +321,11 @@ def greet(name: str) -> str:
 greet("World")  # Works! Returns "Hello, World!"
 ```
 
-If you have code that treats the decorated result as a `FunctionTool` (e.g., accessing `.name` or `.description`), set `FASTMCP_DECORATOR_MODE=object` for v2 compatibility. This escape hatch is itself deprecated and will be removed in a future release.
+If you have code that treats the decorated result as a `FunctionTool` (e.g., accessing `.name` or `.description`), the v2-compatible object-returning behavior was available in v3 via `FASTMCP_DECORATOR_MODE=object`. That escape hatch was removed in FastMCP 4.0 — decorators always return the original function now.
 
 **Background tasks require optional dependency**
 
-FastMCP's background task system (SEP-1686) is now behind an optional extra. If your server uses background tasks, install with:
+FastMCP's background task system is now behind an optional extra. If your server uses background tasks, install with:
 
 ```bash
 pip install "fastmcp[tasks]"
@@ -331,22 +335,22 @@ Without the extra, configuring a tool with `task=True` or `TaskConfig` will rais
 
 ### Deprecated Features
 
-These still work but emit warnings. Update when convenient.
+These were deprecated in v3. Items marked **Removed in v4** no longer work at all — update to the replacement shown. The rest still work but emit warnings; update when convenient.
 
-**mount() prefix → namespace**
+**mount() prefix → namespace** (Removed in v4)
 
-```python
-# Deprecated
+```python test="skip"
+# Removed in v4
 main.mount(subserver, prefix="api")
 
 # New
 main.mount(subserver, namespace="api")
 ```
 
-**import_server() → mount()**
+**import_server() → mount()** (Removed in v4)
 
-```python
-# Deprecated
+```python test="skip"
+# Removed in v4
 main.import_server(subserver)
 
 # New
@@ -355,10 +359,10 @@ main.mount(subserver)
 
 **Module import paths for proxy and OpenAPI**
 
-The proxy and OpenAPI modules have moved under `providers` to reflect v3's provider-based architecture:
+The proxy and OpenAPI modules moved under `providers` to reflect v3's provider-based architecture. The old `fastmcp.server.proxy` and `fastmcp.server.openapi` compatibility shims were **removed in 4.0** — import from the `providers` location instead:
 
 ```python test="skip"
-# Deprecated
+# Removed in 4.0
 from fastmcp.server.proxy import FastMCPProxy
 from fastmcp.server.openapi import FastMCPOpenAPI
 
@@ -367,10 +371,10 @@ from fastmcp.server.providers.proxy import FastMCPProxy
 from fastmcp.server.providers.openapi import OpenAPIProvider
 ```
 
-`FastMCPOpenAPI` itself is deprecated — use `FastMCP` with an `OpenAPIProvider` instead:
+`FastMCPOpenAPI` was **removed in 4.0** — use `FastMCP` with an `OpenAPIProvider` instead:
 
 ```python test="skip"
-# Deprecated
+# Removed in 4.0
 from fastmcp.server.openapi import FastMCPOpenAPI
 server = FastMCPOpenAPI(spec, client)
 
@@ -380,10 +384,10 @@ from fastmcp.server.providers.openapi import OpenAPIProvider
 server = FastMCP("my_api", providers=[OpenAPIProvider(spec, client)])
 ```
 
-**add_tool_transformation() → add_transform()**
+**add_tool_transformation() → add_transform()** (Removed in v4)
 
-```python
-# Deprecated
+```python test="skip"
+# Removed in v4
 mcp.add_tool_transformation("name", config)
 
 # New
@@ -391,39 +395,51 @@ from fastmcp.server.transforms import ToolTransform
 mcp.add_transform(ToolTransform({"name": config}))
 ```
 
-**FastMCP.as_proxy() → create_proxy()**
+**FastMCP.as_proxy() → create_proxy()** (Removed in v4)
 
-```python
-# Deprecated
+The proxy target is passed positionally in both APIs, so most calls migrate unchanged. If you passed the target by keyword, note that the parameter was renamed from `backend=` to `target=`.
+
+```python test="skip"
+# Removed in v4
 proxy = FastMCP.as_proxy("http://example.com/mcp")
+proxy = FastMCP.as_proxy(backend="http://example.com/mcp")  # keyword form
 
 # New
 from fastmcp.server import create_proxy
 proxy = create_proxy("http://example.com/mcp")
+proxy = create_proxy(target="http://example.com/mcp")  # as_proxy(backend=X) → create_proxy(target=X)
 ```
 
 ## v2.14.0
 
 ### OpenAPI Parser Promotion
 
-The experimental OpenAPI parser is now standard. Update imports:
+The experimental OpenAPI parser is now standard. The `fastmcp.experimental.server.openapi` and `fastmcp.server.openapi` shims were both **removed in 4.0** — use `FastMCP` with an `OpenAPIProvider` instead:
 
 ```python test="skip"
 # Before
 from fastmcp.experimental.server.openapi import FastMCPOpenAPI
 
-# After
-from fastmcp.server.openapi import FastMCPOpenAPI
+# After (removed in 4.0 — use OpenAPIProvider)
+from fastmcp import FastMCP
+from fastmcp.server.providers.openapi import OpenAPIProvider
+server = FastMCP("my_api", providers=[OpenAPIProvider(spec, client)])
 ```
 
 ### Removed Deprecated Features
 
-- `BearerAuthProvider` → use `JWTVerifier`
-- `Context.get_http_request()` → use `get_http_request()` from dependencies
-- `from fastmcp import Image` → use `from fastmcp.utilities.types import Image`
-- `FastMCP(dependencies=[...])` → use `fastmcp.json` configuration
-- `FastMCPProxy(client=...)` → use `client_factory=lambda: ...`
-- `output_schema=False` → use `output_schema=None`
+A batch of long-deprecated surfaces came out in 2.14. Each fails loudly at import or call time, and each has a direct replacement:
+
+| Removed | Replacement |
+|---|---|
+| `BearerAuthProvider` | `JWTVerifier` — the same JWT validation under a name that says what it does |
+| `Context.get_http_request()` | `get_http_request()` from [dependency injection](/servers/dependency-injection) |
+| `from fastmcp import Image` | `from fastmcp.utilities.types import Image` |
+| `FastMCP(dependencies=[...])` | a [`fastmcp.json`](/deployment/server-configuration) configuration file |
+| `FastMCPProxy(client=...)` | `client_factory=lambda: ...` |
+| `output_schema=False` | `output_schema=None` |
+
+Two of these are worth understanding rather than just swapping. `FastMCPProxy` takes a factory instead of a client because a single shared client cannot serve concurrent proxied sessions safely — the factory gives each session its own backend connection. And `output_schema=False` became `output_schema=None` because `False` read as "this tool has a schema, and it is false"; `None` says plainly that there is no schema.
 
 ## v2.13.0
 
@@ -431,7 +447,7 @@ from fastmcp.server.openapi import FastMCPOpenAPI
 
 The OAuth proxy now issues its own JWT tokens. For production, provide explicit keys:
 
-```python
+```python test="skip"
 auth = GitHubProvider(
     client_id=os.environ["GITHUB_CLIENT_ID"],
     client_secret=os.environ["GITHUB_CLIENT_SECRET"],

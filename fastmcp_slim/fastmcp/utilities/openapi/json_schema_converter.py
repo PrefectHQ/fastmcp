@@ -6,8 +6,10 @@ to JSON Schema, inspired by py-openapi-schema-to-json-schema but optimized
 for our specific use case.
 """
 
+from collections.abc import Iterator
 from typing import Any
 
+from fastmcp.utilities.json_schema import require_discriminator_property
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -21,6 +23,12 @@ OPENAPI_SPECIFIC_FIELDS = {
     "xml",  # OpenAPI-specific metadata
     "externalDocs",  # OpenAPI-specific metadata
     "deprecated",  # Can be kept but not part of JSON Schema core
+}
+
+# OpenAPI 3.0 boolean exclusive bounds, mapped to the bound they modify
+_EXCLUSIVE_BOUNDS = {
+    "exclusiveMinimum": "minimum",
+    "exclusiveMaximum": "maximum",
 }
 
 # Fields that should be recursively processed
@@ -43,6 +51,7 @@ def convert_openapi_schema_to_json_schema(
     remove_read_only: bool = False,
     remove_write_only: bool = False,
     convert_one_of_to_any_of: bool = True,
+    definitions: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Convert an OpenAPI schema to JSON Schema format.
@@ -52,7 +61,8 @@ def convert_openapi_schema_to_json_schema(
     2. Converts nullable fields to type arrays (for OpenAPI 3.0 only)
     3. Converts oneOf to anyOf for overlapping union handling
     4. Recursively processes nested schemas
-    5. Optionally removes readOnly/writeOnly properties
+    5. Optionally removes readOnly/writeOnly properties (see
+       ``_filter_properties_by_access`` for the exact semantics)
 
     Args:
         schema: OpenAPI schema dictionary
@@ -60,6 +70,9 @@ def convert_openapi_schema_to_json_schema(
         remove_read_only: Whether to remove readOnly properties
         remove_write_only: Whether to remove writeOnly properties
         convert_one_of_to_any_of: Whether to convert oneOf to anyOf
+        definitions: Unconverted schemas that local ``#/$defs/...`` references
+            resolve against when deciding which properties to remove. Defaults
+            to the schema's own ``$defs``.
 
     Returns:
         JSON Schema-compatible dictionary
@@ -67,12 +80,18 @@ def convert_openapi_schema_to_json_schema(
     if not isinstance(schema, dict):
         return schema
 
+    if definitions is None:
+        own_defs = schema.get("$defs")
+        definitions = own_defs if isinstance(own_defs, dict) else None
+
     # Early exit optimization - check if conversion is needed
     needs_conversion = (
-        any(field in schema for field in OPENAPI_SPECIFIC_FIELDS)
+        _has_openapi_specific_fields(schema)
         or (remove_read_only and _has_read_only_properties(schema))
         or (remove_write_only and _has_write_only_properties(schema))
         or (convert_one_of_to_any_of and "oneOf" in schema)
+        # A property can be restricted through a $ref that nothing local reveals
+        or (bool(definitions) and (remove_read_only or remove_write_only))
         or _needs_recursive_processing(
             schema,
             openapi_version,
@@ -88,23 +107,28 @@ def convert_openapi_schema_to_json_schema(
     # Work on a copy to avoid mutation
     result = schema.copy()
 
-    # Step 1: Handle nullable field conversion (OpenAPI 3.0 only)
+    # Step 0: Project readOnly/writeOnly while the annotations still exist; the
+    # steps below (and the conversion of nested schemas) discard them
+    if remove_read_only or remove_write_only:
+        result = _filter_properties_by_access(
+            result, remove_read_only, remove_write_only, definitions
+        )
+
+    # Step 1: Handle nullable and boolean exclusive bounds (OpenAPI 3.0 only)
     if openapi_version and openapi_version.startswith("3.0"):
         result = _convert_nullable_field(result)
+        result = _convert_exclusive_bounds(result)
 
     # Step 2: Convert oneOf to anyOf if requested
     if convert_one_of_to_any_of and "oneOf" in result:
         result["anyOf"] = result.pop("oneOf")
 
-    # Step 3: Remove OpenAPI-specific fields
+    # Step 3: Preserve discriminator tag presence before removing the keyword
+    result = require_discriminator_property(result)
+
+    # Step 4: Remove OpenAPI-specific fields
     for field in OPENAPI_SPECIFIC_FIELDS:
         result.pop(field, None)
-
-    # Step 4: Handle readOnly/writeOnly property removal
-    if remove_read_only or remove_write_only:
-        result = _filter_properties_by_access(
-            result, remove_read_only, remove_write_only
-        )
 
     # Step 5: Recursively process nested schemas
     for field_name, field_type in RECURSIVE_FIELDS.items():
@@ -119,6 +143,7 @@ def convert_openapi_schema_to_json_schema(
                             remove_read_only,
                             remove_write_only,
                             convert_one_of_to_any_of,
+                            definitions,
                         )
                         if isinstance(sub_schema, dict)
                         else sub_schema
@@ -131,6 +156,7 @@ def convert_openapi_schema_to_json_schema(
                         remove_read_only,
                         remove_write_only,
                         convert_one_of_to_any_of,
+                        definitions,
                     )
             elif field_type is list and isinstance(result[field_name], list):
                 result[field_name] = [
@@ -140,12 +166,37 @@ def convert_openapi_schema_to_json_schema(
                         remove_read_only,
                         remove_write_only,
                         convert_one_of_to_any_of,
+                        definitions,
                     )
                     if isinstance(item, dict)
                     else item
                     for item in result[field_name]
                 ]
 
+    return result
+
+
+def _has_openapi_specific_fields(schema: dict[str, Any]) -> bool:
+    """Whether the schema itself carries a keyword that needs converting."""
+    return any(field in schema for field in OPENAPI_SPECIFIC_FIELDS) or any(
+        isinstance(schema.get(keyword), bool) for keyword in _EXCLUSIVE_BOUNDS
+    )
+
+
+def _convert_exclusive_bounds(schema: dict[str, Any]) -> dict[str, Any]:
+    """Convert OpenAPI 3.0 boolean exclusive bounds to JSON Schema numeric bounds.
+
+    ``{"minimum": 5, "exclusiveMinimum": true}`` becomes
+    ``{"exclusiveMinimum": 5}``; a ``false`` flag is simply dropped.
+    """
+    result = schema.copy()
+    for keyword, bound in _EXCLUSIVE_BOUNDS.items():
+        flag = result.get(keyword)
+        if not isinstance(flag, bool):
+            continue
+        del result[keyword]
+        if flag and bound in result:
+            result[keyword] = result.pop(bound)
     return result
 
 
@@ -221,10 +272,7 @@ def _needs_recursive_processing(
                     for sub_schema in schema[field_name].values():
                         if isinstance(sub_schema, dict):
                             nested_needs_conversion = (
-                                any(
-                                    field in sub_schema
-                                    for field in OPENAPI_SPECIFIC_FIELDS
-                                )
+                                _has_openapi_specific_fields(sub_schema)
                                 or (remove_read_only and sub_schema.get("readOnly"))
                                 or (remove_write_only and sub_schema.get("writeOnly"))
                                 or (convert_one_of_to_any_of and "oneOf" in sub_schema)
@@ -241,10 +289,7 @@ def _needs_recursive_processing(
                 else:
                     # Check if nested schema needs conversion
                     nested_needs_conversion = (
-                        any(
-                            field in schema[field_name]
-                            for field in OPENAPI_SPECIFIC_FIELDS
-                        )
+                        _has_openapi_specific_fields(schema[field_name])
                         or (
                             remove_read_only
                             and _has_read_only_properties(schema[field_name])
@@ -269,7 +314,7 @@ def _needs_recursive_processing(
                 for item in schema[field_name]:
                     if isinstance(item, dict):
                         nested_needs_conversion = (
-                            any(field in item for field in OPENAPI_SPECIFIC_FIELDS)
+                            _has_openapi_specific_fields(item)
                             or (remove_read_only and _has_read_only_properties(item))
                             or (remove_write_only and _has_write_only_properties(item))
                             or (convert_one_of_to_any_of and "oneOf" in item)
@@ -286,39 +331,126 @@ def _needs_recursive_processing(
     return False
 
 
-def _filter_properties_by_access(
-    schema: dict[str, Any], remove_read_only: bool, remove_write_only: bool
-) -> dict[str, Any]:
-    """Remove readOnly and/or writeOnly properties from schema."""
-    if "properties" not in schema:
-        return schema
+def resolve_definition_pointer(definitions: dict[str, Any] | None, pointer: str) -> Any:
+    """Look up ``pointer``, the part of a ``#/$defs/...`` reference after
+    ``#/$defs/``, in ``definitions``.
 
-    result = schema.copy()
-    filtered_properties = {}
+    The pointer can continue into a definition, as in
+    ``Pet/properties/status``. Returns None when any segment is missing.
+    """
+    node: Any = definitions or {}
+    for segment in pointer.split("/"):
+        key = segment.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, dict):
+            node = node.get(key)
+        elif isinstance(node, list) and key.isdigit() and int(key) < len(node):
+            node = node[int(key)]
+        else:
+            return None
+    return node
 
-    for prop_name, prop_schema in result["properties"].items():
-        if not isinstance(prop_schema, dict):
-            filtered_properties[prop_name] = prop_schema
+
+def _scope_schemas(
+    schema: dict[str, Any],
+    definitions: dict[str, Any] | None,
+    seen_refs: set[str] | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Yield ``schema`` and the schemas describing the same instance through a
+    local ``$ref`` or an ``allOf`` member.
+
+    Each reference target is visited once per walk, which skips reference
+    cycles and keeps targets shared by several members (a diamond of ``allOf``
+    references) from being walked once per path to them.
+    """
+    if seen_refs is None:
+        seen_refs = set()
+    yield schema
+    ref = schema.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/$defs/") and ref not in seen_refs:
+        seen_refs.add(ref)
+        target = resolve_definition_pointer(definitions, ref[len("#/$defs/") :])
+        if isinstance(target, dict):
+            yield from _scope_schemas(target, definitions, seen_refs)
+    all_of = schema.get("allOf")
+    for member in all_of if isinstance(all_of, list) else []:
+        if isinstance(member, dict):
+            yield from _scope_schemas(member, definitions, seen_refs)
+
+
+def _access_restricted_names(
+    schema: dict[str, Any],
+    access_keys: tuple[str, ...],
+    definitions: dict[str, Any] | None,
+) -> set[str]:
+    """Names of the object's properties annotated with any of ``access_keys``.
+
+    A property counts when its own schema, its ``$ref`` target, or one of its
+    ``allOf`` members carries the annotation. The object is what ``schema``
+    describes together with its ``$ref``/``allOf`` members; nested objects and
+    array items are separate scopes and are not inspected.
+    """
+    names: set[str] = set()
+    for scope in _scope_schemas(schema, definitions):
+        properties = scope.get("properties")
+        if not isinstance(properties, dict):
             continue
+        for name, prop in properties.items():
+            if isinstance(prop, dict) and any(
+                member.get(key)
+                for member in _scope_schemas(prop, definitions)
+                for key in access_keys
+            ):
+                names.add(name)
+    return names
 
-        should_remove = (remove_read_only and prop_schema.get("readOnly")) or (
-            remove_write_only and prop_schema.get("writeOnly")
-        )
 
-        if not should_remove:
-            filtered_properties[prop_name] = prop_schema
-
-    result["properties"] = filtered_properties
-
-    # Clean up required array if properties were removed
-    if "required" in result and filtered_properties:
-        result["required"] = [
-            prop for prop in result["required"] if prop in filtered_properties
-        ]
-        if not result["required"]:
+def _drop_property_names(schema: dict[str, Any], names: set[str]) -> dict[str, Any]:
+    """Remove ``names`` from ``properties`` and ``required``, including in inline
+    ``allOf``/``anyOf``/``oneOf`` members, which constrain the same instance."""
+    result = schema.copy()
+    if isinstance(properties := result.get("properties"), dict):
+        result["properties"] = {k: v for k, v in properties.items() if k not in names}
+    if isinstance(required := result.get("required"), list):
+        remaining = [name for name in required if name not in names]
+        if remaining:
+            result["required"] = remaining
+        else:
             result.pop("required")
-
+    for key in ("allOf", "anyOf", "oneOf"):
+        if isinstance(members := result.get(key), list):
+            result[key] = [
+                _drop_property_names(member, names)
+                if isinstance(member, dict)
+                else member
+                for member in members
+            ]
     return result
+
+
+def _filter_properties_by_access(
+    schema: dict[str, Any],
+    remove_read_only: bool,
+    remove_write_only: bool,
+    definitions: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Remove readOnly and/or writeOnly properties from an object schema.
+
+    Must run before the annotations are discarded. The excluded names are
+    collected for the whole object (the schema plus its ``$ref`` and ``allOf``
+    members, see ``_access_restricted_names``) and exactly those names are then
+    dropped from ``properties`` and ``required`` wherever the object declares or
+    requires them. Other requirements are kept, even when the property is
+    defined by an ``allOf`` member or covered by ``additionalProperties``.
+    """
+    access_keys: tuple[str, ...] = ()
+    if remove_read_only:
+        access_keys += ("readOnly",)
+    if remove_write_only:
+        access_keys += ("writeOnly",)
+    excluded = _access_restricted_names(schema, access_keys, definitions)
+    if not excluded:
+        return schema
+    return _drop_property_names(schema, excluded)
 
 
 def convert_schema_definitions(

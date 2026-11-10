@@ -1,13 +1,22 @@
+import socket
 import time
 from unittest.mock import patch
 from urllib.parse import urlparse
 
-import httpx
+import anyio
+import httpx2
 import pytest
-from mcp.types import TextResourceContents
+from key_value.aio.stores.memory import MemoryStore
+from mcp import MCPError
+from mcp.shared.auth import OAuthClientInformationFull
+from mcp_types import TextResourceContents
+from pydantic import AnyUrl
 
+import fastmcp.client.auth.oauth as oauth_module
+import fastmcp.utilities.http as http_module
 from fastmcp.client import Client
 from fastmcp.client.auth import OAuth
+from fastmcp.client.auth.oauth import TokenStorageAdapter
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.auth.auth import ClientRegistrationOptions
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
@@ -41,6 +50,23 @@ def fastmcp_server(issuer_url: str):
     return server
 
 
+class ExpiredFirstRegistrationProvider(InMemoryOAuthProvider):
+    def __init__(self, base_url: str):
+        super().__init__(
+            base_url=base_url,
+            client_registration_options=ClientRegistrationOptions(enabled=True),
+        )
+        self.registration_count = 0
+
+    async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        self.registration_count += 1
+        if self.registration_count == 1:
+            client_info.client_secret = "expired-secret"
+            client_info.client_secret_expires_at = int(time.time()) - 1
+            client_info.token_endpoint_auth_method = "client_secret_post"
+        await super().register_client(client_info)
+
+
 @pytest.fixture
 async def streamable_http_server():
     """Start OAuth-enabled server."""
@@ -65,16 +91,31 @@ def client_with_headless_oauth(streamable_http_server: str) -> Client:
 
 
 async def test_unauthorized(client_unauthorized: Client):
-    """Test that unauthenticated requests are rejected."""
-    with pytest.raises(httpx.HTTPStatusError, match="401 Unauthorized"):
+    """Test that unauthenticated requests are rejected.
+
+    SDK v2 surfaces the server's 401 as an MCPError ("Server returned an error
+    response") rather than re-raising the raw httpx2.HTTPStatusError.
+    """
+    with pytest.raises(MCPError, match="error response") as exc_info:
         async with client_unauthorized:
             pass
 
+    assert exc_info.value.__cause__ is not exc_info.value
 
-async def test_ping(client_with_headless_oauth: Client):
-    """Test that we can ping the server."""
-    async with client_with_headless_oauth:
-        assert await client_with_headless_oauth.ping()
+
+async def test_ping(streamable_http_server: str):
+    """Test that we can ping the server.
+
+    Pinned to legacy: `ping` is a handshake-era request removed from the modern
+    (2026-07-28) protocol.
+    """
+    client = Client(
+        transport=StreamableHttpTransport(streamable_http_server),
+        auth=HeadlessOAuth(mcp_url=streamable_http_server, scopes=["read", "write"]),
+        mode="legacy",
+    )
+    async with client:
+        assert await client.ping()
 
 
 async def test_list_tools(client_with_headless_oauth: Client):
@@ -115,7 +156,7 @@ async def test_oauth_server_metadata_discovery(streamable_http_server: str):
     parsed_url = urlparse(streamable_http_server)
     server_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
-    async with httpx.AsyncClient() as client:
+    async with httpx2.AsyncClient() as client:
         # Test OAuth discovery endpoint
         metadata_url = f"{server_base_url}/.well-known/oauth-authorization-server"
         response = await client.get(metadata_url)
@@ -129,6 +170,89 @@ async def test_oauth_server_metadata_discovery(streamable_http_server: str):
         # The endpoints should be properly formed URLs
         assert metadata["authorization_endpoint"].startswith(server_base_url)
         assert metadata["token_endpoint"].startswith(server_base_url)
+
+
+async def test_expired_dynamic_registration_is_retried():
+    port = find_available_port()
+    base_url = f"http://127.0.0.1:{port}"
+    provider = ExpiredFirstRegistrationProvider(base_url)
+    server = FastMCP("TestServer", auth=provider)
+
+    async with run_server_async(server, port=port, transport="http") as url:
+        # Pinned to legacy: `ping` is a handshake-era request removed from the
+        # modern (2026-07-28) protocol; the retry is exercised via the handshake.
+        client = Client(
+            transport=StreamableHttpTransport(url),
+            auth=HeadlessOAuth(mcp_url=url),
+            mode="legacy",
+        )
+        async with client:
+            assert await client.ping()
+
+    assert provider.registration_count == 2
+
+
+async def test_oauth_callback_handler_propagates_iss_to_authorization_code_result():
+    """RFC 9207: `OAuth.callback_handler()` (the production, non-headless path)
+    must carry `iss` from the callback query string all the way into the
+    `AuthorizationCodeResult` handed back to the MCP SDK.
+
+    The MCP SDK's `validate_authorization_response_iss` raises when the
+    authorization server metadata advertises
+    `authorization_response_iss_parameter_supported` and the result it
+    receives has no `iss` -- so if this hop drops it, every production OAuth
+    login against an RFC 9207-compliant server (like OAuthProxy) fails, even
+    though the server sent `iss` correctly. `HeadlessOAuth` already carries
+    `iss` through for tests -- this test exercises the real `OAuth` class
+    that production clients actually use.
+    """
+    oauth = OAuth(mcp_url="http://127.0.0.1:9999")
+
+    async def send_callback():
+        await anyio.sleep(0.1)
+        async with httpx2.AsyncClient() as client:
+            response = await client.get(
+                f"http://{oauth._callback_host}:{oauth.redirect_port}/callback",
+                params={
+                    "code": "auth-code-123",
+                    "state": "state-xyz",
+                    "iss": "https://issuer.example.com",
+                },
+            )
+            assert response.status_code == 200
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(send_callback)
+        result = await oauth.callback_handler()
+
+        assert result.code == "auth-code-123"
+        assert result.state == "state-xyz"
+        assert result.iss == "https://issuer.example.com"
+
+
+async def test_oauth_callback_port_in_use_fails_the_connection(
+    streamable_http_server: str,
+):
+    """A callback port that cannot be bound fails the connection with a clear
+    error instead of leaking uvicorn's SystemExit out of the client."""
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        oauth = OAuth(
+            mcp_url=streamable_http_server,
+            callback_host="127.0.0.1",
+            callback_port=busy.getsockname()[1],
+        )
+        client = Client(
+            transport=StreamableHttpTransport(streamable_http_server), auth=oauth
+        )
+
+        with (
+            patch.object(oauth_module.webbrowser, "open"),
+            pytest.raises(RuntimeError, match="callback server could not start"),
+        ):
+            async with client:
+                pass
 
 
 class TestOAuthClientUrlHandling:
@@ -176,6 +300,100 @@ class TestOAuthClientUrlHandling:
         # Token storage should key by the full URL, not just the host
         assert oauth.token_storage_adapter._server_url == mcp_url
 
+    def test_oauth_uses_configured_callback_host_port_and_timeout(self):
+        oauth = OAuth(
+            mcp_url="https://example.com/mcp",
+            callback_port=8765,
+            callback_host="127.0.0.1",
+            callback_timeout=12.5,
+        )
+
+        assert oauth.context.client_metadata.redirect_uris is not None
+        assert str(oauth.context.client_metadata.redirect_uris[0]) == (
+            "http://127.0.0.1:8765/callback"
+        )
+        assert oauth._callback_timeout == 12.5
+
+    @pytest.mark.parametrize("callback_host", ["::1", "[::1]"])
+    def test_oauth_brackets_ipv6_callback_host_in_redirect_uri(
+        self, callback_host: str
+    ):
+        oauth = OAuth(
+            mcp_url="https://example.com/mcp",
+            callback_port=8765,
+            callback_host=callback_host,
+        )
+
+        assert oauth.context.client_metadata.redirect_uris is not None
+        assert str(oauth.context.client_metadata.redirect_uris[0]) == (
+            "http://[::1]:8765/callback"
+        )
+        assert oauth._callback_host == "::1"
+
+    def test_oauth_finds_available_port_on_callback_host(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        seen_hosts: list[str] = []
+
+        def find_available_port(host: str = "127.0.0.1") -> int:
+            seen_hosts.append(host)
+            return 8765
+
+        monkeypatch.setattr(oauth_module, "find_available_port", find_available_port)
+
+        oauth = OAuth(
+            mcp_url="https://example.com/mcp",
+            callback_host="[::1]",
+        )
+
+        assert seen_hosts == ["::1"]
+        assert oauth.redirect_port == 8765
+        assert oauth.context.client_metadata.redirect_uris is not None
+        assert str(oauth.context.client_metadata.redirect_uris[0]) == (
+            "http://[::1]:8765/callback"
+        )
+
+    @pytest.mark.parametrize(
+        ("host", "expected_family"),
+        [
+            ("localhost", socket.AF_INET),
+            ("127.0.0.1", socket.AF_INET),
+            ("::1", socket.AF_INET6),
+        ],
+    )
+    def test_available_port_uses_uvicorn_host_family(
+        self,
+        host: str,
+        expected_family: socket.AddressFamily,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        seen: list[tuple[socket.AddressFamily, tuple[str, int]]] = []
+
+        class FakeSocket:
+            def __init__(
+                self,
+                family: socket.AddressFamily,
+                socket_type: socket.SocketKind,
+            ):
+                self.family = family
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+            def bind(self, address: tuple[str, int]) -> None:
+                seen.append((self.family, address))
+
+            def getsockname(self) -> tuple[str, int]:
+                return host, 8765
+
+        monkeypatch.setattr(http_module.socket, "socket", FakeSocket)
+
+        assert http_module.find_available_port(host=host) == 8765
+        assert seen == [(expected_family, (host, 0))]
+
 
 class TestOAuthGeneratorCleanup:
     """Tests for OAuth async generator cleanup (issue #2643).
@@ -203,13 +421,13 @@ class TestOAuthGeneratorCleanup:
                 if self._exhausted:
                     raise StopAsyncIteration
                 self._exhausted = True
-                return httpx.Request("GET", "https://example.com")
+                return httpx2.Request("GET", "https://example.com")
 
             async def asend(self, value):
                 if self._exhausted:
                     raise StopAsyncIteration
                 self._exhausted = True
-                return httpx.Request("GET", "https://example.com")
+                return httpx2.Request("GET", "https://example.com")
 
             async def athrow(self, exc_type, exc_val=None, exc_tb=None):
                 raise StopAsyncIteration
@@ -224,12 +442,12 @@ class TestOAuthGeneratorCleanup:
             OAuth.__bases__[0], "async_auth_flow", return_value=tracked_gen
         ):
             # Drive the OAuth flow
-            flow = oauth.async_auth_flow(httpx.Request("GET", "https://example.com"))
+            flow = oauth.async_auth_flow(httpx2.Request("GET", "https://example.com"))
             try:
                 # First asend(None) starts the generator per async generator protocol
                 await flow.asend(None)  # ty: ignore[invalid-argument-type]
                 try:
-                    await flow.asend(httpx.Response(200))
+                    await flow.asend(httpx2.Response(200))
                 except StopAsyncIteration:
                     pass
             except StopAsyncIteration:
@@ -257,7 +475,7 @@ class TestOAuthGeneratorCleanup:
             async def asend(self, value):
                 if self._first_call:
                     self._first_call = False
-                    return httpx.Request("GET", "https://example.com")
+                    return httpx2.Request("GET", "https://example.com")
                 raise ValueError("Simulated failure")
 
             async def athrow(self, exc_type, exc_val=None, exc_tb=None):
@@ -271,10 +489,10 @@ class TestOAuthGeneratorCleanup:
         with patch.object(
             OAuth.__bases__[0], "async_auth_flow", return_value=tracked_gen
         ):
-            flow = oauth.async_auth_flow(httpx.Request("GET", "https://example.com"))
+            flow = oauth.async_auth_flow(httpx2.Request("GET", "https://example.com"))
             with pytest.raises(ValueError, match="Simulated failure"):
                 await flow.asend(None)  # ty: ignore[invalid-argument-type]
-                await flow.asend(httpx.Response(200))
+                await flow.asend(httpx2.Response(200))
 
         assert tracked_gen.aclose_called, (
             "Generator aclose() was not called after exception"
@@ -457,3 +675,59 @@ class TestTokenStorageTTL:
 
         await adapter.clear()
         assert await adapter.get_token_expiry() is None
+
+
+class TestClientInfoStorageTTL:
+    async def test_expired_client_info_removes_stale_registration(self):
+        storage = MemoryStore()
+        adapter = TokenStorageAdapter(
+            async_key_value=storage, server_url="https://test"
+        )
+        current = OAuthClientInformationFull(
+            client_id="current-client",
+            client_secret="current-secret",
+            client_secret_expires_at=0,
+            redirect_uris=[AnyUrl("http://localhost/callback")],
+        )
+        await adapter.set_client_info(current)
+        assert await adapter.get_client_info() == current
+
+        expired = current.model_copy(
+            update={
+                "client_id": "expired-client",
+                "client_secret_expires_at": int(time.time()) - 1,
+            }
+        )
+        await adapter.set_client_info(expired)
+
+        assert await adapter.get_client_info() is None
+
+    async def test_never_expiring_client_info_is_stored(self):
+        adapter = TokenStorageAdapter(
+            async_key_value=MemoryStore(), server_url="https://test"
+        )
+        client_info = OAuthClientInformationFull(
+            client_id="never-expiring-client",
+            client_secret="secret",
+            client_secret_expires_at=0,
+            redirect_uris=[AnyUrl("http://localhost/callback")],
+        )
+
+        await adapter.set_client_info(client_info)
+
+        assert await adapter.get_client_info() == client_info
+
+    async def test_future_expiring_client_info_is_stored(self):
+        adapter = TokenStorageAdapter(
+            async_key_value=MemoryStore(), server_url="https://test"
+        )
+        client_info = OAuthClientInformationFull(
+            client_id="future-expiring-client",
+            client_secret="secret",
+            client_secret_expires_at=int(time.time()) + 60,
+            redirect_uris=[AnyUrl("http://localhost/callback")],
+        )
+
+        await adapter.set_client_info(client_info)
+
+        assert await adapter.get_client_info() == client_info

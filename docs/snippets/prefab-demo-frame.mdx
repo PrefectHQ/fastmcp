@@ -1,0 +1,66 @@
+export const PrefabDemoFrame = ({ demo, height, title }) => {
+  const [blobUrl, setBlobUrl] = React.useState(null);
+
+  React.useEffect(() => {
+    let active = true;
+    let objectUrl = null;
+    let payloadsPromise = window.__FASTMCP_PREFAB_DEMOS_PROMISE__;
+
+    if (window.__FASTMCP_PREFAB_DEMOS__) {
+      payloadsPromise = Promise.resolve(window.__FASTMCP_PREFAB_DEMOS__);
+    } else if (!payloadsPromise) {
+      payloadsPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "/prefab-demo-payloads.js";
+        script.onload = () => resolve(window.__FASTMCP_PREFAB_DEMOS__);
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+      window.__FASTMCP_PREFAB_DEMOS_PROMISE__ = payloadsPromise;
+    }
+
+    payloadsPromise
+      .then((payloads) => {
+        const html = payloads[demo];
+        if (!html) {
+          throw new Error(`Unknown Prefab demo: ${demo}`);
+        }
+        objectUrl = URL.createObjectURL(
+          new Blob([html], { type: "text/html" }),
+        );
+        if (active) {
+          setBlobUrl(objectUrl);
+        } else {
+          URL.revokeObjectURL(objectUrl);
+        }
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [demo]);
+
+  if (!blobUrl) {
+    return <div style={{ width: "100%", height, borderRadius: "8px" }} />;
+  }
+
+  return (
+    <iframe
+      src={blobUrl}
+      title={title}
+      style={{
+        width: "100%",
+        height,
+        border: "none",
+        overflow: "hidden",
+        borderRadius: "8px",
+      }}
+      frameBorder="0"
+      scrolling="no"
+      sandbox="allow-scripts allow-same-origin"
+    />
+  );
+};

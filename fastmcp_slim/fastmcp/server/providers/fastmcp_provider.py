@@ -10,27 +10,23 @@ executed.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any, overload
+from collections.abc import AsyncGenerator, Generator, Sequence
+from contextlib import asynccontextmanager, contextmanager
+from typing import TYPE_CHECKING, Any
 
-import mcp.types
-from mcp.types import AnyUrl
+from pydantic import AnyUrl
 
 from fastmcp.prompts.base import Prompt, PromptResult
 from fastmcp.resources.base import Resource, ResourceResult
-from fastmcp.resources.template import ResourceTemplate, expand_uri_template
+from fastmcp.resources.template import ResourceTemplate, forward_uri
 from fastmcp.server.providers.base import Provider
-from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.telemetry import delegate_span
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
-    from docket import Docket
-    from docket.execution import Execution
-
+    from fastmcp.server.extensions import ServerExtension
     from fastmcp.server.server import FastMCP
 
 
@@ -80,65 +76,49 @@ class FastMCPProviderTool(Tool):
             icons=tool.icons,
         )
 
-    @overload
-    async def _run(
-        self,
-        arguments: dict[str, Any],
-        task_meta: None = None,
-    ) -> ToolResult: ...
+    async def _run(self, arguments: dict[str, Any]) -> ToolResult:
+        """Delegate to the child server's call_tool().
 
-    @overload
-    async def _run(
-        self,
-        arguments: dict[str, Any],
-        task_meta: TaskMeta,
-    ) -> mcp.types.CreateTaskResult: ...
-
-    async def _run(
-        self,
-        arguments: dict[str, Any],
-        task_meta: TaskMeta | None = None,
-    ) -> ToolResult | mcp.types.CreateTaskResult:
-        """Delegate to child server's call_tool() with task_meta.
-
-        Passes task_meta through to the child server so it can handle
-        backgrounding appropriately. fn_key is already set by the parent
-        server before calling this method.
+        fn_key is already set by the parent server before calling this method. A
+        child tool that requests client input (SEP-2322) returns an
+        `InputRequiredToolResult`, which forwards through this delegation to the
+        parent's wire handler unchanged.
         """
+        from fastmcp.server.extensions import _delegate_extension_interceptors
+
         # Pass exact version so child executes the correct version
         version = VersionSpec(eq=self.version) if self.version else None
 
-        with delegate_span(
-            self._original_name or "",
-            "FastMCPProvider",
-            self._original_name or "",
-            method="tools/call",
+        with (
+            _delegate_extension_interceptors(self._server),
+            delegate_span(
+                self._original_name or "",
+                "FastMCPProvider",
+                self._original_name or "",
+                method="tools/call",
+            ),
         ):
             return await self._server.call_tool(
                 self._original_name,
                 arguments,
                 version=version,
-                task_meta=task_meta,
             )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
-        """Delegate to child server's call_tool() without task_meta.
+        """Delegate to the child server's call_tool().
 
         This is called when the tool is used within a TransformedTool
-        forwarding function or other contexts where task_meta is not available.
+        forwarding function or other contexts.
         """
+        from fastmcp.server.extensions import _delegate_extension_interceptors
+
         # Pass exact version so child executes the correct version
         version = VersionSpec(eq=self.version) if self.version else None
 
-        result = await self._server.call_tool(
-            self._original_name, arguments, version=version
-        )
-        # Result from call_tool should always be ToolResult when no task_meta
-        if isinstance(result, mcp.types.CreateTaskResult):
-            raise RuntimeError(
-                "Unexpected CreateTaskResult from call_tool without task_meta"
+        with _delegate_extension_interceptors(self._server):
+            return await self._server.call_tool(
+                self._original_name, arguments, version=version
             )
-        return result
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
@@ -186,20 +166,10 @@ class FastMCPProviderResource(Resource):
             icons=resource.icons,
         )
 
-    @overload
-    async def _read(self, task_meta: None = None) -> ResourceResult: ...
+    async def _read(self) -> ResourceResult:
+        """Delegate to the child server's read_resource().
 
-    @overload
-    async def _read(self, task_meta: TaskMeta) -> mcp.types.CreateTaskResult: ...
-
-    async def _read(
-        self, task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
-        """Delegate to child server's read_resource() with task_meta.
-
-        Passes task_meta through to the child server so it can handle
-        backgrounding appropriately. fn_key is already set by the parent
-        server before calling this method.
+        fn_key is already set by the parent server before calling this method.
         """
         # Pass exact version so child reads the correct version
         version = VersionSpec(eq=self.version) if self.version else None
@@ -210,9 +180,7 @@ class FastMCPProviderResource(Resource):
             self._original_uri or "",
             method="resources/read",
         ):
-            return await self._server.read_resource(
-                self._original_uri, version=version, task_meta=task_meta
-            )
+            return await self._server.read_resource(self._original_uri, version=version)
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
@@ -258,30 +226,10 @@ class FastMCPProviderPrompt(Prompt):
             icons=prompt.icons,
         )
 
-    @overload
-    async def _render(
-        self,
-        arguments: dict[str, Any] | None = None,
-        task_meta: None = None,
-    ) -> PromptResult: ...
+    async def _render(self, arguments: dict[str, Any] | None = None) -> PromptResult:
+        """Delegate to the child server's render_prompt().
 
-    @overload
-    async def _render(
-        self,
-        arguments: dict[str, Any] | None,
-        task_meta: TaskMeta,
-    ) -> mcp.types.CreateTaskResult: ...
-
-    async def _render(
-        self,
-        arguments: dict[str, Any] | None = None,
-        task_meta: TaskMeta | None = None,
-    ) -> PromptResult | mcp.types.CreateTaskResult:
-        """Delegate to child server's render_prompt() with task_meta.
-
-        Passes task_meta through to the child server so it can handle
-        backgrounding appropriately. fn_key is already set by the parent
-        server before calling this method.
+        fn_key is already set by the parent server before calling this method.
         """
         # Pass exact version so child renders the correct version
         version = VersionSpec(eq=self.version) if self.version else None
@@ -293,27 +241,21 @@ class FastMCPProviderPrompt(Prompt):
             method="prompts/get",
         ):
             return await self._server.render_prompt(
-                self._original_name, arguments, version=version, task_meta=task_meta
+                self._original_name, arguments, version=version
             )
 
     async def render(self, arguments: dict[str, Any] | None = None) -> PromptResult:
-        """Delegate to child server's render_prompt() without task_meta.
+        """Delegate to the child server's render_prompt().
 
         This is called when the prompt is used within a transformed context
-        or other contexts where task_meta is not available.
+        or other contexts.
         """
         # Pass exact version so child renders the correct version
         version = VersionSpec(eq=self.version) if self.version else None
 
-        result = await self._server.render_prompt(
+        return await self._server.render_prompt(
             self._original_name, arguments, version=version
         )
-        # Result from render_prompt should always be PromptResult when no task_meta
-        if isinstance(result, mcp.types.CreateTaskResult):
-            raise RuntimeError(
-                "Unexpected CreateTaskResult from render_prompt without task_meta"
-            )
-        return result
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
@@ -348,7 +290,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         cls, server: Any, template: ResourceTemplate
     ) -> FastMCPProviderResourceTemplate:
         """Wrap a ResourceTemplate to create FastMCPProviderResources."""
-        return cls(
+        wrapped = cls(
             server=server,
             original_uri_template=template.uri_template,
             uri_template=template.uri_template,
@@ -363,7 +305,14 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
             meta=template.get_meta(),
             title=template.title,
             icons=template.icons,
+            security=template.security,
         )
+        # Mounts wrap every template on every list, so share the source's
+        # compiled pattern instead of rebuilding it per wrapper.
+        template._compiled_pattern()
+        wrapped._pattern = template._pattern
+        wrapped._list_query_params = template._list_query_params
+        return wrapped
 
     async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
         """Create a FastMCPProviderResource for the given URI.
@@ -372,8 +321,8 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         We use `_original_uri_template` with `params` to construct the internal
         URI that the nested server understands.
         """
-        # Expand the original template with params to get internal URI
-        original_uri = expand_uri_template(self._original_uri_template or "", params)
+        # Expand the original template's path; forward the query as sent
+        original_uri = forward_uri(self._original_uri_template or "", params, uri)
         return FastMCPProviderResource(
             server=self._server,
             original_uri=original_uri,
@@ -381,29 +330,20 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
             name=self.name,
             description=self.description,
             mime_type=self.mime_type,
+            tags=self.tags,
+            annotations=self.annotations,
+            meta=self.meta,
+            title=self.title,
+            icons=self.icons,
         )
 
-    @overload
-    async def _read(
-        self, uri: str, params: dict[str, Any], task_meta: None = None
-    ) -> ResourceResult: ...
+    async def _read(self, uri: str, params: dict[str, Any]) -> ResourceResult:
+        """Delegate to the child server's read_resource().
 
-    @overload
-    async def _read(
-        self, uri: str, params: dict[str, Any], task_meta: TaskMeta
-    ) -> mcp.types.CreateTaskResult: ...
-
-    async def _read(
-        self, uri: str, params: dict[str, Any], task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
-        """Delegate to child server's read_resource() with task_meta.
-
-        Passes task_meta through to the child server so it can handle
-        backgrounding appropriately. fn_key is already set by the parent
-        server before calling this method.
+        fn_key is already set by the parent server before calling this method.
         """
-        # Expand the original template with params to get internal URI
-        original_uri = expand_uri_template(self._original_uri_template or "", params)
+        # Expand the original template's path; forward the query as sent
+        original_uri = forward_uri(self._original_uri_template or "", params, uri)
 
         # Pass exact version so child reads the correct version
         version = VersionSpec(eq=self.version) if self.version else None
@@ -414,50 +354,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
             self._original_uri_template or "",
             method="resources/read",
         ):
-            return await self._server.read_resource(
-                original_uri, version=version, task_meta=task_meta
-            )
-
-    async def read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult:
-        """Read the resource content for background task execution.
-
-        Reads the resource via the wrapped server and returns the ResourceResult.
-        This method is called by Docket during background task execution.
-        """
-        # Expand the original template with arguments to get internal URI
-        original_uri = expand_uri_template(self._original_uri_template or "", arguments)
-
-        # Pass exact version so child reads the correct version
-        version = VersionSpec(eq=self.version) if self.version else None
-
-        # Read from the wrapped server
-        result = await self._server.read_resource(original_uri, version=version)
-        if isinstance(result, mcp.types.CreateTaskResult):
-            raise RuntimeError("Unexpected CreateTaskResult during Docket execution")
-
-        return result
-
-    def register_with_docket(self, docket: Docket) -> None:
-        """No-op: the child's actual template is registered via get_tasks()."""
-
-    async def add_to_docket(
-        self,
-        docket: Docket,
-        params: dict[str, Any],
-        *,
-        fn_key: str | None = None,
-        task_key: str | None = None,
-        **kwargs: Any,
-    ) -> Execution:
-        """Schedule this template for background execution via docket.
-
-        The child's FunctionResourceTemplate.fn is registered (via get_tasks),
-        and it expects splatted **kwargs, so we splat params here.
-        """
-        lookup_key = fn_key or self.key
-        if task_key:
-            kwargs["key"] = task_key
-        return await docket.add(lookup_key, **kwargs)(**params)
+            return await self._server.read_resource(original_uri, version=version)
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
@@ -518,6 +415,17 @@ class FastMCPProvider(Provider):
         super().__init__()
         self.server = server
 
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        """Expose the mounted server's bundled and auto-registerable extensions."""
+        return self.server.required_extensions()
+
+    @contextmanager
+    def _extension_runtime(
+        self, available: frozenset[str], *, root: FastMCP | None
+    ) -> Generator[None, None, None]:
+        with self.server._extension_runtime(available, root=root):
+            yield
+
     # -------------------------------------------------------------------------
     # Tool methods
     # -------------------------------------------------------------------------
@@ -541,14 +449,22 @@ class FastMCPProvider(Provider):
         exact version matching and range filtering. Uses get_tool to ensure
         the nested server's transforms are applied.
         """
-        raw_tool = await self.server.get_tool(name, version)
+        # Lookups must use the child's state store, just as its list and
+        # execution methods do, before the parent applies its own rules.
+        from fastmcp.server.context import Context
+
+        async with Context(fastmcp=self.server):
+            raw_tool = await self.server.get_tool(name, version)
         if raw_tool is None:
             return None
         return FastMCPProviderTool.wrap(self.server, raw_tool)
 
     async def get_app_tool(self, app_name: str, tool_name: str) -> Tool | None:
         """Delegate to nested server's get_app_tool, wrapping for middleware."""
-        raw_tool = await self.server.get_app_tool(app_name, tool_name)
+        from fastmcp.server.context import Context
+
+        async with Context(fastmcp=self.server):
+            raw_tool = await self.server.get_app_tool(app_name, tool_name)
         if raw_tool is None:
             return None
         wrapped = FastMCPProviderTool.wrap(self.server, raw_tool)
@@ -557,13 +473,22 @@ class FastMCPProvider(Provider):
         wrapped._original_name = hashed_backend_name(app_name, tool_name)
         return wrapped
 
-    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
-        """Delegate to nested server's get_tool_by_hash, wrapping for middleware."""
-        raw_tool = await self.server.get_tool_by_hash(tool_hash, tool_name)
+    async def _get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+        """Delegate to nested server's get_tool_by_hash, wrapping for middleware.
+
+        The nested server applies its own transforms, visibility, and auth.
+        The call is forwarded under the hashed name so the nested server
+        resolves the same tool again rather than whatever its listed name
+        reaches.
+        """
+        from fastmcp.server.context import Context
+
+        async with Context(fastmcp=self.server):
+            raw_tool = await self.server.get_tool_by_hash(tool_hash, tool_name)
         if raw_tool is None:
             return None
         wrapped = FastMCPProviderTool.wrap(self.server, raw_tool)
-        wrapped._original_name = f"{tool_hash}_{tool_name}"
+        wrapped._original_name = f"__{tool_hash}_{tool_name}"
         return wrapped
 
     # -------------------------------------------------------------------------
@@ -589,7 +514,10 @@ class FastMCPProvider(Provider):
         exact version matching and range filtering. Uses get_resource to ensure
         the nested server's transforms are applied.
         """
-        raw_resource = await self.server.get_resource(uri, version)
+        from fastmcp.server.context import Context
+
+        async with Context(fastmcp=self.server):
+            raw_resource = await self.server.get_resource(uri, version)
         if raw_resource is None:
             return None
         return FastMCPProviderResource.wrap(self.server, raw_resource)
@@ -619,7 +547,10 @@ class FastMCPProvider(Provider):
         exact version matching and range filtering. Uses get_resource_template
         to ensure the nested server's transforms are applied.
         """
-        raw_template = await self.server.get_resource_template(uri, version)
+        from fastmcp.server.context import Context
+
+        async with Context(fastmcp=self.server):
+            raw_template = await self.server.get_resource_template(uri, version)
         if raw_template is None:
             return None
         return FastMCPProviderResourceTemplate.wrap(self.server, raw_template)
@@ -647,7 +578,10 @@ class FastMCPProvider(Provider):
         exact version matching and range filtering. Uses get_prompt to ensure
         the nested server's transforms are applied.
         """
-        raw_prompt = await self.server.get_prompt(name, version)
+        from fastmcp.server.context import Context
+
+        async with Context(fastmcp=self.server):
+            raw_prompt = await self.server.get_prompt(name, version)
         if raw_prompt is None:
             return None
         return FastMCPProviderPrompt.wrap(self.server, raw_prompt)
@@ -667,28 +601,9 @@ class FastMCPProvider(Provider):
         # Get tasks with child server's transforms already applied
         components = list(await self.server.get_tasks())
 
-        # Separate by type for this provider's transform application
-        tools = [c for c in components if isinstance(c, Tool)]
-        resources = [c for c in components if isinstance(c, Resource)]
-        templates = [c for c in components if isinstance(c, ResourceTemplate)]
-        prompts = [c for c in components if isinstance(c, Prompt)]
-
-        # Apply this provider's transforms sequentially
-        for transform in self.transforms:
-            tools = await transform.list_tools(tools)
-            resources = await transform.list_resources(resources)
-            templates = await transform.list_resource_templates(templates)
-            prompts = await transform.list_prompts(prompts)
-
-        # Filter to only task-eligible components (same as base Provider)
         return [
             c
-            for c in [
-                *tools,
-                *resources,
-                *templates,
-                *prompts,
-            ]
+            for c in await self._apply_task_transforms(components)
             if c.task_config.supports_tasks()
         ]
 
@@ -697,7 +612,7 @@ class FastMCPProvider(Provider):
     # -------------------------------------------------------------------------
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         """Start the mounted server's lifespan.
 
         Sets ``_lifespan_root_active=True`` to signal to the wrapped server's

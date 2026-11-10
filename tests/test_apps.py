@@ -6,9 +6,16 @@ extension negotiation, and the ``Context.client_supports_extension`` method.
 
 from __future__ import annotations
 
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
+from mcp.server.connection import Connection
+from mcp.server.session import ServerSession
+from mcp_types import (
+    ClientCapabilities,
+    Implementation,
+)
 
 from fastmcp import Client, FastMCP
 from fastmcp.apps import (
@@ -20,6 +27,7 @@ from fastmcp.apps import (
     app_config_to_meta_dict,
 )
 from fastmcp.server.context import Context
+from fastmcp.server.low_level import client_supports_extension
 
 # ---------------------------------------------------------------------------
 # Model serialization
@@ -385,6 +393,12 @@ class TestResourceWithApp:
 
 
 class TestExtensionAdvertisement:
+    @pytest.mark.xfail(
+        reason="SDK v2 strips capabilities.extensions at the negotiated "
+        "(pre-2026) handshake version, so the SEP-2133 UI extension is not "
+        "advertised to the client (sdk-feedback #2).",
+        strict=True,
+    )
     async def test_capabilities_include_ui_extension(self):
         server = FastMCP("test")
 
@@ -405,14 +419,14 @@ class TestExtensionAdvertisement:
         )
 
         async with Client(server) as client:
-            experimental = client.initialize_result.capabilities.experimental or {}
+            experimental = client.server_capabilities.experimental or {}
             assert experimental.get("file_exchange") == {"version": "0.3"}
 
     async def test_experimental_capabilities_default_empty(self):
         server = FastMCP("test")
 
         async with Client(server) as client:
-            experimental = client.initialize_result.capabilities.experimental
+            experimental = client.server_capabilities.experimental
             assert not experimental
 
 
@@ -426,6 +440,83 @@ class TestContextClientSupportsExtension:
         server = FastMCP("test")
         async with Context(fastmcp=server) as ctx:
             assert ctx.client_supports_extension(UI_EXTENSION_ID) is False
+
+
+class TestClientSupportsExtension:
+    """Tests for the low-level ``client_supports_extension`` helper.
+
+    SDK v2 declares ``extensions`` as a real field on ``ClientCapabilities``, so
+    a client sending ``ClientCapabilities(extensions={...})`` populates the field
+    directly (``model_extra`` stays ``None``). The helper must read the real
+    field, not only ``model_extra``. It also covers the 2026-07-28 envelope,
+    where a client declares capabilities without ``clientInfo`` and the session
+    therefore has no ``client_params``.
+    """
+
+    CLIENT_INFO = Implementation(name="test-client", version="1.0")
+
+    @staticmethod
+    def _session_with_capabilities(
+        capabilities: ClientCapabilities | None,
+        *,
+        client_info: Implementation | None,
+    ) -> ServerSession:
+        """Build a session over a 2026-07-28 request envelope."""
+        info = None
+        if client_info is not None:
+            info = client_info.model_dump(by_alias=True, mode="json")
+        caps = None
+        if capabilities is not None:
+            caps = capabilities.model_dump(by_alias=True, mode="json")
+        connection = Connection.from_envelope("2026-07-28", info, caps)
+        return ServerSession(cast(Any, object()), connection)
+
+    def test_real_extensions_field(self):
+        """A client that sets the real `extensions` field is detected."""
+        caps = ClientCapabilities(extensions={UI_EXTENSION_ID: {}})
+        # Guard: the regression this covers is the field being populated while
+        # model_extra stays empty.
+        assert caps.model_extra in (None, {})
+        session = self._session_with_capabilities(caps, client_info=self.CLIENT_INFO)
+        assert client_supports_extension(session, UI_EXTENSION_ID) is True
+
+    def test_real_extensions_field_without_target_extension(self):
+        caps = ClientCapabilities(extensions={"other/extension": {}})
+        session = self._session_with_capabilities(caps, client_info=self.CLIENT_INFO)
+        assert client_supports_extension(session, UI_EXTENSION_ID) is False
+
+    def test_extensions_without_client_info(self):
+        """clientInfo is optional on 2026-07-28 while clientCapabilities is not,
+        so a client can declare the extension with no client params on the
+        session to read it from."""
+        caps = ClientCapabilities(extensions={UI_EXTENSION_ID: {}})
+        session = self._session_with_capabilities(caps, client_info=None)
+        assert session.client_params is None
+        assert client_supports_extension(session, UI_EXTENSION_ID) is True
+
+    def test_legacy_model_extra_fallback(self):
+        """Defensive fallback: capabilities whose real `extensions` field is None
+        but which carry `extensions` in `model_extra` are still detected.
+
+        SDK v2 always routes `extensions` to the real field, so this branch is
+        only reachable by a capabilities object serialized under an older schema;
+        we exercise it with a stand-in that mimics that shape.
+        """
+        fake_caps = SimpleNamespace(
+            extensions=None,
+            model_extra={"extensions": {UI_EXTENSION_ID: {}}},
+        )
+        session: Any = SimpleNamespace(client_capabilities=fake_caps)
+        assert client_supports_extension(session, UI_EXTENSION_ID) is True
+
+    def test_no_extensions(self):
+        caps = ClientCapabilities()
+        session = self._session_with_capabilities(caps, client_info=self.CLIENT_INFO)
+        assert client_supports_extension(session, UI_EXTENSION_ID) is False
+
+    def test_no_capabilities(self):
+        session = self._session_with_capabilities(None, client_info=self.CLIENT_INFO)
+        assert client_supports_extension(session, UI_EXTENSION_ID) is False
 
 
 # ---------------------------------------------------------------------------
@@ -465,7 +556,7 @@ class TestIntegration:
             resources = await client.list_resources()
             assert len(resources) == 1
             assert str(resources[0].uri) == "ui://my-app/view.html"
-            assert resources[0].mimeType == UI_MIME_TYPE
+            assert resources[0].mime_type == UI_MIME_TYPE
 
     async def test_ui_resource_read_preserves_mime_type(self):
         """Reading a ui:// resource returns content with the correct MIME type."""
@@ -478,7 +569,7 @@ class TestIntegration:
         async with Client(server) as client:
             result = await client.read_resource_mcp("ui://my-app/view.html")
             assert len(result.contents) == 1
-            assert result.contents[0].mimeType == UI_MIME_TYPE
+            assert result.contents[0].mime_type == UI_MIME_TYPE
 
     async def test_app_tool_callable(self):
         """A tool registered with app= is still callable normally."""
@@ -504,6 +595,12 @@ class TestIntegration:
             result = await client.call_tool("backend_greet", {"name": "Alice"})
             assert any("Hello, Alice!" in str(c) for c in result.content)
 
+    @pytest.mark.xfail(
+        reason="SDK v2 strips capabilities.extensions at the negotiated "
+        "(pre-2026) handshake version, so the SEP-2133 UI extension is not "
+        "advertised to the client (sdk-feedback #2).",
+        strict=True,
+    )
     async def test_extension_and_tool_together(self):
         """Server advertises extension AND tool has app meta."""
         server = FastMCP("test")
@@ -615,7 +712,7 @@ class TestPrefabAppConfig:
         assert config.csp.frame_domains == ["https://example.com"]
 
     async def test_auto_synthesizes_renderer_resource(self):
-        """Each prefab tool gets a per-tool renderer resource on demand."""
+        """Prefab tools synthesize shared renderer resources on demand."""
         from fastmcp.apps import PrefabAppConfig
 
         server = FastMCP("test")
@@ -625,11 +722,11 @@ class TestPrefabAppConfig:
             return "hello"
 
         resources = list(await server.list_resources())
-        prefab = [r for r in resources if "prefab/tool" in str(r.uri)]
+        prefab = [r for r in resources if "prefab/renderer" in str(r.uri)]
         assert len(prefab) == 1
 
     async def test_equivalent_to_app_true(self):
-        """PrefabAppConfig() and app=True both synthesize a per-tool renderer."""
+        """PrefabAppConfig() and app=True produce equivalent renderer identities."""
         from fastmcp.apps import PrefabAppConfig
 
         server1 = FastMCP("test1")
@@ -651,6 +748,7 @@ class TestPrefabAppConfig:
         assert tools2[0].meta is not None
         ui2 = tools2[0].meta.get("ui", {})
 
-        # Both produce per-tool URIs in the prefab/tool/<hash>/ form.
-        assert ui1.get("resourceUri", "").startswith("ui://prefab/tool/")
-        assert ui2.get("resourceUri", "").startswith("ui://prefab/tool/")
+        assert ui1["resourceUri"] == ui2["resourceUri"]
+        # Equivalent configurations produce the same shared renderer URI.
+        assert ui1.get("resourceUri", "").startswith("ui://prefab/renderer/")
+        assert ui2.get("resourceUri", "").startswith("ui://prefab/renderer/")

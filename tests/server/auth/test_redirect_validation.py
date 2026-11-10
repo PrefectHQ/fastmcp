@@ -1,12 +1,304 @@
 """Tests for redirect URI validation in OAuth flows."""
 
+import re
+from pathlib import Path
+from urllib.parse import parse_qs, parse_qsl, urlparse
+
+import pytest
 from pydantic import AnyUrl
 
+import fastmcp.server.auth
 from fastmcp.server.auth.redirect_validation import (
     DEFAULT_LOCALHOST_PATTERNS,
+    add_query_params,
+    build_client_redirect,
+    is_redirect_uri_allowed_for_application_type,
     matches_allowed_pattern,
+    replace_query_param,
     validate_redirect_uri,
 )
+
+
+class TestAddQueryParams:
+    """Test that add_query_params preserves the registered callback's exact query bytes.
+
+    A registered redirect URI may carry an opaque or signed query string.
+    Decoding it with parse_qsl and re-serializing with urlencode mutates it
+    (a valueless `?flag` becomes `?flag=`, and non-UTF-8 percent-encoded
+    bytes get replaced) which breaks clients that route on, or
+    cryptographically validate, the raw callback query.
+    """
+
+    def test_preserves_valueless_param_and_non_utf8_bytes(self):
+        original_query = "flag&sig=%FF%FE"
+        url = f"https://client.example.com/callback?{original_query}"
+
+        result = add_query_params(
+            url,
+            {
+                "code": "abc123",
+                "state": "xyz state",
+                "iss": "https://issuer.example.com/",
+            },
+        )
+
+        result_query = urlparse(result).query
+
+        # The original query substring must survive byte-for-byte: the
+        # valueless `flag` must not become `flag=`, and the non-UTF-8
+        # percent-encoded `sig` value must not be decoded/replaced.
+        assert result_query.startswith(f"{original_query}&")
+
+        # New params are appended after a single `&`, correctly encoded.
+        appended = result_query[len(original_query) + 1 :]
+        assert dict(parse_qsl(appended)) == {
+            "code": "abc123",
+            "state": "xyz state",
+            "iss": "https://issuer.example.com/",
+        }
+
+    def test_empty_query_has_no_stray_ampersand(self):
+        url = "https://client.example.com/callback"
+
+        result = add_query_params(url, {"code": "abc123"})
+
+        assert result == "https://client.example.com/callback?code=abc123"
+
+    def test_appends_to_existing_ordinary_query(self):
+        url = "https://client.example.com/callback?foo=bar"
+
+        result = add_query_params(url, {"code": "abc123"})
+
+        assert result == "https://client.example.com/callback?foo=bar&code=abc123"
+
+
+class TestReplaceQueryParam:
+    """Direct tests for the idempotent replace-or-append primitive that
+    `build_client_redirect` relies on to guarantee exactly one `iss`.
+    """
+
+    def test_replaces_existing_value_in_place_preserving_other_bytes(self):
+        url = "https://client.example.com/callback?iss=tenant&sig=%FF%FE"
+
+        result = replace_query_param(url, "iss", "https://issuer.example.com/")
+
+        assert urlparse(result).query == (
+            "iss=https%3A%2F%2Fissuer.example.com%2F&sig=%FF%FE"
+        )
+
+    def test_appends_when_key_absent(self):
+        url = "https://client.example.com/callback?sig=%FF%FE"
+
+        result = replace_query_param(url, "iss", "https://issuer.example.com/")
+
+        assert urlparse(result).query == (
+            "sig=%FF%FE&iss=https%3A%2F%2Fissuer.example.com%2F"
+        )
+
+    def test_only_first_occurrence_is_replaced(self):
+        """A key appearing twice in the input is left with one replaced
+        occurrence and one untouched -- callers must not feed this function
+        an already-duplicated key and expect deduplication."""
+        url = "https://client.example.com/callback?iss=first&iss=second"
+
+        result = replace_query_param(url, "iss", "https://issuer.example.com/")
+
+        assert urlparse(result).query == (
+            "iss=https%3A%2F%2Fissuer.example.com%2F&iss=second"
+        )
+
+
+class TestBuildClientRedirect:
+    """Tests for the single helper that owns the client-facing-redirect
+    `iss` invariant: exactly one `iss`, set to the canonical value, with
+    every other query byte preserved verbatim.
+
+    This is the consolidation point for RFC 9207 support -- every redirect
+    the OAuth proxy sends back to a client (success or error, across all
+    five call sites that build one) must go through this function rather
+    than hand-building a params dict with its own `"iss"` key.
+    """
+
+    def test_appends_params_and_iss_when_absent(self):
+        url = "https://client.example.com/callback"
+
+        result = build_client_redirect(
+            url,
+            {"code": "abc", "state": "xyz"},
+            iss="https://issuer.example.com/",
+        )
+
+        assert dict(parse_qsl(urlparse(result).query)) == {
+            "code": "abc",
+            "state": "xyz",
+            "iss": "https://issuer.example.com/",
+        }
+
+    def test_replaces_iss_already_present_in_registered_redirect_uri(self):
+        """A registered redirect_uri may legitimately carry its own `iss`
+        query parameter (e.g. a multi-tenant client encoding its tenant in
+        the callback URL). Blindly appending the server's issuer on top of
+        that would yield two `iss` values -- RFC 6749 §3.1 forbids a
+        response parameter appearing more than once, so strict clients
+        reject the response or read the wrong value. This is the P2 defect
+        this helper exists to close off at every call site, not just one.
+        """
+        url = "https://client.example.com/callback?iss=tenant&sig=%FF%FE"
+
+        result = build_client_redirect(
+            url,
+            {"code": "abc", "state": "xyz"},
+            iss="https://issuer.example.com/",
+        )
+
+        result_query = urlparse(result).query
+        iss_values = parse_qs(result_query)["iss"]
+        assert len(iss_values) == 1
+        assert iss_values == ["https://issuer.example.com/"]
+
+    def test_collapses_a_repeated_iss_from_the_registered_redirect_uri(self):
+        """A redirect_uri may carry `iss` more than once (`?iss=a&iss=b`).
+        `replace_query_param` rewrites only the first match, so the survivor
+        used to be `iss=<issuer>&iss=b` -- two response parameters, exactly
+        what RFC 6749 §3.1 forbids. The helper promises "exactly one", so
+        the later copies are dropped.
+        """
+        url = "https://client.example.com/cb?iss=a&iss=b"
+
+        result = build_client_redirect(
+            url,
+            {"error": "access_denied", "state": "xyz"},
+            iss="https://issuer.example.com/",
+        )
+
+        assert parse_qs(urlparse(result).query)["iss"] == [
+            "https://issuer.example.com/"
+        ]
+
+    def test_dropping_repeated_iss_keeps_other_query_bytes_verbatim(self):
+        """Collapsing the duplicates must not round-trip the rest of the
+        query: the valueless `flag` and the non-UTF-8 `sig` stay byte for
+        byte, and the surviving `iss` keeps its position.
+        """
+        url = "https://client.example.com/cb?iss=a&flag&sig=%FF%FE&iss=b"
+
+        result = build_client_redirect(
+            url,
+            {"code": "abc"},
+            iss="https://issuer.example.com/",
+        )
+
+        assert urlparse(result).query == (
+            "iss=https%3A%2F%2Fissuer.example.com%2F&flag&sig=%FF%FE&code=abc"
+        )
+
+    def test_preserves_valueless_param_and_non_utf8_bytes_alongside_existing_iss(
+        self,
+    ):
+        """Exact end-to-end reproduction of the worked example from the P2
+        review comment: registered redirect_uri already has `iss`, a
+        valueless `flag`, and a non-UTF-8 percent-encoded `sig` -- all three
+        must survive the round trip through `add_query_params` +
+        `replace_query_param` untouched, with only `iss` rewritten in
+        place.
+        """
+        url = "https://client.example.com/callback?iss=tenant&flag&sig=%FF%FE"
+
+        result = build_client_redirect(
+            url,
+            {"code": "abc", "state": "xyz state"},
+            iss="https://issuer.example.com/",
+        )
+
+        assert urlparse(result).query == (
+            "iss=https%3A%2F%2Fissuer.example.com%2F"
+            "&flag&sig=%FF%FE&code=abc&state=xyz+state"
+        )
+
+    def test_rejects_iss_hand_specified_in_params(self):
+        """`iss` must come from the keyword-only `iss` argument, never from
+        the `params` dict -- this keeps exactly one place a caller can set
+        it, rather than two that could disagree."""
+        with pytest.raises(ValueError, match="iss"):
+            build_client_redirect(
+                "https://client.example.com/callback",
+                {"code": "abc", "iss": "sneaky"},
+                iss="https://issuer.example.com/",
+            )
+
+    def test_empty_params_does_not_add_stray_ampersand(self):
+        """The authorize-handler call site passes no extra params (it only
+        needs to fix up `iss` on a URL the SDK already built) -- an empty
+        `params` dict must not introduce a trailing/stray `&`."""
+        url = "https://client.example.com/callback?code=abc&state=xyz"
+
+        result = build_client_redirect(url, {}, iss="https://issuer.example.com/")
+
+        assert urlparse(result).query == (
+            "code=abc&state=xyz&iss=https%3A%2F%2Fissuer.example.com%2F"
+        )
+        assert "&&" not in result
+        assert not result.endswith("&")
+
+    @pytest.mark.parametrize(
+        "registered_uri,expected_prefix",
+        [
+            ("myapp://", "myapp://?"),
+            ("myapp:///callback", "myapp:///callback?"),
+            ("myapp://callback", "myapp://callback?"),
+            ("com.example.app:/callback", "com.example.app:/callback?"),
+        ],
+    )
+    def test_preserves_custom_scheme_empty_authority(
+        self, registered_uri: str, expected_prefix: str
+    ):
+        """Regression test for #6296: custom native-app schemes with an empty
+        authority (`myapp://`, `myapp:///callback`) must not have their `//`
+        stripped by `urlunparse` when query parameters are appended."""
+        result = build_client_redirect(
+            registered_uri,
+            {"code": "abc"},
+            iss="https://as.example/",
+        )
+
+        assert result == (f"{expected_prefix}code=abc&iss=https%3A%2F%2Fas.example%2F")
+
+
+class TestNoHandSpecifiedIssOutsideHelper:
+    """Guard against a future call site reintroducing the duplicate-`iss`
+    bug this PR consolidates away.
+
+    This is the sixth review round on the RFC 9207 `iss` work, and the last
+    two rounds were the same defect surfacing at different call sites: a
+    caller hand-building a params dict with its own `"iss"` key instead of
+    routing through `build_client_redirect`. Rather than trust that every
+    future redirect site remembers to do this, scan the directories that
+    build client-facing authorization redirects (`oauth_proxy/`,
+    `handlers/`) for a dict-literal `"iss"` key. `jwt_issuer.py` and the
+    JWT/Clerk providers legitimately use `"iss"` as a JWT claim name, but
+    those live outside these two directories, so this scan does not need to
+    special-case them.
+    """
+
+    def test_no_dict_literal_iss_key_in_redirect_building_modules(self):
+        auth_root = Path(fastmcp.server.auth.__file__).parent
+        scan_dirs = [auth_root / "oauth_proxy", auth_root / "handlers"]
+        iss_dict_key = re.compile(r"""["']iss["']\s*:""")
+
+        offenders = [
+            str(path)
+            for scan_dir in scan_dirs
+            for path in scan_dir.rglob("*.py")
+            if iss_dict_key.search(path.read_text())
+        ]
+
+        assert not offenders, (
+            "Found a hand-specified 'iss' dict key outside "
+            "build_client_redirect() in: "
+            f"{offenders}. Route this redirect through "
+            "fastmcp.server.auth.redirect_validation.build_client_redirect "
+            "instead so the duplicate-iss invariant stays centralized."
+        )
 
 
 class TestMatchesAllowedPattern:
@@ -66,14 +358,49 @@ class TestValidateRedirectUri:
         assert validate_redirect_uri(None, [])
         assert validate_redirect_uri(None, ["http://localhost:*"])
 
-    def test_default_allows_all(self):
-        """Test that None (default) allows all URIs for DCR compatibility."""
-        # All URIs should be allowed when None is provided (DCR compatibility)
-        assert validate_redirect_uri("http://localhost:3000", None)
-        assert validate_redirect_uri("http://127.0.0.1:8080", None)
-        assert validate_redirect_uri("http://example.com", None)
-        assert validate_redirect_uri("https://app.example.com", None)
-        assert validate_redirect_uri("https://claude.ai/api/mcp/auth_callback", None)
+    @pytest.mark.parametrize(
+        "uri",
+        [
+            "http://localhost:3000",
+            "http://127.0.0.1:8080",
+            "http://example.com",
+            "https://app.example.com",
+            "https://claude.ai/api/mcp/auth_callback",
+            "cursor://anysphere.cursor-mcp/oauth/callback",
+        ],
+    )
+    def test_default_allows_dcr_compatible_redirects(self, uri: str):
+        """None preserves broad DCR compatibility for ordinary redirect URIs."""
+        assert validate_redirect_uri(uri, None)
+
+    @pytest.mark.parametrize(
+        "uri",
+        [
+            "javascript:alert(document.cookie)//",
+            "JaVaScRiPt:alert(document.cookie)//",
+            "data:text/html,<script>alert(1)</script>",
+            "file:///tmp/callback",
+            "vbscript:msgbox(1)",
+        ],
+    )
+    def test_default_rejects_unsafe_browser_schemes(self, uri: str):
+        """Default DCR compatibility must not allow active browser schemes."""
+        assert not validate_redirect_uri(uri, None)
+
+    @pytest.mark.parametrize(
+        "uri,pattern",
+        [
+            ("javascript:alert(document.cookie)//", "javascript:*"),
+            ("data:text/html,<script>alert(1)</script>", "data:*"),
+            ("file:///tmp/callback", "file:///*"),
+            ("vbscript:msgbox(1)", "vbscript:*"),
+        ],
+    )
+    def test_custom_patterns_cannot_allow_unsafe_browser_schemes(
+        self, uri: str, pattern: str
+    ):
+        """Unsafe browser schemes stay blocked even if a pattern names them."""
+        assert not validate_redirect_uri(uri, [pattern])
 
     def test_empty_list_allows_none(self):
         """Test that empty list allows no redirect URIs."""
@@ -315,4 +642,142 @@ class TestDefaultPatterns:
         )
         assert not validate_redirect_uri(
             "https://claude.ai/api/mcp/auth_callback", DEFAULT_LOCALHOST_PATTERNS
+        )
+
+
+class TestRawStringNormalization:
+    """Raw-string redirect URIs must validate identically to the AnyUrl form.
+
+    Browsers parse a 302 Location with WHATWG rules, and pydantic's AnyUrl
+    normalizes the same way (backslash becomes a path separator, dot-segments
+    are resolved, IPv4 shorthand is expanded, trailing C0 characters are
+    stripped). A plain string skips that parser, so attacker-controlled
+    spellings matched allowlist patterns that the parsed form would have
+    failed (#6295).
+    """
+
+    @pytest.mark.parametrize(
+        "uri,pattern",
+        [
+            (r"https://evil.com\.example.com/cb", "https://*.example.com/*"),
+            (r"https://app.example.com/cb/..\steal", "https://app.example.com/cb/*"),
+            ("https://app.example.com/cb/.. ", "https://app.example.com/cb/*"),
+        ],
+    )
+    def test_raw_string_rejects_whatwg_ambiguous_spellings(self, uri, pattern):
+        assert not matches_allowed_pattern(uri, pattern)
+        # The parsed (AnyUrl) form already failed the same pattern; the two
+        # input forms must agree.
+        assert not matches_allowed_pattern(str(AnyUrl(uri)), pattern)
+
+    def test_raw_string_rejected_by_validate_redirect_uri(self):
+        patterns = ["https://*.example.com/*"]
+        uri = r"https://evil.com\.example.com/cb"
+        assert not validate_redirect_uri(uri, patterns)
+        assert not validate_redirect_uri(AnyUrl(uri), patterns)
+
+    def test_web_application_type_rejects_ipv4_shorthand(self):
+        # `https://127.1/cb` normalizes to the loopback `127.0.0.1`, so a
+        # "web" client (which requires a non-loopback https host) must be
+        # rejected in both input forms.
+        assert not is_redirect_uri_allowed_for_application_type(
+            "https://127.1/cb", "web"
+        )
+        assert not is_redirect_uri_allowed_for_application_type(
+            AnyUrl("https://127.1/cb"), "web"
+        )
+
+    def test_native_application_type_rejects_backslash_localhost(self):
+        # `http://evil.com\.localhost/cb` keeps the loopback-suffix host only
+        # in the un-normalized form; normalized it is `evil.com`, not loopback.
+        assert not is_redirect_uri_allowed_for_application_type(
+            r"http://evil.com\.localhost/cb", "native"
+        )
+        assert not is_redirect_uri_allowed_for_application_type(
+            AnyUrl(r"http://evil.com\.localhost/cb"), "native"
+        )
+
+    def test_dot_segments_still_rejected_after_normalization(self):
+        # Normalization resolves dot-segments away, so the raw spelling must
+        # still be rejected: a normalized-only check would turn a rejected
+        # traversal into a matching ordinary path.
+        patterns = ["https://app.example.com/oauth/callback/*"]
+        assert not validate_redirect_uri(
+            "https://app.example.com/oauth/callback/./foo", patterns
+        )
+        assert not validate_redirect_uri(
+            "https://app.example.com/oauth/callback/foo/..", patterns
+        )
+        assert not matches_allowed_pattern(
+            "https://app.example.com/oauth/callback/./foo", patterns[0]
+        )
+
+    def test_legitimate_raw_strings_unchanged(self):
+        # Ordinary http(s) redirect URIs validate exactly as before.
+        assert validate_redirect_uri(
+            "http://localhost:3000/callback", ["http://localhost:*"]
+        )
+        assert validate_redirect_uri(
+            "https://app.example.com/cb", ["https://*.example.com/*"]
+        )
+        # Custom schemes that AnyUrl cannot express are passed through
+        # unchanged and keep their previous classification.
+        assert is_redirect_uri_allowed_for_application_type(
+            "com.example.app:/callback", "native"
+        )
+        assert is_redirect_uri_allowed_for_application_type(
+            "urn:ietf:wg:oauth:2.0:oob", "native"
+        )
+        assert is_redirect_uri_allowed_for_application_type(
+            "myapp://callback", "native"
+        )
+
+
+class TestBackslashAuthorityRejects:
+    r"""A backslash in the raw authority must be rejected outright.
+
+    WHATWG parsing (pydantic's AnyUrl, and any browser reading a 302
+    Location) ends the authority at a backslash, so
+    ``https://trusted.example\@attacker.example/cb`` normalizes to host
+    ``trusted.example`` with ``@attacker.example/cb`` as the path and would
+    pass the pattern check. But the raw string is what callers emit:
+    ``RedirectResponse`` percent-encodes the backslash, and a browser then
+    reads ``trusted.example%5C`` as userinfo with host ``attacker.example``
+    -- outside the allowlisted origin. Both spellings were rejected by
+    the pre-normalization implementation; keep them rejected (#6295).
+    """
+
+    @pytest.mark.parametrize(
+        "uri,pattern",
+        [
+            (
+                "https://trusted.example\\@attacker.example/cb",
+                "https://trusted.example/*",
+            ),
+            ("http://localhost\\@attacker.example/cb", "http://localhost:*"),
+        ],
+    )
+    def test_backslash_authority_pattern_rejected(self, uri, pattern):
+        assert not matches_allowed_pattern(uri, pattern)
+
+    @pytest.mark.parametrize(
+        "uri,application_type",
+        [
+            ("http://localhost\\@attacker.example/cb", "native"),
+            ("https://trusted.example\\@attacker.example/cb", "web"),
+        ],
+    )
+    def test_backslash_authority_application_type_rejected(self, uri, application_type):
+        assert not is_redirect_uri_allowed_for_application_type(uri, application_type)
+
+    def test_legitimate_uris_still_allowed(self):
+        # No backslash in the authority: ordinary behavior is intact.
+        assert matches_allowed_pattern(
+            "https://trusted.example/cb", "https://trusted.example/*"
+        )
+        assert matches_allowed_pattern(
+            "http://localhost:3000/callback", "http://localhost:*"
+        )
+        assert is_redirect_uri_allowed_for_application_type(
+            "http://localhost:8123/callback", "native"
         )

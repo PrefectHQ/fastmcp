@@ -47,7 +47,7 @@ OpenAPI Spec → Parser → HTTPRoute with Pre-calculated Fields → RequestDire
 ### Request Processing
 
 ```
-MCP Tool Call → RequestDirector.build() → httpx.Request → HTTP Response → Structured Output
+MCP Tool Call → RequestDirector.build() → httpx2.Request → HTTP Response → Structured Output
 ```
 
 1. **Tool Invocation**: FastMCP receives tool call with parameters
@@ -103,14 +103,14 @@ All components use the same RequestDirector approach:
 ### Basic Server Setup
 
 ```python
-import httpx
+import httpx2
 from fastmcp.server.openapi import FastMCPOpenAPI
 
 # OpenAPI spec (can be loaded from file/URL)
 openapi_spec = {...}
 
 # Create HTTP client
-async with httpx.AsyncClient() as client:
+async with httpx2.AsyncClient() as client:
     # Create server with stateless request building
     server = FastMCPOpenAPI(
         openapi_spec=openapi_spec,
@@ -134,8 +134,8 @@ director = RequestDirector(spec)
 # Build HTTP request
 request = director.build(route, flat_arguments, base_url)
 
-# Execute with httpx
-async with httpx.AsyncClient() as client:
+# Execute with httpx2
+async with httpx2.AsyncClient() as client:
     response = await client.send(request)
 ```
 
@@ -206,6 +206,6 @@ Tests are located in `/tests/server/openapi/`:
 ## Dependencies
 
 - `openapi-core` - OpenAPI specification processing and validation
-- `httpx` - HTTP client library
+- `httpx2` - HTTP client library
 - `pydantic` - Data validation and serialization
 - `urllib.parse` - URL building and manipulation

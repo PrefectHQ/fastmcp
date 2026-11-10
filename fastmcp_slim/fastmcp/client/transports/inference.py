@@ -1,9 +1,12 @@
+import sys
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, overload
 
-from mcp.server.fastmcp import FastMCP as FastMCP1Server
+from mcp.server.mcpserver import MCPServer as SDKServer
 from pydantic import AnyUrl
 
+from fastmcp._warnings import FastMCPDeprecationWarning
 from fastmcp.client.transports.base import ClientTransport, ClientTransportT
 from fastmcp.client.transports.config import MCPConfigTransport
 from fastmcp.client.transports.http import StreamableHttpTransport
@@ -24,6 +27,26 @@ else:
 logger = get_logger(__name__)
 
 
+_PACKAGE_ROOT = str(Path(__file__).resolve().parents[2])
+
+
+def _external_stacklevel() -> int:
+    """Stack level of the first caller outside the fastmcp package.
+
+    Public entry points reach `infer_transport` through different wrapper depths
+    (`Client(...)`, `create_proxy(...)`, a direct call), so a fixed stacklevel
+    would point the deprecation warning at internal frames for some of them.
+    """
+    level = 1
+    frame = sys._getframe(1)
+    while frame is not None:
+        if not frame.f_code.co_filename.startswith(_PACKAGE_ROOT):
+            return level
+        frame = frame.f_back
+        level += 1
+    return 1
+
+
 @overload
 def infer_transport(transport: ClientTransportT) -> ClientTransportT: ...
 
@@ -33,7 +56,7 @@ def infer_transport(transport: FastMCP) -> FastMCPTransport: ...
 
 
 @overload
-def infer_transport(transport: FastMCP1Server) -> FastMCPTransport: ...
+def infer_transport(transport: SDKServer) -> FastMCPTransport: ...
 
 
 @overload
@@ -65,7 +88,7 @@ def infer_transport(transport: Path) -> PythonStdioTransport | NodeStdioTranspor
 def infer_transport(
     transport: ClientTransport
     | FastMCP
-    | FastMCP1Server
+    | SDKServer
     | AnyUrl
     | Path
     | MCPConfig
@@ -81,9 +104,11 @@ def infer_transport(
 
     The function supports these input types:
     - ClientTransport: Used directly without modification
-    - FastMCP or FastMCP1Server: Creates an in-memory FastMCPTransport
-    - Path or str (file path): Creates PythonStdioTransport (.py) or NodeStdioTransport (.js)
-    - AnyUrl or str (URL): Creates StreamableHttpTransport (default) or SSETransport (for /sse endpoints)
+    - FastMCP or SDKServer: Creates an in-memory FastMCPTransport
+    - Path: Creates PythonStdioTransport (.py) or NodeStdioTransport (.js)
+    - AnyUrl or str (URL): Creates StreamableHttpTransport (default) or SSETransport (for /sse endpoints).
+      A str naming an existing .py or .js file still infers a stdio transport but
+      emits a FastMCPDeprecationWarning; pass a Path instead.
     - MCPConfig or dict: Creates MCPConfigTransport, potentially connecting to multiple servers
 
     For HTTP URLs, they are assumed to be Streamable HTTP URLs unless they end in `/sse`.
@@ -97,7 +122,7 @@ def infer_transport(
     Examples:
         ```python
         # Connect to a local Python script
-        transport = infer_transport("my_script.py")
+        transport = infer_transport(Path("my_script.py"))
 
         # Connect to a remote server via HTTP
         transport = infer_transport("http://example.com/mcp")
@@ -120,17 +145,33 @@ def infer_transport(
     # the transport is a FastMCP server (2.x or 1.0)
     elif _is_fastmcp_server(transport):
         inferred_transport = FastMCPTransport(
-            mcp=cast("FastMCP[Any] | FastMCP1Server", transport)
+            mcp=cast("FastMCP[Any] | SDKServer", transport)
         )
 
     # the transport is a path to a script
-    elif isinstance(transport, Path | str) and Path(transport).exists():
-        if str(transport).endswith(".py"):
-            inferred_transport = PythonStdioTransport(script_path=cast(Path, transport))
-        elif str(transport).endswith(".js"):
-            inferred_transport = NodeStdioTransport(script_path=cast(Path, transport))
+    elif isinstance(transport, Path):
+        if transport.suffix == ".py":
+            inferred_transport = PythonStdioTransport(script_path=transport)
+        elif transport.suffix == ".js":
+            inferred_transport = NodeStdioTransport(script_path=transport)
         else:
             raise ValueError(f"Unsupported script type: {transport}")
+
+    # a string naming an existing script: still works, but warns. Strings will
+    # mean URLs only in FastMCP 5; a Path is the explicit way to run a script.
+    elif (
+        isinstance(transport, str)
+        and transport.endswith((".py", ".js"))
+        and Path(transport).exists()
+    ):
+        warnings.warn(
+            f"Inferring a stdio transport from the string {transport!r} is"
+            " deprecated and will be removed in FastMCP 5. Pass"
+            f" pathlib.Path({transport!r}) or an explicit StdioTransport instead.",
+            FastMCPDeprecationWarning,
+            stacklevel=_external_stacklevel(),
+        )
+        inferred_transport = infer_transport(Path(transport))
 
     # the transport is an http(s) URL
     elif isinstance(transport, AnyUrl | str) and str(transport).startswith("http"):
@@ -159,7 +200,7 @@ def infer_transport(
 
 
 def _is_fastmcp_server(transport: object) -> bool:
-    if isinstance(transport, FastMCP1Server):
+    if isinstance(transport, SDKServer):
         return True
 
     try:

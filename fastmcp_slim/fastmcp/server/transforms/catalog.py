@@ -49,6 +49,7 @@ from collections.abc import Sequence
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
+from fastmcp.apps.config import is_model_visible
 from fastmcp.server.transforms import Transform
 from fastmcp.utilities.versions import dedupe_with_versions
 
@@ -177,6 +178,16 @@ class CatalogTransform(Transform):
         of each tool is returned — matching what protocol handlers expose
         on the wire.
 
+        Tools the model may not see are excluded. A catalog is read by the
+        model as tool output rather than advertised as ``tools/list``, so the
+        host filtering the spec relies on never applies to it — this is the
+        only place the declaration can be enforced.
+
+        Visibility is checked after deduplication, on the version a bare name
+        actually reaches. Checking first would let a model-visible older
+        version advertise a name whose highest version is app-only, and the
+        call would run the version nobody was shown.
+
         Args:
             ctx: The current request context.
             run_middleware: Whether to run middleware on the inner call.
@@ -188,7 +199,8 @@ class CatalogTransform(Transform):
             tools = await ctx.fastmcp.list_tools(run_middleware=run_middleware)
         finally:
             self._bypass.reset(token)
-        return dedupe_with_versions(tools, lambda t: t.name)
+        selected = dedupe_with_versions(tools, lambda t: t.name)
+        return [tool for tool in selected if is_model_visible(tool)]
 
     async def get_resource_catalog(
         self, ctx: Context, *, run_middleware: bool = True

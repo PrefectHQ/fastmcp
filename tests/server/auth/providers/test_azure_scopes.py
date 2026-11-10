@@ -12,6 +12,14 @@ from fastmcp.server.auth.providers.azure import (
 )
 from fastmcp.server.auth.providers.jwt import RSAKeyPair, StaticTokenVerifier
 
+# Import the optional azure-identity SDK once, at collection time. The OBO
+# tests mock it via patch("azure.identity.aio.OnBehalfOfCredential"), but the
+# provider imports it lazily — so without this the heavy SDK import lands
+# inside the first OBO test's 5s pytest-timeout window and flakes on cold
+# Windows runners (#4175). importorskip also skips cleanly if the optional
+# `azure` extra is absent, instead of hard-failing at runtime.
+pytest.importorskip("azure.identity.aio")
+
 
 @pytest.fixture
 def memory_storage() -> MemoryStore:
@@ -417,8 +425,8 @@ class TestAzureJWTVerifier:
         assert verifier.algorithm == "RS256"
         assert verifier.required_scopes == ["access_as_user"]
 
-    async def test_validates_short_form_scopes(self):
-        key_pair = RSAKeyPair.generate()
+    async def test_validates_short_form_scopes(self, rsa_key_pair: RSAKeyPair):
+        key_pair = rsa_key_pair
         verifier = AzureJWTVerifier(
             client_id="my-client-id",
             tenant_id="my-tenant-id",
@@ -438,9 +446,11 @@ class TestAzureJWTVerifier:
         assert result is not None
         assert "access_as_user" in result.scopes
 
-    async def test_validates_token_with_client_id_audience(self):
+    async def test_validates_token_with_client_id_audience(
+        self, rsa_key_pair: RSAKeyPair
+    ):
         """Azure AD v2 tokens use the bare client_id GUID as audience."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         verifier = AzureJWTVerifier(
             client_id="my-client-id",
             tenant_id="my-tenant-id",
@@ -459,9 +469,11 @@ class TestAzureJWTVerifier:
         assert result is not None
         assert "access_as_user" in result.scopes
 
-    async def test_validates_token_with_custom_identifier_uri_audience(self):
+    async def test_validates_token_with_custom_identifier_uri_audience(
+        self, rsa_key_pair: RSAKeyPair
+    ):
         """Custom identifier_uri (e.g. Bicep deployments) accepted as audience."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         verifier = AzureJWTVerifier(
             client_id="my-client-id",
             tenant_id="my-tenant-id",
@@ -481,9 +493,9 @@ class TestAzureJWTVerifier:
         assert result is not None
         assert "read" in result.scopes
 
-    async def test_rejects_token_with_wrong_audience(self):
+    async def test_rejects_token_with_wrong_audience(self, rsa_key_pair: RSAKeyPair):
         """Tokens for a different application must be rejected."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         verifier = AzureJWTVerifier(
             client_id="my-client-id",
             tenant_id="my-tenant-id",
@@ -511,6 +523,15 @@ class TestAzureJWTVerifier:
             "api://my-client-id/read",
             "api://my-client-id/write",
         ]
+
+    def test_translates_arbitrary_challenge_scopes(self):
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+            required_scopes=["read"],
+        )
+
+        assert verifier.get_challenge_scopes(["admin"]) == ["api://my-client-id/admin"]
 
     def test_already_prefixed_scopes_pass_through(self):
         verifier = AzureJWTVerifier(

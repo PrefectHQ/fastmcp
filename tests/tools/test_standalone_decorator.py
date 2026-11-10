@@ -5,6 +5,8 @@ to a server. Functions can be added explicitly via server.add_tool() or
 discovered by FileSystemProvider.
 """
 
+import subprocess
+import sys
 from typing import cast
 
 import pytest
@@ -14,6 +16,28 @@ from fastmcp.client import Client
 from fastmcp.tools import tool
 from fastmcp.tools.base import Tool
 from fastmcp.tools.function_tool import DecoratedTool, FunctionTool, ToolMeta
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "from fastmcp.tools import tool",
+        "from fastmcp.resources import Resource, resource",
+        "from fastmcp.prompts import Prompt, prompt",
+        "import sys; import fastmcp.apps.config; assert 'fastmcp.tools.function_tool' not in sys.modules",
+        "from fastmcp.server.auth import AuthCheck",
+        "from fastmcp.server import Context, FastMCP, create_proxy",
+    ],
+)
+@pytest.mark.subprocess_heavy
+def test_component_import_works_in_fresh_interpreter(statement: str):
+    result = subprocess.run(
+        [sys.executable, "-c", statement],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 class TestToolDecorator:
@@ -128,6 +152,19 @@ class TestToolDecorator:
         # The function is still callable even though it has metadata
         result = cast(DecoratedTool, greet)("World")
         assert result == "Hello, World!"
+
+    def test_staticmethod_metadata_is_available_on_unwrapped_function(self):
+        """@tool should attach metadata where staticmethod access can find it."""
+
+        class MyClass:
+            @tool(name="custom-static-tool")
+            @staticmethod
+            def my_method() -> str:
+                return "hello"
+
+        created_tool = FunctionTool.from_function(MyClass.my_method)
+
+        assert created_tool.name == "custom-static-tool"
 
     def test_tool_rejects_classmethod_decorator(self):
         """@tool should reject classmethod-decorated functions."""

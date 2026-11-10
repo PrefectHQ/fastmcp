@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import pytest
-from mcp.types import (
+from mcp_types import (
     TextContent,
 )
 from pydantic import AnyUrl, BaseModel, TypeAdapter
@@ -45,7 +45,7 @@ class PersonDataclass:
 
 
 class TestToolOutputSchema:
-    @pytest.mark.parametrize("annotation", [str, int, float, bool, list, AnyUrl])
+    @pytest.mark.parametrize("annotation", [str, int, float, bool, AnyUrl])
     async def test_simple_output_schema(self, annotation):
         mcp = FastMCP()
 

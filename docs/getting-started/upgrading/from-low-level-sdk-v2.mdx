@@ -1,0 +1,619 @@
+---
+title: Upgrading from the Low-Level SDK v2
+sidebarTitle: "From Low-Level SDK v2"
+description: Move a server built on v2 of the low-level Python SDK's Server class to FastMCP
+icon: up
+---
+
+If your server builds on the `mcp` package's low-level `Server` class as SDK v2 rebuilt it — handlers passed to the constructor as `on_list_tools`, `on_call_tool`, and their siblings, each taking `(ctx, params)` and returning a wrapped result object — this guide is for you. FastMCP replaces that machinery with a declarative API where your functions *are* the protocol surface.
+
+The core idea: instead of describing your tools to the SDK and then separately implementing them, you write ordinary Python functions and let FastMCP derive the protocol layer from your code. Type hints become JSON Schema. Docstrings become descriptions. Return values are serialized automatically. The dispatch you wrote to route a call by name, and the schemas you wrote by hand to describe it, both disappear.
+
+Migrating from the low-level SDK v2 is more direct than migrating from v1, because you and FastMCP already share a protocol layer. FastMCP 4 is built on SDK v2, so `mcp_types` imports keep working, field names are already snake_case, and the era negotiation you get is the one you have. Almost nothing about the wire changes — the one exception is [argument strictness](#stricter-arguments), covered below.
+
+<Note>
+On SDK v1's decorator-registered `Server` — `@server.list_tools()`, `@server.call_tool()` — instead? See [Upgrading from the Low-Level SDK v1](/getting-started/upgrading/from-low-level-sdk-v1), where the before-and-after code matches that API.
+
+Using SDK v2's high-level `MCPServer` class? See [Upgrading from MCP SDK v2](/getting-started/upgrading/from-mcp-sdk-v2) — that migration is mostly renaming.
+</Note>
+
+<Prompt description="Copy this prompt into any LLM along with your server code to get automated upgrade guidance.">
+You are rewriting an MCP server built on the MCP Python SDK v2's low-level `Server` class (`mcp.server.lowlevel.server.Server`, with `on_*` handlers passed to the constructor) using FastMCP 4's high-level API.
+
+FIRST, fetch https://gofastmcp.com/getting-started/upgrading/from-low-level-sdk-v2 — it explains every item below in full, with before-and-after code. Fetch https://gofastmcp.com for anything the guide doesn't cover. Do not guess at a FastMCP API you have not confirmed in the docs.
+
+Then work through the provided code looking for each of these. The guide has the replacement for every one:
+
+CONSTRUCTION AND TRANSPORT
+- `Server(name, on_list_tools=..., on_call_tool=..., ...)` — the whole constructor, including every handler passed to it
+- `server.run(read_stream, write_stream, server.create_initialization_options())` and its `stdio_server()` context manager
+- `server.streamable_http_app()` and any Starlette app assembled around it
+- `asyncio.run(main())` boilerplate
+- `lifespan=` — carries over directly: pass the same async context manager to `FastMCP(lifespan=...)`, and read what it yields from `ctx.lifespan_context` in any tool. Do not drop it — the tools that depended on it (a DB connection, a client pool) lose their dependency silently if you do.
+
+HANDLERS TO DELETE, EACH REPLACED BY ONE DECORATOR (not simply removed)
+- `on_list_tools` + `on_call_tool` → one `@mcp.tool` function per branch of the `if params.name == ...` dispatch chain inside `on_call_tool`
+- `on_list_resources` + `on_list_resource_templates` + `on_read_resource` → one `@mcp.resource` function per resource/template
+- `on_list_prompts` + `on_get_prompt` → one `@mcp.prompt` function per prompt
+- `on_completion` → one `@mcp.completion` function. This one is easy to drop by mistake: skipping it does not just remove autocomplete cleanly, it silently stops FastMCP from advertising the completions capability at all, since that capability is only advertised when a handler is registered.
+- `on_subscribe_resource` / `on_unsubscribe_resource` / `on_subscriptions_listen` — flag for the user, no single-decorator equivalent
+- `on_set_logging_level`, `on_progress`, `on_roots_list_changed`, `on_ping` — flag for the user, these are protocol-level hooks with no direct FastMCP surface
+
+TYPES THAT DISAPPEAR FROM YOUR CODE
+- Hand-written `input_schema` / `output_schema` JSON Schema dicts — these come from type hints now
+- `types.ListToolsResult`, `types.CallToolResult`, `types.ListResourcesResult`, `types.ListResourceTemplatesResult`, `types.ReadResourceResult`, `types.ListPromptsResult`, `types.GetPromptResult` — result wrappers FastMCP builds for you
+- `types.TextContent`, `types.TextResourceContents`, `types.BlobResourceContents` — return plain Python values instead
+- `types.ImageContent` / `types.AudioContent` — `fastmcp.utilities.types.Image` / `Audio`
+- `types.Tool`, `types.Resource`, `types.ResourceTemplate`, `types.Prompt`, `types.PromptArgument` — declaration types FastMCP derives
+- `types.PromptMessage` — `fastmcp.prompts.Message`
+- Note which `mcp_types` imports are still needed afterward; protocol types are unchanged in FastMCP, so surviving imports stay as they are.
+
+CONTEXT AND SIDE CHANNELS
+- `ctx.session.send_log_message(...)` — `ctx.info()` / `ctx.debug()` / `ctx.warning()` / `ctx.error()` on a `fastmcp.Context` parameter
+- `ctx.session.report_progress(...)` — `ctx.report_progress()`
+- `ctx.meta`, `ctx.protocol_version` — these live on `ctx.request_context` in FastMCP (`ctx.request_context.meta`, `ctx.request_context.protocol_version`); `ctx.protocol_version` directly on the Context does not exist. `ctx.request_id` is on FastMCP's Context as well, converted to a `str`
+- `ctx.params` — no equivalent, and none is needed: the raw request params were how a low-level handler read the tool's arguments, and those are now the decorated function's typed parameters. `ctx.request_context.params` does NOT exist and raises AttributeError.
+- Direct `ctx.session` use for anything else — `Context.session` exists in FastMCP too and returns the same raw SDK session, so this still works; prefer a `Context` method where one exists, and note the remaining uses as SDK-coupled
+
+ERRORS AND AUTH
+- `raise ValueError(f"Unknown tool: ...")` dispatch fallbacks — these become unnecessary
+- `MCPError` construction and any error-code mapping
+- `auth=AuthSettings(...)`, `token_verifier=`, `auth_server_provider=` — one `auth=` provider in FastMCP
+- `TransportSecuritySettings`
+
+For each item found, show the original code, say what it did, and give the FastMCP equivalent. Where several handlers collapse into one decorated function, show the collapse rather than a line-by-line mapping. Call out anything you could not find a documented FastMCP replacement for instead of inventing one.
+</Prompt>
+
+## Install
+
+FastMCP 4 is a stable release:
+
+```bash
+pip install "fastmcp>=4"
+```
+
+The `fastmcp` package depends on `fastmcp-slim` at the same version; both resolve together with no extra constraints.
+
+FastMCP 4 depends on the MCP SDK v2 you are already using, so `mcp_types` stays importable and every protocol type keeps its current name and fields. Most of those imports vanish from your code anyway — FastMCP derives them — but the ones you keep need no changes.
+
+## Server and Transport
+
+The `Server` class asks you to open a transport, connect its streams, build initialization options, and run an event loop. FastMCP collapses that into a constructor and a `run()` call.
+
+<CodeGroup>
+
+```python Before test="skip"
+import asyncio
+
+from mcp.server.lowlevel.server import Server
+from mcp.server.stdio import stdio_server
+
+server = Server("my-server")  # plus every on_* handler
+
+async def main():
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(
+            read_stream,
+            write_stream,
+            server.create_initialization_options(),
+        )
+
+asyncio.run(main())
+```
+
+```python After
+from fastmcp import FastMCP
+
+mcp = FastMCP("my-server")
+
+# ... register tools, resources, prompts ...
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+</CodeGroup>
+
+Serving HTTP is the same shape. Where the low-level class hands you a Starlette app from `server.streamable_http_app()` and leaves the hosting to you, FastMCP runs it directly:
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("my-server")
+
+if __name__ == "__main__":
+    mcp.run(transport="http", host="0.0.0.0", port=8000)
+```
+
+`mcp.http_app()` still returns a Starlette app when you need to mount the server inside a larger application.
+
+## Tools
+
+This is where the difference is largest. SDK v2 requires two handlers — one describing your tools with hand-written JSON Schema, one dispatching calls by name — and both are passed to the constructor, so the connection between a tool's declaration and its implementation lives only in your head. FastMCP derives both from the function.
+
+<CodeGroup>
+
+```python Before
+import mcp_types as types
+from mcp.server.context import ServerRequestContext
+from mcp.server.lowlevel.server import Server
+
+
+async def list_tools(ctx: ServerRequestContext, params) -> types.ListToolsResult:
+    number = {"type": "number"}
+    schema = {
+        "type": "object",
+        "properties": {"a": number, "b": number},
+        "required": ["a", "b"],
+    }
+    return types.ListToolsResult(
+        tools=[
+            types.Tool(name="add", description="Add two numbers", input_schema=schema),
+            types.Tool(
+                name="multiply", description="Multiply two numbers", input_schema=schema
+            ),
+        ]
+    )
+
+
+async def call_tool(
+    ctx: ServerRequestContext, params: types.CallToolRequestParams
+) -> types.CallToolResult:
+    arguments = params.arguments or {}
+    if params.name == "add":
+        result = arguments["a"] + arguments["b"]
+    elif params.name == "multiply":
+        result = arguments["a"] * arguments["b"]
+    else:
+        raise ValueError(f"Unknown tool: {params.name}")
+    return types.CallToolResult(content=[types.TextContent(type="text", text=str(result))])
+
+
+server = Server("math", on_list_tools=list_tools, on_call_tool=call_tool)
+```
+
+```python After
+from fastmcp import FastMCP
+
+mcp = FastMCP("math")
+
+
+@mcp.tool
+def add(a: float, b: float) -> float:
+    """Add two numbers"""
+    return a + b
+
+
+@mcp.tool
+def multiply(a: float, b: float) -> float:
+    """Multiply two numbers"""
+    return a * b
+```
+
+</CodeGroup>
+
+Each `@mcp.tool` function is self-contained: its name becomes the tool name, its docstring becomes the description, its annotations become the JSON Schema, and its return value is serialized for you. The dispatch chain, the schema dicts, the `CallToolResult` wrapper, the `TextContent` wrapper, and the unknown-tool fallback all go away — a tool that doesn't exist is now the framework's problem, not a branch you maintain.
+
+### Type Mapping
+
+Your hand-written `input_schema` becomes the function's parameters:
+
+| JSON Schema | Python type |
+|---|---|
+| `{"type": "string"}` | `str` |
+| `{"type": "number"}` | `float` |
+| `{"type": "integer"}` | `int` |
+| `{"type": "boolean"}` | `bool` |
+| `{"type": "array", "items": {"type": "string"}}` | `list[str]` |
+| `{"type": "object"}` | `dict` |
+| A property absent from `required` | `param: str \| None = None` |
+
+Constraints carry over too. A schema with `"minimum"` and `"maximum"` becomes a Pydantic `Field`, and a nested object schema becomes a Pydantic model or dataclass used as the annotation — FastMCP generates the same schema back out of it.
+
+### Return Values
+
+The low-level class requires tools to return a `CallToolResult` wrapping a list of content blocks. FastMCP takes the value itself — strings, numbers, dicts, lists, dataclasses, Pydantic models — and handles both the content block and the structured output. For images and audio, FastMCP provides wrapper types that carry the format. Each takes a file path, or raw bytes with `data=` and `format=`:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.utilities.types import Image
+
+mcp = FastMCP("media")
+
+
+@mcp.tool
+def latest_chart() -> Image:
+    """Return the most recent chart."""
+    return Image(path="chart.png")
+```
+
+When you need full control over the wire result — multiple content blocks, or structured content that differs from the content blocks — return a `ToolResult` from `fastmcp.tools` instead.
+
+### Stricter Arguments
+
+Deriving the schema from your signature also tightens what callers may send, and this is the one behavior change the migration introduces. Your `on_call_tool` handler reads `params.arguments` as a plain dict and never looks at keys it doesn't need, so a call carrying an unexpected key succeeds. FastMCP declares `"additionalProperties": false` on the generated schema and enforces it, so the same call fails:
+
+```python test="skip"
+# Against the low-level handler: succeeds, "extra" never read.
+# Against FastMCP:               raises, "extra" is not a parameter of greet().
+await client.call_tool("greet", {"name": "World", "extra": "surprise"})
+```
+
+For most servers this is an improvement that costs nothing — a caller sending keys your handler never read was already a bug, and the hand-written schema never advertised that they were allowed. It matters if a client in your fleet attaches metadata alongside real arguments, since those calls start failing the moment you migrate. Accept them explicitly as optional parameters if you need to keep them working.
+
+## Resources
+
+Resources take three handlers on the low-level class: one to list static resources, one to list URI templates, and one to read whichever URI arrives, with routing you write by hand. FastMCP replaces all three with a decorator per resource, and detects templates from the URI itself.
+
+<CodeGroup>
+
+```python Before
+import json
+
+import mcp_types as types
+from mcp.server.context import ServerRequestContext
+from mcp.server.lowlevel.server import Server
+
+
+async def list_resources(ctx: ServerRequestContext, params) -> types.ListResourcesResult:
+    return types.ListResourcesResult(
+        resources=[
+            types.Resource(
+                uri="config://app",
+                name="app_config",
+                description="Application configuration",
+                mime_type="application/json",
+            )
+        ]
+    )
+
+
+async def list_resource_templates(
+    ctx: ServerRequestContext, params
+) -> types.ListResourceTemplatesResult:
+    return types.ListResourceTemplatesResult(
+        resource_templates=[
+            types.ResourceTemplate(
+                uri_template="users://{user_id}/profile",
+                name="user_profile",
+                description="User profile by ID",
+            )
+        ]
+    )
+
+
+async def read_resource(
+    ctx: ServerRequestContext, params: types.ReadResourceRequestParams
+) -> types.ReadResourceResult:
+    uri = str(params.uri)
+    if uri == "config://app":
+        text = json.dumps({"debug": False, "version": "1.0"})
+    elif uri.startswith("users://"):
+        user_id = uri.split("/")[2]
+        text = json.dumps({"id": user_id, "name": f"User {user_id}"})
+    else:
+        raise ValueError(f"Unknown resource: {uri}")
+    return types.ReadResourceResult(
+        contents=[
+            types.TextResourceContents(
+                uri=params.uri, mime_type="application/json", text=text
+            )
+        ]
+    )
+
+
+server = Server(
+    "data",
+    on_list_resources=list_resources,
+    on_list_resource_templates=list_resource_templates,
+    on_read_resource=read_resource,
+)
+```
+
+```python After
+import json
+
+from fastmcp import FastMCP
+
+mcp = FastMCP("data")
+
+
+@mcp.resource("config://app", mime_type="application/json")
+def app_config() -> str:
+    """Application configuration"""
+    return json.dumps({"debug": False, "version": "1.0"})
+
+
+@mcp.resource("users://{user_id}/profile", mime_type="application/json")
+def user_profile(user_id: str) -> str:
+    """User profile by ID"""
+    return json.dumps({"id": user_id, "name": f"User {user_id}"})
+```
+
+</CodeGroup>
+
+The URI does the routing. A `{placeholder}` in the URI makes the resource a template, and FastMCP matches the parameter to the function argument of the same name — so the `uri.split("/")[2]` parsing goes away along with the handler that held it. Return a `str` for text content and `bytes` for binary; FastMCP builds the `TextResourceContents` or `BlobResourceContents` wrapper.
+
+Templated resources also gain a protection the low-level version left to you: FastMCP screens extracted parameter values for path traversal, absolute paths, and null bytes before your function runs. See [Path Security](/servers/resources#path-security) if a template legitimately accepts those values.
+
+## Prompts
+
+The same collapse, one more time: `on_list_prompts` declares arguments as `PromptArgument` objects, `on_get_prompt` routes by name and assembles a `GetPromptResult` of `PromptMessage` objects. FastMCP takes a function whose parameters are the arguments.
+
+<CodeGroup>
+
+```python Before
+import mcp_types as types
+from mcp.server.context import ServerRequestContext
+from mcp.server.lowlevel.server import Server
+
+
+async def list_prompts(ctx: ServerRequestContext, params) -> types.ListPromptsResult:
+    return types.ListPromptsResult(
+        prompts=[
+            types.Prompt(
+                name="review_code",
+                description="Review code for issues",
+                arguments=[
+                    types.PromptArgument(
+                        name="code", description="The code to review", required=True
+                    ),
+                    types.PromptArgument(
+                        name="language", description="Programming language", required=False
+                    ),
+                ],
+            )
+        ]
+    )
+
+
+async def get_prompt(
+    ctx: ServerRequestContext, params: types.GetPromptRequestParams
+) -> types.GetPromptResult:
+    if params.name != "review_code":
+        raise ValueError(f"Unknown prompt: {params.name}")
+    arguments = params.arguments or {}
+    language = arguments.get("language", "")
+    note = f" (written in {language})" if language else ""
+    text = f"Please review this code{note}:\n\n{arguments.get('code', '')}"
+    return types.GetPromptResult(
+        description="Code review prompt",
+        messages=[
+            types.PromptMessage(
+                role="user", content=types.TextContent(type="text", text=text)
+            )
+        ],
+    )
+
+
+server = Server("prompts", on_list_prompts=list_prompts, on_get_prompt=get_prompt)
+```
+
+```python After
+from fastmcp import FastMCP
+
+mcp = FastMCP("prompts")
+
+
+@mcp.prompt
+def review_code(code: str, language: str | None = None) -> str:
+    """Review code for issues"""
+    note = f" (written in {language})" if language else ""
+    return f"Please review this code{note}:\n\n{code}"
+```
+
+</CodeGroup>
+
+Returning a `str` wraps it as a single user message. Whether an argument is required is read from the signature: `code` has no default, so it's required; `language` defaults to `None`, so it isn't. Multi-turn prompts return a list of `Message` objects, which take their text positionally and default to the user role:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.prompts import Message
+
+mcp = FastMCP("prompts")
+
+
+@mcp.prompt
+def debug_session(error: str) -> list[Message]:
+    """Start a debugging conversation"""
+    return [
+        Message(f"I'm seeing this error:\n\n{error}"),
+        Message("I'll help you debug that. Can you share the relevant code?", role="assistant"),
+    ]
+```
+
+## Request Context
+
+The low-level class hands each handler a `ServerRequestContext` carrying the raw `ServerSession`, and you reach through it to send notifications. FastMCP injects a typed `Context` into any function that declares one, and puts the operations you actually want on it directly.
+
+<CodeGroup>
+
+```python Before
+import mcp_types as types
+from mcp.server.context import ServerRequestContext
+from mcp.server.lowlevel.server import Server
+
+
+async def call_tool(
+    ctx: ServerRequestContext, params: types.CallToolRequestParams
+) -> types.CallToolResult:
+    if params.name == "process_data":
+        await ctx.session.send_log_message(level="info", data="Starting processing...")
+        await ctx.session.report_progress(1, 2)
+        # ... do work ...
+        await ctx.session.send_log_message(level="info", data="Done!")
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text="Processed")]
+        )
+    raise ValueError(f"Unknown tool: {params.name}")
+
+
+server = Server("worker", on_call_tool=call_tool)
+```
+
+```python After
+from fastmcp import FastMCP, Context
+
+mcp = FastMCP("worker")
+
+
+@mcp.tool
+async def process_data(ctx: Context) -> str:
+    """Process data with progress logging"""
+    await ctx.info("Starting processing...")
+    await ctx.report_progress(1, 2)
+    # ... do work ...
+    await ctx.info("Done!")
+    return "Processed"
+```
+
+</CodeGroup>
+
+The `Context` parameter is injected by type annotation and never appears in the tool's schema, so clients see `process_data` as taking no arguments. Beyond logging and progress, it carries resource reads, [session state](/servers/sessions), elicitation, and component visibility — see [Context](/servers/context) for the full surface.
+
+One thing to check as you migrate: `ctx.session` still exists on a FastMCP `Context` as an escape hatch, and it hands back the same raw SDK session your handlers use today. That makes it a working translation for anything with no `Context` equivalent — but it's also the one part of your server that stays coupled to SDK internals, so reach for the `Context` method first and keep the escape hatch for what genuinely has no equivalent.
+
+## Complete Example
+
+Everything above, applied at once:
+
+<CodeGroup>
+
+```python Before expandable
+import json
+
+import mcp_types as types
+from mcp.server.context import ServerRequestContext
+from mcp.server.lowlevel.server import Server
+
+
+async def list_tools(ctx: ServerRequestContext, params) -> types.ListToolsResult:
+    return types.ListToolsResult(
+        tools=[
+            types.Tool(
+                name="greet",
+                description="Greet someone by name",
+                input_schema={
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                },
+            )
+        ]
+    )
+
+
+async def call_tool(
+    ctx: ServerRequestContext, params: types.CallToolRequestParams
+) -> types.CallToolResult:
+    if params.name == "greet":
+        name = (params.arguments or {})["name"]
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text=f"Hello, {name}!")]
+        )
+    raise ValueError(f"Unknown tool: {params.name}")
+
+
+async def list_resources(ctx: ServerRequestContext, params) -> types.ListResourcesResult:
+    return types.ListResourcesResult(
+        resources=[
+            types.Resource(
+                uri="info://version", name="version", description="Server version"
+            )
+        ]
+    )
+
+
+async def read_resource(
+    ctx: ServerRequestContext, params: types.ReadResourceRequestParams
+) -> types.ReadResourceResult:
+    if str(params.uri) != "info://version":
+        raise ValueError(f"Unknown resource: {params.uri}")
+    return types.ReadResourceResult(
+        contents=[
+            types.TextResourceContents(
+                uri=params.uri, text=json.dumps({"version": "1.0.0"})
+            )
+        ]
+    )
+
+
+async def list_prompts(ctx: ServerRequestContext, params) -> types.ListPromptsResult:
+    return types.ListPromptsResult(
+        prompts=[
+            types.Prompt(
+                name="summarize",
+                description="Summarize text",
+                arguments=[types.PromptArgument(name="text", required=True)],
+            )
+        ]
+    )
+
+
+async def get_prompt(
+    ctx: ServerRequestContext, params: types.GetPromptRequestParams
+) -> types.GetPromptResult:
+    if params.name != "summarize":
+        raise ValueError(f"Unknown prompt: {params.name}")
+    text = (params.arguments or {}).get("text", "")
+    return types.GetPromptResult(
+        description="Summarize text",
+        messages=[
+            types.PromptMessage(
+                role="user",
+                content=types.TextContent(type="text", text=f"Summarize:\n\n{text}"),
+            )
+        ],
+    )
+
+
+server = Server(
+    "demo",
+    on_list_tools=list_tools,
+    on_call_tool=call_tool,
+    on_list_resources=list_resources,
+    on_read_resource=read_resource,
+    on_list_prompts=list_prompts,
+    on_get_prompt=get_prompt,
+)
+```
+
+```python After
+import json
+
+from fastmcp import FastMCP
+
+mcp = FastMCP("demo")
+
+
+@mcp.tool
+def greet(name: str) -> str:
+    """Greet someone by name"""
+    return f"Hello, {name}!"
+
+
+@mcp.resource("info://version")
+def version() -> str:
+    """Server version"""
+    return json.dumps({"version": "1.0.0"})
+
+
+@mcp.prompt
+def summarize(text: str) -> str:
+    """Summarize text"""
+    return f"Summarize:\n\n{text}"
+
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+</CodeGroup>
+
+## What You Gain
+
+Deleting the handler machinery is the immediate payoff, but the reason to make this move is what becomes available once your server is a FastMCP server.
+
+[Server composition](/servers/composition) mounts one server inside another, so a surface that grew unwieldy as a single dispatch chain splits into modules developed and tested independently. [Middleware](/servers/middleware) runs across every request for logging, rate limiting, error handling, and caching, with hooks at whichever level of specificity you need — the cross-cutting concerns that, on the low-level class, meant threading the same code through every handler. [Proxy servers](/servers/providers/proxy) put a FastMCP server in front of any existing MCP server, bridging transports and adding auth to a backend you don't control, and the [OpenAPI integration](/integrations/openapi) generates an entire server from an API specification you already have. [Authentication](/servers/auth/authentication) consolidates the SDK's separate token verifier, authorization-server provider, and `AuthSettings` into a single `auth=` provider, with named providers for GitHub, Google, Auth0, Keycloak, and others.
+
+The change most likely to affect your daily work is [testing](/servers/testing). FastMCP ships a client that connects to a server object in the same Python process, so a test calls your tools directly — no subprocess, no stdio pipes, no transport to stand up.

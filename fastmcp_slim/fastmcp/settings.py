@@ -2,12 +2,11 @@ from __future__ import annotations as _annotations
 
 import inspect
 import os
-from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from platformdirs import user_data_dir
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import (
     BaseSettings,
     SettingsConfigDict,
@@ -21,6 +20,8 @@ ENV_FILE = os.getenv("FASTMCP_ENV_FILE", ".env")
 
 LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
+TELEMETRY_MODE = Literal["native", "propagation_only", "off"]
+
 MCP_LOG_LEVEL = Literal[
     "debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"
 ]
@@ -28,109 +29,6 @@ MCP_LOG_LEVEL = Literal[
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
 TEN_MB_IN_BYTES = 1024 * 1024 * 10
-
-
-class DocketSettings(BaseSettings):
-    """Docket worker configuration."""
-
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_DOCKET_",
-        extra="ignore",
-    )
-
-    name: Annotated[
-        str,
-        Field(
-            description=inspect.cleandoc(
-                """
-                Name for the Docket queue. All servers/workers sharing the same name
-                and backend URL will share a task queue.
-                """
-            ),
-        ),
-    ] = "fastmcp"
-
-    url: Annotated[
-        str,
-        Field(
-            description=inspect.cleandoc(
-                """
-                URL for the Docket backend. Supports:
-                - memory:// - In-memory backend (single process only)
-                - redis://host:port/db - Redis/Valkey backend (distributed, multi-process)
-
-                Example: redis://localhost:6379/0
-
-                Default is memory:// for single-process scenarios. Use Redis or Valkey
-                when coordinating tasks across multiple processes (e.g., additional
-                workers via the fastmcp tasks CLI).
-                """
-            ),
-        ),
-    ] = "memory://"
-
-    worker_name: Annotated[
-        str | None,
-        Field(
-            description=inspect.cleandoc(
-                """
-                Name for the Docket worker. If None, Docket will auto-generate
-                a unique worker name.
-                """
-            ),
-        ),
-    ] = None
-
-    concurrency: Annotated[
-        int,
-        Field(
-            description=inspect.cleandoc(
-                """
-                Maximum number of tasks the worker can process concurrently.
-                """
-            ),
-        ),
-    ] = 10
-
-    redelivery_timeout: Annotated[
-        timedelta,
-        Field(
-            description=inspect.cleandoc(
-                """
-                Task redelivery timeout. If a worker doesn't complete
-                a task within this time, the task will be redelivered to another
-                worker.
-                """
-            ),
-        ),
-    ] = timedelta(seconds=300)
-
-    reconnection_delay: Annotated[
-        timedelta,
-        Field(
-            description=inspect.cleandoc(
-                """
-                Delay between reconnection attempts when the worker
-                loses connection to the Docket backend.
-                """
-            ),
-        ),
-    ] = timedelta(seconds=5)
-
-    minimum_check_interval: Annotated[
-        timedelta,
-        Field(
-            description=inspect.cleandoc(
-                """
-                How frequently the worker polls for new tasks. Lower
-                values reduce latency for task pickup at the cost of
-                more CPU usage. The default of 50ms is a good balance;
-                increase for high-volume production deployments where
-                tasks are long-running.
-                """
-            ),
-        ),
-    ] = timedelta(milliseconds=50)
 
 
 class Settings(BaseSettings):
@@ -173,6 +71,8 @@ class Settings(BaseSettings):
 
     home: Path = Path(user_data_dir("fastmcp", appauthor=False))
 
+    oauth_encryption_key: SecretStr | None = None
+
     test_mode: bool = False
 
     log_enabled: bool = True
@@ -184,8 +84,6 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return v.upper()
         return v
-
-    docket: DocketSettings = DocketSettings()
 
     enable_rich_logging: Annotated[
         bool,
@@ -224,6 +122,22 @@ class Settings(BaseSettings):
         ),
     ] = True
 
+    mcp_camelcase_compat: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Whether to install compatibility shims that let legacy
+                camelCase reads on MCP SDK objects (e.g. `tool.inputSchema`,
+                `result.isError`) keep working after the SDK v2 rename to
+                snake_case. Each bridged read emits a
+                `FastMCPDeprecationWarning`. Set to False to disable the shims
+                entirely, in which case only the snake_case names resolve.
+                """
+            ),
+        ),
+    ] = True
+
     client_raise_first_exceptiongroup_error: Annotated[
         bool,
         Field(
@@ -238,6 +152,31 @@ class Settings(BaseSettings):
             ),
         ),
     ] = True
+
+    telemetry_mode: Annotated[
+        TELEMETRY_MODE,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Controls FastMCP's native OpenTelemetry instrumentation.
+
+                - `native` (default): FastMCP creates MCP spans and propagates
+                  trace context through request `_meta`. FastMCP uses only the
+                  OpenTelemetry API, so span creation is a no-op with negligible
+                  overhead unless an SDK and exporter are configured.
+                - `propagation_only`: FastMCP still injects and extracts trace
+                  context, and still parents downstream spans from the incoming
+                  `_meta` context, but creates none of its own MCP spans. Use
+                  this when another instrumentation layer owns the MCP span
+                  hierarchy and FastMCP's spans would duplicate it.
+                - `off`: FastMCP's span helpers become a transparent
+                  pass-through. No spans are created even when an SDK is
+                  configured, and the surrounding OTel context is left
+                  untouched — no trace context is extracted or attached.
+                """
+            ),
+        ),
+    ] = "native"
 
     client_init_timeout: Annotated[
         float | None,
@@ -310,6 +249,26 @@ class Settings(BaseSettings):
         ),
     ] = False
 
+    ssrf_trust_proxy: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Trust an outbound HTTP proxy for SSRF-protected fetches (OAuth client
+                metadata and JWKS). When False (default), FastMCP resolves the target
+                hostname itself and refuses to connect if it maps to a private,
+                loopback, link-local, or otherwise reserved IP. When True, FastMCP
+                routes auth metadata and JWKS fetches through the configured
+                HTTPS_PROXY/ALL_PROXY and does not honor NO_PROXY; if no proxy is
+                configured the fetch is refused (raising SSRFError) rather than sent
+                direct with the blocklist disabled. Only enable this when a trusted
+                corporate proxy is the mandated egress path: it shifts SSRF trust to
+                that proxy. Scheme (HTTPS-only) and hostname checks still apply.
+                """
+            ),
+        ),
+    ] = False
+
     server_dependencies: list[str] = Field(
         default_factory=list,
         description="List of dependencies to install in the server environment",
@@ -320,6 +279,32 @@ class Settings(BaseSettings):
     stateless_http: bool = (
         False  # If True, uses true stateless mode (new transport per request)
     )
+    http_host_origin_protection: bool | Literal["auto"] = False
+    http_allowed_hosts: list[str] | None = None
+    http_allowed_origins: list[str] | None = None
+    http_session_idle_timeout: Annotated[
+        Annotated[float, Field(gt=0)] | Literal["auto"] | None,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Maximum time in seconds a streamable-HTTP session may remain
+                idle before it is terminated. A session's deadline is pushed
+                forward on every request. Defaults to "auto", which uses the
+                MCP SDK's default (1800 seconds as of SDK 2.2). When None,
+                sessions never expire from inactivity. Only applies to stateful
+                HTTP sessions.
+                Explicit durations must be a positive number of seconds.
+                """
+            ),
+        ),
+    ] = "auto"
+
+    @field_validator("http_session_idle_timeout", mode="before")
+    @classmethod
+    def parse_disabled_session_idle_timeout(cls, v):
+        if isinstance(v, str) and v.lower() == "none":
+            return None
+        return v
 
     mounted_components_raise_on_load_error: Annotated[
         bool,
@@ -362,20 +347,3 @@ class Settings(BaseSettings):
             ),
         ),
     ] = "stable"
-
-    decorator_mode: Annotated[
-        Literal["function", "object"],
-        Field(
-            description=inspect.cleandoc(
-                """
-                Controls what decorators (@tool, @resource, @prompt) return.
-
-                - "function" (default): Decorators return the original function unchanged.
-                  The function remains callable and is registered with the server normally.
-                - "object" (deprecated): Decorators return component objects (FunctionTool,
-                  FunctionResource, FunctionPrompt). This was the default behavior in v2 and
-                  will be removed in a future version.
-                """
-            ),
-        ),
-    ] = "function"

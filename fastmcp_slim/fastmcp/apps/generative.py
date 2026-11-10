@@ -27,7 +27,7 @@ except ImportError as _exc:
     ) from _exc
 
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -101,8 +101,9 @@ class GenerativeUI(Provider):
         if self._setup_done:
             return
 
+        # CSP belongs on the renderer resource, not the tool (MCP Apps spec).
         csp = _build_csp()
-        app_config = AppConfig(resource_uri=_gen.RESOURCE_URI, csp=csp)
+        app_config = AppConfig(resource_uri=_gen.RESOURCE_URI)
 
         # -- generate_ui tool --
         # Wraps prefab_ui.generative.execute with sandbox lifecycle management.
@@ -150,7 +151,7 @@ class GenerativeUI(Provider):
 
         resource_config = AppConfig(csp=csp)
         resource = TextResource(
-            uri=_gen.RESOURCE_URI,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            uri=_gen.RESOURCE_URI,  # type: ignore[arg-type]
             name="Prefab Generative Renderer",
             text=get_generative_renderer_html(),
             mime_type=UI_MIME_TYPE,
@@ -193,7 +194,7 @@ class GenerativeUI(Provider):
         return None
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         self._ensure_setup()
         async with self._local.lifespan():
             yield

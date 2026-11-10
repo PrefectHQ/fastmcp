@@ -1,58 +1,59 @@
 ---
 title: Background Tasks
 sidebarTitle: Background Tasks
-description: Run long-running operations asynchronously with progress tracking
+description: Run long-running tools asynchronously with progress tracking
 icon: clock
 tag: "NEW"
 ---
 
 import { VersionBadge } from "/snippets/version-badge.mdx"
 
-<VersionBadge version="2.14.0" />
+<VersionBadge version="4.0.0" />
 
 <Tip>
-Background tasks require the `tasks` optional extra. See [installation instructions](#enabling-background-tasks) below.
+Background tasks require the `fastmcp-tasks` package. See [enabling background tasks](#enabling-background-tasks) below.
 </Tip>
 
-FastMCP implements the MCP background task protocol ([SEP-1686](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks)), giving your servers a production-ready distributed task scheduler with a single decorator change.
+FastMCP implements the MCP background tasks extension ([`io.modelcontextprotocol/tasks`](https://modelcontextprotocol.io/extensions/tasks/overview), SEP-2663), giving your servers a production-ready distributed task scheduler with one extension registration and a decorator change.
 
 <Tip>
 **What is Docket?** FastMCP's task system is powered by [Docket](https://github.com/chrisguidry/docket), originally built by [Prefect](https://prefect.io) to power [Prefect Cloud](https://www.prefect.io/prefect/cloud)'s managed task scheduling and execution service, where it processes millions of concurrent tasks every day. Docket is now open-sourced for the community.
 </Tip>
 
-
 ## What Are MCP Background Tasks?
 
-In MCP, all component interactions are blocking by default. When a client calls a tool, reads a resource, or fetches a prompt, it sends a request and waits for the response. For operations that take seconds or minutes, this creates a poor user experience.
+In MCP, a tool call is blocking by default. When a client calls a tool, it sends a request and waits for the response. For operations that take seconds or minutes, this creates a poor user experience.
 
-The MCP background task protocol solves this by letting clients:
-1. **Start** an operation and receive a task ID immediately
-2. **Track** progress as the operation runs
-3. **Retrieve** the result when ready
+Background tasks solve this by letting a server tell a supporting client:
+1. **Start** the tool and return a task ID immediately
+2. **Poll** for status as the tool runs
+3. **Retrieve** the result when ready — or answer a question the tool asks mid-run
 
-FastMCP handles all of this for you. Add `task=True` to your decorator, and your function gains full background execution with progress reporting, distributed processing, and horizontal scaling.
+FastMCP handles all of this for you. Add `task=True` to a tool decorator and register the tasks extension, and your function gains background execution with progress reporting, distributed processing, and horizontal scaling.
 
 ### MCP Background Tasks vs Python Concurrency
 
 You can always use Python's concurrency primitives (asyncio, threads, multiprocessing) or external task queues in your FastMCP servers. FastMCP is just Python—run code however you like.
 
-MCP background tasks are different: they're **protocol-native**. This means MCP clients that support the task protocol can start operations, receive progress updates, and retrieve results through the standard MCP interface. The coordination happens at the protocol level, not inside your application code.
+MCP background tasks are different: they're **protocol-native**. This means MCP clients that support the tasks extension can start a call, poll it, and retrieve its result through the standard MCP interface. The coordination happens at the protocol level, not inside your application code.
 
 ## Enabling Background Tasks
 
-<VersionBadge version="3.0.0" /> Background tasks require the `tasks` extra:
+Background tasks require the `fastmcp-tasks` package:
 
 ```bash
 pip install "fastmcp[tasks]"
 ```
 
-Add `task=True` to any tool, resource, resource template, or prompt decorator. This marks the component as capable of background execution.
+Register `TasksExtension` on your server, then add `task=True` to a tool decorator. `task=True` marks the tool as *capable* of background execution; the extension is what actually runs it — a `task=True` tool on a server with no tasks extension registered raises at server startup.
 
-```python {6}
+```python {5,8}
 import asyncio
 from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
 
 mcp = FastMCP("MyServer")
+mcp.add_extension(TasksExtension())
 
 @mcp.tool(task=True)
 async def slow_computation(duration: int) -> str:
@@ -62,34 +63,38 @@ async def slow_computation(duration: int) -> str:
     return f"Completed in {duration} seconds"
 ```
 
-When a client requests background execution, the call returns immediately with a task ID. The work executes in a background worker, and the client can poll for status or wait for the result.
+Whether a given call actually runs as a task depends on the client: it opts in per request, and the *server* decides based on the tool's execution mode (below). When it does run as a task, the call returns immediately with a task ID; the work executes in a background worker, and the client polls for the result. A [FastMCP client](/clients/tasks) does all of this transparently — `client.call_tool(...)` looks the same either way.
+
+Background tasks are a modern-protocol feature: the tasks capability is negotiated over `2026-07-28` connections, so a client pinned to `mode="legacy"` never triggers one — the tool always runs synchronously for it.
 
 <Warning>
-Background tasks require async functions. Attempting to use `task=True` with a sync function raises a `ValueError` at registration time.
+Background tasks require async functions. Attempting to use `task=True` with a sync function raises a `ValueError` at registration time. Only tools can be task-enabled; resources, resource templates, and prompts do not carry `task=`.
 </Warning>
 
 ## Execution Modes
 
-For fine-grained control over task execution behavior, use `TaskConfig` instead of the boolean shorthand. The MCP task protocol defines three execution modes:
+For fine-grained control over task execution behavior, use `TaskConfig` instead of the boolean shorthand. The tasks extension defines three execution modes:
 
-| Mode | Client calls without task | Client calls with task |
+| Mode | Client calls without the tasks capability | Client calls with the tasks capability |
 |------|--------------------------|------------------------|
-| `"forbidden"` | Executes synchronously | Error: task not supported |
-| `"optional"` | Executes synchronously | Executes as background task |
-| `"required"` | Error: task required | Executes as background task |
+| `"forbidden"` | Executes synchronously | Executes synchronously (never tasked) |
+| `"optional"` | Executes synchronously | Executes as a background task |
+| `"required"` | Error: task required | Executes as a background task |
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.tasks import TaskConfig
+from fastmcp.utilities.tasks import TaskConfig
+from fastmcp_tasks import TasksExtension
 
 mcp = FastMCP("MyServer")
+mcp.add_extension(TasksExtension())
 
 # Supports both sync and background execution (default when task=True)
 @mcp.tool(task=TaskConfig(mode="optional"))
 async def flexible_task() -> str:
     return "Works either way"
 
-# Requires background execution - errors if client doesn't request task
+# Requires background execution - errors if the client didn't opt in
 @mcp.tool(task=TaskConfig(mode="required"))
 async def must_be_background() -> str:
     return "Only runs as a background task"
@@ -104,18 +109,22 @@ The boolean shortcuts map to these modes:
 - `task=True` → `TaskConfig(mode="optional")`
 - `task=False` → `TaskConfig(mode="forbidden")`
 
+When a `mode="required"` tool is called by a client that didn't opt in, FastMCP returns a "missing required capability" error rather than running it synchronously.
+
+A client's opt-in applies to the tool it called. When a tool, resource, or prompt calls a tool through `ctx.fastmcp.call_tool()`, as a [search transform's](/servers/transforms/tool-search) `call_tool` proxy and [CodeMode's](/servers/transforms/code-mode) `execute` do, the inner call runs in the foreground so the caller gets its result. An `"optional"` tool runs synchronously there, and a `"required"` tool raises a tool error, since only the client can start a task by calling it directly.
+
 ### Poll Interval
 
-<VersionBadge version="2.15.0" />
-
-When clients poll for task status, the server tells them how frequently to check back. By default, FastMCP suggests a 5-second interval, but you can customize this per component:
+When a client polls for task status, the server can suggest how frequently to check back:
 
 ```python
 from datetime import timedelta
 from fastmcp import FastMCP
-from fastmcp.server.tasks import TaskConfig
+from fastmcp.utilities.tasks import TaskConfig
+from fastmcp_tasks import TasksExtension
 
 mcp = FastMCP("MyServer")
+mcp.add_extension(TasksExtension())
 
 # Poll every 2 seconds for a fast-completing task
 @mcp.tool(task=TaskConfig(mode="optional", poll_interval=timedelta(seconds=2)))
@@ -128,31 +137,38 @@ async def slow_task() -> str:
     return "Eventually done"
 ```
 
-Shorter intervals give clients faster feedback but increase server load. Longer intervals reduce load but delay status updates.
+Shorter intervals give clients faster feedback but increase server load. The interval is a ceiling, not an exact cadence — the FastMCP client starts polling quickly and backs off toward it, so a fast task is still observed as done almost immediately.
 
 ### Server-Wide Default
 
-To enable background task support for all components by default, pass `tasks=True` to the constructor. Individual decorators can still override this with `task=False`.
+To enable background task support for all tools by default, pass `tasks=True` to the constructor. Individual decorators can still override this with `task=False`. The server still needs the tasks extension registered.
 
 ```python
+from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
+
 mcp = FastMCP("MyServer", tasks=True)
+mcp.add_extension(TasksExtension())
 ```
 
 <Warning>
-If your server defines any synchronous tools, resources, or prompts, you will need to explicitly set `task=False` on their decorators to avoid an error.
+If your server defines any synchronous tools, you will need to explicitly set `task=False` on their decorators to avoid an error.
 </Warning>
 
-### Graceful Degradation
-
-When a client requests background execution but the component has `mode="forbidden"`, FastMCP executes synchronously and returns the result inline. This follows the SEP-1686 specification for graceful degradation—clients can always request background execution without worrying about server capabilities.
-
-Conversely, when a component has `mode="required"` but the client doesn't request background execution, FastMCP returns an error indicating that task execution is required.
-
 ### Configuration
+
+`TasksExtension` takes the backend configuration directly, with `FASTMCP_DOCKET_*` environment variables as defaults — so `TasksExtension()` works out of the box against an env-configured deployment:
+
+```python
+mcp.add_extension(TasksExtension(url="redis://localhost:6379/0", concurrency=20))
+```
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `FASTMCP_DOCKET_URL` | `memory://` | Backend URL (`memory://` or `redis://host:port/db`) |
+| `FASTMCP_DOCKET_NAME` | `fastmcp` | Queue name. Servers and workers sharing a name and URL share a queue. |
+| `FASTMCP_DOCKET_CONCURRENCY` | `10` | Maximum concurrent tasks per worker. |
+| `FASTMCP_TASKS_ENCRYPTION_KEY` | (unset) | Encrypts [task context snapshots at rest](#credentials-at-rest). Every server and worker sharing a queue must set the same key. |
 
 ## Backends
 
@@ -173,28 +189,95 @@ The in-memory backend (`memory://`) requires zero configuration and works out of
 
 ### Redis Backend
 
-For production deployments, use Redis (or Valkey) as your backend by setting `FASTMCP_DOCKET_URL=redis://localhost:6379`.
+For production deployments, use Redis (or Valkey) as your backend:
+
+```python
+mcp.add_extension(TasksExtension(url="redis://localhost:6379/0"))
+```
 
 **Advantages:**
 - **Persistent**: Tasks survive server restarts
 - **Fast**: Single-digit millisecond task pickup latency
 - **Scalable**: Add workers to distribute load across processes or machines
 
-## Workers
+### Rotating Redis Credentials
 
-Every FastMCP server with task-enabled components automatically starts an **embedded worker**. You do not need to start a separate worker process for tasks to execute.
+For backends with expiring credentials, pass a redis-py `CredentialProvider` to `TasksExtension`. Use a URL without a username or password. Docket passes the provider to its Redis connections so a reconnect can obtain fresh credentials.
 
-To scale horizontally, add more workers using the CLI:
+This example reads credentials from a file on each new connection. Your deployment can replace the file when the password or token changes:
+
+```python
+from pathlib import Path
+
+from redis.credentials import CredentialProvider
+
+from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
+
+
+class FileCredentials(CredentialProvider):
+    def get_credentials(self) -> tuple[str, str]:
+        password = Path("/run/secrets/redis-password").read_text().strip()
+        return "tasks-user", password
+
+
+mcp = FastMCP("MyServer")
+mcp.add_extension(
+    TasksExtension(
+        url="rediss://redis.example.com:6379/0",
+        credential_provider=FileCredentials(),
+    )
+)
+
+
+@mcp.tool(task=True)
+async def double(value: int) -> int:
+    return value * 2
+```
+
+You can also supply a provider that implements `get_credentials_async()`. FastMCP does not generate or refresh cloud tokens itself, and `TasksExtension` rejects streaming providers (such as redis-entraid's) for now, because a token refresh can hand one Redis connection to two commands at once. See [Docket credential providers](https://docket.lol/en/latest/production/#credential-providers) for details about long-lived connections and provider ownership.
+
+Configure the provider in your server module. [Additional workers](#workers) load that same module and use its registered extension, so no separate worker flag is needed. Provider objects are runtime configuration, not `FASTMCP_DOCKET_*` environment settings. The default `memory://` backend ignores them.
+
+`TasksExtension.clone()` copies the resolved settings and shares the credential provider with the original extension. To give servers independent authentication state, construct each extension with its own provider instead.
+
+### Credentials at Rest
+
+A background task runs long after the request that submitted it has ended, but it still needs to know who asked for the work. FastMCP captures that identity at submission time in a **task context snapshot**: the caller's access token and every inbound HTTP header, including `Authorization`. The worker restores the snapshot before the tool body runs, so `get_access_token()` and `get_http_headers()` return the submitting caller.
+
+That snapshot lives in the backend for the task's TTL. With `memory://` it never leaves the process. With Redis or Valkey it is a stored value, and by default it is stored as plaintext JSON. A `rediss://` URL encrypts the connection, not the data the backend holds. Anyone who can read the backend can read the tokens.
+
+Set `FASTMCP_TASKS_ENCRYPTION_KEY` to encrypt the snapshot before it is written:
 
 ```bash
-fastmcp tasks worker server.py
+export FASTMCP_TASKS_ENCRYPTION_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+```
+
+<Warning>
+Every server and worker on the same queue must set the same key. The process that restores a snapshot is rarely the one that captured it, and a worker with the wrong key cannot recover the caller.
+</Warning>
+
+With a key configured, restore **fails closed**: a worker that cannot decrypt a snapshot fails the task instead of running the tool with no identity. This matters for a tool whose behavior depends on the caller: running it as an anonymous user is worse than not running it. The failure is reported to the client as a task error, and the server log names the key mismatch.
+
+Two consequences of failing closed are worth planning for. Tasks submitted before the key was set fail when a worker with the key picks them up, so drain the queue before you roll a key out. Rotating a key does the same to tasks in flight under the old one.
+
+The key protects the snapshot only. Tool arguments and any answers a task gathers through [mid-task input](#gathering-input-mid-task) are still stored as plaintext, so treat the backend as sensitive regardless.
+
+## Workers
+
+A server with the tasks extension registered and at least one task-enabled tool automatically starts an **embedded worker**. You do not need to start a separate worker process for tasks to execute.
+
+To scale horizontally, add more workers:
+
+```bash
+python -m fastmcp_tasks.worker_cli worker server.py
 ```
 
 Each additional worker pulls tasks from the same queue, distributing load across processes. Configure worker concurrency via environment:
 
 ```bash
 export FASTMCP_DOCKET_CONCURRENCY=20
-fastmcp tasks worker server.py
+python -m fastmcp_tasks.worker_cli worker server.py
 ```
 
 <Note>
@@ -202,7 +285,52 @@ Additional workers only work with Redis/Valkey backends. The in-memory backend i
 </Note>
 
 <Warning>
-Task-enabled components must be defined at server startup to be registered with all workers. Components added dynamically after the server starts will not be available for background execution.
+Task-enabled tools must be defined at server startup to be registered with all workers. Tools added dynamically after the server starts will not be available for background execution.
+</Warning>
+
+## Gathering Input Mid-Task
+
+A tool can ask the client a question partway through — the same [guard pattern](/servers/elicitation#elicitation-on-the-modern-protocol) used for multi-round-trip input on foreground calls: instead of awaiting a response, the tool *returns* one, and FastMCP re-runs it once the client answers.
+
+```python
+from fastmcp import Context, FastMCP
+from fastmcp_tasks import TasksExtension
+from mcp.types import (
+    ElicitRequest,
+    ElicitRequestFormParams,
+    ElicitResult,
+    InputRequiredResult,
+)
+
+mcp = FastMCP("MyServer")
+mcp.add_extension(TasksExtension())
+
+@mcp.tool(task=True)
+async def plan_dinner(ctx: Context) -> str | InputRequiredResult:
+    responses = ctx.input_responses
+    if responses is None:
+        # First leg: ask a question and end here.
+        request = ElicitRequest(
+            params=ElicitRequestFormParams(
+                message="What are you in the mood for?",
+                requested_schema={"type": "object", "properties": {"cuisine": {"type": "string"}}},
+            )
+        )
+        return InputRequiredResult(
+            result_type="input_required",
+            input_requests={"prefs": request},
+        )
+
+    # Re-entered leg: the client's answer is on ctx.input_responses.
+    answer = responses["prefs"]
+    assert isinstance(answer, ElicitResult)
+    return f"Tonight: {answer.content['cuisine']}!"
+```
+
+Run as a task, this "ends" the tool's first leg entirely rather than blocking a worker on the client's answer: the task reports `input_required`, the client answers, and FastMCP re-invokes the tool with the answer attached. No worker ever sits idle waiting on a round-trip — the same tool works identically whether it's called synchronously or as a background task, and a [FastMCP client](/clients/tasks) answers the question automatically through its elicitation handler.
+
+<Warning>
+Imperative `await ctx.elicit(...)` is not supported inside a background task — it would require blocking a worker for the length of a client round-trip. Use the guard pattern (return `InputRequiredResult`) instead; calling `ctx.elicit()` from a task-enabled tool raises with guidance toward the guard pattern.
 </Warning>
 
 ## Progress Reporting
@@ -212,8 +340,10 @@ The `Progress` dependency lets you report progress back to clients. Inject it as
 ```python
 from fastmcp import FastMCP
 from fastmcp.dependencies import Progress
+from fastmcp_tasks import TasksExtension
 
 mcp = FastMCP("MyServer")
+mcp.add_extension(TasksExtension())
 
 @mcp.tool(task=True)
 async def process_files(files: list[str], progress: Progress = Progress()) -> str:
@@ -241,23 +371,31 @@ FastMCP exposes Docket's full dependency injection system within your task-enabl
 ```python
 from docket import Docket, Worker
 from fastmcp import FastMCP
-from fastmcp.dependencies import Progress, CurrentDocket, CurrentWorker
+from fastmcp.dependencies import Progress
+from fastmcp_tasks import TasksExtension
+from fastmcp_tasks.dependencies import CurrentDocket, CurrentWorker
 
 mcp = FastMCP("MyServer")
+mcp.add_extension(TasksExtension())
+
+
+async def send_report(user_id: str) -> None:
+    ...
+
 
 @mcp.tool(task=True)
 async def my_task(
+    user_id: str,
     progress: Progress = Progress(),
     docket: Docket = CurrentDocket(),
     worker: Worker = CurrentWorker(),
 ) -> str:
     # Schedule additional background work
-    await docket.add(another_task, arg1, arg2)
+    await docket.add(send_report)(user_id)
 
-    # Access worker metadata
-    worker_name = worker.name
-
-    return "Done"
+    return f"Report scheduled by {worker.name}"
 ```
 
-With `CurrentDocket()`, you can schedule additional background tasks, chain work together, and coordinate complex workflows. See the [Docket documentation](https://chrisguidry.github.io/docket/) for the complete API, including retry policies, timeouts, and custom dependencies.
+`docket.add()` takes the function and returns a scheduler; call that with the function's arguments to enqueue it.
+
+With `CurrentDocket()`, you can schedule additional background tasks, chain work together, and coordinate complex workflows. See the [Docket documentation](https://docket.lol/) for the complete API, including retry policies, timeouts, and custom dependencies.

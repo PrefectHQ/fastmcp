@@ -25,10 +25,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install UV
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -38,10 +38,16 @@ jobs:
 
       - name: Generate Marvin App token
         id: marvin-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         with:
           app-id: ${{ secrets.MARVIN_APP_ID }}
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+          permission-actions: read
+          permission-checks: read
+          permission-statuses: read
 
       - name: React to comment with eyes
         env:
@@ -51,6 +57,9 @@ jobs:
 
       - name: Run Claude for Issue Comment
         uses: ./.github/actions/run-claude
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
         with:
           claude-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github-token: ${{ steps.marvin-token.outputs.token }}
@@ -61,13 +70,13 @@ jobs:
             <context>
             Repository: ${{ github.repository }}
             Issue Number: #${{ github.event.issue.number }}
-            Issue Title: ${{ github.event.issue.title }}
+            Issue Title: ${{ env.ISSUE_TITLE }}
             Issue Author: ${{ github.event.issue.user.login }}
             Comment Author: ${{ github.event.comment.user.login }}
             </context>
 
             <user_request>
-            ${{ github.event.comment.body }}
+            ${{ env.COMMENT_BODY }}
             </user_request>
 
             <task>

@@ -18,19 +18,23 @@ production use with enterprise identity providers.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import secrets
 import time
 from base64 import urlsafe_b64encode
 from collections import OrderedDict
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from typing import Any, Literal
-from urllib.parse import urlencode, urlparse, urlunparse
+from urllib.parse import urlencode
 
 import anyio
-import httpx
+import httpx2
 from authlib.common.security import generate_token
-from authlib.integrations.httpx_client import AsyncOAuth2Client
 from cryptography.fernet import Fernet
+from joserfc.errors import JoseError
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.filetree import (
@@ -40,23 +44,31 @@ from key_value.aio.stores.filetree import (
 )
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from mcp.server.auth.handlers.metadata import MetadataHandler
+from mcp.server.auth.handlers.register import RegistrationHandler
+from mcp.server.auth.middleware.client_auth import ClientAuthenticator
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
     AuthorizationParams,
     AuthorizeError,
+    IdentityAssertionParams,
     RefreshToken,
+    RegistrationError,
     TokenError,
 )
-from mcp.server.auth.routes import build_metadata, cors_middleware
+from mcp.server.auth.routes import build_metadata, cors_middleware, create_auth_routes
 from mcp.server.auth.settings import (
     ClientRegistrationOptions,
     RevocationOptions,
 )
-from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from pydantic import AnyHttpUrl, AnyUrl, SecretStr
+from mcp.shared.auth import (
+    OAuthClientInformationFull,
+    OAuthClientMetadata,
+    OAuthToken,
+)
+from pydantic import AnyHttpUrl, AnyUrl, SecretStr, ValidationError
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse
+from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 from typing_extensions import override
 
@@ -65,10 +77,19 @@ from fastmcp.server.auth.auth import (
     OAuthProvider,
     PrivateKeyJWTClientAuthenticator,
     TokenHandler,
+    TokenVerificationError,
     TokenVerifier,
 )
 from fastmcp.server.auth.cimd import CIMDClientManager
 from fastmcp.server.auth.handlers.authorize import AuthorizationHandler
+from fastmcp.server.auth.identity_assertion import (
+    JWT_BEARER_GRANT_TYPE,
+    IdentityAssertion,
+    IdentityAssertionError,
+    IdentityAssertionValidator,
+    normalize_resource_url,
+    server_url_has_query,
+)
 from fastmcp.server.auth.jwt_issuer import (
     JWTIssuer,
     derive_jwt_key,
@@ -81,6 +102,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     DEFAULT_REFRESH_TOKEN_EXPIRY_SECONDS,
     HTTP_TIMEOUT_SECONDS,
     ClientCode,
+    ConsentCSRFToken,
     JTIMapping,
     OAuthTransaction,
     ProxyDCRClient,
@@ -88,7 +110,14 @@ from fastmcp.server.auth.oauth_proxy.models import (
     UpstreamTokenSet,
     _hash_token,
 )
+from fastmcp.server.auth.oauth_proxy.revocation import RevocationProvider
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
+from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client, OAuthError
+from fastmcp.server.auth.redirect_validation import (
+    build_client_redirect,
+    is_redirect_uri_allowed_for_application_type,
+    validate_redirect_uri,
+)
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
@@ -96,29 +125,79 @@ logger = get_logger(__name__)
 
 _REFRESH_LOCK_CACHE_SIZE = 10_000
 
+#: SEP-837: the client's declared `application_type`, recovered from the raw DCR
+#: request body by `_ApplicationTypeRegistrationHandler` before the SDK's
+#: `RegistrationHandler` runs. The SDK parses `application_type` into
+#: `OAuthClientMetadata` but drops it when it builds the
+#: `OAuthClientInformationFull` handed to `register_client`, so this ContextVar
+#: is the only place the real value survives into the provider. It is `None` when
+#: `register_client` is called directly (outside the HTTP route) or when the body
+#: failed to parse, in which case the object's own `application_type` is used.
+_pending_application_type: ContextVar[Literal["web", "native"] | None] = ContextVar(
+    "_pending_application_type", default=None
+)
 
-def _normalize_resource_url(url: str) -> str:
-    """Normalize a resource URL by removing query parameters and trailing slashes.
 
-    RFC 8707 allows clients to include query parameters in resource URLs, but the
-    server's configured resource URL typically doesn't include them. This function
-    normalizes URLs for comparison by stripping query params and fragments.
+class _ApplicationTypeRegistrationHandler:
+    """Recover the DCR `application_type` the SDK handler drops (SEP-837).
 
-    Args:
-        url: The URL to normalize
-
-    Returns:
-        Normalized URL with scheme, host, and path only (no query/fragment)
+    The SDK's `RegistrationHandler` validates the request body into an
+    `OAuthClientMetadata` (which carries `application_type`) but omits the field
+    when constructing the `OAuthClientInformationFull` it passes to
+    `register_client`. This thin wrapper re-parses `application_type` from the
+    same request body and publishes it on a ContextVar so `register_client` can
+    enforce the web/native redirect rules, then delegates to the SDK handler
+    unchanged. Reading `request.body()` here is safe: Starlette caches the body,
+    so the SDK handler's own read returns the same bytes.
     """
-    parsed = urlparse(str(url))
-    return urlunparse(
-        (parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", "", "")
-    )
+
+    def __init__(self, handler: RegistrationHandler) -> None:
+        self._handler = handler
+
+    async def handle(self, request: Request) -> Response:
+        application_type: Literal["web", "native"] | None = None
+        try:
+            metadata = OAuthClientMetadata.model_validate_json(await request.body())
+        except ValidationError:
+            # Let the SDK handler surface the validation error verbatim.
+            application_type = None
+        else:
+            application_type = metadata.application_type
+
+        token = _pending_application_type.set(application_type)
+        try:
+            return await self._handler.handle(request)
+        finally:
+            _pending_application_type.reset(token)
 
 
-def _server_url_has_query(url: str) -> bool:
-    """Check if a URL has query parameters."""
-    return bool(urlparse(str(url)).query)
+#: Marker claim identifying a FastMCP access token minted from a SEP-990 ID-JAG.
+#: These tokens are self-contained (they carry the asserted subject directly) and
+#: are validated without the upstream token-swap that regular proxy tokens use.
+_ID_JAG_GRANT_MARKER = "id_jag"
+
+
+def _assertion_granted_scopes(claims: dict[str, Any]) -> list[str]:
+    """Scopes granted by an ID-JAG, from its `scope` or `scp` claim."""
+    scope = claims.get("scope")
+    if isinstance(scope, str):
+        return scope.split()
+    scp = claims.get("scp")
+    if isinstance(scp, list):
+        return [str(s) for s in scp]
+    if isinstance(scp, str):
+        return scp.split()
+    return []
+
+
+def _log_cull_failure(task: asyncio.Task[None]) -> None:
+    """Log an exception from a background state cull, if any."""
+    if not task.cancelled() and (exc := task.exception()) is not None:
+        logger.warning("Failed to cull expired OAuth proxy state: %s", exc)
+
+
+# Minimum seconds between culls of the default on-disk OAuth state store.
+_STATE_CULL_INTERVAL_SECONDS = 3600.0
 
 
 class OAuthProxy(OAuthProvider, ConsentMixin):
@@ -193,7 +272,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
        - Clean up one-time use authorization code
 
     5. Token Refresh:
-       - Forward refresh requests to upstream using authlib
+       - Forward refresh requests to upstream
        - Handle token rotation if upstream issues new refresh token
        - Update local token mappings
 
@@ -271,8 +350,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Token expiry fallback
         fallback_access_token_expiry_seconds: int | None = None,
         fallback_refresh_token_expiry_seconds: int | None = None,
+        # FastMCP-issued access token lifetime (decoupled from upstream)
+        fastmcp_access_token_expiry_seconds: int | None = None,
+        # Token refresh threshold
+        token_expiry_threshold_seconds: int = 0,
         # CIMD (Client ID Metadata Document) support
         enable_cimd: bool = True,
+        # Identity assertion (SEP-990 ID-JAG) support
+        identity_assertion: IdentityAssertion | None = None,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -294,17 +379,21 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             service_documentation_url: Optional service documentation URL
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 Patterns support wildcards (e.g., "http://localhost:*", "https://*.example.com/*").
-                If None (default), all redirect URIs are allowed (for DCR compatibility).
+                If None (default), DCR clients use registered redirect URIs, with loopback
+                ports allowed to vary for MCP compatibility. Unsafe browser schemes are rejected.
                 If empty list, no redirect URIs are allowed.
                 These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
             valid_scopes: List of all the possible valid scopes for a client.
                 These are advertised to clients through the `/.well-known` endpoints. Defaults to `required_scopes` if not provided.
             forward_pkce: Whether to forward PKCE to upstream server (default True).
+                False removes protection against authorization-code interception
+                on the upstream exchange; client-to-proxy PKCE still applies.
                 Enable for providers that support/require PKCE (Google, Azure, AWS, etc.).
                 Disable only if upstream provider doesn't support PKCE.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
-                If None, authlib will use its default (typically "client_secret_basic").
+                Defaults to "client_secret_basic" when a client secret is configured
+                and to "none" (public client, no secret sent) otherwise.
             extra_authorize_params: Additional parameters to forward to the upstream authorization endpoint.
                 Useful for provider-specific parameters like Auth0's "audience".
                 Example: {"audience": "https://api.example.com"}
@@ -314,7 +403,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 If None, an encrypted file store will be created in the data directory.
             jwt_signing_key: Secret for signing FastMCP JWT tokens (any string or bytes).
                 If bytes are provided, they will be used as-is.
-                If a string is provided, it will be derived into a 32-byte key using PBKDF2 (1.2M iterations).
+                If a string is provided, it will be derived into a 32-byte key using PBKDF2 (1,000,000 iterations).
                 If not provided, it will be derived from the upstream client secret using HKDF.
             require_authorization_consent: Consent screen behavior (default True).
                 - True: always show the consent screen before redirecting to the
@@ -325,14 +414,21 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                   redirect_uri) in the same browser. Cross-site navigations are
                   still prompted to block AS-in-the-middle attacks. Lower UX
                   friction, but weaker protection than True.
-                - "external": skip the built-in consent screen; consent is handled
-                  externally (e.g. by the upstream IdP or a custom login page).
+                - "external": follow the same authorization path as False, but
+                  suppress the warning as an operator acknowledgment that equivalent
+                  consent and transaction-binding protections are enforced externally.
+                  FastMCP does not provide or verify those external protections.
+                  Both False and "external" remove FastMCP's consent and browser
+                  binding checks, reducing security unless equivalent checks exist
+                  elsewhere; ordinary upstream consent is not equivalent.
                 - False: skip consent entirely. SECURITY WARNING: only set to
                   False for local development or testing environments.
             consent_csp_policy: Content Security Policy for the consent page.
                 If None (default), uses the built-in CSP policy with appropriate directives.
                 If empty string "", disables CSP entirely (no meta tag is rendered).
                 If a non-empty string, uses that as the CSP policy value.
+                Disabling or weakening CSP reduces browser content-injection
+                protections unless the deployment supplies an equivalent CSP header.
                 This allows organizations with their own CSP policies to override or disable
                 the built-in CSP directives.
             fallback_access_token_expiry_seconds: Expiry time to use when upstream provider
@@ -346,9 +442,33 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 lifetime — the actual upstream refresh remains the source of truth. If the
                 upstream rejects the refresh, the client gets `invalid_grant` and re-auths,
                 regardless of how much life is left on the FastMCP refresh token.
+            fastmcp_access_token_expiry_seconds: Lifetime for the FastMCP-issued access
+                token (JWT), decoupling it from the upstream provider's `expires_in`. By
+                default (None) the FastMCP access token mirrors the upstream access token
+                lifetime. The FastMCP JWT is a reference token — `load_access_token`
+                re-validates the upstream token on every request and transparently refreshes
+                it when expired — so issuing a longer-lived FastMCP token does not extend
+                upstream access: a revoked or expired upstream session still fails validation
+                and forces re-auth. Set this for bridges whose upstream issues short-lived
+                access tokens (5-60 min) that some MCP clients can't refresh gracefully
+                (e.g. `mcp-remote`), where the short client-facing TTL forces a full re-auth
+                on every idle period. Only affects the FastMCP-issued token; the upstream
+                token's real expiry is preserved internally to drive transparent refresh.
+                When the upstream provider issues no refresh token there is no way to renew
+                the access token, so the lifetime is capped at the upstream `expires_in`
+                regardless of this value (it can still be used to shorten it).
+            token_expiry_threshold_seconds: Number of seconds before actual expiry to consider
+                a token as expired (default 0). This prevents race conditions where a token
+                passes the expiry check but expires before the next operation completes.
+                For example, set to 30 to refresh tokens that will expire within 30 seconds.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs. When True, clients can authenticate using HTTPS URLs as client
                 IDs, with metadata fetched from the URL. Supports private_key_jwt auth.
+            identity_assertion: Optional SEP-990 identity assertion (ID-JAG) configuration.
+                When provided, the token endpoint accepts the RFC 7523 jwt-bearer grant
+                carrying an ID-JAG issued by one of the configured trusted issuers, and
+                mints a short-lived access token (no refresh token) for the asserted
+                subject. When omitted, the grant is rejected as unsupported.
         """
 
         default_scopes = valid_scopes or token_verifier.required_scopes
@@ -450,6 +570,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             if fallback_refresh_token_expiry_seconds is not None
             else DEFAULT_REFRESH_TOKEN_EXPIRY_SECONDS
         )
+        self._fastmcp_access_token_expiry_seconds: int | None = (
+            fastmcp_access_token_expiry_seconds
+        )
+        self._token_expiry_threshold_seconds: int = token_expiry_threshold_seconds
 
         if jwt_signing_key is None:
             if upstream_client_secret is None:
@@ -483,6 +607,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # keys get isolated directories (e.g. two servers on the same machine with
         # different keys won't collide). Decryption errors are treated as cache misses
         # rather than hard failures, so key rotation just causes re-registration.
+        default_file_store: FileTreeStore | None = None
         if client_storage is None:
             storage_encryption_key = derive_jwt_key(
                 high_entropy_material=jwt_signing_key.decode(),
@@ -493,7 +618,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             storage_dir = settings.home / "oauth-proxy" / key_fingerprint
             storage_dir.mkdir(parents=True, exist_ok=True)
 
-            file_store = FileTreeStore(
+            default_file_store = FileTreeStore(
                 data_directory=storage_dir,
                 key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(
                     storage_dir
@@ -504,11 +629,16 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             )
 
             client_storage = FernetEncryptionWrapper(
-                key_value=file_store,
+                key_value=default_file_store,
                 fernet=Fernet(key=storage_encryption_key),
                 raise_on_decryption_error=False,
             )
 
+        # The store FastMCP created itself, if any. Expired entries are only ever
+        # reaped from this store: a user-provided client_storage is never culled.
+        self._default_file_store: FileTreeStore | None = default_file_store
+        self._cull_task: asyncio.Task[None] | None = None
+        self._last_cull_started: float | None = None
         self._client_storage: AsyncKeyValue = client_storage
 
         # Cache HTTPS check to avoid repeated logging
@@ -544,6 +674,19 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             key_value=self._client_storage,
             pydantic_model=OAuthTransaction,
             default_collection="mcp-oauth-transactions",
+            raise_on_validation_error=True,
+        )
+
+        # Consent CSRF tokens, keyed by a hash of the token rather than by
+        # transaction. Each render of a consent page writes its own key, so
+        # renders that overlap cannot overwrite one another the way appending
+        # to a list on the transaction would.
+        self._consent_csrf_store: PydanticAdapter[ConsentCSRFToken] = PydanticAdapter[
+            ConsentCSRFToken
+        ](
+            key_value=self._client_storage,
+            pydantic_model=ConsentCSRFToken,
+            default_collection="mcp-consent-csrf-tokens",
             raise_on_validation_error=True,
         )
 
@@ -588,6 +731,23 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
             )
 
+        # Identity assertion (SEP-990 ID-JAG): per RFC 7523 §3 the `aud` must
+        # identify this authorization server, and an authorization server is
+        # identified by its issuer — the same value published as `issuer` in
+        # the authorization server metadata, which is `issuer_url` (defaulting
+        # to `base_url`).
+        self._identity_assertion: IdentityAssertion | None = identity_assertion
+        self._identity_assertion_validator: IdentityAssertionValidator | None = None
+        if identity_assertion is not None:
+            self._identity_assertion_validator = IdentityAssertionValidator(
+                config=identity_assertion,
+                audience=str(self.issuer_url),
+            )
+        # ID-JAG access tokens are self-contained (no upstream token or JTI
+        # mapping to delete), so revocation tracks their jtis here until the
+        # token would expire anyway. Per-process, like ID-JAG replay tracking.
+        self._revoked_id_jag_jtis: dict[str, float] = {}
+
         # Advisory locks for transparent upstream token refresh, keyed by
         # upstream_token_id. Prevents concurrent async tasks from racing to
         # refresh the same token within a single process. Does not protect
@@ -599,6 +759,37 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             "Initialized OAuth proxy provider with upstream server %s",
             self._upstream_authorization_endpoint,
         )
+
+    def _maybe_cull_expired_state(self) -> None:
+        """Reap expired entries from the default on-disk store, at most hourly.
+
+        Called on the OAuth write paths, so a long-running server keeps its
+        state directory bounded without a dedicated scheduler, and the first
+        flow after a restart clears what previous runs left behind. The cull
+        runs as a background task so it never delays the request that
+        triggered it. A custom `client_storage` is never culled: FastMCP only
+        reaps the store it created itself, and entries without a TTL (e.g.
+        DCR client registrations) are left untouched.
+
+        See https://github.com/PrefectHQ/fastmcp/issues/5718.
+        """
+        if self._default_file_store is None:
+            return
+        if self._cull_task is not None and not self._cull_task.done():
+            return
+        now = time.monotonic()
+        if (
+            self._last_cull_started is not None
+            and now - self._last_cull_started < _STATE_CULL_INTERVAL_SECONDS
+        ):
+            return
+        self._last_cull_started = now
+        # Keep a strong reference: the loop only holds tasks weakly.
+        self._cull_task = asyncio.get_running_loop().create_task(
+            self._default_file_store.cull(),
+            name="fastmcp-oauth-proxy-state-cull",
+        )
+        self._cull_task.add_done_callback(_log_cull_failure)
 
     # -------------------------------------------------------------------------
     # Scope Management
@@ -644,9 +835,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         super().set_mcp_path(mcp_path)
 
         # Create JWT issuer with correct audience based on actual MCP path
-        # This ensures tokens are bound to the specific resource URL
+        # This ensures tokens are bound to the specific resource URL. The `iss`
+        # claim is the authorization server's issuer identifier (`issuer_url`),
+        # which matches the `issuer` advertised in the metadata document.
         self._jwt_issuer = JWTIssuer(
-            issuer=str(self.base_url),
+            issuer=str(self.issuer_url),
             audience=str(self._resource_url),
             signing_key=self._jwt_signing_key,
         )
@@ -666,6 +859,19 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 "before token operations."
             )
         return self._jwt_issuer
+
+    @property
+    def token_endpoint_url(self) -> str:
+        """The token endpoint URL, as advertised in the authorization server metadata.
+
+        A CIMD `private_key_jwt` assertion is bound to this URL as its `aud`, so
+        it must match the advertised `token_endpoint` byte-for-byte. The SDK's
+        `build_metadata` builds that URL by stripping any trailing slash from
+        `base_url` first, so this does too: pydantic renders a bare-authority
+        `base_url` with a trailing slash, which would otherwise expect an `aud`
+        of `https://example.com//token`.
+        """
+        return f"{str(self.base_url).rstrip('/')}/token"
 
     # -------------------------------------------------------------------------
     # Upstream OAuth Client
@@ -689,6 +895,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             token_endpoint_auth_method=self._token_endpoint_auth_method,
             timeout=HTTP_TIMEOUT_SECONDS,
         )
+
+    @asynccontextmanager
+    async def _upstream_oauth_client(self) -> AsyncGenerator[AsyncOAuth2Client, None]:
+        oauth_client = self._create_upstream_oauth_client()
+        try:
+            yield oauth_client
+        finally:
+            await oauth_client.aclose()
 
     def _get_refresh_lock(self, token_id: str) -> anyio.Lock:
         """Get or create a per-token refresh lock, evicting LRU entries when at capacity."""
@@ -721,6 +935,40 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         return code_verifier, code_challenge
 
+    def _build_upstream_authorize_url(
+        self, txn_id: str, transaction: dict[str, Any]
+    ) -> str:
+        """Construct the upstream IdP authorization URL using stored transaction data."""
+        query_params: dict[str, Any] = {
+            "response_type": "code",
+            "client_id": self._upstream_client_id,
+            "redirect_uri": f"{str(self.base_url).rstrip('/')}{self._redirect_path}",
+            "state": txn_id,
+        }
+
+        scopes_to_use = transaction.get("scopes") or self.required_scopes or []
+        if scopes_to_use:
+            query_params["scope"] = " ".join(scopes_to_use)
+
+        proxy_code_verifier = transaction.get("proxy_code_verifier")
+        if proxy_code_verifier:
+            challenge_bytes = hashlib.sha256(proxy_code_verifier.encode()).digest()
+            proxy_code_challenge = (
+                urlsafe_b64encode(challenge_bytes).decode().rstrip("=")
+            )
+            query_params["code_challenge"] = proxy_code_challenge
+            query_params["code_challenge_method"] = "S256"
+
+        if self._forward_resource:
+            if resource := transaction.get("resource"):
+                query_params["resource"] = resource
+
+        if self._extra_authorize_params:
+            query_params.update(self._extra_authorize_params)
+
+        separator = "&" if "?" in self._upstream_authorization_endpoint else "?"
+        return f"{self._upstream_authorization_endpoint}{separator}{urlencode(query_params)}"
+
     # -------------------------------------------------------------------------
     # Client Registration (Local Implementation)
     # -------------------------------------------------------------------------
@@ -731,7 +979,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         provided to the DCR client during registration, not the upstream client ID.
 
         For unregistered clients, returns None (which will raise an error in the SDK).
-        CIMD clients (URL-based client IDs) are looked up and cached automatically.
+        CIMD clients (URL-based client IDs) are looked up through the bounded
+        in-process document cache rather than persisted in the DCR client store.
         """
         # Load from storage
         client = await self._client_store.get(key=client_id)
@@ -741,31 +990,22 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 client.allowed_redirect_uri_patterns = (
                     self._allowed_client_redirect_uris
                 )
+            if client.cimd_document is None:
+                return client
 
-            # Refresh CIMD clients using HTTP cache-aware fetcher.
-            if self._cimd_manager is not None and client.cimd_document is not None:
-                try:
-                    refreshed = await self._cimd_manager.get_client(client_id)
-                    if refreshed is not None:
-                        await self._client_store.put(key=client_id, value=refreshed)
-                        return refreshed
-                except Exception as e:
-                    logger.debug(
-                        "CIMD refresh failed for %s, using cached client: %s",
-                        client_id,
-                        e,
-                    )
-
-            return client
-
-        # Client not in storage — try CIMD lookup for URL-based client IDs
+        # Resolve URL-derived clients through the bounded CIMD cache. Older
+        # versions persisted them indefinitely, so remove those records only
+        # after a successful refresh and keep them as a fallback until then.
         if self._cimd_manager is not None and self._cimd_manager.is_cimd_client_id(
             client_id
         ):
             cimd_client = await self._cimd_manager.get_client(client_id)
             if cimd_client is not None:
-                await self._client_store.put(key=client_id, value=cimd_client)
+                if client is not None:
+                    await self._client_store.delete(key=client_id)
                 return cimd_client
+            if client is not None:
+                return client
 
         # Some MCP clients (e.g. claude.ai) skip Dynamic Client Registration and
         # send the upstream OAuth App's client_id directly in the /authorize request.
@@ -775,14 +1015,18 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 "Client %s matched upstream client_id — synthesizing client without DCR",
                 client_id,
             )
+            synthesized_grant_types = ["authorization_code", "refresh_token"]
+            if self._identity_assertion is not None:
+                synthesized_grant_types.append(JWT_BEARER_GRANT_TYPE)
             return ProxyDCRClient(
                 client_id=client_id,
                 client_secret=None,
                 redirect_uris=[AnyUrl("http://localhost")],
-                grant_types=["authorization_code", "refresh_token"],
+                grant_types=synthesized_grant_types,
                 scope=self._default_scope_str,
                 token_endpoint_auth_method="none",
                 allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
+                allow_unregistered_redirect_uris=True,
             )
 
         return None
@@ -800,6 +1044,74 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Create a ProxyDCRClient with configured redirect URI validation
         if client_info.client_id is None:
             raise ValueError("client_id is required for client registration")
+
+        # SEP-837: the SDK's RegistrationHandler drops application_type when it
+        # builds this object, so prefer the value the HTTP route recovered from
+        # the raw request body. Fall back to the object's own field for direct
+        # (non-HTTP) callers. Write it back so the DCR response echoes the type.
+        #
+        # The SDK splits the registration *request* model from the registered
+        # *client record*: `OAuthClientMetadata.application_type` defaults to
+        # "native", while `OAuthClientInformationFull.application_type` is
+        # `str | None` and defaults to None. Normalize the unset case back to
+        # "native" so a client that omits the field gets the RFC 7591 default
+        # recorded explicitly, on both the HTTP and direct-call paths.
+        pending_application_type = _pending_application_type.get()
+        if pending_application_type is not None:
+            client_info.application_type = pending_application_type
+        elif client_info.application_type is None:
+            client_info.application_type = "native"
+        application_type = client_info.application_type
+
+        if client_info.redirect_uris:
+            for redirect_uri in client_info.redirect_uris:
+                if not validate_redirect_uri(
+                    redirect_uri=redirect_uri,
+                    allowed_patterns=self._allowed_client_redirect_uris,
+                ):
+                    raise RegistrationError(
+                        "invalid_redirect_uri",
+                        f"Redirect URI '{redirect_uri}' is not allowed.",
+                    )
+                # SEP-837: honor the client's declared application_type. "web"
+                # clients are restricted to non-loopback https redirect URIs.
+                if not is_redirect_uri_allowed_for_application_type(
+                    redirect_uri,
+                    application_type,
+                ):
+                    raise RegistrationError(
+                        "invalid_redirect_uri",
+                        f"Redirect URI '{redirect_uri}' is not allowed for "
+                        f"application_type '{application_type}'.",
+                    )
+        elif application_type == "web":
+            # Clients may omit redirect_uris and supply one at authorization,
+            # which falls back to the `http://localhost` placeholder below. A web
+            # client can never authorize against that placeholder (loopback http
+            # fails its own rule), so registering one would only produce a client
+            # that is guaranteed to fail later. Refuse it now, with a reason.
+            raise RegistrationError(
+                "invalid_redirect_uri",
+                "redirect_uris is required for application_type 'web'; web "
+                "clients must register a non-loopback https redirect URI.",
+            )
+
+        redirect_uris = client_info.redirect_uris or [AnyUrl("http://localhost")]
+
+        # When identity assertion is enabled, registered clients are allowed to
+        # present the SEP-990 jwt-bearer (ID-JAG) grant. Add it to the client's
+        # registered grant types so the token endpoint's grant-type check accepts
+        # it — clients that never register (or register without it while identity
+        # assertion is disabled) remain unable to use the grant.
+        registered_grant_types = list(
+            client_info.grant_types or ["authorization_code", "refresh_token"]
+        )
+        if (
+            self._identity_assertion is not None
+            and JWT_BEARER_GRANT_TYPE not in registered_grant_types
+        ):
+            registered_grant_types.append(JWT_BEARER_GRANT_TYPE)
+
         # We use token_endpoint_auth_method="none" because the proxy handles
         # all upstream authentication. The client_secret must also be None
         # because the SDK requires secrets to be provided if they're set,
@@ -807,11 +1119,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         proxy_client: ProxyDCRClient = ProxyDCRClient(
             client_id=client_info.client_id,
             client_secret=None,
-            redirect_uris=client_info.redirect_uris or [AnyUrl("http://localhost")],
-            grant_types=client_info.grant_types
-            or ["authorization_code", "refresh_token"],
+            redirect_uris=redirect_uris,
+            grant_types=registered_grant_types,
             scope=client_info.scope or self._default_scope_str,
             token_endpoint_auth_method="none",
+            application_type=application_type,
             allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
             client_name=getattr(client_info, "client_name", None),
         )
@@ -820,6 +1132,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             key=client_info.client_id,
             value=proxy_client,
         )
+
+        # The SDK's RegistrationHandler serializes this same `client_info` object
+        # into the DCR response after we return. Left untouched it would echo the
+        # SDK's default `client_secret_post` (or a requested `client_secret_basic`)
+        # and a generated secret — a confidential method the proxy never enforces
+        # and does not advertise in server metadata. Normalize it to the public
+        # client we actually store so the registration response, stored client, and
+        # advertised `token_endpoint_auth_methods_supported` all agree.
+        client_info.token_endpoint_auth_method = "none"
+        client_info.client_secret = None
+        client_info.client_secret_expires_at = None
 
         # Log redirect URIs to help users discover what patterns they might need
         if client_info.redirect_uris:
@@ -859,6 +1182,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         "remember" mode, still route through /consent so the cookie lookup and
         Sec-Fetch-Site gating can run.
         """
+        self._maybe_cull_expired_state()
         # Security check: validate client's requested resource matches this server
         # This prevents tokens intended for one server from being used on another
         #
@@ -877,14 +1201,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             server_url = str(self._resource_url)
             client_url = str(client_resource)
 
-            if _server_url_has_query(server_url):
+            if server_url_has_query(server_url):
                 # Server has query params - require exact match for security
                 urls_match = client_url.rstrip("/") == server_url.rstrip("/")
             else:
                 # Server has no query params - normalize both for comparison
-                urls_match = _normalize_resource_url(
+                urls_match = normalize_resource_url(
                     client_url
-                ) == _normalize_resource_url(server_url)
+                ) == normalize_resource_url(server_url)
 
             if not urls_match:
                 logger.warning(
@@ -893,7 +1217,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     self._resource_url,
                 )
                 raise AuthorizeError(
-                    error="invalid_target",  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                    error="invalid_target",  # type: ignore[arg-type]
                     error_description="Resource does not match this server",
                 )
 
@@ -913,9 +1237,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Store transaction data for IdP callback processing
         if client.client_id is None:
             raise AuthorizeError(
-                error="invalid_client",  # type: ignore[arg-type]  # "invalid_client" is valid OAuth error but not in Literal type  # ty:ignore[invalid-argument-type]
+                error="invalid_client",  # type: ignore[arg-type]  # "invalid_client" is valid OAuth error but not in Literal type
                 error_description="Client ID is required",
             )
+        # Clients may omit `scope` entirely, in which case OAuth lets the
+        # authorization server apply its configured default. Resolve that default
+        # once, here, so the transaction records the scopes actually being
+        # authorized. Every later consumer — the consent screen, the issued
+        # authorization code, token exchange, and refresh — reads this one value
+        # instead of deciding for itself whether to substitute required_scopes.
+        effective_scopes = params.scopes or self.required_scopes or []
+
         transaction = OAuthTransaction(
             txn_id=txn_id,
             client_id=client.client_id,
@@ -923,7 +1255,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             client_state=params.state or "",
             code_challenge=params.code_challenge,
             code_challenge_method=getattr(params, "code_challenge_method", "S256"),
-            scopes=params.scopes or [],
+            scopes=effective_scopes,
             created_at=time.time(),
             resource=getattr(params, "resource", None),
             proxy_code_verifier=proxy_code_verifier,
@@ -934,7 +1266,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             ttl=15 * 60,  # Auto-expire after 15 minutes
         )
 
-        # If consent is disabled or handled externally, skip consent screen.
+        # False and "external" both remove FastMCP's consent and browser-binding
+        # protections against confused deputy attacks. "external" only suppresses
+        # the warning; FastMCP does not provide or verify external enforcement.
         # "remember" mode still routes through /consent so cookie lookup and
         # Sec-Fetch-Site gating can run.
         if self._require_authorization_consent in (False, "external"):
@@ -998,7 +1332,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Create authorization code object with PKCE challenge
         if client.client_id is None:
             raise AuthorizeError(
-                error="invalid_client",  # type: ignore[arg-type]  # "invalid_client" is valid OAuth error but not in Literal type  # ty:ignore[invalid-argument-type]
+                error="invalid_client",  # type: ignore[arg-type]  # "invalid_client" is valid OAuth error but not in Literal type
                 error_description="Client ID is required",
             )
         return AuthorizationCode(
@@ -1028,6 +1362,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         PKCE validation is handled by the MCP framework before this method is called.
         """
+        self._maybe_cull_expired_state()
         # Look up stored code data
         code_model = await self._code_store.get(key=authorization_code.code)
         if not code_model:
@@ -1040,6 +1375,15 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Get stored upstream tokens
         idp_tokens = code_model.idp_tokens
 
+        # A non-positive lifetime means the upstream access token is already
+        # unusable. Reject it as an OAuth error before consuming our one-time
+        # authorization code instead of passing an invalid TTL to storage.
+        if "expires_in" in idp_tokens and int(idp_tokens["expires_in"]) <= 0:
+            raise TokenError(
+                "invalid_grant",
+                "Upstream access token has a non-positive expires_in",
+            )
+
         # Use IdP-granted scopes when available (RFC 6749 §5.1: the IdP MUST
         # include a scope parameter when the granted scope differs from the
         # requested scope).  Fall back to requested scopes only when the IdP
@@ -1049,6 +1393,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             if "scope" in idp_tokens
             else list(authorization_code.scopes)
         )
+        # Translate IdP-wire scopes into the client-facing form before they
+        # propagate to storage, the FastMCP JWT, and the response body. Default
+        # implementation is identity; AzureProvider overrides this to strip the
+        # identifier_uri prefix Azure echoes back on custom API scopes.
+        granted_scopes = self._translate_scopes_from_idp(granted_scopes)
 
         # Clean up client code (one-time use)
         await self._code_store.delete(key=authorization_code.code)
@@ -1085,6 +1434,20 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             logger.debug(
                 "Access token TTL: %d seconds (default, no refresh token)", expires_in
             )
+
+        # The FastMCP-issued access token is a reference into our storage and may
+        # outlive the upstream access token, because transparent refresh keeps the
+        # upstream token fresh on each request. `expires_in` stays the upstream
+        # lifetime; this drives only the FastMCP JWT, its JTI mapping, and the
+        # response's expires_in. Extending past the upstream lifetime is only safe
+        # when we can refresh: without an upstream refresh token there is no way to
+        # renew the access token, so the FastMCP token must not claim to outlive the
+        # upstream token it points at.
+        fastmcp_access_expires_in = expires_in
+        if self._fastmcp_access_token_expiry_seconds is not None:
+            fastmcp_access_expires_in = self._fastmcp_access_token_expiry_seconds
+            if not idp_tokens.get("refresh_token"):
+                fastmcp_access_expires_in = min(fastmcp_access_expires_in, expires_in)
 
         # Calculate refresh token expiry if provided by upstream
         # Some providers include refresh_expires_in, some don't
@@ -1130,7 +1493,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             key=upstream_token_id,
             value=upstream_token_set,
             ttl=max(
-                refresh_expires_in or 0, expires_in, 1
+                refresh_expires_in or 0, expires_in, fastmcp_access_expires_in, 1
             ),  # Keep until longest-lived token expires (min 1s for safety)
         )
         logger.debug("Stored encrypted upstream tokens (jti=%s)", access_jti[:8])
@@ -1145,7 +1508,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             client_id=client.client_id,
             scopes=granted_scopes,
             jti=access_jti,
-            expires_in=expires_in,
+            expires_in=fastmcp_access_expires_in,
             upstream_claims=upstream_claims,
         )
 
@@ -1169,7 +1532,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 upstream_token_id=upstream_token_id,
                 created_at=time.time(),
             ),
-            ttl=expires_in,  # Auto-expire with access token
+            ttl=fastmcp_access_expires_in,  # Auto-expire with FastMCP access token
         )
         if refresh_jti:
             await self._jti_mapping_store.put(
@@ -1206,8 +1569,133 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         return OAuthToken(
             access_token=fastmcp_access_token,
             token_type="Bearer",
-            expires_in=expires_in,
+            expires_in=fastmcp_access_expires_in,
             refresh_token=fastmcp_refresh_token,
+            scope=" ".join(granted_scopes),
+        )
+
+    # -------------------------------------------------------------------------
+    # Identity Assertion Flow (SEP-990 ID-JAG)
+    # -------------------------------------------------------------------------
+
+    async def exchange_identity_assertion(
+        self,
+        client: OAuthClientInformationFull,
+        params: IdentityAssertionParams,
+    ) -> OAuthToken:
+        """Exchange a SEP-990 ID-JAG for a short-lived FastMCP access token.
+
+        Validates the ID-JAG against the configured trusted issuers (signature,
+        `iss`, `aud`, `exp`, `typ`, `sub`, and `jti` replay), then mints a
+        self-contained FastMCP access token carrying the asserted subject. No
+        refresh token is issued — the client re-exchanges a fresh assertion.
+
+        Raises:
+            TokenError: ``invalid_grant`` if the assertion is rejected, or
+                ``unsupported_grant_type`` if identity assertion is not configured.
+        """
+        if (
+            self._identity_assertion is None
+            or self._identity_assertion_validator is None
+        ):
+            raise TokenError(
+                "unsupported_grant_type",
+                "The JWT bearer grant is not supported by this authorization server",
+            )
+
+        # RFC 8707: when the request names a resource, it must be this server —
+        # the same invariant (and the same skip-when-unconfigured behavior)
+        # authorize() enforces for authorization requests.
+        if params.resource and self._resource_url:
+            server_url = str(self._resource_url)
+            client_url = str(params.resource)
+            if server_url_has_query(server_url):
+                # Server has query params - require exact match for security
+                resource_matches = client_url.rstrip("/") == server_url.rstrip("/")
+            else:
+                resource_matches = normalize_resource_url(
+                    client_url
+                ) == normalize_resource_url(server_url)
+            if not resource_matches:
+                logger.warning(
+                    "ID-JAG resource mismatch: client requested %s but server is %s",
+                    client_url,
+                    self._resource_url,
+                )
+                raise TokenError(
+                    "invalid_target", "Resource does not match this server"
+                )
+
+        # SEP-990: the assertion's signed client_id and resource claims (checked
+        # against the authenticated client and this server) bind the assertion
+        # before its jti is recorded as consumed — passed into validate() itself
+        # so that binding happens ahead of replay-tracking, not after.
+        try:
+            claims = await self._identity_assertion_validator.validate(
+                params.assertion,
+                client_id=client.client_id or "",
+                resource_url=str(self._resource_url) if self._resource_url else None,
+            )
+        except IdentityAssertionError as e:
+            # Log detail server-side; return a generic error to the client so we
+            # do not leak which validation step failed.
+            logger.info("ID-JAG rejected: %s", e)
+            raise TokenError("invalid_grant", "Invalid identity assertion") from e
+
+        subject = str(claims["sub"])
+
+        # Granted scopes are authoritative from the signed assertion (or, when the
+        # assertion omits them, from explicit server policy). The client-supplied
+        # request `scope` (`params.scopes`) is NOT covered by the signed assertion,
+        # so it may only NARROW the granted set — never widen it. A client cannot
+        # obtain a scope the assertion did not grant by asking for it at the token
+        # endpoint (e.g. an assertion granting `read` requesting `admin` gets nothing
+        # extra).
+        authoritative_scopes = _assertion_granted_scopes(claims)
+        if not authoritative_scopes:
+            authoritative_scopes = list(self._identity_assertion.required_scopes or [])
+
+        # Configured mandatory scopes that the assertion actually grants must always
+        # ride on the issued token — the client request may only narrow the
+        # remaining, optional scopes. Otherwise a request like `scope=read` could
+        # silently drop a required `admin` scope the assertion authorized.
+        required = set(self._identity_assertion.required_scopes or [])
+
+        if params.scopes:
+            requested = set(params.scopes)
+            granted_scopes = [
+                s for s in authoritative_scopes if s in required or s in requested
+            ]
+        else:
+            granted_scopes = list(authoritative_scopes)
+
+        expires_in = self._identity_assertion.access_token_expiry_seconds
+        access_jti = secrets.token_urlsafe(32)
+
+        access_token = self.jwt_issuer.issue_access_token(
+            client_id=client.client_id or "",
+            scopes=granted_scopes,
+            jti=access_jti,
+            expires_in=expires_in,
+            subject=subject,
+            extra_claims={
+                "fastmcp_grant": _ID_JAG_GRANT_MARKER,
+                "assertion_iss": str(claims.get("iss")),
+            },
+        )
+
+        logger.debug(
+            "Issued ID-JAG access token for subject=%s client=%s jti=%s",
+            subject,
+            client.client_id,
+            access_jti[:8],
+        )
+
+        # SEP-990: no refresh token — the IdP controls session lifetime.
+        return OAuthToken(
+            access_token=access_token,
+            token_type="Bearer",
+            expires_in=expires_in,
             scope=" ".join(granted_scopes),
         )
 
@@ -1218,14 +1706,46 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     def _prepare_scopes_for_token_exchange(self, scopes: list[str]) -> list[str]:
         """Prepare scopes for initial token exchange (auth code -> tokens).
 
-        Override this method to provide scopes during the authorization
-        code exchange. Some providers (like Azure) require scopes to be sent.
+        The default omits the `scope` parameter from the upstream code
+        exchange, because the scopes were already negotiated at the
+        authorization endpoint and some OIDC providers reject them on the
+        token request. Override this method to send scopes during the
+        exchange; providers that require them (like Azure) do so.
 
         Args:
             scopes: Scopes from the authorization request
 
         Returns:
             List of scopes to send, or empty list to omit scope parameter
+        """
+        return []
+
+    def _translate_scopes_from_idp(self, scopes: list[str]) -> list[str]:
+        """Translate IdP-returned scopes into the client-facing form.
+
+        Some IdPs (notably Azure) require scopes on the wire in a form that
+        differs from the form MCP clients use — e.g. Azure requires custom API
+        scopes to be prefixed with the application's identifier URI
+        (``api://{client_id}/read``) on outbound requests and echoes that same
+        prefixed form back in the token response. MCP clients, however, request
+        and recognize the short form (``read``) advertised via
+        ``/.well-known/oauth-authorization-server``.
+
+        This hook is the inverse of provider-specific outbound translation
+        (e.g. :meth:`AzureProvider._prefix_scopes_for_azure`). The default
+        implementation returns the scopes unchanged, which is correct for any
+        provider where IdP-wire scopes already match the client-facing form.
+
+        It is called once on each ``scope`` value parsed out of an IdP token
+        response, before that value is stored, embedded in the FastMCP JWT
+        scope claim, or echoed to the client. Applying the translation here
+        keeps storage, the issued JWT, and the response body consistent.
+
+        Args:
+            scopes: Scopes parsed from the IdP token response's ``scope`` field.
+
+        Returns:
+            List of scopes in the form clients expect.
         """
         return scopes
 
@@ -1286,6 +1806,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         token_hash = _hash_token(refresh_token)
         metadata = await self._refresh_token_store.get(key=token_hash)
         if not metadata:
+            logger.warning(
+                "Refresh token not found for client=%s (token_hash=%s); it was "
+                "already rotated, expired, or revoked. Rejecting with invalid_grant, "
+                "which forces the client to re-authenticate.",
+                client.client_id,
+                token_hash[:8],
+            )
             return None
         # Verify token belongs to this client (prevents cross-client token usage)
         if metadata.client_id != client.client_id:
@@ -1318,6 +1845,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         5. Issue new FastMCP access token
         6. Keep same FastMCP refresh token (unless upstream rotates)
         """
+        self._maybe_cull_expired_state()
         # Verify FastMCP refresh token
         try:
             refresh_payload = self.jwt_issuer.verify_token(
@@ -1348,9 +1876,6 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             logger.error("No upstream refresh token available")
             raise TokenError("invalid_grant", "Refresh not supported for this token")
 
-        # Refresh upstream token using authlib
-        oauth_client = self._create_upstream_oauth_client()
-
         # Allow child classes to transform scopes before sending to upstream
         # This enables provider-specific scope formatting (e.g., Azure prefixing)
         # while keeping original scopes in storage
@@ -1358,16 +1883,29 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         try:
             logger.debug("Refreshing upstream token (jti=%s)", refresh_jti[:8])
-            token_response: dict[str, Any] = await oauth_client.refresh_token(
-                url=self._upstream_token_endpoint,
-                refresh_token=upstream_token_set.refresh_token,
-                scope=" ".join(upstream_scopes) if upstream_scopes else None,
-                **self._extra_token_params,
-            )
+            async with self._upstream_oauth_client() as oauth_client:
+                token_response: dict[str, Any] = await oauth_client.refresh_token(
+                    url=self._upstream_token_endpoint,
+                    refresh_token=upstream_token_set.refresh_token,
+                    scope=" ".join(upstream_scopes) if upstream_scopes else None,
+                    **self._extra_token_params,
+                )
             logger.debug("Successfully refreshed upstream token")
-        except Exception as e:
-            logger.error("Upstream token refresh failed: %s", e)
-            raise TokenError("invalid_grant", f"Upstream refresh failed: {e}") from e
+        except OAuthError as e:
+            logger.warning("Upstream OAuth token refresh failed: %s", e.error)
+            if e.error == "invalid_grant":
+                raise TokenError(
+                    "invalid_grant", "Upstream refresh token was rejected"
+                ) from e
+            raise
+
+        # A refresh response with a non-positive lifetime is equally unusable.
+        # Reject it before mutating stored upstream state or rotating JTI mappings.
+        if "expires_in" in token_response and int(token_response["expires_in"]) <= 0:
+            raise TokenError(
+                "invalid_grant",
+                "Upstream access token has a non-positive expires_in",
+            )
 
         # Update stored upstream token
         # In refresh flow, we know there's a refresh token, so default to 1 hour
@@ -1392,12 +1930,25 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         upstream_token_set.access_token = token_response["access_token"]
         upstream_token_set.expires_at = time.time() + new_expires_in
 
+        # See exchange_authorization_code: the FastMCP access token may outlive the
+        # upstream one. `new_expires_in` stays the upstream lifetime (drives
+        # upstream_token_set.expires_at and transparent refresh).
+        fastmcp_access_expires_in = (
+            self._fastmcp_access_token_expiry_seconds
+            if self._fastmcp_access_token_expiry_seconds is not None
+            else new_expires_in
+        )
+
         # Prefer IdP-granted scopes from refresh response (RFC 6749 §5.1)
         refreshed_scopes: list[str] = (
             parse_scopes(token_response["scope"]) or []
             if "scope" in token_response
             else scopes
         )
+        # Same translation as in exchange_authorization_code — keep storage,
+        # the rotated FastMCP JWT, and the response body all in client-facing
+        # scope form.
+        refreshed_scopes = self._translate_scopes_from_idp(refreshed_scopes)
         upstream_token_set.scope = " ".join(refreshed_scopes)
 
         # Handle upstream refresh token rotation and expiry
@@ -1448,7 +1999,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             key=upstream_token_set.upstream_token_id,
             value=upstream_token_set,
             ttl=max(
-                refresh_ttl, new_expires_in, 1
+                refresh_ttl, new_expires_in, fastmcp_access_expires_in, 1
             ),  # Keep until longest-lived token expires (min 1s for safety)
         )
 
@@ -1465,7 +2016,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             client_id=client.client_id,
             scopes=refreshed_scopes,
             jti=new_access_jti,
-            expires_in=new_expires_in,
+            expires_in=fastmcp_access_expires_in,
             upstream_claims=upstream_claims,
         )
 
@@ -1477,7 +2028,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 upstream_token_id=upstream_token_set.upstream_token_id,
                 created_at=time.time(),
             ),
-            ttl=new_expires_in,  # Auto-expire with refreshed access token
+            ttl=fastmcp_access_expires_in,  # Auto-expire with FastMCP access token
         )
 
         # Issue NEW minimal FastMCP refresh token (rotation for security).
@@ -1538,7 +2089,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         return OAuthToken(
             access_token=new_fastmcp_access,
             token_type="Bearer",
-            expires_in=new_expires_in,
+            expires_in=fastmcp_access_expires_in,
             refresh_token=new_fastmcp_refresh,  # NEW refresh token (rotated)
             scope=" ".join(refreshed_scopes),
         )
@@ -1589,14 +2140,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         """
         scopes = upstream_token_set.scope.split() if upstream_token_set.scope else []
         upstream_scopes = self._prepare_scopes_for_upstream_refresh(scopes)
-        oauth_client = self._create_upstream_oauth_client()
 
-        token_response: dict[str, Any] = await oauth_client.refresh_token(
-            url=self._upstream_token_endpoint,
-            refresh_token=upstream_token_set.refresh_token,
-            scope=" ".join(upstream_scopes) if upstream_scopes else None,
-            **self._extra_token_params,
-        )
+        async with self._upstream_oauth_client() as oauth_client:
+            token_response: dict[str, Any] = await oauth_client.refresh_token(
+                url=self._upstream_token_endpoint,
+                refresh_token=upstream_token_set.refresh_token,
+                scope=" ".join(upstream_scopes) if upstream_scopes else None,
+                **self._extra_token_params,
+            )
         logger.debug(
             "Transparent upstream refresh succeeded (token_id=%s)",
             upstream_token_set.upstream_token_id[:8],
@@ -1612,10 +2163,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         upstream_token_set.access_token = token_response["access_token"]
         upstream_token_set.expires_at = time.time() + new_expires_in
-        upstream_token_set.scope = " ".join(
+        refreshed_scopes = (
             parse_scopes(token_response["scope"]) or []
             if "scope" in token_response
             else scopes
+        )
+        upstream_token_set.scope = " ".join(
+            self._translate_scopes_from_idp(refreshed_scopes)
         )
 
         # Handle upstream refresh token rotation
@@ -1653,7 +2207,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         await self._upstream_token_store.put(
             key=upstream_token_set.upstream_token_id,
             value=upstream_token_set,
-            ttl=max(refresh_ttl, new_expires_in, 1),
+            # Include the configured FastMCP lifetime so the upstream token never
+            # expires before an extended access JTI mapping that still points at it.
+            ttl=max(
+                refresh_ttl,
+                new_expires_in,
+                self._fastmcp_access_token_expiry_seconds or 0,
+                1,
+            ),
         )
 
         return upstream_token_set
@@ -1677,6 +2238,30 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             payload = self.jwt_issuer.verify_token(token)
             jti = payload["jti"]
             upstream_claims = payload.get("upstream_claims")
+
+            # SEP-990: ID-JAG tokens are self-contained — the asserted subject
+            # is carried in the token itself, and there is no upstream token to
+            # swap for. Return directly from the verified claims, unless the
+            # token was revoked (tracked by jti until natural expiry).
+            if payload.get("fastmcp_grant") == _ID_JAG_GRANT_MARKER:
+                if self._identity_assertion is None:
+                    logger.warning(
+                        "Rejected ID-JAG token: identity assertion is not configured (jti=%s)",
+                        jti[:16],
+                    )
+                    return None
+                if jti in self._revoked_id_jag_jtis:
+                    logger.info("Rejected revoked ID-JAG access token jti=%s", jti[:16])
+                    return None
+                scope = payload.get("scope", "")
+                return AccessToken(
+                    token=token,
+                    client_id=str(payload.get("client_id", "")),
+                    scopes=scope.split() if scope else [],
+                    expires_at=int(payload["exp"]) if payload.get("exp") else None,
+                    subject=str(payload["sub"]) if payload.get("sub") else None,
+                    claims=payload,
+                )
 
             # 2. Look up upstream token via JTI mapping
             jti_mapping = await self._jti_mapping_store.get(key=jti)
@@ -1704,16 +2289,19 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 return None
             validated = await self._token_validator.verify_token(verification_token)
 
-            # 4. If upstream validation failed due to token expiry and we
-            # have a refresh token, attempt transparent refresh to avoid
-            # forcing the client into a full re-auth flow. Only refresh on
-            # expiry — other failures (scope mismatch, revocation) won't be
-            # helped by a refresh and would just burn tokens.
-            if (
+            # 4. Determine if refresh is needed. Two cases:
+            #    a) Validation failed and token is expired/within threshold
+            #    b) Validation passed but token is within threshold (proactive)
+            needs_refresh = upstream_token_set.refresh_token and (
+                upstream_token_set.expires_at
+                <= time.time() + self._token_expiry_threshold_seconds
+            )
+            should_refresh = needs_refresh and (
                 not validated
-                and upstream_token_set.refresh_token
-                and upstream_token_set.expires_at <= time.time()
-            ):
+                or (validated and self._token_expiry_threshold_seconds > 0)
+            )
+
+            if should_refresh:
                 try:
                     token_id = upstream_token_set.upstream_token_id
 
@@ -1738,12 +2326,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                             )
 
                         # Only refresh if the (possibly reloaded) token is
-                        # still expired — a non-expiry failure on a fresh
-                        # token (scope mismatch, revocation) won't be
-                        # helped by refreshing.
+                        # still within threshold — a freshly-refreshed token
+                        # doesn't need another refresh.
                         if (
-                            not validated
-                            and upstream_token_set.expires_at <= time.time()
+                            upstream_token_set.expires_at
+                            <= time.time() + self._token_expiry_threshold_seconds
                         ):
                             upstream_token_set = await self._try_transparent_refresh(
                                 upstream_token_set
@@ -1755,6 +2342,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                                 validated = await self._token_validator.verify_token(
                                     verification_token
                                 )
+                except TokenVerificationError:
+                    raise
                 except Exception as e:
                     logger.debug("Transparent upstream refresh failed: %s", e)
                     # In a distributed deployment, another worker may have
@@ -1772,8 +2361,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                                 )
                                 if validated:
                                     upstream_token_set = reloaded
-                    except Exception:
-                        pass
+                    except TokenVerificationError:
+                        raise
+                    except Exception as reload_error:
+                        logger.debug(
+                            "Re-read of upstream token after refresh failure also failed: %s",
+                            reload_error,
+                        )
 
             if not validated:
                 logger.debug("Upstream token validation failed")
@@ -1813,6 +2407,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             )
             return validated
 
+        except TokenVerificationError:
+            raise
         except Exception as e:
             logger.debug("Token swap validation failed: %s", e)
             return None
@@ -1832,28 +2428,79 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         if isinstance(token, RefreshToken):
             await self._refresh_token_store.delete(key=_hash_token(token.token))
 
+        # ID-JAG access tokens are self-contained and never known upstream, so
+        # upstream revocation cannot invalidate them. Track the jti locally so
+        # load_access_token() rejects the token for its remaining lifetime.
+        try:
+            payload = self.jwt_issuer.verify_token(token.token)
+        except (JoseError, ValueError, KeyError):
+            # Not a (valid) FastMCP-issued JWT — nothing to track locally.
+            payload = None
+        if payload is not None and payload.get("fastmcp_grant") == _ID_JAG_GRANT_MARKER:
+            now = time.time()
+            self._revoked_id_jag_jtis = {
+                jti: exp for jti, exp in self._revoked_id_jag_jtis.items() if exp > now
+            }
+            exp = payload.get("exp")
+            jti = payload.get("jti")
+            if isinstance(jti, str) and jti:
+                self._revoked_id_jag_jtis[jti] = (
+                    float(exp) if isinstance(exp, (int, float)) else now + 3600
+                )
+                logger.debug("Revoked ID-JAG access token jti=%s", jti[:16])
+            return
+
         # Attempt upstream revocation if endpoint is configured
         if self._upstream_revocation_endpoint:
             try:
-                async with httpx.AsyncClient(
+                # For refresh tokens, resolve the upstream refresh token via
+                # JTI mapping so we revoke the token the authorization server
+                # actually issued, not the FastMCP-issued JWT wrapper.
+                if isinstance(token, RefreshToken):
+                    refresh_payload = self.jwt_issuer.verify_token(
+                        token.token, expected_token_use="refresh"
+                    )
+                    refresh_jti = refresh_payload["jti"]
+                    jti_mapping = await self._jti_mapping_store.get(key=refresh_jti)
+                    if jti_mapping is None:
+                        logger.warning("No JTI mapping found for refresh token")
+                        return
+
+                    upstream_token_set = await self._upstream_token_store.get(
+                        key=jti_mapping.upstream_token_id
+                    )
+                    if (
+                        upstream_token_set is None
+                        or not upstream_token_set.refresh_token
+                    ):
+                        logger.warning("No upstream refresh token found")
+                        return
+
+                    upstream_token_to_revoke = upstream_token_set.refresh_token
+                else:
+                    upstream_token_to_revoke = token.token
+
+                async with httpx2.AsyncClient(
                     timeout=HTTP_TIMEOUT_SECONDS
                 ) as http_client:
-                    revocation_data: dict[str, str] = {"token": token.token}
+                    revocation_data: dict[str, str] = {
+                        "token": upstream_token_to_revoke
+                    }
                     request_kwargs: dict[str, Any] = {"data": revocation_data}
 
                     # Use the factory method when available (supports alternative auth like
                     # client assertions for managed identity), falling back to basic auth
                     # or client_id-only for public clients per RFC 7009
-                    oauth_client = self._create_upstream_oauth_client()
-                    if oauth_client.client_secret is not None:
-                        # Client secret is available, use HTTP Basic auth
-                        request_kwargs["auth"] = (
-                            self._upstream_client_id,
-                            oauth_client.client_secret,
-                        )
-                    else:
-                        # No secret; public client must still identify itself per RFC 7009
-                        revocation_data["client_id"] = self._upstream_client_id
+                    async with self._upstream_oauth_client() as oauth_client:
+                        if oauth_client.client_secret is not None:
+                            # Client secret is available, use HTTP Basic auth
+                            request_kwargs["auth"] = (
+                                self._upstream_client_id,
+                                oauth_client.client_secret,
+                            )
+                        else:
+                            # No secret; public client must still identify itself per RFC 7009
+                            revocation_data["client_id"] = self._upstream_client_id
 
                     await http_client.post(
                         self._upstream_revocation_endpoint,
@@ -1876,6 +2523,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         This method creates standard OAuth routes and replaces:
         - /authorize endpoint: Enhanced error responses for unregistered clients
         - /token endpoint: OAuth 2.1 compliant error codes
+        - /revoke endpoint: Downstream client ownership without changing user identity
 
         Args:
             mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
@@ -1907,6 +2555,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 authorize_handler = AuthorizationHandler(
                     provider=self,
                     base_url=self.base_url,  # ty: ignore[invalid-argument-type]
+                    issuer_url=self.issuer_url,
                     server_name=None,  # Could be extended to pass server metadata
                     server_icon_url=None,
                 )
@@ -1918,22 +2567,30 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     )
                 )
             elif (
-                self._cimd_manager is not None
+                (self._cimd_manager is not None or self._identity_assertion is not None)
                 and isinstance(route, Route)
                 and route.path == "/token"
                 and route.methods is not None
                 and "POST" in route.methods
             ):
-                # Replace the token endpoint authenticator with one that supports
-                # private_key_jwt for CIMD clients
-                token_endpoint_url = f"{self.base_url}/token"
-                cimd_authenticator = PrivateKeyJWTClientAuthenticator(
-                    provider=self,
-                    cimd_manager=self._cimd_manager,
-                    token_endpoint_url=token_endpoint_url,
-                )
+                # Replace the token endpoint so it can (a) authenticate CIMD
+                # private_key_jwt clients and (b) accept the SEP-990 jwt-bearer
+                # grant when identity assertion is enabled.
+                token_endpoint_url = self.token_endpoint_url
+                if self._cimd_manager is not None:
+                    authenticator: ClientAuthenticator = (
+                        PrivateKeyJWTClientAuthenticator(
+                            provider=self,
+                            cimd_manager=self._cimd_manager,
+                            token_endpoint_url=token_endpoint_url,
+                        )
+                    )
+                else:
+                    authenticator = ClientAuthenticator(self)
                 token_handler = TokenHandler(
-                    provider=self, client_authenticator=cimd_authenticator
+                    provider=self,
+                    client_authenticator=authenticator,
+                    identity_assertion_enabled=self._identity_assertion is not None,
                 )
                 custom_routes.append(
                     Route(
@@ -1945,9 +2602,54 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     )
                 )
             elif (
-                self._cimd_manager is not None
-                and isinstance(route, Route)
-                and route.path.startswith("/.well-known/oauth-authorization-server")
+                isinstance(route, Route)
+                and route.path == "/revoke"
+                and route.methods is not None
+                and "POST" in route.methods
+            ):
+                # Let the SDK retain its request-size limit, CORS, and other
+                # endpoint protections; only token ownership needs adapting.
+                revocation_routes = create_auth_routes(
+                    provider=RevocationProvider(self),
+                    issuer_url=self.base_url,  # ty: ignore[invalid-argument-type]
+                    revocation_options=self.revocation_options,
+                )
+                custom_routes.extend(
+                    candidate
+                    for candidate in revocation_routes
+                    if candidate.path == route.path
+                )
+            elif (
+                isinstance(route, Route)
+                and route.path == "/register"
+                and route.methods is not None
+                and "POST" in route.methods
+            ):
+                # SEP-837: wrap the SDK RegistrationHandler so the client's
+                # declared application_type (which the SDK parses but drops before
+                # calling register_client) survives into the provider and its
+                # web/native redirect rules are enforced over HTTP.
+                registration_options = (
+                    self.client_registration_options or ClientRegistrationOptions()
+                )
+                sdk_registration_handler = RegistrationHandler(
+                    provider=self,
+                    options=registration_options,
+                )
+                registration_handler = _ApplicationTypeRegistrationHandler(
+                    sdk_registration_handler
+                )
+                custom_routes.append(
+                    Route(
+                        path="/register",
+                        endpoint=cors_middleware(
+                            registration_handler.handle, ["POST", "OPTIONS"]
+                        ),
+                        methods=["POST", "OPTIONS"],
+                    )
+                )
+            elif isinstance(route, Route) and route.path.startswith(
+                "/.well-known/oauth-authorization-server"
             ):
                 client_registration_options = (
                     self.client_registration_options or ClientRegistrationOptions()
@@ -1958,8 +2660,33 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     self.service_documentation_url,
                     client_registration_options,
                     revocation_options,
+                    supports_identity_assertion=self._identity_assertion is not None,
                 )
-                metadata.client_id_metadata_document_supported = True
+                # `build_metadata` derives both the `issuer` field and every
+                # endpoint URL from a single argument. Endpoints must stay on
+                # `base_url` (that is where the routes are actually mounted),
+                # while the issuer identity is `issuer_url`. RFC 8414 §3.3
+                # requires `issuer` to match the URL the client used for
+                # discovery, which is the `issuer_url` advertised in the
+                # protected resource metadata.
+                metadata.issuer = self.issuer_url  # ty: ignore[invalid-assignment]
+                # RFC 9207: every authorization response we issue carries an
+                # `iss` matching this issuer byte-for-byte, so this route must
+                # always be overridden to advertise support — not just when
+                # CIMD or identity assertion is also enabled.
+                metadata.authorization_response_iss_parameter_supported = True
+                # Every client the proxy authenticates at the token endpoint is
+                # public: DCR-registered and synthesized clients are stored with
+                # `token_endpoint_auth_method="none"`, and CIMD clients use
+                # `private_key_jwt`. The SDK's default advertisement of
+                # `client_secret_basic`/`client_secret_post` is misleading — the
+                # proxy never enforces a downstream client secret — so we override
+                # it to reflect the methods actually supported.
+                auth_methods = ["none"]
+                if self._cimd_manager is not None:
+                    metadata.client_id_metadata_document_supported = True
+                    auth_methods.append("private_key_jwt")
+                metadata.token_endpoint_auth_methods_supported = auth_methods
                 handler = MetadataHandler(metadata)
                 methods = route.methods or ["GET", "OPTIONS"]
 
@@ -2015,22 +2742,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             txn_id = request.query_params.get("state")
             error = request.query_params.get("error")
 
-            if error:
-                error_description = request.query_params.get("error_description")
-                logger.error(
-                    "IdP callback error: %s - %s",
-                    error,
-                    error_description,
-                )
-                # Show error page to user
-                html_content = create_error_html(
-                    error_title="OAuth Error",
-                    error_message=f"Authentication failed: {error_description or 'Unknown error'}",
-                    error_details={"Error Code": error} if error else None,
-                )
-                return HTMLResponse(content=html_content, status_code=400)
-
-            if not idp_code or not txn_id:
+            if not idp_code and not error:
                 logger.error("IdP callback missing code or transaction ID")
                 html_content = create_error_html(
                     error_title="OAuth Error",
@@ -2039,20 +2751,82 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 return HTMLResponse(content=html_content, status_code=400)
 
             # Look up transaction data
-            transaction_model = await self._transaction_store.get(key=txn_id)
-            if not transaction_model:
+            transaction_model = (
+                await self._transaction_store.get(key=txn_id) if txn_id else None
+            )
+
+            if error:
+                error_description = request.query_params.get("error_description")
+                logger.error(
+                    "IdP callback error: %s - %s",
+                    error,
+                    error_description,
+                )
+                if transaction_model:
+                    # Forward the error to the client's redirect_uri (RFC 6749 §4.1.2.1)
+                    client_redirect_uri = transaction_model.client_redirect_uri
+                    if not self._validate_client_redirect_uri(client_redirect_uri):
+                        logger.warning(
+                            "Blocked IdP callback error redirect to disallowed URI "
+                            "for transaction %s",
+                            txn_id,
+                        )
+                        html_content = create_error_html(
+                            error_title="OAuth Error",
+                            error_message="Invalid redirect URI",
+                        )
+                        return HTMLResponse(content=html_content, status_code=400)
+
+                    error_params: dict[str, str] = {
+                        "error": error,
+                        "state": transaction_model.client_state,
+                    }
+                    if error_description:
+                        error_params["error_description"] = error_description
+                    return RedirectResponse(
+                        url=build_client_redirect(
+                            client_redirect_uri,
+                            error_params,
+                            iss=str(self.issuer_url),
+                        ),
+                        status_code=302,
+                    )
+                # No trusted redirect_uri available — show local error page
+                html_content = create_error_html(
+                    error_title="OAuth Error",
+                    error_message=f"Authentication failed: {error_description or 'Unknown error'}",
+                    error_details={"Error Code": error},
+                )
+                return HTMLResponse(content=html_content, status_code=400)
+            if not txn_id or not transaction_model:
                 logger.error("IdP callback with invalid transaction ID: %s", txn_id)
                 html_content = create_error_html(
                     error_title="OAuth Error",
                     error_message="Invalid or expired authorization transaction. Please try authenticating again.",
                 )
                 return HTMLResponse(content=html_content, status_code=400)
+
+            if not self._validate_client_redirect_uri(
+                transaction_model.client_redirect_uri
+            ):
+                logger.warning(
+                    "Blocked IdP callback redirect to disallowed URI for transaction %s",
+                    txn_id,
+                )
+                html_content = create_error_html(
+                    error_title="OAuth Error",
+                    error_message="Invalid redirect URI",
+                )
+                return HTMLResponse(content=html_content, status_code=400)
+
             # Verify consent binding cookie to prevent confused deputy attacks.
             # When consent is enabled, the browser that approved consent receives
             # a signed cookie. A different browser (e.g., a victim lured to the
             # IdP URL) won't have this cookie and will be rejected. "remember"
             # mode still issues consent tokens (on silent approval or HTML
             # approval), so both code paths need binding verification.
+            # False and "external" intentionally skip this security check, so
+            # those modes require equivalent protection outside FastMCP.
             if self._require_authorization_consent in (True, "remember"):
                 consent_token = transaction_model.consent_token
                 if not consent_token:
@@ -2083,9 +2857,6 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
             transaction = transaction_model.model_dump()
 
-            # Exchange IdP code for tokens (server-side)
-            oauth_client = self._create_upstream_oauth_client()
-
             try:
                 idp_redirect_uri = (
                     f"{str(self.base_url).rstrip('/')}{self._redirect_path}"
@@ -2095,8 +2866,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 )
 
                 # Build token exchange parameters
-                token_params = {
-                    "url": self._upstream_token_endpoint,
+                token_params: dict[str, Any] = {
                     "code": idp_code,
                     "redirect_uri": idp_redirect_uri,
                 }
@@ -2126,9 +2896,15 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         list(self._extra_token_params.keys()),
                     )
 
-                idp_tokens: dict[str, Any] = await oauth_client.fetch_token(
-                    **token_params
-                )
+                # Exchange IdP code for tokens (server-side)
+                async with self._upstream_oauth_client() as oauth_client:
+                    # url is passed by keyword: the _create_upstream_oauth_client
+                    # override point is duck-typed, and alternative clients may
+                    # declare it keyword-only (the refresh_token sites already
+                    # call by keyword).
+                    idp_tokens: dict[str, Any] = await oauth_client.fetch_token(
+                        url=self._upstream_token_endpoint, **token_params
+                    )
 
                 logger.debug(
                     f"Successfully exchanged IdP code for tokens (transaction: {txn_id}, PKCE: {bool(proxy_code_verifier)})"
@@ -2180,16 +2956,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 "state": client_state,
             }
 
-            # Add query parameters to client redirect URI
-            separator = "&" if "?" in client_redirect_uri else "?"
-            client_callback_url = (
-                f"{client_redirect_uri}{separator}{urlencode(callback_params)}"
+            client_callback_url = build_client_redirect(
+                client_redirect_uri, callback_params, iss=str(self.issuer_url)
             )
 
             logger.debug(f"Forwarding to client callback for transaction {txn_id}")
 
             response = RedirectResponse(url=client_callback_url, status_code=302)
-            self._clear_consent_binding_cookie(request, response, txn_id)
+            self._clear_consent_binding_cookie(response, txn_id)
             return response
 
         except Exception as e:

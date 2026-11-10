@@ -1,6 +1,6 @@
 from typing import TypeAlias
 
-from mcp.shared.session import ProgressFnT
+from mcp.shared.dispatcher import ProgressFnT
 
 from fastmcp.utilities.logging import get_logger
 

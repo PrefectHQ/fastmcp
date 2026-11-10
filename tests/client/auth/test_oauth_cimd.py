@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 
-import httpx
+import httpx2
 import pytest
 
 from fastmcp.client.auth import OAuth
@@ -108,7 +108,7 @@ class TestOAuthBind:
     async def test_unbound_raises_runtime_error(self):
         """async_auth_flow should fail clearly when OAuth is not bound."""
         oauth = OAuth(client_metadata_url=VALID_CIMD_URL)
-        request = httpx.Request("GET", MCP_SERVER_URL)
+        request = httpx2.Request("GET", MCP_SERVER_URL)
         with pytest.raises(RuntimeError, match="no server URL"):
             async for _ in oauth.async_auth_flow(request):
                 pass

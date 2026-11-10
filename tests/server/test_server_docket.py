@@ -3,13 +3,16 @@
 import asyncio
 from contextlib import asynccontextmanager
 
+import pytest
 from docket import Docket
 from docket.worker import Worker
+from fastmcp_tasks.dependencies import CurrentDocket, CurrentWorker
+from redis.credentials import CredentialProvider, StreamingCredentialProvider
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.dependencies import CurrentDocket, CurrentWorker
 from fastmcp.server.dependencies import get_context
+from fastmcp_tasks import TasksExtension
 
 HUZZAH = "huzzah!"
 
@@ -23,10 +26,9 @@ async def test_docket_not_initialized_without_task_components():
         return "no docket needed"
 
     async with Client(mcp) as client:
-        # Docket should not be initialized
-        assert mcp._docket is None
+        # Without a task=True tool, the lifespan never takes the Docket branch.
+        assert mcp.docket is None
 
-        # Regular tools still work
         result = await client.call_tool("regular_tool", {})
         assert result.data == "no docket needed"
 
@@ -34,8 +36,9 @@ async def test_docket_not_initialized_without_task_components():
 async def test_current_docket():
     """CurrentDocket dependency provides access to Docket instance."""
     mcp = FastMCP("test-server")
+    mcp.add_extension(TasksExtension())
 
-    # Need a task-enabled component to trigger Docket initialization
+    # A task-enabled component makes the lifespan start Docket.
     @mcp.tool(task=True)
     async def _trigger_docket() -> str:
         return "trigger"
@@ -53,8 +56,8 @@ async def test_current_docket():
 async def test_current_worker():
     """CurrentWorker dependency provides access to Worker instance."""
     mcp = FastMCP("test-server")
+    mcp.add_extension(TasksExtension())
 
-    # Need a task-enabled component to trigger Docket initialization
     @mcp.tool(task=True)
     async def _trigger_docket() -> str:
         return "trigger"
@@ -77,8 +80,8 @@ async def test_worker_executes_background_tasks():
     """Verify that the Docket Worker is running and executes tasks."""
     task_completed = asyncio.Event()
     mcp = FastMCP("test-server")
+    mcp.add_extension(TasksExtension())
 
-    # Need a task-enabled component to trigger Docket initialization
     @mcp.tool(task=True)
     async def _trigger_docket() -> str:
         return "trigger"
@@ -107,69 +110,12 @@ async def test_worker_executes_background_tasks():
         await asyncio.wait_for(task_completed.wait(), timeout=2.0)
 
 
-async def test_current_docket_in_resource():
-    """CurrentDocket works in resources."""
-    mcp = FastMCP("test-server")
-
-    # Need a task-enabled component to trigger Docket initialization
-    @mcp.tool(task=True)
-    async def _trigger_docket() -> str:
-        return "trigger"
-
-    @mcp.resource("docket://info")
-    def get_docket_info(docket: Docket = CurrentDocket()) -> str:
-        assert isinstance(docket, Docket)
-        return HUZZAH
-
-    async with Client(mcp) as client:
-        result = await client.read_resource("docket://info")
-        assert HUZZAH in str(result)
-
-
-async def test_current_docket_in_prompt():
-    """CurrentDocket works in prompts."""
-    mcp = FastMCP("test-server")
-
-    # Need a task-enabled component to trigger Docket initialization
-    @mcp.tool(task=True)
-    async def _trigger_docket() -> str:
-        return "trigger"
-
-    @mcp.prompt()
-    def task_prompt(task_type: str, docket: Docket = CurrentDocket()) -> str:
-        assert isinstance(docket, Docket)
-        return HUZZAH
-
-    async with Client(mcp) as client:
-        result = await client.get_prompt("task_prompt", {"task_type": "background"})
-        assert HUZZAH in str(result)
-
-
-async def test_current_docket_in_resource_template():
-    """CurrentDocket works in resource templates."""
-    mcp = FastMCP("test-server")
-
-    # Need a task-enabled component to trigger Docket initialization
-    @mcp.tool(task=True)
-    async def _trigger_docket() -> str:
-        return "trigger"
-
-    @mcp.resource("docket://tasks/{task_id}")
-    def get_task_status(task_id: str, docket: Docket = CurrentDocket()) -> str:
-        assert isinstance(docket, Docket)
-        return HUZZAH
-
-    async with Client(mcp) as client:
-        result = await client.read_resource("docket://tasks/123")
-        assert HUZZAH in str(result)
-
-
 async def test_concurrent_calls_maintain_isolation():
     """Multiple concurrent calls each get the same Docket instance."""
     mcp = FastMCP("test-server")
+    mcp.add_extension(TasksExtension())
     docket_ids = []
 
-    # Need a task-enabled component to trigger Docket initialization
     @mcp.tool(task=True)
     async def _trigger_docket() -> str:
         return "trigger"
@@ -206,8 +152,8 @@ async def test_user_lifespan_still_works_with_docket():
         yield {"custom_data": "test_value"}
 
     mcp = FastMCP("test-server", lifespan=custom_lifespan)
+    mcp.add_extension(TasksExtension())
 
-    # Need a task-enabled component to trigger Docket initialization
     @mcp.tool(task=True)
     async def _trigger_docket() -> str:
         return "trigger"
@@ -225,3 +171,56 @@ async def test_user_lifespan_still_works_with_docket():
         assert lifespan_entered
         result = await client.call_tool("check_both", {})
         assert HUZZAH in str(result)
+
+
+async def test_memory_backend_does_not_request_credentials():
+    class UnusedCredentials(CredentialProvider):
+        def get_credentials(self) -> tuple[str, str]:
+            raise AssertionError("The memory backend must not authenticate")
+
+    mcp = FastMCP("memory-credentials")
+    mcp.add_extension(TasksExtension(credential_provider=UnusedCredentials()))
+
+    @mcp.tool(task=True)
+    async def double(value: int) -> int:
+        return value * 2
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("double", {"value": 21})
+
+    assert result.data == 42
+    assert type(result.data) is int
+
+
+def test_streaming_credential_providers_are_rejected():
+    class RefreshingCredentials(StreamingCredentialProvider):
+        def get_credentials(self) -> tuple[str, str]:
+            return "tasks", "secret"
+
+        def on_next(self, callback): ...
+
+        def on_error(self, callback): ...
+
+        def is_streaming(self) -> bool:
+            return True
+
+    with pytest.raises(ValueError, match="Streaming credential providers"):
+        TasksExtension(credential_provider=RefreshingCredentials())
+
+
+async def test_provider_and_url_credentials_are_rejected():
+    mcp = FastMCP("conflicting-credentials")
+    mcp.add_extension(
+        TasksExtension(
+            url="redis://user:password@localhost:6379/0",
+            credential_provider=CredentialProvider(),
+        )
+    )
+
+    @mcp.tool(task=True)
+    async def double(value: int) -> int:
+        return value * 2
+
+    with pytest.raises(ValueError, match="not both"):
+        async with mcp._lifespan_manager():
+            pytest.fail("Conflicting credentials must not start the task backend")

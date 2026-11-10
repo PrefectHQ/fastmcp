@@ -6,17 +6,18 @@ sidebarTitle: auth0
 # `fastmcp.server.auth.providers.auth0`
 
 
-Auth0 OAuth provider for FastMCP.
+Auth0 OAuth providers for FastMCP.
 
-This module provides a complete Auth0 integration that's ready to use with
-just the configuration URL, client ID, client secret, audience, and base URL.
+This module provides two Auth0 integrations:
 
-Example:
+- ``Auth0Provider`` — OAuth proxy for fixed Auth0 application credentials
+- ``Auth0MCPProvider`` — resource server for Auth0 Auth for MCP (DCR/CIMD)
+
+Example (OAuth proxy):
     ```python
     from fastmcp import FastMCP
     from fastmcp.server.auth.providers.auth0 import Auth0Provider
 
-    # Simple Auth0 OAuth protection
     auth = Auth0Provider(
         config_url="https://auth0.config.url",
         client_id="your-auth0-client-id",
@@ -28,14 +29,69 @@ Example:
     mcp = FastMCP("My Protected Server", auth=auth)
     ```
 
+Example (Auth for MCP):
+    ```python
+    from fastmcp import FastMCP
+    from fastmcp.server.auth.providers.auth0 import Auth0MCPProvider
+
+    auth = Auth0MCPProvider(
+        config_url="https://your-tenant.auth0.com/.well-known/openid-configuration",
+        base_url="http://127.0.0.1:8000",
+    )
+
+    mcp = FastMCP("My MCP Server", auth=auth)
+    ```
+
 
 ## Classes
 
-### `Auth0Provider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/auth0.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Auth0Provider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/auth0.py#L62" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 An Auth0 provider implementation for FastMCP.
 
 This provider is a complete Auth0 integration that's ready to use with
 just the configuration URL, client ID, client secret, audience, and base URL.
+
+
+### `Auth0JWTVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/auth0.py#L196" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+JWT verifier for Auth0 MCP access tokens.
+
+Auth0's ``rfc9068_profile_authz`` token dialect exposes API permissions in
+the ``permissions`` claim. Standard OAuth ``scope``/``scp`` claims are checked
+first; ``permissions`` is included when present.
+
+
+### `Auth0MCPProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/auth0.py#L214" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Auth0 resource server provider for Auth for MCP (DCR/CIMD).
+
+FastMCP validates access tokens issued by Auth0 while Auth0 handles OAuth,
+dynamic client registration, and CIMD approval in the tenant dashboard.
+
+Enable the Resource Parameter Compatibility Profile in Auth0 and create an
+API whose identifier matches this server's resource URL (logged at startup).
+
+
+**Methods:**
+
+#### `set_mcp_path` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/auth0.py#L291" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_mcp_path(self, mcp_path: str | None) -> None
+```
+
+Bind the default verifier's audience to this server's resource URL.
+
+
+#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/auth0.py#L308" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_routes(self, mcp_path: str | None = None) -> list[Route]
+```
+
+Protected resource routes plus Auth0 authorization server metadata.
 

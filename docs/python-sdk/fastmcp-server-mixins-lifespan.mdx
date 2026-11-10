@@ -6,25 +6,29 @@ sidebarTitle: lifespan
 # `fastmcp.server.mixins.lifespan`
 
 
-Lifespan and Docket task infrastructure for FastMCP Server.
+Lifespan infrastructure for FastMCP Server.
 
 ## Classes
 
-### `LifespanMixin` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/mixins/lifespan.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `LifespanMixin` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/lifespan.py#L39" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
-Mixin providing lifespan and Docket task infrastructure for FastMCP.
+Mixin providing lifespan infrastructure for FastMCP.
 
 
 **Methods:**
 
-#### `docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/mixins/lifespan.py#L29" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/lifespan.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 docket(self: FastMCP) -> Docket | None
 ```
 
-Get the Docket instance if Docket support is enabled.
+The Docket instance owned by this server, if the tasks extension is active.
 
-Returns None if Docket is not enabled or server hasn't been started yet.
+Returns the Docket that the tasks extension initialized as the root of a
+runtime tree, or None when no task backend is running. Mounted children do
+not own their own Docket — they share the root's via ``_current_docket``
+ContextVar inheritance — so accessing ``.docket`` on a mounted child
+returns None even while its tasks run on the root's Docket.
 

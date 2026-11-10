@@ -32,7 +32,7 @@ class TestDereferenceRefsMiddleware:
         async with Client(mcp) as client:
             tools = await client.list_tools()
 
-        schema = tools[0].inputSchema
+        schema = tools[0].input_schema
         # $defs should be removed — everything inlined
         assert "$defs" not in schema
         # The Color enum should be inlined into the request property
@@ -49,7 +49,7 @@ class TestDereferenceRefsMiddleware:
         async with Client(mcp) as client:
             tools = await client.list_tools()
 
-        schema = tools[0].inputSchema
+        schema = tools[0].input_schema
         # $defs should still be present
         assert "$defs" in schema
 
@@ -64,7 +64,7 @@ class TestDereferenceRefsMiddleware:
         async with Client(mcp) as client:
             tools = await client.list_tools()
 
-        schema = tools[0].inputSchema
+        schema = tools[0].input_schema
         assert "$defs" not in schema
 
     async def test_does_not_mutate_original_tool(self):
@@ -100,9 +100,9 @@ class TestDereferenceRefsMiddleware:
 
         tool = tools[0]
         # Both input and output schemas should be dereferenced
-        assert "$defs" not in tool.inputSchema
-        if tool.outputSchema is not None:
-            assert "$defs" not in tool.outputSchema
+        assert "$defs" not in tool.input_schema
+        if tool.output_schema is not None:
+            assert "$defs" not in tool.output_schema
 
     async def test_resource_templates_dereferenced(self):
         """Middleware dereferences resource template schemas."""
@@ -130,7 +130,46 @@ class TestDereferenceRefsMiddleware:
         async with Client(mcp) as client:
             tools = await client.list_tools()
 
-        schema = tools[0].inputSchema
+        schema = tools[0].input_schema
         # Simple schema should not have $defs regardless
         assert "$defs" not in schema
         assert schema["properties"]["a"]["type"] == "integer"
+
+    async def test_root_ref_to_boolean_schema_does_not_fail_listing(self):
+        """A tool whose schema has a root $ref to a boolean schema is listed.
+
+        `true` is a valid JSON Schema, but dereferencing it replaces the
+        whole schema with a non-dict, which previously raised and failed
+        tools/list for the entire server (#6125). The tool now keeps its
+        schema and every other tool stays visible.
+        """
+        from fastmcp.tools import Tool
+
+        class AnyArgs(Tool):
+            async def run(self, arguments):
+                return "ok"
+
+        mcp = FastMCP("test", dereference_schemas=True)
+        mcp.add_tool(
+            AnyArgs(
+                name="anything",
+                parameters={
+                    "type": "object",
+                    "$ref": "#/$defs/Any",
+                    "$defs": {"Any": True},
+                },
+            )
+        )
+
+        @mcp.tool
+        def ping() -> str:
+            return "pong"
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+
+        assert [t.name for t in tools] == ["anything", "ping"]
+        # The boolean schema can't be inlined, so the tool keeps its
+        # original $ref and $defs rather than crashing the listing.
+        anything = tools[0].input_schema
+        assert anything["type"] == "object"

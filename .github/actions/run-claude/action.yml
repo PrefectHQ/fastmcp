@@ -37,10 +37,15 @@ inputs:
     required: false
     default: ""
 
+  extra-allowed-tools:
+    description: "Additional comma-separated tools to append to allowed-tools"
+    required: false
+    default: ""
+
   model:
     description: "Model to use for Claude"
     required: false
-    default: "claude-opus-4-6"
+    default: "claude-opus-4-8"
 
   allowed-bots:
     description: "Allowed bot usernames, or '*' for all bots"
@@ -88,7 +93,7 @@ runs:
         track_progress: ${{ inputs.track-progress }}
         prompt: ${{ inputs.prompt }}
         claude_args: |
-          ${{ (inputs.allowed-tools != '' || inputs.extra-allowed-tools != '') && format('--allowedTools {0}{1}', inputs.allowed-tools, inputs.extra-allowed-tools != '' && format(',{0}', inputs.extra-allowed-tools) || '') || '' }}
+          ${{ (inputs.allowed-tools != '' || inputs.extra-allowed-tools != '') && format('--allowedTools ''{0}{1}''', inputs.allowed-tools, inputs.extra-allowed-tools != '' && format(',{0}', inputs.extra-allowed-tools) || '') || '' }}
           ${{ inputs.mcp-servers != '' && format('--mcp-config ''{0}''', inputs.mcp-servers) || '' }}
           --model ${{ inputs.model }}
         settings: |

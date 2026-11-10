@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from collections.abc import Sequence
 
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.server.context import Context

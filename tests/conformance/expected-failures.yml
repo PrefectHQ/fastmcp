@@ -1,6 +1,23 @@
+# Scenarios the conformance suite runs that FastMCP does not pass.
+#
+# This is a baseline, not a to-do list: every entry needs a reason, and anything
+# that is merely unimplemented in the *fixture* belongs in server.py instead.
+# The suite is run with `--suite all`, so draft and pending scenarios count too.
+
 server:
-  - completion-complete
-  - server-sse-polling
+  # Resource subscriptions (resources/subscribe, resources/unsubscribe) are not
+  # implemented. The server correctly advertises `resources.subscribe: false`,
+  # but the suite calls the methods regardless of the declared capability. Both
+  # scenarios were removed in MCP 2026-07-28, the version FastMCP targets, so
+  # this affects handshake-era clients only.
   - resources-subscribe
   - resources-unsubscribe
-  - dns-rebinding-protection
+
+  # SEP-2663 MRTR-to-tasks composition: a task-supporting guard tool is
+  # expected to gather its input over foreground multi-round-trip rounds and
+  # only mint the task on the final round. FastMCP instead creates the task up
+  # front and parks it at `input_required`, answered through `tasks/update` —
+  # the model the `tasks-mrtr-input` scenario exercises. Supporting both would
+  # need the tool to declare which one it wants, which is an unmade API
+  # decision rather than a bug.
+  - tasks-mrtr-composition

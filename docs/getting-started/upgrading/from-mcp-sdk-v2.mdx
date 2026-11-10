@@ -1,0 +1,327 @@
+---
+title: Upgrading from MCP SDK v2
+sidebarTitle: "From MCP SDK v2"
+description: Move a server built on the MCP Python SDK v2's MCPServer class to FastMCP
+icon: up
+---
+
+If your server starts with `from mcp.server.mcpserver import MCPServer`, you're using the high-level server API introduced in v2 of the `mcp` package. Moving to FastMCP is a mechanical migration: the two APIs share a lineage, so most of your code carries over with a rename.
+
+```python
+# Before
+from mcp.server.mcpserver import MCPServer
+
+server = MCPServer("my-server")
+
+@server.tool()
+def greet(name: str) -> str:
+    """Greet someone by name"""
+    return f"Hello, {name}!"
+
+# After
+from fastmcp import FastMCP
+
+mcp = FastMCP("my-server")
+
+@mcp.tool
+def greet(name: str) -> str:
+    """Greet someone by name"""
+    return f"Hello, {name}!"
+```
+
+That resemblance is not a coincidence. `MCPServer` is the SDK's successor to FastMCP 1.0, the high-level server that shipped inside SDK v1; FastMCP is the standalone framework that grew from the same starting point. Both derive the protocol layer from your function signatures — type hints become JSON Schema, docstrings become descriptions, return values are serialized for you. What separates them is scope: `MCPServer` is the SDK's ergonomic surface over the protocol, while FastMCP builds on that same SDK v2 and adds the machinery a server needs in production — composition, middleware, proxying, authentication providers, tool transformation, a client, and a testing story.
+
+<Note>
+Building on the low-level `Server` class instead? See [Upgrading from the Low-Level SDK v2](/getting-started/upgrading/from-low-level-sdk-v2). Still on SDK v1's `mcp.server.fastmcp.FastMCP`? Your upgrade is a single import — see [Upgrading from MCP SDK v1](/getting-started/upgrading/from-mcp-sdk-v1).
+</Note>
+
+<Prompt description="Copy this prompt into any LLM along with your server code to get automated upgrade guidance.">
+You are migrating an MCP server from the MCP Python SDK v2's high-level `MCPServer` class (`mcp.server.mcpserver`) to FastMCP 4. The two APIs are close relatives, so most of this is mechanical renaming.
+
+FIRST, fetch https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk-v2 — it carries the full mapping table and before-and-after code for everything below. Fetch https://gofastmcp.com for anything the guide doesn't cover. Do not invent a FastMCP API you have not confirmed in the docs.
+
+Then work through the provided code looking for each of these.
+
+IMPORTS AND CONSTRUCTION
+- `MCPServer`, and `Context`, `Image`, `Audio`, `Message` imported from `mcp.server.mcpserver`
+- `mcp_types` imports — these are UNCHANGED. FastMCP 4 builds on the same SDK v2, so leave them alone and say so.
+
+DECORATORS
+- `@server.tool()`, `@server.prompt()` — FastMCP takes a bare `@mcp.tool` / `@mcp.prompt` (and still accepts the called form)
+- `@server.resource(...)`, `@server.completion()`, `@server.custom_route(...)`
+
+TRANSPORT
+- `run(transport="streamable-http")` — FastMCP names this transport "http"
+- `streamable_http_app()`, `sse_app()`
+
+CONSTRUCTOR ARGUMENTS THAT DO NOT CARRY OVER
+- `debug=`, `log_level=`
+- `warn_on_duplicate_tools=` / `_resources=` / `_prompts=`
+- `dependencies=`
+- `title=`, `description=`
+- `token_verifier=`, `auth_server_provider=`, `auth=AuthSettings(...)` — FastMCP consolidates all three into one `auth=` provider
+- `cache_hints=`
+- `extensions=`
+- `tools=[...]` (rare — the SDK's `Tool` type is not exported): FastMCP takes plain callables, so pass the underlying functions
+Passing any of these raises TypeError, except `auth=`: the keyword survives, and an SDK `AuthSettings` value fails later, with an AttributeError when the server builds its HTTP app. Only `debug=` and `log_level=` get an error naming the replacement. `name`, `version`, `instructions`, `icons`, `website_url`, `lifespan`, `resource_security`, and `request_state_security` carry over unchanged.
+
+CONTEXT — these ten properties do NOT exist on FastMCP's Context and raise AttributeError if you only swap the import:
+- `ctx.mcp_server` → `ctx.fastmcp`
+- `ctx.headers` → `get_http_headers()` from `fastmcp.server.dependencies` (a function, not a property)
+- `ctx.protocol_version` → `ctx.request_context.protocol_version`
+- `ctx.client_capabilities` → read it off `ctx.session` / `ctx.request_context`
+- `ctx.notify_tools_changed()`, `notify_resources_changed()`, `notify_prompts_changed()`, `notify_resource_updated()` → `ctx.send_notification(...)` with the matching `mcp_types` notification. FastMCP emits the list-changed ones for you when components change visibility through `ctx.enable_components` / `ctx.disable_components`.
+- `ctx.elicit_url` → not the same thing as `ctx.elicit` (that one is form elicitation, with a different signature and wire behavior). The URL flow survives on the raw session as `ctx.session.elicit_url(...)` — use that rather than deleting an OAuth or payment handoff.
+- `ctx.close_standalone_sse_stream` → no public FastMCP equivalent, and NOT on `ctx.request_context`. Flag it for the user.
+These four exist on both but with DIFFERENT signatures, so a bare import swap compiles and then fails at runtime:
+- `ctx.log(level, data)` → `ctx.log(message, level=...)` — the first positional argument is now the message, not the level
+- `ctx.info(data)` / `debug` / `warning` / `error` → these take `message` as a string, where the SDK accepted any JSON-serializable `data`
+- `ctx.elicit(message, schema=Model)` → `ctx.elicit(message, response_type=Model)` — the keyword was renamed
+- `ctx.read_resource(uri)` → still takes a URI, but returns a `ResourceResult` whose payload is under `.contents`, where the SDK returned an iterable of content objects directly. Code that iterates or indexes the return value needs updating.
+
+Genuinely unchanged: `report_progress`, `request_id`, `client_id`, `input_responses`, `request_state`, `close_sse_stream`, `session`, and `request_context`.
+
+RESOLVERS — the one part that is not a rename, so check for it first
+- any `Annotated[T, Resolve(fn)]` parameter, and the resolvers behind it
+- resolvers returning `Elicit[...]`, `Sample`, or `ListRoots`
+FastMCP has no resolver injection, but the underlying requests survive in a different shape: on a modern connection `Elicit`, `Sample`, and `ListRoots` all ride the guard pattern, where the tool returns an `InputRequiredResult` and the client answers on the next call. Do not tell the user these capabilities are simply unavailable. Flag every resolver with the guide's per-capability reasoning (server-side LLM call is usually better than guard-routed sampling; roots are often simplest as ordinary tool arguments) rather than picking a rewrite yourself. Also note that a resolved parameter is hidden from the tool's input schema, so replacing it with an ordinary argument changes the schema clients see.
+
+For each item found, show the original code, name what changed, and give the FastMCP equivalent from the guide. Call out anything you could not find a documented replacement for instead of inventing one.
+</Prompt>
+
+## Install
+
+FastMCP 4 is a stable release:
+
+```bash
+pip install "fastmcp>=4"
+```
+
+The `fastmcp` package depends on `fastmcp-slim` at the same version; both resolve together with no extra constraints.
+
+FastMCP 4 depends on the MCP SDK v2, so nothing you already import from `mcp_types` moves. That is the practical benefit of migrating at this version rather than an earlier one: you and FastMCP are on the same protocol layer, with the same snake_case field names and the same type package, so the migration touches only the server API.
+
+## The Mechanical Part
+
+Most of the work is renaming. This table covers the surfaces a typical `MCPServer` server touches:
+
+| MCP SDK v2 | FastMCP |
+|---|---|
+| `from mcp.server.mcpserver import MCPServer` | `from fastmcp import FastMCP` |
+| `from mcp.server.mcpserver import Context` | `from fastmcp import Context` |
+| `from mcp.server.mcpserver import Image, Audio` | `from fastmcp.utilities.types import Image, Audio` |
+| `from mcp.server.mcpserver.prompts.base import Message` | `from fastmcp.prompts import Message` |
+| `@server.tool()` | `@mcp.tool` |
+| `@server.prompt()` | `@mcp.prompt` |
+| `@server.resource("uri://x")` | `@mcp.resource("uri://x")` |
+| `@server.completion()` | `@mcp.completion` |
+| `@server.custom_route(path, methods)` | `@mcp.custom_route(path, methods)` |
+| `server.run(transport="streamable-http")` | `mcp.run(transport="http")` |
+| `server.streamable_http_app()` | `mcp.http_app()` |
+| `server.sse_app()` | `mcp.http_app(transport="sse")` |
+| `ctx.mcp_server` | `ctx.fastmcp` |
+| `ctx.headers` | `get_http_headers()` from `fastmcp.server.dependencies` |
+| `ctx.protocol_version` | `ctx.request_context.protocol_version` |
+| `ctx.client_capabilities` | read it off `ctx.session` |
+| `from mcp_types import X` | unchanged |
+
+Two of these are worth a sentence each. The decorators lose their parentheses: `MCPServer` required `@server.tool()` and raised a `TypeError` telling you so if you wrote `@server.tool`, while FastMCP accepts both forms, so `@mcp.tool` is the idiomatic spelling and `@mcp.tool()` keeps working if you'd rather not touch every line. And the streamable HTTP transport is named `"http"` in FastMCP rather than `"streamable-http"` — the transport is the same, and `mcp.run()` still defaults to stdio.
+
+Here is a complete server before and after. Nothing in the logic changes:
+
+<CodeGroup>
+
+```python Before
+import json
+from mcp.server.mcpserver import MCPServer, Context
+
+server = MCPServer("demo")
+
+@server.tool()
+def greet(name: str) -> str:
+    """Greet someone by name"""
+    return f"Hello, {name}!"
+
+@server.tool()
+async def process(items: list[str], ctx: Context) -> str:
+    """Process a batch of items"""
+    for i, item in enumerate(items):
+        await ctx.report_progress(i, len(items))
+    return f"Processed {len(items)} items"
+
+@server.resource("config://app", mime_type="application/json")
+def app_config() -> str:
+    """Application configuration"""
+    return json.dumps({"debug": False})
+
+@server.resource("users://{user_id}/profile")
+def profile(user_id: str) -> str:
+    """User profile by ID"""
+    return json.dumps({"id": user_id})
+
+@server.prompt()
+def summarize(text: str) -> str:
+    """Summarize text"""
+    return f"Summarize:\n\n{text}"
+
+if __name__ == "__main__":
+    server.run(transport="streamable-http")
+```
+
+```python After
+import json
+from fastmcp import FastMCP, Context
+
+mcp = FastMCP("demo")
+
+@mcp.tool
+def greet(name: str) -> str:
+    """Greet someone by name"""
+    return f"Hello, {name}!"
+
+@mcp.tool
+async def process(items: list[str], ctx: Context) -> str:
+    """Process a batch of items"""
+    for i, item in enumerate(items):
+        await ctx.report_progress(i, len(items))
+    return f"Processed {len(items)} items"
+
+@mcp.resource("config://app", mime_type="application/json")
+def app_config() -> str:
+    """Application configuration"""
+    return json.dumps({"debug": False})
+
+@mcp.resource("users://{user_id}/profile")
+def profile(user_id: str) -> str:
+    """User profile by ID"""
+    return json.dumps({"id": user_id})
+
+@mcp.prompt
+def summarize(text: str) -> str:
+    """Summarize text"""
+    return f"Summarize:\n\n{text}"
+
+if __name__ == "__main__":
+    mcp.run(transport="http")
+```
+
+</CodeGroup>
+
+## Constructor Arguments
+
+`FastMCP()` describes your server's identity and behavior; how it gets deployed is decided when you serve it. Several `MCPServer` constructor arguments move accordingly. Each raises a `TypeError` rather than being silently ignored, but only `debug=` and `log_level=` get an error naming the replacement; the rest fail with a generic "unexpected keyword argument", so use the table below.
+
+`name`, `version`, `instructions`, `icons`, `website_url`, `lifespan`, `resource_security`, and `request_state_security` all mean what they meant before. The rest map like this:
+
+| `MCPServer(...)` | FastMCP |
+|---|---|
+| `debug=True` | `FASTMCP_DEBUG` environment variable |
+| `log_level="DEBUG"` | `run_http_async(log_level=...)` or `FASTMCP_LOG_LEVEL` |
+| `warn_on_duplicate_tools`, `_resources`, `_prompts` | a single `on_duplicate=` |
+| `dependencies=[...]` | a [`fastmcp.json`](/deployment/server-configuration) configuration file |
+| `title=`, `description=` | `instructions=` |
+| `tools=[Tool, ...]` | `tools=[callable, ...]`, or FastMCP's own `Tool` |
+| `resources=[Resource, ...]` | no constructor keyword — register with `@mcp.resource` or `mcp.add_resource()` |
+| `subscriptions=<SubscriptionBus>` | no equivalent — see below |
+| `token_verifier=`, `auth_server_provider=`, `auth=AuthSettings(...)` | a single `auth=` provider |
+| `cache_hints={...}` | `cache_ttl=`, `cache_scope=` |
+| `extensions=[...]` | `mcp.add_extension(...)` |
+| `middleware=[ServerMiddleware, ...]` | `middleware=[Middleware, ...]` — same keyword, different class |
+
+`middleware=` is the row most likely to be mistaken for a rename. Both constructors take a `middleware=` sequence, but an `MCPServer` wants the SDK's `ServerMiddleware` — one hook wrapping every raw JSON-RPC message — while FastMCP wants its own `Middleware`, which adds typed per-operation hooks (`on_call_tool`, `on_list_tools`, and the rest) on top of the same message-level pass. Keeping the keyword and swapping the base class is the migration; see [Middleware](/servers/middleware).
+
+Authentication is the largest of these, and it consolidates rather than moves. `MCPServer` exposes the SDK's raw auth plumbing — a token verifier, an authorization-server provider, and an `AuthSettings` object, configured separately. FastMCP takes one `auth=` provider that carries the whole configuration, and ships providers for the common cases: `JWTVerifier` for validating tokens you already issue, `RemoteAuthProvider` for delegating to an external authorization server, `OAuthProxy` for wrapping a provider that lacks Dynamic Client Registration, and named providers for GitHub, Google, Auth0, Keycloak, WorkOS, and others. See [Authentication](/servers/auth/authentication).
+
+Two rows are worth reading before you delete the argument. `resources=` has no constructor equivalent, so pre-built `Resource` objects need registering through `@mcp.resource` or `mcp.add_resource()` instead — dropping the keyword silently drops the resources with it. And `subscriptions=`, which an `MCPServer` uses to plug in an external pub/sub bus so resource-update notifications reach clients across replicas, has no FastMCP equivalent at all. A multi-replica deployment that relies on it should confirm it can live without cross-replica subscription fan-out before migrating, because a mechanical rename removes that behavior without any error to warn you.
+
+### Serving HTTP
+
+Renaming `streamable_http_app()` to `http_app()` is only mechanical for a call with no arguments. The keywords were renamed and regrouped, so an existing call carries arguments `http_app()` does not accept:
+
+| SDK v2 | FastMCP |
+|---|---|
+| `streamable_http_app(streamable_http_path=...)` | `http_app(path=...)` |
+| `sse_app(sse_path=...)` | `http_app(path=..., transport="sse")` |
+| `sse_app(message_path=...)` | no equivalent |
+| `max_request_body_size=`, `max_sessions=` | no equivalent |
+| `transport_security=TransportSecuritySettings(...)` | `host_origin_protection=`, `allowed_hosts=`, `allowed_origins=` |
+| `host=...` | pass to `mcp.run(host=...)` instead |
+
+`json_response`, `stateless_http`, `event_store`, `retry_interval`, and `session_idle_timeout` keep their names. See [Deploying HTTP servers](/deployment/http) for the host and origin settings.
+
+### Stricter Arguments
+
+One behavior change survives the rename and is worth knowing before you migrate. `MCPServer` binds the arguments it recognizes and ignores the rest, so a call carrying an unexpected key succeeds. FastMCP declares `"additionalProperties": false` on every generated schema and enforces it, so the same call fails:
+
+```python test="skip"
+# Against MCPServer: succeeds, "extra" ignored.
+# Against FastMCP:   raises, "extra" is not a parameter of greet().
+await client.call_tool("greet", {"name": "World", "extra": "surprise"})
+```
+
+For most servers this is an improvement that costs nothing — a caller sending keys your tool never reads was already a bug. It matters if a client in your fleet passes extra metadata alongside real arguments, since those calls start failing the moment you migrate. Accept the extras explicitly as optional parameters if you need to keep them working.
+
+## Asking for Input
+
+This is the one part of the migration that is not a rename, so read it before you start if your tools use resolvers.
+
+`MCPServer` asks the client for things through dependency-injection resolvers. A tool parameter annotated `Annotated[T, Resolve(fn)]` is filled by running `fn` before the tool body, and the resolver can return a request marker — `Elicit[T]` to ask the user, `Sample` to borrow the client's model, `ListRoots` to fetch its roots — which the framework turns into the right wire interaction for whichever protocol era the connection negotiated:
+
+```python
+from typing import Annotated
+from pydantic import BaseModel
+from mcp.server.mcpserver import MCPServer, Resolve, Elicit
+
+server = MCPServer("booking")
+
+
+class Destination(BaseModel):
+    destination: str
+
+
+def ask_destination() -> Elicit[Destination]:
+    return Elicit("Where would you like to fly?", Destination)
+
+
+@server.tool()
+def book_flight(dest: Annotated[Destination, Resolve(ask_destination)]) -> str:
+    """Book a flight"""
+    return f"Booked to {dest.destination}"
+```
+
+FastMCP has no equivalent annotation, and it makes the protocol era explicit instead of hiding it. Which replacement you want depends on which era your clients speak.
+
+On **handshake-era connections** (≤ 2025-11-25), a running tool asks the user directly with `ctx.elicit()`, and the call blocks until the answer arrives. Where the resolver returned a value or aborted the call, `ctx.elicit()` hands you the outcome to branch on, so declining and cancelling become cases your tool answers for itself:
+
+```python
+from fastmcp import FastMCP, Context
+
+mcp = FastMCP("booking")
+
+
+@mcp.tool
+async def book_flight(ctx: Context) -> str:
+    """Book a flight"""
+    result = await ctx.elicit("Where would you like to fly?", response_type=str)
+    if result.action == "accept":
+        return f"Booked to {result.data}"
+    return "Booking cancelled"
+```
+
+On the **modern protocol** (2026-07-28), server-initiated requests are gone from the wire, so a tool asks by *returning* a description of what it needs. The client answers and calls the tool again with the answer attached, and the tool re-runs from the top. This is the [guard pattern](/servers/elicitation#elicitation-on-the-modern-protocol), and it reads the answers off `ctx.input_responses`.
+
+The two are era-gated in both directions: `ctx.elicit()` raises on a modern connection, and a guard result raises on a handshake one. A server that must serve both branches on `ctx.request_context.protocol_version`. See [Elicitation](/servers/elicitation#which-approach-to-use) for both shapes side by side.
+
+Resolvers that return `Sample` or `ListRoots` have no *injected* equivalent — FastMCP has no `ctx.sample()` or `ctx.list_roots()` — but the underlying request survives, so this is a change of shape rather than a loss of capability. On a modern connection both ride the same guard pattern as elicitation: the tool returns an `InputRequiredResult` describing the sampling or roots request, and the client answers on the next call.
+
+Which shape you want differs by capability. For **roots**, the guard route is the natural replacement, since one round buys the whole answer — and taking the paths as ordinary tool arguments is simpler still whenever the caller can supply them. For **generation**, prefer [calling an LLM from your server](/servers/sampling) with your own API key: your tool then behaves identically for every client, including the many that never implemented sampling, and you avoid paying a full request-response cycle per generation step. Reach for the guard route when using the *caller's* model is specifically the point.
+
+One schema detail is easy to miss during the rewrite. A resolved parameter never appears in the tool's input schema — `book_flight` above advertises no arguments at all. When you replace a resolver with an explicit tool argument, the schema the client sees gains a field, which is usually what you want but is a visible change to your tool's contract.
+
+## What You Gain
+
+The migration is worth doing for what sits on the other side of it. FastMCP is a framework rather than a protocol surface, and these are the capabilities that most often motivate the move:
+
+[Server composition](/servers/composition) mounts one server inside another, so a large surface splits into modules that are developed and tested independently. [Middleware](/servers/middleware) runs across every request for logging, rate limiting, error handling, and caching, with hooks at whichever level of specificity you need. [Proxy servers](/servers/providers/proxy) put a FastMCP server in front of any existing MCP server, bridging transports and adding auth to a backend you don't control. The [OpenAPI integration](/integrations/openapi) generates a whole server from an existing API specification. [Tool transformation](/servers/transforms/transforms) rewrites the tools a server exposes — renaming, hiding, and reshaping arguments — without touching the code that defines them.
+
+FastMCP also ships a [client](/clients/client), which `MCPServer` has no counterpart for. It speaks every transport, drives both protocol eras, and connects to a server object in-process — so [testing](/servers/testing) a server means calling its tools in the same Python process, with no subprocess and no network.

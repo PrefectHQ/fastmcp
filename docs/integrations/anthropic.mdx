@@ -69,9 +69,11 @@ You'll also need to authenticate with Anthropic. You can do this by setting the 
 export ANTHROPIC_API_KEY="your-api-key"
 ```
 
-Here is an example of how to call your server from Python. Note that you'll need to replace `https://your-server-url.com` with the actual URL of your server. In addition, we use `/mcp/` as the endpoint because we deployed a streamable-HTTP server with the default path; you may need to use a different endpoint if you customized your server's deployment. **At this time you must also include the `extra_headers` parameter with the `anthropic-beta` header.**
+Here is an example of how to call your server from Python. Note that you'll need to replace `https://your-server-url.com` with the actual URL of your server. In addition, we use `/mcp` as the endpoint because we deployed a streamable-HTTP server with the default path; you may need to use a different endpoint if you customized your server's deployment.
 
-```python {5, 13-22}
+The connector is in beta, so the call goes through `client.beta.messages` with the `mcp-client-2025-11-20` flag. Each entry in `mcp_servers` also needs a matching `mcp_toolset` entry in `tools` that references it by name; declaring the server without the toolset is rejected as a validation error.
+
+```python {5, 12, 14-21}
 import anthropic
 from rich import print
 
@@ -81,19 +83,18 @@ url = 'https://your-server-url.com'
 client = anthropic.Anthropic()
 
 response = client.beta.messages.create(
-    model="claude-sonnet-4-20250514",
+    model="claude-sonnet-5",
     max_tokens=1000,
+    betas=["mcp-client-2025-11-20"],
     messages=[{"role": "user", "content": "Roll a few dice!"}],
     mcp_servers=[
         {
             "type": "url",
-            "url": f"{url}/mcp/",
+            "url": f"{url}/mcp",
             "name": "dice-server",
         }
     ],
-    extra_headers={
-        "anthropic-beta": "mcp-client-2025-04-04"
-    }
+    tools=[{"type": "mcp_toolset", "mcp_server_name": "dice-server"}],
 )
 
 print(response.content)
@@ -193,7 +194,7 @@ Error code: 400 - {
 
 To authenticate the client, you can pass the token using the `authorization_token` parameter in your MCP server configuration:
 
-```python {8, 21}
+```python {8, 22}
 import anthropic
 from rich import print
 
@@ -206,20 +207,19 @@ access_token = 'your-access-token'
 client = anthropic.Anthropic()
 
 response = client.beta.messages.create(
-    model="claude-sonnet-4-20250514",
+    model="claude-sonnet-5",
     max_tokens=1000,
+    betas=["mcp-client-2025-11-20"],
     messages=[{"role": "user", "content": "Roll a few dice!"}],
     mcp_servers=[
         {
             "type": "url",
-            "url": f"{url}/mcp/",
+            "url": f"{url}/mcp",
             "name": "dice-server",
             "authorization_token": access_token
         }
     ],
-    extra_headers={
-        "anthropic-beta": "mcp-client-2025-04-04"
-    }
+    tools=[{"type": "mcp_toolset", "mcp_server_name": "dice-server"}],
 )
 
 print(response.content)

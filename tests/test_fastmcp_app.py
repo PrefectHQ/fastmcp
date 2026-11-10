@@ -22,6 +22,7 @@ from fastmcp.apps.app import (
     FastMCPApp,
     _make_resolver,
 )
+from fastmcp.server.providers.addressing import hash_tool, hashed_backend_name
 from fastmcp.tools.base import Tool
 
 # ---------------------------------------------------------------------------
@@ -490,9 +491,9 @@ class TestCallToolAppRouting:
         assert result.content[0].text == "saved bob"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_hashed_name_survives_namespace_mount(self):
-        """The hashed-name path bypasses display-layer transforms entirely.
-        A FastMCPApp mounted under a Namespace transform still has its
-        backend tools reachable via the same hash."""
+        """The hash identifies a tool independently of its name. A FastMCPApp
+        mounted under a Namespace transform still has its backend tools
+        reachable via the same hash."""
         from fastmcp.server.providers.addressing import hashed_backend_name
 
         app = FastMCPApp("crm")
@@ -579,13 +580,13 @@ class TestCallToolAppRouting:
 
 
 # ---------------------------------------------------------------------------
-# App-only tool filtering from server list_tools / get_tool
+# App-only tool visibility: declared in meta, listed on the wire
 # ---------------------------------------------------------------------------
 
 
-class TestAppOnlyToolFiltering:
-    async def test_app_only_tool_hidden_from_list_tools(self):
-        """@app.tool() (visibility=["app"]) should not appear in server.list_tools()."""
+class TestAppOnlyToolVisibility:
+    async def test_app_only_tool_appears_in_list_tools(self):
+        """@app.tool() (visibility=["app"]) is listed; the host filters it out."""
         app = FastMCPApp("crm")
 
         @app.tool()
@@ -597,7 +598,40 @@ class TestAppOnlyToolFiltering:
 
         tools = await server.list_tools()
         names = [t.name for t in tools]
-        assert "save_contact" not in names
+        assert "save_contact" in names
+
+    async def test_app_only_tool_declares_app_visibility(self):
+        """The listed tool carries visibility=["app"] so a host can filter it."""
+        app = FastMCPApp("crm")
+
+        @app.tool()
+        def save_contact(name: str) -> str:
+            return name
+
+        server = FastMCP("Platform")
+        server.add_provider(app)
+
+        tool = next(t for t in await server.list_tools() if t.name == "save_contact")
+        assert tool.meta is not None
+        assert tool.meta["ui"]["visibility"] == ["app"]
+
+    async def test_app_only_tool_visibility_survives_the_wire(self):
+        """A client sees the visibility declaration, which is what it filters on."""
+        app = FastMCPApp("crm")
+
+        @app.tool()
+        def save_contact(name: str) -> str:
+            return name
+
+        server = FastMCP("Platform")
+        server.add_provider(app)
+
+        async with Client(server) as client:
+            tool = next(
+                t for t in await client.list_tools() if t.name == "save_contact"
+            )
+        assert tool.meta is not None
+        assert tool.meta["ui"]["visibility"] == ["app"]
 
     async def test_model_visible_tool_in_list_tools(self):
         """@app.tool(model=True) (visibility=["app","model"]) appears in list_tools."""
@@ -629,8 +663,8 @@ class TestAppOnlyToolFiltering:
         names = [t.name for t in tools]
         assert "show_dashboard" in names
 
-    async def test_app_only_tool_still_callable_via_app_name(self):
-        """Even though filtered from list_tools, app-only tools are callable via call_tool with app_name."""
+    async def test_app_only_tool_callable_via_hashed_address(self):
+        """The hashed address still resolves, independent of the display name."""
         app = FastMCPApp("contacts")
 
         @app.tool()
@@ -640,35 +674,30 @@ class TestAppOnlyToolFiltering:
         server = FastMCP("Platform")
         server.add_provider(app)
 
-        # Verify it's hidden from list_tools
-        tools = await server.list_tools()
-        names = [t.name for t in tools]
-        assert "save" not in names
-
-        # But still callable via the hashed-address routing path.
-        from fastmcp.server.providers.addressing import hashed_backend_name
-
         result = await server.call_tool(
             hashed_backend_name("contacts", "save"), {"name": "alice"}
         )
         assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
-    async def test_app_only_tool_hidden_from_get_tool(self):
-        """server.get_tool() returns None for app-only tools."""
-        app = FastMCPApp("crm")
+    async def test_app_only_tool_callable_by_display_name(self):
+        """App-only tools resolve normally; the host decides who may call them."""
+        app = FastMCPApp("contacts")
 
         @app.tool()
-        def save_contact(name: str) -> str:
-            return name
+        def save(name: str) -> str:
+            return f"saved {name}"
 
         server = FastMCP("Platform")
         server.add_provider(app)
 
-        tool = await server.get_tool("save_contact")
-        assert tool is None
+        tool = await server.get_tool("save")
+        assert tool is not None
 
-    async def test_app_only_tool_hidden_with_namespace(self):
-        """App-only tools hidden even when accessed through a namespace."""
+        result = await server.call_tool("save", {"name": "alice"})
+        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+
+    async def test_app_only_tool_namespaced_in_list_tools(self):
+        """Namespacing renames app-only tools like any other tool."""
         app = FastMCPApp("crm")
 
         @app.tool()
@@ -680,7 +709,23 @@ class TestAppOnlyToolFiltering:
 
         tools = await server.list_tools()
         names = [t.name for t in tools]
-        assert "crm_save" not in names
+        assert "crm_save" in names
+
+    async def test_app_only_tool_carries_public_hash(self):
+        """The identity hash is public meta, so intermediaries can match on it."""
+        app = FastMCPApp("crm")
+
+        @app.tool()
+        def save(name: str) -> str:
+            return name
+
+        server = FastMCP("Platform")
+        server.add_provider(app, namespace="crm")
+
+        async with Client(server) as client:
+            tool = next(t for t in await client.list_tools() if t.name == "crm_save")
+        assert tool.meta is not None
+        assert tool.meta["fastmcp"]["tool_hash"] == hash_tool("crm", "save")
 
 
 # ---------------------------------------------------------------------------
@@ -830,9 +875,8 @@ class TestComposition:
         names = {t.name for t in tools}
         assert names == {"dashboard", "save"}
 
-    async def test_ui_synthesizes_per_tool_renderer_resource(self):
-        """Each @app.ui() tool gets its own renderer resource synthesized
-        on demand from the server's address registry."""
+    async def test_ui_synthesizes_renderer_resource(self):
+        """An @app.ui() tool gets its renderer resource synthesized on demand."""
         app = FastMCPApp("test")
 
         @app.ui()
@@ -843,7 +887,7 @@ class TestComposition:
         server.add_provider(app)
 
         resources = list(await server.list_resources())
-        prefab = [r for r in resources if "prefab/tool" in str(r.uri)]
+        prefab = [r for r in resources if "prefab/renderer" in str(r.uri)]
         assert len(prefab) == 1
 
 
@@ -872,21 +916,25 @@ class TestAppIntegration:
         server = FastMCP("Platform")
         server.add_provider(app, namespace="crm")
 
-        # The @app.ui() tool should be visible (namespaced) to the client.
-        # The @app.tool() backend tool should NOT appear.
+        # Both tools are listed (namespaced). The backend tool declares
+        # visibility=["app"] so the host keeps it out of the model's list.
         async with Client(server) as client:
             tools = await client.list_tools()
             tool_names = [t.name for t in tools]
             assert "crm_contact_form" in tool_names
-            assert "crm_save_contact" not in tool_names
+            assert "crm_save_contact" in tool_names
+
+            backend = next(t for t in tools if t.name == "crm_save_contact")
+            assert backend.meta is not None
+            assert backend.meta["ui"]["visibility"] == ["app"]
 
             # Call the UI tool through the client and check structured_content
             result = await client.call_tool_mcp("crm_contact_form", {})
-            sc = result.structuredContent
+            sc = result.structured_content
             assert sc is not None
 
-        # Call the backend tool via its hashed address — bypasses namespace
-        # transforms and visibility filtering by going through the registry.
+        # Call the backend tool via its hashed address — resolves regardless
+        # of the namespace transform applied to the display name.
         backend_result = await server.call_tool(
             hashed_backend_name("contacts", "save_contact"),
             {"name": "Alice", "email": "alice@example.com"},

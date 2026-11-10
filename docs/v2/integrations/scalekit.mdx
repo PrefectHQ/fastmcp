@@ -173,22 +173,15 @@ logging.basicConfig(level=logging.DEBUG)
 You can inspect JWT tokens in your tools to understand the user context:
 
 ```python
-from fastmcp.server.context import request_ctx
-import jwt
+from fastmcp.server.dependencies import get_access_token
 
 @mcp.tool
 def inspect_token() -> dict:
     """Inspect the current JWT token claims."""
-    context = request_ctx.get()
+    token = get_access_token()
+    if token is None:
+        return {"error": "No token found"}
 
-    # Extract token from Authorization header
-    if hasattr(context, 'request') and hasattr(context.request, 'headers'):
-        auth_header = context.request.headers.get('authorization', '')
-        if auth_header.startswith('Bearer '):
-            token = auth_header[7:]
-            # Decode without verification (already verified by provider)
-            claims = jwt.decode(token, options={"verify_signature": False})
-            return claims
-
-    return {"error": "No token found"}
+    # Claims were already verified by the auth provider.
+    return token.claims
 ```

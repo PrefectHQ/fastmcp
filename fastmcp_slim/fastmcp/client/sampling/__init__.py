@@ -2,13 +2,13 @@ import inspect
 from collections.abc import Awaitable, Callable
 from typing import TypeAlias, TypeVar, cast
 
-import mcp.types
+import mcp_types
 from mcp import ClientSession, CreateMessageResult
 from mcp.client.session import SamplingFnT
 from mcp.server.session import ServerSession
-from mcp.shared.context import LifespanContextT, RequestContext
-from mcp.types import CreateMessageRequestParams as SamplingParams
-from mcp.types import CreateMessageResultWithTools, SamplingMessage
+from fastmcp.client._sdk_context_shim import LifespanContextT, RequestContext
+from mcp_types import CreateMessageRequestParams as SamplingParams
+from mcp_types import CreateMessageResultWithTools, SamplingMessage
 
 # Result type that handlers can return
 SamplingHandlerResult: TypeAlias = (
@@ -47,7 +47,7 @@ def create_sampling_callback(
     async def _sampling_handler(
         context,
         params: SamplingParams,
-    ) -> CreateMessageResult | CreateMessageResultWithTools | mcp.types.ErrorData:
+    ) -> CreateMessageResult | CreateMessageResultWithTools | mcp_types.ErrorData:
         try:
             result = sampling_handler(params.messages, params, context)
             if inspect.isawaitable(result):
@@ -59,12 +59,12 @@ def create_sampling_callback(
                 result = CreateMessageResult(
                     role="assistant",
                     model="fastmcp-slim",
-                    content=mcp.types.TextContent(type="text", text=result),
+                    content=mcp_types.TextContent(type="text", text=result),
                 )
             return result
         except Exception as e:
-            return mcp.types.ErrorData(
-                code=mcp.types.INTERNAL_ERROR,
+            return mcp_types.ErrorData(
+                code=mcp_types.INTERNAL_ERROR,
                 message=str(e),
             )
 

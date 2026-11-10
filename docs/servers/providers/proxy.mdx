@@ -20,6 +20,8 @@ The Proxy Provider enables:
 - **Add security**: Act as a controlled gateway with authentication and authorization
 - **Simplify access**: Provide a stable endpoint even if backend servers change
 
+The proxy sits between your client and the source server: the client sends an MCP request to the proxy, the proxy forwards it over whichever transport the backend speaks, and the response comes back the same way.
+
 ```mermaid
 sequenceDiagram
     participant Client as Your Client
@@ -49,6 +51,7 @@ if __name__ == "__main__":
 ```
 
 This gives you:
+
 - Safe concurrent request handling
 - Automatic forwarding of MCP features (sampling, elicitation, etc.)
 - Session isolation to prevent context mixing
@@ -56,6 +59,12 @@ This gives you:
 <Tip>
 To mount a proxy inside another FastMCP server, see [Mounting External Servers](/servers/composition#mounting-external-servers).
 </Tip>
+
+## Connection Semantics
+
+FastMCP proxies are lazy bridges. Creating the proxy object and starting the local server do not contact the upstream server. During client negotiation, the proxy makes a best-effort request for optional server metadata using the backend client's existing lifecycle and negotiation mode; an unavailable backend does not prevent the client from connecting to the proxy.
+
+Subsequent MCP requests such as `ping`, `tools/list`, `resources/list`, `prompts/list`, tool calls, resource reads, sampling, elicitation, logging, and progress connect to the backend as needed. Component provider failures follow `provider_error_strategy`: the default `"warn"` logs and skips a failed provider, while `"raise"` reports the failure to the client.
 
 ## Transport Bridging
 
@@ -75,10 +84,11 @@ if __name__ == "__main__":
 Or expose a local server via HTTP:
 
 ```python
+from pathlib import Path
 from fastmcp.server import create_proxy
 
 # Bridge local server to HTTP
-local_proxy = create_proxy("local_server.py", name="stdio-to-HTTP")
+local_proxy = create_proxy(Path("local_server.py"), name="stdio-to-HTTP")
 
 if __name__ == "__main__":
     local_proxy.run(transport="http", host="0.0.0.0", port=8080)
@@ -91,10 +101,11 @@ if __name__ == "__main__":
 `create_proxy()` provides session isolation - each request gets its own isolated backend session:
 
 ```python
+from pathlib import Path
 from fastmcp.server import create_proxy
 
 # Each request creates a fresh backend session (recommended)
-proxy = create_proxy("backend_server.py")
+proxy = create_proxy(Path("backend_server.py"))
 
 # Multiple clients can use this proxy simultaneously:
 # - Client A calls a tool → gets isolated session
@@ -107,10 +118,11 @@ proxy = create_proxy("backend_server.py")
 If you pass an already-connected client, the proxy reuses that session:
 
 ```python
+from pathlib import Path
 from fastmcp import Client
 from fastmcp.server import create_proxy
 
-async with Client("backend_server.py") as connected_client:
+async with Client(Path("backend_server.py")) as connected_client:
     # This proxy reuses the connected session
     proxy = create_proxy(connected_client)
 
@@ -120,6 +132,27 @@ async with Client("backend_server.py") as connected_client:
 <Warning>
 Shared sessions may cause context mixing in concurrent scenarios. Use only in single-threaded situations or with explicit synchronization.
 </Warning>
+
+A reused session keeps the settings it connected with, so backend tool results are validated against their declared output schema instead of [relayed as-is](#tool-results-are-relayed-not-inspected). A connected `ProxyClient` is the exception: the proxy builds a fresh session from it for each request.
+
+## HTTP Header Forwarding
+
+Proxies forward eligible incoming HTTP headers, including `Authorization` and custom headers, to HTTP and SSE backends by default. Headers configured on the backend transport take precedence. Cookies and connection-specific headers are excluded.
+
+When your backend uses its own configured headers or authentication, set `forward_incoming_headers=False` on its `ProxyClient`. The setting also applies to every backend in an MCP configuration.
+
+```python
+from fastmcp.client.transports import StreamableHttpTransport
+from fastmcp.server import create_proxy
+from fastmcp.server.providers.proxy import ProxyClient
+
+transport = StreamableHttpTransport(
+    "http://backend:8000/mcp",
+    headers={"x-api-key": "backend-api-key"},
+)
+backend = ProxyClient(transport, forward_incoming_headers=False)
+proxy = create_proxy(backend)
+```
 
 ## MCP Feature Forwarding
 
@@ -136,10 +169,11 @@ Proxies automatically forward MCP protocol features:
 | Progress | Progress notifications |
 
 ```python
+from pathlib import Path
 from fastmcp.server import create_proxy
 
 # All features forwarded automatically
-proxy = create_proxy("advanced_backend.py")
+proxy = create_proxy(Path("advanced_backend.py"))
 
 # When the backend:
 # - Requests LLM sampling → forwarded to your client
@@ -147,19 +181,100 @@ proxy = create_proxy("advanced_backend.py")
 # - Reports progress → shown in your client
 ```
 
+Protocol extensions are not forwarded automatically, because the proxy doesn't know which ones its backend supports. To forward a backend's Skills discovery, pass `skills=True` to `create_proxy` or `ProxyProvider`; see [Proxied servers](/servers/skills#proxied-servers).
+
 ### Disabling Features
 
 Selectively disable forwarding:
 
 ```python
+from pathlib import Path
+
 from fastmcp.server.providers.proxy import ProxyClient
 
 backend = ProxyClient(
-    "backend_server.py",
+    Path("backend_server.py"),
     sampling_handler=None,  # Disable LLM sampling
     log_handler=None        # Disable log forwarding
 )
 ```
+
+### Tool Results Are Relayed, Not Inspected
+
+<VersionBadge version="4.0.0" />
+
+A proxy passes a backend's tool results through untouched, including results that don't match the output schema the backend advertised. Deciding whether a server honored its own contract belongs to the client consuming the result, and that client validates for itself.
+
+This matters when a backend's declared schema is subtly wrong — an enum missing a variant it actually returns, say. A proxy that enforced the schema would replace the backend's working response with an error of its own, and the client would never see what the backend actually said.
+
+```python
+from pathlib import Path
+from fastmcp import Client
+from fastmcp.server import create_proxy
+
+proxy = create_proxy(Path("backend_server.py"))
+
+async with Client(proxy) as client:
+    # The backend's response arrives as the backend sent it. If it violates
+    # the backend's own output schema, this client raises — its decision.
+    result = await client.call_tool("get_status")
+```
+
+Skipping the check also avoids a `tools/list` round trip to the backend on every proxied call, since validation would need the backend's schemas and a proxy builds a fresh connection per request.
+
+### Protocol Era Mirroring
+
+<VersionBadge version="4.0.0" />
+
+A proxy is a server on its front and a client on its back, and the two MCP protocol eras have mutually exclusive interaction models on a single session. On the handshake era (≤2025-11-25) the backend can push server-initiated requests — sampling, elicitation, roots — which the proxy forwards to your client. On the modern era (2026-07-28) those pushes are gone; a backend guard tool instead returns an input request that the proxy relays back as a result. A single proxy session speaks one era, so the whole chain has to agree end-to-end.
+
+By default the proxy relays the era: whatever era your client negotiates on the front, the proxy negotiates the same era on its backend connection, per request. A handshake client reaches a handshake backend, so server-initiated forwarding works; a modern client reaches a modern backend, so a guard tool's input request round-trips. Different clients hitting the same proxy each get a backend session in their own era — the eras never cross.
+
+```python
+from pathlib import Path
+from fastmcp import Client
+from fastmcp.server import create_proxy
+
+# No mode: the backend mirrors each client's negotiated era.
+proxy = create_proxy(Path("backend_server.py"))
+
+# A handshake client gets a handshake backend (push-forwarding works).
+async with Client(proxy, mode="legacy") as client:
+    ...
+
+# A modern client gets a modern backend (guard tools round-trip).
+async with Client(proxy, mode="auto") as client:
+    ...
+```
+
+Passing an explicit `mode` pins the backend to one era regardless of the client:
+
+```python
+from pathlib import Path
+# Always negotiate the modern era upstream, whatever the client speaks.
+proxy = create_proxy(Path("backend_server.py"), mode="auto")
+```
+
+Pinning breaks the end-to-end era agreement, so reserve it for a backend that only speaks one era. When the client's era and the pinned backend era disagree on a feature — a modern client asking for a guard round-trip against a handshake-pinned backend, say — the mismatch surfaces through the normal era gates rather than silently degrading. Mirroring applies to proxies created from a target the proxy connects itself (a URL, path, config, or `FastMCP` instance); when you hand `create_proxy` an already-configured `Client`, that client carries its own mode and mirroring does not override it.
+
+A multi-server configuration adds a hop: FastMCP mounts one proxy per configured server onto a router, and your client talks to that router rather than to any backend directly. The era carries through the whole depth, so each real backend negotiates the era your client did — not just the router in front of them.
+
+```python
+proxy = create_proxy(
+    {
+        "mcpServers": {
+            "weather": {"url": "https://weather.example.com/mcp"},
+            "calendar": {"url": "https://calendar.example.com/mcp"},
+        }
+    }
+)
+```
+
+A modern client here reaches both `weather` and `calendar` on modern sessions, so a guard tool on either one round-trips end to end. An explicit `mode` pins every backend in the configuration, the same way it pins a single one.
+
+### Request Metadata
+
+Request `_meta` follows the same connection boundary. Progress tokens, tracing, task state, and application or vendor metadata pass through the proxy to the backend. The connection-owned keys — protocol version, client identity, and client capabilities — never copy from the frontend connection: a modern backend session stamps its own negotiated values, and a handshake-era backend receives none. This holds even when the two connections negotiate different eras, such as a modern client reaching a handshake-only backend through an explicit `mode`.
 
 ## Configuration-Based Proxies
 
@@ -223,28 +338,16 @@ Proxied components follow standard prefixing rules:
 
 <VersionBadge version="2.10.5" />
 
-Components from a proxy server are "mirrored" - they reflect the remote server's state and cannot be modified directly.
-
-To modify a proxied component (like disabling it), create a local copy:
+Components from a proxy server are "mirrored": they reflect the remote server's state, and every call goes to the backend. To hide or rename a proxied component, apply [visibility](/servers/visibility) or [transforms](/servers/transforms/transforms) on the proxy or on the server that mounts it:
 
 ```python
-from fastmcp import FastMCP
+from pathlib import Path
 from fastmcp.server import create_proxy
 
-proxy = create_proxy("backend_server.py")
+proxy = create_proxy(Path("backend_server.py"))
 
-# Get mirrored tool
-mirrored_tool = await proxy.get_tool("useful_tool")
-
-# Create modifiable local copy
-local_tool = mirrored_tool.copy()
-
-# Add to your own server
-my_server = FastMCP("MyServer")
-my_server.add_tool(local_tool)
-
-# Now you can control enabled state
-my_server.disable(keys={local_tool.key})
+# Hide one backend tool from clients of this proxy
+proxy.disable(names={"useful_tool"})
 ```
 
 ## Performance Considerations
@@ -288,7 +391,7 @@ You can reuse a single backend session by providing a client factory that return
 ```python
 from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
 
-base_client = ProxyClient("http://backend:8000/mcp")
+base_client = ProxyClient("http://backend:8000/mcp", forward_incoming_headers=False)
 shared_client = base_client.new()
 
 proxy = FastMCPProxy(
@@ -297,7 +400,9 @@ proxy = FastMCPProxy(
 )
 ```
 
-This eliminates the MCP initialization handshake on every call, which can dramatically reduce latency under load. The `Client` uses reference counting for its session lifecycle, so concurrent callers sharing the same instance is safe.
+This eliminates the MCP initialization handshake on every call, which can reduce latency under load. The `Client` uses reference counting for its session lifecycle, so concurrent callers can share the same instance.
+
+Forwarded headers are attached when a session connects, so a shared session carries the headers of whichever request opened it to every request that reuses it. Set `forward_incoming_headers=False` on a shared client, as above, and give it the backend credentials directly.
 
 <Warning>
 Only reuse sessions when you know the backend is stateless (e.g. stateless HTTP). For stateful backends (stdio processes, servers that track session state), use the default fresh-session behavior to avoid context mixing.
@@ -305,16 +410,39 @@ Only reuse sessions when you know the backend is stateless (e.g. stateless HTTP)
 
 ## Advanced Usage
 
+### Forwarding Server Metadata
+
+Add `ProxyMetadataMiddleware` when a gateway built with `ProxyProvider` should also expose backend instructions and namespaced `_meta`:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.providers.proxy import (
+    ProxyClient,
+    ProxyMetadataMiddleware,
+    ProxyProvider,
+)
+
+backend = ProxyProvider(lambda: ProxyClient("http://backend:8000/mcp", mode="auto"))
+gateway = FastMCP(
+    "Controlled Gateway",
+    providers=[backend],
+    middleware=[ProxyMetadataMiddleware(backend)],
+)
+```
+
+By default the gateway keeps its own `serverInfo`; pass `identity="upstream"` to use the backend identity when available. Frontend instructions and `_meta` values win on collisions. The middleware never copies upstream protocol versions, connection metadata, capabilities, cache policy, `resultType`, or unknown top-level fields. If the backend is unavailable, the client can still connect without its optional metadata.
+
 ### FastMCPProxy Class
 
 For explicit session control, use `FastMCPProxy` directly:
 
 ```python
+from pathlib import Path
 from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
 
 # Custom session factory
 def create_client():
-    return ProxyClient("backend_server.py")
+    return ProxyClient(Path("backend_server.py"))
 
 proxy = FastMCPProxy(client_factory=create_client)
 ```

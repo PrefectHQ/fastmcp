@@ -5,7 +5,6 @@ import time
 
 import pytest
 from key_value.aio.stores.memory import MemoryStore
-from pytest_httpx import HTTPXMock
 
 from fastmcp.server.auth.providers.google import (
     GOOGLE_SCOPE_ALIASES,
@@ -13,6 +12,7 @@ from fastmcp.server.auth.providers.google import (
     GoogleTokenVerifier,
     _normalize_google_scope,
 )
+from tests.utilities.httpx2_mock import HTTPXMock
 
 
 @pytest.fixture
@@ -39,6 +39,20 @@ class TestGoogleProvider:
         assert provider._upstream_client_secret is not None
         assert provider._upstream_client_secret.get_secret_value() == "GOCSPX-test123"
         assert str(provider.base_url) == "https://myserver.com/"
+
+    def test_verifier_audience_pinned_to_client_id(self, memory_storage: MemoryStore):
+        """The provider's token verifier only accepts tokens minted for its own client."""
+        provider = GoogleProvider(
+            client_id="123456789.apps.googleusercontent.com",
+            client_secret="GOCSPX-test123",
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        verifier = provider._token_validator
+        assert isinstance(verifier, GoogleTokenVerifier)
+        assert verifier.audience == "123456789.apps.googleusercontent.com"
 
     def test_init_defaults(self, memory_storage: MemoryStore):
         """Test that default values are applied correctly."""
@@ -237,7 +251,7 @@ class TestGoogleScopeNormalization:
         assert "profile" in GOOGLE_SCOPE_ALIASES
 
 
-# Regex patterns for URL matching (tokeninfo uses query params)
+# Regex patterns for Google OAuth endpoints
 _TOKENINFO_RE = re.compile(r"https://oauth2\.googleapis\.com/tokeninfo")
 _USERINFO_RE = re.compile(r"https://www\.googleapis\.com/oauth2/v2/userinfo")
 
@@ -341,6 +355,65 @@ class TestGoogleTokenVerifier:
 
         assert result is None
 
+    async def test_audience_match_accepted(self, httpx_mock: HTTPXMock):
+        """When audience is configured, a token with a matching 'aud' is accepted."""
+        httpx_mock.add_response(
+            url=_TOKENINFO_RE,
+            json={
+                "aud": "123.apps.googleusercontent.com",
+                "sub": "12345",
+                "scope": "openid",
+                "expires_in": "3600",
+            },
+        )
+        httpx_mock.add_response(url=_USERINFO_RE, json={"sub": "12345"})
+
+        verifier = GoogleTokenVerifier(audience="123.apps.googleusercontent.com")
+        result = await verifier.verify_token("valid-token")
+
+        assert result is not None
+        assert result.claims["aud"] == "123.apps.googleusercontent.com"
+
+    async def test_audience_mismatch_rejected(self, httpx_mock: HTTPXMock):
+        """A valid Google token minted for a different OAuth client is rejected."""
+        httpx_mock.add_response(
+            url=_TOKENINFO_RE,
+            json={
+                "aud": "attacker.apps.googleusercontent.com",
+                "sub": "12345",
+                "scope": "openid",
+                "expires_in": "3600",
+            },
+        )
+
+        verifier = GoogleTokenVerifier(audience="123.apps.googleusercontent.com")
+        result = await verifier.verify_token("foreign-client-token")
+
+        assert result is None
+
+    async def test_audience_list_match_accepted(self, httpx_mock: HTTPXMock):
+        """A list audience accepts any listed client ID and rejects others."""
+        httpx_mock.add_response(
+            url=_TOKENINFO_RE,
+            json={
+                "aud": "456.apps.googleusercontent.com",
+                "sub": "12345",
+                "scope": "openid",
+                "expires_in": "3600",
+            },
+        )
+        httpx_mock.add_response(url=_USERINFO_RE, json={"sub": "12345"})
+
+        verifier = GoogleTokenVerifier(
+            audience=[
+                "123.apps.googleusercontent.com",
+                "456.apps.googleusercontent.com",
+            ]
+        )
+        result = await verifier.verify_token("valid-token")
+
+        assert result is not None
+
     async def test_missing_sub_returns_none(self, httpx_mock: HTTPXMock):
         """A 200 response without 'sub' is rejected."""
         httpx_mock.add_response(
@@ -405,8 +478,8 @@ class TestGoogleTokenVerifier:
 
         assert result is None
 
-    async def test_uses_query_param_not_bearer_header(self, httpx_mock: HTTPXMock):
-        """verify_token sends the token as a query parameter to tokeninfo, not a Bearer header."""
+    async def test_uses_bearer_header_not_query_param(self, httpx_mock: HTTPXMock):
+        """verify_token keeps the access token out of the tokeninfo URL."""
         httpx_mock.add_response(
             url=_TOKENINFO_RE,
             json={
@@ -426,8 +499,8 @@ class TestGoogleTokenVerifier:
 
         requests = httpx_mock.get_requests()
         tokeninfo_req = requests[0]
-        assert "access_token=my-access-token" in str(tokeninfo_req.url)
-        assert "Authorization" not in tokeninfo_req.headers
+        assert "my-access-token" not in str(tokeninfo_req.url)
+        assert tokeninfo_req.headers["Authorization"] == "Bearer my-access-token"
 
     async def test_calls_tokeninfo_endpoint(self, httpx_mock: HTTPXMock):
         """verify_token calls the tokeninfo endpoint, not the userinfo endpoint, for verification."""
@@ -534,3 +607,123 @@ class TestGoogleTokenVerifier:
 
         assert result is not None
         assert "https://www.googleapis.com/auth/calendar" in result.scopes
+
+    def test_cache_disabled_by_default(self):
+        """Caching is disabled by default."""
+        verifier = GoogleTokenVerifier()
+        assert not verifier._cache.enabled
+
+    def test_cache_enabled_with_ttl(self):
+        """Providing cache_ttl_seconds enables the internal TokenCache."""
+        verifier = GoogleTokenVerifier(cache_ttl_seconds=300)
+        assert verifier._cache.enabled
+
+    async def test_cache_hit_avoids_second_api_call(self, httpx_mock: HTTPXMock):
+        """A second verify_token call with the same token uses cache."""
+        httpx_mock.add_response(
+            url=_TOKENINFO_RE,
+            json={
+                "aud": "123.apps.googleusercontent.com",
+                "sub": "12345",
+                "scope": "openid",
+                "expires_in": "3600",
+            },
+        )
+        httpx_mock.add_response(
+            url=_USERINFO_RE,
+            json={"sub": "12345"},
+        )
+
+        verifier = GoogleTokenVerifier(cache_ttl_seconds=300)
+        result1 = await verifier.verify_token("tok-1")
+        assert result1 is not None
+
+        # Second call - should hit cache and not make more HTTP requests
+        result2 = await verifier.verify_token("tok-1")
+        assert result2 is not None
+        assert result2.client_id == result1.client_id
+
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 2  # exactly 1 tokeninfo + 1 userinfo call
+
+    async def test_cache_disabled_makes_every_call(self, httpx_mock: HTTPXMock):
+        """When cache is disabled (default), every call queries Google endpoints."""
+        httpx_mock.add_response(
+            url=_TOKENINFO_RE,
+            json={
+                "aud": "123.apps.googleusercontent.com",
+                "sub": "12345",
+                "scope": "openid",
+                "expires_in": "3600",
+            },
+        )
+        httpx_mock.add_response(
+            url=_USERINFO_RE,
+            json={"sub": "12345"},
+        )
+        httpx_mock.add_response(
+            url=_TOKENINFO_RE,
+            json={
+                "aud": "123.apps.googleusercontent.com",
+                "sub": "12345",
+                "scope": "openid",
+                "expires_in": "3600",
+            },
+        )
+        httpx_mock.add_response(
+            url=_USERINFO_RE,
+            json={"sub": "12345"},
+        )
+
+        verifier = GoogleTokenVerifier(cache_ttl_seconds=0)
+        await verifier.verify_token("tok-1")
+        await verifier.verify_token("tok-1")
+
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 4
+
+    async def test_failures_are_not_cached(self, httpx_mock: HTTPXMock):
+        """Failed verifications must not be cached."""
+        httpx_mock.add_response(
+            url=_TOKENINFO_RE,
+            status_code=400,
+            json={"error": "invalid_token"},
+        )
+        httpx_mock.add_response(
+            url=_TOKENINFO_RE,
+            json={
+                "aud": "123.apps.googleusercontent.com",
+                "sub": "12345",
+                "scope": "openid",
+                "expires_in": "3600",
+            },
+        )
+        httpx_mock.add_response(
+            url=_USERINFO_RE,
+            json={"sub": "12345"},
+        )
+
+        verifier = GoogleTokenVerifier(cache_ttl_seconds=300)
+        result_fail = await verifier.verify_token("tok-retry")
+        assert result_fail is None
+
+        result_ok = await verifier.verify_token("tok-retry")
+        assert result_ok is not None
+
+    def test_provider_passes_cache_params_to_verifier(
+        self, memory_storage: MemoryStore
+    ):
+        """GoogleProvider correctly propagates cache_ttl_seconds and max_cache_size."""
+        provider = GoogleProvider(
+            client_id="123.apps.googleusercontent.com",
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            cache_ttl_seconds=120,
+            max_cache_size=500,
+        )
+        verifier = provider._token_validator
+        assert isinstance(verifier, GoogleTokenVerifier)
+        assert verifier._cache.enabled
+        assert verifier._cache._ttl == 120
+        assert verifier._cache._max_size == 500

@@ -3,7 +3,6 @@ title: File Upload
 sidebarTitle: File Upload
 description: Drag-and-drop file upload for any MCP server
 icon: upload
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -49,29 +48,60 @@ FileUpload(
 
 The `max_file_size` limit is enforced both in the UI (the DropZone rejects oversized files) and on the server (the `store_files` tool validates before calling `on_store`).
 
+### Retention in memory
+
+Set `max_total_size` to cap the combined decoded file bytes in the default in-memory store across every session. A batch is accepted in full or rejected; replacing a filename uses the size of its final contents. This limit counts file contents, rather than base64 encoding overhead or file metadata.
+
+Set `file_ttl_seconds` to expire files after a fixed age since upload. Replacing a file starts a new expiry period; reading it does not. Expired files are removed across all scopes when the default storage methods store, list, or read files. Cleanup runs on these operations, without a background timer.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.apps.file_upload import FileUpload
+
+mcp = FastMCP("My Server")
+mcp.add_provider(FileUpload(
+    max_total_size=50 * 1024 * 1024,
+    file_ttl_seconds=3600,
+))
+```
+
+Both options default to `None`, keeping files for the server process's lifetime without an aggregate size limit. `max_total_size` accepts a nonnegative integer; `file_ttl_seconds` accepts a positive, finite duration. These controls apply to the default in-memory methods. If you override the storage methods, your implementation sets its own retention policy.
+
 ## Storage scoping
 
-By default, files are stored in memory and scoped by MCP session ID. Each session gets its own isolated file store — files uploaded in one conversation aren't visible in another.
+By default, files are stored in memory and scoped to the client that uploaded them, so one client's files aren't visible to another. How FastMCP identifies that client depends on the protocol version the connection negotiated.
 
-This works with **stdio**, **SSE**, and **stateful HTTP** transports, where sessions persist across requests.
+On a handshake-era connection (`mode="legacy"`, or a client that predates MCP 2026-07-28), files are scoped by MCP session ID. This works with **stdio**, **SSE**, and **stateful HTTP** transports, where sessions persist across requests.
+
+MCP 2026-07-28 connections, which FastMCP clients negotiate by default, have no session. Files are scoped to the authenticated user instead, the same identity [`UserSession`](/servers/sessions) uses. Without authentication, stdio servers keep one store for the process, because a stdio server serves a single client. An unauthenticated HTTP request carries nothing that identifies its client between requests, so the default storage rejects it with an error rather than sharing files across clients. Add [authentication](/servers/auth/authentication) to the server, or override `_get_scope_key`.
 
 <Warning>
-In **stateless HTTP** mode, each request creates a new session object with a new ID. Files stored during one request (e.g. the UI upload) will be invisible to the next request (e.g. the LLM calling `list_files`). You **must** override `_get_scope_key` to use a stable identifier like a user ID from your auth token.
+On handshake-era connections to a **stateless HTTP** server, each request creates a new session with a new ID. Files stored during one request (e.g. the UI upload) are invisible to the next request (e.g. the LLM calling `list_files`). For these clients you **must** override `_get_scope_key` to use a stable identifier, such as a user ID from your auth token.
 </Warning>
 
-For stateless deployments, override `_get_scope_key` to return a stable identifier. For example, to scope files by authenticated user:
+To scope files by a stable identifier of your own, override `_get_scope_key`. To scope files by authenticated user, read the caller from `get_access_token()`.
+
+Reject the request when there is no subject to key on. `get_access_token()` returns `None` on an unauthenticated request, and `subject` is optional even on a valid token, since not every verifier populates it. Returning a fallback in either case would put every such caller in one shared bucket, so they would see each other's uploads.
 
 ```python
 from fastmcp.apps.file_upload import FileUpload
+from fastmcp.server.dependencies import get_access_token
 
 class UserScopedUpload(FileUpload):
     def _get_scope_key(self, ctx):
-        return ctx.access_token["sub"]
+        token = get_access_token()
+        if token is None or not token.subject:
+            raise ValueError("File scoping requires an authenticated user with a subject")
+        return token.subject
 ```
+
+If your provider carries the user identity in a different claim, read it from `token.claims` and validate it the same way.
 
 For process-wide shared storage (all users see all files):
 
 ```python
+from fastmcp.apps.file_upload import FileUpload
+
 class SharedUpload(FileUpload):
     def _get_scope_key(self, ctx):
         return "__shared__"
@@ -84,11 +114,22 @@ The default implementation stores files in memory for the lifetime of the server
 ```python
 import base64
 
+import boto3
+
 from fastmcp.apps.file_upload import FileUpload
+from fastmcp.server.dependencies import get_access_token
+
+s3 = boto3.client("s3")
 
 class S3Upload(FileUpload):
+    def _get_scope_key(self, ctx):
+        token = get_access_token()
+        if token is None or not token.subject:
+            raise ValueError("File scoping requires an authenticated user with a subject")
+        return token.subject
+
     def on_store(self, files, ctx):
-        user_id = ctx.access_token["sub"]
+        user_id = self._get_scope_key(ctx)
         for f in files:
             s3.put_object(
                 Bucket="uploads",
@@ -98,7 +139,7 @@ class S3Upload(FileUpload):
         return self.on_list(ctx)
 
     def on_list(self, ctx):
-        user_id = ctx.access_token["sub"]
+        user_id = self._get_scope_key(ctx)
         objects = s3.list_objects(Bucket="uploads", Prefix=f"{user_id}/")
         return [
             {
@@ -112,7 +153,7 @@ class S3Upload(FileUpload):
         ]
 
     def on_read(self, name, ctx):
-        user_id = ctx.access_token["sub"]
+        user_id = self._get_scope_key(ctx)
         obj = s3.get_object(Bucket="uploads", Key=f"{user_id}/{name}")
         content = obj["Body"].read()
         return {

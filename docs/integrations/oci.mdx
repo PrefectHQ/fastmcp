@@ -75,7 +75,7 @@ Follow the Steps as mentioned below to create an OAuth client.
     Click on "Edit OAuth configuration" button.
     Configure the application as OAuth client by selecting "Configure this application as a client now" radio button.
     Select "Authorization code" grant type. If you are planning to use the same OAuth client application for token exchange, select "Client credentials" grant type as well. In the sample, we will use the same client.
-    For Authorization grant type, select redirect URL. In most cases, this will be the MCP server URL followed by "/oauth/callback".
+    For Authorization grant type, select redirect URL. In most cases, this will be the MCP server URL followed by "/auth/callback".
 
     <Frame>
         <img src="/integrations/images/oci/ocioauthconfiguration.png" alt="OAuth Configuration for an Integrated Application in OCI IAM Domain" />
@@ -91,13 +91,34 @@ Follow the Steps as mentioned below to create an OAuth client.
 </Step>
 </Steps>
 
+### Step 3: FastMCP Configuration
+
+Create your FastMCP server with `OCIProvider`. Set `config_url` to your identity domain's OIDC discovery URL, `https://<IAM_GUID>.identity.oraclecloud.com/.well-known/openid-configuration`, and pass the client ID and secret from Step 2. `required_scopes` defaults to `["openid"]`.
+
+```python server.py
+import os
+
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.oci import OCIProvider
+
+auth_provider = OCIProvider(
+    config_url=os.environ["OCI_CONFIG_URL"],
+    client_id=os.environ["OCI_CLIENT_ID"],
+    client_secret=os.environ["OCI_CLIENT_SECRET"],
+    base_url="http://localhost:8000",
+    required_scopes=["openid", "profile", "email"],
+)
+
+mcp = FastMCP(name="OCI Secured App", auth=auth_provider)
+```
+
 This is all you need to implement MCP server authentication against OCI IAM. However, you may want to use an authenticated user token to invoke OCI control plane APIs and propagate identity to the OCI control plane instead of using a service user account. In that case, you need to implement token exchange.
 
-### Step 3: Token Exchange Setup (Only if MCP server needs to talk to OCI Control Plane)
+### Step 4: Token Exchange Setup (Only if MCP server needs to talk to OCI Control Plane)
 
-Token exchange helps you exchange a logged-in user's OCI IAM token for an OCI control plane session token, also known as UPST (User Principal Session Token). To learn more about token exchange, refer to my [Workload Identity Federation Blog](https://www.ateam-oracle.com/post/workload-identity-federation)
+Token exchange helps you exchange a logged-in user's OCI IAM token for an OCI control plane session token, also known as UPST (User Principal Session Token). To learn more about token exchange, see the [Workload Identity Federation blog post](https://www.ateam-oracle.com/post/workload-identity-federation)
 
-For token exchange, we need to configure Identity propagation trust. The blog above discusses setting up the trust using REST APIs. However, you can also use OCI CLI. Before using the CLI command below, ensure that you have created a token exchange OAuth client. In most cases, you can use the same OAuth client that you created above. Replace `<IAM_GUID>` and `<CLIENT_ID>` in the CLI command below with your actual values.
+For token exchange, you need to configure an identity propagation trust. The blog above discusses setting up the trust using REST APIs. However, you can also use OCI CLI. Before using the CLI command below, ensure that you have created a token exchange OAuth client. In most cases, you can use the same OAuth client that you created above. Replace `<IAM_GUID>` and `<CLIENT_ID>` in the CLI command below with your actual values.
 
 ```bash
 oci identity-domains identity-propagation-trust create \
@@ -238,7 +259,7 @@ mcp = FastMCP(name="Production OCI App", auth=auth_provider)
 ```
 
 <Note>
-Parameters (`jwt_signing_key` and `client_storage`) work together to ensure tokens and client registrations survive server restarts. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at Rest** - without it, tokens are stored in plaintext. Store secrets in environment variables and use a persistent storage backend like Redis for distributed deployments.
+Parameters (`jwt_signing_key` and `client_storage`) work together to ensure tokens and client registrations survive server restarts. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** - without it, tokens are stored in plaintext. Store secrets in environment variables and use a persistent storage backend like Redis for distributed deployments.
 
 For complete details on these parameters, see the [OAuth Proxy documentation](/servers/auth/oauth-proxy#configuration-parameters).
 </Note>

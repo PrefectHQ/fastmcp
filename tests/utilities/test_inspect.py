@@ -1,14 +1,16 @@
 """Tests for the inspect.py module."""
 
 import importlib.metadata
+import json
 
-from mcp.server.fastmcp import FastMCP as FastMCP1x
+from mcp.server.mcpserver import MCPServer as SDKServer
 
 import fastmcp
 from fastmcp import Client, FastMCP
 from fastmcp.utilities.inspect import (
     FastMCPInfo,
     ToolInfo,
+    format_mcp_info,
     inspect_fastmcp,
     inspect_fastmcp_v1,
 )
@@ -467,7 +469,7 @@ class TestFastMCP1xCompatibility:
 
     async def test_fastmcp1x_empty_server(self):
         """Test get_fastmcp_info_v1 with an empty FastMCP1x server."""
-        mcp = FastMCP1x("Test1x")
+        mcp = SDKServer("Test1x")
 
         info = await inspect_fastmcp_v1(mcp)
 
@@ -485,7 +487,7 @@ class TestFastMCP1xCompatibility:
 
     async def test_fastmcp1x_with_tools(self):
         """Test get_fastmcp_info_v1 with a FastMCP1x server that has tools."""
-        mcp = FastMCP1x("Test1x")
+        mcp = SDKServer("Test1x")
 
         @mcp.tool()
         def add_numbers(a: int, b: int) -> int:
@@ -505,7 +507,7 @@ class TestFastMCP1xCompatibility:
 
     async def test_fastmcp1x_with_resources(self):
         """Test get_fastmcp_info_v1 with a FastMCP1x server that has resources."""
-        mcp = FastMCP1x("Test1x")
+        mcp = SDKServer("Test1x")
 
         @mcp.resource("resource://data")
         def get_data() -> str:
@@ -522,7 +524,7 @@ class TestFastMCP1xCompatibility:
 
     async def test_fastmcp1x_with_prompts(self):
         """Test get_fastmcp_info_v1 with a FastMCP1x server that has prompts."""
-        mcp = FastMCP1x("Test1x")
+        mcp = SDKServer("Test1x")
 
         @mcp.prompt("analyze")
         def analyze_data(data: str) -> list:
@@ -537,7 +539,7 @@ class TestFastMCP1xCompatibility:
 
     async def test_dispatcher_with_fastmcp1x(self):
         """Test that the main get_fastmcp_info function correctly dispatches to v1."""
-        mcp = FastMCP1x("Test1x")
+        mcp = SDKServer("Test1x")
 
         @mcp.tool()
         def test_tool() -> str:
@@ -569,7 +571,7 @@ class TestFastMCP1xCompatibility:
 
     async def test_fastmcp1x_vs_fastmcp2x_comparison(self):
         """Test that both versions can be inspected and compared."""
-        mcp1x = FastMCP1x("Test1x")
+        mcp1x = SDKServer("Test1x")
         mcp2x = FastMCP("Test2x")
 
         @mcp1x.tool()
@@ -602,3 +604,34 @@ class TestFastMCP1xCompatibility:
         # No templates added in these tests
         assert len(info1x.templates) == 0
         assert len(info2x.templates) == 0
+
+
+class TestFormatMcpInfo:
+    """Tests for the MCP protocol format of inspect."""
+
+    async def test_follows_pagination(self):
+        """A server that paginates its lists is not truncated to the first page."""
+        mcp = FastMCP("Paged", list_page_size=2)
+
+        for i in range(3):
+            mcp.tool(lambda: "x", name=f"tool{i}")
+            mcp.prompt(lambda: "x", name=f"prompt{i}")
+            mcp.resource(f"data://resource{i}", name=f"resource{i}")(lambda: "x")
+            mcp.resource(f"data://template{i}/{{x}}", name=f"template{i}")(
+                lambda x: "x"
+            )
+
+        data = json.loads(await format_mcp_info(mcp))
+
+        assert [t["name"] for t in data["tools"]] == ["tool0", "tool1", "tool2"]
+        assert [p["name"] for p in data["prompts"]] == ["prompt0", "prompt1", "prompt2"]
+        assert [r["name"] for r in data["resources"]] == [
+            "resource0",
+            "resource1",
+            "resource2",
+        ]
+        assert [t["name"] for t in data["resourceTemplates"]] == [
+            "template0",
+            "template1",
+            "template2",
+        ]

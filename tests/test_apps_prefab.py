@@ -8,14 +8,14 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from mcp.types import TextContent
-from prefab_ui.app import PrefabApp
+from mcp_types import TextContent
+from prefab_ui.app import PROTOCOL_VERSION, PrefabApp
 from prefab_ui.components import Column, Heading, Text
 from prefab_ui.components.base import Component
 
 from fastmcp import Client, FastMCP
 from fastmcp.apps import UI_MIME_TYPE, AppConfig
-from fastmcp.resources.types import TextResource
+from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.server.providers.local_provider.decorators.tools import (
     PREFAB_RENDERER_URI,
 )
@@ -39,7 +39,7 @@ class TestConvertResult:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "[Rendered Prefab UI]"
         assert result.structured_content is not None
-        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == PROTOCOL_VERSION
         assert result.structured_content["state"] == {"name": "Alice"}
         # PrefabApp wraps view in a pf-app-root Div
         root = result.structured_content["view"]
@@ -55,7 +55,7 @@ class TestConvertResult:
 
         assert isinstance(result, ToolResult)
         assert result.structured_content is not None
-        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == PROTOCOL_VERSION
         assert result.structured_content["view"]["type"] == "Div"
         assert result.structured_content["view"]["children"][0]["type"] == "Heading"
 
@@ -71,7 +71,7 @@ class TestConvertResult:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "Custom fallback text"
         assert result.structured_content is not None
-        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == PROTOCOL_VERSION
         assert result.structured_content["view"]["type"] == "Div"
         assert result.structured_content["view"]["children"][0]["type"] == "Heading"
 
@@ -85,7 +85,7 @@ class TestConvertResult:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "My text"
         assert result.structured_content is not None
-        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == PROTOCOL_VERSION
         assert result.structured_content["view"]["type"] == "Div"
         assert result.structured_content["view"]["children"][0]["type"] == "Heading"
 
@@ -130,7 +130,7 @@ class TestAppTrue:
             return "hello"
 
         resources = list(await mcp.list_resources())
-        prefab_resources = [r for r in resources if "prefab/tool" in str(r.uri)]
+        prefab_resources = [r for r in resources if "prefab/renderer" in str(r.uri)]
         assert len(prefab_resources) == 1
         assert "renderer.html" in str(prefab_resources[0].uri)
 
@@ -142,8 +142,8 @@ class TestAppTrue:
             return "hello"
 
         resources = list(await mcp.list_resources())
-        renderer = next(r for r in resources if "prefab/tool" in str(r.uri))
-        assert isinstance(renderer, TextResource)
+        renderer = next(r for r in resources if "prefab/renderer" in str(r.uri))
+        assert isinstance(renderer, FunctionResource)
         assert renderer.mime_type == UI_MIME_TYPE
 
     async def test_renderer_resource_has_csp(self):
@@ -154,14 +154,13 @@ class TestAppTrue:
             return "hello"
 
         resources = list(await mcp.list_resources())
-        renderer = next(r for r in resources if "prefab/tool" in str(r.uri))
+        renderer = next(r for r in resources if "prefab/renderer" in str(r.uri))
         assert renderer.meta is not None
         assert "ui" in renderer.meta
         assert "csp" in renderer.meta["ui"]
 
-    async def test_multiple_tools_get_dedicated_resources(self):
-        """Each prefab tool gets its own resource at a distinct hashed
-        URI — no shared singleton, so per-tool CSP becomes possible."""
+    async def test_multiple_tools_share_renderer_resource(self):
+        """Tools with matching resource configuration share one renderer."""
         mcp = FastMCP("test")
 
         @mcp.tool(app=True)
@@ -173,8 +172,8 @@ class TestAppTrue:
             return "b"
 
         resources = list(await mcp.list_resources())
-        prefab_uris = {str(r.uri) for r in resources if "prefab/tool" in str(r.uri)}
-        assert len(prefab_uris) == 2
+        prefab_uris = {str(r.uri) for r in resources if "prefab/renderer" in str(r.uri)}
+        assert len(prefab_uris) == 1
 
     def test_explicit_app_config_not_overridden(self):
         mcp = FastMCP("test")
@@ -391,7 +390,7 @@ class TestIntegration:
             result = await client.call_tool("greet", {"name": "Alice"})
 
         assert result.structured_content is not None
-        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == PROTOCOL_VERSION
         assert result.structured_content["state"] == {"name": "Alice"}
 
     async def test_tool_call_with_custom_text(self):
@@ -412,7 +411,7 @@ class TestIntegration:
             "Greeting for Alice" in c.text for c in result.content if hasattr(c, "text")
         )
         assert result.structured_content is not None
-        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == PROTOCOL_VERSION
 
     async def test_tools_list_includes_app_meta(self):
         mcp = FastMCP("test")
@@ -427,8 +426,8 @@ class TestIntegration:
         tool = next(t for t in tools if t.name == "my_tool")
         meta = tool.meta or {}
         assert "ui" in meta
-        # URI is the per-tool hashed form, not the singleton.
-        assert meta["ui"]["resourceUri"].startswith("ui://prefab/tool/")
+        # URI identifies the effective renderer configuration.
+        assert meta["ui"]["resourceUri"].startswith("ui://prefab/renderer/")
         assert meta["ui"]["resourceUri"].endswith("/renderer.html")
 
     async def test_renderer_resource_readable(self):

@@ -3,14 +3,13 @@ title: Dependency Injection
 sidebarTitle: Dependencies
 description: Inject runtime values like HTTP requests, access tokens, and custom dependencies into your MCP components.
 icon: syringe
-tag: NEW
 ---
 
 import { VersionBadge } from "/snippets/version-badge.mdx";
 
 FastMCP uses dependency injection to provide runtime values to your tools, resources, and prompts. Instead of passing context through every layer of your code, you declare what you need as parameter defaults—FastMCP resolves them automatically when your function runs.
 
-The dependency injection system is powered by [Docket](https://github.com/chrisguidry/docket) and its dependency system [uncalled-for](https://github.com/chrisguidry/uncalled-for). Core DI features like `Depends()` and `CurrentContext()` work without installing Docket. For background tasks and advanced task-related dependencies, install `fastmcp[tasks]`. For comprehensive coverage of dependency patterns, see the [Docket dependency documentation](https://docket.lol/en/latest/dependency-injection/).
+The dependency injection system is powered by [uncalled-for](https://github.com/chrisguidry/uncalled-for), the same dependency engine used by Docket. Core DI features like `Depends()` and `CurrentContext()` work without installing Docket. Background task execution and task-specific dependencies such as `CurrentDocket()` and `CurrentWorker()` require `fastmcp[tasks]`. For comprehensive coverage of dependency patterns, see the [Docket dependency documentation](https://docket.lol/en/latest/dependency-injection/).
 
 <Note>
 Dependency parameters are automatically excluded from the MCP schema—clients never see them as callable parameters. This separation keeps your function signatures clean while giving you access to the runtime context you need.
@@ -82,7 +81,7 @@ async def process_data(data: str, ctx: Context) -> str:
 from fastmcp.dependencies import CurrentContext
 
 @mcp.tool
-async def process_data(data: str, ctx: Context = CurrentContext()) -> str:
+async def process_data_explicit(data: str, ctx: Context = CurrentContext()) -> str:
     ...
 ```
 
@@ -160,10 +159,9 @@ def get_client_ip() -> str:
 ```
 
 <Note>
-Both raise `RuntimeError` when called outside an HTTP context (e.g., STDIO transport).
-For background tasks created from an HTTP request, FastMCP restores a minimal request
-backed by the originating request's snapshotted headers. Use HTTP Headers if you need
-graceful fallback.
+Both raise `RuntimeError` when called outside an HTTP context (e.g., STDIO transport,
+or inside a background task — there is no live request object to reconstruct there).
+Use HTTP Headers below if you need graceful fallback, including inside background tasks.
 </Note>
 
 ### HTTP Headers
@@ -200,7 +198,15 @@ def get_user_agent() -> str:
     return headers.get("user-agent", "Unknown")
 ```
 
-By default, problematic headers like `host` and `content-length` are excluded. Use `get_http_headers(include_all=True)` to include all headers.
+By default, problematic headers like `host` and `content-length` are excluded, along with the credential headers `authorization` and `cookie`. Credentials are withheld because most callers forward whatever they receive, and a session cookie scoped to your MCP host should not reach a separate backend origin.
+
+To read a credential header, ask for it by name:
+
+```python
+headers = get_http_headers(include={"cookie"})
+```
+
+`CurrentHeaders()` already includes both credential headers, since it exposes the current request to your handler rather than forwarding it. Use `get_http_headers(include_all=True)` to include every header.
 
 ### Access Token
 
@@ -226,7 +232,11 @@ async def get_user_id(token: AccessToken = CurrentAccessToken()) -> str:
 **Function:** Use `get_access_token()` (returns `None` if not authenticated):
 
 ```python
+from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_access_token
+
+mcp = FastMCP("Demo")
+
 
 @mcp.tool
 async def get_user_info() -> dict:
@@ -259,8 +269,7 @@ async def add_expense(
     amount: float,
     user_id: str = TokenClaim("oid"),  # Azure object ID
 ) -> dict:
-    await db.insert({"user_id": user_id, "amount": amount})
-    return {"status": "created", "user_id": user_id}
+    return {"status": "created", "user_id": user_id, "amount": amount}
 ```
 
 `TokenClaim()` raises a `RuntimeError` if the claim doesn't exist, listing available claims to help with debugging.
@@ -278,13 +287,16 @@ Common claims vary by identity provider:
 
 <VersionBadge version="2.3.0" />
 
-For background task execution, FastMCP provides dependencies that integrate with [Docket](https://github.com/chrisguidry/docket). These require installing `fastmcp[tasks]`.
+For background task execution, FastMCP provides dependencies that integrate with [Docket](https://github.com/chrisguidry/docket). `CurrentDocket()` and `CurrentWorker()` require installing `fastmcp[tasks]`; `Progress()` also works during immediate foreground execution with an in-memory tracker, and delegates to Docket progress when a Docket worker context is active.
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.dependencies import CurrentDocket, CurrentWorker, Progress
+from fastmcp.dependencies import Progress
+from fastmcp_tasks import TasksExtension
+from fastmcp_tasks.dependencies import CurrentDocket, CurrentWorker
 
 mcp = FastMCP("Task Demo")
+mcp.add_extension(TasksExtension())
 
 
 @mcp.tool(task=True)
@@ -309,7 +321,7 @@ async def long_running_task(
 - **`Progress()`**: Track task progress with atomic updates
 
 <Note>
-Task dependencies require `pip install 'fastmcp[tasks]'`. They're only available within task-enabled components (`task=True`). For comprehensive task patterns, see the [Docket documentation](https://chrisguidry.github.io/docket/dependencies/).
+`CurrentDocket()` and `CurrentWorker()` require `pip install 'fastmcp[tasks]'`. They resolve once the server lifespan has initialized Docket, which happens when the server has `TasksExtension` registered and at least one task-enabled component — so regular foreground tools, resources, and prompts can inject them too, not only task-enabled components. `Progress()` can be injected anywhere regardless, though cross-process task progress requires Docket. For comprehensive task patterns, see the [Docket documentation](https://docket.lol/en/latest/task-patterns/).
 </Note>
 
 ## Custom Dependencies
@@ -344,6 +356,33 @@ async def fetch_data(
 ) -> str:
     return f"User {user_id} fetching '{query}' from {config['api_url']}"
 ```
+
+### Annotated Dependencies
+
+A dependency can also go in the parameter's annotation instead of its default. The parameter keeps its declared type, so a type checker sees `config` as a `dict` rather than a `Depends` object, and a direct call that forgets it fails with a `TypeError` instead of running with the marker. An alias carries the type and the dependency together, so every tool that needs the config reads the same declaration.
+
+```python
+from typing import Annotated
+
+from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
+
+mcp = FastMCP("Annotated Deps Demo")
+
+
+def get_config() -> dict:
+    return {"api_url": "https://api.example.com", "timeout": 30}
+
+
+Config = Annotated[dict, Depends(get_config)]
+
+
+@mcp.tool
+async def fetch_data(query: str, config: Config) -> str:
+    return f"Fetching '{query}' from {config['api_url']}"
+```
+
+As with a default, the parameter stays out of the tool's schema. Use one form per parameter: combining an annotated dependency with a `Depends()` default raises `TypeError`.
 
 ### Caching
 
@@ -430,4 +469,57 @@ async def call_api(endpoint: str, client: dict = Depends(get_api_client)) -> str
     return f"Calling {client['base_url']}/{client['version']}/{endpoint}"
 ```
 
-For advanced dependency patterns—like `TaskArgument()` for accessing task parameters, or custom `Dependency` subclasses—see the [Docket dependency documentation](https://chrisguidry.github.io/docket/dependencies/).
+### Call Arguments
+
+<VersionBadge version="4.0.0" />
+
+A dependency factory can read the arguments of the function it serves. Declare the reference with `CallArgument()`:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.dependencies import CallArgument, Depends
+
+mcp = FastMCP("Call Arguments Demo")
+
+
+def get_account(user_id: str = CallArgument()) -> dict:
+    return {"id": user_id, "plan": "pro"}
+
+
+@mcp.tool
+async def show_account(user_id: str, account: dict = Depends(get_account)) -> str:
+    return f"{account['id']} is on {account['plan']}"
+```
+
+When a client calls `show_account`, the factory receives the same `user_id` value the tool receives. The bare form takes the name of the parameter it is declared on. `CallArgument("user_id")` names the parameter explicitly. The reference also sees a value that another dependency on the tool's signature produced. `CallArgument("tenant", optional=True)` yields `None` when the function has no such parameter. References that form a cycle raise `CycleError`, importable from `fastmcp.dependencies`.
+
+Clients still cannot override dependencies this way: an argument whose name collides with a dependency parameter is stripped before resolution, so a `CallArgument` reference to that parameter resolves the dependency itself.
+
+### Bindings
+
+<VersionBadge version="4.0.0" />
+
+`Depends()` accepts keyword bindings, so you can wire up a factory without changing it:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.dependencies import CallArgument, Depends
+
+mcp = FastMCP("Bindings Demo")
+
+
+def get_account(user_id: str) -> dict:
+    return {"id": user_id, "plan": "pro"}
+
+
+@mcp.tool
+async def show_account(
+    owner: str,
+    account: dict = Depends(get_account, user_id=CallArgument("owner")),
+) -> str:
+    return f"{account['id']} is on {account['plan']}"
+```
+
+A binding that is a `Dependency`, such as `CallArgument(...)` or another `Depends(...)`, resolves first and the factory receives its value. Any other value passes through as it is. A binding replaces the default of the factory's own parameter, which is then never resolved. Two dependencies on the same factory share one cached result only when their bindings match. See the [Docket dependency documentation](https://docket.lol/en/latest/dependency-injection/) for more detail on call arguments and bindings.
+
+For advanced dependency patterns—like `TaskArgument()` for accessing task parameters, or custom `Dependency` subclasses—see the [Docket dependency documentation](https://docket.lol/en/latest/dependency-injection/).

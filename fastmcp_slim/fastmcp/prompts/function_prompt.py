@@ -5,45 +5,37 @@ from __future__ import annotations
 import functools
 import inspect
 import json
-import warnings
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from types import MethodType
 from typing import (
-    TYPE_CHECKING,
     Any,
     Literal,
     Protocol,
     TypeVar,
+    cast,
+    get_type_hints,
     overload,
     runtime_checkable,
 )
 
 import pydantic_core
-from mcp.types import Icon
+from mcp_types import Icon
+from pydantic.fields import FieldInfo
 from pydantic.json_schema import SkipJsonSchema
 
-import fastmcp
-from fastmcp.decorators import resolve_task_config
-from fastmcp.exceptions import FastMCPDeprecationWarning, FastMCPError, PromptError
+from fastmcp.exceptions import PromptError, ValidationError
 from fastmcp.prompts.base import Prompt, PromptArgument, PromptResult
-from fastmcp.server.auth.authorization import AuthCheck
-from fastmcp.server.dependencies import (
-    transform_context_annotations,
-    without_injected_parameters,
-)
-from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
+from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.docstring_parsing import ParsedDocstring, parse_docstring
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import get_cached_typeadapter
-
-if TYPE_CHECKING:
-    from docket import Docket
-    from docket.execution import Execution
+from fastmcp.utilities.types import get_cached_typeadapter, get_function_type_hints
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -71,7 +63,6 @@ class PromptMeta:
     icons: list[Icon] | None = None
     tags: set[str] | None = None
     meta: dict[str, Any] | None = None
-    task: bool | TaskConfig | None = None
     auth: AuthCheck | list[AuthCheck] | None = None
     enabled: bool = True
 
@@ -95,7 +86,6 @@ class FunctionPrompt(Prompt):
         icons: list[Icon] | None = None,
         tags: set[str] | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> FunctionPrompt:
         """Create a Prompt from a function.
@@ -115,7 +105,7 @@ class FunctionPrompt(Prompt):
         # Check mutual exclusion
         individual_params_provided = any(
             x is not None
-            for x in [name, version, title, description, icons, tags, meta, task, auth]
+            for x in [name, version, title, description, icons, tags, meta, auth]
         )
 
         if metadata is not None and individual_params_provided:
@@ -134,7 +124,6 @@ class FunctionPrompt(Prompt):
                 icons=icons,
                 tags=tags,
                 meta=meta,
-                task=task,
                 auth=auth,
             )
 
@@ -145,9 +134,17 @@ class FunctionPrompt(Prompt):
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
-        # Reject functions with *args or **kwargs
+        # Reject signatures that cannot be represented by MCP's named
+        # prompt arguments
         sig = inspect.signature(fn)
         for param in sig.parameters.values():
+            if param.kind == inspect.Parameter.POSITIONAL_ONLY:
+                raise ValueError(
+                    "Functions with positional-only parameters are not "
+                    "supported as prompts because MCP passes prompt arguments "
+                    "by name. Replace them with standard parameters that can be "
+                    "passed as keywords."
+                )
             if param.kind == inspect.Parameter.VAR_POSITIONAL:
                 raise ValueError("Functions with *args are not supported as prompts")
             if param.kind == inspect.Parameter.VAR_KEYWORD:
@@ -156,16 +153,6 @@ class FunctionPrompt(Prompt):
         # Parse the outer docstring (before unwrapping) to preserve the class
         # docstring as the prompt description for callable class instances.
         outer_docstring = parse_docstring(fn)
-
-        # Normalize task to TaskConfig and validate
-        task_value = metadata.task
-        if task_value is None:
-            task_config = TaskConfig(mode="forbidden")
-        elif isinstance(task_value, bool):
-            task_config = TaskConfig.from_bool(task_value)
-        else:
-            task_config = task_value
-        task_config.validate_function(fn, func_name)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
@@ -193,6 +180,11 @@ class FunctionPrompt(Prompt):
         )
 
         # Transform Context type annotations to Depends() for unified DI
+        from fastmcp.server.dependencies import (
+            transform_context_annotations,
+            without_injected_parameters,
+        )
+
         fn = transform_context_annotations(fn)
 
         # Wrap fn to handle dependency resolution internally
@@ -212,6 +204,8 @@ class FunctionPrompt(Prompt):
                     and "description" not in properties[param_name]
                 ):
                     properties[param_name]["description"] = param_desc
+
+        titles = _explicit_parameter_titles(fn)
 
         # Convert parameters to PromptArguments
         arguments: list[PromptArgument] = []
@@ -236,7 +230,10 @@ class FunctionPrompt(Prompt):
                             schema_str = json.dumps(param_schema, separators=(",", ":"))
 
                             # Append schema info to description
-                            schema_note = f"Provide as a JSON string matching the following schema: {schema_str}"
+                            schema_note = (
+                                "Provide a value matching the following JSON schema: "
+                                f"{schema_str}. Encode non-string values as JSON."
+                            )
                             if arg_description:
                                 arg_description = f"{arg_description}\n\n{schema_note}"
                             else:
@@ -252,6 +249,7 @@ class FunctionPrompt(Prompt):
                 arguments.append(
                     PromptArgument(
                         name=param_name,
+                        title=titles.get(param_name),
                         description=arg_description,
                         required=param_name in parameters.get("required", []),
                     )
@@ -267,7 +265,6 @@ class FunctionPrompt(Prompt):
             tags=metadata.tags or set(),
             fn=wrapped_fn,
             meta=metadata.meta,
-            task_config=task_config,
             auth=metadata.auth,
         )
 
@@ -277,37 +274,55 @@ class FunctionPrompt(Prompt):
 
         wrapper_fn = without_injected_parameters(self.fn)
         sig = inspect.signature(wrapper_fn)
+        try:
+            type_hints = get_function_type_hints(wrapper_fn)
+        except Exception:
+            # Preserve the existing fallback for unresolved forward references.
+            type_hints = getattr(wrapper_fn, "__annotations__", {})
         converted_kwargs = {}
 
         for param_name, param_value in kwargs.items():
             if param_name in sig.parameters:
                 param = sig.parameters[param_name]
+                annotation = type_hints.get(param_name, param.annotation)
 
-                # If parameter has no annotation or annotation is str, pass as-is
-                if (
-                    param.annotation == inspect.Parameter.empty
-                    or param.annotation is str
-                ) or not isinstance(param_value, str):
+                if annotation == inspect.Parameter.empty or not isinstance(
+                    param_value, str
+                ):
                     converted_kwargs[param_name] = param_value
                 else:
                     # Try to convert string argument using type adapter
                     try:
-                        adapter = get_cached_typeadapter(param.annotation)
-                        # Try JSON parsing first for complex types
+                        adapter = get_cached_typeadapter(annotation)
+                        # Preserve the MCP wire string when validation keeps it
+                        # as a string. Non-string results still prefer JSON
+                        # decoding so coercible types such as bytes and Path do
+                        # not retain JSON quote characters.
                         try:
+                            python_value = adapter.validate_python(param_value)
+                        except (ValueError, TypeError, pydantic_core.ValidationError):
                             converted_kwargs[param_name] = adapter.validate_json(
                                 param_value
                             )
-                        except (ValueError, TypeError, pydantic_core.ValidationError):
-                            # Fallback to direct validation
-                            converted_kwargs[param_name] = adapter.validate_python(
-                                param_value
-                            )
+                        else:
+                            if isinstance(python_value, str):
+                                converted_kwargs[param_name] = python_value
+                            else:
+                                try:
+                                    converted_kwargs[param_name] = (
+                                        adapter.validate_json(param_value)
+                                    )
+                                except (
+                                    ValueError,
+                                    TypeError,
+                                    pydantic_core.ValidationError,
+                                ):
+                                    converted_kwargs[param_name] = python_value
                     except (ValueError, TypeError, pydantic_core.ValidationError) as e:
                         # If conversion fails, provide informative error
                         raise PromptError(
                             f"Could not convert argument '{param_name}' with value '{param_value}' "
-                            f"to expected type {param.annotation}. Error: {e}"
+                            f"to expected type {annotation}. Error: {e}"
                         ) from e
             else:
                 # Parameter not in function signature, pass as-is
@@ -326,77 +341,43 @@ class FunctionPrompt(Prompt):
             provided = set(arguments or {})
             missing = required - provided
             if missing:
-                raise ValueError(f"Missing required arguments: {missing}")
-
-        try:
-            # Prepare arguments
-            kwargs = arguments.copy() if arguments else {}
-
-            # Convert string arguments to expected types BEFORE validation
-            kwargs = self._convert_string_arguments(kwargs)
-
-            # Filter out arguments that aren't in the function signature
-            # This is important for security: dependencies should not be overridable
-            # from external callers. self.fn is wrapped by without_injected_parameters,
-            # so we only accept arguments that are in the wrapped function's signature.
-            sig = inspect.signature(self.fn)
-            valid_params = set(sig.parameters.keys())
-            kwargs = {k: v for k, v in kwargs.items() if k in valid_params}
-
-            # Use type adapter to validate arguments and handle Field() defaults
-            # This matches the behavior of tools in function_tool
-            type_adapter = get_cached_typeadapter(self.fn)
-
-            # self.fn is wrapped by without_injected_parameters which handles
-            # dependency resolution internally
-            if is_coroutine_function(self.fn):
-                result = await type_adapter.validate_python(kwargs)
-            else:
-                # Run sync functions in threadpool to avoid blocking the event loop
-                result = await call_sync_fn_in_threadpool(
-                    type_adapter.validate_python, kwargs
+                raise ValidationError(
+                    f"Missing required arguments: {missing}",
+                    log_level=logging.WARNING,
                 )
-                # Handle sync wrappers that return awaitables (e.g., partial(async_fn))
-                if inspect.isawaitable(result):
-                    result = await result
 
-            return self.convert_result(result)
-        except FastMCPError:
-            raise
-        except Exception as e:
-            logger.exception(f"Error rendering prompt {self.name}")
-            raise PromptError(f"Error rendering prompt {self.name!r}: {e}") from e
+        # Prepare arguments
+        kwargs = arguments.copy() if arguments else {}
 
-    def register_with_docket(self, docket: Docket) -> None:
-        """Register this prompt with docket for background execution."""
-        if not self.task_config.supports_tasks():
-            return
-        docket.register(self.fn, names=[self.key])
+        # Convert string arguments to expected types BEFORE validation
+        kwargs = self._convert_string_arguments(kwargs)
 
-    async def add_to_docket(
-        self,
-        docket: Docket,
-        arguments: dict[str, Any] | None,
-        *,
-        fn_key: str | None = None,
-        task_key: str | None = None,
-        **kwargs: Any,
-    ) -> Execution:
-        """Schedule this prompt for background execution via docket.
+        # Filter out arguments that aren't in the function signature
+        # This is important for security: dependencies should not be overridable
+        # from external callers. self.fn is wrapped by without_injected_parameters,
+        # so we only accept arguments that are in the wrapped function's signature.
+        sig = inspect.signature(self.fn)
+        valid_params = set(sig.parameters.keys())
+        kwargs = {k: v for k, v in kwargs.items() if k in valid_params}
 
-        FunctionPrompt splats the arguments dict since .fn expects **kwargs.
+        # Use type adapter to validate arguments and handle Field() defaults
+        # This matches the behavior of tools in function_tool
+        type_adapter = get_cached_typeadapter(self.fn)
 
-        Args:
-            docket: The Docket instance
-            arguments: Prompt arguments
-            fn_key: Function lookup key in Docket registry (defaults to self.key)
-            task_key: Redis storage key for the result
-            **kwargs: Additional kwargs passed to docket.add()
-        """
-        lookup_key = fn_key or self.key
-        if task_key:
-            kwargs["key"] = task_key
-        return await docket.add(lookup_key, **kwargs)(**(arguments or {}))
+        # self.fn is wrapped by without_injected_parameters which handles
+        # dependency resolution internally
+        if is_coroutine_function(self.fn):
+            result = await type_adapter.validate_python(kwargs)
+        else:
+            # Run sync functions in threadpool to avoid blocking the event loop
+            result = await call_sync_fn_in_threadpool(
+                type_adapter.validate_python, kwargs
+            )
+            # Handle sync wrappers that return awaitables (e.g., partial(async_fn))
+            if inspect.isawaitable(result):
+                result = await result
+
+        return self.convert_result(result)
 
 
 @overload
@@ -411,7 +392,6 @@ def prompt(
     icons: list[Icon] | None = None,
     tags: set[str] | None = None,
     meta: dict[str, Any] | None = None,
-    task: bool | TaskConfig | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
 ) -> Callable[[F], F]: ...
 @overload
@@ -425,7 +405,6 @@ def prompt(
     icons: list[Icon] | None = None,
     tags: set[str] | None = None,
     meta: dict[str, Any] | None = None,
-    task: bool | TaskConfig | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
 ) -> Callable[[F], F]: ...
 
@@ -440,7 +419,6 @@ def prompt(
     icons: list[Icon] | None = None,
     tags: set[str] | None = None,
     meta: dict[str, Any] | None = None,
-    task: bool | TaskConfig | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
 ) -> Any:
     """Standalone decorator to mark a function as an MCP prompt.
@@ -454,23 +432,6 @@ def prompt(
             "See https://gofastmcp.com/servers/prompts#using-with-methods"
         )
 
-    def create_prompt(
-        fn: Callable[..., Any], prompt_name: str | None
-    ) -> FunctionPrompt:
-        # Create metadata first, then pass it
-        prompt_meta = PromptMeta(
-            name=prompt_name,
-            version=version,
-            title=title,
-            description=description,
-            icons=icons,
-            tags=tags,
-            meta=meta,
-            task=resolve_task_config(task),
-            auth=auth,
-        )
-        return FunctionPrompt.from_function(fn, metadata=prompt_meta)
-
     def attach_metadata(fn: F, prompt_name: str | None) -> F:
         metadata = PromptMeta(
             name=prompt_name,
@@ -480,22 +441,13 @@ def prompt(
             icons=icons,
             tags=tags,
             meta=meta,
-            task=task,
             auth=auth,
         )
-        target = fn.__func__ if hasattr(fn, "__func__") else fn
-        target.__fastmcp__ = metadata
+        target = fn.__func__ if isinstance(fn, staticmethod | MethodType) else fn
+        cast(Any, target).__fastmcp__ = metadata
         return fn
 
     def decorator(fn: F, prompt_name: str | None) -> F:
-        if fastmcp.settings.decorator_mode == "object":
-            warnings.warn(
-                "decorator_mode='object' is deprecated and will be removed in a future version. "
-                "Decorators now return the original function with metadata attached.",
-                FastMCPDeprecationWarning,
-                stacklevel=4,
-            )
-            return create_prompt(fn, prompt_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn, prompt_name)
 
     if inspect.isroutine(name_or_fn):
@@ -513,3 +465,31 @@ def prompt(
         return decorator(fn, prompt_name)
 
     return wrapper
+
+
+def _explicit_parameter_titles(fn: Callable[..., Any]) -> dict[str, str]:
+    """Return the titles set with `Field(title=...)` on fn's parameters.
+
+    The parameter schema cannot tell these apart from the titles Pydantic
+    generates for every parameter, and they are pruned from it, so read them
+    from the annotations and defaults instead.
+    """
+    try:
+        hints = get_type_hints(fn, include_extras=True)
+    except Exception:
+        # Unresolvable annotations: titles set as defaults still count.
+        hints = {}
+    titles: dict[str, str] = {}
+    for name, param in inspect.signature(fn).parameters.items():
+        annotation = hints.get(name, param.annotation)
+        if annotation is inspect.Parameter.empty or isinstance(annotation, str):
+            annotation = Any
+        default = (
+            pydantic_core.PydanticUndefined
+            if param.default is inspect.Parameter.empty
+            else param.default
+        )
+        title = FieldInfo.from_annotated_attribute(annotation, default).title
+        if title is not None:
+            titles[name] = title
+    return titles

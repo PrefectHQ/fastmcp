@@ -1,3 +1,4 @@
+import json
 import subprocess
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -34,6 +35,20 @@ class TestMainCLI:
             _parse_env_var("INVALID_FORMAT")
         assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 1
+
+    @pytest.mark.parametrize("name", ["login", "logout", "whoami"])
+    def test_horizon_account_commands_are_top_level(self, name: str):
+        command, bound, _ = app.parse_args([name, "--json"])
+
+        assert command.__name__ == name  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert bound.arguments == {"json_output": True}
+
+    def test_login_accepts_a_horizon_host(self):
+        _, bound, _ = app.parse_args(
+            ["login", "--host", "https://dev.horizon.prefect.io"]
+        )
+
+        assert bound.arguments == {"host": "https://dev.horizon.prefect.io"}
 
 
 class TestVersionCommand:
@@ -591,6 +606,23 @@ def test_tool(x: int) -> int:
         assert "MCP" in captured.out
         assert "Use --format [fastmcp|mcp] for complete JSON output" in captured.out
 
+    async def test_inspect_command_text_summary_keeps_brackets(self, tmp_path, capsys):
+        """Square brackets in server metadata are shown literally, not parsed as markup."""
+        server_file = tmp_path / "test_server.py"
+        server_file.write_text("""
+import fastmcp
+
+mcp = fastmcp.FastMCP("demo [dev]", instructions="Use [path] or see [/docs]")
+""")
+
+        command, bound, _ = app.parse_args(["inspect", str(server_file)])
+
+        await command(**bound.arguments)
+
+        captured = capsys.readouterr()
+        assert "demo [dev]" in captured.out
+        assert "Use [path] or see [/docs]" in captured.out
+
     async def test_inspect_command_with_real_server(self, tmp_path):
         """Test inspect command with a real server file."""
         # Create a real server file
@@ -636,3 +668,29 @@ def test_prompt(name: str) -> str:
         assert data["server"]["name"] == "InspectTestServer"
         assert len(data["tools"]) == 1
         assert len(data["prompts"]) == 1
+
+    async def test_inspect_command_stdout_is_valid_json(self, tmp_path, capsys):
+        """Long descriptions and bracketed text must reach stdout unchanged."""
+        server_file = tmp_path / "test_server.py"
+        server_file.write_text("""
+import fastmcp
+
+mcp = fastmcp.FastMCP("InspectTestServer")
+
+@mcp.tool
+def test_tool(x: int) -> int:
+    \"\"\"Multiply a number by two and return the product, as plain text [bold]with markup[/bold] inside.\"\"\"
+    return x * 2
+""")
+
+        command, bound, _ = app.parse_args(
+            ["inspect", str(server_file), "--format", "fastmcp"]
+        )
+
+        await command(**bound.arguments)
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["tools"][0]["description"] == (
+            "Multiply a number by two and return the product, as plain text "
+            "[bold]with markup[/bold] inside."
+        )

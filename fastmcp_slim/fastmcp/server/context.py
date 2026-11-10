@@ -1,35 +1,30 @@
 from __future__ import annotations
 
 import logging
-import warnings
 import weakref
-from collections.abc import Callable, Generator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from logging import Logger
-from typing import Any, Literal, overload
+from typing import Any, Literal, cast, overload
 
-import mcp.types
+import mcp_types
 from mcp import LoggingLevel, ServerSession
-from mcp.server.lowlevel.server import request_ctx
-from mcp.shared.context import RequestContext
-from mcp.types import (
+from mcp.server.context import ServerRequestContext
+from mcp_types import (
     GetPromptResult,
-    ModelPreferences,
-    Root,
-    SamplingMessage,
 )
-from mcp.types import Prompt as SDKPrompt
-from mcp.types import Resource as SDKResource
+from mcp_types import Prompt as SDKPrompt
+from mcp_types import Resource as SDKResource
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic.networks import AnyUrl
-from starlette.requests import Request
 from typing_extensions import TypeVar
 from uncalled_for import SharedContext
 
-import fastmcp
-from fastmcp.exceptions import FastMCPDeprecationWarning
+from fastmcp.exceptions import ToolError
 from fastmcp.resources.base import ResourceResult
+from fastmcp.server.dependencies import FastMCPRequestContext, fastmcp_request_ctx
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,
@@ -37,12 +32,7 @@ from fastmcp.server.elicitation import (
     handle_elicit_accept,
     parse_elicit_response_type,
 )
-from fastmcp.server.low_level import MiddlewareServerSession
-from fastmcp.server.sampling import SampleStep, SamplingResult, SamplingTool
-from fastmcp.server.sampling.run import (
-    sample_impl,
-    sample_step_impl,
-)
+from fastmcp.server.low_level import client_supports_extension
 from fastmcp.server.server import FastMCP, StateValue
 from fastmcp.server.transforms.visibility import (
     Visibility,
@@ -75,12 +65,28 @@ _clamp_logger(logger=to_client_logger, max_level="DEBUG")
 
 
 T = TypeVar("T", default=Any)
-ResultT = TypeVar("ResultT", default=str)
 
-# Import ToolChoiceOption from sampling module (after other imports)
-from fastmcp.server.sampling.run import ToolChoiceOption  # noqa: E402
+_ELICIT_MODERN_ERROR = (
+    "elicitation via server-initiated requests is unavailable on 2026-07-28 "
+    "connections."
+)
+
 
 _current_context: ContextVar[Context | None] = ContextVar("context", default=None)
+
+
+#: Error raised when a tool calls ``ctx.elicit()`` inside a background task.
+#: Background tasks gather input with the guard/return pattern (return an
+#: ``InputRequiredResult``), which the end-and-reenter machinery drives across
+#: worker legs. Imperative elicitation would require blocking a worker on a
+#: client round-trip, which end-and-reenter deliberately does not do.
+_TASK_ELICIT_ERROR = (
+    "Imperative ctx.elicit() is not supported inside a background task. Gather "
+    "input with the guard pattern instead: return an InputRequiredResult from "
+    "the tool (with input_requests), and read ctx.input_responses / "
+    "ctx.request_state when the task re-runs after the client answers."
+)
+
 
 TransportType = Literal["stdio", "sse", "streamable-http"]
 _current_transport: ContextVar[TransportType | None] = ContextVar(
@@ -110,6 +116,13 @@ class LogData:
 
     msg: str
     extra: Mapping[str, Any] | None = None
+
+
+def _log_record_reserved_keys() -> set[str]:
+    """Names a `LogRecord` already uses; `Logger.log(extra=...)` raises KeyError
+    when `extra` contains one of them. Read from the active record factory, since
+    applications can install one that adds attributes."""
+    return {*logging.makeLogRecord({}).__dict__, "message", "asctime"}
 
 
 _mcp_level_to_python_level = {
@@ -161,7 +174,7 @@ class Context:
         request_id = ctx.request_id
         client_id = ctx.client_id
 
-        # Manage state across the session (persists across requests)
+        # Manage state (persists across requests on handshake-era sessions)
         await ctx.set_state("key", "value")
         value = await ctx.get_state("key")
 
@@ -172,14 +185,12 @@ class Context:
     ```
 
     State Management:
-    Context provides session-scoped state that persists across requests within
-    the same MCP session. State is automatically keyed by session, ensuring
-    isolation between different clients.
-
-    State set during `on_initialize` middleware will persist to subsequent tool
-    calls when using the same session object (STDIO, SSE, single-server HTTP).
-    For distributed/serverless HTTP deployments where different machines handle
-    the init and tool calls, state is isolated by the mcp-session-id header.
+    Context state is keyed by `session_id`. On handshake-era (legacy)
+    connections that identifier lasts for the MCP session, so state persists
+    across requests and is isolated between clients. On 2026-07-28 connections,
+    which `Client` negotiates by default, every request is a fresh connection,
+    so state does not carry over to the next request. Use
+    [Session State](/servers/sessions) for data that must outlive a request.
 
     The context parameter name can be anything as long as it's annotated with Context.
     The context is optional - tools that don't need it can omit the parameter.
@@ -205,14 +216,21 @@ class Context:
         self._origin_request_id: str | None = origin_request_id
         # Request-scoped state for non-serializable values (serializable=False)
         self._request_state: dict[str, Any] = {}
+        # Multi-round-trip input carried in-task (SEP-2322 guard channel). A
+        # foreground round recovers `input_responses`/`request_state` from the
+        # wire request; a worker has no wire request, so the tasks extension's
+        # in-task loop sets these between rounds and the properties below fall
+        # back to them. The guard tool reads `ctx.input_responses` identically
+        # in both modes — only the transport differs (task store vs wire params).
+        self._task_input_responses: mcp_types.InputResponses | None = None
+        self._task_request_state: str | None = None
 
     @property
     def is_background_task(self) -> bool:
         """True when this context is running in a background task (Docket worker).
 
-        When True, certain operations like elicit() and sample() will use
-        task-aware implementations that can pause the task and wait for
-        client input.
+        When True, certain operations like elicit() will use task-aware
+        implementations that can pause the task and wait for client input.
 
         Example:
             ```python
@@ -266,29 +284,15 @@ class Context:
         self._tokens.append(token)
 
         # Set current server for dependency injection (use weakref to avoid reference cycles)
-        from fastmcp.server.dependencies import (
-            _current_docket,
-            _current_server,
-            _current_worker,
-            is_docket_available,
-        )
+        from fastmcp.server.dependencies import _current_server
 
         self._server_token = _current_server.set(weakref.ref(self.fastmcp))
 
-        # Re-set docket/worker from the server instance so mounted children
-        # inherit the parent's Docket via the ContextVar. Only servers that
-        # own the Docket (the parent) have _docket set; children skip this,
-        # leaving the parent's value in place.
-        if is_docket_available():
-            server = self.fastmcp
-            if server._docket is not None:
-                self._docket_token = _current_docket.set(server._docket)
-            if server._worker is not None:
-                self._worker_token = _current_worker.set(server._worker)
-
-        if not is_docket_available():
-            # Without docket, the lifespan won't provide a SharedContext,
-            # so create one scoped to this Context for Shared() dependencies.
+        try:
+            SharedContext.resolved.get()
+        except LookupError:
+            # Direct calls outside the server lifespan need a temporary scope;
+            # otherwise preserve the app's existing Shared() dependencies.
             self._shared_context = SharedContext()
             await self._shared_context.__aenter__()
 
@@ -296,18 +300,8 @@ class Context:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         """Exit the context manager and reset the most recent token."""
-        from fastmcp.server.dependencies import (
-            _current_docket,
-            _current_server,
-            _current_worker,
-        )
+        from fastmcp.server.dependencies import _current_server
 
-        if hasattr(self, "_worker_token"):
-            _current_worker.reset(self._worker_token)
-            del self._worker_token
-        if hasattr(self, "_docket_token"):
-            _current_docket.reset(self._docket_token)
-            del self._docket_token
         if hasattr(self, "_shared_context"):
             await self._shared_context.__aexit__(exc_type, exc_val, exc_tb)
             del self._shared_context
@@ -322,11 +316,11 @@ class Context:
             _current_context.reset(token)
 
     @property
-    def request_context(self) -> RequestContext[ServerSession, Any, Request] | None:
+    def request_context(self) -> FastMCPRequestContext | None:
         """Access to the underlying request context.
 
         Returns None when the MCP session has not been established yet.
-        Returns the full RequestContext once the MCP session is available.
+        Returns the FastMCPRequestContext wrapper once the MCP session is available.
 
         For HTTP request access in middleware, use `get_http_request()` from fastmcp.server.dependencies,
         which works whether or not the MCP session is available.
@@ -345,10 +339,87 @@ class Context:
             return await call_next(context)
         ```
         """
-        try:
-            return request_ctx.get()
-        except LookupError:
+        return fastmcp_request_ctx.get()
+
+    def client_extension_settings(self, identifier: str) -> dict[str, Any] | None:
+        """This request's per-request opt-in settings for an MCP extension.
+
+        SEP-2133 extensions negotiate per request: the client repeats its
+        extension capabilities in each request's ``_meta`` under
+        ``io.modelcontextprotocol/clientCapabilities`` → ``extensions`` →
+        ``identifier``. Returns the declared settings dict (possibly empty) when
+        the extension was opted in for this request, or ``None`` when it was
+        not (or there is no active request). This bridges an extension's
+        ``tools/call`` interceptor — which receives a FastMCP ``Context`` — to
+        the request's declared client capabilities.
+        """
+        rc = self.request_context
+        if rc is None:
             return None
+        from fastmcp.server.extensions import _extract_client_extension_settings
+
+        return _extract_client_extension_settings(rc.meta, identifier)
+
+    def _input_response_params(
+        self,
+    ) -> mcp_types.InputResponseRequestParams | None:
+        """The active request's multi-round-trip fields (SEP-2322), if any.
+
+        Reads the raw params of the active wire request through the SDK's
+        per-request context and reparses them as `InputResponseRequestParams`
+        to recover the typed `input_responses` / `request_state`. The
+        framework's request-state boundary has already unsealed `requestState`
+        into plaintext by the time a handler observes it. Returns `None`
+        outside a wire request (e.g. a background task) or when the params are
+        not a mapping.
+        """
+        rc = self.request_context
+        if rc is None:
+            return None
+        params = rc._srctx.params
+        if not isinstance(params, Mapping):
+            return None
+        return mcp_types.InputResponseRequestParams.model_validate(dict(params))
+
+    @property
+    def input_responses(self) -> mcp_types.InputResponses | None:
+        """Client responses to a prior `InputRequiredResult.input_requests`.
+
+        The multi-round-trip guard channel (SEP-2322). A guard tool inspects
+        this to decide what to do on each round: `None` on the initial round
+        (nothing has been asked yet, or the client retried without responses),
+        so the tool returns an `InputRequiredResult` to ask; present on a later
+        round, so the tool reads the answers and proceeds. It is a mapping whose
+        keys match the `input_requests` map the tool minted; each value is the
+        client's result for that request (an `ElicitResult`, `CreateMessageResult`,
+        or `ListRootsResult`).
+
+        In a background task there is no wire request, so this falls back to the
+        responses the in-task guard loop delivered (see the tasks extension).
+        """
+        params = self._input_response_params()
+        if params is not None and params.input_responses is not None:
+            return params.input_responses
+        return self._task_input_responses
+
+    @property
+    def request_state(self) -> str | None:
+        """Opaque state echoed from a prior `InputRequiredResult.request_state`.
+
+        The multi-round-trip guard channel (SEP-2322): whatever a tool put in
+        `InputRequiredResult.request_state` on an earlier round is handed back
+        here (as plaintext — the framework seals it on the wire and unseals it
+        before the tool runs, so tampering is rejected before this is read).
+        `None` on the initial round. Use it to carry a small amount of computed
+        state across rounds without re-deriving it.
+
+        In a background task there is no wire request, so this falls back to the
+        state the in-task guard loop re-injected (see the tasks extension).
+        """
+        params = self._input_response_params()
+        if params is not None and params.request_state is not None:
+            return params.request_state
+        return self._task_request_state
 
     @property
     def lifespan_context(self) -> dict[str, Any]:
@@ -400,9 +471,10 @@ class Context:
             message: Optional status message describing current progress
         """
 
+        rc = self.request_context
         progress_token = (
-            self.request_context.meta.progressToken
-            if self.request_context and self.request_context.meta
+            rc._srctx.meta.get("progress_token")
+            if rc is not None and rc._srctx.meta is not None
             else None
         )
 
@@ -450,33 +522,38 @@ class Context:
 
     async def _paginate_list(
         self,
-        request_factory: Callable[[str | None], Any],
-        call_method: Callable[[Any], Any],
+        call_handler: Callable[[Any, Any], Any],
         extract_items: Callable[[Any], list[Any]],
     ) -> list[Any]:
         """Generic pagination helper for list operations.
 
+        Invokes a FastMCP ``_on_*`` list handler (``(ctx, params) -> result``)
+        page by page. The SDK request context comes from the active request;
+        outside a request context a fresh stand-in is used.
+
         Args:
-            request_factory: Function that creates a request from a cursor
-            call_method: Async method to call with the request
-            extract_items: Function to extract items from the result
+            call_handler: FastMCP list handler taking ``(ctx, params)``.
+            extract_items: Function to extract items from the result.
 
         Returns:
             List of all items across all pages
         """
+        rc = self.request_context
+        srctx = rc._srctx if rc is not None else _detached_request_context(self)
+
         all_items: list[Any] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
         while True:
-            request = request_factory(cursor)
-            result = await call_method(request)
+            params = mcp_types.PaginatedRequestParams(cursor=cursor) if cursor else None
+            result = await call_handler(srctx, params)
             all_items.extend(extract_items(result))
-            if not result.nextCursor:
+            if not result.next_cursor:
                 break
-            if result.nextCursor in seen_cursors:
+            if result.next_cursor in seen_cursors:
                 break
-            seen_cursors.add(result.nextCursor)
-            cursor = result.nextCursor
+            seen_cursors.add(result.next_cursor)
+            cursor = result.next_cursor
         return all_items
 
     async def list_resources(self) -> list[SDKResource]:
@@ -486,12 +563,7 @@ class Context:
             List of Resource objects available on the server
         """
         return await self._paginate_list(
-            request_factory=lambda cursor: mcp.types.ListResourcesRequest(
-                params=mcp.types.PaginatedRequestParams(cursor=cursor)
-                if cursor
-                else None
-            ),
-            call_method=self.fastmcp._list_resources_mcp,
+            call_handler=self.fastmcp._on_list_resources,
             extract_items=lambda result: result.resources,
         )
 
@@ -502,12 +574,7 @@ class Context:
             List of Prompt objects available on the server
         """
         return await self._paginate_list(
-            request_factory=lambda cursor: mcp.types.ListPromptsRequest(
-                params=mcp.types.PaginatedRequestParams(cursor=cursor)
-                if cursor
-                else None
-            ),
-            call_method=self.fastmcp._list_prompts_mcp,
+            call_handler=self.fastmcp._on_list_prompts,
             extract_items=lambda result: result.prompts,
         )
 
@@ -524,7 +591,7 @@ class Context:
             The prompt result
         """
         result = await self.fastmcp.render_prompt(name, arguments)
-        if isinstance(result, mcp.types.CreateTaskResult):
+        if isinstance(result, mcp_types.CreateTaskResult):
             raise RuntimeError(
                 "Unexpected CreateTaskResult: Context calls should not have task metadata"
             )
@@ -540,7 +607,7 @@ class Context:
             ResourceResult with contents
         """
         result = await self.fastmcp.read_resource(str(uri))
-        if isinstance(result, mcp.types.CreateTaskResult):
+        if isinstance(result, mcp_types.CreateTaskResult):
             raise RuntimeError(
                 "Unexpected CreateTaskResult: Context calls should not have task metadata"
             )
@@ -567,12 +634,21 @@ class Context:
         data = LogData(msg=message, extra=extra)
         related_request_id = self.origin_request_id
 
+        # Resolve the client-requested minimum level (set via logging/setLevel),
+        # falling back to the server's configured default.
+        min_level = self.fastmcp.client_log_level
+        session = self.session
+        session_min = _get_client_log_level(self.fastmcp, session)
+        if session_min is not None:
+            min_level = session_min
+
         await _log_to_server_and_client(
             data=data,
-            session=self.session,
+            session=session,
             level=level or "info",
             logger_name=logger_name,
             related_request_id=related_request_id,
+            min_level=min_level,
         )
 
     @property
@@ -587,11 +663,13 @@ class Context:
     def client_supports_extension(self, extension_id: str) -> bool:
         """Check whether the connected client supports a given MCP extension.
 
-        Inspects the ``extensions`` extra field on ``ClientCapabilities``
-        sent by the client during initialization.
-
-        Returns ``False`` when no session is available (e.g., outside a
-        request context) or when the client did not advertise the extension.
+        Inspects the ``extensions`` capability the client declared, read from
+        the session's ``client_capabilities``. The session is available in
+        request mode and in background-task mode, where the snapshot session
+        preserves the declared capabilities. Returns ``False`` when no session
+        is available (e.g., a distributed worker with no live session, or
+        outside any context) or when the client did not advertise the
+        extension.
 
         Example::
 
@@ -603,21 +681,18 @@ class Context:
                     return "UI-capable client"
                 return "text-only client"
         """
-        rc = self.request_context
-        if rc is None:
+        try:
+            session = self.session
+        except RuntimeError:
             return False
-        session = rc.session
-        if not isinstance(session, MiddlewareServerSession):
-            return False
-        return session.client_supports_extension(extension_id)
+        return client_supports_extension(session, extension_id)
 
     @property
     def client_id(self) -> str | None:
         """Get the client ID if available."""
+        rc = self.request_context
         return (
-            getattr(self.request_context.meta, "client_id", None)
-            if self.request_context and self.request_context.meta
-            else None
+            rc.meta.get("client_id") if rc is not None and rc.meta is not None else None
         )
 
     @property
@@ -635,27 +710,22 @@ class Context:
 
     @property
     def session_id(self) -> str:
-        """Get the MCP session ID for ALL transports.
+        """Get the identifier of the current MCP connection.
 
-        Returns the session ID that can be used as a key for session-based
-        data storage (e.g., Redis) to share data between tool calls within
-        the same client session.
+        On handshake-era (legacy) connections this is stable for the whole MCP
+        session: the negotiated session ID over streamable HTTP, or an ID
+        generated once per session on other transports. On 2026-07-28
+        connections, which `Client` negotiates by default, every request is its
+        own connection and gets a new identifier, so it can't be used to share
+        data between tool calls. Use [Session State](/servers/sessions) for
+        that.
 
         Returns:
-            The session ID for StreamableHTTP transports, or a generated ID
-            for other transports.
+            The negotiated session ID when there is one, otherwise a generated
+            ID for the current connection.
 
         Raises:
             RuntimeError if no session is available.
-
-        Example:
-            ```python
-            @server.tool
-            def store_data(data: dict, ctx: Context) -> str:
-                session_id = ctx.session_id
-                redis_client.set(f"session:{session_id}:data", json.dumps(data))
-                return f"Data stored for session {session_id}"
-            ```
         """
         from uuid import uuid4
 
@@ -666,29 +736,82 @@ class Context:
         elif self._session is not None:
             session = self._session
         else:
+            # Background task: no live session, but the submitting request's
+            # stable session id was captured in the task snapshot. Use it so
+            # session-scoped state (session_id / get_state / set_state) keeps
+            # working in a worker, keyed to the same client that submitted.
+            from fastmcp.server.dependencies import _background_task_session_id
+
+            task_session_id = _background_task_session_id.get()
+            if task_session_id is not None:
+                return task_session_id
             raise RuntimeError(
                 "session_id is not available because no session exists. "
                 "This typically means you're outside a request context."
             )
 
-        # Check for cached session ID
-        session_id = getattr(session, "_fastmcp_state_prefix", None)
-        if session_id is not None:
-            return session_id
+        # In SDK v2 the ServerSession is constructed fresh per request, so cache
+        # the state prefix on the underlying Connection. On handshake-era
+        # connections it spans the whole client session; on 2026-07-28
+        # connections the SDK builds one per request, so the prefix is
+        # per-request there too.
+        connection = getattr(session, "_connection", None)
 
-        # For HTTP, try to get from header
-        if request_ctx is not None:
+        # Check for a cached prefix on the connection (or the session, as
+        # a fallback for on_initialize where only a raw session is available).
+        if connection is not None:
+            cached = connection.state.get("_fastmcp_state_prefix")
+            if cached is not None:
+                return cached
+        session_cached = getattr(session, "_fastmcp_state_prefix", None)
+        if session_cached is not None:
+            return session_cached
+
+        # For HTTP, prefer the connection's negotiated session id, then the
+        # incoming request header.
+        session_id: str | None = None
+        if connection is not None:
+            session_id = connection.session_id
+        if session_id is None and request_ctx is not None:
             request = request_ctx.request
             if request:
                 session_id = request.headers.get("mcp-session-id")
 
-        # For STDIO/SSE/in-memory, generate a UUID
+        # For STDIO/SSE/in-memory, generate a UUID.
         if session_id is None:
             session_id = str(uuid4())
 
-        # Cache on session for consistency
-        session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        # Cache on the connection (falling back to the session).
+        if connection is not None:
+            connection.state["_fastmcp_state_prefix"] = session_id
+        else:
+            session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         return session_id
+
+    def _session_scope_key(self) -> str | None:
+        """Key for data that follows one client across requests.
+
+        On a handshake-era connection this is `session_id`. A 2026-07-28
+        connection has no session, so the scope is the authenticated user (the
+        identity `UserSession` keys on) or, on stdio and in-memory transports,
+        the server process, which serves a single client. Returns None for an
+        unauthenticated 2026-07-28 HTTP request, where nothing identifies the
+        client from one request to the next.
+
+        Raises:
+            RuntimeError if no session is available.
+        """
+        if not self._is_modern_protocol():
+            return self.session_id
+
+        from fastmcp.server.sessions import _principal_segment, current_principal
+
+        principal = current_principal()
+        if principal is not None:
+            return f"user:{_principal_segment(principal)}"
+        if self.transport in ("sse", "streamable-http"):
+            return None
+        return "process"
 
     @property
     def session(self) -> ServerSession:
@@ -781,20 +904,25 @@ class Context:
             extra=extra,
         )
 
-    async def list_roots(self) -> list[Root]:
-        """List the roots available to the server, as indicated by the client."""
-        result = await self.session.list_roots()
-        return result.roots
-
     async def send_notification(
-        self, notification: mcp.types.ServerNotificationType
+        self, notification: mcp_types.ServerNotification
     ) -> None:
         """Send a notification to the client immediately.
 
         Args:
             notification: An MCP notification instance (e.g., ToolListChangedNotification())
         """
-        await self.session.send_notification(mcp.types.ServerNotification(notification))
+        # v2: ServerNotification is a union of concrete notification models;
+        # ServerSession.send_notification takes an instance directly (no wrapper).
+        #
+        # Relate the notification to the in-flight request so it rides that
+        # request's own stream. A sessionless (2026-07-28) connection has no
+        # standing server→client channel, so an unrelated notification is
+        # dropped; the request's stream is the only way out. Session-based eras
+        # deliver it either way.
+        await self.session.send_notification(
+            notification, related_request_id=self.request_id
+        )
 
     async def close_sse_stream(self) -> None:
         """Close the current response stream to trigger client reconnection.
@@ -835,204 +963,19 @@ class Context:
             return
         await self.request_context.close_sse_stream()
 
-    async def sample_step(
-        self,
-        messages: str | Sequence[str | SamplingMessage],
-        *,
-        system_prompt: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        model_preferences: ModelPreferences | str | list[str] | None = None,
-        tools: Sequence[SamplingTool | Callable[..., Any]] | None = None,
-        tool_choice: ToolChoiceOption | str | None = None,
-        execute_tools: bool = True,
-        mask_error_details: bool | None = None,
-        tool_concurrency: int | None = None,
-    ) -> SampleStep:
+    def _is_modern_protocol(self) -> bool:
+        """True when the negotiated MCP protocol era removed the back-channel.
+
+        Reads the negotiated protocol version from the active request context.
+        The 2026-07-28 era (SEP-2322, SEP-2575) has no back-channel for server-initiated
+        requests such as sampling/elicitation. Returns False when no request
+        context is available (e.g. background task or pre-session), leaving the
+        existing wire path to surface its own error.
         """
-        Make a single LLM sampling call.
-
-        This is a stateless function that makes exactly one LLM call and optionally
-        executes any requested tools. Use this for fine-grained control over the
-        sampling loop.
-
-        Args:
-            messages: The message(s) to send. Can be a string, list of strings,
-                or list of SamplingMessage objects.
-            system_prompt: Optional system prompt for the LLM.
-            temperature: Optional sampling temperature.
-            max_tokens: Maximum tokens to generate. Defaults to 512.
-            model_preferences: Optional model preferences.
-            tools: Optional list of tools the LLM can use.
-            tool_choice: Tool choice mode ("auto", "required", or "none").
-            execute_tools: If True (default), execute tool calls and append results
-                to history. If False, return immediately with tool_calls available
-                in the step for manual execution.
-            mask_error_details: If True, mask detailed error messages from tool
-                execution. When None (default), uses the global settings value.
-                Tools can raise ToolError to bypass masking.
-            tool_concurrency: Controls parallel execution of tools:
-                - None (default): Sequential execution (one at a time)
-                - 0: Unlimited parallel execution
-                - N > 0: Execute at most N tools concurrently
-                If any tool has sequential=True, all tools execute sequentially
-                regardless of this setting.
-
-        Returns:
-            SampleStep containing:
-            - .response: The raw LLM response
-            - .history: Messages including input, assistant response, and tool results
-            - .is_tool_use: True if the LLM requested tool execution
-            - .tool_calls: List of tool calls (if any)
-            - .text: The text content (if any)
-
-        Example:
-            messages = "Research X"
-
-            while True:
-                step = await ctx.sample_step(messages, tools=[search])
-
-                if not step.is_tool_use:
-                    print(step.text)
-                    break
-
-                # Continue with tool results
-                messages = step.history
-        """
-        return await sample_step_impl(
-            self,
-            messages=messages,
-            system_prompt=system_prompt,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            model_preferences=model_preferences,
-            tools=tools,
-            tool_choice=tool_choice,
-            auto_execute_tools=execute_tools,
-            mask_error_details=mask_error_details,
-            tool_concurrency=tool_concurrency,
-        )
-
-    @overload
-    async def sample(
-        self,
-        messages: str | Sequence[str | SamplingMessage],
-        *,
-        system_prompt: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        model_preferences: ModelPreferences | str | list[str] | None = None,
-        tools: Sequence[SamplingTool | Callable[..., Any]] | None = None,
-        result_type: type[ResultT],
-        mask_error_details: bool | None = None,
-        tool_concurrency: int | None = None,
-    ) -> SamplingResult[ResultT]:
-        """Overload: With result_type, returns SamplingResult[ResultT]."""
-
-    @overload
-    async def sample(
-        self,
-        messages: str | Sequence[str | SamplingMessage],
-        *,
-        system_prompt: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        model_preferences: ModelPreferences | str | list[str] | None = None,
-        tools: Sequence[SamplingTool | Callable[..., Any]] | None = None,
-        result_type: None = None,
-        mask_error_details: bool | None = None,
-        tool_concurrency: int | None = None,
-    ) -> SamplingResult[str]:
-        """Overload: Without result_type, returns SamplingResult[str]."""
-
-    async def sample(
-        self,
-        messages: str | Sequence[str | SamplingMessage],
-        *,
-        system_prompt: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        model_preferences: ModelPreferences | str | list[str] | None = None,
-        tools: Sequence[SamplingTool | Callable[..., Any]] | None = None,
-        result_type: type[ResultT] | None = None,
-        mask_error_details: bool | None = None,
-        tool_concurrency: int | None = None,
-    ) -> SamplingResult[ResultT] | SamplingResult[str]:
-        """
-        Send a sampling request to the client and await the response.
-
-        This method runs to completion automatically. When tools are provided,
-        it executes a tool loop: if the LLM returns a tool use request, the tools
-        are executed and the results are sent back to the LLM. This continues
-        until the LLM provides a final text response.
-
-        When result_type is specified, a synthetic `final_response` tool is
-        created. The LLM calls this tool to provide the structured response,
-        which is validated against the result_type and returned as `.result`.
-
-        For fine-grained control over the sampling loop, use sample_step() instead.
-
-        Args:
-            messages: The message(s) to send. Can be a string, list of strings,
-                or list of SamplingMessage objects.
-            system_prompt: Optional system prompt for the LLM.
-            temperature: Optional sampling temperature.
-            max_tokens: Maximum tokens to generate. Defaults to 512.
-            model_preferences: Optional model preferences.
-            tools: Optional list of tools the LLM can use. Accepts plain
-                functions or SamplingTools.
-            result_type: Optional type for structured output. When specified,
-                a synthetic `final_response` tool is created and the LLM's
-                response is validated against this type.
-            mask_error_details: If True, mask detailed error messages from tool
-                execution. When None (default), uses the global settings value.
-                Tools can raise ToolError to bypass masking.
-            tool_concurrency: Controls parallel execution of tools:
-                - None (default): Sequential execution (one at a time)
-                - 0: Unlimited parallel execution
-                - N > 0: Execute at most N tools concurrently
-                If any tool has sequential=True, all tools execute sequentially
-                regardless of this setting.
-
-        Returns:
-            SamplingResult[T] containing:
-            - .text: The text representation (raw text or JSON for structured)
-            - .result: The typed result (str for text, parsed object for structured)
-            - .history: All messages exchanged during sampling
-
-        Note:
-            Background task support for sampling is planned for a future release.
-            Currently, sampling in background tasks requires using the low-level
-            session.create_message() API directly.
-        """
-        # TODO: Add background task support similar to elicit() when is_background_task
-        return await sample_impl(  # ty: ignore[invalid-return-type]
-            self,
-            messages=messages,
-            system_prompt=system_prompt,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            model_preferences=model_preferences,
-            tools=tools,
-            result_type=result_type,
-            mask_error_details=mask_error_details,
-            tool_concurrency=tool_concurrency,
-        )
-
-    @overload
-    async def elicit(
-        self,
-        message: str,
-        response_type: None,
-        *,
-        response_title: str | None = None,
-        response_description: str | None = None,
-    ) -> (
-        AcceptedElicitation[dict[str, Any]] | DeclinedElicitation | CancelledElicitation
-    ): ...
-
-    """When response_type is None, the accepted elicitation will contain an
-    empty dict"""
+        rc = self.request_context
+        if rc is None:
+            return False
+        return rc.protocol_version in MODERN_PROTOCOL_VERSIONS
 
     @overload
     async def elicit(
@@ -1042,10 +985,8 @@ class Context:
         *,
         response_title: str | None = None,
         response_description: str | None = None,
-    ) -> AcceptedElicitation[T] | DeclinedElicitation | CancelledElicitation: ...
-
-    """When response_type is not None, the accepted elicitation will contain the
-    response data"""
+    ) -> AcceptedElicitation[T] | DeclinedElicitation | CancelledElicitation:
+        """The accepted elicitation will contain the response data"""
 
     @overload
     async def elicit(
@@ -1055,10 +996,9 @@ class Context:
         *,
         response_title: str | None = None,
         response_description: str | None = None,
-    ) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation: ...
-
-    """When response_type is a list of strings, the accepted elicitation will
-    contain the selected string response"""
+    ) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation:
+        """When response_type is a list of strings, the accepted elicitation will
+        contain the selected string response"""
 
     @overload
     async def elicit(
@@ -1068,10 +1008,9 @@ class Context:
         *,
         response_title: str | None = None,
         response_description: str | None = None,
-    ) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation: ...
-
-    """When response_type is a dict mapping keys to title dicts, the accepted
-    elicitation will contain the selected key"""
+    ) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation:
+        """When response_type is a dict mapping keys to title dicts, the accepted
+        elicitation will contain the selected key"""
 
     @overload
     async def elicit(
@@ -1081,12 +1020,9 @@ class Context:
         *,
         response_title: str | None = None,
         response_description: str | None = None,
-    ) -> (
-        AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
-    ): ...
-
-    """When response_type is a list containing a list of strings (multi-select),
-    the accepted elicitation will contain a list of selected strings"""
+    ) -> AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation:
+        """When response_type is a list containing a list of strings (multi-select),
+        the accepted elicitation will contain a list of selected strings"""
 
     @overload
     async def elicit(
@@ -1096,13 +1032,10 @@ class Context:
         *,
         response_title: str | None = None,
         response_description: str | None = None,
-    ) -> (
-        AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
-    ): ...
-
-    """When response_type is a list containing a dict mapping keys to title dicts
-    (multi-select with titles), the accepted elicitation will contain a list of
-    selected keys"""
+    ) -> AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation:
+        """When response_type is a list containing a dict mapping keys to title dicts
+        (multi-select with titles), the accepted elicitation will contain a list of
+        selected keys"""
 
     async def elicit(
         self,
@@ -1111,8 +1044,7 @@ class Context:
         | list[str]
         | dict[str, dict[str, str]]
         | list[list[str]]
-        | list[dict[str, dict[str, str]]]
-        | None = None,
+        | list[dict[str, dict[str, str]]],
         *,
         response_title: str | None = None,
         response_description: str | None = None,
@@ -1137,11 +1069,9 @@ class Context:
         "value" field will be generated for the MCP interaction and
         automatically deconstructed into the primitive type upon response.
 
-        Passing ``response_type=None`` (or omitting it) is deprecated and will
-        be removed in a future version. The resulting empty-schema form-mode
-        request is ambiguous and causes some clients (e.g. VS Code) to hang on
-        an empty form. Pass an explicit ``response_type`` describing the data
-        you want back.
+        ``response_type`` is required. Pass ``bool`` when all you need is a
+        confirmation; an empty schema leaves some clients rendering an empty,
+        non-functional form.
 
         Args:
             message: A human-readable message explaining what information is needed
@@ -1158,21 +1088,11 @@ class Context:
                 ``value`` field. Same scope rules as ``response_title``.
 
         Note:
-            This method works transparently in both request and background task
-            contexts. In background task mode (SEP-1686), it will set the task
-            status to "input_required" and wait for the client to provide input.
+            Imperative elicitation is not available inside a background task
+            (calling it there raises a ``ToolError``). A task gathers input with
+            the guard pattern: return an ``InputRequiredResult`` and read
+            ``ctx.input_responses`` / ``ctx.request_state`` when the task re-runs.
         """
-        if response_type is None and fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "Calling ctx.elicit() without a response_type is deprecated "
-                "and will be removed in a future version. The empty-schema "
-                "form-mode request is ambiguous under the current MCP spec "
-                "and causes some clients (e.g. VS Code) to render an empty, "
-                "non-functional form. Pass an explicit response_type "
-                "describing the data you expect back.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
         config = parse_elicit_response_type(
             response_type,
             response_title=response_title,
@@ -1180,18 +1100,22 @@ class Context:
         )
 
         if self.is_background_task:
-            # Background task mode: use task-aware elicitation
-            result = await self._elicit_for_task(
-                message=message,
-                schema=config.schema,
-            )
-        else:
-            # Standard request mode: use session.elicit directly
-            result = await self.session.elicit(
-                message=message,
-                requestedSchema=config.schema,
-                related_request_id=self.request_id,
-            )
+            # Background tasks gather input with the guard/return pattern, not
+            # imperative elicitation — the worker never blocks on a client
+            # round-trip. Fail fast with the guidance to use InputRequiredResult.
+            raise ToolError(_TASK_ELICIT_ERROR)
+        # Foreground push path: server-initiated elicitation needs a back-channel,
+        # which the 2026-07-28 era removed (SEP-2322, SEP-2575). Raise a clear era-aware
+        # error before hitting the wire instead of the SDK's opaque "Method not
+        # found". Handshake-era behavior is unchanged.
+        if self._is_modern_protocol():
+            raise ToolError(_ELICIT_MODERN_ERROR)
+        # Standard request mode: use session.elicit directly
+        result = await self.session.elicit(
+            message=message,
+            requested_schema=config.schema,
+            related_request_id=self.request_id,
+        )
 
         if result.action == "accept":
             return handle_elicit_accept(config, result.content)
@@ -1202,46 +1126,6 @@ class Context:
         else:
             raise ValueError(f"Unexpected elicitation action: {result.action}")
 
-    async def _elicit_for_task(
-        self,
-        message: str,
-        schema: dict[str, Any],
-    ) -> mcp.types.ElicitResult:
-        """Send an elicitation request from a background task (SEP-1686).
-
-        This method handles elicitation when running in a Docket worker context,
-        where there's no active MCP request. It:
-        1. Sets the task status to "input_required"
-        2. Sends the elicitation request with task metadata
-        3. Waits for the client to provide input via tasks/sendInput
-        4. Returns the result and resumes task execution
-
-        Args:
-            message: The message to display to the user
-            schema: The JSON schema for the expected response
-
-        Returns:
-            ElicitResult with the user's response
-
-        Raises:
-            RuntimeError: If not running in a background task context
-        """
-        if not self.is_background_task:
-            raise RuntimeError(
-                "_elicit_for_task called but not in a background task context"
-            )
-
-        # Import here to avoid circular imports and optional dependency issues
-        from fastmcp.server.tasks.elicitation import elicit_for_task
-
-        return await elicit_for_task(
-            task_id=self._task_id,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
-            session=self._session,
-            message=message,
-            schema=schema,
-            fastmcp=self.fastmcp,
-        )
-
     def _make_state_key(self, key: str) -> str:
         """Create session-prefixed key for state storage."""
         return f"{self.session_id}:{key}"
@@ -1251,8 +1135,10 @@ class Context:
     ) -> None:
         """Set a value in the state store.
 
-        By default, values are stored in the session-scoped state store and
-        persist across requests within the same MCP session. Values must be
+        By default, values are stored in the state store under `session_id`.
+        They persist across requests on handshake-era (legacy) connections, but
+        not on 2026-07-28 connections, where `session_id` is per-request; use
+        [Session State](/servers/sessions) for those. Values must be
         JSON-serializable (dicts, lists, strings, numbers, etc.).
 
         For non-serializable values (e.g., HTTP clients, database connections),
@@ -1275,10 +1161,9 @@ class Context:
                 value=StateValue(value=value),
                 ttl=self._STATE_TTL_SECONDS,
             )
-        except Exception as e:
-            # Catch serialization errors from Pydantic (ValueError) or
-            # the key_value library (SerializationError). Both contain
-            # "serialize" in the message. Other exceptions propagate as-is.
+        except ValueError as e:
+            # Pydantic raises PydanticSerializationError (a ValueError) and the
+            # message carries "serialize". Other ValueErrors propagate unchanged.
             if "serialize" in str(e).lower():
                 raise TypeError(
                     f"Value for state key {key!r} is not serializable. "
@@ -1287,6 +1172,19 @@ class Context:
                     f"request-scoped and will not persist across requests."
                 ) from e
             raise
+        except Exception as e:
+            # Import the optional storage implementation only on its error path,
+            # rather than adding the key_value package to every server startup.
+            from key_value.aio.errors import SerializationError
+
+            if not isinstance(e, SerializationError):
+                raise
+            raise TypeError(
+                f"Value for state key {key!r} is not serializable. "
+                f"Use set_state({key!r}, value, serializable=False) to store "
+                f"non-serializable values. Note: non-serializable state is "
+                f"request-scoped and will not persist across requests."
+            ) from e
 
     async def get_state(self, key: str) -> Any:
         """Get a value from the state store.
@@ -1422,34 +1320,80 @@ _MCP_LEVEL_SEVERITY: dict[LoggingLevel, int] = {
 }
 
 
+def _detached_request_context(context: Context) -> ServerRequestContext:
+    """Build a minimal SDK request context for internal handler invocation.
+
+    Used by ``Context._paginate_list`` when no request context is active (e.g.
+    introspection outside a live request), so the ``_on_*`` list handlers have a
+    context to bind. The list handlers only read ``self`` (the FastMCP server)
+    to enumerate components, so a session-less context is sufficient.
+    """
+    return ServerRequestContext(
+        session=cast(ServerSession, context._session),
+        lifespan_context={},
+        protocol_version="2025-06-18",
+        method="internal",
+        params=None,
+        request_id=None,
+        meta=None,
+        request=None,
+    )
+
+
+# `Connection.state` key holding the level a client set with logging/setLevel
+# on a connection that has no session id.
+_CONNECTION_LOG_LEVEL_KEY = "_fastmcp_client_log_level"
+
+
+def _get_client_log_level(
+    server: FastMCP, session: ServerSession
+) -> LoggingLevel | None:
+    """Return the minimum log level the client set with logging/setLevel, if any.
+
+    v2 constructs sessions per-request, so the stable identity is the
+    connection. A handshake-era HTTP session is keyed by its session id on the
+    server. Any other connection (stdio, in-memory, stateless HTTP, 2026-07-28)
+    has no session id, so its level lives in the connection's own state, where
+    no other client can see it and which ends with the connection.
+    """
+    connection = getattr(session, "_connection", None)
+    if connection is None:
+        return None
+    if connection.session_id is None:
+        return connection.state.get(_CONNECTION_LOG_LEVEL_KEY)
+    return server._client_log_levels.get(connection.session_id)
+
+
 async def _log_to_server_and_client(
     data: LogData,
     session: ServerSession,
     level: LoggingLevel,
     logger_name: str | None = None,
     related_request_id: str | None = None,
+    min_level: LoggingLevel | None = None,
 ) -> None:
     """Log a message to the server and client."""
-    from fastmcp.server.low_level import MiddlewareServerSession
-
-    if isinstance(session, MiddlewareServerSession):
-        min_level = session._minimum_logging_level or session.fastmcp.client_log_level
-        if min_level is not None:
-            if _MCP_LEVEL_SEVERITY[level] < _MCP_LEVEL_SEVERITY[min_level]:
-                return
+    if min_level is not None:
+        if _MCP_LEVEL_SEVERITY[level] < _MCP_LEVEL_SEVERITY[min_level]:
+            return
 
     msg_prefix = f"Sending {level.upper()} to client"
 
     if logger_name:
         msg_prefix += f" ({logger_name})"
 
+    # The client receives `data.extra` in full; only the server-side log record
+    # can't carry keys that collide with its own attributes.
+    reserved = _log_record_reserved_keys() if data.extra else set()
     to_client_logger.log(
         level=_mcp_level_to_python_level[level],
         msg=f"{msg_prefix}: {data.msg}",
-        extra=data.extra,
+        extra={k: v for k, v in (data.extra or {}).items() if k not in reserved},
     )
 
-    await session.send_log_message(
+    # Deprecated upstream in SDK v2 but deliberately kept per compat directive;
+    # removed with the multi-round-trip follow-up.
+    await session.send_log_message(  # ty: ignore[deprecated]
         level=level,
         data=data,
         logger=logger_name,

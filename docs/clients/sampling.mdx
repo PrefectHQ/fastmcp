@@ -1,7 +1,7 @@
 ---
 title: LLM Sampling
 sidebarTitle: Sampling
-description: Handle server-initiated LLM completion requests.
+description: Answer a server's request for an LLM completion.
 icon: robot
 ---
 
@@ -9,68 +9,64 @@ import { VersionBadge } from "/snippets/version-badge.mdx";
 
 <VersionBadge version="2.0.0" />
 
-Use this when you need to respond to server requests for LLM completions.
+Use this when a server asks your client to run an LLM completion on its behalf.
 
-MCP servers can request LLM completions from clients during tool execution. This enables servers to delegate AI reasoning to the client, which controls which LLM is used and how requests are made.
+Sampling is how a server borrows your model. Rather than hold an API key of its own, the server describes the messages it wants completed and asks you to run them — you pick the model, and you pay for the tokens. Your side of that arrangement is one function, a **sampling handler**, registered when you create the client.
+
+The handler receives the conversation the server wants completed, the parameters it asked for, and a request context carrying metadata about the call. Return the generated text as a string and FastMCP wraps it in the protocol's result for you; return a `CreateMessageResult` yourself when you want to report the real model name or hand back content that isn't text. If the handler raises, the client sends the error back in place of a completion and the server's tool decides what to do about it.
 
 ## Handler Template
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
-from fastmcp.client.sampling import SamplingMessage, SamplingParams, RequestContext
+from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingParams
+from mcp_types import TextContent
+
 
 async def sampling_handler(
     messages: list[SamplingMessage],
     params: SamplingParams,
-    context: RequestContext
+    context: RequestContext,
 ) -> str:
-    """
-    Handle server requests for LLM completions.
+    """Run the server's messages against your LLM and return the completion."""
+    conversation = [
+        f"{message.role}: {message.content.text}"
+        for message in messages
+        if isinstance(message.content, TextContent)
+    ]
+    system_prompt = params.system_prompt or "You are a helpful assistant."
 
-    Args:
-        messages: Conversation messages to send to the LLM
-        params: Sampling parameters (temperature, max_tokens, etc.)
-        context: Request context with metadata
-
-    Returns:
-        Generated text response from your LLM
-    """
-    # Extract message content
-    conversation = []
-    for message in messages:
-        content = message.content.text if hasattr(message.content, 'text') else str(message.content)
-        conversation.append(f"{message.role}: {content}")
-
-    # Use the system prompt if provided
-    system_prompt = params.systemPrompt or "You are a helpful assistant."
-
-    # Integrate with your LLM service here
+    # Call your LLM here with `conversation` and `system_prompt`.
     return "Generated response based on the messages"
 
-client = Client(
-    "my_mcp_server.py",
-    sampling_handler=sampling_handler,
-)
+
+client = Client(Path("my_mcp_server.py"), sampling_handler=sampling_handler)
 ```
 
+The client answers with this handler however the server asks for a completion. The default `mode="auto"` negotiates whichever protocol era the server speaks, and one handler covers both of the routes an era can use — see [Request Routes](#request-routes).
+
 ## Handler Parameters
+
+Everything the server sends arrives in the first two arguments. The messages are the conversation to complete; the parameters are how the server would like it completed. You decide how much of that to honor, since the client owns the model — a preference your provider cannot express is yours to ignore.
 
 <Card icon="code" title="SamplingMessage">
 <ResponseField name="role" type='Literal["user", "assistant"]'>
   The role of the message
 </ResponseField>
 
-<ResponseField name="content" type="TextContent | ImageContent | AudioContent">
-  The content of the message. TextContent has a `.text` attribute.
+<ResponseField name="content" type="TextContent | ImageContent | AudioContent | ToolUseContent | ToolResultContent | list[...]">
+  The content of the message: one content block or a list of them. `TextContent` has a `.text` attribute; tool-use and tool-result blocks appear only in requests that carry tools.
 </ResponseField>
 </Card>
 
 <Card icon="code" title="SamplingParams">
-<ResponseField name="systemPrompt" type="str | None">
+<ResponseField name="system_prompt" type="str | None">
   Optional system prompt the server wants to use
 </ResponseField>
 
-<ResponseField name="modelPreferences" type="ModelPreferences | None">
+<ResponseField name="model_preferences" type="ModelPreferences | None">
   Server preferences for model selection (hints, cost/speed/intelligence priorities)
 </ResponseField>
 
@@ -78,11 +74,11 @@ client = Client(
   Sampling temperature
 </ResponseField>
 
-<ResponseField name="maxTokens" type="int">
+<ResponseField name="max_tokens" type="int">
   Maximum tokens to generate
 </ResponseField>
 
-<ResponseField name="stopSequences" type="list[str] | None">
+<ResponseField name="stop_sequences" type="list[str] | None">
   Stop sequences for sampling
 </ResponseField>
 
@@ -90,36 +86,42 @@ client = Client(
   Tools the LLM can use during sampling
 </ResponseField>
 
-<ResponseField name="toolChoice" type="ToolChoice | None">
-  Tool usage behavior (`auto`, `required`, or `none`)
+<ResponseField name="tool_choice" type="ToolChoice | None">
+  Tool usage behavior; its `mode` is `auto`, `required`, or `none`
 </ResponseField>
 </Card>
 
 ## Built-in Handlers
 
-FastMCP provides built-in handlers for OpenAI, Anthropic, and Google Gemini APIs that support the full sampling API including tool use.
+Writing the provider call yourself is rarely worth it. FastMCP ships handlers for OpenAI, Anthropic, and Google Gemini that implement the full sampling API, tool use included, and translate the protocol's parameters into each provider's own. Give one a default model and pass it where your own handler would go. Write a custom handler when you need routing across providers, caching, or a provider FastMCP does not cover.
 
 ### OpenAI Handler
 
 <VersionBadge version="2.11.0" />
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     sampling_handler=OpenAISamplingHandler(default_model="gpt-4o"),
 )
 ```
 
-For OpenAI-compatible APIs (like local models):
+Point the handler at any OpenAI-compatible API, including a local model server, by passing your own provider client:
 
 ```python
+from pathlib import Path
+
+from fastmcp import Client
+from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
 from openai import AsyncOpenAI
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     sampling_handler=OpenAISamplingHandler(
         default_model="llama-3.1-70b",
         client=AsyncOpenAI(base_url="http://localhost:8000/v1"),
@@ -128,7 +130,7 @@ client = Client(
 ```
 
 <Note>
-Install the OpenAI handler with `pip install fastmcp[openai]`.
+Install the OpenAI handler with `pip install 'fastmcp[openai]'`.
 </Note>
 
 ### Anthropic Handler
@@ -136,17 +138,21 @@ Install the OpenAI handler with `pip install fastmcp[openai]`.
 <VersionBadge version="2.14.1" />
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.sampling.handlers.anthropic import AnthropicSamplingHandler
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     sampling_handler=AnthropicSamplingHandler(default_model="claude-sonnet-4-5"),
 )
 ```
 
 <Note>
-Install the Anthropic handler with `pip install fastmcp[anthropic]`.
+Install the Anthropic handler with `pip install 'fastmcp[anthropic]'`. The handler supports Anthropic SDK 0.48.0 through 1.x.
+
+When upgrading to Anthropic SDK 1.x, custom HTTP clients passed to `AsyncAnthropic` must use `httpx2` instead of `httpx`. See Anthropic's [migration guide](https://github.com/anthropics/anthropic-sdk-python/blob/main/MIGRATION.md) for changes to SDK integrations. The handler continues to forward an explicitly requested temperature, including zero, for models that support it.
 </Note>
 
 ### Google Gemini Handler
@@ -154,37 +160,45 @@ Install the Anthropic handler with `pip install fastmcp[anthropic]`.
 <VersionBadge version="3.1.0" />
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.sampling.handlers.google_genai import GoogleGenaiSamplingHandler
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     sampling_handler=GoogleGenaiSamplingHandler(default_model="gemini-2.0-flash"),
 )
 ```
 
 <Note>
-Install the Google Gemini handler with `pip install fastmcp[gemini]`.
+Install the Google Gemini handler with `pip install 'fastmcp[gemini]'`.
 </Note>
 
-## Sampling Capabilities
+The [source of these handlers](https://github.com/PrefectHQ/fastmcp/tree/main/fastmcp_slim/fastmcp/client/sampling/handlers) is the best reference for writing your own.
 
-When you provide a `sampling_handler`, FastMCP automatically advertises full sampling capabilities to the server, including tool support. To disable tool support for simpler handlers:
+## Tool Use
+
+A sampling request can carry tools. When it does, your handler passes them to the model and returns whatever comes back, tool calls included — the server executes the tools itself and sends a follow-up sampling request with the results if it needs another turn. Your handler never runs a tool.
+
+Registering a `sampling_handler` advertises basic sampling only, and the protocol lets a server send tools only to a client that declares the `sampling.tools` capability. When your handler can pass tools to its model, as the built-in handlers can, declare it with `sampling_capabilities`:
 
 ```python
-from mcp.types import SamplingCapability
+from pathlib import Path
+
+from fastmcp import Client
+from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
+from mcp_types import SamplingCapability, SamplingToolsCapability
 
 client = Client(
-    "my_mcp_server.py",
-    sampling_handler=basic_handler,
-    sampling_capabilities=SamplingCapability(),  # No tool support
+    Path("my_mcp_server.py"),
+    sampling_handler=OpenAISamplingHandler(default_model="gpt-4o"),
+    sampling_capabilities=SamplingCapability(tools=SamplingToolsCapability()),
 )
 ```
 
-## Tool Execution
+## Request Routes
 
-Tool execution happens on the server side. The client's role is to pass tools to the LLM and return the LLM's response (which may include tool use requests). The server then executes the tools and may send follow-up sampling requests with tool results.
+Servers reach your handler by two routes, and which one applies depends on the protocol era the connection negotiated. A handshake-era server pushes a `sampling/createMessage` request down the open session while a tool is running and waits for the reply. A modern (`2026-07-28`) connection has no such channel, so the tool ends its round by returning a request for a completion instead; the client answers from your handler and calls the tool again with the result attached.
 
-<Tip>
-To implement a custom sampling handler, see the [handler source code](https://github.com/PrefectHQ/fastmcp/tree/main/fastmcp_slim/fastmcp/client/sampling/handlers) as a reference.
-</Tip>
+One registration covers both, so this is rarely something you configure — it matters only when you pin an era, since `mode="legacy"` is the sole route that carries a pushed request. See [protocol negotiation](/clients/client#protocol-negotiation) for how the era is chosen, and [Sampling](/servers/sampling) under Servers for how a server issues these requests.

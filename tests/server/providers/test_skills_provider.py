@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
-from mcp.types import TextResourceContents
+from mcp_types import TextResourceContents
 from pydantic import AnyUrl
 
 from fastmcp import Client, FastMCP
@@ -12,9 +12,15 @@ from fastmcp.server.providers.skills import (
     ClaudeSkillsProvider,
     SkillProvider,
     SkillsDirectoryProvider,
-    SkillsProvider,
 )
 from fastmcp.server.providers.skills._common import parse_frontmatter
+from fastmcp.server.providers.skills.skill_provider import SkillFileResource
+
+# These providers are deprecated; tests/skills/test_deprecated_paths.py checks
+# the warnings.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::fastmcp._warnings.FastMCPDeprecationWarning"
+)
 
 
 class TestParseFrontmatter:
@@ -60,6 +66,150 @@ Content
         assert frontmatter["description"] == "A skill with quotes"
         assert frontmatter["version"] == "2.0.0"
 
+    def test_frontmatter_multiline_literal_block(self):
+        content = """---
+description: |
+  This is a multiline
+  description for the skill
+---
+
+# Skill Content
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == (
+            "This is a multiline\ndescription for the skill"
+        )
+        assert body.strip().startswith("# Skill Content")
+
+    def test_frontmatter_multiline_folded_block(self):
+        content = """---
+description: >
+  This is a folded
+  multiline description
+---
+
+# Skill Content
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == "This is a folded multiline description"
+        assert body.strip().startswith("# Skill Content")
+
+    def test_frontmatter_malformed_falls_back_to_line_parser(self):
+        # Invalid YAML list — safe_load fails; line parser keeps plain keys.
+        content = """---
+description: [unclosed
+name: still-parsed
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["name"] == "still-parsed"
+        assert frontmatter["description"] == "[unclosed"
+        assert body == "Body\n"
+
+    def test_frontmatter_colon_in_value_falls_back_preserves_keys(self):
+        # Real skill files sometimes contain unquoted values with ": " that
+        # PyYAML rejects; must not drop description (FastMCP #4416 review).
+        content = """---
+name: oss-daily
+description: Use when Vishnu wants: daily OSS drafting
+---
+
+# Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["name"] == "oss-daily"
+        assert "daily OSS drafting" in frontmatter["description"]
+        assert body.strip().startswith("# Body")
+
+    def test_frontmatter_non_dict_returns_empty(self):
+        content = """---
+- item1
+- item2
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter == {}
+        assert body == "Body\n"
+
+    def test_frontmatter_scalars_are_preserved_as_strings(self):
+        """`SkillInfo.frontmatter` is public; it must not silently retype values.
+
+        `yaml.BaseLoader` parses block scalars (unlike the old line parser)
+        but applies no implicit scalar resolution, so every value comes back
+        exactly as written instead of being coerced to float/bool/date the
+        way a full loader (e.g. `safe_load`) would.
+
+        The `description: null` case looks surprising but is intentional:
+        under `BaseLoader`, YAML's null token resolves to the *string*
+        `"null"`, not Python `None`. This matches the pre-existing line-based
+        parser (which did `value.strip()` on the raw text and also produced
+        `"null"`), so this restores original behavior rather than inventing
+        a new one. Do not "fix" this back to `None`.
+        """
+        content = """---
+version: 1.10
+enabled: yes
+released: 2024-01-01
+description: null
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["version"] == "1.10"
+        assert frontmatter["enabled"] == "yes"
+        assert frontmatter["released"] == "2024-01-01"
+        assert frontmatter["description"] == "null"
+        for value in frontmatter.values():
+            assert isinstance(value, str)
+
+    def test_frontmatter_description_bool_recovers_original_text(self):
+        content = """---
+description: true
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == "true"
+        assert isinstance(frontmatter["description"], str)
+
+    def test_frontmatter_description_yes_not_coerced_to_true(self):
+        # FastMCP #4416 regression: `yes` bare word previously coerced to True.
+        content = """---
+description: yes
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == "yes"
+
+    def test_frontmatter_description_no_not_coerced_to_false(self):
+        content = """---
+description: no
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == "no"
+
+    def test_frontmatter_description_numeric_scalar_preserves_original_text(self):
+        # YAML resolves `1.10` to float 1.1, dropping the trailing zero the author wrote.
+        content = """---
+description: 1.10
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == "1.10"
+
 
 class TestSkillProvider:
     """Tests for SkillProvider - single skill folder."""
@@ -90,6 +240,26 @@ This is my skill content.
         assert provider.skill_info.name == "my-skill"
         assert provider.skill_info.description == "A test skill"
         assert len(provider.skill_info.files) == 3
+
+    def test_loads_frontmatter_from_utf8_bom_skill(self, tmp_path: Path):
+        skill_dir = tmp_path / "bom-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "\ufeff---\n"
+            "name: bom-skill\n"
+            "description: Skill saved with a UTF-8 BOM\n"
+            "---\n"
+            "# BOM Skill\n",
+            encoding="utf-8",
+        )
+
+        provider = SkillProvider(skill_path=skill_dir)
+
+        assert provider.skill_info.description == "Skill saved with a UTF-8 BOM"
+        assert provider.skill_info.frontmatter == {
+            "name": "bom-skill",
+            "description": "Skill saved with a UTF-8 BOM",
+        }
 
     def test_raises_if_directory_missing(self, tmp_path: Path):
         with pytest.raises(FileNotFoundError, match="Skill directory not found"):
@@ -155,6 +325,26 @@ This is my skill content.
             assert isinstance(result[0], TextResourceContents)
             assert "# My Skill" in result[0].text
 
+    async def test_read_main_file_with_literal_percent_in_name(self, tmp_path: Path):
+        """A custom main_file_name containing a literal '%' must round-trip
+        through the same encode/decode path as supporting files (#4545)."""
+        skill_dir = tmp_path / "percent-main-skill"
+        skill_dir.mkdir()
+        (skill_dir / "MAIN%20FILE.md").write_text("# Demo\n")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(
+            SkillProvider(skill_path=skill_dir, main_file_name="MAIN%20FILE.md")
+        )
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            main = next(
+                r for r in resources if r.name == "percent-main-skill/MAIN%20FILE.md"
+            )
+            result = await client.read_resource(main.uri)
+            assert "# Demo" in result[0].text
+
     async def test_read_manifest(self, single_skill_dir: Path):
         mcp = FastMCP("Test")
         mcp.add_provider(SkillProvider(skill_path=single_skill_dir))
@@ -209,6 +399,76 @@ This is my skill content.
             result = await client.read_resource(AnyUrl("skill://my-skill/reference.md"))
             assert "# Reference" in result[0].text
 
+    async def test_read_supporting_file_with_space_in_name(self, tmp_path: Path):
+        """Percent-encoded resource URIs for supporting files must round-trip (#4545)."""
+        skill_dir = tmp_path / "space-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("# Skill\n")
+        (skill_dir / "setup guide.md").write_text("SPACE OK")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(
+            SkillProvider(skill_path=skill_dir, supporting_files="resources")
+        )
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            supporting = next(
+                r for r in resources if r.name == "space-skill/setup guide.md"
+            )
+            assert str(supporting.uri) == "skill://space-skill/setup%20guide.md"
+
+            result = await client.read_resource(supporting.uri)
+            assert result[0].text == "SPACE OK"
+
+    async def test_read_supporting_file_with_utf8_name(self, tmp_path: Path):
+        skill_dir = tmp_path / "utf8-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("# Skill\n")
+        (skill_dir / "café.md").write_text("UTF8 OK", encoding="utf-8")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(
+            SkillProvider(skill_path=skill_dir, supporting_files="resources")
+        )
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            supporting = next(r for r in resources if r.name == "utf8-skill/café.md")
+
+            result = await client.read_resource(supporting.uri)
+            assert result[0].text == "UTF8 OK"
+
+    async def test_percent_encoded_name_does_not_collide_with_space(
+        self, tmp_path: Path
+    ):
+        """A filename that already contains a literal '%20' must not be confused
+        with a space-containing filename once both are percent-encoded into
+        resource URIs (#4545)."""
+        skill_dir = tmp_path / "percent-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("# Skill\n")
+        (skill_dir / "setup guide.md").write_text("SPACE OK")
+        (skill_dir / "setup%20guide.md").write_text("LITERAL PERCENT OK")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(
+            SkillProvider(skill_path=skill_dir, supporting_files="resources")
+        )
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            by_name = {r.name: r for r in resources}
+            space_uri = by_name["percent-skill/setup guide.md"].uri
+            literal_uri = by_name["percent-skill/setup%20guide.md"].uri
+
+            assert str(space_uri) != str(literal_uri)
+
+            space_result = await client.read_resource(space_uri)
+            literal_result = await client.read_resource(literal_uri)
+            assert space_result[0].text == "SPACE OK"
+            assert literal_result[0].text == "LITERAL PERCENT OK"
+
     async def test_skill_resource_meta(self, single_skill_dir: Path):
         """SkillResource populates meta with skill name and is_manifest."""
         provider = SkillProvider(skill_path=single_skill_dir)
@@ -261,6 +521,96 @@ This is my skill content.
             "name": "my-skill",
             "is_manifest": True,
         }
+
+
+class TestNonStringDescription:
+    """Non-string frontmatter descriptions must not break resource listing.
+
+    ``parse_frontmatter`` returns YAML sequences/mappings as ``list``/``dict``.
+    Storing those verbatim in ``SkillInfo.description`` made ``SkillResource``
+    construction fail pydantic validation, so the skill's main file and
+    manifest disappeared from ``list_resources()``.
+    """
+
+    @staticmethod
+    def _write_skill(tmp_path: Path, frontmatter: str) -> Path:
+        skill_dir = tmp_path / "typed-description-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            f"---\n{frontmatter}\n---\n\n# Fallback Title\n\nBody.\n",
+            encoding="utf-8",
+        )
+        return skill_dir
+
+    @pytest.mark.parametrize(
+        "frontmatter",
+        ["description: [a, b]", "description: {short: x}"],
+        ids=["sequence", "mapping"],
+    )
+    async def test_yaml_collection_description_falls_back_to_body(
+        self, tmp_path: Path, frontmatter: str
+    ):
+        skill_dir = self._write_skill(tmp_path, frontmatter)
+        provider = SkillProvider(skill_path=skill_dir)
+
+        assert provider.skill_info.description == "Fallback Title"
+
+        resources = await provider.list_resources()
+        assert {r.name for r in resources} == {
+            "typed-description-skill/SKILL.md",
+            "typed-description-skill/_manifest",
+        }
+        assert all(isinstance(r.description, str) for r in resources)
+
+        main = await provider.get_resource("skill://typed-description-skill/SKILL.md")
+        assert main is not None
+        assert main.description == "Fallback Title"
+
+        manifest = await provider.get_resource(
+            "skill://typed-description-skill/_manifest"
+        )
+        assert manifest is not None
+
+    async def test_server_lists_skill_with_sequence_description(self, tmp_path: Path):
+        """User-visible symptom: a directly registered provider returned []."""
+        skill_dir = self._write_skill(tmp_path, "description: [a, b]")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(SkillProvider(skill_path=skill_dir))
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+
+        assert {r.name for r in resources} == {
+            "typed-description-skill/SKILL.md",
+            "typed-description-skill/_manifest",
+        }
+
+    @pytest.mark.parametrize(
+        ("frontmatter", "expected_description"),
+        [
+            ('description: [a, b]\nmalformed: "unclosed', "Fallback Title"),
+            # The line-based fallback leaves a mapping-looking scalar as text,
+            # so it is already a valid string description.
+            ('description: {short: x}\nmalformed: "unclosed', "{short: x}"),
+        ],
+        ids=["sequence", "mapping"],
+    )
+    async def test_malformed_yaml_line_fallback_keeps_resources_listable(
+        self, tmp_path: Path, frontmatter: str, expected_description: str
+    ):
+        skill_dir = self._write_skill(tmp_path, frontmatter)
+        provider = SkillProvider(skill_path=skill_dir)
+
+        assert isinstance(provider.skill_info.description, str)
+        assert provider.skill_info.description == expected_description
+
+        resources = await provider.list_resources()
+        assert {r.name for r in resources} == {
+            "typed-description-skill/SKILL.md",
+            "typed-description-skill/_manifest",
+        }
+        assert all(isinstance(r.description, str) for r in resources)
 
 
 class TestSkillsDirectoryProvider:
@@ -423,6 +773,24 @@ Additional documentation.
 
         resources = await provider.list_resources()
         assert resources == []
+
+    @pytest.mark.parametrize("reload", [False, True])
+    async def test_undecodable_skill_is_skipped(self, tmp_path: Path, reload: bool):
+        skills_dir = tmp_path / "skills"
+        good = skills_dir / "good"
+        good.mkdir(parents=True)
+        (good / "SKILL.md").write_text(
+            "---\ndescription: Works\n---\n# Good", encoding="utf-8"
+        )
+        # Notepad's "Unicode" encoding writes UTF-16, which is not valid UTF-8
+        bad = skills_dir / "bad"
+        bad.mkdir()
+        (bad / "SKILL.md").write_text("# Bad", encoding="utf-16")
+
+        provider = SkillsDirectoryProvider(roots=skills_dir, reload=reload)
+
+        resources = await provider.list_resources()
+        assert {r.name for r in resources} == {"good/SKILL.md", "good/_manifest"}
 
     async def test_reload_mode(self, skills_dir: Path):
         provider = SkillsDirectoryProvider(roots=skills_dir, reload=True)
@@ -613,13 +981,6 @@ description: Second occurrence
         assert resources == []
 
 
-class TestSkillsProviderAlias:
-    """Test that SkillsProvider is a backwards-compatible alias."""
-
-    def test_skills_provider_is_alias(self):
-        assert SkillsProvider is SkillsDirectoryProvider
-
-
 class TestClaudeSkillsProvider:
     def test_default_root_is_claude_skills_dir(self, tmp_path: Path, monkeypatch):
         # Mock Path.home() to return a temp path (use tmp_path for cross-platform compatibility)
@@ -658,6 +1019,112 @@ class TestPathTraversalPrevention:
                 await client.read_resource(
                     AnyUrl("skill://test-skill/../../../secret.txt")
                 )
+
+
+# Attack corpus mirroring the shapes exercised by the SDK's
+# mcp.shared.path_security tests: dot-dot traversal (bare, nested,
+# trailing), absolute-path injection (POSIX and Windows drive forms),
+# and null-byte injection. Each must be rejected before any filesystem
+# access, regardless of which skill surface receives it.
+SKILL_PATH_ESCAPES = [
+    "..",
+    "../secret.txt",
+    "../../../etc/passwd",
+    "sub/../../secret.txt",
+    "nested/../../outside.txt",
+    "/etc/passwd",
+    "/absolute/injection.txt",
+    "C:\\Windows\\system32",
+    "C:relative.txt",
+    "good\x00/../../../etc/passwd",
+    "file\x00.txt",
+]
+
+
+class TestPathSafetyAttackCorpus:
+    """Pin path-safety guards against the SDK's attack-shape corpus.
+
+    Every skill file surface routes user-supplied path parameters through
+    the SDK's ``safe_join``. These tests assert the whole corpus is
+    rejected with a clear error before the filesystem is touched, and
+    that legitimate nested paths continue to resolve.
+    """
+
+    @pytest.fixture
+    def skill_with_secret(self, tmp_path: Path) -> Path:
+        """A skill dir containing a nested file, with a secret one level up."""
+        skill_dir = tmp_path / "corpus-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("# Corpus\n\nContent")
+        (skill_dir / "docs").mkdir()
+        (skill_dir / "docs" / "nested.txt").write_text("NESTED OK")
+        (tmp_path / "secret.txt").write_text("SECRET DATA")
+        return skill_dir
+
+    async def _template(self, skill_dir: Path):
+        provider = SkillProvider(skill_path=skill_dir)
+        templates = await provider.list_resource_templates()
+        return templates[0]
+
+    @pytest.mark.parametrize("attack", SKILL_PATH_ESCAPES)
+    async def test_template_read_rejects_escape(
+        self, skill_with_secret: Path, attack: str
+    ):
+        template = await self._template(skill_with_secret)
+        with pytest.raises(ValueError, match="Invalid path"):
+            await template.read(arguments={"path": attack})
+
+    @pytest.mark.parametrize("attack", SKILL_PATH_ESCAPES)
+    async def test_template_create_resource_rejects_escape(
+        self, skill_with_secret: Path, attack: str
+    ):
+        template = await self._template(skill_with_secret)
+        with pytest.raises(ValueError, match="Invalid path"):
+            await template.create_resource(
+                uri=f"skill://corpus-skill/{attack}", params={"path": attack}
+            )
+
+    @pytest.mark.parametrize("attack", SKILL_PATH_ESCAPES)
+    async def test_file_resource_read_rejects_escape(
+        self, skill_with_secret: Path, attack: str
+    ):
+        provider = SkillProvider(
+            skill_path=skill_with_secret, supporting_files="resources"
+        )
+        resource = SkillFileResource(
+            uri=AnyUrl("skill://corpus-skill/x"),
+            name="corpus-skill/x",
+            mime_type="text/plain",
+            skill_info=provider.skill_info,
+            file_path=attack,
+        )
+        with pytest.raises(ValueError, match="Invalid path"):
+            await resource.read()
+
+    async def test_template_read_allows_nested_path(self, skill_with_secret: Path):
+        template = await self._template(skill_with_secret)
+        result = await template.read(arguments={"path": "docs/nested.txt"})
+        assert result == "NESTED OK"
+
+    async def test_template_read_allows_within_bounds_dotdot(
+        self, skill_with_secret: Path
+    ):
+        template = await self._template(skill_with_secret)
+        result = await template.read(arguments={"path": "docs/../docs/nested.txt"})
+        assert result == "NESTED OK"
+
+    async def test_file_resource_read_allows_nested_path(self, skill_with_secret: Path):
+        provider = SkillProvider(
+            skill_path=skill_with_secret, supporting_files="resources"
+        )
+        resource = SkillFileResource(
+            uri=AnyUrl("skill://corpus-skill/docs/nested.txt"),
+            name="corpus-skill/docs/nested.txt",
+            mime_type="text/plain",
+            skill_info=provider.skill_info,
+            file_path="docs/nested.txt",
+        )
+        assert await resource.read() == "NESTED OK"
 
 
 async def test_skill_provider_loads_and_serves_utf8_skill_md(

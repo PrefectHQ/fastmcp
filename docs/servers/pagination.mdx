@@ -3,7 +3,6 @@ title: Pagination
 sidebarTitle: Pagination
 description: Control how servers return large lists of components to clients.
 icon: page
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -14,7 +13,7 @@ When a server exposes many tools, resources, or prompts, returning them all in a
 
 ## Server Configuration
 
-By default, FastMCP servers return all components in a single response for backward compatibility. To enable pagination, set the `list_page_size` parameter when creating your server. This value determines the maximum number of items returned per page across all list operations.
+By default, FastMCP servers return all components in a single response for backward compatibility. To enable pagination, set the `list_page_size` parameter when creating your server. This value must be a positive integer and determines the maximum number of items returned per page across all list operations.
 
 ```python
 from fastmcp import FastMCP
@@ -34,11 +33,13 @@ def analyze(data: str) -> dict:
 # ... many more tools, resources, prompts
 ```
 
-When `list_page_size` is configured, the `tools/list`, `resources/list`, `resources/templates/list`, and `prompts/list` endpoints all paginate their responses. Each response includes a `nextCursor` field when more results exist, which clients use to fetch subsequent pages.
+When `list_page_size` is configured, the `tools/list`, `resources/list`, `resources/templates/list`, and `prompts/list` endpoints all paginate their responses. Each response includes a `next_cursor` field when more results exist, which clients use to fetch subsequent pages.
 
 ### Cursor Format
 
 Cursors are opaque base64-encoded strings per the MCP specification. Clients should treat them as black boxes, passing them unchanged between requests. The cursor encodes the offset into the result set, but this is an implementation detail that may change.
+
+A malformed, non-empty cursor returns the MCP `-32602` (Invalid params) error, whether or not `list_page_size` is configured. Omitting the cursor still returns the complete list when pagination is disabled.
 
 ## Client Behavior
 
@@ -66,12 +67,12 @@ async with Client(server) as client:
     print(f"Page 1: {len(result.tools)} tools")
 
     # Continue fetching while more pages exist
-    while result.nextCursor:
-        result = await client.list_tools_mcp(cursor=result.nextCursor)
+    while result.next_cursor:
+        result = await client.list_tools_mcp(cursor=result.next_cursor)
         print(f"Next page: {len(result.tools)} tools")
 ```
 
-The `_mcp` methods return the raw MCP protocol objects, which include both the items and the `nextCursor` for the next page. When `nextCursor` is `None`, you've reached the end of the result set.
+The `_mcp` methods return the raw MCP protocol objects, which include both the items and the `next_cursor` for the next page. When `next_cursor` is `None`, you've reached the end of the result set.
 
 All four list operations support manual pagination:
 

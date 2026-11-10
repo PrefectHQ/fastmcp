@@ -9,6 +9,15 @@ import time
 import pytest
 
 from fastmcp import Client, FastMCP
+from fastmcp.client.transports import FastMCPTransport
+from fastmcp_tasks import TasksExtension
+from tests.tasks.task_helpers import submit_task, wait_for_task
+
+
+def test_transport_repr_includes_server_name():
+    transport = FastMCPTransport(FastMCP("repr-test"))
+
+    assert repr(transport) == "<FastMCPTransport(server='repr-test')>"
 
 
 @pytest.mark.timeout(10)
@@ -31,8 +40,13 @@ async def test_task_teardown_does_not_hang():
     If this test takes ~5 seconds, the context manager nesting in
     FastMCPTransport.connect_session() has been reversed — the lifespan
     must be the OUTER context and the task group must be the INNER context.
+
+    There is no client task-submission API yet (Phase 4), so the task is
+    driven server-side within the live in-memory session; the teardown path
+    being exercised is the same either way.
     """
     mcp = FastMCP("teardown-test")
+    mcp.add_extension(TasksExtension())
 
     @mcp.tool(task=True)
     async def fast_tool(x: int) -> int:
@@ -40,10 +54,12 @@ async def test_task_teardown_does_not_hang():
 
     t0 = time.monotonic()
 
-    async with Client(mcp) as client:
-        task = await client.call_tool("fast_tool", {"x": 21}, task=True)
-        result = await task.result()
-        assert result.data == 42
+    async with Client(mcp):
+        created = await submit_task(mcp, "fast_tool", {"x": 21})
+        final = await wait_for_task(mcp, created.task_id)
+        assert final.status == "completed"
+        assert final.result is not None
+        assert final.result["structuredContent"] == {"result": 42}
 
     elapsed = time.monotonic() - t0
 

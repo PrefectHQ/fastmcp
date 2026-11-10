@@ -2,9 +2,9 @@ from typing import Any
 
 import pytest
 from inline_snapshot import snapshot
-from mcp.types import TextContent
+from mcp_types import TextContent
 
-from fastmcp import FastMCP
+from fastmcp import Client, FastMCP
 from fastmcp.contrib.bulk_tool_caller.bulk_tool_caller import (
     BulkToolCaller,
     CallToolRequest,
@@ -31,7 +31,7 @@ def error_tool_result_factory(arg1: str) -> CallToolRequestResult:
         "Error calling tool 'error_tool': Error in tool with arg1: " + arg1
     )
     return CallToolRequestResult(
-        isError=True,
+        is_error=True,
         content=[TextContent(text=formatted_error_text, type="text")],
         tool="error_tool",
         arguments={"arg1": arg1},
@@ -46,7 +46,7 @@ async def echo_tool(arg1: str) -> str:
 def echo_tool_result_factory(arg1: str) -> CallToolRequestResult:
     """A tool that returns a result based on the input arguments."""
     return CallToolRequestResult(
-        isError=False,
+        is_error=False,
         content=[TextContent(text=f"{arg1}", type="text")],
         tool="echo_tool",
         arguments={"arg1": arg1},
@@ -60,7 +60,7 @@ async def no_return_tool(arg1: str) -> None:
 def no_return_tool_result_factory(arg1: str) -> CallToolRequestResult:
     """A tool that returns a result based on the input arguments."""
     return CallToolRequestResult(
-        isError=False,
+        is_error=False,
         content=[],
         tool="no_return_tool",
         arguments={"arg1": arg1},
@@ -147,7 +147,7 @@ async def test_call_tool_bulk_error_stops(bulk_caller_live: BulkToolCaller):
                         text="Error calling tool 'error_tool': Error in tool with arg1: error_value",
                     )
                 ],
-                isError=True,
+                is_error=True,
                 tool="error_tool",
                 arguments={"arg1": "error_value"},
             )
@@ -174,7 +174,7 @@ async def test_call_tool_bulk_error_continues(bulk_caller_live: BulkToolCaller):
                         text="Error calling tool 'error_tool': Error in tool with arg1: error_value",
                     )
                 ],
-                isError=True,
+                is_error=True,
                 tool="error_tool",
                 arguments={"arg1": "error_value"},
             ),
@@ -249,7 +249,7 @@ async def test_call_tools_bulk_error_stops(bulk_caller_live: BulkToolCaller):
                         text="Error calling tool 'error_tool': Error in tool with arg1: error_value",
                     )
                 ],
-                isError=True,
+                is_error=True,
                 tool="error_tool",
                 arguments={"arg1": "error_value"},
             )
@@ -275,7 +275,7 @@ async def test_call_tools_bulk_error_continues(bulk_caller_live: BulkToolCaller)
                         text="Error calling tool 'error_tool': Error in tool with arg1: error_value",
                     )
                 ],
-                isError=True,
+                is_error=True,
                 tool="error_tool",
                 arguments={"arg1": "error_value"},
             ),
@@ -309,7 +309,7 @@ async def test_call_tools_bulk_blocks_self_invocation(bulk_caller_live: BulkTool
                         ),
                     )
                 ],
-                isError=True,
+                is_error=True,
                 tool="call_tools_bulk",
                 arguments={"tool_calls": []},
             ),
@@ -341,9 +341,67 @@ async def test_call_tool_bulk_blocks_self_invocation(bulk_caller_live: BulkToolC
                         ),
                     )
                 ],
-                isError=True,
+                is_error=True,
                 tool="call_tool_bulk",
                 arguments={"arg1": "value1"},
             )
         ]
     )
+
+
+async def test_register_tools_applies_prefix_and_separator():
+    server = FastMCP()
+    caller = BulkToolCaller()
+
+    caller.register_tools(server, prefix="one", separator="-")
+
+    async with Client(server) as client:
+        tool_names = {tool.name for tool in await client.list_tools()}
+
+    assert tool_names == {"one-call_tools_bulk", "one-call_tool_bulk"}
+
+
+async def test_register_all_applies_tool_prefix_and_separator():
+    server = FastMCP()
+    caller = BulkToolCaller()
+
+    caller.register_all(server, prefix="all", tool_separator="-")
+
+    async with Client(server) as client:
+        tool_names = {tool.name for tool in await client.list_tools()}
+
+    assert tool_names == {"all-call_tools_bulk", "all-call_tool_bulk"}
+
+
+async def test_multiple_bulk_callers_register_independent_prefixes():
+    server = FastMCP()
+    first = BulkToolCaller()
+    second = BulkToolCaller()
+
+    first.register_tools(server, prefix="first", separator="-")
+    second.register_tools(server, prefix="second", separator="-")
+
+    async with Client(server) as client:
+        tool_names = {tool.name for tool in await client.list_tools()}
+
+    assert tool_names == {
+        "first-call_tools_bulk",
+        "first-call_tool_bulk",
+        "second-call_tools_bulk",
+        "second-call_tool_bulk",
+    }
+
+
+async def test_prefixed_bulk_tools_and_legacy_names_cannot_call_self():
+    caller = BulkToolCaller()
+    caller.register_tools(FastMCP(), prefix="prefixed", separator="-")
+
+    for name in (
+        "call_tools_bulk",
+        "call_tool_bulk",
+        "prefixed-call_tools_bulk",
+        "prefixed-call_tool_bulk",
+    ):
+        result = await caller._call_tool(name, {})
+        assert result.is_error
+        assert result.tool == name

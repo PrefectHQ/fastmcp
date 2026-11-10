@@ -1,0 +1,61 @@
+---
+title: prefab
+sidebarTitle: prefab
+---
+
+# `fastmcp.utilities.prefab`
+
+
+Lazy helpers for FastMCP's optional Prefab UI integration.
+
+## Functions
+
+### `prefab_available` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/prefab.py#L12" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+prefab_available() -> bool
+```
+
+
+Return whether Prefab UI is installed without importing it.
+
+
+### `is_prefab_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/prefab.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+is_prefab_type(candidate: Any) -> bool
+```
+
+
+Return whether a type is a Prefab app or component type.
+
+
+### `is_prefab_app` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/prefab.py#L51" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+is_prefab_app(value: Any) -> bool
+```
+
+
+Return whether a value is a Prefab app.
+
+
+### `is_prefab_component` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/prefab.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+is_prefab_component(value: Any) -> bool
+```
+
+
+Return whether a value is a Prefab component.
+
+
+### `prefab_app_from_component` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/prefab.py#L69" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+prefab_app_from_component(component: Any) -> Any
+```
+
+
+Wrap a Prefab component in a Prefab app.
+

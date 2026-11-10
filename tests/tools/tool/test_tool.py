@@ -1,15 +1,18 @@
+import functools
 from datetime import timedelta
+from typing import Annotated
 
 import pytest
 from dirty_equals import HasName
 from inline_snapshot import snapshot
-from mcp.types import (
+from mcp_types import (
     AudioContent,
     ImageContent,
     ToolExecution,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from fastmcp import Client, FastMCP
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.types import Audio, File, Image
 
@@ -251,8 +254,6 @@ class TestToolFromFunction:
         assert isinstance(result.content[0], AudioContent)
 
     async def test_tool_with_file_return(self):
-        from pydantic import AnyUrl
-
         def file_tool(data: bytes) -> File:
             return File(data=data, format="octet-stream")
 
@@ -265,12 +266,33 @@ class TestToolFromFunction:
             {
                 "type": "resource",
                 "resource": {
-                    "uri": AnyUrl("file:///resource.octet-stream"),
-                    "mimeType": "application/octet-stream",
+                    "uri": "file:///resource.octet-stream",
+                    "mime_type": "application/octet-stream",
                     "blob": "dGVzdC5iaW4=",
                 },
             }
         )
+
+    def test_field_metadata_on_none_default_parameter(self):
+        """Annotated metadata stays on the property itself, not a nested branch.
+
+        Python 3.10's `get_type_hints` wraps `None`-defaulted hints in
+        `Optional[...]`, which used to push the description into an inner
+        `anyOf` there.
+        """
+
+        def search(
+            limit: Annotated[int | None, Field(description="How many.")] = None,
+        ) -> str:
+            return "ok"
+
+        tool = Tool.from_function(search)
+
+        assert tool.parameters["properties"]["limit"] == {
+            "anyOf": [{"type": "integer"}, {"type": "null"}],
+            "default": None,
+            "description": "How many.",
+        }
 
     def test_non_callable_fn(self):
         with pytest.raises(TypeError, match="not a callable object"):
@@ -301,6 +323,93 @@ class TestToolFromFunction:
             ValueError, match="You must provide a name for lambda functions"
         ):
             Tool.from_function(lambda x: x)
+
+    async def test_partial_function(self):
+        """A partial takes its name and docstring from the wrapped function,
+        not from functools.partial's class."""
+
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers.
+
+            Args:
+                x: The first number.
+                y: The second number.
+            """
+            return x * y
+
+        tool = Tool.from_function(functools.partial(multiply, y=2))
+
+        assert tool.name == "multiply"
+        assert tool.description == "Multiply two numbers."
+        assert tool.parameters["properties"] == {
+            "x": {"type": "integer", "description": "The first number."},
+            "y": {"default": 2, "type": "integer", "description": "The second number."},
+        }
+
+        result = await tool.run({"x": 3})
+        assert result.structured_content == {"result": 6}
+
+    async def test_partial_functions_do_not_collide(self):
+        """Partials over different functions must not share the name 'partial',
+        which makes the second registration replace the first."""
+
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers."""
+            return x * y
+
+        def greet(name: str, greeting: str) -> str:
+            """Greet a person."""
+            return f"{greeting}, {name}!"
+
+        mcp = FastMCP()
+        mcp.add_tool(functools.partial(multiply, y=2))
+        mcp.add_tool(functools.partial(greet, greeting="Hello"))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+
+        assert {tool.name: tool.description for tool in tools} == {
+            "multiply": "Multiply two numbers.",
+            "greet": "Greet a person.",
+        }
+
+    @pytest.mark.parametrize("docstring", ["Double the input.", "", None])
+    async def test_partial_explicit_metadata_is_preserved(
+        self, docstring: str | None
+    ) -> None:
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers."""
+            return x * y
+
+        double = functools.partial(multiply, y=2)
+        setattr(double, "__name__", "double")
+        setattr(double, "__doc__", docstring)
+        tool = Tool.from_function(double)
+
+        assert tool.name == "double"
+        assert tool.description == (docstring or None)
+        assert (await tool.run({"x": 3})).structured_content == {"result": 6}
+        assert (await tool.run({"x": 3, "y": 5})).structured_content == {"result": 15}
+
+    def test_partial_explicit_parameter_docs_are_preserved(self) -> None:
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers.
+
+            Args:
+                x: Original input.
+            """
+            return x * y
+
+        double = functools.partial(multiply, y=2)
+        double.__doc__ = """Double the input.
+
+        Args:
+            x: Custom input.
+        """
+        tool = Tool.from_function(double, name="explicit_name", description="")
+        assert tool.name == "explicit_name"
+        assert tool.description == ""
+        assert tool.parameters["properties"]["x"]["description"] == "Custom input."
 
     def test_private_arguments(self):
         def add(_a: int, _b: int) -> int:
@@ -342,6 +451,32 @@ class TestToolFromFunction:
             ValueError, match=r"Functions with \*args are not supported as tools"
         ):
             Tool.from_function(func)
+
+    def test_tool_with_positional_only_parameters_not_allowed(self):
+        def func(a: int, /, b: int) -> int:
+            return a + b
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                "Functions with positional-only parameters are not supported as "
+                "tools.*standard parameters"
+            ),
+        ):
+            Tool.from_function(func)
+
+    def test_tool_with_keyword_capable_parameters(self):
+        def func(a: int, *, b: int) -> int:
+            return a + b
+
+        tool = Tool.from_function(func)
+
+        assert tool.parameters["type"] == "object"
+        assert tool.parameters["required"] == ["a", "b"]
+        assert tool.parameters["properties"] == {
+            "a": {"type": "integer"},
+            "b": {"type": "integer"},
+        }
 
     def test_tool_with_varkwargs_not_allowed(self):
         def func(a: int, b: int, **kwargs: int) -> int:
@@ -542,12 +677,12 @@ class TestToolExecutionField:
             name="my_tool",
             description="A tool with execution",
             parameters={"type": "object", "properties": {}},
-            execution=ToolExecution(taskSupport="optional"),
+            execution=ToolExecution(task_support="optional"),
         )
 
         mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.execution is not None
-        assert mcp_tool.execution.taskSupport == "optional"
+        assert mcp_tool.execution.task_support == "optional"
 
     def test_tool_without_execution_field(self):
         """Test that Tool without execution returns None."""
@@ -566,13 +701,13 @@ class TestToolExecutionField:
             name="my_tool",
             description="A tool",
             parameters={"type": "object", "properties": {}},
-            execution=ToolExecution(taskSupport="optional"),
+            execution=ToolExecution(task_support="optional"),
         )
 
-        override_execution = ToolExecution(taskSupport="required")
+        override_execution = ToolExecution(task_support="required")
         mcp_tool = tool.to_mcp_tool(execution=override_execution)
         assert mcp_tool.execution is not None
-        assert mcp_tool.execution.taskSupport == "required"
+        assert mcp_tool.execution.task_support == "required"
 
     async def test_function_tool_task_config_still_works(self):
         """FunctionTool should still derive execution from task_config."""
@@ -585,7 +720,7 @@ class TestToolExecutionField:
 
         # FunctionTool sets execution from task_config
         assert mcp_tool.execution is not None
-        assert mcp_tool.execution.taskSupport == "optional"
+        assert mcp_tool.execution.task_support == "optional"
 
     def test_tool_execution_required_mode(self):
         """Test that Tool can store required execution mode."""
@@ -593,12 +728,12 @@ class TestToolExecutionField:
             name="my_tool",
             description="A tool with required execution",
             parameters={"type": "object", "properties": {}},
-            execution=ToolExecution(taskSupport="required"),
+            execution=ToolExecution(task_support="required"),
         )
 
         mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.execution is not None
-        assert mcp_tool.execution.taskSupport == "required"
+        assert mcp_tool.execution.task_support == "required"
 
     def test_tool_execution_forbidden_mode(self):
         """Test that Tool can store forbidden execution mode."""
@@ -606,9 +741,9 @@ class TestToolExecutionField:
             name="my_tool",
             description="A tool with forbidden execution",
             parameters={"type": "object", "properties": {}},
-            execution=ToolExecution(taskSupport="forbidden"),
+            execution=ToolExecution(task_support="forbidden"),
         )
 
         mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.execution is not None
-        assert mcp_tool.execution.taskSupport == "forbidden"
+        assert mcp_tool.execution.task_support == "forbidden"

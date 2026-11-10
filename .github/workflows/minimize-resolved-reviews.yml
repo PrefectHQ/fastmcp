@@ -14,8 +14,12 @@ on:
   issue_comment:
     types: [created]
 
+# Scope the group by event name so that the sibling events fired by a single
+# review action (pull_request_review + pull_request_review_comment, same instant)
+# don't cancel each other. Same-PR runs of the *same* event still supersede
+# cleanly, and the last one always completes.
 concurrency:
-  group: minimize-reviews-${{ github.event.pull_request.number || github.event.issue.number }}
+  group: minimize-reviews-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
@@ -38,6 +42,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Minimize resolved review comments
-        uses: strawgate/minimize-resolved-pr-reviews@v0
+        uses: strawgate/minimize-resolved-pr-reviews@429a7d298492171b7ef8852e7475ff13eb39cc68 # v0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

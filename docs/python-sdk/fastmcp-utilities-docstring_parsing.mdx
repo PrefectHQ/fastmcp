@@ -16,7 +16,7 @@ callers.
 
 ## Functions
 
-### `parse_docstring` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/docstring_parsing.py#L35" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `parse_docstring` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/docstring_parsing.py#L33" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 parse_docstring(fn: Callable[..., Any]) -> ParsedDocstring
@@ -26,13 +26,15 @@ parse_docstring(fn: Callable[..., Any]) -> ParsedDocstring
 Parse a function's docstring into a summary and parameter descriptions.
 
 Tries Google, NumPy, and Sphinx parsers in order, using the first one that
-successfully extracts parameter descriptions. If none do, returns the full
-docstring as the description with no parameter descriptions.
+recognizes a structured section (parameters, returns, raises, and so on).
+The description is the free-form text before the first such section. If no
+parser recognizes a section, returns the full docstring as the description
+with no parameter descriptions.
 
 
 ## Classes
 
-### `ParsedDocstring` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/docstring_parsing.py#L28" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ParsedDocstring` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/docstring_parsing.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 The extracted description and per-parameter descriptions from a docstring.

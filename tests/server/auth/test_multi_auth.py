@@ -1,10 +1,18 @@
-import httpx
+import httpx2
 import pytest
+from key_value.aio.stores.memory import MemoryStore
 from pydantic import AnyHttpUrl
 
 from fastmcp import FastMCP
-from fastmcp.server.auth import MultiAuth, RemoteAuthProvider, TokenVerifier
+from fastmcp.server.auth import (
+    MultiAuth,
+    RemoteAuthProvider,
+    TokenVerificationError,
+    TokenVerifier,
+)
 from fastmcp.server.auth.auth import AccessToken
+from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.providers.azure import AzureJWTVerifier
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
 
@@ -13,6 +21,52 @@ class RaisingVerifier(TokenVerifier):
 
     async def verify_token(self, token: str) -> AccessToken | None:
         raise RuntimeError("simulated failure")
+
+
+class UnavailableVerifier(TokenVerifier):
+    """A verifier whose upstream dependency is temporarily unavailable."""
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        raise TokenVerificationError("simulated verifier unavailable")
+
+
+class UnderScopedVerifier(TokenVerifier):
+    """A verifier that returns a token missing its required scopes."""
+
+    async def verify_token(self, token: str) -> AccessToken:
+        return AccessToken(token=token, client_id="c", scopes=[])
+
+
+class UnderScopedAzureJWTVerifier(AzureJWTVerifier):
+    """An Azure verifier that returns a token missing its required scopes."""
+
+    async def verify_token(self, token: str) -> AccessToken:
+        return AccessToken(token=token, client_id="c", scopes=[])
+
+
+class OptionalScopeChallengeProxy(OAuthProxy):
+    """A proxy whose default challenge requests every supported scope."""
+
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        if required_scopes is None:
+            return self.scopes_supported
+        return required_scopes
+
+
+def optional_scope_challenge_proxy() -> OptionalScopeChallengeProxy:
+    return OptionalScopeChallengeProxy(
+        upstream_authorization_endpoint="https://auth.example.com/authorize",
+        upstream_token_endpoint="https://auth.example.com/token",
+        upstream_client_id="client-id",
+        upstream_client_secret="client-secret",
+        token_verifier=StaticTokenVerifier(tokens={}, required_scopes=["openid"]),
+        base_url="https://api.example.com",
+        valid_scopes=["openid", "email", "calendar"],
+        jwt_signing_key="test-secret",
+        client_storage=MemoryStore(),
+    )
 
 
 class TestMultiAuthInit:
@@ -107,6 +161,94 @@ class TestMultiAuthInit:
         auth = MultiAuth(server=provider)
         assert auth.required_scopes == ["read"]
 
+    def test_supported_scopes_from_server(self):
+        verifier = StaticTokenVerifier(
+            tokens={"t": {"client_id": "c", "scopes": ["read"]}},
+            required_scopes=["read"],
+        )
+        provider = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com",
+            scopes_supported=["api://client-id/read"],
+            challenge_scopes=["api://client-id/read"],
+        )
+
+        auth = MultiAuth(server=provider)
+
+        assert auth.required_scopes == ["read"]
+        assert auth.scopes_supported == ["api://client-id/read"]
+        assert auth.challenge_scopes == ["api://client-id/read"]
+
+    def test_supported_scopes_from_verifier_only_configuration(self):
+        verifier = StaticTokenVerifier(
+            tokens={"t": {"client_id": "c", "scopes": ["read"]}},
+        )
+
+        auth = MultiAuth(verifiers=[verifier], required_scopes=["read"])
+
+        assert auth.scopes_supported == ["read"]
+        assert auth.challenge_scopes == ["read"]
+
+    def test_challenge_scopes_translated_by_single_verifier(self):
+        verifier = AzureJWTVerifier(
+            client_id="client-id",
+            tenant_id="test-tenant",
+            required_scopes=["read"],
+        )
+
+        auth = MultiAuth(verifiers=[verifier], required_scopes=["admin"])
+
+        assert auth.challenge_scopes == ["api://client-id/admin"]
+
+    def test_challenge_scopes_not_translated_by_multiple_verifiers(self):
+        first = AzureJWTVerifier(
+            client_id="first-client",
+            tenant_id="test-tenant",
+            required_scopes=["read"],
+        )
+        second = AzureJWTVerifier(
+            client_id="second-client",
+            tenant_id="test-tenant",
+            required_scopes=["read"],
+        )
+
+        auth = MultiAuth(
+            verifiers={"first": first, "second": second}, required_scopes=["admin"]
+        )
+
+        assert auth.challenge_scopes == ["admin"]
+
+    def test_challenge_scopes_respect_required_scopes_override(self):
+        verifier = StaticTokenVerifier(
+            tokens={"t": {"client_id": "c", "scopes": ["read"]}},
+            required_scopes=["read"],
+        )
+        provider = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com",
+            scopes_supported=["api://client-id/read"],
+            challenge_scopes=["api://client-id/read"],
+        )
+
+        auth = MultiAuth(server=provider, required_scopes=["admin"])
+
+        assert auth.scopes_supported == ["api://client-id/read"]
+        assert auth.challenge_scopes == ["admin"]
+
+    def test_challenge_scopes_use_server_default_selection(self):
+        auth = MultiAuth(server=optional_scope_challenge_proxy())
+
+        assert auth.challenge_scopes == ["openid", "email", "calendar"]
+
+    def test_challenge_scopes_keep_override_matching_server_default(self):
+        auth = MultiAuth(
+            server=optional_scope_challenge_proxy(), required_scopes=["openid"]
+        )
+
+        assert auth.challenge_scopes == ["openid"]
+
 
 class TestMultiAuthVerifyToken:
     """Test MultiAuth token verification chain."""
@@ -129,7 +271,7 @@ class TestMultiAuthVerifyToken:
 
         result = await auth.verify_token("server_token")
         assert result is not None
-        assert result.client_id == "server-client"
+        assert result.original_client_id == "server-client"
 
     async def test_falls_back_to_verifiers(self):
         """When server rejects a token, verifiers are tried."""
@@ -149,7 +291,7 @@ class TestMultiAuthVerifyToken:
 
         result = await auth.verify_token("m2m_token")
         assert result is not None
-        assert result.client_id == "m2m-service"
+        assert result.original_client_id == "m2m-service"
 
     async def test_verifier_order_matters(self):
         """Verifiers are tried in order; first match wins."""
@@ -160,10 +302,10 @@ class TestMultiAuthVerifyToken:
             tokens={"shared_token": {"client_id": "second", "scopes": []}}
         )
 
-        auth = MultiAuth(verifiers=[v1, v2])
+        auth = MultiAuth(verifiers={"first": v1, "second": v2})
         result = await auth.verify_token("shared_token")
         assert result is not None
-        assert result.client_id == "first"
+        assert result.original_client_id == "first"
 
     async def test_no_match_returns_none(self):
         """When no server or verifier accepts the token, returns None."""
@@ -177,15 +319,15 @@ class TestMultiAuthVerifyToken:
         v1 = StaticTokenVerifier(tokens={"token_a": {"client_id": "a", "scopes": []}})
         v2 = StaticTokenVerifier(tokens={"token_b": {"client_id": "b", "scopes": []}})
 
-        auth = MultiAuth(verifiers=[v1, v2])
+        auth = MultiAuth(verifiers={"first": v1, "second": v2})
 
         result_a = await auth.verify_token("token_a")
         assert result_a is not None
-        assert result_a.client_id == "a"
+        assert result_a.original_client_id == "a"
 
         result_b = await auth.verify_token("token_b")
         assert result_b is not None
-        assert result_b.client_id == "b"
+        assert result_b.original_client_id == "b"
 
     async def test_raising_verifier_does_not_break_chain(self):
         """If a verifier raises, the chain continues to the next source."""
@@ -196,7 +338,7 @@ class TestMultiAuthVerifyToken:
 
         result = await auth.verify_token("valid")
         assert result is not None
-        assert result.client_id == "good-client"
+        assert result.original_client_id == "good-client"
 
     async def test_raising_server_does_not_break_chain(self):
         """If the server raises, verifiers are still tried."""
@@ -207,11 +349,35 @@ class TestMultiAuthVerifyToken:
 
         result = await auth.verify_token("valid")
         assert result is not None
-        assert result.client_id == "fallback"
+        assert result.original_client_id == "fallback"
+
+    async def test_operational_failure_raises_without_successful_fallback(self):
+        """Operational failure is re-raised if no later source validates."""
+        rejecting = StaticTokenVerifier(tokens={})
+        auth = MultiAuth(verifiers=[UnavailableVerifier(), rejecting])
+
+        with pytest.raises(
+            TokenVerificationError, match="simulated verifier unavailable"
+        ):
+            await auth.verify_token("anything")
+
+    async def test_operational_failure_allows_successful_fallback(self):
+        """A later successful verifier still wins after an operational failure."""
+        good = StaticTokenVerifier(
+            tokens={"valid": {"client_id": "fallback", "scopes": []}}
+        )
+        auth = MultiAuth(verifiers=[UnavailableVerifier(), good])
+
+        result = await auth.verify_token("valid")
+
+        assert result is not None
+        assert result.original_client_id == "fallback"
 
     async def test_all_raising_returns_none(self):
         """If every source raises, verify_token returns None."""
-        auth = MultiAuth(verifiers=[RaisingVerifier(), RaisingVerifier()])
+        auth = MultiAuth(
+            verifiers={"first": RaisingVerifier(), "second": RaisingVerifier()}
+        )
         result = await auth.verify_token("anything")
         assert result is None
 
@@ -233,7 +399,7 @@ class TestMultiAuthVerifyToken:
         auth = MultiAuth(server=server, verifiers=[extra])
         result = await auth.verify_token("token")
         assert result is not None
-        assert result.client_id == "from-server"
+        assert result.original_client_id == "from-server"
 
 
 class TestMultiAuthRoutes:
@@ -314,12 +480,12 @@ class TestMultiAuthIntegration:
             }
         )
 
-        auth = MultiAuth(verifiers=[oauth_tokens, m2m_tokens])
+        auth = MultiAuth(verifiers={"interactive": oauth_tokens, "backend": m2m_tokens})
         mcp = FastMCP("test", auth=auth)
         app = mcp.http_app(path="/mcp")
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             base_url="http://localhost",
         ) as client:
             # No token → 401
@@ -346,8 +512,8 @@ class TestMultiAuthIntegration:
         mcp = FastMCP("test", auth=auth)
         app = mcp.http_app(path="/mcp")
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             base_url="https://api.example.com",
         ) as client:
             # Protected resource metadata should be available
@@ -370,8 +536,8 @@ class TestMultiAuthIntegration:
         mcp = FastMCP("test", auth=auth)
         app = mcp.http_app(path="/mcp")
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             base_url="http://localhost",
         ) as client:
             response = await client.get("/mcp")
@@ -380,6 +546,111 @@ class TestMultiAuthIntegration:
                 'resource_metadata="https://api.example.com/.well-known/oauth-protected-resource/mcp"'
                 in response.headers["www-authenticate"]
             )
+
+    async def test_multi_auth_uses_server_supported_scopes_in_auth_challenges(self):
+        """Challenges should match the request-facing scopes in delegated metadata."""
+        verifier = UnderScopedVerifier(required_scopes=["read"])
+        server = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com",
+            scopes_supported=["api://client-id/read"],
+            challenge_scopes=["api://client-id/read"],
+        )
+
+        auth = MultiAuth(server=server)
+        app = FastMCP("test", auth=auth).http_app(path="/mcp")
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
+            base_url="https://api.example.com",
+        ) as client:
+            missing_response = await client.get("/mcp")
+            narrow_response = await client.get(
+                "/mcp", headers={"Authorization": "Bearer narrow"}
+            )
+
+        assert missing_response.status_code == 401
+        assert (
+            'scope="api://client-id/read"'
+            in missing_response.headers["www-authenticate"]
+        )
+        assert narrow_response.status_code == 403
+        assert (
+            'scope="api://client-id/read"'
+            in narrow_response.headers["www-authenticate"]
+        )
+
+    async def test_multi_auth_scope_override_wins_in_auth_challenges(self):
+        """Outer overrides are translated for both 401 and 403 challenges."""
+        verifier = UnderScopedAzureJWTVerifier(
+            client_id="client-id",
+            tenant_id="test-tenant",
+            required_scopes=["read"],
+        )
+        server = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com",
+        )
+
+        auth = MultiAuth(server=server, required_scopes=["admin"])
+        app = FastMCP("test", auth=auth).http_app(path="/mcp")
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
+            base_url="https://api.example.com",
+        ) as client:
+            missing_response = await client.get("/mcp")
+            narrow_response = await client.get(
+                "/mcp", headers={"Authorization": "Bearer narrow"}
+            )
+
+        assert missing_response.status_code == 401
+        assert (
+            'scope="api://client-id/admin"'
+            in missing_response.headers["www-authenticate"]
+        )
+        assert (
+            "api://client-id/read" not in missing_response.headers["www-authenticate"]
+        )
+        assert narrow_response.status_code == 403
+        assert (
+            'scope="api://client-id/admin"'
+            in narrow_response.headers["www-authenticate"]
+        )
+        assert "api://client-id/read" not in narrow_response.headers["www-authenticate"]
+
+    async def test_verifier_only_scope_translation_in_auth_challenges(self):
+        """A sole verifier translates challenge scopes for both 401 and 403."""
+        verifier = UnderScopedAzureJWTVerifier(
+            client_id="client-id",
+            tenant_id="test-tenant",
+            required_scopes=["read"],
+        )
+
+        auth = MultiAuth(verifiers=[verifier], required_scopes=["read"])
+        app = FastMCP("test", auth=auth).http_app(path="/mcp")
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
+            base_url="https://api.example.com",
+        ) as client:
+            missing_response = await client.get("/mcp")
+            narrow_response = await client.get(
+                "/mcp", headers={"Authorization": "Bearer narrow"}
+            )
+
+        assert missing_response.status_code == 401
+        assert (
+            'scope="api://client-id/read"'
+            in missing_response.headers["www-authenticate"]
+        )
+        assert narrow_response.status_code == 403
+        assert (
+            'scope="api://client-id/read"'
+            in narrow_response.headers["www-authenticate"]
+        )
 
     async def test_multi_auth_override_propagates_to_served_metadata(self):
         """Override on MultiAuth must propagate so served metadata matches the challenge."""
@@ -394,8 +665,8 @@ class TestMultiAuthIntegration:
         mcp = FastMCP("test", auth=auth)
         app = mcp.http_app(path="/mcp")
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             base_url="http://localhost",
         ) as client:
             response = await client.get("/mcp")
@@ -440,12 +711,14 @@ class TestMultiAuthIntegration:
             }
         )
 
-        auth = MultiAuth(verifiers=[interactive_tokens, m2m_tokens])
+        auth = MultiAuth(
+            verifiers={"interactive": interactive_tokens, "backend": m2m_tokens}
+        )
         mcp = FastMCP("test", auth=auth)
         app = mcp.http_app(path="/mcp")
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app, raise_app_exceptions=False),
             base_url="http://localhost",
         ) as client:
             # No token → 401
@@ -488,7 +761,7 @@ class TestMultiAuthSetMcpPath:
     def test_propagates_to_verifiers(self):
         v1 = StaticTokenVerifier(tokens={"t": {"client_id": "c", "scopes": []}})
         v2 = StaticTokenVerifier(tokens={"t2": {"client_id": "c2", "scopes": []}})
-        auth = MultiAuth(verifiers=[v1, v2])
+        auth = MultiAuth(verifiers={"first": v1, "second": v2})
         auth.set_mcp_path("/mcp")
         assert v1._mcp_path == "/mcp"
         assert v2._mcp_path == "/mcp"

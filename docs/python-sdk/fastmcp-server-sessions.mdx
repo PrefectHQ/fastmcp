@@ -1,0 +1,319 @@
+---
+title: sessions
+sidebarTitle: sessions
+---
+
+# `fastmcp.server.sessions`
+
+
+Stateless session state: server-side per-user and per-session storage.
+
+Modern (2026-07-28) MCP connections are stateless by construction — every
+request builds a fresh connection whose in-memory state is discarded when the
+request returns. This module gives tools two explicit ways to keep state across
+calls, both backed by the server's existing state store and both isolated by the
+authenticated principal rather than by any client-declared identifier.
+
+- `Session`: async `get`/`set`/`delete`/`clear` over a single dict stored under
+  one key, scoped to a `(principal, session_id)` pair. This is the state-accessor
+  object a handler works with — the value the standalone `get_session(id)`
+  returns and the value injected for a `UserSession` parameter.
+- `session: UserSession` (injected): a per-user bucket, dependency-injected like
+  `ctx: Context` and keyed by the request's authenticated principal. Requires
+  auth. `UserSession` is the injection annotation; the injected value is a
+  `Session`. It is always available under auth — no `create_session`, no
+  provider, no validation.
+- `session_id: SessionId` (argument): a required string the agent supplies,
+  resolved with the standalone `await get_session(session_id)`. The id is
+  minted
+  by `create_session`; an id that was never created (or was created under a
+  different principal) is rejected. This validation is the whole guarantee — an
+  unminted id never resolves, so nothing enforces provider registration.
+- `SessionProvider`: a `Provider` contributing `create_session` / `end_session`
+  tools. Register it with `mcp.add_provider(SessionProvider())` so a tool that
+  takes `session_id` has a way to mint ids; without it, no id can be created, so
+  those tools simply cannot resolve a session.
+
+Isolation is the authenticated principal, not the session id. State keyed by
+`(principal, session_id)` means a request under principal B can never address
+principal A's keys, no matter what `session_id` it passes; the id only organizes
+sessions within a principal. Without auth there is no principal wall — a session
+id is a bearer capability and sessions are not a boundary between clients.
+
+
+## Functions
+
+### `current_principal` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L139" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+current_principal() -> str | None
+```
+
+
+The authenticated principal for the current request as a compact JSON string.
+
+Returns the `(client_id, issuer, subject)` triple encoded as compact JSON, or
+`None` on an unauthenticated request. Two users of one OAuth client are
+distinct principals whenever the token verifier supplies a subject.
+
+
+### `session_storage_key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L164" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+session_storage_key(principal: str | None, session_id: str) -> str
+```
+
+
+The single storage key holding a session's state dict.
+
+Keyed by `(principal, session_id)`: the principal is the isolation wall, the
+id organizes sessions within it. A session's whole state lives under this one
+key as a dict, so one key means one store TTL per session and `end` is a
+single delete.
+
+
+### `session_id_parameter_names` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L343" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+session_id_parameter_names(fn: Callable[..., object]) -> tuple[str, ...]
+```
+
+
+Names of a function's parameters annotated with `SessionId`.
+
+Scans resolved type hints for `Annotated[str, _SessionIdMarker()]` metadata.
+Returns an empty tuple when the hints cannot be resolved (the function then
+simply carries no auto-populated session-id description).
+
+`functools.partial` is unwrapped first, since `get_type_hints` rejects a
+partial object — FastMCP supports registering a partial as a tool, and its
+schema is still built from the underlying function, so its `SessionId`
+parameters must be detected here too. Parameters the partial has already
+bound — positionally or by keyword — are dropped, matching the tool's actual
+argument surface (the partial's own signature already reflects this).
+
+
+### `CurrentSession` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L449" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+CurrentSession() -> Session
+```
+
+
+Inject the per-user `Session` for the current authenticated principal.
+
+Rarely written explicitly — a `session: UserSession` parameter is rewritten
+to this. Provided for parity with `CurrentContext()` when an explicit default
+is preferred.
+
+
+### `OptionalCurrentSession` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L459" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+OptionalCurrentSession() -> Session | None
+```
+
+
+Inject the per-user `Session`, or `None` when the request is unauthenticated.
+
+Rarely written explicitly — a `session: UserSession | None = None` parameter
+is rewritten to this. Provided for parity with `OptionalCurrentContext()`.
+
+
+### `create_session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L468" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_session() -> str
+```
+
+
+Create a new session and return its identifier.
+
+Mints an unguessable `uuid4`, records an initial session owned by the current
+principal, and returns the id as a string. Store it and pass it back as a
+`session_id` argument on later calls to persist state across a session — only
+an id created this way resolves. State is keyed by the authenticated
+principal, so the id organizes sessions within a user; on an unauthenticated
+connection the id is the only thing standing between callers, which is why it
+is unguessable.
+
+
+### `end_session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L490" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+end_session(session_id: SessionId) -> str
+```
+
+
+End a session and delete all of its state.
+
+Validates the id like any other resolution (an unknown or foreign id is
+rejected), then deletes the session's key so the id no longer resolves.
+
+
+## Classes
+
+### `SessionAuthError` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L106" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+An injected `session: UserSession` was requested with no authenticated principal.
+
+Per-user session injection keys off the request's authenticated principal, so
+it is only meaningful under auth. A tool that needs cross-call state without
+auth should take a `session_id: SessionId` argument instead.
+
+
+### `InvalidSession` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L125" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A session id did not resolve to a session created under the current principal.
+
+Raised by `get_session(session_id)` when the id was never created, or was
+created under a different principal. The public message is deliberately
+generic — the specific reason (which id, which principal) is logged at debug
+level, not returned to the caller, so an attacker cannot distinguish "unknown
+id" from "belongs to someone else".
+
+
+### `Session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L175" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Async accessors over one `(principal, session_id)` bucket of state.
+
+A session's state is a single dict stored under one key. That dict holds user
+state in a `state` sub-dict and a small creation marker alongside it, so a
+created-but-empty session is still distinguishable from a missing one.
+`get`/`set`/`delete` read-modify-write the sub-dict; `clear` empties the
+sub-dict but keeps the session valid; `end` deletes the whole key. Writes
+never impose a TTL — retention is entirely the server store's (configure it on
+the store you pass to `FastMCP(session_state_store=...)`).
+
+Concurrent writes to one session race on the read-modify-write; session state
+is small and typically driven serially by one agent, so this is acceptable.
+
+
+**Methods:**
+
+#### `id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L205" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+id(self) -> str | None
+```
+
+The session's identifier, or `None` for an injected per-user session.
+
+For a session resolved from a `session_id` argument (or minted by
+`create_session`) this is that id. An injected `UserSession` has no
+distinct id — its bucket is the authenticated user — so it is `None`; the
+internal principal-derived key is deliberately not exposed here.
+
+
+#### `get` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L254" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get(self, key: str, default: Any = None) -> Any
+```
+
+Return the value for `key`, or `default` when it is not set.
+
+
+#### `set` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L259" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set(self, key: str, value: Any) -> None
+```
+
+Store `value` under `key` in this session (read-modify-write).
+
+Preserves the creation marker: only the user-state sub-dict is touched.
+
+
+#### `delete` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L270" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delete(self, key: str) -> None
+```
+
+Remove `key` from this session, if present (preserves the marker).
+
+
+#### `clear` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L281" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+clear(self) -> None
+```
+
+Empty the session's user state but keep the session valid.
+
+The user-state sub-dict is reset to empty while the creation marker stays
+in place, so a cleared session still resolves through `get_session`.
+To invalidate a session entirely, use `end` (what `end_session` calls).
+
+
+#### `end` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L294" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+end(self) -> None
+```
+
+Invalidate the session — delete its one key and all of its state.
+
+After this the id no longer resolves through `get_session`. This is
+what `end_session` calls; `clear` only empties state and keeps the session.
+
+
+### `UserSession` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L303" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Annotation marker for the injected per-user session.
+
+A `session: UserSession` parameter is **dependency-injected** like
+`ctx: Context`: keyed by the request's authenticated principal, excluded from
+the input schema, and requiring auth (it raises `SessionAuthError` with no
+principal). It doubles as the injection *annotation* and the injected
+type — the value a handler receives is a `UserSession`, which subclasses
+`Session`, so `await session.get(...)`, `.set`, `.delete`, and `.clear` all
+work exactly as on any other `Session`.
+
+Unlike `session_id: SessionId`, the per-user bucket needs no `create_session`,
+no `SessionProvider`, and no validation — it is always available under auth,
+keyed directly by the caller's identity.
+
+```python
+from fastmcp.server.sessions import UserSession
+
+@mcp.tool
+async def remember(fact: str, session: UserSession) -> str:
+    await session.set("fact", fact)
+    return "noted"
+```
+
+Subclasses `Session` only so the framework's type-based injection detector can
+key off it; it adds no behavior of its own.
+
+
+### `SessionProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/sessions.py#L501" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Provider contributing the session lifecycle tools.
+
+Register it whenever a tool declares a `session_id: SessionId` argument:
+
+```python
+from fastmcp.server.sessions import SessionProvider
+
+mcp.add_provider(SessionProvider())
+```
+
+It registers two tools:
+
+- `create_session()` mints an unguessable `uuid4`, records the session, and
+  returns the id.
+- `end_session(session_id)` invalidates that session and deletes its state.
+
+It owns no storage (session state lives in the server's configured
+`session_state_store`) and imposes no TTL (retention is the store's). It
+exists to mint and end owned session ids. Registration is not enforced: with
+no provider, no id can be created, so every `get_session(...)` rejects —
+a `session_id` tool without a provider simply cannot resolve a session.
+

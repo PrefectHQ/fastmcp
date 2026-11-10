@@ -40,10 +40,6 @@ from fastmcp.server.providers.skills.vendor_providers import (
 )
 
 
-# Backwards compatibility alias
-SkillsProvider = SkillsDirectoryProvider
-
-
 __all__ = [
     "ClaudeSkillsProvider",
     "CodexSkillsProvider",
@@ -54,6 +50,5 @@ __all__ = [
     "OpenCodeSkillsProvider",
     "SkillProvider",
     "SkillsDirectoryProvider",
-    "SkillsProvider",  # Backwards compatibility alias
     "VSCodeSkillsProvider",
 ]

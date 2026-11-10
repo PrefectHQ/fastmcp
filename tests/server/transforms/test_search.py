@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 from unittest.mock import MagicMock
 
-import mcp.types as mcp_types
+import mcp_types
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
@@ -137,6 +137,28 @@ class TestBaseTransformBehavior:
         assert await mcp.get_tool("find_tools") is not None
         assert await mcp.get_tool("run_tool") is not None
 
+    @pytest.mark.parametrize(
+        "transform_cls", [RegexSearchTransform, BM25SearchTransform]
+    )
+    async def test_synthetic_tools_have_titles(self, transform_cls):
+        """Synthetic search/call tools must carry a title.
+
+        Some MCP clients (e.g. ChatGPT) drop tools with no `title` field,
+        which breaks tool-search discovery entirely. See #4414.
+        """
+        mcp = _make_server_with_tools()
+        mcp.add_transform(
+            transform_cls(
+                search_tool_name="find_tools", call_tool_name="call_read_tool"
+            )
+        )
+        tools = await mcp.list_tools()
+        titles = {t.name: t.to_mcp_tool().title for t in tools}
+        assert titles == {
+            "find_tools": "Find Tools",
+            "call_read_tool": "Call Read Tool",
+        }
+
     async def test_search_respects_visibility_filtering(self):
         """Tools disabled via Visibility transform should not appear in search."""
         mcp = _make_server_with_tools()
@@ -188,7 +210,10 @@ class TestBaseTransformBehavior:
             await ctx.disable_components(names={"delete_record"})
             return "disabled"
 
-        async with Client(mcp) as client:
+        # Session visibility rules only persist across requests on the
+        # handshake era (see `test_session_visibility.py`); the modern
+        # protocol version has no session for them to persist in.
+        async with Client(mcp, mode="legacy") as client:
             # Before disabling, search should find delete_record
             result = await client.call_tool("search_tools", {"pattern": "delete"})
             found = _parse_tool_result(result)
@@ -301,6 +326,84 @@ class TestRegexSearch:
 
 
 class TestBM25Search:
+    @pytest.mark.parametrize("version", ["1", "2"], ids=["replacement", "new-version"])
+    async def test_search_returns_current_schema(self, version: str) -> None:
+        mcp = FastMCP("test", on_duplicate="replace")
+        mcp.add_transform(BM25SearchTransform())
+
+        @mcp.tool(name="job_status", version="1")
+        def old(state: Literal["queued"]) -> str:
+            """Check job status."""
+            return state
+
+        await mcp.call_tool("search_tools", {"query": "status"})
+
+        @mcp.tool(name="job_status", version=version)
+        def new(state: Literal["running"]) -> int:
+            """Check job status."""
+            return 1
+
+        result = await mcp.call_tool("search_tools", {"query": "status"})
+        current = await mcp.get_tool("job_status")
+        assert current is not None
+        (found,) = _parse_tool_result(result)
+        assert found["inputSchema"] == current.parameters
+        assert found["outputSchema"] == current.output_schema
+        assert found["_meta"]["fastmcp"]["version"] == version
+
+    async def test_cached_index_resolves_current_tools_after_reordering(self) -> None:
+        def alpha() -> str:
+            return "alpha"
+
+        def beta() -> str:
+            return "beta"
+
+        first = Tool.from_function(alpha)
+        second = Tool.from_function(beta)
+        transform = BM25SearchTransform()
+        assert await transform._search([first, second], "alpha") == [first]
+        index = transform._index
+
+        updated = first.model_copy(update={"title": "Updated alpha"})
+        results = await transform._search([second, updated], "alpha")
+        assert results == [updated]
+        assert transform._index is index
+
+    async def test_search_rebuilds_when_names_change_but_searchable_text_matches(
+        self,
+    ) -> None:
+        def action() -> str:
+            return "ok"
+
+        first = Tool.from_function(action, name="foo", description="bar")
+        other = Tool.from_function(action, name="baz")
+        # "foo" with description "bar" and the bare name "foo bar" produce the
+        # same searchable text, so a text-only staleness check would keep the
+        # stale name list and fail to resolve the renamed tool.
+        renamed = Tool.from_function(action, name="foo bar")
+
+        transform = BM25SearchTransform()
+        assert await transform._search([first, other], "bar") == [first]
+
+        results = await transform._search([renamed, other], "bar")
+        assert results == [renamed]
+
+    async def test_search_rebuilds_when_description_contains_catalog_delimiter(
+        self,
+    ) -> None:
+        def action() -> str:
+            return "ok"
+
+        first = Tool.from_function(action, name="get", description="user data")
+        second = Tool.from_function(action, name="list", description="orders")
+        replacement = Tool.from_function(
+            action, name="get", description="user data|list orders"
+        )
+        transform = BM25SearchTransform()
+        assert await transform._search([first, second], "orders") == [second]
+
+        assert await transform._search([replacement], "orders") == [replacement]
+
     async def test_search_relevance(self):
         mcp = _make_server_with_tools()
         mcp.add_transform(BM25SearchTransform())
@@ -410,6 +513,18 @@ class TestBM25Index:
         index = _BM25Index()
         index.build(["alpha beta gamma"])
         assert index.query("zzz", 5) == []
+
+    def test_unicode_tokens(self):
+        index = _BM25Index()
+        index.build(["show portfolio", "показать портфель"])
+        assert index.query("портфель", 5) == [1]
+
+    def test_unicode_normalization(self):
+        index = _BM25Index()
+        index.build(["Straße ＰＯＲＴＦＯＬＩＯ cafe\u0301"])
+        assert index.query("STRASSE", 5) == [0]
+        assert index.query("portfolio", 5) == [0]
+        assert index.query("café", 5) == [0]
 
 
 # ---------------------------------------------------------------------------

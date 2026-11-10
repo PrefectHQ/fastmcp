@@ -1,0 +1,31 @@
+---
+title: session_scoped_event_store
+sidebarTitle: session_scoped_event_store
+---
+
+# `fastmcp.server.session_scoped_event_store`
+
+
+Lightweight session scoping for Streamable HTTP event stores.
+
+## Classes
+
+### `SessionScopedEventStore` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/session_scoped_event_store.py#L19" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+EventStore adapter that isolates stream IDs to one transport session.
+
+
+**Methods:**
+
+#### `store_event` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/session_scoped_event_store.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+store_event(self, stream_id: StreamId, message: JSONRPCMessage | None) -> EventId
+```
+
+#### `replay_events_after` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/session_scoped_event_store.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+replay_events_after(self, last_event_id: EventId, send_callback: EventCallback) -> StreamId | None
+```

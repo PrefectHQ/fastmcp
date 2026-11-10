@@ -102,6 +102,47 @@ class TestSchemaGeneration:
         assert param_map["id"]["location"] == "body"
         assert param_map["name"]["location"] == "body"
 
+    def test_non_body_parameter_collision_handling(self):
+        """Test that same-named parameters in different locations use suffixes."""
+        route = HTTPRoute(
+            method="GET",
+            path="/users/{id}",
+            operation_id="get_user",
+            parameters=[
+                ParameterInfo(
+                    name="id",
+                    location="path",
+                    required=True,
+                    schema={"type": "string"},
+                ),
+                ParameterInfo(
+                    name="id",
+                    location="query",
+                    required=False,
+                    schema={"type": "string"},
+                ),
+                ParameterInfo(
+                    name="id",
+                    location="header",
+                    required=False,
+                    schema={"type": "string"},
+                ),
+            ],
+        )
+
+        schema, param_map = _combine_schemas_and_map_params(route)
+
+        properties = schema["properties"]
+        assert "id" not in properties
+        assert "id__path" in properties
+        assert "id__query" in properties
+        assert "id__header" in properties
+
+        assert schema["required"] == ["id__path"]
+        assert param_map["id__path"] == {"location": "path", "openapi_name": "id"}
+        assert param_map["id__query"] == {"location": "query", "openapi_name": "id"}
+        assert param_map["id__header"] == {"location": "header", "openapi_name": "id"}
+
     @pytest.mark.parametrize(
         "param_type",
         [

@@ -41,6 +41,8 @@ Token validation must address several security requirements: signature verificat
 
 The challenge in MCP environments is that clients need to obtain valid tokens before making requests, but the MCP protocol doesn't provide built-in discovery mechanisms for token endpoints. Clients must obtain tokens through separate channels or prior configuration.
 
+On the streamable-HTTP transport, each session is additionally bound to the credential that created it: a request that presents a different credential for an existing `Mcp-Session-Id` is rejected with a 404, exactly as if the session did not exist. A leaked session id is therefore useless without the original credential. Session identity is the `(client_id, issuer, subject)` triple your verifier populates.
+
 
 ## TokenVerifier Class
 
@@ -48,9 +50,9 @@ FastMCP provides the `TokenVerifier` class to handle token validation complexity
 
 `TokenVerifier` focuses exclusively on token validation without providing OAuth discovery metadata. This makes it ideal for internal systems where clients already know how to obtain tokens, or for microservices that trust tokens from known issuers.
 
-The class validates token signatures, checks expiration timestamps, and extracts authorization information from token claims. It supports various token formats and validation strategies while maintaining a consistent interface for authorization decisions.
+`TokenVerifier` is a base class: each implementation defines `verify_token`, which returns an `AccessToken` for a valid token and `None` otherwise. FastMCP ships implementations for JWTs, opaque tokens, and development use, described below. Each one presents the same interface to the rest of the server, so authorization decisions don't depend on the token format.
 
-You can subclass `TokenVerifier` to implement custom validation logic for specialized token formats or validation requirements. The base class handles common patterns while allowing extension for unique use cases.
+You can subclass `TokenVerifier` and implement `verify_token` yourself for specialized token formats or validation requirements.
 
 ## JWT Token Verification
 
@@ -76,7 +78,24 @@ mcp = FastMCP(name="Protected API", auth=verifier)
 
 This configuration creates a server that validates JWTs issued by `auth.yourcompany.com`. The verifier periodically fetches public keys from the JWKS endpoint and validates incoming tokens against those keys. Only tokens with the correct issuer and audience claims will be accepted.
 
+The verifier caches keys for one hour and shares a refresh among concurrent requests. `jwks_refresh_interval` sets the minimum time between refresh attempts, including failed attempts, and defaults to 30 seconds. A token with a newly rotated key ID may need to wait until that interval passes. Tokens using a known, fresh key continue to validate during the interval. Set `jwks_refresh_interval=0` to allow a refresh on every cache miss.
+
 The `issuer` parameter ensures tokens come from your trusted authentication system, while `audience` validation prevents tokens intended for other services from being accepted by your MCP server.
+
+`JWTVerifier` accepts RSA (`RS*` and `PS*`), ECDSA (`ES*`), and Edwards-curve (`Ed25519` and `Ed448`) signatures from JWKS endpoints. Set `algorithm` when your issuer does not use the default `RS256`:
+
+```python
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+verifier = JWTVerifier(
+    jwks_uri="https://auth.yourcompany.com/.well-known/jwks.json",
+    issuer="https://auth.yourcompany.com",
+    audience="mcp-production-api",
+    algorithm="Ed25519",
+)
+```
+
+The legacy `EdDSA` identifier is also accepted for compatibility with identity providers that have not yet adopted the fully specified identifiers from RFC 9864.
 
 ### Symmetric Key Verification (HMAC)
 
@@ -119,7 +138,7 @@ The parameter is named `public_key` for backwards compatibility, but when using 
 
 ### Static Public Key Verification
 
-Static public key verification works when you have a fixed RSA or ECDSA signing key and don't need automatic key rotation. This approach is primarily useful for development environments or controlled deployments where JWKS endpoints aren't available.
+Static public key verification works when you have a fixed RSA, ECDSA, or EdDSA signing key and don't need automatic key rotation. This approach is primarily useful for development environments or controlled deployments where JWKS endpoints aren't available.
 
 ```python
 from fastmcp import FastMCP
@@ -139,7 +158,8 @@ verifier = JWTVerifier(
 mcp = FastMCP(name="Protected API", auth=verifier)
 ```
 
-This configuration validates tokens using a specific RSA or ECDSA public key. The key must correspond to the private key used by your token issuer. While less flexible than JWKS endpoints, this approach can be useful in development environments or when testing with fixed keys.
+This configuration validates tokens using a specific RSA, ECDSA, or EdDSA public key. The key must correspond to the private key used by your token issuer. While less flexible than JWKS endpoints, this approach can be useful in development environments or when testing with fixed keys.
+
 ## Opaque Token Verification
 
 Many authorization servers issue opaque tokens rather than self-contained JWTs. Opaque tokens are random strings that carry no information themselves - the authorization server maintains their state and validation requires querying the server. FastMCP supports opaque token validation through OAuth 2.0 Token Introspection (RFC 7662).
@@ -173,6 +193,23 @@ mcp = FastMCP(name="Protected API", auth=verifier)
 
 The verifier authenticates to the introspection endpoint using client credentials and queries it whenever a bearer token arrives. FastMCP checks whether the token is active and has sufficient scopes before allowing access.
 
+Introspection results are not cached by default, so a token revoked at the authorization server is rejected on its next request. Set `cache_ttl_seconds` to cache results for that many seconds when the per-request network call costs more than immediate revocation is worth; `max_cache_size` bounds the cache and defaults to 10,000 tokens.
+
+If your authorization server returns an `aud` field, set `audience` to select tokens for your API. You can provide one audience or a list of allowed audiences. The response must contain a matching string or an array of nonempty strings with at least one match; a missing or malformed `aud` is rejected when `audience` is configured.
+
+```python
+from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
+
+verifier = IntrospectionTokenVerifier(
+    introspection_url="https://auth.yourcompany.com/oauth/introspect",
+    client_id="mcp-resource-server",
+    client_secret="your-client-secret",
+    audience="mcp-production-api",
+)
+```
+
+The default, `audience=None`, leaves audience selection to your authorization server's introspection policy. The introspection `client_id` authenticates the request to that server; it does not set the expected token audience.
+
 Two standard client authentication methods are supported, both defined in RFC 6749:
 
 - **`client_secret_basic`** (default): Sends credentials via HTTP Basic Auth header
@@ -181,6 +218,8 @@ Two standard client authentication methods are supported, both defined in RFC 67
 Most OAuth providers support both methods, though some may require one specifically. Configure the authentication method with the `client_auth_method` parameter:
 
 ```python
+from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
+
 # Use POST body authentication instead of Basic Auth
 verifier = IntrospectionTokenVerifier(
     introspection_url="https://auth.yourcompany.com/oauth/introspect",
@@ -249,6 +288,7 @@ By default, `DebugTokenVerifier` accepts any non-empty token as valid. This elim
 For more controlled testing, provide custom validation logic:
 
 ```python
+from fastmcp import FastMCP
 from fastmcp.server.auth.providers.debug import DebugTokenVerifier
 
 # Synchronous validation - check token prefix
@@ -264,12 +304,18 @@ mcp = FastMCP(name="Development Server", auth=verifier)
 The validation callable can also be async, enabling database lookups or external service calls:
 
 ```python
+from redis.asyncio import Redis
+
+from fastmcp import FastMCP
 from fastmcp.server.auth.providers.debug import DebugTokenVerifier
 
-# Asynchronous validation - check against cache
+redis = Redis()
+
+
+# Asynchronous validation - check against Redis
 async def validate_token(token: str) -> bool:
-    # Check if token exists in Redis, database, etc.
-    return await redis.exists(f"valid_tokens:{token}")
+    return await redis.exists(f"valid_tokens:{token}") > 0
+
 
 verifier = DebugTokenVerifier(
     validate=validate_token,
@@ -325,21 +371,21 @@ This pattern enables comprehensive testing of JWT validation logic without depen
 
 <VersionBadge version="2.18.0" />
 
-All token verifiers that make HTTP calls accept an optional `http_client` parameter. This lets you provide your own `httpx.AsyncClient` for connection pooling, custom TLS configuration, or proxy settings.
+All token verifiers that make HTTP calls accept an optional `http_client` parameter. This lets you provide your own `httpx2.AsyncClient` for connection pooling, custom TLS configuration, or proxy settings.
 
 ### Connection Pooling
 
 By default, each token verification call creates a fresh HTTP client. Under high load, this means repeated TCP connections and TLS handshakes. Providing a shared client enables connection pooling across calls:
 
 ```python
-import httpx
+import httpx2
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
 
 # Create a shared client with connection pooling
-http_client = httpx.AsyncClient(
+http_client = httpx2.AsyncClient(
     timeout=10,
-    limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+    limits=httpx2.Limits(max_connections=20, max_keepalive_connections=10),
 )
 
 verifier = IntrospectionTokenVerifier(
@@ -355,7 +401,10 @@ mcp = FastMCP(name="Protected API", auth=verifier)
 The same pattern works for `JWTVerifier` when using JWKS endpoints:
 
 ```python
+import httpx2
 from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+http_client = httpx2.AsyncClient(timeout=10)
 
 verifier = JWTVerifier(
     jwks_uri="https://auth.yourcompany.com/.well-known/jwks.json",
@@ -373,10 +422,12 @@ When you provide an `http_client`, you are responsible for its lifecycle. The ve
 
 ```python
 from contextlib import asynccontextmanager
+
+import httpx2
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
 
-http_client = httpx.AsyncClient(timeout=10)
+http_client = httpx2.AsyncClient(timeout=10)
 
 verifier = IntrospectionTokenVerifier(
     introspection_url="https://auth.example.com/introspect",
@@ -394,7 +445,7 @@ mcp = FastMCP(name="My API", auth=verifier, lifespan=lifespan)
 ```
 </Note>
 
-The convenience providers (`GitHubProvider`, `GoogleProvider`, `DiscordProvider`, `WorkOSProvider`, `AzureProvider`) also accept `http_client` and pass it through to their internal token verifier.
+The convenience providers (`GitHubProvider`, `GoogleProvider`, `DiscordProvider`, `WorkOSProvider`, `AzureProvider`, `ClerkProvider`, `HuggingFaceProvider`) also accept `http_client` and pass it through to their internal token verifier.
 
 ## Production Configuration
 
@@ -423,4 +474,3 @@ mcp = FastMCP(name="Production API", auth=verifier)
 This keeps configuration out of your codebase while maintaining explicit setup.
 
 This approach enables the same codebase to run across development, staging, and production environments with different authentication requirements. Development might use static tokens while production uses JWT verification, all controlled through environment configuration.
-

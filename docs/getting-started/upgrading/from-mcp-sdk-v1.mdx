@@ -1,0 +1,258 @@
+---
+title: Upgrading from MCP SDK v1
+sidebarTitle: "From MCP SDK v1"
+description: Upgrade from FastMCP 1.0, bundled in v1 of the MCP Python SDK, to the standalone FastMCP framework
+icon: up
+---
+
+If your server starts with `from mcp.server.fastmcp import FastMCP`, you're using FastMCP 1.0 — the version bundled with v1 of the `mcp` package. Upgrading to the standalone FastMCP framework is easy. **For most servers, it's a single import change.**
+
+```python test="skip"
+# Before
+from mcp.server.fastmcp import FastMCP
+
+# After
+from fastmcp import FastMCP
+```
+
+That's it. Your `@mcp.tool`, `@mcp.resource`, and `@mcp.prompt` decorators, your `mcp.run()` call, and the rest of your server code all work as-is.
+
+<Tip>
+**Why upgrade?** FastMCP 1.0 pioneered the Pythonic MCP server experience, and we're proud it was bundled into the `mcp` package. The standalone FastMCP project has since grown into a full framework for taking MCP servers from prototype to production — with composition, middleware, proxy servers, authentication, and much more. Upgrading gives you access to all of that, plus ongoing updates and fixes.
+</Tip>
+
+## The SDK v2 Transition
+
+MCP SDK v2 is a substantial, deliberate modernization of the protocol layer, and part of that work rebuilt the high-level server as `MCPServer` under `mcp.server.mcpserver`. `mcp.server.fastmcp` does not exist there — so a FastMCP 1.0 server meets the change the moment its environment resolves `mcp` to v2:
+
+```
+ModuleNotFoundError: No module named 'mcp.server.fastmcp'
+```
+
+Often nobody chose that moment. An unpinned `mcp` dependency, a fresh lockfile, or a rebuilt container picks up the new major version and the module your server imports on line one has moved. Nothing is wrong with your code, and nothing is wrong with the SDK — major versions are exactly where a change like this belongs. Your build just crossed it earlier than you planned to.
+
+Pinning the SDK back restores the old module immediately, with no code changes, and buys you time to choose deliberately:
+
+```bash
+pip install "mcp<2"
+```
+
+## Two Upgrade Paths
+
+From here, both directions are reasonable, and which is less work depends on which API you already write.
+
+**`MCPServer`, the SDK's high-level server**, is a capable, well-designed API and the direct continuation of the SDK's own line. Because it was rebuilt rather than renamed, expect real work: a new class and import, a different decorator call style, and protocol types imported from the standalone `mcp_types` package with snake_case field names.
+
+**FastMCP** is the import change at the top of this page. It is short for a specific, historical reason: FastMCP 1.0 *is* early FastMCP — it was contributed into the `mcp` package, and the standalone project kept developing that same high-level API. The surface you already write against is the surface FastMCP still offers. FastMCP 4 is itself built on MCP SDK v2, so both paths land you on the same modern protocol layer; FastMCP absorbs the adaptation internally rather than asking your code to do it.
+
+The claim is narrower than it may sound. It holds for FastMCP 1.0 servers specifically, because of shared lineage — not because one library is better than the other. Both projects are moving the same direction on the same protocol.
+
+If you have already moved to SDK v2 and write against `MCPServer` today, see [Upgrading from MCP SDK v2](/getting-started/upgrading/from-mcp-sdk-v2). If your server uses the low-level `Server` class rather than the high-level one, see [Upgrading from the Low-Level SDK v1](/getting-started/upgrading/from-low-level-sdk-v1).
+
+## Install
+
+FastMCP 4 is a stable release:
+
+```bash
+pip install "fastmcp>=4"
+```
+
+The `fastmcp` package depends on `fastmcp-slim` at the same version; both resolve together with no extra constraints.
+
+FastMCP depends on the `mcp` package, so the SDK stays installed and importable. What changes is which parts of it you reach for. FastMCP 4 builds on SDK v2, where `mcp.server.fastmcp` is gone — anything you imported from it needs a new home, and the sections below cover that. `mcp.types` still resolves (it aliases the standalone `mcp_types` package), though its fields are snake_case now. Update your import, run your server, and if your tools work, you're done.
+
+<Prompt description="Copy this prompt into any LLM along with your server code to get automated upgrade guidance.">
+You are upgrading an MCP server from FastMCP 1.0 (bundled in v1 of the `mcp` package) to standalone FastMCP 4.
+
+FIRST, fetch https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk-v1 — it explains every item below, with the replacement code. Fetch https://gofastmcp.com for anything the guide doesn't cover. Do not invent a FastMCP API you have not confirmed in the docs.
+
+For most servers the entire upgrade is the first item. Work through the rest looking for signals, and report only what you actually find.
+
+THE IMPORT (every server needs this)
+- `from mcp.server.fastmcp import FastMCP` → `from fastmcp import FastMCP`
+- `from mcp.server.fastmcp import Context`
+- `from mcp.server.fastmcp import Image`
+
+CONSTRUCTOR ARGUMENTS THAT MOVED (all raise TypeError)
+- moved to run()/http_app(), and FastMCP names them in the error: host, port, log_level, debug, sse_path, message_path, streamable_http_path, json_response, stateless_http
+- moved but rejected with only a generic "unexpected keyword argument", so flag these explicitly: `event_store=` (→ `http_app(event_store=...)`; dropping it silently disables streamable-HTTP resumability), `retry_interval=` and `session_idle_timeout=` (→ the same keywords on `http_app()`), `mount_path=` (→ `http_app(path=...)`), `transport=` (→ `run(transport=...)`), `transport_security=` (→ host/origin settings on `http_app()`), `warn_on_duplicate_tools/_resources/_prompts=` (→ one `on_duplicate=`), `dependencies=` (→ a fastmcp.json file)
+- `name`, `instructions`, `website_url`, `icons`, `tools`, `lifespan` carry over unchanged
+- note when reporting: FastMCP names the streamable HTTP transport "http", not "streamable-http"
+
+CONTEXT METHODS WITH CHANGED SIGNATURES (compile fine, fail at runtime)
+- `ctx.log(level, message)` → `ctx.log(message, level=...)`, message first
+- `ctx.elicit(..., schema=Model)` → `response_type=Model`
+- `ctx.read_resource(uri)` → returns a `ResourceResult`; read `.contents` rather than iterating the return value
+- `ctx.info` / `debug` / `warning` / `error`, `ctx.report_progress`, `ctx.request_id`, `ctx.client_id` are unchanged
+
+AUTHENTICATION (the one case where the single import change is NOT enough)
+- `token_verifier=` and `auth_server_provider=` — both raise TypeError on FastMCP 4
+- `auth=AuthSettings(...)` — the keyword survives but the value does not: FastMCP's `auth=` takes a FastMCP `AuthProvider`, not the SDK settings object
+Report these as a real migration, not a rename: FastMCP consolidates all three into one provider, and ships `JWTVerifier` for tokens you already issue, `RemoteAuthProvider` for delegating to an external authorization server, `OAuthProxy` for wrapping a provider without Dynamic Client Registration, and named providers for GitHub, Google, Auth0, Keycloak, and others. Look up the right one at https://gofastmcp.com/servers/auth/authentication rather than guessing.
+
+PROMPT RETURN VALUES
+- prompt functions returning `PromptMessage`, or `TextContent`-wrapped content
+- prompt functions returning raw dicts with "role"/"content" keys — FastMCP 1.0 coerced these silently, standalone FastMCP does not
+
+OTHER mcp.* IMPORTS
+- anything from `mcp.types` — the import path still works in the SDK v2 that FastMCP 4 builds on, but the fields were renamed from camelCase to snake_case
+- `from mcp.server.stdio import stdio_server` and any transport boilerplate around it
+- `mcp.types.TextContent` / `ImageContent` used to wrap tool return values — FastMCP has friendlier equivalents, so prefer those over keeping the raw protocol types
+
+For each item found, show the original line, name what changed, and give the corrected code from the guide. If the only change needed is the import, say so plainly rather than manufacturing work.
+</Prompt>
+
+## What Might Need Updating
+
+Most servers need nothing beyond the import change. Skim the sections below to see if any apply.
+
+### Constructor Settings
+
+If you passed transport settings like `host` or `port` directly to `FastMCP()`, those now belong on `run()`. This keeps your server definition independent of how it's deployed:
+
+```python test="skip"
+from fastmcp import FastMCP
+
+# Before
+mcp = FastMCP("my-server", host="0.0.0.0", port=8080)
+mcp.run()
+
+# After
+mcp = FastMCP("my-server")
+mcp.run(transport="http", host="0.0.0.0", port=8080)
+```
+
+Nine arguments move this way, and each raises a `TypeError` naming its own replacement, so you can also just run the server and follow the errors: `host`, `port`, `log_level`, `debug`, `sse_path`, `message_path`, `streamable_http_path`, `json_response`, and `stateless_http`.
+
+A second group is rejected with only a generic "unexpected keyword argument" and no hint, which makes these the ones worth reading in advance:
+
+| SDK v1 `FastMCP(...)` | FastMCP 4 |
+|---|---|
+| `event_store=` | `mcp.http_app(event_store=...)` |
+| `retry_interval=`, `session_idle_timeout=` | the same keywords on `mcp.http_app()` |
+| `mount_path=` | `mcp.http_app(path=...)` |
+| `transport=` | `mcp.run(transport=...)` |
+| `transport_security=` | `host_origin_protection=`, `allowed_hosts=`, `allowed_origins=` on `http_app()` |
+| `warn_on_duplicate_tools=`, `_resources=`, `_prompts=` | a single `on_duplicate=` |
+| `dependencies=[...]` | a [`fastmcp.json`](/deployment/server-configuration) configuration file |
+| `auth_server_provider=`, `token_verifier=` | a single `auth=` provider — see [Authentication](#authentication) below |
+
+Dropping `event_store=` rather than moving it is the one to watch: it silently disables streamable-HTTP resumability, so a client that reconnects loses the events it missed instead of replaying them.
+
+`name`, `instructions`, `website_url`, `icons`, `tools`, and `lifespan` carry over to the constructor unchanged.
+
+### Authentication
+
+This is the one case where the import change alone won't do. FastMCP 1.0 exposed the SDK's auth plumbing as three separate constructor arguments — `token_verifier=`, `auth_server_provider=`, and `auth=AuthSettings(...)`. The first two raise `TypeError` on FastMCP 4, and while `auth=` survives as a keyword, its value doesn't: FastMCP expects one of its own `AuthProvider` objects rather than the SDK's settings object.
+
+The replacement is a single provider carrying the whole configuration, chosen by what you're actually doing:
+
+| What you were doing | FastMCP provider |
+|---|---|
+| Validating JWTs you already issue | `JWTVerifier` |
+| Delegating to an external authorization server | `RemoteAuthProvider` |
+| Wrapping a provider without Dynamic Client Registration | `OAuthProxy` |
+| GitHub, Google, Auth0, Keycloak, WorkOS, … | the matching named provider |
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth import JWTVerifier
+
+mcp = FastMCP("my-server", auth=JWTVerifier(jwks_uri="https://example.com/.well-known/jwks.json"))
+```
+
+See [Authentication](/servers/auth/authentication) for the full set and their configuration.
+
+### Context Methods
+
+`from fastmcp import Context` gets you the injected context object, but three of its methods took a different shape in FastMCP 1.0, and a bare import swap leaves calls that compile and then fail:
+
+| SDK v1 | FastMCP 4 |
+|---|---|
+| `ctx.log(level, message)` | `ctx.log(message, level=...)` — message is first now |
+| `ctx.elicit(message, schema=Model)` | `ctx.elicit(message, response_type=Model)` |
+| `ctx.read_resource(uri)` | returns a `ResourceResult`; the payload is under `.contents` rather than being iterable directly |
+
+`ctx.info()` and its `debug`/`warning`/`error` siblings, `ctx.report_progress()`, `ctx.request_id`, and `ctx.client_id` are unchanged.
+
+### Prompts
+
+If your prompt functions return `mcp.types.PromptMessage` objects or raw dicts with `role`/`content` keys, upgrade them to FastMCP's `Message` class. Or just return a plain string — it's automatically wrapped as a user message. FastMCP 1.0 silently coerced dicts into messages; standalone FastMCP requires typed `Message` objects or strings.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("prompts")
+
+@mcp.prompt
+def review(code: str) -> str:
+    """Review code for issues"""
+    return f"Please review this code:\n\n{code}"
+```
+
+Multi-turn prompts return a list of messages. `Message` takes the text positionally and defaults to the user role, so only the assistant turns need a `role`:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.prompts import Message
+
+mcp = FastMCP("prompts")
+
+@mcp.prompt
+def debug(error: str) -> list[Message]:
+    """Start a debugging session"""
+    return [
+        Message(f"I'm seeing this error:\n\n{error}"),
+        Message("I'll help debug that. Can you share the relevant code?", role="assistant"),
+    ]
+```
+
+### Other `mcp.*` Imports
+
+FastMCP 4 builds on MCP SDK v2, which moved the protocol types into a standalone `mcp_types` package and re-exports it as `mcp.types` — so `from mcp.types import X` keeps working. The field names did change, from camelCase to snake_case (`inputSchema` → `input_schema`, `mimeType` → `mime_type`, and so on). For everything else SDK v2 changed, see [Upgrading from FastMCP 3](/getting-started/upgrading/from-fastmcp-3), which covers the same protocol rebuild from the FastMCP side.
+
+Where FastMCP provides its own API for the same thing, it's worth switching over rather than importing the protocol type:
+
+| MCP SDK v1 | FastMCP equivalent |
+|---|---|
+| `mcp.types.TextContent(type="text", text=str(x))` | Just return `x` from your tool |
+| `mcp.types.ImageContent(...)` | `from fastmcp.utilities.types import Image` |
+| `mcp.types.PromptMessage(...)` | `from fastmcp.prompts import Message` |
+| `mcp.server.fastmcp.Context` | `from fastmcp import Context` |
+| `from mcp.server.stdio import stdio_server` | Not needed — `mcp.run()` handles transport |
+
+For protocol types without a FastMCP equivalent, import them from `mcp_types` directly.
+
+### Decorated Functions
+
+Decorators return your original function unchanged, as they did in FastMCP 1.0, so decorated functions stay callable for testing, reuse, and composition. FastMCP 1.0 required the call form, `@mcp.tool()`; FastMCP accepts that and the bare `@mcp.tool` alike:
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("greeter")
+
+@mcp.tool
+def greet(name: str) -> str:
+    """Greet someone"""
+    return f"Hello, {name}!"
+
+# This works now — the function is still a regular function
+assert greet("World") == "Hello, World!"
+```
+
+When you need the component object itself, reach it through the server with `await mcp.get_tool("greet")`.
+
+## Verifying the Upgrade
+
+Run your server the way you always have. To confirm every component came across, inspect the server with the FastMCP CLI:
+
+```bash
+fastmcp inspect my_server.py
+```
+
+The summary counts the tools, resources, templates, and prompts your server exposes, and `--format fastmcp` prints each one in full, so a component that failed to register shows up here rather than at the first client call.
+
+## Looking Ahead
+
+The MCP ecosystem is evolving fast. Part of FastMCP's job is to absorb that complexity on your behalf — as the protocol and its tooling grow, we do the work so your server code doesn't have to change. The SDK v1 to v2 transition is the clearest example so far: an entire protocol layer was rewritten underneath FastMCP 4, and the servers on this page cross it with one line.

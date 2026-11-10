@@ -9,13 +9,14 @@ Run with:
 
 import asyncio
 import json
+from pathlib import Path
 
 from fastmcp.client import Client
 
 
 async def main():
     # Connect to the server
-    async with Client("examples/prompts_as_tools/server.py") as client:
+    async with Client(Path("examples/prompts_as_tools/server.py")) as client:
         # List all available tools
         print("=== Available Tools ===")
         tools = await client.list_tools()

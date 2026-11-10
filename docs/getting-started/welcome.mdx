@@ -1,27 +1,13 @@
 ---
-title: "Welcome to FastMCP"
+title: "FastMCP: The Framework for MCP"
 sidebarTitle: "Welcome!"
-description: The fast, Pythonic way to build MCP servers, clients, and applications.
+description: FastMCP is the standard framework for building Model Context Protocol (MCP) servers, clients, and interactive applications.
 icon: hand-wave
 mode: center
 ---
-{/* <img
-  src="/assets/brand/f-watercolor-waves-4.png"
 
-  alt="'F' logo on a watercolor background"
-  noZoom
-  className="rounded-2xl block dark:hidden"
-  /> 
-  <img
-  src="/assets/brand/f-watercolor-waves-4-dark.png"
-  alt="'F' logo on a watercolor background"
-  noZoom
-  className="rounded-2xl hidden dark:block"
-  />
-
-  
-  */}
 <video
+  aria-hidden="true"
   autoPlay
   muted
   loop
@@ -30,6 +16,7 @@ mode: center
   src="/assets/brand/f-watercolor-waves-4-animated.mp4"
 ></video>
 <video
+  aria-hidden="true"
   autoPlay
   muted
   loop
@@ -38,97 +25,114 @@ mode: center
   src="/assets/brand/f-watercolor-waves-4-dark-animated.mp4"
 ></video>
 
+**FastMCP is a full framework for building [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) applications.** It gives you one coherent API for servers, clients, and interactive apps. Use it to expose Python functions as MCP tools, connect to local or remote MCP servers, and return interactive interfaces directly from your tools. FastMCP manages schema generation, validation, transport, authentication, and protocol compatibility around your application code.
 
-**FastMCP is the standard framework for building MCP applications.** The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) connects LLMs to tools and data. FastMCP gives you everything you need to go from prototype to production — build servers that expose capabilities, connect clients to any MCP service, and give your tools interactive UIs:
+A FastMCP server starts with ordinary Python:
 
 ```python {1}
 from fastmcp import FastMCP
 
 mcp = FastMCP("Demo 🚀")
 
+
 @mcp.tool
 def add(a: int, b: int) -> int:
-    """Add two numbers"""
+    """Add two numbers."""
     return a + b
+
 
 if __name__ == "__main__":
     mcp.run()
 ```
 
+## Move fast and make things
 
-## Move Fast and Make Things
+An effective MCP application needs more than a function registry. Models need accurate schemas, callers need validated results, clients need compatible transports, and production servers need authentication and predictable lifecycle management.
 
-The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) lets you give agents access to your tools and data. But building an effective MCP application is harder than it looks.
+FastMCP treats those as framework responsibilities. Declare a Python function and FastMCP derives its schema, validates its inputs and outputs, and exposes it through MCP. Connect a client to a URL and FastMCP handles protocol negotiation, authentication, and connection lifecycle. Your application remains ordinary Python while FastMCP keeps the MCP boundary correct.
 
-FastMCP handles all of it. Declare a tool with a Python function, and the schema, validation, and documentation are generated automatically. Connect to a server with a URL, and transport negotiation, authentication, and protocol lifecycle are managed for you. You focus on your logic, and the MCP part just works: **with FastMCP, best practices are built in.**
+**That's why FastMCP is the standard framework for working with MCP.** FastMCP created the high-level Python API incorporated into the official MCP Python SDK in 2024. The actively maintained standalone project is now downloaded more than a million times a day, and some version of FastMCP powers 70% of MCP servers across all languages.
 
-**That's why FastMCP is the standard framework for working with MCP.** FastMCP 1.0 was incorporated into the official MCP Python SDK in 2024. Today, the actively maintained standalone project is downloaded a million times a day, and some version of FastMCP powers 70% of MCP servers across all languages.
+## Servers, clients, and apps
 
-FastMCP has three pillars:
+FastMCP covers the full MCP application lifecycle through three complementary pillars:
 
 <CardGroup cols={3}>
   <Card title="Servers" img="/assets/images/servers-card.png" href="/servers/server">
-    Expose tools, resources, and prompts to LLMs.
+    Expose Python functions, data, and instructions as MCP tools, resources, and prompts.
   </Card>
   <Card title="Apps" img="/assets/images/apps-card.png" href="/apps/overview">
-    Give your tools interactive UIs rendered directly in the conversation.
+    Give MCP tools interactive user interfaces rendered directly in the conversation.
   </Card>
   <Card title="Clients" img="/assets/images/clients-card.png" href="/clients/client">
-    Connect to any MCP server — local or remote, programmatic or CLI.
+    Connect to any MCP server through Python, the command line, or another MCP application.
   </Card>
 </CardGroup>
 
-**[Servers](/servers/server)** wrap your Python functions into MCP-compliant tools, resources, and prompts. **[Clients](/clients/client)** connect to any server with full protocol support. And **[Apps](/apps/overview)** give your tools interactive UIs rendered directly in the conversation.
+**[Servers](/servers/server)** turn your application logic into MCP capabilities with generated schemas and validation. **[Clients](/clients/client)** connect to local or remote MCP servers with full protocol support. **[Apps](/apps/overview)** let tools return forms, tables, charts, and other interactive interfaces alongside ordinary MCP results.
 
-Ready to build? Start with the [installation guide](/getting-started/installation) or jump straight to the [quickstart](/getting-started/quickstart).
+The three pillars share one model: FastMCP owns the protocol machinery while your code defines what the application does.
+
+**Building in TypeScript?** [FastMCP for TypeScript](https://github.com/PrefectHQ/fastmcp-ts) is the official counterpart, built and maintained by the same team. Its servers, clients, and apps follow the same concepts, so what you learn here carries over.
+
+<CardGroup cols={2}>
+  <Card title="Install FastMCP" icon="download" href="/getting-started/installation">
+    Add FastMCP to your project with `uv add fastmcp`, verify the package, and find the right upgrade guide.
+  </Card>
+  <Card title="Build your first server" icon="rocket-launch" href="/getting-started/quickstart">
+    Create a tool, run its server, call it from a client, and add an interactive UI.
+  </Card>
+</CardGroup>
 
 FastMCP is made with 💙 by [Prefect](https://www.prefect.io/).
 
-## Run FastMCP in production with Horizon
-
-FastMCP is the standard way to build MCP servers. **[Prefect Horizon](https://www.prefect.io/horizon?utm_source=gofastmcp&utm_medium=docs&utm_campaign=docs_welcome&utm_content=welcome_body)** is the enterprise MCP gateway for running them safely.
-
-Built by the FastMCP team, Horizon packages the best practices we've learned shipping the world's most popular MCP framework.
-
-Deploy FastMCP servers from GitHub with branch previews and instant rollback. Create a private registry of every MCP your company uses. Secure access with SSO and tool-level RBAC. Get audit logs, observability, and governance across your MCP stack. Remix approved tools into purpose-built endpoints for teams and agents.
-
-Start with FastMCP. [Scale with Horizon →](https://www.prefect.io/horizon?utm_source=gofastmcp&utm_medium=docs&utm_campaign=docs_welcome&utm_content=welcome_cta)
-
 <Tip>
-**This documentation reflects FastMCP's `main` branch**, meaning it always reflects the latest development version. Features are generally marked with version badges (e.g. `New in version: 3.0.0`) to indicate when they were introduced. Note that this may include features that are not yet released.
+**This documentation reflects FastMCP's `main` branch**, so it may describe features that have not reached a stable release. Version badges identify when features were introduced.
 </Tip>
 
-## LLM-Friendly Docs
+<a id="scale-mcp-with-horizon" />
 
-The FastMCP documentation is available in multiple LLM-friendly formats:
+## Scale MCP with FastMCP Gateway
 
-### MCP Server
+FastMCP handles the MCP application layer. **[FastMCP Gateway](https://www.prefect.io/horizon?utm_source=gofastmcp&utm_medium=docs&utm_campaign=docs_welcome&utm_content=welcome_body)** is the enterprise MCP gateway for scaling servers and tools across teams, with centralized governance over how they are deployed, discovered, secured, and used.
 
-The FastMCP docs are accessible via MCP! The server URL is `https://gofastmcp.com/mcp`.
+FastMCP Gateway applies the operational patterns developed while maintaining FastMCP: deploy servers from GitHub with branch previews and instant rollback, organize them in a private registry, protect access with SSO and tool-level RBAC, and observe activity through audit logs and telemetry.
 
-In fact, you can use FastMCP to search the FastMCP docs:
+FastMCP Gateway can also combine approved tools into purpose-built MCP endpoints for different teams and agents, while keeping access policy and governance centralized.
+
+Start with FastMCP. [Scale with FastMCP Gateway →](https://www.prefect.io/horizon?utm_source=gofastmcp&utm_medium=docs&utm_campaign=docs_welcome&utm_content=welcome_cta)
+
+## LLM-friendly docs
+
+FastMCP documentation is designed for developers and coding agents. Every page is available as Markdown, the complete documentation is published in `llms.txt` formats, and the documentation itself is exposed through an MCP server.
+
+### MCP server
+
+Point any MCP-compatible agent at `https://gofastmcp.com/mcp` to let it search the documentation as it works. You can also connect with FastMCP's Python client directly:
 
 ```python
 import asyncio
+
 from fastmcp import Client
 
-async def main():
+
+async def main() -> None:
     async with Client("https://gofastmcp.com/mcp") as client:
         result = await client.call_tool(
             name="search_fast_mcp",
-            arguments={"query": "deploy a FastMCP server"}
+            arguments={"query": "deploy a FastMCP server"},
         )
-    print(result)
+        print(result)
+
 
 asyncio.run(main())
 ```
 
-### Text Formats
+### Markdown formats
 
-The docs are also available in [llms.txt format](https://llmstxt.org/):
-- [llms.txt](https://gofastmcp.com/llms.txt) - A sitemap listing all documentation pages
-- [llms-full.txt](https://gofastmcp.com/llms-full.txt) - The entire documentation in one file (may exceed context windows)
+The documentation is also available in [`llms.txt`](https://llmstxt.org/) formats:
 
-Any page can be accessed as markdown by appending `.md` to the URL. For example, this page becomes `https://gofastmcp.com/getting-started/welcome.md`.
+- [`llms.txt`](https://gofastmcp.com/llms.txt) lists every documentation page.
+- [`llms-full.txt`](https://gofastmcp.com/llms-full.txt) contains the complete documentation in one file and may exceed some context windows.
 
-You can also copy any page as markdown by pressing "Cmd+C" (or "Ctrl+C" on Windows) on your keyboard.
+Append `.md` to any documentation URL to retrieve that page as Markdown. For example, this page is available at `https://gofastmcp.com/getting-started/welcome.md`. You can also copy the current page as Markdown by pressing `Cmd+C` or `Ctrl+C`.

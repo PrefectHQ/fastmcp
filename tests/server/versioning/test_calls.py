@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.utilities.versions import (

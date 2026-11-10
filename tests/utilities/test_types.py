@@ -3,9 +3,10 @@ import os
 from typing import Annotated, Any, cast
 
 import pytest
-from mcp.types import BlobResourceContents, TextResourceContents
+from mcp_types import BlobResourceContents, TextResourceContents
 from pydantic import Field
 
+from fastmcp import Client, FastMCP
 from fastmcp.utilities.types import (
     Audio,
     File,
@@ -163,6 +164,23 @@ class TestImage:
         image = Image(data=b"test", format="jpeg")
         assert image._mime_type == "image/jpeg"
 
+    @pytest.mark.parametrize(
+        "fmt,mime_type",
+        [
+            ("jpg", "image/jpeg"),
+            ("JPG", "image/jpeg"),
+            ("svg", "image/svg+xml"),
+            ("tif", "image/tiff"),
+            ("png", "image/png"),
+            ("avif", "image/avif"),
+        ],
+    )
+    def test_mime_type_from_format(self, fmt, mime_type):
+        """Format aliases map to the same MIME type as the matching file extension."""
+        image = Image(data=b"test", format=fmt)
+        assert image._mime_type == mime_type
+        assert image.to_image_content().mime_type == mime_type
+
     def test_missing_data_and_path_raises_error(self):
         """Test that error is raised when neither path nor data is provided."""
         with pytest.raises(ValueError, match="Either path or data must be provided"):
@@ -204,7 +222,7 @@ class TestImage:
         content = img.to_image_content()
 
         assert content.type == "image"
-        assert content.mimeType == "image/png"
+        assert content.mime_type == "image/png"
         assert content.data == base64.b64encode(test_data).decode()
 
         # Test with data
@@ -212,7 +230,7 @@ class TestImage:
         content = img.to_image_content()
 
         assert content.type == "image"
-        assert content.mimeType == "image/jpeg"
+        assert content.mime_type == "image/jpeg"
         assert content.data == base64.b64encode(test_data).decode()
 
     def test_to_image_content_error(self, monkeypatch):
@@ -282,10 +300,25 @@ class TestAudio:
         assert audio.data == b"test"
         assert audio._mime_type == "audio/wav"  # Default for raw data
 
+    def test_mime_type_from_format(self):
+        """Test MIME type normalization from audio format."""
+
+        expected = {
+            "wav": "audio/wav",
+            "mp3": "audio/mpeg",
+            "ogg": "audio/ogg",
+            "m4a": "audio/mp4",
+            "flac": "audio/flac",
+        }
+
+        for fmt, mime in expected.items():
+            audio = Audio(data=b"test", format=fmt)
+            assert audio._mime_type == mime
+
     def test_audio_initialization_with_format(self):
         """Test audio initialization with a specific format."""
         audio = Audio(data=b"test", format="mp3")
-        assert audio._mime_type == "audio/mp3"
+        assert audio._mime_type == "audio/mpeg"
 
     def test_missing_data_and_path_raises_error(self):
         """Test that error is raised when neither path nor data is provided."""
@@ -316,6 +349,46 @@ class TestAudio:
             audio = Audio(path=path)
             assert audio._mime_type == mime
 
+    @pytest.mark.parametrize(
+        "extension,mime_type",
+        [
+            ("opus", "audio/ogg"),
+            ("aac", "audio/aac"),
+            ("webm", "audio/webm"),
+            ("aiff", "audio/aiff"),
+            ("aif", "audio/aiff"),
+        ],
+    )
+    @pytest.mark.parametrize("uppercase", [False, True])
+    async def test_path_and_format_agree_on_mime_type(
+        self, tmp_path, extension, mime_type, uppercase
+    ):
+        """A file extension maps to the same MIME type as the matching format."""
+        if uppercase:
+            extension = extension.upper()
+        path = tmp_path / f"test.{extension}"
+        path.write_bytes(b"fake audio data")
+
+        from_path = Audio(path=path)
+        from_format = Audio(data=b"test", format=extension)
+
+        assert from_path._mime_type == mime_type
+        assert from_format._mime_type == mime_type
+        assert from_path.to_audio_content().mime_type == mime_type
+
+        server = FastMCP()
+
+        @server.tool
+        def audio() -> Audio:
+            return from_path
+
+        async with Client(server) as client:
+            result = await client.call_tool("audio")
+
+        assert result.content[0].type == "audio"
+        assert result.content[0].mime_type == mime_type
+        assert base64.b64decode(result.content[0].data) == path.read_bytes()
+
     def test_to_audio_content(self, tmp_path, monkeypatch):
         """Test conversion to AudioContent."""
         # Test with path
@@ -327,7 +400,7 @@ class TestAudio:
         content = audio.to_audio_content()
 
         assert content.type == "audio"
-        assert content.mimeType == "audio/wav"
+        assert content.mime_type == "audio/wav"
         assert content.data == base64.b64encode(test_data).decode()
 
         # Test with data
@@ -335,7 +408,7 @@ class TestAudio:
         content = audio.to_audio_content()
 
         assert content.type == "audio"
-        assert content.mimeType == "audio/mp3"
+        assert content.mime_type == "audio/mpeg"
         assert content.data == base64.b64encode(test_data).decode()
 
     def test_to_audio_content_error(self, monkeypatch):
@@ -359,7 +432,7 @@ class TestAudio:
         content = audio.to_audio_content(mime_type="audio/custom")
 
         assert content.type == "audio"
-        assert content.mimeType == "audio/custom"
+        assert content.mime_type == "audio/custom"
         assert content.data == base64.b64encode(test_data).decode()
 
 
@@ -405,6 +478,31 @@ class TestFile:
         file = File(data=b"test", format="pdf")
         assert file._mime_type == "application/pdf"
 
+    @pytest.mark.parametrize(
+        ("fmt", "mime_type"),
+        [
+            ("csv", "text/csv"),
+            ("HTML", "text/html"),
+            ("htm", "text/html"),
+            ("md", "text/markdown"),
+            ("markdown", "text/markdown"),
+            ("txt", "text/plain"),
+            ("pdf", "application/pdf"),
+        ],
+    )
+    def test_mime_type_from_format(self, fmt, mime_type):
+        """Text format aliases map to their canonical text/* MIME types."""
+        file = File(data=b"a,b", format=fmt)
+        assert file._mime_type == mime_type
+
+    def test_text_format_is_sent_as_text(self):
+        """A text/* format is embedded as text, not a base64 blob."""
+        file = File(data=b"a,b\n1,2\n", format="csv")
+        resource = file.to_resource_content().resource
+        assert isinstance(resource, TextResourceContents)
+        assert resource.mime_type == "text/csv"
+        assert resource.text == "a,b\n1,2\n"
+
     def test_file_initialization_with_name(self):
         """Test file initialization with a custom name."""
         file = File(data=b"test", name="custom")
@@ -442,7 +540,7 @@ class TestFile:
         resource = file.to_resource_content()
 
         assert resource.type == "resource"
-        assert resource.resource.mimeType == "text/plain"
+        assert resource.resource.mime_type == "text/plain"
         # Convert both to strings for comparison
         assert str(resource.resource.uri) == file_path.resolve().as_uri()
         if isinstance(resource.resource, BlobResourceContents):
@@ -455,11 +553,62 @@ class TestFile:
         resource = file.to_resource_content()
 
         assert resource.type == "resource"
-        assert resource.resource.mimeType == "application/pdf"
+        assert resource.resource.mime_type == "application/pdf"
         # Convert URI to string for comparison
         assert str(resource.resource.uri) == "file:///resource.pdf"
         if isinstance(resource.resource, BlobResourceContents):
             assert resource.resource.blob == base64.b64encode(test_data).decode()
+
+    def test_to_resource_content_with_data_and_name_without_extension(self):
+        """Test data-backed File URI with a custom name that needs an extension."""
+        file = File(data=b"test file data", format="pdf", name="report")
+        resource = file.to_resource_content()
+
+        assert resource.resource.mime_type == "application/pdf"
+        assert str(resource.resource.uri) == "file:///report.pdf"
+
+    def test_to_resource_content_with_data_preserves_name_extension(self):
+        """Test data-backed File URI preserves a custom name with an extension."""
+        file = File(data=b"test file data", format="pdf", name="report.pdf")
+        resource = file.to_resource_content()
+
+        assert resource.resource.mime_type == "application/pdf"
+        assert str(resource.resource.uri) == "file:///report.pdf"
+
+    @pytest.mark.parametrize(
+        ("kwargs", "expected_uri"),
+        [
+            (dict(format="txt"), "file:///resource.txt"),
+            (dict(format="md"), "file:///resource.md"),
+            (dict(format="md", name="README"), "file:///README.md"),
+            (dict(format="TXT"), "file:///resource.txt"),
+        ],
+    )
+    def test_to_resource_content_extension_follows_format(self, kwargs, expected_uri):
+        """The URI extension comes from `format`, not the MIME subtype."""
+        file = File(data=b"hello", **kwargs)
+        resource = file.to_resource_content()
+
+        assert str(resource.resource.uri) == expected_uri
+
+    @pytest.mark.parametrize(
+        ("name", "expected_uri"),
+        [
+            ("report#draft.pdf", "file:///report%23draft.pdf"),
+            ("report?draft.pdf", "file:///report%3Fdraft.pdf"),
+            ("report%20draft.pdf", "file:///report%2520draft.pdf"),
+            ("report#draft", "file:///report%23draft.pdf"),
+            ("report draft.pdf", "file:///report%20draft.pdf"),
+            ("résumé.pdf", "file:///r%C3%A9sum%C3%A9.pdf"),
+            ("reports/report.pdf", "file:///reports/report.pdf"),
+        ],
+    )
+    def test_to_resource_content_encodes_name(self, name: str, expected_uri: str):
+        file = File(data=b"report data", format="pdf", name=name)
+
+        resource = file.to_resource_content()
+
+        assert resource.resource.uri == expected_uri
 
     def test_to_resource_content_with_text_data(self):
         """Test conversion to ResourceContent with text data (TextResourceContents)."""
@@ -469,7 +618,7 @@ class TestFile:
         assert resource.type == "resource"
         # Should be TextResourceContents for text/plain
         assert isinstance(resource.resource, TextResourceContents)
-        assert resource.resource.mimeType == "text/plain"
+        assert resource.resource.mime_type == "text/plain"
         assert resource.resource.text == "hello world"
 
     def test_to_resource_content_error(self, monkeypatch):
@@ -490,7 +639,7 @@ class TestFile:
         file = File(path=file_path)
         resource = file.to_resource_content(mime_type="application/custom")
 
-        assert resource.resource.mimeType == "application/custom"
+        assert resource.resource.mime_type == "application/custom"
 
 
 class TestReplaceType:

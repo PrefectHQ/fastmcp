@@ -1,6 +1,8 @@
-import httpx
+import httpx2
 import pytest
 from pydantic import AnyHttpUrl
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from fastmcp import FastMCP
 from fastmcp.server.auth import RemoteAuthProvider
@@ -180,6 +182,44 @@ class TestRemoteAuthProvider:
             "https://api.example.com/mcp"
         )
 
+    def test_init_preserves_all_legacy_positional_slots(self, test_tokens):
+        token_verifier = StaticTokenVerifier(
+            tokens=test_tokens, required_scopes=["read"]
+        )
+        documentation_url = AnyHttpUrl("https://docs.example.com/auth")
+
+        provider = RemoteAuthProvider(
+            token_verifier,
+            [AnyHttpUrl("https://auth.example.com")],
+            "https://auth.example.com/proxy",
+            ["read"],
+            "https://api.example.com",
+            "Example API",
+            documentation_url,
+        )
+
+        assert provider._scopes_supported == ["read"]
+        assert provider.resource_base_url == AnyHttpUrl("https://api.example.com/")
+        assert provider.resource_name == "Example API"
+        assert provider.resource_documentation == documentation_url
+        assert provider._challenge_scopes is None
+
+    def test_challenge_scope_translation_falls_back_for_protocol_verifier(self):
+        class ProtocolVerifier:
+            required_scopes = ["read"]
+            scopes_supported = ["read", "admin"]
+
+            async def verify_token(self, token: str):
+                return None
+
+        provider = RemoteAuthProvider(
+            token_verifier=ProtocolVerifier(),  # ty: ignore[invalid-argument-type]
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com",
+        )
+
+        assert provider.get_challenge_scopes() == ["read"]
+
 
 class TestRemoteAuthProviderIntegration:
     """Integration tests for RemoteAuthProvider with FastMCP server."""
@@ -222,8 +262,8 @@ class TestRemoteAuthProviderIntegration:
         mcp = FastMCP("test-server", auth=basic_auth_provider)
         mcp_http_app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_http_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_http_app),
             base_url="https://api.example.com",
         ) as client:
             # The metadata URL is path-aware per RFC 9728
@@ -237,8 +277,8 @@ class TestRemoteAuthProviderIntegration:
         mcp = FastMCP("test-server", auth=auth_provider)
         mcp_http_app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_http_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_http_app),
             base_url="https://api.example.com",
         ) as client:
             # The metadata URL is path-aware per RFC 9728
@@ -257,8 +297,8 @@ class TestRemoteAuthProviderIntegration:
         mcp = FastMCP("test-server", auth=auth_provider)
         mcp_http_app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_http_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_http_app),
             base_url="https://api.example.com",
         ) as client:
             # The metadata URL is path-aware per RFC 9728
@@ -289,8 +329,8 @@ class TestRemoteAuthProviderIntegration:
         resource_path = resource_parsed.path.lstrip("/")
         metadata_path = f"/.well-known/oauth-protected-resource/{resource_path}"
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_http_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_http_app),
             base_url="https://test.example.com",
         ) as client:
             # The metadata URL is path-aware per RFC 9728
@@ -314,8 +354,8 @@ class TestRemoteAuthProviderIntegration:
         mcp = FastMCP("test-server", auth=auth_provider)
         mcp_http_app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_http_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_http_app),
             base_url="https://api.example.com",
         ) as client:
             # The metadata URL is path-aware per RFC 9728
@@ -338,8 +378,8 @@ class TestRemoteAuthProviderIntegration:
         mcp = FastMCP("test-server", auth=auth_provider)
         mcp_http_app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_http_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_http_app),
             base_url="https://api.example.com",
         ) as client:
             # The metadata URL is path-aware per RFC 9728
@@ -423,8 +463,8 @@ class TestRemoteAuthProviderIntegration:
         mcp = FastMCP("test-server", auth=auth_provider)
         mcp_http_app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_http_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_http_app),
             base_url="https://my-server.com",
         ) as client:
             # The metadata URL is path-aware per RFC 9728
@@ -460,8 +500,8 @@ class TestRemoteAuthProviderIntegration:
         mcp = FastMCP("test-server", auth=auth_provider)
         mcp_http_app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_http_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_http_app),
             base_url="https://my-server.com",
         ) as client:
             # The metadata URL is path-aware per RFC 9728
@@ -498,8 +538,8 @@ class TestRemoteAuthProviderIntegration:
         mcp = FastMCP("test-server", auth=auth_provider)
         mcp_http_app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_http_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_http_app),
             base_url="https://my-server.com",
         ) as client:
             # The metadata URL is path-aware per RFC 9728
@@ -533,8 +573,8 @@ class TestRemoteAuthProviderIntegration:
         mcp = FastMCP("test-server", auth=provider)
         mcp_http_app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_http_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_http_app),
             base_url="https://my-server.com",
         ) as client:
             response = await client.get("/.well-known/oauth-protected-resource/mcp")
@@ -561,8 +601,8 @@ class TestRemoteAuthProviderIntegration:
         mcp = FastMCP("test-server", auth=provider)
         mcp_http_app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_http_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_http_app),
             base_url="https://my-server.com",
         ) as client:
             response = await client.get("/.well-known/oauth-protected-resource/mcp")
@@ -570,3 +610,41 @@ class TestRemoteAuthProviderIntegration:
             assert response.status_code == 200
             data = response.json()
             assert data["scopes_supported"] == ["read"]
+
+    async def test_overridden_get_routes_receives_mcp_path(self):
+        """A subclass that forwards mcp_path keeps path-aware metadata."""
+
+        class CompanyAuthProvider(RemoteAuthProvider):
+            def get_routes(self, mcp_path: str | None = None) -> list[Route]:
+                routes = super().get_routes(mcp_path)
+
+                async def authorization_server_metadata(request):
+                    return JSONResponse({"issuer": "https://auth.example.com"})
+
+                routes.append(
+                    Route(
+                        "/.well-known/oauth-authorization-server",
+                        authorization_server_metadata,
+                    )
+                )
+                return routes
+
+        provider = CompanyAuthProvider(
+            token_verifier=StaticTokenVerifier(
+                tokens={"test": {"client_id": "c", "scopes": ["read"]}}
+            ),
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com",
+        )
+        app = FastMCP("Company API", auth=provider).http_app()
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
+            base_url="https://api.example.com",
+        ) as client:
+            metadata = await client.get("/.well-known/oauth-protected-resource/mcp")
+            custom = await client.get("/.well-known/oauth-authorization-server")
+
+        assert metadata.status_code == 200
+        assert custom.status_code == 200
+        assert custom.json()["issuer"] == "https://auth.example.com"

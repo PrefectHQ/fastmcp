@@ -21,7 +21,7 @@ The answer lies in **standardization**. The AI ecosystem is fragmented. Every mo
 
 1.  **Interoperability:** Build one MCP server, and it can be used by any MCP-compliant client (Claude, Gemini, OpenAI, custom agents, etc.) without custom integration code. This is the protocol's most important promise.
 2.  **Discoverability:** Clients can dynamically ask a server what it's capable of at runtime. They receive a structured, machine-readable "menu" of tools and resources.
-3.  **Security & Safety:** MCP provides a clear, sandboxed boundary. An LLM can't execute arbitrary code on your server; it can only *request* to run the specific, typed, and validated functions you explicitly expose.
+3.  **Explicit boundaries:** MCP gives hosts and servers a typed inventory of the capabilities they expose. That creates a clear place to apply authorization, user confirmation, input validation, and sandboxing; the protocol defines the interface, while your application supplies those security policies.
 4.  **Composability:** You can build small, specialized MCP servers and combine them to create powerful, complex applications.
 
 ## Core MCP Components 
@@ -111,10 +111,6 @@ def summarize_text(text_to_summarize: str) -> str:
 
 ## Advanced Capabilities
 
-Beyond the core components, MCP also supports more advanced interaction patterns, such as a server requesting that the *client's* LLM generate a completion (known as **sampling**), or a server sending asynchronous **notifications** to a client. These features enable more complex, bidirectional workflows and are fully supported by FastMCP.
+Beyond tools, resources, and prompts, MCP supports richer interaction patterns such as notifications, progress updates, user elicitation, and argument completion. Extensions add capabilities such as durable background tasks.
 
-## Next Steps
-
-Now that you understand the core concepts of the Model Context Protocol, you're ready to start building. The best place to begin is our step-by-step tutorial.
-
-[**Tutorial: How to Create an MCP Server in Python →**](/tutorials/create-mcp-server)
+FastMCP exposes these patterns through typed Python APIs. For example, [elicitation](/servers/elicitation) lets tools request missing information or confirmation, while [background tasks](/servers/tasks) let long-running work continue after the original request returns.

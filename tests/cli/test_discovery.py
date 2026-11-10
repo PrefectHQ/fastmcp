@@ -140,6 +140,30 @@ class TestParseMcpConfig:
         servers = _parse_mcp_config(path, "test")
         assert servers == []
 
+    def test_invalid_server_does_not_hide_valid_servers(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ):
+        path = tmp_path / "config.json"
+        _write_config(
+            path,
+            {
+                "mcpServers": {
+                    "working": {
+                        "command": "python",
+                        "args": ["server.py"],
+                    },
+                    "broken": {
+                        "args": ["missing-command.py"],
+                    },
+                }
+            },
+        )
+
+        servers = _parse_mcp_config(path, "test")
+
+        assert [server.name for server in servers] == ["working"]
+        assert "broken" in caplog.text
+
     def test_remote_server(self, tmp_path: Path):
         path = tmp_path / "config.json"
         _write_config(path, _REMOTE_CONFIG)
@@ -147,6 +171,40 @@ class TestParseMcpConfig:
         assert len(servers) == 1
         assert isinstance(servers[0].config, RemoteMCPServer)
         assert servers[0].config.url == "http://localhost:8000/mcp"
+
+    def test_reads_as_utf8_explicitly(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Regression test for GH-4689: config files must be read with an
+        explicit UTF-8 encoding, not the platform's preferred encoding
+        (e.g. cp949 on Windows with a non-UTF-8 locale), since that's what
+        every tool that writes these files emits."""
+        original_read_text = Path.read_text
+
+        def _tracking_read_text(self: Path, *args: Any, **kwargs: Any) -> str:
+            assert kwargs.get("encoding") == "utf-8", (
+                "path.read_text() must pass encoding='utf-8' explicitly"
+            )
+            return original_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", _tracking_read_text)
+
+        path = tmp_path / "config.json"
+        path.write_bytes(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "demo": {
+                            "command": "echo",
+                            "args": ["hello — world"],
+                        }
+                    }
+                }
+            ).encode("utf-8")
+        )
+        servers = _parse_mcp_config(path, "test")
+        assert len(servers) == 1
+        assert servers[0].name == "demo"
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +317,50 @@ class TestScanClaudeCode:
                 project_path=str(project_dir),
                 project_servers={"api": {"url": "http://localhost:8000/mcp"}},
             ),
+        )
+        servers = _scan_claude_code(project_dir)
+        assert len(servers) == 1
+        assert servers[0].name == "api"
+
+    def test_project_servers_match_posix_path_key(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Claude Code on Windows stores project keys with forward slashes."""
+        monkeypatch.setattr("fastmcp.cli.discovery.Path.home", lambda: tmp_path)
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+        config_path = tmp_path / ".claude.json"
+        _write_config(
+            config_path,
+            _claude_code_config(
+                project_path=project_dir.resolve().as_posix(),
+                project_servers={"api": {"url": "http://localhost:8000/mcp"}},
+            ),
+        )
+        servers = _scan_claude_code(project_dir)
+        assert len(servers) == 1
+        assert servers[0].name == "api"
+
+    def test_duplicate_project_key_spellings_use_one_entry(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr("fastmcp.cli.discovery.Path.home", lambda: tmp_path)
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+        posix_dir = project_dir.resolve().as_posix()
+        config_path = tmp_path / ".claude.json"
+        _write_config(
+            config_path,
+            {
+                "projects": {
+                    f"{posix_dir}/": {
+                        "mcpServers": {"api": {"url": "http://localhost:8000/mcp"}}
+                    },
+                    posix_dir.replace("/my-project", "/./my-project"): {
+                        "mcpServers": {"api": {"url": "http://localhost:9000/mcp"}}
+                    },
+                }
+            },
         )
         servers = _scan_claude_code(project_dir)
         assert len(servers) == 1
@@ -457,6 +559,90 @@ _GOOSE_CONFIG = {
 
 
 class TestScanGoose:
+    @pytest.fixture(params=["linux", "win32"])
+    def goose_config_path(
+        self,
+        request: pytest.FixtureRequest,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> Path:
+        monkeypatch.setattr("fastmcp.cli.discovery.Path.home", lambda: tmp_path)
+        monkeypatch.setattr("fastmcp.cli.discovery.sys.platform", request.param)
+        config_root = tmp_path / "config-root"
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(config_root))
+        monkeypatch.setenv("APPDATA", str(config_root))
+        if request.param == "win32":
+            path = config_root / "Block" / "goose" / "config" / "config.yaml"
+        else:
+            path = config_root / "goose" / "config.yaml"
+        path.parent.mkdir(parents=True)
+        return path
+
+    @pytest.mark.parametrize(
+        "url", ["https://example.com/mcp", "https://example.com/sse"]
+    )
+    @pytest.mark.parametrize("headers", [None, {"X-Tenant": "test-only"}])
+    def test_streamable_http_discovery_and_resolution(
+        self,
+        goose_config_path: Path,
+        tmp_path: Path,
+        url: str,
+        headers: dict[str, str] | None,
+    ):
+        extension: dict[str, Any] = {
+            "enabled": True,
+            "type": "streamable_http",
+            "uri": url,
+        }
+        if headers is not None:
+            extension["headers"] = headers
+        config = {"extensions": {**_GOOSE_CONFIG["extensions"], "remote": extension}}
+        goose_config_path.write_text(yaml.dump(config), encoding="utf-8")
+
+        servers = {s.name: s for s in _scan_goose()}
+        assert set(servers) == {"tavily", "remote"}
+        remote = servers["remote"]
+        assert remote.qualified_name == "goose:remote"
+        assert remote.config_path == goose_config_path
+        assert isinstance(remote.config, RemoteMCPServer)
+        assert remote.config.url == url
+        assert remote.config.transport == "http"
+        assert remote.config.headers == (headers or {})
+        assert isinstance(servers["tavily"].config, StdioMCPServer)
+
+        transport = resolve_name("goose:remote", start_dir=tmp_path)
+        assert isinstance(transport, StreamableHttpTransport)
+        assert transport.url == url
+        assert transport.headers == (headers or {})
+
+    def test_skips_disabled_and_invalid_http_extensions(self, goose_config_path: Path):
+        goose_config_path.write_text(
+            yaml.dump(
+                {
+                    "extensions": {
+                        **_GOOSE_CONFIG["extensions"],
+                        "disabled-remote": {
+                            "enabled": False,
+                            "type": "streamable_http",
+                            "uri": "https://example.com/mcp",
+                        },
+                        "missing-uri": {"type": "streamable_http"},
+                        "invalid-headers": {
+                            "type": "streamable_http",
+                            "uri": "https://example.com/mcp",
+                            "headers": {"X-Tenant": []},
+                        },
+                        "legacy": {"type": "sse", "uri": "https://example.com/sse"},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        servers = {s.name: s for s in _scan_goose()}
+        assert set(servers) == {"tavily", "legacy"}
+        assert isinstance(servers["legacy"].config, RemoteMCPServer)
+        assert isinstance(servers["legacy"].config.to_transport(), SSETransport)
+
     def test_finds_stdio_extensions(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):

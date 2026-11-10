@@ -108,13 +108,24 @@ mcp = FastMCP(name="My Server", auth=auth)
 </ParamField>
 
 <ParamField body="algorithm" type="str | None">
-  JWT algorithm to use for token verification (e.g., "RS256"). If not specified,
-  uses the provider's default. Only used when `token_verifier` is not provided.
+  JWT algorithm to use for token verification (e.g., "ES256"). Defaults to
+  `RS256`. Only used when `token_verifier` is not provided.
 </ParamField>
 
 <ParamField body="required_scopes" type="list[str] | None">
   List of OAuth scopes for token validation. These are automatically
   included in authorization requests. Only used when `token_verifier` is not provided.
+</ParamField>
+
+<ParamField body="verify_id_token" type="bool" default="False">
+
+<VersionBadge version="3.0.1" />
+  Verify the upstream OIDC `id_token` instead of the access token. Use this for
+  providers that issue opaque access tokens but standard JWT ID tokens. The
+  default verifier then checks the ID token's audience against `client_id`, and
+  `required_scopes` is enforced on FastMCP-issued tokens instead of the upstream
+  token, since ID tokens carry no scope claim. The upstream access token is
+  still stored for calls to the provider's APIs.
 </ParamField>
 
 <ParamField body="redirect_path" type="str" default="/auth/callback">
@@ -124,12 +135,21 @@ mcp = FastMCP(name="My Server", auth=auth)
 
 <ParamField body="allowed_client_redirect_uris" type="list[str] | None">
   List of allowed redirect URI patterns for MCP clients. Patterns support wildcards (e.g., `"http://localhost:*"`, `"https://*.example.com/*"`).
-  - `None` (default): All redirect URIs allowed (for MCP/DCR compatibility)
+  - `None` (default): DCR clients use registered redirect URIs, with loopback ports allowed to vary for MCP compatibility. Unsafe browser schemes such as `javascript:`, `data:`, `file:`, and `vbscript:` are rejected.
   - Empty list `[]`: No redirect URIs allowed
   - Custom list: Only matching patterns allowed
 
-These patterns apply to MCP client loopback redirects, NOT the upstream OAuth app redirect URI.
+These patterns apply to MCP client loopback redirects. Configure the upstream OAuth app redirect URI separately with `redirect_path`.
 
+</ParamField>
+
+<ParamField body="valid_scopes" type="list[str] | None">
+  The complete set of scopes clients are allowed to request — the full set of
+  available scopes (a superset of `required_scopes`). These are advertised to
+  clients through the `/.well-known` endpoints (as `scopes_supported`) and
+  enforced at Dynamic Client Registration: a client registering with a scope
+  outside this set is rejected. Defaults to `required_scopes` from your token
+  verifier if not specified.
 </ParamField>
 
 <ParamField body="token_endpoint_auth_method" type="str | None">
@@ -137,7 +157,7 @@ These patterns apply to MCP client loopback redirects, NOT the upstream OAuth ap
   - `"client_secret_basic"`: Send credentials in Authorization header (most common)
   - `"client_secret_post"`: Send credentials in request body (required by some providers)
   - `"none"`: No authentication (for public clients)
-  - `None` (default): Uses authlib's default (typically `"client_secret_basic"`)
+  - `None` (default): `"client_secret_basic"` when a client secret is configured, `"none"` otherwise
 
 Set this if your provider requires a specific authentication method and the default doesn't work.
 
@@ -146,14 +166,13 @@ Set this if your provider requires a specific authentication method and the defa
 <ParamField body="jwt_signing_key" type="str | bytes | None">
 
 <VersionBadge version="2.13.0" />
-  Secret used to sign FastMCP JWT tokens issued to clients. Accepts any string or bytes - will be derived into a proper 32-byte cryptographic key using HKDF.
+  Secret used to sign FastMCP JWT tokens issued to clients. **`bytes`** are used as-is, with no stretching, so supply at least 32 bytes of high-entropy key material. With the default file-backed client storage, the bytes must also decode as UTF-8; use `secrets.token_urlsafe(32).encode()` instead of raw `secrets.token_bytes()`, or configure `client_storage` explicitly. **A string** is stretched into a 32-byte key with PBKDF2 (1,000,000 iterations), since a supplied string may be low-entropy.
 
   **Default behavior (`None`):**
-  - **Mac/Windows**: Auto-managed via system keyring. Keys are generated once and persisted, surviving server restarts with zero configuration. Keys are automatically derived from server attributes, so this approach, while convenient, is **only** suitable for development and local testing. For production, you must provide an explicit secret.
-  - **Linux**: Ephemeral (random salt at startup). Tokens become invalid on server restart, triggering client re-authentication.
+  The key is deterministically derived from `client_secret` using HKDF, on every platform. Because the derivation is deterministic, the same key is produced across restarts as long as `client_secret` doesn't change, so tokens remain valid without any extra configuration. This convenience makes it **only** suitable for development and local testing.
 
   **For production:**
-  Provide an explicit secret (e.g., from environment variable) to use a fixed key instead of the auto-generated one.
+  Provide an explicit `jwt_signing_key` (e.g., from an environment variable) rather than relying on the auto-derived key.
 </ParamField>
 
 <ParamField body="client_storage" type="AsyncKeyValue | None">
@@ -162,10 +181,9 @@ Set this if your provider requires a specific authentication method and the defa
   Storage backend for persisting OAuth client registrations and upstream tokens.
 
   **Default behavior:**
-  - **Mac/Windows**: Encrypted DiskStore in your platform's data directory (derived from `platformdirs`)
-  - **Linux**: MemoryStore (ephemeral - clients lost on restart)
+  Encrypted disk store in your platform's data directory (derived from `platformdirs`), on every platform including Linux. The encryption key is itself derived from `jwt_signing_key`.
 
-  By default on Mac/Windows, clients are automatically persisted to encrypted disk storage, allowing them to survive server restarts as long as the filesystem remains accessible. This means MCP clients only need to register once and can reconnect seamlessly. On Linux where keyring isn't available, ephemeral storage is used to match the ephemeral key strategy.
+  By default, clients are automatically persisted to encrypted disk storage, allowing them to survive server restarts as long as the filesystem remains accessible. This means MCP clients only need to register once and can reconnect seamlessly.
 
 For production deployments with multiple servers or cloud deployments, use a network-accessible storage backend rather than local disk storage. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest.** See [Storage Backends](/servers/storage-backends) for available options.
 
@@ -199,11 +217,15 @@ auth = OIDCProxy(
 </ParamField>
 
 <ParamField body="require_authorization_consent" type='bool | Literal["remember", "external"]' default="True">
-  Consent screen behavior for authorization requests. Accepts `True` (default; always prompt — strongest protection), `"remember"` (silent consent on return visits via signed cookie, gated by `Sec-Fetch-Site` to block AS-in-the-middle attacks), `"external"` (consent handled by upstream IdP or custom page), or `False` (disable entirely; local/testing only). See the [OAuthProxy documentation](/servers/auth/oauth-proxy) for full details on each mode and the security trade-offs.
+  Consent screen behavior for authorization requests. Accepts `True` (default; always prompt — strongest protection), `"remember"` (silent consent on return visits via signed cookie, gated by `Sec-Fetch-Site` to block AS-in-the-middle attacks), `"external"` (same authorization path as `False`, but the warning is suppressed because the operator asserts that equivalent protections are enforced externally), or `False` (disable entirely; local/testing only). See the [OAuthProxy documentation](/servers/auth/oauth-proxy) for full details on each mode and the security trade-offs.
+
+  `False` and `"external"` disable FastMCP's consent and browser-binding checks, reducing protection against confused deputy and AS-in-the-middle attacks unless equivalent checks are enforced elsewhere. FastMCP does not provide or verify external enforcement. `"remember"` is also weaker than the default `True`, since its cross-site detection is a browser heuristic.
 </ParamField>
 
 <ParamField body="consent_csp_policy" type="str | None" default="None">
   Content Security Policy for the consent page.
+
+  Disabling or weakening this policy reduces browser protections against content injection unless your deployment supplies an equivalent CSP header; FastMCP does not verify that header.
 
   - `None` (default): Uses the built-in CSP policy with appropriate directives for form submission
   - Empty string `""`: Disables CSP entirely (no meta tag rendered)
@@ -213,25 +235,28 @@ auth = OIDCProxy(
 </ParamField>
 </Card>
 
+`OIDCProxy` also accepts `issuer_url`, `forward_resource`, `extra_authorize_params`, `extra_token_params`, the token expiry options, and `identity_assertion`, with the same meaning as on [`OAuthProxy`](/servers/auth/oauth-proxy#configuration-parameters). When you set `audience`, it is added to both the authorization and token requests; an `audience` key in `extra_authorize_params` or `extra_token_params` takes precedence.
+
 ### Using Built-in Providers
 
 FastMCP includes pre-configured OIDC providers for common services:
 
 ```python
+from fastmcp import FastMCP
 from fastmcp.server.auth.providers.auth0 import Auth0Provider
 
 auth = Auth0Provider(
-    config_url="https://.../.well-known/openid-configuration",
+    config_url="https://your-tenant.us.auth0.com/.well-known/openid-configuration",
     client_id="your-auth0-client-id",
     client_secret="your-auth0-client-secret",
-    audience="https://...",
-    base_url="https://localhost:8000"
+    audience="https://your-api-identifier.com",
+    base_url="http://localhost:8000"
 )
 
 mcp = FastMCP(name="My Server", auth=auth)
 ```
 
-Available providers include `Auth0Provider` at present.
+Available providers include [`Auth0Provider`](/integrations/auth0), [`AWSCognitoProvider`](/integrations/aws-cognito), and [`OCIProvider`](/integrations/oci).
 
 ### Scope Configuration
 
@@ -270,7 +295,7 @@ auth = Auth0Provider(
     client_id=os.environ.get("AUTH0_CLIENT_ID"),
     client_secret=os.environ.get("AUTH0_CLIENT_SECRET"),
     audience=os.environ.get("AUTH0_AUDIENCE"),
-    base_url=os.environ.get("BASE_URL", "https://localhost:8000")
+    base_url=os.environ.get("BASE_URL", "http://localhost:8000")
 )
 
 mcp = FastMCP(name="My Server", auth=auth)

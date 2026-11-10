@@ -1,12 +1,22 @@
-"""Tests for middleware support during initialization."""
+"""Tests for middleware support during initialization.
+
+`on_initialize` only fires for the `initialize` handshake, which is unique to
+the older protocol version; the modern version connects without it, so a
+default client never triggers this hook. Most tests below pin `mode="legacy"`
+for that reason. `test_session_state_persists_across_tool_calls` pins for a
+different reason: it exercises `ctx.set_state`/`get_state` persisting across
+multiple tool calls in the same client session, which requires the
+handshake-era's persistent session (see `test_session_visibility.py` for the
+same distinction applied to a different feature).
+"""
 
 from collections.abc import Sequence
 from typing import Any
 
-import mcp.types as mt
+import mcp_types as mt
 import pytest
-from mcp import McpError
-from mcp.types import ErrorData, TextContent
+from mcp import MCPError
+from mcp_types import TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -39,7 +49,7 @@ class InitializationMiddleware(Middleware):
         if hasattr(context.message, "params") and hasattr(
             context.message.params, "clientInfo"
         ):
-            self.client_info = context.message.params.clientInfo
+            self.client_info = context.message.params.client_info
 
         # Store in instance for cross-request access
         # (session state is not available during on_initialize)
@@ -96,7 +106,7 @@ class ClientDetectionMiddleware(Middleware):
                 if tool.annotations is None:
                     tool.annotations = mt.ToolAnnotations()
                 # Mark as read-only for test clients
-                tool.annotations.readOnlyHint = True
+                tool.annotations.read_only_hint = True
             self.tools_modified = True
 
         return tools
@@ -123,7 +133,7 @@ async def test_simple_initialization_hook():
     server.add_middleware(middleware)
 
     # Connect client
-    async with Client(server):
+    async with Client(server, mode="legacy"):
         # Middleware should have been called
         assert middleware.called is True, "on_initialize was not called"
 
@@ -139,7 +149,7 @@ async def test_middleware_receives_initialization():
         return f"Result: {x}"
 
     # Connect client
-    async with Client(server) as client:
+    async with Client(server, mode="legacy") as client:
         # Middleware should have been called during initialization
         assert middleware.initialized is True
 
@@ -160,7 +170,7 @@ async def test_client_detection_middleware():
         return "example"
 
     # Connect with a client
-    async with Client(server) as client:
+    async with Client(server, mode="legacy") as client:
         # Middleware should have been called during initialization
         assert middleware.initialization_called is True
         assert middleware.is_test_client is True
@@ -173,7 +183,7 @@ async def test_client_detection_middleware():
         # Check that the tool has the modified annotation
         tool = tools[0]
         assert tool.annotations is not None
-        assert tool.annotations.readOnlyHint is True
+        assert tool.annotations.read_only_hint is True
 
 
 async def test_multiple_middleware_initialization():
@@ -190,7 +200,7 @@ async def test_multiple_middleware_initialization():
     def test_tool() -> str:
         return "test"
 
-    async with Client(server) as client:
+    async with Client(server, mode="legacy") as client:
         # Both middleware should have processed initialization
         assert init_mw.initialized is True
         assert detect_mw.initialization_called is True
@@ -241,7 +251,7 @@ async def test_session_state_persists_across_tool_calls():
     def test_tool() -> str:
         return "success"
 
-    async with Client(server) as client:
+    async with Client(server, mode="legacy") as client:
         # First call - state should be None initially
         result = await client.call_tool("test_tool", {})
         assert isinstance(result.content[0], TextContent)
@@ -287,19 +297,19 @@ async def test_middleware_can_access_initialize_result():
     middleware = ResponseCapturingMiddleware()
     server.add_middleware(middleware)
 
-    async with Client(server):
+    async with Client(server, mode="legacy"):
         # Middleware should have captured the InitializeResult
         assert middleware.initialize_result is not None
         assert isinstance(middleware.initialize_result, mt.InitializeResult)
 
         # Verify the result contains expected server info
-        assert middleware.initialize_result.serverInfo.name == "TestServer"
-        assert middleware.initialize_result.protocolVersion is not None
+        assert middleware.initialize_result.server_info.name == "TestServer"
+        assert middleware.initialize_result.protocol_version is not None
         assert middleware.initialize_result.capabilities is not None
 
 
 async def test_middleware_mcp_error_during_initialization():
-    """Test that McpError raised in middleware during initialization is sent to client."""
+    """Test that MCPError raised in middleware during initialization is sent to client."""
     server = FastMCP("TestServer")
 
     class ErrorThrowingMiddleware(Middleware):
@@ -308,16 +318,14 @@ async def test_middleware_mcp_error_during_initialization():
             context: MiddlewareContext[mt.InitializeRequest],
             call_next: CallNext[mt.InitializeRequest, mt.InitializeResult | None],
         ) -> mt.InitializeResult | None:
-            raise McpError(
-                ErrorData(
-                    code=mt.INVALID_PARAMS, message="Invalid initialization parameters"
-                )
+            raise MCPError(
+                code=mt.INVALID_PARAMS, message="Invalid initialization parameters"
             )
 
     server.add_middleware(ErrorThrowingMiddleware())
 
-    with pytest.raises(McpError) as exc_info:
-        async with Client(server):
+    with pytest.raises(MCPError) as exc_info:
+        async with Client(server, mode="legacy"):
             pass
 
     assert exc_info.value.error.message == "Invalid initialization parameters"
@@ -325,7 +333,7 @@ async def test_middleware_mcp_error_during_initialization():
 
 
 async def test_middleware_mcp_error_before_call_next():
-    """Test McpError raised before calling next middleware."""
+    """Test MCPError raised before calling next middleware."""
     server = FastMCP("TestServer")
 
     class EarlyErrorMiddleware(Middleware):
@@ -334,14 +342,12 @@ async def test_middleware_mcp_error_before_call_next():
             context: MiddlewareContext[mt.InitializeRequest],
             call_next: CallNext[mt.InitializeRequest, mt.InitializeResult | None],
         ) -> mt.InitializeResult | None:
-            raise McpError(
-                ErrorData(code=mt.INVALID_REQUEST, message="Request validation failed")
-            )
+            raise MCPError(code=mt.INVALID_REQUEST, message="Request validation failed")
 
     server.add_middleware(EarlyErrorMiddleware())
 
-    with pytest.raises(McpError) as exc_info:
-        async with Client(server):
+    with pytest.raises(MCPError) as exc_info:
+        async with Client(server, mode="legacy"):
             pass
 
     assert exc_info.value.error.message == "Request validation failed"
@@ -349,7 +355,7 @@ async def test_middleware_mcp_error_before_call_next():
 
 
 async def test_middleware_mcp_error_after_call_next():
-    """Test that McpError raised after call_next doesn't break the connection.
+    """Test that MCPError raised after call_next doesn't break the connection.
 
     When an error is raised after call_next, the responder has already completed,
     so the error is caught but not sent to the responder (checked via _completed flag).
@@ -368,15 +374,13 @@ async def test_middleware_mcp_error_after_call_next():
         ) -> mt.InitializeResult | None:
             await call_next(context)
             self.error_raised = True
-            raise McpError(
-                ErrorData(code=mt.INTERNAL_ERROR, message="Post-processing failed")
-            )
+            raise MCPError(code=mt.INTERNAL_ERROR, message="Post-processing failed")
 
     middleware = PostProcessingErrorMiddleware()
     server.add_middleware(middleware)
 
     # Error is logged but not re-raised to prevent duplicate response
-    async with Client(server):
+    async with Client(server, mode="legacy"):
         pass
 
     assert middleware.error_raised is True
@@ -387,9 +391,8 @@ async def test_state_isolation_between_streamable_http_clients():
 
     Each client should have its own session ID and isolated state.
     """
-    from fastmcp.client.transports import StreamableHttpTransport
     from fastmcp.server.context import Context
-    from fastmcp.utilities.tests import run_server_async
+    from fastmcp.utilities.tests import asgi_server
 
     server = FastMCP("TestServer")
 
@@ -404,12 +407,11 @@ async def test_state_isolation_between_streamable_http_clients():
             "session_id": ctx.session_id,
         }
 
-    async with run_server_async(server, transport="streamable-http") as url:
+    async with asgi_server(server, transport="streamable-http") as running_server:
         import json
 
         # Client 1 stores its value
-        transport1 = StreamableHttpTransport(url=url)
-        async with Client(transport=transport1) as client1:
+        async with running_server.client() as client1:
             result1 = await client1.call_tool(
                 "store_and_read", {"value": "client1-value"}
             )
@@ -419,8 +421,7 @@ async def test_state_isolation_between_streamable_http_clients():
             session_id_1 = data1["session_id"]
 
         # Client 2 should have completely isolated state
-        transport2 = StreamableHttpTransport(url=url)
-        async with Client(transport=transport2) as client2:
+        async with running_server.client() as client2:
             result2 = await client2.call_tool(
                 "store_and_read", {"value": "client2-value"}
             )

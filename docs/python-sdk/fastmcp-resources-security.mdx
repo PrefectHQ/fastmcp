@@ -1,0 +1,74 @@
+---
+title: security
+sidebarTitle: security
+---
+
+# `fastmcp.resources.security`
+
+
+Path-safety policy for templated resource parameters.
+
+Templated resources (`@mcp.resource("file:///{path}")`-style) extract
+parameter values straight out of the request URI and hand them to the
+resource function. When those values flow into filesystem or URI
+construction, a malicious client can smuggle path-traversal payloads
+(`../`, absolute paths, null bytes) through the template.
+
+`ResourceSecurity` screens extracted parameter values *before* the
+resource handler runs. It is applied by default to every templated
+read, mirroring the posture of the underlying MCP SDK's
+`ResourceSecurity` (traversal, absolute paths, and null bytes rejected).
+
+The screening reuses the SDK's component-based traversal check, so a
+value that merely *contains* dots (e.g. `HEAD~3..HEAD`, `v1..v2`,
+`file.tar.gz`) is not rejected — only an actual `..` path segment is.
+
+
+## Classes
+
+### `InheritSecurity` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/security.py#L49" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Sentinel type: inherit the server-wide resource-security default.
+
+Distinguishes "no per-component policy was set" (inherit whatever the
+server configured) from an explicit ``None`` (screening disabled for
+this component).
+
+
+### `ResourceSecurity` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/security.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Security policy applied to extracted resource template parameters.
+
+These checks run after a URI has matched a template and its
+parameter values have been extracted and percent-decoded. They catch
+path-traversal and absolute-path injection regardless of how the
+value was encoded in the URI (literal, `%2F`, `%5C`, `%2E%2E`).
+
+All checks default on. Screen a value like `HEAD~3..HEAD` (dots
+inside a single segment) passes — only a standalone `..` segment is
+treated as traversal.
+
+
+**Methods:**
+
+#### `validate` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/security.py#L127" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+validate(self, params: Mapping[str, object]) -> str | None
+```
+
+Check all parameter values against the configured policy.
+
+String values (and lists of strings, from wildcard `{path*}`
+parameters that span multiple segments) are screened; non-string
+values are ignored, since traversal is a string-path concern.
+
+**Args:**
+- `params`: Extracted template parameters.
+
+**Returns:**
+- The name of the first parameter that fails, or `None` if all
+- values pass.
+

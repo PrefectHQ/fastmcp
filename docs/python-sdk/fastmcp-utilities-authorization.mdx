@@ -1,0 +1,163 @@
+---
+title: authorization
+sidebarTitle: authorization
+---
+
+# `fastmcp.utilities.authorization`
+
+
+Authorization checks for FastMCP components.
+
+Auth checks are callables that receive an ``AuthContext`` and return True to
+allow access or False to deny it. They can also raise ``AuthorizationError`` to
+deny with a custom message; other exceptions are masked and treated as denial.
+
+
+## Functions
+
+### `require_scopes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/authorization.py#L143" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+require_scopes(*scopes: str) -> AuthCheck
+```
+
+
+Require all of the given OAuth scopes.
+
+
+### `require_roles` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/authorization.py#L148" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+require_roles(*roles: str) -> AuthCheck
+```
+
+
+Require all of the given roles, read from the token's claims.
+
+Roles and groups are not part of OIDC, so every identity provider puts them
+somewhere different: `realm_access.roles` on Keycloak, `roles` on Microsoft
+Entra, `cognito:groups` on AWS Cognito, `permissions` or a namespaced custom
+claim on Auth0. `extract` receives the token's claims and returns the
+caller's roles, which keeps that provider-specific knowledge at the call
+site instead of guessing it here.
+
+```python
+from fastmcp.server.auth import require_roles
+
+keycloak = require_roles("admin", extract=lambda c: c["realm_access"]["roles"])
+cognito = require_roles("admins", extract=lambda c: c["cognito:groups"])
+```
+
+A token missing the claim entirely is denied rather than treated as an
+error, so `extract` may index into the claims without guarding. An
+extractor returning a bare string is treated as one role, since a provider
+that stores a single role as a scalar is common.
+
+Unlike `require_scopes`, this check cannot signal a shortfall: OAuth has no
+way to request a role, so there is no `insufficient_scope` challenge to
+emit. A role denial is therefore reported as a plain `AuthorizationError`,
+and it suppresses any scope shortfall alongside it — a caller blocked by
+their role must not be told to go obtain a scope that would not help.
+Scope shortfalls are still reported normally whenever the role check
+passes.
+
+**Args:**
+- `*roles`: Roles the caller must hold. All are required (AND logic).
+- `extract`: Callable mapping the token's claims to the caller's roles.
+
+**Raises:**
+- `ValueError`: If no roles are given, which would allow any authenticated
+caller and is more likely a mistake than an intent.
+
+
+### `restrict_tag` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/authorization.py#L197" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+restrict_tag(tag: str) -> AuthCheck
+```
+
+
+Require scopes when the accessed component has a specific tag.
+
+
+### `scope_requirements` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/authorization.py#L202" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+scope_requirements(checks: AuthCheck | list[AuthCheck], ctx: AuthContext) -> list[str] | None
+```
+
+
+Scopes a check list requires but the token lacks, without running it.
+
+Returns ``None`` when the list contains any opaque (non-scope) check. Such a
+check might deny for a reason unrelated to scopes, and evaluating it here
+would run authorization logic — with whatever side effects it carries —
+outside its normal place in the chain. Since its verdict is unknown, its
+siblings' scopes must not be disclosed either, so the whole list is withheld.
+
+When every check is scope-aware, the result is their combined shortfall,
+computed purely from the token and component (an empty list means the list is
+already satisfied). This lets a shortfall be aggregated across authorization
+layers without evaluating anything that would otherwise be skipped.
+
+
+### `run_auth_checks_with_shortfall` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/authorization.py#L253" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run_auth_checks_with_shortfall(checks: AuthCheck | list[AuthCheck], ctx: AuthContext) -> tuple[bool, list[str]]
+```
+
+
+Run auth checks with AND logic, classifying the denial cause.
+
+Returns ``(authorized, missing_scopes)``. ``missing_scopes`` names every
+scope the caller must obtain to satisfy *all* scope requirements at once:
+the union of the shortfalls across every scope-aware check, not just the
+first one to fail. Reporting only the first would strand a caller in a
+step-up loop — it obtains that scope, retries, and is denied again for the
+next — so the union is what makes a single re-authorization converge.
+
+The challenge is withheld entirely (an empty list, which the caller surfaces
+as a plain ``AuthorizationError``) unless every non-scope check passes. A
+custom policy denial — a tenant check, say — must never be reported as an
+``insufficient_scope`` shortfall, and must never name the scopes of a
+component the caller could not otherwise reach. To guarantee that, the
+opaque checks are all evaluated before any scope is disclosed; a shortfall
+is only reported once they have all passed.
+
+An ``AuthorizationError`` raised by a check propagates unchanged.
+
+
+### `run_auth_checks` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/authorization.py#L304" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run_auth_checks(checks: AuthCheck | list[AuthCheck], ctx: AuthContext) -> bool
+```
+
+
+Run auth checks with AND logic, stopping at the first failure.
+
+
+## Classes
+
+### `AuthContext` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/authorization.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Context passed to auth check callables.
+
+**Attributes:**
+- `token`: The current access token, or None if unauthenticated.
+- `component`: The tool, resource, resource template, or prompt being accessed.
+- `tool`: Backwards-compatible alias for component when it is a Tool.
+
+
+**Methods:**
+
+#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/authorization.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+tool(self) -> Tool | None
+```
+
+Backwards-compatible access to the component as a Tool.
+

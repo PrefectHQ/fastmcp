@@ -71,10 +71,12 @@ When using [mounted servers](/servers/composition), middleware behavior follows 
 
 ```python
 from fastmcp import FastMCP
+from fastmcp.server.auth import require_scopes
+from fastmcp.server.middleware import AuthMiddleware
 from fastmcp.server.middleware.logging import LoggingMiddleware
 
 parent = FastMCP("Parent")
-parent.add_middleware(AuthMiddleware())  # Runs for ALL requests
+parent.add_middleware(AuthMiddleware(auth=require_scopes("api")))  # Runs for ALL requests
 
 child = FastMCP("Child")
 child.add_middleware(LoggingMiddleware())  # Only runs for child's tools
@@ -84,7 +86,7 @@ parent.mount(child, namespace="child")
 
 Requests to `child_tool` flow through the parent's `AuthMiddleware` first, then through the child's `LoggingMiddleware`.
 
-Middleware-stored state does not automatically cross mount boundaries. If `AuthMiddleware` on the parent calls `ctx.set_state("user_id", ...)`, a tool on the child server calling `ctx.get_state("user_id")` will get `None` — each `FastMCP` instance owns its own session state store. To share state across the mount, either pass the same `session_state_store` to both servers or use `serializable=False` for request-scoped values. See [State and Mounted Servers](/servers/context#state-and-mounted-servers) for details.
+Middleware-stored state does not automatically cross mount boundaries. If middleware on the parent calls `ctx.set_state("user_id", ...)`, a tool on the child server calling `ctx.get_state("user_id")` will get `None` — each `FastMCP` instance owns its own state store. To share state across the mount, either pass the same `session_state_store` to both servers or use `serializable=False` for request-scoped values. See [Request State](/servers/context#request-state) for details.
 
 ## Hooks
 
@@ -97,6 +99,22 @@ Rather than processing every message identically, FastMCP provides specialized h
 | Operation | `on_call_tool`, `on_read_resource`, `on_get_prompt`, etc. | Specific MCP operations |
 
 When a client calls a tool, the middleware chain processes `on_message` first, then `on_request`, then `on_call_tool`. This hierarchy lets you target exactly the right scope—use `on_message` for logging everything, `on_request` for authentication, and `on_call_tool` for tool-specific behavior.
+
+### What middleware sees
+
+<VersionBadge version="4.0.0" />
+
+Dispatch begins in the SDK's middleware layer — the single point every inbound message passes through. As a result, `on_message`, `on_request`, and `on_notification` observe **every** message a client sends, including the ones that never reach a tool, resource, or prompt handler:
+
+- **Notifications** such as `notifications/cancelled`, `notifications/initialized`, and `notifications/progress` reach `on_message` and `on_notification`.
+- **Cancellations** are observed as a `notifications/cancelled` message. The connection applies the cancellation itself and then hands the notification to your middleware.
+- **Malformed or unroutable requests**—an unknown method, or a `tools/call` whose params fail validation before the tool runs—reach `on_message` and `on_request` as a raised error propagating through `call_next`, so logging and error-handling middleware record them.
+
+The operation hooks (`on_call_tool`, `on_list_tools`, and the rest) fire exactly once per request, and their `call_next` still returns the typed component result—a `ToolResult`, a `list[Tool]`, and so on—so a tool exception propagates through `on_call_tool`, `on_request`, and `on_message` exactly where error, logging, and timing middleware expect it.
+
+#### Multi-round tool calls
+
+A guard tool asks the client for input by returning an `InputRequiredResult` (see [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol)). Each round of a multi-round call is a complete request→response cycle that runs the **full middleware chain**: `on_call_tool` fires once per round, and on an asking round `call_next` returns the ask as that round's ordinary result value—an `InputRequiredToolResult`, a `ToolResult` subclass. Nothing is raised and nothing is held open, so default middleware completes normally on every round (logging logs the ask, timing times it, error handling does not fire—an ask is a legitimate result, not an error). Middleware that needs to treat an ask differently identifies it with an `isinstance(result, InputRequiredToolResult)` check; see [Middleware and multi-round calls](/servers/elicitation#middleware) for a worked example.
 
 ### Hook Signature
 
@@ -262,29 +280,53 @@ async def on_list_prompts(self, context: MiddlewareContext, call_next):
 
 <VersionBadge version="2.13.0" />
 
-Called when a client connects and initializes the session. This hook cannot modify the initialization response.
+Called when a handshake-era (legacy) client connects and initializes the session; modern clients negotiate through `server/discover` instead, which `on_discover` handles. Middleware can reject the client before `call_next()` raises an error response, or inspect and modify the `InitializeResult` after `call_next()` returns.
+
+The request params carry the identity the client declared for itself on `client_info`, which makes this the natural place to gate access by client. Note that these fields are snake_case: the MCP wire format spells it `clientInfo`, but the Python model exposes `client_info` and treats the camelCase form as a serialization alias only.
 
 ```python
-from mcp import McpError
-from mcp.types import ErrorData
+from fastmcp.exceptions import McpError
 
 async def on_initialize(self, context: MiddlewareContext, call_next):
-    client_info = context.message.params.get("clientInfo", {})
-    client_name = client_info.get("name", "unknown")
+    client_name = context.message.params.client_info.name
 
     # Reject before call_next to send error to client
     if client_name == "blocked-client":
-        raise McpError(ErrorData(code=-32000, message="Client not supported"))
+        raise McpError(code=-32000, message="Client not supported")
 
-    await call_next(context)
+    result = await call_next(context)
     print(f"Client {client_name} initialized")
+    return result
 ```
 
-**Returns:** `None` — The initialization response is handled internally by the MCP protocol.
+**Returns:** `InitializeResult | None` — The value you return is what gets serialized to the client, so modifying the result from `call_next()` changes what the client receives, including fields like `instructions` and `server_info`.
+
+```python
+async def on_initialize(self, context: MiddlewareContext, call_next):
+    result = await call_next(context)
+    result.instructions = "Custom instructions for this client"
+    return result
+```
 
 <Warning>
-Raising `McpError` after `call_next()` will only log the error, not send it to the client. The response has already been sent. Always reject **before** `call_next()`.
+Rejection works only **before** `call_next()`. Raising `McpError` afterward logs the error without sending it — the client still receives a successful initialize response.
 </Warning>
+
+#### on_discover
+
+Called when a modern client negotiates through `server/discover`. Core discovery responses are returned as `DiscoverResult`; extension-owned result types are returned as dictionaries and should be passed through unless the middleware handles that extension.
+
+```python
+from mcp_types import DiscoverResult
+
+async def on_discover(self, context, call_next):
+    result = await call_next(context)
+    if not isinstance(result, DiscoverResult):
+        return result
+    return result.model_copy(update={"instructions": "Custom instructions"})
+```
+
+Fields such as `supported_versions`, `capabilities`, and cache policy should only be changed when the server's public behavior also changes.
 
 ### Raw Handler
 
@@ -326,7 +368,7 @@ async def on_request(self, context: MiddlewareContext, call_next):
     return await call_next(context)
 ```
 
-For HTTP-specific data (headers, client IP) when using HTTP transports, see [HTTP Requests](/servers/context#http-requests).
+For HTTP-specific data (headers, client IP) when using HTTP transports, see [HTTP Request](/servers/dependency-injection#http-request).
 
 ## Built-in Middleware
 
@@ -354,7 +396,7 @@ mcp.add_middleware(LoggingMiddleware(
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `include_payloads` | `bool` | `False` | Log request/response content |
-| `max_payload_length` | `int` | `500` | Truncate payloads beyond this length |
+| `max_payload_length` | `int` | `1000` | Truncate payloads beyond this length |
 | `logger` | `Logger` | module logger | Custom logger instance |
 
 ### Timing
@@ -432,6 +474,7 @@ from key_value.aio.stores.filetree import (
 )
 
 cache_dir = Path("cache")
+cache_dir.mkdir(parents=True, exist_ok=True)
 mcp.add_middleware(ResponseCachingMiddleware(
     cache_storage=FileTreeStore(
         data_directory=cache_dir,
@@ -444,7 +487,7 @@ mcp.add_middleware(ResponseCachingMiddleware(
 See [Storage Backends](/servers/storage-backends) for complete options.
 
 <Note>
-Cache keys are based on the operation name and arguments only — they do not include user or session identity. If your tools return user-specific data derived from auth context (e.g., headers or session state) rather than from the request arguments, you should either disable caching for those tools or ensure user identity is part of the tool arguments.
+Cache keys include the method name, arguments, the requested component version, and the caller's access token — entries are partitioned per token, so responses cannot leak across users with different permissions. Unauthenticated callers (including STDIO) share a single anonymous partition. Data derived from request context *other than* the auth token — custom HTTP headers, session state — is not part of the key, so disable caching for tools whose results depend on it.
 </Note>
 
 ### Rate Limiting
@@ -472,8 +515,8 @@ mcp.add_middleware(RateLimitingMiddleware(
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `max_requests_per_second` | `float` | `10.0` | Sustained request rate |
-| `burst_capacity` | `int` | `20` | Maximum burst size |
-| `client_id_func` | `Callable` | `None` | Custom client identification |
+| `burst_capacity` | `int` | twice the rate, at least 1 for a positive rate | Maximum burst size; `1` allows no bursts beyond the steady rate |
+| `get_client_id` | `Callable` | `None` | Custom client identification |
 
 For sliding window rate limiting:
 
@@ -496,7 +539,13 @@ from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware, Re
 
 ```python
 from fastmcp import FastMCP
+from fastmcp.server.middleware import MiddlewareContext
 from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
+
+
+def my_error_callback(error: Exception, context: MiddlewareContext) -> None:
+    print(f"{context.method} failed: {error!r}")
+
 
 mcp = FastMCP("MyServer")
 mcp.add_middleware(ErrorHandlingMiddleware(
@@ -509,7 +558,7 @@ mcp.add_middleware(ErrorHandlingMiddleware(
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `include_traceback` | `bool` | `False` | Include stack traces in logs |
-| `transform_errors` | `bool` | `False` | Convert exceptions to MCP errors |
+| `transform_errors` | `bool` | `True` | Convert exceptions to MCP errors |
 | `error_callback` | `Callable` | `None` | Custom callback on errors |
 
 For automatic retries:
@@ -578,7 +627,7 @@ def search(query: str) -> str:
 When a response exceeds the limit, the middleware extracts all text content, joins it together, truncates to fit within the limit, and returns a single `TextContent` block. For non-text responses, the serialized JSON is used as the text source.
 
 <Note>
-If a tool defines an `output_schema`, truncated responses will no longer conform to that schema — the client will receive a plain `TextContent` block instead of the expected structured output. Keep this in mind when setting size limits for tools with structured responses.
+Because truncation can replace structured output with plain text, the middleware omits `outputSchema` from `tools/list` for every tool it limits. Responses below the limit still include their original structured content, but clients cannot validate or hydrate it against an advertised output schema. Tools excluded with the `tools` parameter keep their output schemas.
 </Note>
 
 ```python
@@ -651,7 +700,7 @@ Raise the appropriate error type to stop processing and return an error to the c
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.exceptions import ToolError
 
-class AuthMiddleware(Middleware):
+class AdminToolGuard(Middleware):
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         tool_name = context.message.name
 
@@ -669,6 +718,22 @@ class AuthMiddleware(Middleware):
 | General requests | `McpError` |
 
 Do not return error values or skip `call_next()` to indicate errors—raise exceptions for proper error propagation.
+
+### Authorizing Resource Access
+
+To restrict which resources a caller can read, implement `check_resource_access` rather than `on_read_resource`. The default `on_read_resource` calls it before every read, and features that describe resources without reading them, such as [Skills discovery](/servers/skills#access-control), call it too, so a resource the caller cannot read is not advertised either. Raise `AuthorizationError` to deny access.
+
+```python
+from fastmcp.exceptions import AuthorizationError
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+
+class InternalResourceGuard(Middleware):
+    async def check_resource_access(self, context: MiddlewareContext):
+        if str(context.message.uri).startswith("internal://"):
+            raise AuthorizationError("Access denied")
+```
+
+If you also override `on_read_resource`, call `super().on_read_resource(context, call_next)` so the check still runs. `AuthMiddleware` implements this hook for its resource checks.
 
 ### Modifying Requests
 
@@ -706,6 +771,46 @@ class ResponseEnricher(Middleware):
 
 For more complex tool transformations, consider [Transforms](/servers/transforms/transforms) instead.
 
+### Inspecting Tool Text Results
+
+Use `on_call_tool` to check text returned by a tool after it runs. This example accepts an asynchronous checker that raises when a text block should be rejected. Check only `TextContent` blocks and return the original result when every check succeeds:
+
+```python
+from collections.abc import Awaitable, Callable
+
+from fastmcp.exceptions import ToolError
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.tools import ToolResult
+from mcp.types import TextContent
+
+
+class TextInspectionMiddleware(Middleware):
+    def __init__(self, inspect_text: Callable[[str], Awaitable[None]]) -> None:
+        self.inspect_text = inspect_text
+
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        result = await call_next(context)
+        if not isinstance(result, ToolResult):
+            return result
+
+        for block in result.content:
+            if not isinstance(block, TextContent):
+                continue
+
+            try:
+                await self.inspect_text(block.text)
+            except Exception as exc:
+                raise ToolError("Tool text inspection failed") from exc
+
+        return result
+```
+
+The checker does not rewrite or redact the result. A rejected text block or a checker failure stops the tool call; successful checks preserve the original result, including structured content and metadata.
+
+This checks text blocks only. It does not inspect `structured_content`, image content, or other non-text blocks. If your policy applies to the entire result, validate those fields separately. For advisory checks, catch failures deliberately, report them through logging or response metadata, and return the original result.
+
+Server middleware sees only tool calls and results handled by this server. It cannot inspect or control the client's model, the model's conversation, or tools that run on the client.
+
 ### Filtering Lists
 
 List operations return FastMCP objects that you can filter before they reach the client. When filtering list results, also block execution in the corresponding operation hook to maintain consistency:
@@ -722,7 +827,7 @@ class PrivateToolFilter(Middleware):
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         if context.fastmcp_context:
             tool = await context.fastmcp_context.fastmcp.get_tool(context.message.name)
-            if "private" in tool.tags:
+            if tool is not None and "private" in tool.tags:
                 raise ToolError("Tool not found")
 
         return await call_next(context)
@@ -730,24 +835,19 @@ class PrivateToolFilter(Middleware):
 
 ### Accessing Component Metadata
 
-During execution hooks, component metadata (like tags) isn't directly available. Look up the component through the server:
+During execution hooks, component metadata (like tags) isn't directly available. Look up the component through the server. The lookup returns `None` for a tool that doesn't exist or isn't visible to the caller, so leave that case to the normal call path:
 
 ```python
 from fastmcp.server.middleware import Middleware, MiddlewareContext
-from fastmcp.exceptions import ToolError
 
 class TagBasedAuth(Middleware):
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         if context.fastmcp_context:
-            try:
-                tool = await context.fastmcp_context.fastmcp.get_tool(context.message.name)
+            tool = await context.fastmcp_context.fastmcp.get_tool(context.message.name)
 
-                if "requires-auth" in tool.tags:
-                    # Check authentication here
-                    pass
-
-            except Exception:
-                pass  # Let execution handle missing tools
+            if tool is not None and "requires-auth" in tool.tags:
+                # Check authentication here
+                pass
 
         return await call_next(context)
 ```
@@ -777,7 +877,7 @@ class UserMiddleware(Middleware):
 
         # Store for tools to access
         if context.fastmcp_context:
-            context.fastmcp_context.set_state("user_id", user_id)
+            await context.fastmcp_context.set_state("user_id", user_id)
 
         return await call_next(context)
 ```
@@ -790,12 +890,12 @@ from fastmcp import FastMCP, Context
 mcp = FastMCP("MyServer")
 
 @mcp.tool
-def get_user_data(ctx: Context) -> str:
-    user_id = ctx.get_state("user_id")
+async def get_user_data(ctx: Context) -> str:
+    user_id = await ctx.get_state("user_id")
     return f"Data for user: {user_id}"
 ```
 
-See [Context State Management](/servers/context#state-management) for details.
+See [Request State](/servers/context#request-state) for details.
 
 ### Constructor Parameters
 
@@ -837,6 +937,82 @@ class ErrorLogger(Middleware):
 ```
 
 Catching and not re-raising suppresses the error entirely. Usually you want to log and re-raise.
+
+### Audit and Event Records
+
+A common need is to emit one structured record per tool call — for audit logs, policy decisions, or offline analysis — without wrapping individual tools or storing raw payloads. `on_call_tool` is the right place: it sees the call start, the resolved `ToolResult` (so it can detect empty or error results), the duration, and can deny the call before it runs.
+
+Use [OpenTelemetry](/servers/telemetry) when the goal is to *export* spans to an observability backend. Reach for a record like this when you want a self-contained, redacted audit trail — or to drive runtime decisions from the result.
+
+```python
+import hashlib
+import json
+from datetime import datetime
+
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.exceptions import ToolError
+
+
+def _schema_hash(arguments: dict | None) -> str:
+    """Stable hash of the argument shape — detects schema drift without storing values."""
+    shape = sorted(arguments or {})
+    return hashlib.sha256(json.dumps(shape).encode()).hexdigest()[:12]
+
+
+def _redact(arguments: dict | None) -> dict:
+    """Keep keys, drop values — raw inputs stay out of the default path."""
+    return {key: "<redacted>" for key in (arguments or {})}
+
+
+def _call_id(context: MiddlewareContext) -> str | None:
+    """Request id when an MCP session is active (see Session Availability above)."""
+    ctx = context.fastmcp_context
+    if ctx is not None and ctx.request_context:
+        return ctx.request_id
+    return None
+
+
+class AuditMiddleware(Middleware):
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        record = {
+            "tool": context.message.name,
+            "call_id": _call_id(context),
+            "schema_hash": _schema_hash(context.message.arguments),
+            "arguments": _redact(context.message.arguments),
+            "received_at": context.timestamp.isoformat(),
+        }
+
+        try:
+            result = await call_next(context)
+        except Exception as exc:
+            record["status"] = "failed"
+            record["error"] = type(exc).__name__
+            self.emit(record)
+            raise
+
+        empty = not result.content and result.structured_content is None
+        record["status"] = "error" if result.is_error else "empty" if empty else "completed"
+        now = datetime.now(context.timestamp.tzinfo)
+        record["duration_ms"] = round((now - context.timestamp).total_seconds() * 1000, 2)
+        self.emit(record)
+        return result
+
+    def emit(self, record: dict) -> None:
+        # Swap in your sink: structured logger, queue, audit store, etc.
+        print(json.dumps(record))
+```
+
+Each record carries the fields downstream tools tend to need — tool name, call id, input schema hash, redacted arguments, result class (`completed` / `empty` / `error` / `failed`), and duration — while raw inputs and outputs stay out by default.
+
+To make this a policy layer, deny inside the same hook before calling `call_next`:
+
+```python
+async def on_call_tool(self, context: MiddlewareContext, call_next):
+    if not self.is_allowed(context.message.name, context.message.arguments):
+        self.emit({"tool": context.message.name, "status": "denied", "reason": "policy"})
+        raise ToolError("Call blocked by policy")
+    return await call_next(context)
+```
 
 ### Complete Example
 

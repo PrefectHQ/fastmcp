@@ -3,6 +3,7 @@
 import asyncio
 import secrets
 import time
+from contextlib import suppress
 from unittest.mock import Mock
 from urllib.parse import urlencode
 
@@ -31,6 +32,7 @@ class MockOAuthProvider:
         self.base_url = f"http://localhost:{port}"
         self.app = None
         self.server = None
+        self._serve_task: asyncio.Task | None = None
 
         # Storage for OAuth state
         self.authorization_codes = {}
@@ -235,16 +237,25 @@ class MockOAuthProvider:
         self.server = Server(config)
 
         # Start server in background
-        asyncio.create_task(self.server.serve())
+        self._serve_task = asyncio.create_task(self.server.serve())
 
-        # Wait for server to be ready
-        await asyncio.sleep(0.05)
+        # Wait for the server to finish startup instead of a fixed sleep.
+        # uvicorn.Server flips `started` to True once the listening socket
+        # is bound, right before it would start accepting connections.
+        deadline = asyncio.get_event_loop().time() + 5.0
+        while not self.server.started:
+            if asyncio.get_event_loop().time() > deadline:
+                raise RuntimeError("Mock OAuth server failed to start in time")
+            await asyncio.sleep(0.005)
 
     async def stop(self):
         """Stop the mock OAuth server."""
         if self.server:
             self.server.should_exit = True
-            await asyncio.sleep(0.01)
+            if self._serve_task is not None:
+                # Wait for the actual shutdown rather than a fixed sleep.
+                with suppress(TimeoutError):
+                    await asyncio.wait_for(self._serve_task, timeout=5.0)
 
     def reset(self):
         """Reset all state for next test."""

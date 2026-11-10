@@ -13,9 +13,15 @@ Use this when you need to respond to server requests for user input during tool 
 
 Elicitation allows MCP servers to request structured input from users during operations. Instead of requiring all inputs upfront, servers can interactively ask for missing parameters, request clarification, or gather additional context.
 
+<Note>
+**These sections show the server-initiated flow, which the handshake-era protocol uses.** On `2026-07-28` the server asks by returning a request instead — see [input-required rounds](#input-required-rounds). One `elicitation_handler` serves both, so the examples below pin `mode="legacy"` only to exercise the pushed form.
+</Note>
+
 ## Handler Template
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.elicitation import ElicitResult, ElicitRequestParams, RequestContext
 
@@ -30,8 +36,8 @@ async def elicitation_handler(
 
     Args:
         message: The prompt to display to the user
-        response_type: Python dataclass type for the response (None if no data expected)
-        params: Original MCP elicitation parameters including raw JSON schema
+        response_type: Python dataclass type for form responses (None for URL requests or empty schemas)
+        params: Original MCP elicitation parameters
         context: Request context with metadata
 
     Returns:
@@ -44,18 +50,24 @@ async def elicitation_handler(
     if not user_input:
         return ElicitResult(action="decline")
 
-    # Create response using the provided dataclass type
+    # URL requests and empty-object schemas have no response type to construct,
+    # so accepting is the whole response.
+    if response_type is None:
+        return ElicitResult(action="accept")
+
+    # A scalar request, such as ctx.elicit(..., response_type=str), has one `value` field
     return response_type(value=user_input)
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
+    mode="legacy",
     elicitation_handler=elicitation_handler,
 )
 ```
 
 ## How It Works
 
-When a server needs user input, it sends an elicitation request with a message prompt and a JSON schema describing the expected response structure. FastMCP automatically converts this schema into a Python dataclass type, making it easy to construct properly typed responses without manually parsing JSON schemas.
+When a server needs user input, it sends an elicitation request with a message prompt. Form elicitation requests include a JSON schema describing the expected response structure, and FastMCP automatically converts that schema into a Python dataclass type. A server that asks for a single scalar, such as a string or number, gets a dataclass with one `value` field, which is what the examples on this page construct. URL elicitation requests and empty-object schemas use `response_type=None`.
 
 The handler receives four parameters:
 
@@ -65,11 +77,11 @@ The handler receives four parameters:
 </ResponseField>
 
 <ResponseField name="response_type" type="type | None">
-  A Python dataclass type that FastMCP created from the server's JSON schema. Use this to construct your response with proper typing. If the server requests an empty object, this will be `None`.
+  A Python dataclass type that FastMCP created from a form request's JSON schema. Use this to construct your response with proper typing. For URL requests or empty-object schemas, this will be `None`.
 </ResponseField>
 
 <ResponseField name="params" type="ElicitRequestParams">
-  The original MCP elicitation parameters, including the raw JSON schema in `params.requestedSchema`
+  The original MCP elicitation parameters. Form requests carry the raw JSON schema on `params.requested_schema`; URL requests carry `params.url` instead and have no schema.
 </ResponseField>
 
 <ResponseField name="context" type="RequestContext">
@@ -79,7 +91,7 @@ The handler receives four parameters:
 
 ## Response Actions
 
-You can return data directly, which implicitly accepts the elicitation:
+You can return data directly, either an instance of `response_type` or a plain `dict`, which implicitly accepts the elicitation:
 
 ```python
 async def elicitation_handler(message, response_type, params, context):
@@ -117,6 +129,8 @@ async def elicitation_handler(message, response_type, params, context):
 A file management tool might ask which directory to create:
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.elicitation import ElicitResult
 
@@ -132,7 +146,27 @@ async def elicitation_handler(message, response_type, params, context):
     return response_type(value=user_response)
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
+    mode="legacy",
     elicitation_handler=elicitation_handler
+)
+```
+
+## Input-required rounds
+
+<VersionBadge version="4.0.0" />
+
+On protocol version `2026-07-28` and later, a server can ask for input before it returns a final result. Nothing is held open: the tool *returns* a description of what it needs, which completes that round as an ordinary response, and the client answers by issuing a **new** `call_tool`, `get_prompt`, or `read_resource` request carrying the answer. `fastmcp.Client` drives that loop for you — it fulfils each round's requests using the callbacks you already configured (your `elicitation_handler`, `sampling_handler`, and roots) and repeats until the call reaches a terminal result. No extra wiring is needed beyond the handlers described above.
+
+The `input_required_max_rounds` parameter caps how many rounds the client will answer before giving up, guarding against a server that never terminates. It defaults to `10`.
+
+```python
+from fastmcp import Client
+
+client = Client(
+    "https://example.com/mcp",
+    mode="auto",
+    elicitation_handler=elicitation_handler,
+    input_required_max_rounds=5,
 )
 ```

@@ -2,13 +2,13 @@
 
 import inspect
 
-import mcp.types as mcp_types
 import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
+from tests.conftest import make_server_request_context
 
 
 class Connection:
@@ -170,11 +170,11 @@ class TestTransformContextAnnotations:
             return f"same={ctx1 is ctx2}"
 
         # Both ctx params should be excluded from schema
-        result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
+        result = await mcp._on_list_tools(make_server_request_context(), None)
         tool = next(t for t in result.tools if t.name == "tool_with_multiple_ctx")
-        assert "name" in tool.inputSchema["properties"]
-        assert "ctx1" not in tool.inputSchema["properties"]
-        assert "ctx2" not in tool.inputSchema["properties"]
+        assert "name" in tool.input_schema["properties"]
+        assert "ctx1" not in tool.input_schema["properties"]
+        assert "ctx2" not in tool.input_schema["properties"]
 
     async def test_context_in_class_method(self, mcp: FastMCP):
         """Test Context transformation works with bound methods."""
@@ -284,3 +284,57 @@ class TestTransformContextAnnotations:
             result = await client.get_prompt("prompt_with_ctx", {"topic": "AI"})
             assert "Write about AI" in result.messages[0].content.text
             assert "session:" in result.messages[0].content.text
+
+
+class TestGeneratorDependencies:
+    """Generators must be consumed before injected dependencies close."""
+
+    async def test_async_generator_sees_open_dependency(self, mcp: FastMCP):
+        """Regression test for async-generator tools using Depends (#5399)."""
+        import io
+        from collections.abc import AsyncIterator
+        from contextlib import asynccontextmanager
+
+        from fastmcp.dependencies import Depends
+
+        @asynccontextmanager
+        async def open_stream():
+            stream = io.StringIO("payload")
+            try:
+                yield stream
+            finally:
+                stream.close()
+
+        @mcp.tool
+        async def read_stream(stream=Depends(open_stream)) -> AsyncIterator[str]:
+            yield stream.read()
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("read_stream", {})
+            assert not result.is_error
+            assert result.content[0].text == '["payload"]'
+
+    async def test_sync_generator_sees_open_dependency(self, mcp: FastMCP):
+        """Sync generators share the same lifetime requirement."""
+        import io
+        from collections.abc import Iterator
+        from contextlib import contextmanager
+
+        from fastmcp.dependencies import Depends
+
+        @contextmanager
+        def open_stream():
+            stream = io.StringIO("payload")
+            try:
+                yield stream
+            finally:
+                stream.close()
+
+        @mcp.tool
+        def read_stream(stream=Depends(open_stream)) -> Iterator[str]:
+            yield stream.read()
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("read_stream", {})
+            assert not result.is_error
+            assert result.content[0].text == '["payload"]'

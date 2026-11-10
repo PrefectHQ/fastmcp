@@ -296,8 +296,10 @@ auth = OAuthProxy(..., client_storage=MemoryStore())
   **`"remember"` — silent consent on return:**
   Users see the consent screen on first authorization; subsequent flows from the same browser for the same `(client_id, redirect_uri)` are silently approved via a signed cookie. Cross-site navigations (detected via `Sec-Fetch-Site`) fall back to the prompt. `Sec-Fetch-Site` is a browser-level heuristic rather than a protocol guarantee: an attacker who finds a way to initiate a non-cross-site navigation (XSS on a sibling origin, a same-site redirect chain, etc.) can reach the silent-consent path. `True` does not depend on this signal. See [Confused Deputy Attacks](#confused-deputy-attacks) for the underlying attack class.
 
-  **`"external"` — delegate to upstream:**
-  Skip the built-in consent page; consent is collected by the upstream IdP or a custom login page referenced via `upstream_authorization_endpoint`. No security warning is logged.
+  **`"external"` — externally managed:**
+  Follows the same authorization path as `False`: FastMCP skips its consent page and associated browser-binding protections, then redirects directly to the upstream provider. The difference is logging. `False` emits a security warning, while `"external"` suppresses that warning as an explicit acknowledgment that the operator is enforcing equivalent consent and transaction-binding protections elsewhere. FastMCP does not provide or verify those external protections.
+
+  Ordinary upstream OAuth consent is generally not equivalent. It typically authorizes FastMCP's shared upstream application without identifying the downstream MCP client or binding approval to that client's transaction. Use `"external"` only when your surrounding authorization system supplies those protections.
 
   **`False` — disable entirely:**
   Authorization proceeds directly to the upstream provider without any consent UI. Logs a security warning. Only for local development or testing.
@@ -317,7 +319,7 @@ auth = OAuthProxy(..., client_storage=MemoryStore())
   ```
 
   <Warning>
-    Disabling consent removes an important security layer. Only disable for local development or testing environments where you fully control all connecting clients.
+    Both `False` and `"external"` disable FastMCP's consent and browser-binding protections. `False` warns about this configuration; `"external"` suppresses the warning because it is an operator acknowledgment that equivalent protections exist elsewhere. Prefer the default `True` unless you own that external authorization flow.
   </Warning>
 </ParamField>
 

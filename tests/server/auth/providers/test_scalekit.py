@@ -1,11 +1,12 @@
 """Tests for Scalekit OAuth provider."""
 
-import httpx
+import httpx2
 import pytest
+from mcp import MCPError
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
-from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 from fastmcp.server.auth.providers.scalekit import ScalekitProvider
 from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
 
@@ -90,10 +91,15 @@ class TestScalekitProvider:
             base_url="https://myserver.com/",
         )
 
-        # Check that JWT verifier uses the correct endpoints
+        # Check that JWT verifier uses the correct endpoints. Both the bare
+        # environment URL and the resource-scoped issuer are accepted so tokens
+        # from before and after Scalekit's issuer migration validate.
         assert isinstance(provider.token_verifier, JWTVerifier)
         assert provider.token_verifier.jwks_uri == "https://my-env.scalekit.com/keys"
-        assert provider.token_verifier.issuer == "https://my-env.scalekit.com"
+        assert provider.token_verifier.issuer == [
+            "https://my-env.scalekit.com",
+            "https://my-env.scalekit.com/resources/sk_resource_456",
+        ]
         assert provider.token_verifier.audience == "sk_resource_456"
 
     def test_required_scopes_hooks_into_verifier(self):
@@ -121,6 +127,61 @@ class TestScalekitProvider:
             str(provider.authorization_servers[0])
             == "https://my-env.scalekit.com/resources/sk_resource_456"
         )
+
+
+class TestScalekitIssuerMigration:
+    """Scalekit is migrating the `iss` claim from the bare environment URL to a
+    resource-scoped issuer. Tokens minted before and after the migration must
+    both validate against the same provider.
+    """
+
+    ENV_URL = "https://my-env.scalekit.com"
+    RESOURCE_ID = "sk_resource_456"
+
+    @pytest.fixture
+    def key_pair(self) -> RSAKeyPair:
+        return RSAKeyPair.generate()
+
+    def _provider(self, key_pair: RSAKeyPair) -> ScalekitProvider:
+        provider = ScalekitProvider(
+            environment_url=self.ENV_URL,
+            resource_id=self.RESOURCE_ID,
+            base_url="https://myserver.com/",
+        )
+        # Verify against the test key instead of Scalekit's live JWKS endpoint.
+        assert isinstance(provider.token_verifier, JWTVerifier)
+        provider.token_verifier.public_key = key_pair.public_key
+        return provider
+
+    async def test_pre_migration_issuer_accepted(self, key_pair: RSAKeyPair):
+        """The bare environment URL issuer (pre-migration) validates."""
+        provider = self._provider(key_pair)
+        token = key_pair.create_token(
+            issuer=self.ENV_URL,
+            audience=self.RESOURCE_ID,
+        )
+
+        assert await provider.token_verifier.verify_token(token) is not None
+
+    async def test_post_migration_issuer_accepted(self, key_pair: RSAKeyPair):
+        """The resource-scoped issuer (post-migration) validates."""
+        provider = self._provider(key_pair)
+        token = key_pair.create_token(
+            issuer=f"{self.ENV_URL}/resources/{self.RESOURCE_ID}",
+            audience=self.RESOURCE_ID,
+        )
+
+        assert await provider.token_verifier.verify_token(token) is not None
+
+    async def test_unknown_issuer_rejected(self, key_pair: RSAKeyPair):
+        """An issuer outside the accepted set is still rejected."""
+        provider = self._provider(key_pair)
+        token = key_pair.create_token(
+            issuer="https://evil.example.com",
+            audience=self.RESOURCE_ID,
+        )
+
+        assert await provider.token_verifier.verify_token(token) is None
 
 
 @pytest.fixture
@@ -153,12 +214,11 @@ def client_with_headless_oauth(mcp_server_url: str) -> Client:
 
 class TestScalekitProviderIntegration:
     async def test_unauthorized_access(self, mcp_server_url: str):
-        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        # SDK v2 surfaces the server's 401 as a generic MCPError at the client
+        # boundary rather than re-raising httpx2.HTTPStatusError.
+        with pytest.raises(MCPError):
             async with Client(mcp_server_url) as client:
                 tools = await client.list_tools()  # noqa: F841
-
-        assert isinstance(exc_info.value, httpx.HTTPStatusError)
-        assert exc_info.value.response.status_code == 401
         assert "tools" not in locals()
 
     async def test_metadata_route_forwards_scalekit_response(
@@ -199,10 +259,10 @@ class TestScalekitProviderIntegration:
                 DummyAsyncClient.last_url = url
                 return DummyResponse(metadata_payload)
 
-        real_httpx_client = httpx.AsyncClient
+        real_httpx_client = httpx2.AsyncClient
 
         monkeypatch.setattr(
-            "fastmcp.server.auth.providers.scalekit.httpx.AsyncClient",
+            "fastmcp.server.auth.providers.scalekit.httpx2.AsyncClient",
             DummyAsyncClient,
         )
 

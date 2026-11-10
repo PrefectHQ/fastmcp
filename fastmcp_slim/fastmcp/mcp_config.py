@@ -27,24 +27,26 @@ from __future__ import annotations
 import datetime
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Self, cast
 from urllib.parse import urlparse
 
-import httpx
+import httpx2
 from pydantic import (
     AnyUrl,
     BaseModel,
     ConfigDict,
     Field,
+    PrivateAttr,
     model_validator,
 )
-from typing_extensions import Self, override
+from typing_extensions import override
 
 from fastmcp import _install_hints
 
 if TYPE_CHECKING:
     from fastmcp.client.transports import (
         ClientTransport,
+        FastMCPTransport,
         SSETransport,
         StdioTransport,
         StreamableHttpTransport,
@@ -137,21 +139,30 @@ class _TransformingMCPServerMixin(BaseModel):
             ) from exc
 
         transport = cast("ClientTransport", super().to_transport())  # ty: ignore[unresolved-attribute]
-        client = Client(transport=transport, name=client_name)
+        # The proxy that wraps this client forwards the initialize handshake and
+        # server-initiated features, which require the legacy era.
+        config = cast("MCPServerTypes", self)
+        timeout = config.timeout / 1000 if config.timeout is not None else None
+        client = Client(
+            transport=transport, name=client_name, mode="legacy", timeout=timeout
+        )
         wrapped_mcp_server = create_proxy(client, name=server_name)
 
-        if self.include_tags is not None:
-            wrapped_mcp_server.enable(tags=self.include_tags, only=True)
-        if self.exclude_tags is not None:
-            wrapped_mcp_server.disable(tags=self.exclude_tags)
+        # Add tool transforms FIRST - they may add/modify tags. Then add
+        # enabled filters - they filter based on tags. This mirrors the order
+        # used by the multi-server composite path.
         if self.tools:
             wrapped_mcp_server.add_transform(
                 ToolTransform(_coerce_tool_transform_configs(self.tools))
             )
+        if self.include_tags is not None:
+            wrapped_mcp_server.enable(tags=self.include_tags, only=True)
+        if self.exclude_tags is not None:
+            wrapped_mcp_server.disable(tags=self.exclude_tags)
 
         return wrapped_mcp_server, transport
 
-    def to_transport(self) -> ClientTransport:
+    def to_transport(self) -> FastMCPTransport:
         """Get the transport for the transforming MCP server."""
         try:
             from fastmcp.client.transports import FastMCPTransport
@@ -162,13 +173,24 @@ class _TransformingMCPServerMixin(BaseModel):
                 )
             ) from exc
 
-        return FastMCPTransport(mcp=self._to_server_and_underlying_transport()[0])
+        transport = FastMCPTransport(mcp=self._to_server_and_underlying_transport()[0])
+        # The wrapped proxy talks to its upstream over the legacy era (it pins
+        # the backend client to `mode="legacy"` to forward the initialize
+        # handshake and server-initiated features). Mark the wrapper legacy-only
+        # so a default `Client(config)` on `mode="auto"` negotiates legacy with
+        # it too, keeping both legs on the same era — otherwise a modern
+        # frontend would receive a forwarded server-initiated request that the
+        # modern era has no back-channel for.
+        transport.legacy_only = True
+        return transport
 
 
 class StdioMCPServer(BaseModel):
     """MCP server configuration for stdio transport.
 
     This is the canonical configuration format for MCP servers using stdio transport.
+    `timeout` sets the per-request timeout in milliseconds when used in an
+    `MCPConfig`. It takes precedence over the client timeout; zero disables it.
     """
 
     # Required fields
@@ -198,7 +220,7 @@ class StdioMCPServer(BaseModel):
 
     model_config = ConfigDict(extra="allow")  # Preserve unknown fields
 
-    def to_transport(self) -> StdioTransport:
+    def to_transport(self) -> StdioTransport | FastMCPTransport:
         from fastmcp.client.transports import StdioTransport
 
         return StdioTransport(
@@ -218,6 +240,8 @@ class RemoteMCPServer(BaseModel):
     """MCP server configuration for HTTP/SSE transport.
 
     This is the canonical configuration format for MCP servers using remote transports.
+    `timeout` sets the per-request timeout in milliseconds when used in an
+    `MCPConfig`. It takes precedence over the client timeout; zero disables it.
     """
 
     # Required fields
@@ -229,15 +253,26 @@ class RemoteMCPServer(BaseModel):
 
     # Authentication
     auth: Annotated[
-        str | Literal["oauth"] | httpx.Auth | None,
+        str | Literal["oauth"] | httpx2.Auth | None,
         Field(
-            description='Either a string representing a Bearer token, the literal "oauth" to use OAuth authentication, or an httpx.Auth instance for custom authentication.',
+            description='Either a string representing a Bearer token, the literal "oauth" to use OAuth authentication, or an httpx2.Auth instance for custom authentication.',
         ),
     ] = None
+
+    # Resolved `auth="oauth"` client, kept for the lifetime of this server
+    # config. See `_resolve_auth`.
+    _oauth_auth: Any = PrivateAttr(default=None)
+    _oauth_auth_url: str | None = PrivateAttr(default=None)
 
     # Timeout configuration
     sse_read_timeout: datetime.timedelta | int | float | None = None
     timeout: int | None = None  # Maximum response time in milliseconds
+
+    # Streamable HTTP configuration
+    max_sse_event_size: int | None = 1024 * 1024
+    """Maximum size in bytes of an incoming SSE event on the streamable HTTP
+    transport. Defaults to 1 MiB. None disables the limit. Ignored for SSE
+    transport."""
 
     # Metadata
     description: str | None = None  # Human-readable server description
@@ -250,7 +285,36 @@ class RemoteMCPServer(BaseModel):
         extra="allow", arbitrary_types_allowed=True
     )  # Preserve unknown fields
 
-    def to_transport(self) -> StreamableHttpTransport | SSETransport:
+    def _resolve_auth(self) -> Any:
+        """The auth object to hand to a newly built transport.
+
+        `auth="oauth"` makes the transport construct an `OAuth` client, and
+        that client's token store defaults to per-instance memory. A multi-server
+        `MCPConfig` proxy rebuilds its backend transports for every request, so
+        each rebuild discarded the collected token and sent the user through the
+        browser flow again. A single-server config builds its transport once,
+        which is why it logged in once.
+
+        Keeping the resolved client on the server config gives one token store
+        per configured server however many transports are built. Every other
+        form is returned unchanged: a bearer string still resolves per
+        transport, and a caller-supplied `httpx2.Auth` is already an object
+        whose lifetime the caller owns.
+        """
+        if self.auth != "oauth":
+            return self.auth
+        # The client is bound to the URL it was built for, so a config whose URL
+        # was rewritten in place must not keep sending the user to the old one.
+        if self._oauth_auth is None or self._oauth_auth_url != self.url:
+            from fastmcp.client.auth.oauth import OAuth
+
+            self._oauth_auth = OAuth(self.url)
+            self._oauth_auth_url = self.url
+        return self._oauth_auth
+
+    def to_transport(
+        self,
+    ) -> StreamableHttpTransport | SSETransport | FastMCPTransport:
         from fastmcp.client.transports import (
             SSETransport,
             StreamableHttpTransport,
@@ -265,7 +329,7 @@ class RemoteMCPServer(BaseModel):
             return SSETransport(
                 self.url,
                 headers=self.headers,
-                auth=self.auth,
+                auth=self._resolve_auth(),
                 sse_read_timeout=self.sse_read_timeout,
             )
         else:
@@ -273,8 +337,8 @@ class RemoteMCPServer(BaseModel):
             return StreamableHttpTransport(
                 self.url,
                 headers=self.headers,
-                auth=self.auth,
-                sse_read_timeout=self.sse_read_timeout,
+                auth=self._resolve_auth(),
+                max_sse_event_size=self.max_sse_event_size,
             )
 
 
@@ -332,13 +396,15 @@ class MCPConfig(BaseModel):
     def write_to_file(self, file_path: Path) -> None:
         """Write configuration to JSON file."""
         file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_text(self.model_dump_json(indent=2))
+        file_path.write_text(self.model_dump_json(indent=2), encoding="utf-8")
 
     @classmethod
     def from_file(cls, file_path: Path) -> Self:
         """Load configuration from JSON file."""
-        if file_path.exists() and (content := file_path.read_text().strip()):
-            return cls.model_validate_json(content)  # ty: ignore[possibly-unresolved-reference]
+        if file_path.exists() and (
+            content := file_path.read_text(encoding="utf-8").strip()
+        ):
+            return cls.model_validate_json(content)
 
         raise ValueError(f"No MCP servers defined in the config: {file_path}")
 
@@ -366,8 +432,12 @@ def update_config_file(
     """Update an MCP configuration file from a server object, preserving existing fields.
 
     This is used for updating the mcpServer configurations of third-party tools so we do not
-    worry about transforming server objects here."""
-    config = MCPConfig.from_file(file_path)
+    worry about transforming server objects here. A missing or empty file is treated as a
+    config with no servers, so it is created on write."""
+    if file_path.exists() and file_path.read_text(encoding="utf-8").strip():
+        config = MCPConfig.from_file(file_path)
+    else:
+        config = MCPConfig()
 
     # If updating an existing server, merge with existing configuration
     # to preserve any unknown fields

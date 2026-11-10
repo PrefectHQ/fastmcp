@@ -1,13 +1,21 @@
 """Tests for Azure (Microsoft Entra) OAuth provider."""
 
+import time
+from typing import Any, Literal
+from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 from key_value.aio.stores.memory import MemoryStore
-from mcp.server.auth.provider import AuthorizationParams
+from mcp.server.auth.provider import (
+    AuthorizationCode,
+    AuthorizationParams,
+    RefreshToken,
+)
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
+from fastmcp.server.auth.oauth_proxy.models import ClientCode, UpstreamTokenSet
 from fastmcp.server.auth.providers.azure import AzureProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 
@@ -215,10 +223,10 @@ class TestAzureProvider:
         assert verifier.required_scopes == [".default"]
 
     async def test_token_accepted_with_client_id_audience(
-        self, memory_storage: MemoryStore
+        self, memory_storage: MemoryStore, rsa_key_pair: RSAKeyPair
     ):
         """Azure AD v2 tokens use the bare client_id as aud — must be accepted."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         provider = AzureProvider(
             client_id="test_client",
             client_secret="test_secret",
@@ -245,10 +253,10 @@ class TestAzureProvider:
         assert result is not None
 
     async def test_token_accepted_with_identifier_uri_audience(
-        self, memory_storage: MemoryStore
+        self, memory_storage: MemoryStore, rsa_key_pair: RSAKeyPair
     ):
         """Azure AD v1 tokens use the identifier_uri as aud — must be accepted."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         provider = AzureProvider(
             client_id="test_client",
             client_secret="test_secret",
@@ -275,10 +283,10 @@ class TestAzureProvider:
         assert result is not None
 
     async def test_token_rejected_with_wrong_audience(
-        self, memory_storage: MemoryStore
+        self, memory_storage: MemoryStore, rsa_key_pair: RSAKeyPair
     ):
         """Tokens for a different application must be rejected."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         provider = AzureProvider(
             client_id="test_client",
             client_secret="test_secret",
@@ -437,6 +445,25 @@ class TestAzureProvider:
         )
         assert "Mail.Read" in upstream_url
         assert "User.Read" in upstream_url
+
+    def test_prepare_scopes_for_token_exchange_falls_back_to_required_scopes(
+        self, memory_storage: MemoryStore
+    ):
+        """Clients may omit scope; Azure still needs an API scope with offline_access."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            base_url="https://myserver.com",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        result = provider._prepare_scopes_for_token_exchange([])
+
+        assert result == ["api://my-api/read", "offline_access"]
 
     def test_base_authority_defaults_to_public_cloud(self, memory_storage: MemoryStore):
         """Test that base_authority defaults to login.microsoftonline.com."""
@@ -717,10 +744,10 @@ class TestAzureProvider:
             "https://graph.microsoft.com/.default" in result
         )  # Not prefixed (contains ://)
 
-    def test_prepare_scopes_for_upstream_refresh_empty_scopes(
+    def test_prepare_scopes_for_upstream_refresh_empty_scopes_falls_back_to_required(
         self, memory_storage: MemoryStore
     ):
-        """Test behavior with empty scopes list."""
+        """Clients may omit scope; refresh should still request the configured API scope."""
         provider = AzureProvider(
             client_id="test_client",
             client_secret="test_secret",
@@ -733,13 +760,13 @@ class TestAzureProvider:
             client_storage=memory_storage,
         )
 
-        # Empty scopes should still add OIDC scopes (not User.Read)
         result = provider._prepare_scopes_for_upstream_refresh([])
 
+        assert "api://my-api/read" in result
         assert "User.Read" not in result  # Not OIDC
         assert "openid" in result
         assert "offline_access" in result  # Auto-included
-        assert len(result) == 2  # Only OIDC scopes: openid + offline_access
+        assert len(result) == 3
 
     def test_prepare_scopes_for_upstream_refresh_no_additional_scopes(
         self, memory_storage: MemoryStore
@@ -824,6 +851,174 @@ class TestAzureProvider:
         assert result.count("api://my-api/read") == 1
 
 
+class TestAzureProviderPrompt:
+    """Tests that prompt reaches Azure rather than FastMCP's own consent page."""
+
+    @pytest.fixture
+    def client(self) -> OAuthClientInformationFull:
+        return OAuthClientInformationFull(
+            client_id="dummy",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+    @pytest.fixture
+    def params(self) -> AuthorizationParams:
+        return AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+            scopes=["read"],
+            state="abc",
+            code_challenge="xyz",
+        )
+
+    @pytest.mark.parametrize("consent", [True, "remember"])
+    async def test_prompt_reaches_azure_not_the_consent_url(
+        self,
+        memory_storage: MemoryStore,
+        client: OAuthClientInformationFull,
+        params: AuthorizationParams,
+        consent: bool | Literal["remember"],
+    ):
+        """With the consent screen in the loop, prompt belongs on the Azure URL."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            require_authorization_consent=consent,
+        )
+        await provider.register_client(client)
+
+        url = await provider.authorize(client, params)
+
+        # authorize() returns the local consent page, which must stay clean
+        assert url.startswith("https://srv.example/consent?")
+        assert "prompt" not in url
+
+        txn_id = parse_qs(urlparse(url).query)["txn_id"][0]
+        transaction = await provider._transaction_store.get(key=txn_id)
+        assert transaction is not None
+
+        upstream_url = provider._build_upstream_authorize_url(
+            txn_id, transaction.model_dump()
+        )
+        assert upstream_url.startswith("https://login.microsoftonline.com/")
+        assert "prompt=select_account" in upstream_url
+
+    async def test_prompt_sent_once_when_consent_disabled(
+        self,
+        memory_storage: MemoryStore,
+        client: OAuthClientInformationFull,
+        params: AuthorizationParams,
+    ):
+        """Without the consent screen, authorize() returns the Azure URL directly."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            require_authorization_consent=False,
+        )
+        await provider.register_client(client)
+
+        url = await provider.authorize(client, params)
+
+        assert url.startswith("https://login.microsoftonline.com/")
+        assert "prompt=select_account" in url
+        assert url.count("prompt=") == 1
+
+    async def test_extra_authorize_params_override_default_prompt(
+        self,
+        memory_storage: MemoryStore,
+        client: OAuthClientInformationFull,
+        params: AuthorizationParams,
+    ):
+        """Caller-supplied params win over the select_account default."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            require_authorization_consent=False,
+            extra_authorize_params={
+                "prompt": "login",
+                "domain_hint": "contoso.com",
+            },
+        )
+        await provider.register_client(client)
+
+        url = await provider.authorize(client, params)
+
+        assert "prompt=login" in url
+        assert "domain_hint=contoso.com" in url
+        assert "select_account" not in url
+
+    @pytest.mark.parametrize(
+        "extra_authorize_params", [{}, {"extra_authorize_params": None}]
+    )
+    async def test_b2c_does_not_send_select_account(
+        self,
+        memory_storage: MemoryStore,
+        client: OAuthClientInformationFull,
+        params: AuthorizationParams,
+        extra_authorize_params: dict[str, Any],
+    ):
+        """B2C user flows only support prompt=login, so send no prompt by default."""
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="test_client",
+            client_secret="test_secret",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            require_authorization_consent=False,
+            **extra_authorize_params,
+        )
+        await provider.register_client(client)
+
+        url = await provider.authorize(client, params)
+
+        assert url.startswith("https://mytenant.b2clogin.com/")
+        assert "prompt=" not in url
+
+    async def test_b2c_accepts_an_explicit_prompt(
+        self,
+        memory_storage: MemoryStore,
+        client: OAuthClientInformationFull,
+        params: AuthorizationParams,
+    ):
+        """The B2C opt-out is a default, not a restriction."""
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="test_client",
+            client_secret="test_secret",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            require_authorization_consent=False,
+            extra_authorize_params={"prompt": "login"},
+        )
+        await provider.register_client(client)
+
+        url = await provider.authorize(client, params)
+
+        assert "prompt=login" in url
+
+
 class TestAzureProviderTokenIssuer:
     """Tests for the token_issuer parameter on AzureProvider."""
 
@@ -862,9 +1057,11 @@ class TestAzureProviderTokenIssuer:
         assert isinstance(provider._token_validator, JWTVerifier)
         assert provider._token_validator.issuer == custom_issuer
 
-    async def test_explicit_issuer_enforced(self, memory_storage: MemoryStore):
+    async def test_explicit_issuer_enforced(
+        self, memory_storage: MemoryStore, rsa_key_pair: RSAKeyPair
+    ):
         """With an explicit token_issuer, wrong issuers are rejected."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         expected = "https://expected.issuer.com/v2.0"
         provider = AzureProvider(
             client_id="test_client",
@@ -1083,10 +1280,10 @@ class TestAzureProviderFromB2C:
         assert "B2C_1A_SIGNUP_SIGNIN" in provider._upstream_token_endpoint
 
     async def test_b2c_token_accepted_with_any_issuer(
-        self, memory_storage: MemoryStore
+        self, memory_storage: MemoryStore, rsa_key_pair: RSAKeyPair
     ):
         """B2C provider (issuer=None) accepts tokens from any issuer."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         provider = AzureProvider.from_b2c(
             tenant_name="mytenant",
             policy_name="B2C_1_susi",
@@ -1113,10 +1310,10 @@ class TestAzureProviderFromB2C:
         assert result is not None
 
     async def test_b2c_token_rejected_with_wrong_audience(
-        self, memory_storage: MemoryStore
+        self, memory_storage: MemoryStore, rsa_key_pair: RSAKeyPair
     ):
         """B2C provider still rejects tokens with wrong audience."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         provider = AzureProvider.from_b2c(
             tenant_name="mytenant",
             policy_name="B2C_1_susi",
@@ -1183,3 +1380,284 @@ class TestAzureProviderFromB2CInputValidation:
                 jwt_signing_key="test-secret",
                 client_storage=memory_storage,
             )
+
+
+class TestAzureScopeRoundTrip:
+    """Azure echoes ``api://{client_id}/<scope>`` back in its token response's
+    ``scope`` field, but MCP clients request and recognize the unprefixed form
+    advertised on ``/.well-known/oauth-authorization-server``. Without
+    translation, strict clients (e.g. ChatGPT) compare requested vs. granted
+    and surface a "permissions not granted" warning even though the token is
+    fully valid.
+    """
+
+    CLIENT_ID = "dummy"
+    REDIRECT_URI = "http://localhost:12345/callback"
+
+    async def _register_and_store_code(
+        self,
+        provider: AzureProvider,
+        *,
+        code: str,
+        idp_tokens: dict,
+    ) -> tuple[OAuthClientInformationFull, AuthorizationCode]:
+        # set_mcp_path() is what initializes the JWT issuer used during the
+        # token exchange. Normally get_routes() does this; for a unit test we
+        # call it directly.
+        provider.set_mcp_path("/mcp")
+
+        client = OAuthClientInformationFull(
+            client_id=self.CLIENT_ID,
+            client_secret="secret",
+            redirect_uris=[AnyUrl(self.REDIRECT_URI)],
+        )
+        await provider.register_client(client)
+
+        await provider._code_store.put(
+            key=code,
+            value=ClientCode(
+                code=code,
+                client_id=self.CLIENT_ID,
+                redirect_uri=self.REDIRECT_URI,
+                code_challenge="",
+                code_challenge_method="S256",
+                scopes=["read", "write"],
+                idp_tokens=idp_tokens,
+                expires_at=time.time() + 300,
+                created_at=time.time(),
+            ),
+        )
+
+        auth_code = AuthorizationCode(
+            code=code,
+            scopes=["read", "write"],
+            expires_at=time.time() + 300,
+            client_id=self.CLIENT_ID,
+            code_challenge="",
+            redirect_uri=AnyUrl(self.REDIRECT_URI),
+            redirect_uri_provided_explicitly=True,
+        )
+        return client, auth_code
+
+    async def test_exchange_authorization_code_unprefixes_echoed_scopes(
+        self, memory_storage: MemoryStore
+    ):
+        """OAuthToken.scope returned to the client must use the unprefixed form
+        advertised on /.well-known, not the prefixed form Azure echoes back.
+        """
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            identifier_uri="api://my-api",
+            required_scopes=["read", "write"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        client, auth_code = await self._register_and_store_code(
+            provider,
+            code="test-auth-code",
+            idp_tokens={
+                "access_token": "upstream-access-token",
+                "refresh_token": "upstream-refresh-token",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+                # This is what Azure actually returns — the prefixed form.
+                "scope": "api://my-api/read api://my-api/write",
+            },
+        )
+
+        result = await provider.exchange_authorization_code(client, auth_code)
+
+        assert result.scope is not None
+        granted = set(result.scope.split())
+        assert granted == {"read", "write"}, (
+            f"Expected unprefixed scopes echoed to client, got {result.scope!r}"
+        )
+
+    async def test_exchange_authorization_code_preserves_external_scopes(
+        self, memory_storage: MemoryStore
+    ):
+        """External resource URIs (e.g. Microsoft Graph) and OIDC scopes don't
+        carry the identifier_uri prefix, so the translation must leave them
+        alone."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        client, auth_code = await self._register_and_store_code(
+            provider,
+            code="test-auth-code-mixed",
+            idp_tokens={
+                "access_token": "upstream-access-token",
+                "refresh_token": "upstream-refresh-token",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+                "scope": (
+                    "api://my-api/read https://graph.microsoft.com/User.Read openid"
+                ),
+            },
+        )
+
+        result = await provider.exchange_authorization_code(client, auth_code)
+
+        assert result.scope is not None
+        granted = set(result.scope.split())
+        assert granted == {
+            "read",
+            "https://graph.microsoft.com/User.Read",
+            "openid",
+        }
+
+    async def test_exchange_refresh_token_unprefixes_echoed_scopes(
+        self, memory_storage: MemoryStore
+    ):
+        """The same translation must apply on refresh — otherwise the cosmetic
+        scope mismatch reappears after the first refresh."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            identifier_uri="api://my-api",
+            required_scopes=["read", "write"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        with patch(
+            "fastmcp.server.auth.oauth_proxy.proxy.AsyncOAuth2Client"
+        ) as MockClient:
+            mock_client = AsyncMock()
+            mock_client.fetch_token = AsyncMock(
+                return_value={
+                    "access_token": "upstream-access-token",
+                    "refresh_token": "upstream-refresh-token",
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                    "scope": "api://my-api/read api://my-api/write",
+                }
+            )
+            MockClient.return_value = mock_client
+
+            client, auth_code = await self._register_and_store_code(
+                provider,
+                code="test-auth-code-refresh",
+                idp_tokens={
+                    "access_token": "upstream-access-token",
+                    "refresh_token": "upstream-refresh-token",
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                    "scope": "api://my-api/read api://my-api/write",
+                },
+            )
+            initial = await provider.exchange_authorization_code(client, auth_code)
+
+            assert initial.refresh_token is not None
+            fastmcp_refresh = RefreshToken(
+                token=initial.refresh_token,
+                client_id=self.CLIENT_ID,
+                scopes=["read", "write"],
+                expires_at=None,
+            )
+
+            # Simulate Azure echoing prefixed scopes on the refresh response too.
+            mock_client.refresh_token = AsyncMock(
+                return_value={
+                    "access_token": "rotated-upstream-token",
+                    "refresh_token": "rotated-upstream-refresh",
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                    "scope": "api://my-api/read api://my-api/write",
+                }
+            )
+
+            refreshed = await provider.exchange_refresh_token(
+                client, fastmcp_refresh, ["read", "write"]
+            )
+
+        assert refreshed.scope is not None
+        granted = set(refreshed.scope.split())
+        assert granted == {"read", "write"}, (
+            f"Expected unprefixed scopes after refresh, got {refreshed.scope!r}"
+        )
+
+    async def test_transparent_refresh_unprefixes_echoed_scopes(
+        self, memory_storage: MemoryStore
+    ):
+        """Transparent refresh stores client-facing scopes too.
+
+        Otherwise the scope mismatch can reappear when an expired upstream token
+        is refreshed during access-token validation.
+        """
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            identifier_uri="api://my-api",
+            required_scopes=["read", "write"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        upstream_token_set = UpstreamTokenSet(
+            upstream_token_id="upstream-token-id",
+            access_token="expired-upstream-token",
+            refresh_token="refresh-token",
+            refresh_token_expires_at=time.time() + 3600,
+            expires_at=time.time() - 60,
+            token_type="Bearer",
+            scope="read write",
+            client_id=self.CLIENT_ID,
+            created_at=time.time() - 3600,
+        )
+
+        mock_oauth_client = AsyncMock()
+        mock_oauth_client.refresh_token = AsyncMock(
+            return_value={
+                "access_token": "rotated-upstream-token",
+                "refresh_token": "rotated-refresh-token",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+                "scope": "api://my-api/read api://my-api/write",
+            }
+        )
+
+        with patch.object(
+            provider, "_create_upstream_oauth_client", return_value=mock_oauth_client
+        ):
+            refreshed = await provider._try_transparent_refresh(upstream_token_set)
+
+        assert refreshed.scope == "read write"
+
+    def test_translate_scopes_from_idp_is_inverse_of_prefix(
+        self, memory_storage: MemoryStore
+    ):
+        """The new hook should be the exact inverse of _prefix_scopes_for_azure
+        for any input the provider would have sent upstream."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            identifier_uri="api://my-api",
+            required_scopes=["read", "write"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        original = ["read", "write", "openid", "https://graph.microsoft.com/User.Read"]
+        round_tripped = provider._translate_scopes_from_idp(
+            provider._prefix_scopes_for_azure(original)
+        )
+        assert round_tripped == original

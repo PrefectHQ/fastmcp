@@ -101,8 +101,8 @@ class TestGitHubTokenVerifier:
         """Test token verification when GitHub API returns error."""
         verifier = GitHubTokenVerifier()
 
-        # Mock httpx.AsyncClient to simulate GitHub API failure
-        with patch("httpx.AsyncClient") as mock_client_class:
+        # Mock httpx2.AsyncClient to simulate GitHub API failure
+        with patch("httpx2.AsyncClient") as mock_client_class:
             mock_client = MagicMock()
             mock_client_class.return_value.__aenter__.return_value = mock_client
 
@@ -119,7 +119,7 @@ class TestGitHubTokenVerifier:
         """Test successful token verification."""
         verifier = GitHubTokenVerifier(required_scopes=["user"])
 
-        # Mock the httpx.AsyncClient directly
+        # Mock the httpx2.AsyncClient directly
         mock_client = AsyncMock()
 
         # Mock successful user API response
@@ -135,6 +135,7 @@ class TestGitHubTokenVerifier:
 
         # Mock successful scopes API response
         scopes_response = MagicMock()
+        scopes_response.status_code = 200
         scopes_response.headers = {"x-oauth-scopes": "user,repo"}
 
         # Set up the mock client to return our responses
@@ -142,7 +143,7 @@ class TestGitHubTokenVerifier:
 
         # Patch the AsyncClient context manager
         with patch(
-            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+            "fastmcp.server.auth.providers.github.httpx2.AsyncClient"
         ) as mock_client_class:
             mock_client_class.return_value.__aenter__.return_value = mock_client
 
@@ -203,7 +204,7 @@ class TestGitHubTokenVerifierCaching:
         mock_client = AsyncMock()
 
         with patch(
-            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+            "fastmcp.server.auth.providers.github.httpx2.AsyncClient"
         ) as mock_cls:
             mock_cls.return_value.__aenter__.return_value = mock_client
 
@@ -226,7 +227,7 @@ class TestGitHubTokenVerifierCaching:
         mock_client = AsyncMock()
 
         with patch(
-            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+            "fastmcp.server.auth.providers.github.httpx2.AsyncClient"
         ) as mock_cls:
             mock_cls.return_value.__aenter__.return_value = mock_client
 
@@ -244,7 +245,7 @@ class TestGitHubTokenVerifierCaching:
         mock_client = AsyncMock()
 
         with patch(
-            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+            "fastmcp.server.auth.providers.github.httpx2.AsyncClient"
         ) as mock_cls:
             mock_cls.return_value.__aenter__.return_value = mock_client
 
@@ -265,7 +266,7 @@ class TestGitHubTokenVerifierCaching:
         mock_client = AsyncMock()
 
         with patch(
-            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+            "fastmcp.server.auth.providers.github.httpx2.AsyncClient"
         ) as mock_cls:
             mock_cls.return_value.__aenter__.return_value = mock_client
 
@@ -278,8 +279,8 @@ class TestGitHubTokenVerifierCaching:
             assert result2 is not None
             assert result2.claims["login"] == "testuser"
 
-    async def test_scope_failure_skips_cache(self):
-        """Token verified with fallback scopes (scope API failed) should not be cached."""
+    async def test_scope_failure_keeps_identity_without_inventing_scopes(self):
+        """A scope-endpoint outage may verify identity, but must not invent scopes."""
         verifier = GitHubTokenVerifier(cache_ttl_seconds=300)
 
         mock_client = AsyncMock()
@@ -296,18 +297,25 @@ class TestGitHubTokenVerifierCaching:
 
         scopes_response = MagicMock()
         scopes_response.status_code = 500
+        scopes_response.text = "simulated outage"
         scopes_response.headers = {}
 
         with patch(
-            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+            "fastmcp.server.auth.providers.github.httpx2.AsyncClient"
         ) as mock_cls:
             mock_cls.return_value.__aenter__.return_value = mock_client
 
             mock_client.get.side_effect = [user_response, scopes_response]
-            result = await verifier.verify_token("tok-1")
-            assert result is not None
-            # Should NOT be cached because scope response was not 200
-            assert not verifier._cache.enabled or len(verifier._cache._entries) == 0
+            first = await verifier.verify_token("tok-1")
+            second = await verifier.verify_token("tok-1")
+
+            assert first is not None
+            assert first.scopes == []
+            assert second is not None
+            assert second.scopes == []
+            assert second.client_id == first.client_id
+            assert second is not first
+            assert mock_client.get.call_count == 2
 
     def test_provider_passes_cache_params(self, memory_storage: MemoryStore):
         provider = GitHubProvider(

@@ -141,7 +141,9 @@ class TestFileUploadProvider:
         text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
         assert "test.txt" in text
 
-    async def test_ui_tool_visible_backend_hidden(self):
+    async def test_backend_tool_listed_as_app_only(self):
+        """``store_files`` is listed but declares visibility=["app"], so the
+        host keeps it out of the model's tool list."""
         server = FastMCP("test", providers=[FileUpload()])
 
         tools = await server.list_tools()
@@ -150,7 +152,11 @@ class TestFileUploadProvider:
         assert "file_manager" in tool_names
         assert "list_files" in tool_names
         assert "read_file" in tool_names
-        assert "store_files" not in tool_names
+        assert "store_files" in tool_names
+
+        store_files = next(t for t in tools if t.name == "store_files")
+        assert store_files.meta is not None
+        assert store_files.meta["ui"]["visibility"] == ["app"]
 
     async def test_max_file_size_enforced_server_side(self):
         server = FastMCP("test", providers=[FileUpload(max_file_size=100)])

@@ -21,7 +21,7 @@ Request a rendered prompt with `get_prompt()`:
 async with client:
     # Simple prompt without arguments
     result = await client.get_prompt("welcome_message")
-    # result -> mcp.types.GetPromptResult
+    # result -> mcp_types.GetPromptResult
 
     # Access the generated messages
     for message in result.messages:
@@ -81,7 +81,7 @@ async with client:
         print(f"  Content: {message.content.text if hasattr(message.content, 'text') else message.content}")
 ```
 
-Prompts can generate different message types. System messages configure LLM behavior:
+Every prompt message has the role `user` or `assistant`; MCP prompts have no system role. A prompt can return a single message that sets up the LLM's task:
 
 ```python
 async with client:
@@ -124,16 +124,16 @@ async with client:
     result_v1 = await client.get_prompt("summarize", {"text": "..."}, version="1.0")
 ```
 
-See [Metadata](/servers/versioning#version-discovery) for how to discover available versions.
+See [Version Discovery](/servers/versioning#version-discovery) for how to discover available versions.
 
 ## Multi-Server Clients
 
-When using multi-server clients, prompts are accessible directly without prefixing:
+When using multi-server clients, prompt names are prefixed with the server name, just like tools, so `weather_prompt` on the `weather` server becomes `weather_weather_prompt`:
 
 ```python
 async with client:  # Multi-server client
-    result1 = await client.get_prompt("weather_prompt", {"city": "London"})
-    result2 = await client.get_prompt("assistant_prompt", {"query": "help"})
+    result1 = await client.get_prompt("weather_weather_prompt", {"city": "London"})
+    result2 = await client.get_prompt("assistant_assistant_prompt", {"query": "help"})
 ```
 
 ## Raw Protocol Access
@@ -143,5 +143,5 @@ For complete control, use `get_prompt_mcp()` which returns the full MCP protocol
 ```python
 async with client:
     result = await client.get_prompt_mcp("example_prompt", {"arg": "value"})
-    # result -> mcp.types.GetPromptResult
+    # result -> mcp_types.GetPromptResult
 ```

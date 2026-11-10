@@ -253,15 +253,15 @@ class TestProjectPrepareCommand:
         mock_find.return_value = None
 
         # Run command without output_dir - should exit with error for missing output_dir
-        with pytest.raises(SystemExit) as exc_info:
-            with patch("fastmcp.cli.cli.logger.error") as mock_error:
+        with patch("fastmcp.cli.cli.logger.error") as mock_error:
+            with pytest.raises(SystemExit) as exc_info:
                 await prepare(config_path=None, output_dir=None)
 
-        assert isinstance(exc_info.value, SystemExit)
-        assert exc_info.value.code == 1
-        mock_error.assert_called()
-        error_msg = mock_error.call_args[0][0]
-        assert "--output-dir parameter is required" in error_msg
+            assert isinstance(exc_info.value, SystemExit)
+            assert exc_info.value.code == 1
+            mock_error.assert_called()
+            error_msg = mock_error.call_args[0][0]
+            assert "--output-dir parameter is required" in error_msg
 
     @patch("pathlib.Path.exists")
     async def test_project_prepare_config_not_exists(self, mock_exists):
@@ -272,15 +272,15 @@ class TestProjectPrepareCommand:
         mock_exists.return_value = False
 
         # Run command without output_dir - should exit with error for missing output_dir
-        with pytest.raises(SystemExit) as exc_info:
-            with patch("fastmcp.cli.cli.logger.error") as mock_error:
+        with patch("fastmcp.cli.cli.logger.error") as mock_error:
+            with pytest.raises(SystemExit) as exc_info:
                 await prepare(config_path="missing.json", output_dir=None)
 
-        assert isinstance(exc_info.value, SystemExit)
-        assert exc_info.value.code == 1
-        mock_error.assert_called()
-        error_msg = mock_error.call_args[0][0]
-        assert "--output-dir parameter is required" in error_msg
+            assert isinstance(exc_info.value, SystemExit)
+            assert exc_info.value.code == 1
+            mock_error.assert_called()
+            error_msg = mock_error.call_args[0][0]
+            assert "--output-dir parameter is required" in error_msg
 
     @patch("pathlib.Path.exists")
     @patch("fastmcp.utilities.mcp_server_config.MCPServerConfig.from_file")
@@ -295,12 +295,12 @@ class TestProjectPrepareCommand:
         mock_from_file.return_value = mock_config
 
         # Run command - should exit with error
-        with pytest.raises(SystemExit) as exc_info:
-            with patch("fastmcp.cli.cli.console.print") as mock_print:
+        with patch("fastmcp.cli.cli.console.print") as mock_print:
+            with pytest.raises(SystemExit) as exc_info:
                 await prepare(config_path="config.json", output_dir="./test-env")
 
-        assert isinstance(exc_info.value, SystemExit)
-        assert exc_info.value.code == 1
-        # Should print error message
-        error_call = mock_print.call_args_list[-1][0][0]
-        assert "Failed to prepare project" in error_call
+            assert isinstance(exc_info.value, SystemExit)
+            assert exc_info.value.code == 1
+            # Should print error message
+            error_call = mock_print.call_args_list[-1][0][0]
+            assert "Failed to prepare project" in error_call

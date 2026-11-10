@@ -1,14 +1,12 @@
 """Provides a base mixin class and decorators for easy registration of class methods with FastMCP."""
 
 import inspect
-import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-import fastmcp
-from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.prompts.base import Prompt
 from fastmcp.resources.base import Resource
+from fastmcp.resources.template import ResourceTemplate
 from fastmcp.tools.base import Tool
 from fastmcp.utilities.types import get_fn_name
 
@@ -71,15 +69,6 @@ def mcp_tool(
         raise TypeError(
             f"mcp_tool() got unexpected keyword argument(s): {sorted(unknown)!r}. "
             f"Valid keyword arguments are: {sorted(_TOOL_VALID_KWARGS)}"
-        )
-
-    if "serializer" in kwargs and fastmcp.settings.deprecation_warnings:
-        warnings.warn(
-            "The `serializer` parameter is deprecated. "
-            "Return ToolResult from your tools for full control over serialization. "
-            "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-            FastMCPDeprecationWarning,
-            stacklevel=2,
         )
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -190,15 +179,18 @@ class MCPMixin:
 
     def _get_methods_to_register(self, registration_type: str):
         """Retrieves all methods marked for a specific registration type."""
-        return [
-            (
-                getattr(self, method_name),
-                getattr(getattr(self, method_name), registration_type).copy(),
-            )
-            for method_name in dir(self)
-            if callable(getattr(self, method_name))
-            and hasattr(getattr(self, method_name), registration_type)
-        ]
+        methods = []
+        for method_name in dir(self):
+            # Look for the marker without reading the attribute, so properties
+            # and other descriptors on the instance are never evaluated.
+            static_attr = inspect.getattr_static(self, method_name, None)
+            func = getattr(static_attr, "__func__", static_attr)
+            if not hasattr(func, registration_type):
+                continue
+            method = getattr(self, method_name)
+            if callable(method):
+                methods.append((method, getattr(method, registration_type).copy()))
+        return methods
 
     def register_tools(
         self,
@@ -238,6 +230,9 @@ class MCPMixin:
     ) -> None:
         """Registers all methods marked with @mcp_resource with the FastMCP server.
 
+        A method whose URI contains `{param}` placeholders is registered as a
+        resource template; any other method is registered as a static resource.
+
         Args:
             mcp_server: The FastMCP server instance to register resources with.
             prefix: Optional prefix to prepend to resource names and URIs.  If
@@ -262,8 +257,17 @@ class MCPMixin:
             if enabled is False:
                 continue
 
-            resource = Resource.from_function(fn=method, **registration_info)
-            mcp_server.add_resource(resource)
+            uri = registration_info.pop("uri")
+            if "{" in uri and "}" in uri:
+                template = ResourceTemplate.from_function(
+                    fn=method, uri_template=uri, **registration_info
+                )
+                mcp_server.add_template(template)
+            else:
+                resource = Resource.from_function(
+                    fn=method, uri=uri, **registration_info
+                )
+                mcp_server.add_resource(resource)
 
     def register_prompts(
         self,

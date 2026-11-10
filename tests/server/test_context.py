@@ -1,15 +1,15 @@
-from typing import Any, cast
+import logging
+from collections.abc import Iterator
 from unittest.mock import MagicMock
 
 import pytest
-from mcp.types import ModelPreferences
 
+from fastmcp import Client
 from fastmcp.server.context import (
     Context,
     reset_transport,
     set_transport,
 )
-from fastmcp.server.sampling.run import _parse_model_preferences
 from fastmcp.server.server import FastMCP
 
 
@@ -18,50 +18,33 @@ def context():
     return Context(fastmcp=FastMCP())
 
 
-class TestParseModelPreferences:
-    def test_parse_model_preferences_string(self, context):
-        mp = _parse_model_preferences("claude-haiku-4-5")
-        assert isinstance(mp, ModelPreferences)
-        assert mp.hints is not None
-        assert mp.hints[0].name == "claude-haiku-4-5"
-
-    def test_parse_model_preferences_list(self, context):
-        mp = _parse_model_preferences(["claude-haiku-4-5", "claude"])
-        assert isinstance(mp, ModelPreferences)
-        assert mp.hints is not None
-        assert [h.name for h in mp.hints] == ["claude-haiku-4-5", "claude"]
-
-    def test_parse_model_preferences_object(self, context):
-        obj = ModelPreferences(hints=[])
-        assert _parse_model_preferences(obj) is obj
-
-    def test_parse_model_preferences_invalid_type(self, context):
-        with pytest.raises(ValueError):
-            _parse_model_preferences(model_preferences=123)  # pyright: ignore[reportArgumentType] # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type]
-
-
 class TestSessionId:
     def test_session_id_with_http_headers(self, context):
         """Test that session_id returns the value from mcp-session-id header."""
-        from mcp.server.lowlevel.server import request_ctx
-        from mcp.shared.context import RequestContext
+        from fastmcp.server.dependencies import (
+            FastMCPRequestContext,
+            fastmcp_request_ctx,
+        )
 
         mock_headers = {"mcp-session-id": "test-session-123"}
 
-        token = request_ctx.set(
-            RequestContext(
-                request_id=0,
-                meta=None,
+        token = fastmcp_request_ctx.set(
+            FastMCPRequestContext(
                 session=MagicMock(wraps={}),
-                lifespan_context=MagicMock(),
+                request_id="0",
+                meta=None,
                 request=MagicMock(headers=mock_headers),
+                protocol_version="2025-06-18",
+                close_sse_stream=None,
+                lifespan_context=MagicMock(),
+                _srctx=MagicMock(meta=None),
             )
         )
 
         try:
             assert context.session_id == "test-session-123"
         finally:
-            request_ctx.reset(token)
+            fastmcp_request_ctx.reset(token)
 
     def test_session_id_without_http_headers(self, context):
         """Test that session_id returns a UUID when no HTTP headers are available.
@@ -71,16 +54,22 @@ class TestSessionId:
         """
         import uuid
 
-        from mcp.server.lowlevel.server import request_ctx
-        from mcp.shared.context import RequestContext
+        from fastmcp.server.dependencies import (
+            FastMCPRequestContext,
+            fastmcp_request_ctx,
+        )
 
         mock_session = MagicMock(wraps={})
-        token = request_ctx.set(
-            RequestContext(
-                request_id=0,
-                meta=None,
+        token = fastmcp_request_ctx.set(
+            FastMCPRequestContext(
                 session=mock_session,
+                request_id="0",
+                meta=None,
+                request=None,
+                protocol_version="2025-06-18",
+                close_sse_stream=None,
                 lifespan_context=MagicMock(),
+                _srctx=MagicMock(meta=None),
             )
         )
 
@@ -91,7 +80,7 @@ class TestSessionId:
             # Should be cached on session
             assert mock_session._fastmcp_state_prefix == session_id
         finally:
-            request_ctx.reset(token)
+            fastmcp_request_ctx.reset(token)
 
 
 class TestContextState:
@@ -337,56 +326,67 @@ class TestContextMeta:
     """Test suite for Context meta functionality."""
 
     def test_request_context_meta_access(self, context):
-        """Test that meta can be accessed from request context."""
-        from mcp.server.lowlevel.server import request_ctx
-        from mcp.shared.context import RequestContext
+        """Test that the lifted _meta dict is accessible from request context.
 
-        # Create a mock meta object with attributes
-        class MockMeta:
-            def __init__(self):
-                self.user_id = "user-123"
-                self.trace_id = "trace-456"
-                self.custom_field = "custom-value"
+        In the v2 SDK port the wrapper's ``meta`` is the raw ``_meta`` block
+        lifted from the request params (a dict), not a typed object.
+        """
+        from fastmcp.server.dependencies import (
+            FastMCPRequestContext,
+            fastmcp_request_ctx,
+        )
 
-        mock_meta = MockMeta()
+        meta_dict = {
+            "user_id": "user-123",
+            "trace_id": "trace-456",
+            "custom_field": "custom-value",
+        }
 
-        token = request_ctx.set(
-            RequestContext(
-                request_id=0,
-                meta=cast(Any, mock_meta),  # Mock object for testing
+        token = fastmcp_request_ctx.set(
+            FastMCPRequestContext(
                 session=MagicMock(wraps={}),
+                request_id="0",
+                meta=meta_dict,
+                request=None,
+                protocol_version="2025-06-18",
+                close_sse_stream=None,
                 lifespan_context=MagicMock(),
+                _srctx=MagicMock(meta=None),
             )
         )
 
-        # Access meta through context
         retrieved_meta = context.request_context.meta
         assert retrieved_meta is not None
-        assert retrieved_meta.user_id == "user-123"
-        assert retrieved_meta.trace_id == "trace-456"
-        assert retrieved_meta.custom_field == "custom-value"
+        assert retrieved_meta["user_id"] == "user-123"
+        assert retrieved_meta["trace_id"] == "trace-456"
+        assert retrieved_meta["custom_field"] == "custom-value"
 
-        request_ctx.reset(token)
+        fastmcp_request_ctx.reset(token)
 
     def test_request_context_meta_none(self, context):
         """Test that context handles None meta gracefully."""
-        from mcp.server.lowlevel.server import request_ctx
-        from mcp.shared.context import RequestContext
+        from fastmcp.server.dependencies import (
+            FastMCPRequestContext,
+            fastmcp_request_ctx,
+        )
 
-        token = request_ctx.set(
-            RequestContext(
-                request_id=0,
-                meta=None,
+        token = fastmcp_request_ctx.set(
+            FastMCPRequestContext(
                 session=MagicMock(wraps={}),
+                request_id="0",
+                meta=None,
+                request=None,
+                protocol_version="2025-06-18",
+                close_sse_stream=None,
                 lifespan_context=MagicMock(),
+                _srctx=MagicMock(meta=None),
             )
         )
 
-        # Access meta through context
         retrieved_meta = context.request_context.meta
         assert retrieved_meta is None
 
-        request_ctx.reset(token)
+        fastmcp_request_ctx.reset(token)
 
 
 class TestTransport:
@@ -477,9 +477,7 @@ class TestTransportIntegration:
 
     async def test_transport_set_via_http_middleware(self):
         """Test that transport is set per-request via HTTP middleware."""
-        from fastmcp import Client
-        from fastmcp.client.transports import StreamableHttpTransport
-        from fastmcp.utilities.tests import run_server_async
+        from fastmcp.utilities.tests import asgi_client
 
         mcp = FastMCP("test")
         observed_transport = None
@@ -490,9 +488,128 @@ class TestTransportIntegration:
             observed_transport = ctx.transport
             return observed_transport or "none"
 
-        async with run_server_async(mcp, transport="streamable-http") as url:
-            transport = StreamableHttpTransport(url=url)
-            async with Client(transport=transport) as client:
-                result = await client.call_tool("get_transport", {})
-                assert observed_transport == "streamable-http"
-                assert result.data == "streamable-http"
+        async with asgi_client(mcp, transport="streamable-http") as client:
+            result = await client.call_tool("get_transport", {})
+            assert observed_transport == "streamable-http"
+            assert result.data == "streamable-http"
+
+
+class TestContextLogExtra:
+    async def test_log_extra_with_log_record_attribute_names(self):
+        """`extra` keys that collide with LogRecord attributes must not fail the call."""
+        from fastmcp import Client
+
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        async def emit(ctx: Context) -> str:
+            await ctx.info("hello", extra={"name": "job-1", "module": "billing"})
+            return "ok"
+
+        received = []
+
+        async def log_handler(message):
+            received.append(message.data)
+
+        async with Client(mcp, log_handler=log_handler) as client:
+            result = await client.call_tool("emit", {})
+
+        assert result.data == "ok"
+        assert received == [
+            {"msg": "hello", "extra": {"name": "job-1", "module": "billing"}}
+        ]
+
+    async def test_log_extra_with_attribute_from_custom_record_factory(self):
+        """Attributes added by a record factory installed later are reserved too."""
+        import logging
+
+        from fastmcp import Client
+
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        async def emit(ctx: Context) -> str:
+            await ctx.info("hello", extra={"request_id": "r-1"})
+            return "ok"
+
+        received = []
+
+        async def log_handler(message):
+            received.append(message.data)
+
+        previous = logging.getLogRecordFactory()
+
+        def factory(*args, **kwargs):
+            record = previous(*args, **kwargs)
+            record.request_id = "from-factory"
+            return record
+
+        logging.setLogRecordFactory(factory)
+        try:
+            async with Client(mcp, log_handler=log_handler) as client:
+                result = await client.call_tool("emit", {})
+        finally:
+            logging.setLogRecordFactory(previous)
+
+        assert result.data == "ok"
+        assert received == [{"msg": "hello", "extra": {"request_id": "r-1"}}]
+
+
+class TestContextToClientLogger:
+    @pytest.fixture
+    def to_client_logger(self) -> Iterator[logging.Logger]:
+        logger = logging.getLogger("fastmcp.server.context.to_client")
+        yield logger
+        logger.setLevel(logging.NOTSET)
+
+    @staticmethod
+    async def call_log_tool(method: str) -> list[str]:
+        """Call a tool that logs "hello" with `ctx.<method>`.
+
+        Returns the levels of the log messages the client received.
+        """
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        async def emit(ctx: Context) -> str:
+            await getattr(ctx, method)("hello")
+            return "ok"
+
+        received: list[str] = []
+
+        async def log_handler(message):
+            received.append(message.level)
+
+        async with Client(mcp, log_handler=log_handler) as client:
+            await client.call_tool("emit", {})
+        return received
+
+    @pytest.mark.parametrize("method", ["debug", "info", "warning", "error"])
+    async def test_server_side_copy_is_not_logged_at_info_level(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        to_client_logger: logging.Logger,
+        method: str,
+    ):
+        to_client_logger.setLevel(logging.INFO)
+
+        assert await self.call_log_tool(method) == [method]
+
+        assert [r for r in caplog.records if r.name == to_client_logger.name] == []
+
+    @pytest.mark.parametrize("method", ["debug", "info", "warning", "error"])
+    async def test_server_side_copy_is_logged_at_debug_level_when_enabled(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        to_client_logger: logging.Logger,
+        method: str,
+    ):
+        to_client_logger.setLevel(logging.DEBUG)
+
+        assert await self.call_log_tool(method) == [method]
+
+        assert [
+            (r.levelno, r.levelname, r.getMessage())
+            for r in caplog.records
+            if r.name == to_client_logger.name
+        ] == [(logging.DEBUG, "DEBUG", f"Sending {method.upper()} to client: hello")]

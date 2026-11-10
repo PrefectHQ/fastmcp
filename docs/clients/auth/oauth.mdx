@@ -29,13 +29,13 @@ from fastmcp import Client
 
 # Uses default OAuth settings
 async with Client("https://your-server.fastmcp.app/mcp", auth="oauth") as client:
-    await client.ping()
+    await client.list_tools()
 ```
 
 
 ### `OAuth` Helper
 
-To fully configure the OAuth flow, use the `OAuth` helper and pass it to the `auth` parameter of the `Client` or transport instance. `OAuth` manages the complexities of the OAuth 2.1 Authorization Code Grant with PKCE (Proof Key for Code Exchange) for enhanced security, and implements the full `httpx.Auth` interface.
+To fully configure the OAuth flow, use the `OAuth` helper and pass it to the `auth` parameter of the `Client` or transport instance. `OAuth` manages the complexities of the OAuth 2.1 Authorization Code Grant with PKCE (Proof Key for Code Exchange) for enhanced security, and implements the full `httpx2.Auth` interface.
 
 ```python {2, 4, 6}
 from fastmcp import Client
@@ -44,7 +44,7 @@ from fastmcp.client.auth import OAuth
 oauth = OAuth(scopes=["user"])
 
 async with Client("https://your-server.fastmcp.app/mcp", auth=oauth) as client:
-    await client.ping()
+    await client.list_tools()
 ```
 
 <Note>
@@ -56,12 +56,14 @@ You don't need to pass `mcp_url` when using `OAuth` with `Client(auth=...)` — 
 - **`scopes`** (`str | list[str]`, optional): OAuth scopes to request. Can be space-separated string or list of strings
 - **`client_name`** (`str`, optional): Client name for dynamic registration. Defaults to `"FastMCP Client"`
 - **`client_id`** (`str`, optional): Pre-registered OAuth client ID. When provided, skips Dynamic Client Registration entirely. See [Pre-Registered Clients](#pre-registered-clients)
-- **`client_secret`** (`str`, optional): OAuth client secret for pre-registered clients. Optional — public clients that rely on PKCE can omit this
+- **`client_secret`** (`str`, optional): OAuth client secret for pre-registered clients, sent to the token endpoint with `client_secret_post` unless `additional_client_metadata` sets `token_endpoint_auth_method`. Public clients that rely on PKCE can omit it
 - **`client_metadata_url`** (`str`, optional): URL-based client identity (CIMD). See [CIMD Authentication](/clients/auth/cimd) for details
-- **`token_storage`** (`AsyncKeyValue`, optional): Storage backend for persisting OAuth tokens. Defaults to in-memory storage (tokens lost on restart). See [Token Storage](#token-storage) for encrypted storage options
+- **`token_storage`** (`AsyncKeyValue`, optional): Storage backend for persisting OAuth tokens. Defaults to in-memory storage, which loses tokens on restart and emits a warning. See [Token Storage](#token-storage) for encrypted storage options
 - **`additional_client_metadata`** (`dict[str, Any]`, optional): Extra metadata for client registration
 - **`callback_port`** (`int`, optional): Fixed port for OAuth callback server. If not specified, uses a random available port
-- **`httpx_client_factory`** (`McpHttpClientFactory`, optional): Factory for creating httpx clients
+- **`callback_host`** (`str`, optional): Hostname for the callback server and the `redirect_uri`. Defaults to `"localhost"`
+- **`callback_timeout`** (`float`, optional): Seconds to wait for the browser callback before raising `TimeoutError`. Defaults to `300.0`
+- **`httpx_client_factory`** (`McpHttpClientFactory`, optional): Factory for creating httpx2 clients
 
 
 ## OAuth Flow
@@ -73,13 +75,13 @@ The OAuth flow is triggered when you use a FastMCP `Client` configured to use OA
 The client first checks the configured `token_storage` backend for existing, valid tokens for the target server. If one is found, it will be used to authenticate the client.
 </Step>
 <Step title="OAuth Server Discovery">
-If no valid tokens exist, the client attempts to discover the OAuth server's endpoints using a well-known URI (e.g., `/.well-known/oauth-authorization-server`) based on the `mcp_url`.
+If no valid tokens exist, the client reads the MCP server's protected resource metadata (`/.well-known/oauth-protected-resource`) to find its authorization server, then fetches that server's metadata (`/.well-known/oauth-authorization-server` or OpenID Connect discovery) to learn its endpoints.
 </Step>
 <Step title="Client Registration">
 If a `client_id` is provided, the client uses those pre-registered credentials directly and skips this step entirely. Otherwise, if a `client_metadata_url` is configured and the server supports CIMD, the client uses its metadata URL as its identity. As a fallback, the client performs Dynamic Client Registration (RFC 7591) if the server supports it.
 </Step>
 <Step title="Local Callback Server">
-A temporary local HTTP server is started on an available port (or the port specified via `callback_port`). This server's address (e.g., `http://127.0.0.1:<port>/callback`) acts as the `redirect_uri` for the OAuth flow.
+A temporary local HTTP server is started on an available port (or the port specified via `callback_port`). This server's address (by default `http://localhost:<port>/callback`, set by `callback_host`) acts as the `redirect_uri` for the OAuth flow.
 </Step>
 <Step title="Browser Interaction">
 The user's default web browser is automatically opened, directing them to the OAuth server's authorization endpoint. The user logs in and grants (or denies) the requested `scopes`.
@@ -109,23 +111,37 @@ By default, tokens are stored in memory and lost when your application restarts.
 </Warning>
 
 ```python
+import os
+from pathlib import Path
+
+from cryptography.fernet import Fernet
 from fastmcp import Client
 from fastmcp.client.auth import OAuth
-from key_value.aio.stores.disk import DiskStore
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1CollectionSanitizationStrategy,
+    FileTreeV1KeySanitizationStrategy,
+)
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
-from cryptography.fernet import Fernet
-import os
 
-# Create encrypted disk storage
+token_dir = Path("~/.fastmcp/oauth-tokens").expanduser()
+token_dir.mkdir(parents=True, exist_ok=True)
+
+file_store = FileTreeStore(
+    data_directory=token_dir,
+    key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(token_dir),
+    collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(token_dir),
+)
+
 encrypted_storage = FernetEncryptionWrapper(
-    key_value=DiskStore(directory="~/.fastmcp/oauth-tokens"),
-    fernet=Fernet(os.environ["OAUTH_STORAGE_ENCRYPTION_KEY"])
+    key_value=file_store,
+    fernet=Fernet(os.environ["OAUTH_STORAGE_ENCRYPTION_KEY"]),
 )
 
 oauth = OAuth(token_storage=encrypted_storage)
 
 async with Client("https://your-server.fastmcp.app/mcp", auth=oauth) as client:
-    await client.ping()
+    await client.list_tools()
 ```
 
 You can use any `AsyncKeyValue`-compatible backend from the [key-value library](https://github.com/strawgate/py-key-value) including Redis, DynamoDB, and more. Wrap your storage in `FernetEncryptionWrapper` for encryption.
@@ -150,7 +166,7 @@ async with Client(
         client_metadata_url="https://myapp.example.com/oauth/client.json",
     ),
 ) as client:
-    await client.ping()
+    await client.list_tools()
 ```
 
 See the [CIMD Authentication](/clients/auth/cimd) page for complete documentation on creating, hosting, and validating CIMD documents.
@@ -172,12 +188,14 @@ async with Client(
         client_secret="my-client-secret",
     ),
 ) as client:
-    await client.ping()
+    await client.list_tools()
 ```
 
 Public clients that rely on PKCE for security can omit `client_secret`:
 
 ```python
+from fastmcp.client.auth import OAuth
+
 oauth = OAuth(client_id="my-public-client-id")
 ```
 

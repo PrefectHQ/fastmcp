@@ -34,6 +34,7 @@ class RequestBodyInfo(FastMCPBaseModel):
         default_factory=dict
     )  # Key: media type
     description: str | None = None
+    encoding: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class ResponseInfo(FastMCPBaseModel):

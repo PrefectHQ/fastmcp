@@ -39,30 +39,33 @@ The `fastmcp.json` configuration answers three fundamental questions about your 
 
 This conceptual model helps you understand the purpose of each configuration section and organize your settings effectively. The configuration file maps directly to these three concerns:
 
+`source` is the *where*, `environment` the *what*, and `deployment` the *how*:
+
 ```json
 {
   "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
   "source": {
-    // WHERE: Location of your server code
-    "type": "filesystem",  // Optional, defaults to "filesystem"
+    "type": "filesystem",
     "path": "server.py",
     "entrypoint": "mcp"
   },
   "environment": {
-    // WHAT: Environment setup and dependencies
-    "type": "uv",  // Optional, defaults to "uv"
-    "python": ">=3.10",
+    "type": "uv",
+    "python": ">=3.11",
     "dependencies": ["pandas", "numpy"]
   },
   "deployment": {
-    // HOW: Runtime configuration
     "transport": "stdio",
     "log_level": "INFO"
   }
 }
 ```
 
-Only the `source` field is required. The `environment` and `deployment` sections are optional and provide additional configuration when needed.
+Only the `source` field is required. The `environment` and `deployment` sections are optional and provide additional configuration when needed. Both `type` fields shown above are optional too, defaulting to `"filesystem"` and `"uv"` respectively.
+
+<Warning>
+`fastmcp.json` is parsed as strict JSON, so it accepts no comments or trailing commas.
+</Warning>
 
 ### JSON Schema Support
 
@@ -129,7 +132,7 @@ The source configuration determines **WHERE** your server code lives. It tells F
 
 Future releases will support additional source types:
 - **Git repositories** (`type: "git"`) for loading server code directly from version control
-- **Prefect Horizon** (`type: "cloud"`) for hosted servers with automatic scaling and management
+- **FastMCP Gateway** (`type: "cloud"`) for hosted servers with automatic scaling and management
 </Note>
 
 ### Environment Configuration
@@ -152,8 +155,8 @@ FastMCP uses an extensible environment system with a base `Environment` class th
     <ParamField body="python" type="string">
       Python version constraint. Examples:
       - Exact version: `"3.12"`
-      - Minimum version: `">=3.10"`
-      - Version range: `">=3.10,<3.13"`
+      - Minimum version: `">=3.11"`
+      - Version range: `">=3.11,<3.14"`
     </ParamField>
     
     <ParamField body="dependencies" type="list[str]">
@@ -192,7 +195,7 @@ FastMCP uses an extensible environment system with a base `Environment` class th
     ```json
     "environment": {
       "type": "uv",
-      "python": ">=3.10",
+      "python": ">=3.11",
       "dependencies": ["pandas", "numpy"],
       "editable": ["."]
     }
@@ -229,9 +232,10 @@ Environment variables are included in this section because they're runtime confi
   
   <Expandable title="Deployment Fields">
     <ParamField body="transport" type="string" default="stdio">
-      Protocol for client communication:
+      Protocol for client communication. `"http"` and `"streamable-http"` both select FastMCP's Streamable HTTP transport:
       - `"stdio"`: Standard input/output for desktop clients
-      - `"http"`: Network-accessible HTTP server
+      - `"http"`: Network-accessible Streamable HTTP server
+      - `"streamable-http"`: Explicit alias for Streamable HTTP
       - `"sse"`: Server-sent events
     </ParamField>
     
@@ -241,12 +245,12 @@ Environment variables are included in this section because they're runtime confi
       - `"0.0.0.0"`: All network interfaces
     </ParamField>
     
-    <ParamField body="port" type="integer" default="3000">
-      Port number for HTTP transport.
+    <ParamField body="port" type="integer" default="8000">
+      Port number for HTTP transport. If omitted, FastMCP uses the server runtime default.
     </ParamField>
     
-    <ParamField body="path" type="string" default="/mcp/">
-      URL path for the MCP endpoint when using HTTP transport.
+    <ParamField body="path" type="string" default="/mcp">
+      URL path for the MCP endpoint when using HTTP transport. The default is `/mcp` for Streamable HTTP and `/sse` for SSE.
     </ParamField>
     
     <ParamField body="log_level" type="string" default="INFO">
@@ -300,9 +304,9 @@ The `env` field in deployment configuration supports runtime interpolation of en
 
 When the server starts, FastMCP replaces `${ENVIRONMENT}`, `${DB_USER}`, etc. with values from your system's environment variables. If a variable doesn't exist, the placeholder is preserved as-is.
 
-**Example**: If your system has `ENVIRONMENT=production` and `DB_HOST=db.example.com`:
+For example, suppose your system has `ENVIRONMENT=production` and `DB_HOST=db.example.com`, and your configuration contains:
+
 ```json
-// Configuration
 {
   "deployment": {
     "env": {
@@ -311,8 +315,11 @@ When the server starts, FastMCP replaces `${ENVIRONMENT}`, `${DB_USER}`, etc. wi
     }
   }
 }
+```
 
-// Result at runtime
+The server process then starts with these values:
+
+```json
 {
   "API_URL": "https://api.production.example.com",
   "DB_HOST": "db.example.com"
@@ -396,20 +403,20 @@ This flag tells FastMCP: "I already have the source code, skip any download/clon
 
 Note: For filesystem sources (local Python files), this flag has no effect since they don't require preparation.
 
-The configuration file works with all FastMCP commands:
+The configuration file works with server-loading commands that explicitly accept FastMCP config files:
 - **`run`** - Start the server in production mode
-- **`dev`** - Launch with the Inspector UI for development  
+- **`dev inspector`** - Launch with the Inspector UI for development
 - **`inspect`** - View server capabilities and configuration
-- **`install`** - Install to Claude Desktop, Cursor, or other MCP clients
+- **`install`** - Install to Claude Desktop, Cursor, or another MCP client
 
-When no file argument is provided, FastMCP searches the current directory for `fastmcp.json`. This means you can simply navigate to your project directory and run `fastmcp run` to start your server with all its configured settings.
+`run`, `dev inspector`, and `inspect` search the current directory for a file named exactly `fastmcp.json` when you don't pass a file argument, so you can navigate to your project directory and run `fastmcp run` to start your server with all its configured settings. `install` requires an explicit path to the config file — it never searches.
 
 ### CLI Override Behavior
 
 Command-line arguments take precedence over configuration file values, allowing ad-hoc adjustments without modifying the file:
 
 ```bash
-# Config specifies port 3000, CLI overrides to 8080
+# Config specifies port 8000, CLI overrides to 8080
 fastmcp run fastmcp.json --port 8080
 
 # Config specifies stdio, CLI overrides to HTTP
@@ -434,7 +441,7 @@ You can use different configuration files for different environments:
 - `prod.fastmcp.json` - Production settings
 - `test_fastmcp.json` - Test configuration
 
-Any file with "fastmcp.json" in the name is recognized as a configuration file.
+Only a file named exactly `fastmcp.json` is auto-detected when you omit the path. Other FastMCP configuration files can use any `.json` name, but you must pass them explicitly.
 
 ## Examples
 
@@ -461,19 +468,16 @@ A configuration optimized for local development:
 ```json
 {
   "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
-  // WHERE does the server live?
   "source": {
     "path": "src/server.py",
     "entrypoint": "app"
   },
-  // WHAT dependencies does it need?
   "environment": {
     "type": "uv",
     "python": "3.12",
-    "dependencies": ["fastmcp[dev]"],
-    "editable": "."
+    "dependencies": ["fastmcp"],
+    "editable": ["."]
   },
-  // HOW should it run?
   "deployment": {
     "transport": "http",
     "host": "127.0.0.1",
@@ -494,23 +498,20 @@ A production-ready configuration with full dependency management:
 ```json
 {
   "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
-  // WHERE does the server live?
   "source": {
     "path": "app/main.py",
     "entrypoint": "mcp_server"
   },
-  // WHAT dependencies does it need?
   "environment": {
     "python": "3.11",
     "requirements": "requirements/production.txt",
     "project": "."
   },
-  // HOW should it run?
   "deployment": {
     "transport": "http",
     "host": "0.0.0.0",
     "port": 3000,
-    "path": "/api/mcp/",
+    "path": "/api/mcp",
     "log_level": "INFO",
     "env": {
       "ENV": "production",

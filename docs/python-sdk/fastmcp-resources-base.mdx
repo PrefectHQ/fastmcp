@@ -8,9 +8,32 @@ sidebarTitle: base
 
 Base classes and interfaces for FastMCP resources.
 
+## Functions
+
+### `convert_raw_to_resource_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/base.py#L242" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+convert_raw_to_resource_result(raw_value: Any) -> ResourceResult
+```
+
+
+Wrap a user function's return value in a ResourceResult.
+
+Shared by `Resource` and `ResourceTemplate` so both honor the MIME type
+the component declares in listings. A component that advertises
+`text/csv` must not serve `text/plain` on read.
+
+**Args:**
+- `raw_value`: The value returned by the user's function.
+- `mime_type`: The component's declared MIME type, forwarded to content items.
+- `meta`: Component-level meta (e.g. `ui` metadata for MCP Apps CSP/permissions)
+propagated to each content item. For `list[ResourceContent]` returns
+it is merged into every item, with item-level keys taking precedence.
+
+
 ## Classes
 
-### `ResourceContent` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/base.py#L39" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ResourceContent` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/base.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Wrapper for resource content with optional MIME type and metadata.
@@ -21,10 +44,10 @@ other types (dict, list, BaseModel, etc.) are automatically JSON-serialized.
 
 **Methods:**
 
-#### `to_mcp_resource_contents` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/base.py#L94" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `to_mcp_resource_contents` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/base.py#L89" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-to_mcp_resource_contents(self, uri: AnyUrl | str) -> mcp.types.TextResourceContents | mcp.types.BlobResourceContents
+to_mcp_resource_contents(self, uri: AnyUrl | str) -> mcp_types.TextResourceContents | mcp_types.BlobResourceContents
 ```
 
 Convert to MCP resource contents type.
@@ -36,7 +59,7 @@ Convert to MCP resource contents type.
 - TextResourceContents for str content, BlobResourceContents for bytes
 
 
-### `ResourceResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/base.py#L121" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ResourceResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/base.py#L116" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Canonical result type for resource reads.
@@ -47,10 +70,10 @@ per-item MIME types, and metadata at both the item and result level.
 
 **Methods:**
 
-#### `to_mcp_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/base.py#L202" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `to_mcp_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/base.py#L197" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-to_mcp_result(self, uri: AnyUrl | str) -> mcp.types.ReadResourceResult
+to_mcp_result(self, uri: AnyUrl | str) -> mcp_types.ReadResourceResult
 ```
 
 Convert to MCP ReadResourceResult.
@@ -62,7 +85,25 @@ Convert to MCP ReadResourceResult.
 - MCP ReadResourceResult with converted contents
 
 
-### `Resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/base.py#L218" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `InputRequiredResourceResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/base.py#L213" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+The full result of a single multi-round-trip resource read (SEP-2322).
+
+`InputRequiredResult` is a result type, not a `tools/call` feature: any
+request may resolve to one. When a resource or resource template returns an
+`InputRequiredResult` from its body to ask the client for input, that ask is
+the legitimate result of this `resources/read` — so FastMCP wraps it in this
+`ResourceResult` subclass, mirroring `InputRequiredToolResult` and
+`InputRequiredPromptResult`, and it flows through the middleware chain as an
+ordinary return value.
+
+Invariant: the wrapped `InputRequiredResult` is never serialized as resource
+contents. `contents` is always empty; the wire handler (`_on_read_resource`)
+reads `.input_required` and returns it to the runner.
+
+
+### `Resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/base.py#L322" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Base class for all resources.
@@ -70,13 +111,13 @@ Base class for all resources.
 
 **Methods:**
 
-#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/base.py#L243" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/base.py#L347" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_function(cls, fn: Callable[..., Any], uri: str | AnyUrl) -> FunctionResource
 ```
 
-#### `set_default_mime_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/base.py#L282" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_default_mime_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/base.py#L384" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_default_mime_type(cls, mime_type: str | None) -> str
@@ -85,7 +126,7 @@ set_default_mime_type(cls, mime_type: str | None) -> str
 Set default MIME type if not provided.
 
 
-#### `set_default_name` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/base.py#L289" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_default_name` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/base.py#L391" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_default_name(self) -> Self
@@ -94,7 +135,7 @@ set_default_name(self) -> Self
 Set default name from URI if not provided.
 
 
-#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/base.py#L299" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/base.py#L401" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read(self) -> str | bytes | ResourceResult
@@ -108,7 +149,7 @@ Subclasses implement this to return resource data. Supported return types:
     - ResourceResult: Full control over contents and result-level meta
 
 
-#### `convert_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/base.py#L311" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `convert_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/base.py#L413" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 convert_result(self, raw_value: Any) -> ResourceResult
@@ -131,7 +172,7 @@ MCP Apps CSP/permissions) is propagated to each content item so
 that hosts can read it from the ``resources/read`` response.
 
 
-#### `to_mcp_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/base.py#L405" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `to_mcp_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/base.py#L445" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 to_mcp_resource(self, **overrides: Any) -> SDKResource
@@ -140,7 +181,7 @@ to_mcp_resource(self, **overrides: Any) -> SDKResource
 Convert the resource to an SDKResource.
 
 
-#### `key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/base.py#L428" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/base.py#L468" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 key(self) -> str
@@ -149,31 +190,7 @@ key(self) -> str
 The globally unique lookup key for this resource.
 
 
-#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/base.py#L433" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-register_with_docket(self, docket: Docket) -> None
-```
-
-Register this resource with docket for background execution.
-
-
-#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/base.py#L439" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-add_to_docket(self, docket: Docket, **kwargs: Any) -> Execution
-```
-
-Schedule this resource for background execution via docket.
-
-**Args:**
-- `docket`: The Docket instance
-- `fn_key`: Function lookup key in Docket registry (defaults to self.key)
-- `task_key`: Redis storage key for the result
-- `**kwargs`: Additional kwargs passed to docket.add()
-
-
-#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/base.py#L460" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/base.py#L473" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_span_attributes(self) -> dict[str, Any]

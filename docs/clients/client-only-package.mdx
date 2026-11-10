@@ -1,7 +1,7 @@
 ---
 title: Client-Only Package
 description: Use FastMCP's client without installing the full server framework.
-icon: package
+icon: box
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -29,13 +29,14 @@ Use `fastmcp-slim[client]` when your code connects to MCP servers but does not d
 Client-only installs support remote and subprocess transports:
 
 ```python
+from pathlib import Path
 from fastmcp import Client
 
 # Remote MCP server
 http_client = Client("https://example.com/mcp")
 
 # Local MCP server over stdio
-stdio_client = Client("my_server.py")
+stdio_client = Client(Path("my_server.py"))
 ```
 
 Single-server MCP configuration works as well:
@@ -83,7 +84,7 @@ Use the full package for:
 
 - defining or running FastMCP servers
 - in-memory clients connected directly to `FastMCP` server objects
-- multi-server MCP configurations
+- multi-server MCP configurations, and configurations that use tool transformations or tag filters
 - FastMCP apps, proxies, server auth, middleware, and other server-side features
 
 The `fastmcp-slim` package is intentionally narrower: it is for client-only consumers who want FastMCP's MCP client behavior without depending on the full framework.

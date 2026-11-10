@@ -1,6 +1,6 @@
 from typing import Any
 
-from mcp.types import CallToolResult, TextContent
+from mcp_types import CallToolResult, TextContent
 from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
@@ -43,7 +43,7 @@ class CallToolRequestResult(CallToolResult):
         return cls(
             tool=tool,
             arguments=arguments,
-            isError=result.isError,
+            is_error=result.is_error,
             content=result.content,
         )
 
@@ -55,6 +55,10 @@ class BulkToolCaller(MCPMixin):
 
     _BULK_TOOL_NAMES: frozenset[str] = frozenset({"call_tools_bulk", "call_tool_bulk"})
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._registered_bulk_tool_names = set(self._BULK_TOOL_NAMES)
+
     def register_tools(
         self,
         mcp_server: "FastMCP",
@@ -65,8 +69,14 @@ class BulkToolCaller(MCPMixin):
         Register the tools provided by this class with the given MCP server.
         """
         self.connection = FastMCPTransport(mcp_server)
+        if prefix:
+            self._registered_bulk_tool_names.update(
+                f"{prefix}{separator}{name}" for name in self._BULK_TOOL_NAMES
+            )
 
-        super().register_tools(mcp_server=mcp_server)
+        super().register_tools(
+            mcp_server=mcp_server, prefix=prefix, separator=separator
+        )
 
     @mcp_tool()
     async def call_tools_bulk(
@@ -84,7 +94,7 @@ class BulkToolCaller(MCPMixin):
 
             results.append(result)
 
-            if result.isError and not continue_on_error:
+            if result.is_error and not continue_on_error:
                 return results
 
         return results
@@ -112,7 +122,7 @@ class BulkToolCaller(MCPMixin):
 
             results.append(result)
 
-            if result.isError and not continue_on_error:
+            if result.is_error and not continue_on_error:
                 return results
 
         return results
@@ -124,11 +134,11 @@ class BulkToolCaller(MCPMixin):
         Helper method to call a tool with the provided arguments.
         """
 
-        if tool in self._BULK_TOOL_NAMES:
+        if tool in self._registered_bulk_tool_names:
             return CallToolRequestResult(
                 tool=tool,
                 arguments=arguments,
-                isError=True,
+                is_error=True,
                 content=[
                     TextContent(
                         type="text",
@@ -146,6 +156,6 @@ class BulkToolCaller(MCPMixin):
             return CallToolRequestResult(
                 tool=tool,
                 arguments=arguments,
-                isError=result.isError,
+                is_error=result.is_error,
                 content=result.content,
             )

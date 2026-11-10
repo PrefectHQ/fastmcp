@@ -1,0 +1,237 @@
+---
+title: Composing Servers
+sidebarTitle: Composition
+description: Combine multiple servers into one
+icon: puzzle-piece
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="2.2.0" />
+
+As your application grows, you'll want to split it into focused servers — one for weather, one for calendar, one for admin — and combine them into a single server that clients connect to. That's what `mount()` does.
+
+When you mount a server, all its tools, resources, and prompts become available through the parent. The connection is live: add a tool to the child after mounting, and it's immediately visible through the parent.
+
+```python
+from fastmcp import FastMCP
+
+weather = FastMCP("Weather")
+
+@weather.tool
+def get_forecast(city: str) -> str:
+    """Get weather forecast for a city."""
+    return f"Sunny in {city}"
+
+@weather.resource("data://cities")
+def list_cities() -> list[str]:
+    """List supported cities."""
+    return ["London", "Paris", "Tokyo"]
+
+main = FastMCP("MainApp")
+main.mount(weather)
+
+# main now serves get_forecast and data://cities
+```
+
+## Mounting External Servers
+
+Mount remote HTTP servers or subprocess-based MCP servers using `create_proxy()`:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server import create_proxy
+
+mcp = FastMCP("Orchestrator")
+
+# Mount a remote HTTP server (URLs work directly)
+mcp.mount(create_proxy("http://api.example.com/mcp"), namespace="api")
+
+# Mount local Python scripts (file paths work directly)
+mcp.mount(create_proxy("./my_server.py"), namespace="local")
+```
+
+### Mounting npm/uvx Packages
+
+For npm packages or Python tools, use the config dict format:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server import create_proxy
+
+mcp = FastMCP("Orchestrator")
+
+# Mount npm package via config
+github_config = {
+    "mcpServers": {
+        "default": {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-github"]
+        }
+    }
+}
+mcp.mount(create_proxy(github_config), namespace="github")
+
+# Mount Python tool via config
+sqlite_config = {
+    "mcpServers": {
+        "default": {
+            "command": "uvx",
+            "args": ["mcp-server-sqlite", "--db", "data.db"]
+        }
+    }
+}
+mcp.mount(create_proxy(sqlite_config), namespace="db")
+```
+
+Or use explicit transport classes:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server import create_proxy
+from fastmcp.client.transports import NpxStdioTransport, UvxStdioTransport
+
+mcp = FastMCP("Orchestrator")
+
+mcp.mount(
+    create_proxy(NpxStdioTransport(package="@modelcontextprotocol/server-github")),
+    namespace="github"
+)
+mcp.mount(
+    create_proxy(UvxStdioTransport(tool_name="mcp-server-sqlite", tool_args=["--db", "data.db"])),
+    namespace="db"
+)
+```
+
+For advanced configuration, see [Proxying](/servers/providers/proxy).
+
+## Namespacing
+
+<VersionBadge version="3.0.0" />
+
+When mounting multiple servers, use namespaces to avoid naming conflicts:
+
+```python
+weather = FastMCP("Weather")
+calendar = FastMCP("Calendar")
+
+@weather.tool
+def get_data() -> str:
+    return "Weather data"
+
+@calendar.tool
+def get_data() -> str:
+    return "Calendar data"
+
+main = FastMCP("Main")
+main.mount(weather, namespace="weather")
+main.mount(calendar, namespace="calendar")
+
+# Tools are now:
+# - weather_get_data
+# - calendar_get_data
+```
+
+### How Namespacing Works
+
+| Component Type | Without Namespace | With `namespace="api"` |
+|----------------|-------------------|------------------------|
+| Tool | `my_tool` | `api_my_tool` |
+| Prompt | `my_prompt` | `api_my_prompt` |
+| Resource | `data://info` | `data://api/info` |
+| Template | `data://{id}` | `data://api/{id}` |
+
+Namespacing uses [transforms](/servers/transforms/transforms) under the hood.
+
+## Dynamic Composition
+
+Because `mount()` creates a live link, you can add components to a child server after mounting and they'll be immediately available through the parent:
+
+```python
+main = FastMCP("Main")
+main.mount(dynamic_server, namespace="dynamic")
+
+# Add a tool AFTER mounting - it's accessible through main
+@dynamic_server.tool
+def added_later() -> str:
+    return "Added after mounting!"
+```
+
+## Tag Filtering
+
+<VersionBadge version="3.0.0" />
+
+Parent server tag filters apply recursively to mounted servers:
+
+```python
+api_server = FastMCP("API")
+
+@api_server.tool(tags={"production"})
+def prod_endpoint() -> str:
+    return "Production data"
+
+@api_server.tool(tags={"development"})
+def dev_endpoint() -> str:
+    return "Debug data"
+
+# Mount with production filter
+prod_app = FastMCP("Production")
+prod_app.mount(api_server, namespace="api")
+prod_app.enable(tags={"production"}, only=True)
+
+# Only prod_endpoint (namespaced as api_prod_endpoint) is visible
+```
+
+## Performance Considerations
+
+Operations like `list_tools()` on the parent are affected by the performance of all mounted servers. This is particularly noticeable with:
+
+- HTTP-based mounted servers (300-400ms vs 1-2ms for local tools)
+- Mounted servers with slow initialization
+- Deep mounting hierarchies
+
+If low latency is critical, consider implementing caching strategies or limiting mounting depth.
+
+## Custom Routes
+
+<VersionBadge version="2.4.0" />
+
+Custom HTTP routes defined with `@server.custom_route()` are also forwarded when mounting:
+
+```python
+subserver = FastMCP("Sub")
+
+@subserver.custom_route("/health", methods=["GET"])
+async def health_check():
+    return {"status": "ok"}
+
+main = FastMCP("Main")
+main.mount(subserver, namespace="sub")
+
+# /health is now accessible through main's HTTP app
+```
+
+## Conflict Resolution
+
+<VersionBadge version="3.0.0" />
+
+When mounting multiple servers with the same namespace (or no namespace), the **most recently mounted** server takes precedence for conflicting component names:
+
+```python
+server_a = FastMCP("A")
+server_b = FastMCP("B")
+
+@server_a.tool
+def shared_tool() -> str:
+    return "From A"
+
+@server_b.tool
+def shared_tool() -> str:
+    return "From B"
+
+main = FastMCP("Main")
+main.mount(server_a)
+main.mount(server_b)
+
+# shared_tool returns "From B" (most recently mounted)
+```

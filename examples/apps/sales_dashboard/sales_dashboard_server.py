@@ -1,3 +1,5 @@
+from typing import TypedDict
+
 from prefab_ui.components import (
     Card,
     CardContent,
@@ -17,7 +19,15 @@ from fastmcp import FastMCP
 
 mcp = FastMCP("Sales Dashboard")
 
-MONTHLY_REVENUE = [
+
+class MonthlyRevenue(TypedDict):
+    month: str
+    new_business: int
+    expansion: int
+    renewal: int
+
+
+MONTHLY_REVENUE: list[MonthlyRevenue] = [
     {"month": "Jul", "new_business": 182_000, "expansion": 74_000, "renewal": 210_000},
     {"month": "Aug", "new_business": 195_000, "expansion": 81_000, "renewal": 215_000},
     {"month": "Sep", "new_business": 224_000, "expansion": 93_000, "renewal": 208_000},

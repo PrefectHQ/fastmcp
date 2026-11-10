@@ -27,7 +27,7 @@ def mock_cognito_oidc_discovery():
         ],
     }
 
-    with patch("httpx.get") as mock_get:
+    with patch("httpx2.get") as mock_get:
         mock_response = mock_get.return_value
         mock_response.raise_for_status.return_value = None
         mock_response.json.return_value = mock_oidc_config

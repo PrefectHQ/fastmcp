@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.experimental.transforms.code_mode import (
@@ -356,6 +356,32 @@ async def test_search_full_detail_empty_results_returns_json() -> None:
     text = _unwrap_string_result(result)
     parsed = json.loads(text)
     assert parsed == []
+
+
+async def test_search_full_detail_returns_current_schema() -> None:
+    mcp = FastMCP("CodeMode Updated Schema")
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    @mcp.tool(name="convert", version="1")
+    def old(value: str) -> str:
+        """Convert a value."""
+        return value
+
+    arguments = {"query": "convert", "detail": "full"}
+    await _run_tool(mcp, "search", arguments)
+
+    @mcp.tool(name="convert", version="2")
+    def new(value: int = 1) -> int:
+        """Convert a value."""
+        return value
+
+    result = await _run_tool(mcp, "search", arguments)
+    current = await mcp.get_tool("convert")
+    assert current is not None
+    (found,) = json.loads(_unwrap_string_result(result))
+    assert found["inputSchema"] == current.parameters
+    assert found["outputSchema"] == current.output_schema
+    assert found["_meta"]["fastmcp"]["version"] == "2"
 
 
 async def test_get_schema_empty_tools_list() -> None:

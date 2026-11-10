@@ -2,10 +2,11 @@ import json
 
 import pytest
 from fastapi import FastAPI, Request
-from mcp.types import TextResourceContents
+from mcp_types import TextResourceContents
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
+from fastmcp.server import create_proxy
 from fastmcp.server.providers.openapi import MCPType, RouteMap
 from fastmcp.utilities.tests import run_server_async
 
@@ -63,7 +64,7 @@ async def sse_server():
 @pytest.fixture
 async def proxy_server(shttp_server: str):
     """Start a proxy server."""
-    proxy = FastMCP.as_proxy(StreamableHttpTransport(shttp_server))
+    proxy = create_proxy(StreamableHttpTransport(shttp_server))
     async with run_server_async(proxy, transport="http") as url:
         yield url
 
@@ -160,7 +161,7 @@ async def test_client_headers_shttp_tool(shttp_server: str):
         assert headers["x-test"] == "test-123"
 
 
-async def test_client_overrides_server_headers(shttp_server: str):
+async def test_server_headers_take_precedence_over_client_headers(shttp_server: str):
     async with Client(
         transport=StreamableHttpTransport(
             shttp_server, headers={"x-server-header": "test-client"}
@@ -169,7 +170,7 @@ async def test_client_overrides_server_headers(shttp_server: str):
         result = await client.read_resource("resource://get_headers_headers_get")
         assert isinstance(result[0], TextResourceContents)
         headers = json.loads(result[0].text)
-        assert headers["x-server-header"] == "test-client"
+        assert headers["x-server-header"] == "test-abc"
 
 
 async def test_client_with_excluded_header_is_ignored(sse_server: str):

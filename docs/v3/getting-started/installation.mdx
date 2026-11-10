@@ -1,0 +1,118 @@
+---
+title: Installation
+description: Install FastMCP and verify your setup
+icon: arrow-down-to-line
+---
+## Install FastMCP
+
+We recommend using [uv](https://docs.astral.sh/uv/getting-started/installation/) to install and manage FastMCP.
+
+```bash
+pip install fastmcp
+```
+
+Or with uv:
+
+```bash
+uv add fastmcp
+```
+
+### Optional Dependencies
+
+FastMCP provides optional extras for specific features. For example, to install the background tasks extra:
+
+```bash
+pip install "fastmcp[tasks]"
+```
+
+See [Background Tasks](/servers/tasks) for details on the task system.
+
+### Verify Installation
+
+To verify that FastMCP is installed correctly, you can run the following command:
+
+```bash
+fastmcp version
+```
+
+You should see output like the following:
+
+```bash
+$ fastmcp version
+
+FastMCP version:                           3.0.0
+MCP version:                               1.25.0
+Python version:                            3.12.2
+Platform:            macOS-15.3.1-arm64-arm-64bit
+FastMCP root path:            ~/Developer/fastmcp
+```
+
+### Dependency Licensing
+
+<Info>
+FastMCP depends on Cyclopts for CLI functionality. Cyclopts v4 includes docutils as a transitive dependency, which has complex licensing that may trigger compliance reviews in some organizations.
+
+If this is a concern, you can install Cyclopts v5 alpha which removes this dependency:
+
+```bash
+pip install "cyclopts>=5.0.0a1"
+```
+
+Alternatively, wait for the stable v5 release. See [this issue](https://github.com/BrianPugh/cyclopts/issues/672) for details.
+</Info>
+## Upgrading
+
+### From FastMCP 2.0
+
+See the [Upgrade Guide](/getting-started/upgrading/from-fastmcp-2) for a complete list of breaking changes and migration steps.
+
+### From the MCP SDK
+
+#### From FastMCP 1.0
+
+If you're using FastMCP 1.0 via the `mcp` package (meaning you import FastMCP as  `from mcp.server.fastmcp import FastMCP`), upgrading is straightforward — for most servers, it's a single import change. See the [full upgrade guide](/getting-started/upgrading/from-mcp-sdk) for details.
+
+#### From the Low-Level Server API
+
+If you built your server directly on the `mcp` package's `Server` class — with `list_tools()`/`call_tool()` handlers and hand-written JSON Schema — see the [migration guide](/getting-started/upgrading/from-low-level-sdk) for a full walkthrough.
+
+## Troubleshooting
+
+### `import fastmcp` fails after a pip upgrade
+
+This affects one specific case: upgrading to FastMCP 3.3 or later from FastMCP 3.2 or earlier with `pip`. Fresh installs and `uv` upgrades are unaffected, so you can skip this unless you did exactly that.
+
+If `import fastmcp` raises `ModuleNotFoundError`, or `from fastmcp import FastMCP` raises `ImportError`, immediately after the upgrade, your install is in a half-removed state. Reinstall in a single step:
+
+```bash
+pip install --force-reinstall fastmcp
+```
+
+If that doesn't resolve it, remove both distributions and reinstall from a clean state:
+
+```bash
+pip uninstall -y fastmcp fastmcp-slim
+pip install fastmcp
+```
+
+FastMCP 3.3 moved the importable code from the `fastmcp` distribution into `fastmcp-slim`. During a single-command `pip` upgrade, pip can install the new files and then delete them while uninstalling the old `fastmcp` distribution, whose file manifest still lists those paths. `uv` uninstalls before it installs, so it is unaffected.
+
+## Versioning Policy
+
+FastMCP follows semantic versioning with pragmatic adaptations for the rapidly evolving MCP ecosystem. Breaking changes may occur in minor versions (e.g., 2.3.x to 2.4.0) when necessary to stay current with the MCP Protocol.
+
+For production use, always pin to exact versions:
+```
+fastmcp==3.0.0  # Good
+fastmcp>=3.0.0  # Bad - may install breaking changes
+```
+
+See the full [versioning and release policy](/development/releases#versioning-policy) for details on our public API, deprecation practices, and breaking change philosophy.
+
+## Contributing to FastMCP
+
+Interested in contributing to FastMCP? See the [Contributing Guide](/development/contributing) for details on:
+- Setting up your development environment
+- Running tests and pre-commit hooks
+- Submitting issues and pull requests
+- Code standards and review process

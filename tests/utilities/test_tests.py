@@ -1,10 +1,16 @@
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 import fastmcp
-from fastmcp import FastMCP
-from fastmcp.utilities.tests import HeadlessOAuth, temporary_settings
+from fastmcp import Client, FastMCP
+from fastmcp.utilities.tests import (
+    HeadlessOAuth,
+    run_server_async,
+    temporary_settings,
+)
 
 
 class TestTemporarySettings:
@@ -43,12 +49,33 @@ class TestTransportSetting:
                 mock_stdio.assert_called_once()
 
 
+class TestRunServerAsync:
+    async def test_yields_url_of_running_server(self):
+        mcp = FastMCP("test")
+
+        async with run_server_async(mcp) as url:
+            async with Client(url) as client:
+                assert await client.list_tools() == []
+
+    async def test_startup_failure_raises(self):
+        @asynccontextmanager
+        async def failing_lifespan(server: FastMCP) -> AsyncGenerator[None, None]:
+            raise RuntimeError("database unavailable")
+            yield
+
+        mcp = FastMCP("test", lifespan=failing_lifespan)
+
+        with pytest.raises(RuntimeError, match="database unavailable"):
+            async with run_server_async(mcp):
+                pass
+
+
 class TestHeadlessOAuthCallbackHandler:
     """Regression tests for #4056: blank query values must survive parse_qs.
 
     The OAuth callback handler in HeadlessOAuth parses the redirect Location
     header. parse_qs without keep_blank_values=True silently drops keys whose
-    value is empty (e.g. `?state=`), which mis-models real OAuth callbacks
+    value is empty (e.g. `?state=`), which misrepresents real OAuth callbacks
     where an empty `state` is distinct from a missing one.
     """
 
@@ -66,16 +93,16 @@ class TestHeadlessOAuthCallbackHandler:
         oauth = self._make_oauth_with_redirect(
             "https://example.com/callback?code=abc&state="
         )
-        auth_code, state = await oauth.callback_handler()
-        assert auth_code == "abc"
-        assert state == ""
+        result = await oauth.callback_handler()
+        assert result.code == "abc"
+        assert result.state == ""
 
     async def test_callback_returns_none_when_state_missing(self):
         """A truly missing state still returns None (default)."""
         oauth = self._make_oauth_with_redirect("https://example.com/callback?code=abc")
-        auth_code, state = await oauth.callback_handler()
-        assert auth_code == "abc"
-        assert state is None
+        result = await oauth.callback_handler()
+        assert result.code == "abc"
+        assert result.state is None
 
     async def test_callback_uses_blank_error_description_verbatim(self):
         """When the OAuth provider sends an empty error_description, surface

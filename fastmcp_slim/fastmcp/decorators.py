@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from fastmcp.prompts.function_prompt import PromptMeta
     from fastmcp.resources.function_resource import ResourceMeta
-    from fastmcp.server.tasks.config import TaskConfig
     from fastmcp.tools.function_tool import ToolMeta
+    from fastmcp.utilities.tasks import TaskConfig
 
     FastMCPMeta = ToolMeta | ResourceMeta | PromptMeta
 

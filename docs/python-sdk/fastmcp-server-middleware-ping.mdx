@@ -10,7 +10,7 @@ Ping middleware for keeping client connections alive.
 
 ## Classes
 
-### `PingMiddleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/middleware/ping.py#L10" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `PingMiddleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/ping.py#L12" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Middleware that sends periodic pings to keep client connections alive.
@@ -22,11 +22,11 @@ ends.
 
 **Methods:**
 
-#### `on_message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/middleware/ping.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/ping.py#L44" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_message(self, context: MiddlewareContext, call_next: CallNext) -> Any
 ```
 
-Start ping task on first message from a session.
+Start ping task on first message from a connection.
 

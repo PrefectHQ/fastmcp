@@ -2,10 +2,10 @@
 
 from urllib.parse import urlparse
 
-import httpx
 import pytest
 from key_value.aio.stores.memory import MemoryStore
-from pytest_httpx import HTTPXMock
+from mcp import MCPError
+from starlette.testclient import TestClient
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
@@ -16,6 +16,7 @@ from fastmcp.server.auth.providers.workos import (
     WorkOSTokenVerifier,
 )
 from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
+from tests.utilities.httpx2_mock import HTTPXMock
 
 
 @pytest.fixture
@@ -103,6 +104,81 @@ class TestWorkOSProvider:
         assert provider._redirect_path == "/auth/callback"
         # WorkOS provider has no default scopes but we can't easily verify without accessing internals
 
+    def test_extra_authorize_params_default_none(self, memory_storage: MemoryStore):
+        """WorkOS doesn't set provider-specific defaults — empty unless caller opts in."""
+        provider = WorkOSProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            authkit_domain="https://test.authkit.app",
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert provider._extra_authorize_params == {}
+
+    def test_extra_authorize_params_passed_through(self, memory_storage: MemoryStore):
+        """Caller-supplied params are forwarded to the upstream authorize URL.
+
+        Common use case: force `offline_access` into the scope so WorkOS issues
+        a refresh token.
+        """
+        provider = WorkOSProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            authkit_domain="https://test.authkit.app",
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            extra_authorize_params={
+                "scope": "openid profile email offline_access",
+            },
+        )
+
+        assert provider._extra_authorize_params == {
+            "scope": "openid profile email offline_access",
+        }
+
+    def test_valid_scopes_passed_through(self, memory_storage: MemoryStore):
+        """valid_scopes is forwarded to OAuthProxy and advertised via DCR."""
+        provider = WorkOSProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            authkit_domain="https://test.authkit.app",
+            base_url="https://myserver.com",
+            required_scopes=["openid"],
+            valid_scopes=["openid", "profile", "email", "offline_access"],
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        reg_options = provider.client_registration_options
+        assert reg_options is not None
+        assert reg_options.valid_scopes is not None
+        assert set(reg_options.valid_scopes) == {
+            "openid",
+            "profile",
+            "email",
+            "offline_access",
+        }
+
+    def test_valid_scopes_defaults_to_required(self, memory_storage: MemoryStore):
+        """When valid_scopes is omitted, the OAuthProxy falls back to required_scopes."""
+        provider = WorkOSProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            authkit_domain="https://test.authkit.app",
+            base_url="https://myserver.com",
+            required_scopes=["openid", "profile"],
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        reg_options = provider.client_registration_options
+        assert reg_options is not None
+        assert reg_options.valid_scopes is not None
+        assert set(reg_options.valid_scopes) == {"openid", "profile"}
+
     def test_oauth_endpoints_configured_correctly(self, memory_storage: MemoryStore):
         """Test that OAuth endpoints are configured correctly."""
         provider = WorkOSProvider(
@@ -158,12 +234,11 @@ class TestAuthKitProvider:
     async def test_unauthorized_access(
         self, memory_storage: MemoryStore, mcp_server_url: str
     ):
-        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        # SDK v2 surfaces the server's 401 as a generic MCPError at the client
+        # boundary rather than re-raising httpx2.HTTPStatusError.
+        with pytest.raises(MCPError):
             async with Client(mcp_server_url) as client:
                 tools = await client.list_tools()  # noqa: F841
-
-        assert isinstance(exc_info.value, httpx.HTTPStatusError)
-        assert exc_info.value.response.status_code == 401
         assert "tools" not in locals()
 
     # async def test_authorized_access(self, client_with_headless_oauth: Client):
@@ -263,6 +338,26 @@ class TestAuthKitAudienceBinding:
         verifier = auth.token_verifier
         assert isinstance(verifier, JWTVerifier)
         assert verifier.audience == "http://127.0.0.1:8000/mcp"
+
+    @pytest.mark.parametrize(
+        "authkit_domain",
+        ["https://test.authkit.app", "https://test.authkit.app/"],
+    )
+    def test_protected_resource_metadata_preserves_authkit_issuer(
+        self, authkit_domain: str
+    ):
+        issuer = "https://test.authkit.app"
+        auth = AuthKitProvider(
+            authkit_domain=authkit_domain,
+            base_url="http://127.0.0.1:8000",
+        )
+        app = FastMCP("test", auth=auth).http_app(path="/mcp")
+
+        with TestClient(app) as client:
+            response = client.get("/.well-known/oauth-protected-resource/mcp")
+
+        assert response.status_code == 200
+        assert response.json()["authorization_servers"] == [issuer]
 
 
 class TestWorkOSTokenVerifierScopes:

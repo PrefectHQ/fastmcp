@@ -32,6 +32,7 @@ class TestClientListToolsTracing:
             if s.name == "tools/list"
             and s.attributes is not None
             and "fastmcp.server.name" not in s.attributes
+            and "fastmcp.component.key" in s.attributes
         ]
         assert len(client_spans) >= 1
 
@@ -63,6 +64,7 @@ class TestClientListToolsTracing:
                 for s in tools_list_spans
                 if s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
+                and "fastmcp.component.key" in s.attributes
             ),
             None,
         )
@@ -105,6 +107,7 @@ class TestClientListResourcesTracing:
             if s.name == "resources/list"
             and s.attributes is not None
             and "fastmcp.server.name" not in s.attributes
+            and "fastmcp.component.key" in s.attributes
         ]
         assert len(client_spans) >= 1
 
@@ -138,6 +141,7 @@ class TestClientListResourceTemplatesTracing:
             if s.name == "resources/templates/list"
             and s.attributes is not None
             and "fastmcp.server.name" not in s.attributes
+            and "fastmcp.component.key" in s.attributes
         ]
         assert len(client_spans) >= 1
 
@@ -171,6 +175,7 @@ class TestClientListPromptsTracing:
             if s.name == "prompts/list"
             and s.attributes is not None
             and "fastmcp.server.name" not in s.attributes
+            and "fastmcp.component.key" in s.attributes
         ]
         assert len(client_spans) >= 1
 

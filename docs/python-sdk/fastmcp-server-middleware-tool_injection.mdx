@@ -8,90 +8,46 @@ sidebarTitle: tool_injection
 
 A middleware for injecting tools into the MCP server context.
 
-## Functions
-
-### `list_prompts` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-list_prompts(context: Context) -> list[Prompt]
-```
-
-
-List prompts available on the server.
-
-
-### `get_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L67" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-get_prompt(context: Context, name: Annotated[str, 'The name of the prompt to render.'], arguments: Annotated[dict[str, Any] | None, 'The arguments to pass to the prompt.'] = None) -> mcp.types.GetPromptResult
-```
-
-
-Render a prompt available on the server.
-
-
-### `list_resources` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L102" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-list_resources(context: Context) -> list[mcp.types.Resource]
-```
-
-
-List resources available on the server.
-
-
-### `read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-read_resource(context: Context, uri: Annotated[AnyUrl | str, 'The URI of the resource to read.']) -> ResourceResult
-```
-
-
-Read a resource available on the server.
-
-
 ## Classes
 
-### `ToolInjectionMiddleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L24" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ToolInjectionMiddleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/tool_injection.py#L13" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A middleware for injecting tools into the context.
 
+The server this middleware is added to lists and calls the injected tools
+alongside its own. They are resolved by the server's tool lookup, so a
+tool's `auth` check and every middleware in the chain, including
+`AuthMiddleware`, apply to them as they do to registered tools, wherever
+this middleware sits in the chain. Server and session visibility settings
+do not apply to injected tools.
+
+Injected tools are matched by name alone; a requested version is ignored.
+An injected tool takes precedence over a registered tool with the same
+name, and the registered tool is no longer listed. When several injection
+middleware provide the same name, the one added first takes precedence.
+Injected tools follow their task configuration as registered tools do.
+
 
 **Methods:**
 
-#### `on_list_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L35" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `injected_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/tool_injection.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-on_list_tools(self, context: MiddlewareContext[mcp.types.ListToolsRequest], call_next: CallNext[mcp.types.ListToolsRequest, Sequence[Tool]]) -> Sequence[Tool]
+injected_tools(self) -> Sequence[Tool]
 ```
 
-Inject tools into the response.
+The tools this middleware injects, one per name.
+
+If several given tools share a name, the last one is kept, matching
+`get_injected_tool()`.
 
 
-#### `on_call_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L44" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_injected_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/tool_injection.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-on_call_tool(self, context: MiddlewareContext[mcp.types.CallToolRequestParams], call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult]) -> ToolResult
+get_injected_tool(self, name: str) -> Tool | None
 ```
 
-Intercept tool calls to injected tools.
-
-
-### `PromptToolMiddleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L83" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-
-A middleware for injecting prompts as tools into the context.
-
-.. deprecated::
-    Use ``fastmcp.server.transforms.PromptsAsTools`` instead.
-
-
-### `ResourceToolMiddleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L125" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-
-A middleware for injecting resources as tools into the context.
-
-.. deprecated::
-    Use ``fastmcp.server.transforms.ResourcesAsTools`` instead.
+Return the injected tool with this name, if there is one.
 

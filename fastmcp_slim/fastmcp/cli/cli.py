@@ -15,15 +15,16 @@ import cyclopts
 import pyperclip
 from cyclopts import Parameter
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 import fastmcp
 from fastmcp.cli import run as run_module
 from fastmcp.cli.auth import auth_app
 from fastmcp.cli.client import call_command, discover_command, list_command
+from fastmcp.cli.deploy.command import login, logout, whoami
 from fastmcp.cli.generate import generate_cli_command
 from fastmcp.cli.install import install_app
-from fastmcp.cli.tasks import tasks_app
 from fastmcp.utilities.cli import is_already_in_uv_subprocess, load_and_merge_config
 from fastmcp.utilities.inspect import (
     InspectFormat,
@@ -66,6 +67,9 @@ def _parse_env_var(env_var: str) -> tuple[str, str]:
         logger.error("Invalid environment variable format. Must be KEY=VALUE")
         sys.exit(1)
     key, value = env_var.split("=", 1)
+    if not key.strip():
+        logger.error("Invalid environment variable format. KEY cannot be empty")
+        sys.exit(1)
     return key.strip(), value.strip()
 
 
@@ -180,7 +184,7 @@ async def inspector(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_requirements: Annotated[
@@ -235,13 +239,7 @@ async def inspector(
             with_requirements=with_requirements,
             project=project,
             editable=[str(p) for p in with_editable] if with_editable else None,
-            port=server_port,  # Use deployment config for server port
         )
-
-        # Get server port from config if not specified via CLI
-        if not server_port:
-            server_port = config.deployment.port
-
     except FileNotFoundError:
         sys.exit(1)
 
@@ -262,10 +260,9 @@ async def inspector(
             sys.exit(1)
         assert config is not None  # For type checker
 
-        # Skip server-object validation in module mode — the module
-        # manages its own startup and may not expose an importable server.
-        if not module:
-            await config.source.load_server()
+        # Let the child server load the source. Importing it here would happen
+        # outside the configured uv environment and would invoke factories a
+        # second time when `fastmcp run` starts.
 
         env_vars = {}
         if ui_port:
@@ -289,9 +286,12 @@ async def inspector(
         # Build the fastmcp run command
         fastmcp_cmd = ["fastmcp", "run", server_spec, "--no-banner"]
 
-        # Forward module mode flag
+        # The Inspector connects over stdio, so a fastmcp.json deployment
+        # must not make the child serve HTTP. Module mode ignores --transport.
         if module:
             fastmcp_cmd.append("--module")
+        else:
+            fastmcp_cmd.extend(["--transport", "stdio"])
 
         # Add reload flags if enabled - the server will handle reloading
         if reload:
@@ -359,6 +359,21 @@ async def apps(
             help="Auto-reload the MCP server on file changes",
         ),
     ] = True,
+    host: Annotated[
+        str,
+        cyclopts.Parameter(
+            "--host",
+            help="Host to bind to",
+        ),
+    ] = "127.0.0.1",
+    log_panel: Annotated[
+        bool,
+        cyclopts.Parameter(
+            "--log-panel",
+            negative="--no-log-panel",
+            help="Log panel feature in FastMCP dev UI",
+        ),
+    ] = True,
 ) -> None:
     """Preview a FastMCPApp UI in the browser.
 
@@ -378,7 +393,14 @@ async def apps(
 
     from fastmcp.cli.apps_dev import run_dev_apps
 
-    await run_dev_apps(server_spec, mcp_port=mcp_port, dev_port=dev_port, reload=reload)
+    await run_dev_apps(
+        server_spec,
+        mcp_port=mcp_port,
+        dev_port=dev_port,
+        reload=reload,
+        host=host,
+        log_panel=log_panel,
+    )
 
 
 @app.command
@@ -410,7 +432,7 @@ async def run(
         str | None,
         cyclopts.Parameter(
             "--path",
-            help="The route path for the server (default: /mcp/ for http transport, /sse/ for sse transport)",
+            help="The route path for the server (default: /mcp for http transport, /sse for sse transport)",
         ),
     ] = None,
     log_level: Annotated[
@@ -428,7 +450,7 @@ async def run(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_packages: Annotated[
@@ -656,6 +678,8 @@ async def run(
                 reload_cmd.extend(["--log-level", final_log_level])
             if final_no_banner:
                 reload_cmd.append("--no-banner")
+            if skip_source:
+                reload_cmd.append("--skip-source")
             reload_cmd.append("--no-reload")  # Prevent infinite spawning
             reload_cmd.append("--stateless")  # Stateless mode for reload compatibility
 
@@ -705,6 +729,10 @@ async def run(
             inner_cmd.extend(["--log-level", final_log_level])
         if final_no_banner:
             inner_cmd.append("--no-banner")
+        if stateless:
+            inner_cmd.append("--stateless")
+        if skip_source:
+            inner_cmd.append("--skip-source")
         # Add skip-env flag to prevent infinite recursion
         inner_cmd.append("--skip-env")
 
@@ -782,7 +810,7 @@ async def inspect(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_packages: Annotated[
@@ -854,7 +882,7 @@ async def inspect(
         if server_spec.endswith(".json") and config is None:
             # This might be an MCPConfig, check the file
             try:
-                with open(Path(server_spec)) as f:
+                with open(Path(server_spec), encoding="utf-8") as f:
                     data = json.load(f)
                 if "mcpServers" in data:
                     logger.error("MCPConfig files are not supported by inspect command")
@@ -931,16 +959,16 @@ async def inspect(
 
             # Server section
             console.print("[bold]Server[/bold]")
-            console.print(f"  Name:         {info.name}")
+            console.print(f"  Name:         {escape(info.name)}")
             if info.version:
-                console.print(f"  Version:      {info.version}")
+                console.print(f"  Version:      {escape(info.version)}")
             if info.website_url:
-                console.print(f"  Website:      {info.website_url}")
+                console.print(f"  Website:      {escape(str(info.website_url))}")
             if info.icons:
                 console.print(f"  Icons:        {len(info.icons)}")
             console.print(f"  Generation:   {info.server_generation}")
             if info.instructions:
-                console.print(f"  Instructions: {info.instructions}")
+                console.print(f"  Instructions: {escape(info.instructions)}")
             console.print()
 
             # Components section
@@ -978,13 +1006,14 @@ async def inspect(
 
             # Print confirmation to console
             console.print(
-                f"[bold green]✓[/bold green] Server inspection saved to: [cyan]{output}[/cyan]"
+                f"[bold green]✓[/bold green] Server inspection saved to: [cyan]{escape(str(output))}[/cyan]"
             )
-            console.print(f"  Server: [bold]{info.name}[/bold]")
+            console.print(f"  Server: [bold]{escape(info.name)}[/bold]")
             console.print(f"  Format: {format.value}")
         else:
-            # Output JSON to stdout
-            console.print(formatted_json.decode("utf-8"))
+            # Output JSON to stdout. The console would wrap long lines and
+            # interpret [markup], corrupting the JSON.
+            print(formatted_json.decode("utf-8"))
 
     except Exception as e:
         logger.exception(
@@ -994,7 +1023,9 @@ async def inspect(
                 "error": str(e),
             },
         )
-        console.print(f"[bold red]✗[/bold red] Failed to inspect server: {e}")
+        console.print(
+            f"[bold red]✗[/bold red] Failed to inspect server: {escape(str(e))}"
+        )
         sys.exit(1)
 
 
@@ -1099,9 +1130,6 @@ app.command(project_app)
 # Add install subcommands using proper Cyclopts pattern
 app.command(install_app)
 
-# Add tasks subcommand group
-app.command(tasks_app)
-
 # Add client query commands
 app.command(list_command, name="list")
 app.command(call_command, name="call")
@@ -1110,6 +1138,11 @@ app.command(generate_cli_command, name="generate-cli")
 
 # Add auth subcommand group (includes CIMD commands)
 app.command(auth_app)
+
+# Add Prefect Horizon account commands
+app.command(login)
+app.command(logout)
+app.command(whoami)
 
 
 if __name__ == "__main__":

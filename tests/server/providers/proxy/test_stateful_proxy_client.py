@@ -1,17 +1,26 @@
 import asyncio
+import contextlib
+import weakref
 from dataclasses import dataclass
+from unittest.mock import MagicMock
 
 import pytest
 from anyio import create_task_group
-from mcp.types import LoggingLevel
+from mcp_types import LoggingLevel
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.client.logging import LogMessage
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.exceptions import ToolError
+from fastmcp.server.context import _current_context
+from fastmcp.server.dependencies import fastmcp_request_ctx, get_server
 from fastmcp.server.elicitation import AcceptedElicitation
-from fastmcp.server.providers.proxy import FastMCPProxy, StatefulProxyClient
+from fastmcp.server.providers.proxy import (
+    FastMCPProxy,
+    StatefulProxyClient,
+    _restore_request_context,
+)
 from fastmcp.utilities.tests import find_available_port, run_server_async
 
 
@@ -19,7 +28,7 @@ from fastmcp.utilities.tests import find_available_port, run_server_async
 def fastmcp_server():
     mcp = FastMCP("TestServer")
 
-    states: dict[int, int] = {}
+    states: dict[str, int] = {}
 
     @mcp.tool
     async def log(
@@ -30,13 +39,16 @@ def fastmcp_server():
     @mcp.tool
     async def stateful_put(value: int, context: Context) -> None:
         """put a value associated with the server session"""
-        key = id(context.session)
+        # SDK v2 constructs a ServerSession per request, so `id(context.session)`
+        # is not a stable per-connection key. Use the connection-scoped
+        # `session_id` to share state across calls on the same client session.
+        key = context.session_id
         states[key] = value
 
     @mcp.tool
     async def stateful_get(context: Context) -> int:
         """get the value associated with the server session"""
-        key = id(context.session)
+        key = context.session_id
         try:
             return states[key]
         except KeyError:
@@ -47,6 +59,13 @@ def fastmcp_server():
 
 @pytest.fixture
 async def stateful_proxy_server(fastmcp_server: FastMCP):
+    # `StatefulProxyClient` is a `ProxyClient` subclass, so it inherits the same
+    # `mode="legacy"` default for a directly-constructed instance (see
+    # `TestProxyClientEraDefault` in test_proxy_client.py) — this backend isn't
+    # built through `create_proxy`'s era-mirroring factory, so it stays pinned
+    # regardless of the front era. Tests of handshake-only forwarding pin their
+    # front `Client` to `mode="legacy"` too: those server-initiated
+    # interactions do not exist on modern connections.
     client = StatefulProxyClient(transport=FastMCPTransport(fastmcp_server))
     return FastMCPProxy(client_factory=client.new_stateful)
 
@@ -71,6 +90,32 @@ async def stateless_server(stateful_proxy_server: FastMCP):
 
 
 class TestStatefulProxyClient:
+    async def test_reconnects_after_persistent_session_ends(self):
+        """A completed request must not prevent a dead session from reconnecting."""
+        backend = FastMCP("backend")
+
+        @backend.tool
+        def echo(value: str) -> str:
+            return value
+
+        client = StatefulProxyClient(backend)
+        try:
+            async with client:
+                result = await client.call_tool("echo", {"value": "first"})
+                assert result.data == "first"
+
+            session_task = client._session_state.session_task
+            assert session_task is not None
+            session_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await session_task
+
+            async with client:
+                result = await client.call_tool("echo", {"value": "second"})
+                assert result.data == "second"
+        finally:
+            await client.close()
+
     async def test_concurrent_log_requests_no_mixing(
         self, stateful_proxy_server: FastMCP
     ):
@@ -84,8 +129,12 @@ class TestStatefulProxyClient:
             results["logger_b"] = message
 
         async with (
-            Client(stateful_proxy_server, log_handler=log_handler_a) as client_a,
-            Client(stateful_proxy_server, log_handler=log_handler_b) as client_b,
+            Client(
+                stateful_proxy_server, mode="legacy", log_handler=log_handler_a
+            ) as client_a,
+            Client(
+                stateful_proxy_server, mode="legacy", log_handler=log_handler_b
+            ) as client_b,
         ):
             async with create_task_group() as tg:
                 tg.start_soon(
@@ -104,7 +153,8 @@ class TestStatefulProxyClient:
 
     async def test_stateful_proxy(self, stateful_proxy_server: FastMCP):
         """Test that the state shared across multiple calls for the same client (fixes #959)."""
-        async with Client(stateful_proxy_server) as client:
+        # See stateful_proxy_server fixture: its backend is pinned to legacy.
+        async with Client(stateful_proxy_server, mode="legacy") as client:
             with pytest.raises(ToolError, match="Value not found"):
                 await client.call_tool("stateful_get", {})
 
@@ -115,7 +165,8 @@ class TestStatefulProxyClient:
     async def test_stateless_proxy(self, stateless_server: str):
         """Test that the state will not be shared across different calls,
         even if they are from the same client."""
-        async with Client(stateless_server) as client:
+        # See stateful_proxy_server fixture: its backend is pinned to legacy.
+        async with Client(stateless_server, mode="legacy") as client:
             await client.call_tool("stateful_put", {"value": 1})
 
             with pytest.raises(ToolError, match="Value not found"):
@@ -143,7 +194,9 @@ class TestStatefulProxyClient:
         multi_proxy_mcp.mount(proxy_mcp_a, namespace="a")
         multi_proxy_mcp.mount(proxy_mcp_b, namespace="b")
 
-        async with Client(multi_proxy_mcp) as client:
+        # Both mounted backends are directly-constructed StatefulProxyClients
+        # (see stateful_proxy_server fixture note above), pinned to legacy.
+        async with Client(multi_proxy_mcp, mode="legacy") as client:
             result_a = await client.call_tool("a_tool_a", {})
             result_b = await client.call_tool("b_tool_b", {})
             assert result_a.data == "a"
@@ -188,10 +241,13 @@ class TestStatefulProxyClient:
             return ElicitResult(action="accept", content=response_type(name="Alice"))
 
         # Run the proxy over HTTP so the transport uses
-        # related_request_id routing for server-initiated messages.
+        # related_request_id routing for server-initiated messages. Elicitation
+        # is a handshake-only back-channel feature, and the backend is a
+        # directly-constructed StatefulProxyClient pinned to legacy regardless
+        # (see stateful_proxy_server fixture note above) — pin the front to match.
         async with run_server_async(proxy) as proxy_url:
             async with Client(
-                proxy_url, elicitation_handler=elicitation_handler
+                proxy_url, mode="legacy", elicitation_handler=elicitation_handler
             ) as client:
                 result1 = await client.call_tool("ask_name", {})
                 assert result1.data == "Hello, Alice!"
@@ -199,3 +255,76 @@ class TestStatefulProxyClient:
                 # one that would hang without the fix.
                 result2 = await client.call_tool("ask_name", {})
                 assert result2.data == "Hello, Alice!"
+
+
+class TestRestoreRequestContextCurrentServer:
+    """Regression tests for `_restore_request_context` (refs #4054, Bug 4).
+
+    The receive-loop repair must also restore `_current_server`, so handlers
+    that resolve the server via dependency injection (e.g. `get_server()`)
+    work. It must do so set-only — without opening a `Context` context-manager
+    scope — since this patches a long-lived task's ContextVars in place.
+    """
+
+    async def _run_in_child_context(self, fn):
+        # Run in a child task so contextvar writes are isolated from the test
+        # task and `fastmcp_request_ctx` is genuinely unset (defaults to None).
+        return await asyncio.create_task(fn())
+
+    async def test_lookup_error_branch_restores_current_server(self):
+        fastmcp = FastMCP("restore-test")
+        rc = MagicMock()
+        rc.session = MagicMock()
+        rc.request_id = "req-1"
+        rc_ref: list = [(rc, weakref.ref(fastmcp))]
+
+        async def body():
+            assert fastmcp_request_ctx.get() is None
+            _restore_request_context(rc_ref)
+
+            # The actual Bug 4 fix: get_server() now resolves.
+            assert get_server() is fastmcp
+            assert fastmcp_request_ctx.get() is rc
+
+            ctx = _current_context.get()
+            assert ctx is not None
+            assert ctx.fastmcp is fastmcp
+            # Set-only: no context-manager scope was opened, so __aenter__'s
+            # token bookkeeping never ran.
+            assert ctx._tokens == []
+            assert not hasattr(ctx, "_shared_context")
+
+        await self._run_in_child_context(body)
+
+    async def test_stale_override_branch_restores_current_server(self):
+        fastmcp = FastMCP("restore-test")
+        session = MagicMock()
+
+        stale_rc = MagicMock()
+        stale_rc.session = session
+        stale_rc.request_id = "old"
+
+        fresh_rc = MagicMock()
+        fresh_rc.session = session
+        fresh_rc.request_id = "new"
+
+        rc_ref: list = [(fresh_rc, weakref.ref(fastmcp))]
+
+        async def body():
+            fastmcp_request_ctx.set(stale_rc)
+            _restore_request_context(rc_ref)
+
+            assert fastmcp_request_ctx.get() is fresh_rc
+            assert get_server() is fastmcp
+
+        await self._run_in_child_context(body)
+
+    async def test_no_stash_is_noop(self):
+        rc_ref: list = [None]
+
+        async def body():
+            # No stash: nothing restored, no error.
+            _restore_request_context(rc_ref)
+            assert fastmcp_request_ctx.get() is None
+
+        await self._run_in_child_context(body)

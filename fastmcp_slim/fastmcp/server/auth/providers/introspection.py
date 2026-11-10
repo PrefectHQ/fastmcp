@@ -28,7 +28,7 @@ import contextlib
 import time
 from typing import Any, Literal, get_args
 
-import httpx
+import httpx2
 from pydantic import AnyHttpUrl, SecretStr
 
 from fastmcp.server.auth import AccessToken, TokenVerifier
@@ -86,10 +86,11 @@ class IntrospectionTokenVerifier(TokenVerifier):
         client_auth_method: ClientAuthMethod = "client_secret_basic",
         timeout_seconds: int = 10,
         required_scopes: list[str] | None = None,
+        audience: str | list[str] | None = None,
         base_url: AnyHttpUrl | str | None = None,
         cache_ttl_seconds: int | None = None,
         max_cache_size: int | None = None,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
     ):
         """
         Initialize the introspection token verifier.
@@ -102,6 +103,9 @@ class IntrospectionTokenVerifier(TokenVerifier):
                 uses HTTP Basic Auth header, "client_secret_post" sends credentials in POST body
             timeout_seconds: HTTP request timeout in seconds (default: 10)
             required_scopes: Required scopes for all tokens (optional)
+            audience: Expected audience or list of allowed audiences. When set,
+                the response must include a matching string or array of strings
+                in `aud`. None leaves audience selection to the authorization server.
             base_url: Base URL for TokenVerifier protocol
             cache_ttl_seconds: How long to cache introspection results in seconds.
                 Caching is disabled by default (None) to preserve real-time
@@ -109,7 +113,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
                 (e.g., 300 for 5 minutes).
             max_cache_size: Maximum number of tokens to cache when caching is
                 enabled. Default: 10000.
-            http_client: Optional httpx.AsyncClient for connection pooling. When provided,
+            http_client: Optional httpx2.AsyncClient for connection pooling. When provided,
                 the client is reused across calls and the caller is responsible for its
                 lifecycle. When None (default), a fresh client is created per call.
         """
@@ -137,6 +141,14 @@ class IntrospectionTokenVerifier(TokenVerifier):
                 f"Must be {options}."
             )
         self.client_auth_method: ClientAuthMethod = client_auth_method
+
+        if audience is not None:
+            audiences = [audience] if isinstance(audience, str) else audience
+            if not audiences or any(
+                not isinstance(value, str) or not value for value in audiences
+            ):
+                raise ValueError("audience must contain nonempty strings")
+        self.audience = audience
 
         self.timeout_seconds = timeout_seconds
         self._http_client = http_client
@@ -203,7 +215,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
             async with (
                 contextlib.nullcontext(self._http_client)
                 if self._http_client is not None
-                else httpx.AsyncClient(timeout=self.timeout_seconds)
+                else httpx2.AsyncClient(timeout=self.timeout_seconds)
             ) as client:
                 # Prepare introspection request per RFC 7662
                 # Build request data with token and token_type_hint
@@ -265,6 +277,28 @@ class IntrospectionTokenVerifier(TokenVerifier):
                         )
                         return None
 
+                if self.audience is not None:
+                    aud = introspection_data.get("aud")
+                    token_audiences = [aud] if isinstance(aud, str) else aud
+                    expected_audiences = (
+                        [self.audience]
+                        if isinstance(self.audience, str)
+                        else self.audience
+                    )
+                    if (
+                        not isinstance(token_audiences, list)
+                        or not token_audiences
+                        or any(
+                            not isinstance(value, str) or not value
+                            for value in token_audiences
+                        )
+                        or not any(
+                            value in token_audiences for value in expected_audiences
+                        )
+                    ):
+                        self.logger.debug("Token introspection audience mismatch")
+                        return None
+
                 # Extract scopes
                 scopes = self._extract_scopes(introspection_data)
 
@@ -287,17 +321,18 @@ class IntrospectionTokenVerifier(TokenVerifier):
                     client_id=str(client_id),
                     scopes=scopes,
                     expires_at=int(exp) if exp is not None else None,
+                    subject=introspection_data.get("sub"),
                     claims=introspection_data,  # Store full response for extensibility
                 )
                 self._cache.set(token, result)
                 return result
 
-        except httpx.TimeoutException:
+        except httpx2.TimeoutException:
             self.logger.debug(
                 "Token introspection timed out after %d seconds", self.timeout_seconds
             )
             return None
-        except httpx.RequestError as e:
+        except httpx2.RequestError as e:
             self.logger.debug("Token introspection request failed: %s", e)
             return None
         except Exception as e:

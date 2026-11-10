@@ -13,16 +13,23 @@ import hmac
 import json
 import secrets
 import time
-from base64 import urlsafe_b64encode
-from typing import TYPE_CHECKING, Any
-from urllib.parse import urlencode, urlparse
+from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from pydantic import AnyUrl
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
 
-from fastmcp.server.auth.oauth_proxy.models import ProxyDCRClient
+from fastmcp.server.auth.oauth_proxy.models import (
+    ConsentCSRFToken,
+    ProxyDCRClient,
+    _hash_token,
+)
 from fastmcp.server.auth.oauth_proxy.ui import create_consent_html
+from fastmcp.server.auth.redirect_validation import (
+    build_client_redirect,
+    validate_redirect_uri,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.ui import create_secure_html_response
 
@@ -33,7 +40,39 @@ if TYPE_CHECKING:
 # Keeps the Cookie header bounded to avoid hitting reverse proxy header limits.
 _MAX_REMEMBERED_CLIENTS = 25
 
+# Maximum number of consent-state cookies the browser carries at once. Each
+# render of a consent page adds one, and a handful of renders is normal (a
+# reload, a preload, an extension re-fetching the URL); the bound keeps the
+# Cookie header from growing without limit across many pending flows.
+#
+# The matching server-side state is bounded by its own 15-minute TTL rather
+# than by a count, because counting entries would mean reading them back and
+# rewriting them — the read-modify-write that concurrent renders race on.
+_MAX_CSRF_TOKENS = 10
+
+_CONSENT_BINDING_COOKIE_BASE = "MCP_CONSENT_BINDING"
+
+# Base name of the consent-state cookie. One cookie is set per issued CSRF
+# token (`MCP_CONSENT_STATE_<digest>`) rather than one list shared by all of
+# them: two renders in flight at once both build their Set-Cookie from the same
+# inbound Cookie header, so a shared list silently drops whichever entry was
+# written first. Separate names never collide.
+#
+# The unsuffixed name is the pre-upgrade flat list. It is read, never written,
+# so a consent page rendered before an upgrade can still be submitted after it.
+_CONSENT_STATE_COOKIE_BASE = "MCP_CONSENT_STATE"
+
 logger = get_logger(__name__)
+
+
+def _consent_state_base_name(csrf_token: str) -> str:
+    """Base cookie name carrying a single issued CSRF token.
+
+    The token is hashed rather than used directly so the raw token does not end
+    up in a cookie name, which is far more likely to be logged than its value.
+    """
+    digest = hashlib.sha256(csrf_token.encode()).hexdigest()[:32]
+    return f"{_CONSENT_STATE_COOKIE_BASE}_{digest}"
 
 
 class ConsentMixin:
@@ -59,6 +98,16 @@ class ConsentMixin:
         """Create a stable key for consent tracking from client_id and redirect_uri."""
         normalized = self._normalize_uri(str(redirect_uri))
         return f"{client_id}:{normalized}"
+
+    def _validate_client_redirect_uri(
+        self: OAuthProxy,
+        redirect_uri: str,
+    ) -> bool:
+        """Validate a stored transaction redirect URI before sending a browser to it."""
+        return validate_redirect_uri(
+            redirect_uri=redirect_uri,
+            allowed_patterns=self._allowed_client_redirect_uris,
+        )
 
     def _cookie_name(self: OAuthProxy, base_name: str) -> str:
         """Return secure cookie name for HTTPS, fallback for HTTP development."""
@@ -166,12 +215,121 @@ class ConsentMixin:
             path="/",
         )
 
-    def _read_consent_bindings(self: OAuthProxy, request: Request) -> dict[str, str]:
-        """Read the consent binding map from the signed cookie.
+    def _read_consent_state_cookies(
+        self: OAuthProxy, request: Request
+    ) -> dict[str, tuple[str, float]]:
+        """Per-token consent-state cookies the browser sent, by cookie name.
 
-        Returns a dict of {txn_id: consent_token} for all pending flows.
+        Returns {cookie_name: (txn_id, issued_at)} for every cookie whose
+        signature verifies. Unsigned, tampered, or unparsable cookies are
+        skipped rather than raising, the same way the other cookie readers here
+        treat them.
         """
-        cookie_name = self._cookie_name("MCP_CONSENT_BINDING")
+        prefix = self._cookie_name(f"{_CONSENT_STATE_COOKIE_BASE}_")
+        found: dict[str, tuple[str, float]] = {}
+        for name, raw in request.cookies.items():
+            if not name.startswith(prefix):
+                continue
+            payload = self._verify_cookie(raw)
+            if not payload:
+                logger.debug("Cookie signature verification failed for %s", name)
+                continue
+            try:
+                data = json.loads(base64.b64decode(payload.encode()).decode())
+            except Exception:
+                logger.debug("Failed to decode cookie %s; ignoring", name)
+                continue
+            if not isinstance(data, dict):
+                continue
+            txn_id = data.get("txn")
+            issued_at = data.get("iat")
+            if isinstance(txn_id, str) and isinstance(issued_at, int | float):
+                found[name] = (txn_id, float(issued_at))
+        return found
+
+    def _set_consent_state_cookie(
+        self: OAuthProxy,
+        response: HTMLResponse | RedirectResponse,
+        csrf_token: str,
+        txn_id: str,
+        issued_at: float,
+    ) -> None:
+        """Record that this browser received `csrf_token`, under its own name.
+
+        The cookie is what makes the double-submit check meaningful: the token
+        in the form has to match one this browser was actually handed. Writing
+        it under a name derived from the token keeps that property while making
+        the write independent of every other render's.
+        """
+        payload = base64.b64encode(
+            json.dumps(
+                {"txn": txn_id, "iat": issued_at}, separators=(",", ":")
+            ).encode()
+        ).decode()
+        response.set_cookie(
+            self._cookie_name(_consent_state_base_name(csrf_token)),
+            self._sign_cookie(payload),
+            max_age=15 * 60,
+            secure=self._is_https,
+            httponly=True,
+            samesite="lax",
+            path="/",
+        )
+
+    def _clear_consent_state_for_transaction(
+        self: OAuthProxy,
+        request: Request,
+        response: HTMLResponse | RedirectResponse,
+        txn_id: str,
+        *,
+        include_legacy: bool,
+    ) -> None:
+        """Expire the consent state belonging to one completed transaction.
+
+        Only this transaction's cookies are removed. Another consent flow the
+        same browser has open keeps its own state, which a single shared list
+        had no way to express — completing either flow wiped both.
+        """
+        for name, (cookie_txn, _issued_at) in self._read_consent_state_cookies(
+            request
+        ).items():
+            if hmac.compare_digest(cookie_txn, txn_id):
+                self._expire_cookie(response, name)
+
+        if include_legacy:
+            # The pre-upgrade cookie is a flat list with no transaction
+            # attached, so it can only be cleared wholesale. Reached only when
+            # the submitted token came from it, which means every flow sharing
+            # it was rendered before the upgrade too.
+            self._set_list_cookie(
+                response,
+                _CONSENT_STATE_COOKIE_BASE,
+                self._encode_list_cookie([]),
+                max_age=60,
+            )
+
+    def _expire_cookie(
+        self: OAuthProxy,
+        response: HTMLResponse | RedirectResponse,
+        name: str,
+    ) -> None:
+        """Expire one cookie by name, matching the attributes it was set with."""
+        response.set_cookie(
+            name,
+            "",
+            max_age=0,
+            secure=self._is_https,
+            httponly=True,
+            samesite="lax",
+            path="/",
+        )
+
+    def _read_consent_bindings(self: OAuthProxy, request: Request) -> dict[str, str]:
+        """Read a pre-upgrade consent binding map from its signed cookie.
+
+        Kept temporarily so OAuth flows approved before an upgrade can finish.
+        """
+        cookie_name = self._cookie_name(_CONSENT_BINDING_COOKIE_BASE)
         raw = request.cookies.get(cookie_name)
         # Only fall back to the non-__Host- name over plain HTTP. On HTTPS,
         # __Host- enforces host-only scope; accepting the weaker name would
@@ -191,30 +349,28 @@ class ConsentMixin:
             logger.debug("Failed to decode consent binding cookie")
         return {}
 
-    def _write_consent_bindings(
+    def _consent_binding_cookie_name(self: OAuthProxy, txn_id: str) -> str:
+        """Return an independent cookie name for one consent transaction."""
+        digest = hashlib.sha256(txn_id.encode()).hexdigest()[:32]
+        return self._cookie_name(f"{_CONSENT_BINDING_COOKIE_BASE}_{digest}")
+
+    def _set_consent_binding_cookie(
         self: OAuthProxy,
         response: HTMLResponse | RedirectResponse,
-        bindings: dict[str, str],
+        txn_id: str,
+        consent_token: str,
     ) -> None:
-        """Write the consent binding map to a signed cookie."""
-        name = self._cookie_name("MCP_CONSENT_BINDING")
-        if not bindings:
-            response.set_cookie(
-                name,
-                "",
-                max_age=0,
-                secure=self._is_https,
-                httponly=True,
-                samesite="lax",
-                path="/",
-            )
-            return
-        payload_bytes = json.dumps(bindings, separators=(",", ":")).encode()
-        payload_b64 = base64.b64encode(payload_bytes).decode()
-        signed_value = self._sign_cookie(payload_b64)
+        """Set an independently signed cookie for one consent transaction.
+
+        This cookie binds the browser that approved consent to the IdP callback,
+        ensuring a different browser cannot complete the OAuth flow. Its name
+        is derived from the transaction ID, so concurrent approvals from the
+        same cookie snapshot cannot overwrite one another.
+        """
+        name = self._consent_binding_cookie_name(txn_id)
         response.set_cookie(
             name,
-            signed_value,
+            self._sign_cookie(consent_token),
             max_age=15 * 60,
             secure=self._is_https,
             httponly=True,
@@ -222,33 +378,17 @@ class ConsentMixin:
             path="/",
         )
 
-    def _set_consent_binding_cookie(
-        self: OAuthProxy,
-        request: Request,
-        response: HTMLResponse | RedirectResponse,
-        txn_id: str,
-        consent_token: str,
-    ) -> None:
-        """Add a consent binding entry for a transaction.
-
-        This cookie binds the browser that approved consent to the IdP callback,
-        ensuring a different browser cannot complete the OAuth flow. Multiple
-        concurrent flows are supported by storing a map of txn_id → consent_token.
-        """
-        bindings = self._read_consent_bindings(request)
-        bindings[txn_id] = consent_token
-        self._write_consent_bindings(response, bindings)
-
     def _clear_consent_binding_cookie(
         self: OAuthProxy,
-        request: Request,
         response: HTMLResponse | RedirectResponse,
         txn_id: str,
     ) -> None:
-        """Remove a specific consent binding entry after successful callback."""
-        bindings = self._read_consent_bindings(request)
-        bindings.pop(txn_id, None)
-        self._write_consent_bindings(response, bindings)
+        """Expire this transaction's binding after its successful callback.
+
+        The legacy shared cookie is left to its 15-minute expiry: rewriting it
+        from a callback's cookie snapshot could erase another concurrent flow.
+        """
+        self._expire_cookie(response, self._consent_binding_cookie_name(txn_id))
 
     def _verify_consent_binding_cookie(
         self: OAuthProxy,
@@ -257,48 +397,16 @@ class ConsentMixin:
         expected_token: str,
     ) -> bool:
         """Verify the consent binding for a specific transaction."""
-        bindings = self._read_consent_bindings(request)
-        actual = bindings.get(txn_id)
-        if not actual:
-            return False
-        return hmac.compare_digest(actual, expected_token)
+        name = self._consent_binding_cookie_name(txn_id)
+        raw = request.cookies.get(name)
+        if raw:
+            actual = self._verify_cookie(raw)
+            if actual and hmac.compare_digest(actual, expected_token):
+                return True
 
-    def _build_upstream_authorize_url(
-        self: OAuthProxy, txn_id: str, transaction: dict[str, Any]
-    ) -> str:
-        """Construct the upstream IdP authorization URL using stored transaction data."""
-        query_params: dict[str, Any] = {
-            "response_type": "code",
-            "client_id": self._upstream_client_id,
-            "redirect_uri": f"{str(self.base_url).rstrip('/')}{self._redirect_path}",
-            "state": txn_id,
-        }
-
-        scopes_to_use = transaction.get("scopes") or self.required_scopes or []
-        if scopes_to_use:
-            query_params["scope"] = " ".join(scopes_to_use)
-
-        # If PKCE forwarding was enabled, include the proxy challenge
-        proxy_code_verifier = transaction.get("proxy_code_verifier")
-        if proxy_code_verifier:
-            challenge_bytes = hashlib.sha256(proxy_code_verifier.encode()).digest()
-            proxy_code_challenge = (
-                urlsafe_b64encode(challenge_bytes).decode().rstrip("=")
-            )
-            query_params["code_challenge"] = proxy_code_challenge
-            query_params["code_challenge_method"] = "S256"
-
-        # Forward resource indicator if present in transaction
-        if self._forward_resource:
-            if resource := transaction.get("resource"):
-                query_params["resource"] = resource
-
-        # Extra configured parameters
-        if self._extra_authorize_params:
-            query_params.update(self._extra_authorize_params)
-
-        separator = "&" if "?" in self._upstream_authorization_endpoint else "?"
-        return f"{self._upstream_authorization_endpoint}{separator}{urlencode(query_params)}"
+        # Accept signed shared-map cookies for flows approved before an upgrade.
+        actual = self._read_consent_bindings(request).get(txn_id)
+        return bool(actual) and hmac.compare_digest(actual, expected_token)
 
     async def _handle_consent(
         self: OAuthProxy, request: Request
@@ -355,19 +463,32 @@ class ConsentMixin:
                     )
                     upstream_url = self._build_upstream_authorize_url(txn_id, txn)
                     response = RedirectResponse(url=upstream_url, status_code=302)
-                    self._set_consent_binding_cookie(
-                        request, response, txn_id, consent_token
-                    )
+                    self._set_consent_binding_cookie(response, txn_id, consent_token)
                     return response
 
                 if client_key in denied:
+                    if not self._validate_client_redirect_uri(
+                        txn["client_redirect_uri"]
+                    ):
+                        logger.warning(
+                            "Blocked consent denial redirect to disallowed URI for transaction %s",
+                            txn_id,
+                        )
+                        return create_secure_html_response(
+                            "<h1>Error</h1><p>Invalid redirect URI</p>",
+                            status_code=400,
+                        )
+
                     callback_params = {
                         "error": "access_denied",
                         "state": txn.get("client_state") or "",
                     }
-                    sep = "&" if "?" in txn["client_redirect_uri"] else "?"
                     return RedirectResponse(
-                        url=f"{txn['client_redirect_uri']}{sep}{urlencode(callback_params)}",
+                        url=build_client_redirect(
+                            txn["client_redirect_uri"],
+                            callback_params,
+                            iss=str(self.issuer_url),
+                        ),
                         status_code=302,
                     )
             else:
@@ -378,20 +499,31 @@ class ConsentMixin:
                     sec_fetch_site,
                 )
 
-        # Need consent: issue CSRF token and show HTML
+        # Need consent: issue CSRF token and show HTML.
+        #
+        # A transaction can be rendered more than once before it is submitted —
+        # a reload, a browser preload, an extension re-fetching the URL. Every
+        # render issues its own token, so that a token stays unique to the
+        # browser that received it and the double-submit cookie check keeps its
+        # meaning, and every token issued for the transaction stays valid until
+        # it expires. Dropping the earlier one kills the form the user is
+        # already looking at: they click Approve and get "Invalid or expired
+        # consent token" on a flow that never expired, with no way to recover.
+        #
+        # The token is stored under its own key rather than appended to a list
+        # on the transaction. Two renders in flight at once would both read the
+        # same transaction, each append their token, and the second write would
+        # drop the first — `AsyncKeyValue` has no compare-and-swap to prevent
+        # it. Independent keys make the writes commute, including across
+        # processes sharing one storage backend.
         csrf_token = secrets.token_urlsafe(32)
-        csrf_expires_at = time.time() + 15 * 60
-
-        # Update transaction with CSRF token
-        txn_model.csrf_token = csrf_token
-        txn_model.csrf_expires_at = csrf_expires_at
-        await self._transaction_store.put(
-            key=txn_id, value=txn_model, ttl=15 * 60
-        )  # Auto-expire after 15 minutes
-
-        # Update dict for use in HTML generation
-        txn["csrf_token"] = csrf_token
-        txn["csrf_expires_at"] = csrf_expires_at
+        issued_at = time.time()
+        csrf_expires_at = issued_at + 15 * 60
+        await self._consent_csrf_store.put(
+            key=_hash_token(csrf_token),
+            value=ConsentCSRFToken(txn_id=txn_id, expires_at=csrf_expires_at),
+            ttl=15 * 60,  # Auto-expire after 15 minutes
+        )
 
         # Load client to get client_name and CIMD info if available
         client = await self.get_client(txn["client_id"])
@@ -432,15 +564,19 @@ class ConsentMixin:
             cimd_domain=cimd_domain,
         )
         response = create_secure_html_response(html)
-        # Merge new CSRF token with any existing ones (supports concurrent flows)
-        existing_tokens = self._decode_list_cookie(request, "MCP_CONSENT_STATE")
-        existing_tokens.append(csrf_token)
-        self._set_list_cookie(
-            response,
-            "MCP_CONSENT_STATE",
-            self._encode_list_cookie(existing_tokens),
-            max_age=15 * 60,
-        )
+        self._set_consent_state_cookie(response, csrf_token, txn_id, issued_at)
+
+        # Keep the browser's consent state bounded. The cookie just set always
+        # survives; the oldest of the rest are expired to make room. Eviction
+        # is by issued-at from the cookie itself, so it does not depend on any
+        # server-side bookkeeping that renders would have to share.
+        others = self._read_consent_state_cookies(request)
+        others.pop(self._cookie_name(_consent_state_base_name(csrf_token)), None)
+        surplus = len(others) + 1 - _MAX_CSRF_TOKENS
+        if surplus > 0:
+            by_age = sorted(others.items(), key=lambda item: item[1][1])
+            for name, _entry in by_age[:surplus]:
+                self._expire_cookie(response, name)
         return response
 
     async def _submit_consent(
@@ -464,10 +600,34 @@ class ConsentMixin:
             )
 
         txn = txn_model.model_dump()
-        expected_csrf = txn.get("csrf_token")
-        expires_at = float(txn.get("csrf_expires_at") or 0)
 
-        if not expected_csrf or csrf_token != expected_csrf or time.time() > expires_at:
+        # Look the token up by its own key. A record proves the token was
+        # issued by a render of THIS transaction; nothing else can have written
+        # it, and a concurrent render cannot have removed it.
+        csrf_record = (
+            await self._consent_csrf_store.get(key=_hash_token(csrf_token))
+            if csrf_token
+            else None
+        )
+        if csrf_record is not None:
+            legacy_csrf = False
+            csrf_valid = (
+                hmac.compare_digest(csrf_record.txn_id, txn_id)
+                and time.time() <= csrf_record.expires_at
+            )
+        else:
+            # No record: either the token is bogus, or the consent page was
+            # rendered by a version that kept the token on the transaction.
+            # Honouring the old location keeps a flow that was already open
+            # during an upgrade submittable instead of failing at Approve.
+            stored = txn_model.csrf_token
+            csrf_valid = bool(csrf_token and stored) and (
+                hmac.compare_digest(stored or "", csrf_token)
+                and time.time() <= (txn_model.csrf_expires_at or 0)
+            )
+            legacy_csrf = csrf_valid
+
+        if not csrf_valid:
             return create_secure_html_response(
                 "<h1>Error</h1><p>Invalid or expired consent token</p>", status_code=400
             )
@@ -476,8 +636,16 @@ class ConsentMixin:
         # Without this, an attacker who knows their own tx_id/csrf_token can
         # CSRF the victim's browser into approving consent, bypassing the
         # consent binding cookie protection.
-        cookie_csrf_tokens = self._decode_list_cookie(request, "MCP_CONSENT_STATE")
-        if csrf_token not in cookie_csrf_tokens:
+        if legacy_csrf:
+            cookie_ok = csrf_token in self._decode_list_cookie(
+                request, _CONSENT_STATE_COOKIE_BASE
+            )
+        else:
+            entry = self._read_consent_state_cookies(request).get(
+                self._cookie_name(_consent_state_base_name(csrf_token))
+            )
+            cookie_ok = entry is not None and hmac.compare_digest(entry[0], txn_id)
+        if not cookie_ok:
             logger.warning(
                 "CSRF double-submit check failed for transaction %s "
                 "(possible cross-site consent forgery)",
@@ -518,21 +686,33 @@ class ConsentMixin:
                     max_age=365 * 24 * 3600,
                 )
 
-            # Clear CSRF cookie by setting empty short-lived value
-            self._set_list_cookie(
-                response, "MCP_CONSENT_STATE", self._encode_list_cookie([]), max_age=60
+            # Retire this transaction's consent state, both halves of it: the
+            # stored token so it cannot be replayed, and the cookies that
+            # carried it. Other pending flows are left alone.
+            await self._consent_csrf_store.delete(key=_hash_token(csrf_token))
+            self._clear_consent_state_for_transaction(
+                request, response, txn_id, include_legacy=legacy_csrf
             )
-            self._set_consent_binding_cookie(request, response, txn_id, consent_token)
+            self._set_consent_binding_cookie(response, txn_id, consent_token)
             return response
 
         elif action == "deny":
+            if not self._validate_client_redirect_uri(txn["client_redirect_uri"]):
+                logger.warning(
+                    "Blocked consent denial redirect to disallowed URI for transaction %s",
+                    txn_id,
+                )
+                return create_secure_html_response(
+                    "<h1>Error</h1><p>Invalid redirect URI</p>",
+                    status_code=400,
+                )
+
             callback_params = {
                 "error": "access_denied",
                 "state": txn.get("client_state") or "",
             }
-            sep = "&" if "?" in txn["client_redirect_uri"] else "?"
-            client_callback_url = (
-                f"{txn['client_redirect_uri']}{sep}{urlencode(callback_params)}"
+            client_callback_url = build_client_redirect(
+                txn["client_redirect_uri"], callback_params, iss=str(self.issuer_url)
             )
             response = RedirectResponse(url=client_callback_url, status_code=302)
 
@@ -549,8 +729,9 @@ class ConsentMixin:
                     max_age=365 * 24 * 3600,
                 )
 
-            self._set_list_cookie(
-                response, "MCP_CONSENT_STATE", self._encode_list_cookie([]), max_age=60
+            await self._consent_csrf_store.delete(key=_hash_token(csrf_token))
+            self._clear_consent_state_for_transaction(
+                request, response, txn_id, include_legacy=legacy_csrf
             )
             return response
 

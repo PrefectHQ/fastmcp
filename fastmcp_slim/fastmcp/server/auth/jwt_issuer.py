@@ -9,26 +9,13 @@ from __future__ import annotations
 
 import base64
 import time
-import warnings
 from typing import Any, overload
 
-with warnings.catch_warnings():
-    # authlib.jose emits AuthlibDeprecationWarning on import; suppress it so
-    # importing this module does not trigger the warning under
-    # `warnings.simplefilter("error")`. The `authlib.deprecate` import lives
-    # inside this block too: importing it for the first time runs
-    # `warnings.simplefilter("always", AuthlibDeprecationWarning)` at module
-    # scope, which would otherwise leak past `catch_warnings()` and clobber
-    # the caller's filter for subsequent Authlib deprecations. See
-    # jlowin/fastmcp#4098.
-    from authlib.deprecate import AuthlibDeprecationWarning
-
-    warnings.simplefilter("ignore", AuthlibDeprecationWarning)
-    from authlib.jose import JsonWebToken
-    from authlib.jose.errors import JoseError
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from joserfc import jwk, jwt
+from joserfc.errors import JoseError
 
 import fastmcp
 from fastmcp.utilities.logging import get_logger
@@ -113,7 +100,7 @@ class JWTIssuer:
         self.issuer = issuer
         self.audience = audience
         self._signing_key = signing_key
-        self._jwt = JsonWebToken(["HS256"])
+        self._jwt_key = jwk.import_key(signing_key, "oct")
 
     def issue_access_token(
         self,
@@ -122,6 +109,8 @@ class JWTIssuer:
         jti: str,
         expires_in: int = 3600,
         upstream_claims: dict[str, Any] | None = None,
+        subject: str | None = None,
+        extra_claims: dict[str, Any] | None = None,
     ) -> str:
         """Issue a minimal FastMCP access token.
 
@@ -135,6 +124,12 @@ class JWTIssuer:
             jti: Unique token identifier (maps to upstream token)
             expires_in: Token lifetime in seconds
             upstream_claims: Optional claims from upstream IdP token to include
+            subject: Optional `sub` claim. Set for self-contained tokens (e.g.
+                minted from an ID-JAG) where the subject is carried directly in
+                the token rather than looked up via a JTI mapping.
+            extra_claims: Optional additional top-level claims to embed. Used to
+                mark self-contained tokens (e.g. the ID-JAG issuer/marker) so
+                `load_access_token` can validate them without a JTI mapping.
 
         Returns:
             Signed JWT token
@@ -152,11 +147,21 @@ class JWTIssuer:
             "jti": jti,
         }
 
+        if subject is not None:
+            payload["sub"] = subject
+
+        if extra_claims:
+            payload.update(extra_claims)
+
         if upstream_claims:
             payload["upstream_claims"] = upstream_claims
 
-        token_bytes = self._jwt.encode(header, payload, self._signing_key)
-        token = token_bytes.decode("utf-8")
+        token = jwt.encode(
+            header,
+            payload,
+            self._jwt_key,
+            algorithms=["HS256"],
+        )
 
         logger.debug(
             "Issued access token for client=%s jti=%s exp=%d",
@@ -208,8 +213,12 @@ class JWTIssuer:
         if upstream_claims:
             payload["upstream_claims"] = upstream_claims
 
-        token_bytes = self._jwt.encode(header, payload, self._signing_key)
-        token = token_bytes.decode("utf-8")
+        token = jwt.encode(
+            header,
+            payload,
+            self._jwt_key,
+            algorithms=["HS256"],
+        )
 
         logger.debug(
             "Issued refresh token for client=%s jti=%s exp=%d",
@@ -242,7 +251,11 @@ class JWTIssuer:
         """
         try:
             # Decode and verify signature
-            payload = self._jwt.decode(token, self._signing_key)
+            payload = jwt.decode(
+                token,
+                self._jwt_key,
+                algorithms=["HS256"],
+            ).claims
 
             # Validate token type
             token_use = payload.get("token_use", "access")

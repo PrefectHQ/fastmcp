@@ -1,10 +1,139 @@
 """Client session and task error propagation tests."""
 
 import asyncio
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from typing import Any, cast
 
+import anyio
+import httpx2
 import pytest
+from mcp import ClientSession, MCPError
+from mcp_types import CONNECTION_CLOSED, INTERNAL_ERROR, TextContent
 
+from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.client.transports import (
+    ClientTransport,
+    FastMCPTransport,
+    PythonStdioTransport,
+)
+from fastmcp.client.transports.base import TransportOptions
+
+
+class _FailingTransport(ClientTransport):
+    def __init__(self, exception: Exception) -> None:
+        self._exception = exception
+
+    @asynccontextmanager
+    async def connect_session(
+        self, **session_kwargs: Any
+    ) -> AsyncGenerator[ClientSession, None]:
+        raise self._exception
+        yield
+
+
+class _DroppingTransport(ClientTransport):
+    """An in-memory connection that can be lost the way an HTTP one is.
+
+    Setting `drop` fails a background task inside the transport, which cancels
+    the client's session the way a dead HTTP connection does. The transport then
+    holds its teardown open until `teardown` is set, and raises `failure`, like
+    the termination request an HTTP transport sends to a server that is gone.
+    """
+
+    def __init__(self, server: FastMCP) -> None:
+        self._inner = FastMCPTransport(server)
+        self.drop = anyio.Event()
+        self.teardown = anyio.Event()
+        self.failure = OSError("All connection attempts failed")
+
+    @asynccontextmanager
+    async def connect_session(
+        self, **session_kwargs: Any
+    ) -> AsyncGenerator[ClientSession, None]:
+        async def lose_connection() -> None:
+            await self.drop.wait()
+            raise OSError("server went away")
+
+        try:
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(lose_connection)
+                async with self._inner.connect_session(**session_kwargs) as session:
+                    yield session
+        finally:
+            await self.teardown.wait()
+            raise self.failure
+
+
+async def _raised(call: Callable[[], Awaitable[Any]]) -> BaseException | None:
+    try:
+        await call()
+    except Exception as exc:
+        return exc
+    return None
+
+
+class TestLostConnectionInsideContext:
+    """A call made after the connection drops reports the connection failure.
+
+    Regression tests for https://github.com/PrefectHQ/fastmcp/issues/6162, where
+    such a call raised "Client is not connected. Use the 'async with client:'
+    context manager first." although it ran inside `async with client`. Outcomes
+    are recorded inside the context and checked after it, because the context's
+    exit re-raises the transport failure and would mask an assertion error.
+    """
+
+    @staticmethod
+    def calls(client: Client) -> list[Callable[[], Awaitable[Any]]]:
+        return [
+            lambda: client.call_tool("greet", {"name": "World"}),
+            client.ping,
+            client.list_tools,
+        ]
+
+    async def test_call_while_transport_unwinds_reports_closed_connection(
+        self, fastmcp_server
+    ):
+        transport = _DroppingTransport(fastmcp_server)
+        client = Client(transport)
+        raised: list[BaseException | None] = []
+
+        with pytest.raises(OSError) as exit_info:
+            async with client:
+                transport.drop.set()
+                while client.is_connected():
+                    await asyncio.sleep(0)
+                raised.extend([await _raised(call) for call in self.calls(client)])
+                transport.teardown.set()
+
+        assert exit_info.value is transport.failure
+        assert len(raised) == 3
+        for exc in raised:
+            assert isinstance(exc, MCPError)
+            assert exc.error.code == CONNECTION_CLOSED
+
+        with pytest.raises(RuntimeError, match="Client is not connected"):
+            await client.ping()
+
+    async def test_call_after_session_task_fails_reports_its_error(
+        self, fastmcp_server
+    ):
+        transport = _DroppingTransport(fastmcp_server)
+        transport.teardown.set()
+        client = Client(transport)
+        raised: list[BaseException | None] = []
+
+        with pytest.raises(OSError) as exit_info:
+            async with client:
+                session_task = client._session_state.session_task
+                assert session_task is not None
+                transport.drop.set()
+                await asyncio.wait({session_task})
+                raised.extend([await _raised(call) for call in self.calls(client)])
+
+        assert exit_info.value is transport.failure
+        assert raised == [transport.failure] * 3
 
 
 class TestSessionTaskErrorPropagation:
@@ -30,7 +159,7 @@ class TestSessionTaskErrorPropagation:
 
             async def never_complete():
                 """A coroutine that will never complete normally."""
-                await asyncio.sleep(1000)
+                await asyncio.Event().wait()
 
             async def failing_session():
                 """Simulates a session task that raises an error."""
@@ -135,3 +264,147 @@ class TestSessionTaskErrorPropagation:
 
             # Restore for cleanup
             client._session_state.session_task = original_task
+
+
+class TestConnectionFailurePropagation:
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            MCPError(code=INTERNAL_ERROR, message="upstream failed"),
+            httpx2.HTTPStatusError(
+                "upstream unavailable",
+                request=httpx2.Request("GET", "https://example.com"),
+                response=httpx2.Response(503),
+            ),
+        ],
+        ids=["mcp-error", "http-status-error"],
+    )
+    async def test_preserves_passthrough_exception(self, failure: Exception):
+        client = Client(transport=_FailingTransport(failure))
+
+        with pytest.raises(type(failure)) as exc_info:
+            async with client:
+                pass
+
+        assert exc_info.value is failure
+        assert exc_info.value.__cause__ is not failure
+
+    async def test_wraps_other_failures_with_cause(self):
+        failure = OSError("connection refused")
+        client = Client(transport=_FailingTransport(failure))
+
+        with pytest.raises(RuntimeError, match="Client failed to connect") as exc_info:
+            async with client:
+                pass
+
+        assert exc_info.value.__cause__ is failure
+
+
+class TestCustomSessionClass:
+    """Transports build the session class the client asks for."""
+
+    async def test_session_class_is_used_when_provided(self):
+        built: list[str] = []
+
+        class RecordingClientSession(ClientSession):
+            def __init__(self, *args, **kwargs):
+                built.append("yes")
+                super().__init__(*args, **kwargs)
+
+        server = FastMCP("Server")
+
+        @server.tool
+        def ping() -> str:
+            return "pong"
+
+        client = Client(server)
+        client._transport_options = TransportOptions(
+            session_class=RecordingClientSession
+        )
+        async with client:
+            await client.call_tool("ping")
+
+        assert built == ["yes"]
+
+    async def test_default_session_class_is_client_session(self):
+        server = FastMCP("Server")
+
+        @server.tool
+        def ping() -> str:
+            return "pong"
+
+        client = Client(server)
+        assert TransportOptions().session_class is ClientSession
+        async with client:
+            result = await client.call_tool("ping")
+
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "pong"
+
+
+class TestKeepAliveSessionsRespectClientOptions:
+    """A cached stdio session must not be handed to a client wanting different options.
+
+    `StdioTransport` keeps its subprocess and session alive between connections
+    by default. Serving that cached session to a second client would give it the
+    first client's behavior — e.g. an ordinary client silently inheriting a
+    proxy's non-validating session. Rebuilding it is only safe while nobody else
+    is using it.
+    """
+
+    class Reconnected(Exception):
+        """Raised in place of a real teardown so the test stops at the guard."""
+
+    @asynccontextmanager
+    async def cached_connection(self, monkeypatch, options: TransportOptions):
+        """A transport that believes it already holds a session built for `options`."""
+        transport = PythonStdioTransport(script_path=__file__, keep_alive=True)
+
+        async def never_finishes():
+            await asyncio.sleep(60)
+
+        task = asyncio.create_task(never_finishes())
+        transport._connect_task = task
+        transport._session = cast(ClientSession, object())
+        transport._session_options = options
+
+        async def fake_disconnect():
+            raise TestKeepAliveSessionsRespectClientOptions.Reconnected
+
+        monkeypatch.setattr(transport, "disconnect", fake_disconnect)
+        try:
+            yield transport
+        finally:
+            task.cancel()
+            transport._connect_task = None
+
+    async def test_matching_options_reuse_the_cached_session(self, monkeypatch):
+        options = TransportOptions()
+        async with self.cached_connection(monkeypatch, options) as transport:
+            assert await transport.connect(transport_options=options) is None
+
+    async def test_differing_options_rebuild_an_idle_session(self, monkeypatch):
+        class OtherSession(ClientSession):
+            pass
+
+        async with self.cached_connection(monkeypatch, TransportOptions()) as transport:
+            with pytest.raises(self.Reconnected):
+                await transport.connect(
+                    transport_options=TransportOptions(session_class=OtherSession)
+                )
+
+    async def test_differing_options_do_not_disturb_a_session_in_use(self, monkeypatch):
+        """Tearing down a live session would break the client already on it."""
+
+        class OtherSession(ClientSession):
+            pass
+
+        async with self.cached_connection(monkeypatch, TransportOptions()) as transport:
+            transport._active_sessions = 1
+
+            with pytest.raises(RuntimeError, match="still using it"):
+                await transport.connect(
+                    transport_options=TransportOptions(session_class=OtherSession)
+                )
+
+            assert transport._connect_task is not None

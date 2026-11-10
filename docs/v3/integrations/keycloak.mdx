@@ -1,0 +1,141 @@
+---
+title: Keycloak OAuth 🤝 FastMCP
+sidebarTitle: Keycloak
+description: Secure your FastMCP server with Keycloak OAuth
+icon: shield-check
+tag: NEW
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="3.2.4" />
+
+This guide shows you how to secure your FastMCP server using **Keycloak OAuth**. This integration uses the [**Remote OAuth**](/servers/auth/remote-oauth) pattern with Dynamic Client Registration (DCR), where Keycloak handles user login and your FastMCP server validates the tokens.
+
+<Note>
+**Keycloak 26.6.0 or later is required.** Earlier versions had a DCR incompatibility with MCP clients ([PR #45309](https://github.com/keycloak/keycloak/pull/45309)) that is fixed in 26.6.0.
+</Note>
+
+## Configuration
+
+### Prerequisites
+
+Before you begin, you will need:
+1. A running **[Keycloak](https://keycloak.org/)** instance (e.g., `http://localhost:8080`)
+2. A Keycloak realm with **Dynamic Client Registration** enabled and a trusted host policy that allows your server URL (e.g., `http://localhost:8000/*`)
+3. Your FastMCP server's public URL (e.g., `http://localhost:8000`)
+
+### FastMCP Configuration
+
+Create your FastMCP server and use `KeycloakAuthProvider` to handle OAuth:
+
+```python server.py
+import os
+
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.keycloak import KeycloakAuthProvider
+from fastmcp.server.dependencies import get_access_token
+
+auth = KeycloakAuthProvider(
+    realm_url=os.getenv("KEYCLOAK_REALM_URL") or "http://localhost:8080/realms/myrealm",
+    base_url="http://localhost:8000",
+    # audience="http://localhost:8000",  # Recommended for production
+)
+
+mcp = FastMCP("Keycloak Example Server", auth=auth)
+
+
+@mcp.tool
+async def get_access_token_claims() -> dict:
+    """Get the authenticated user's access token claims."""
+    token = get_access_token()
+    return {
+        "sub": token.claims.get("sub"),
+        "scope": token.claims.get("scope"),
+        "azp": token.claims.get("azp"),
+    }
+```
+
+<Warning>
+**Production security**: Always configure the `audience` parameter in production. Without it, your server accepts tokens issued for any audience. Configure Keycloak audience mappers and set `audience` to your server's base URL to ensure tokens are specifically intended for your server.
+</Warning>
+
+## Local Development
+
+Local infrastructure tooling is deliberately kept out of the FastMCP core library to keep auth integrations slim and the associated maintenance burden as low as possible. That said, Keycloak is a popular identity provider for local development and testing, so a dedicated FastMCP-compatible setup blueprint lives in the companion project [**fastmcp-keycloak-local**](https://github.com/stephaneberle9/fastmcp-keycloak-local).
+
+It provides everything needed to develop and test FastMCP servers with Keycloak OAuth locally: a Docker-based Keycloak setup with a pre-configured `fastmcp` realm (Dynamic Client Registration enabled, test user included), cross-platform start scripts, and integration guides for the MCP Inspector, Claude Desktop, and Claude Code CLI.
+
+## Testing
+
+### Running the Server
+
+```bash
+fastmcp run server.py --transport http --port 8000
+```
+
+### Testing with a Client
+
+```python client.py
+import asyncio
+from fastmcp import Client
+
+async def main():
+    async with Client("http://localhost:8000/mcp", auth="oauth") as client:
+        print("✓ Authenticated with Keycloak!")
+        result = await client.call_tool("get_access_token_claims")
+        print(f"sub: {result.data.get('sub', 'N/A')}")
+
+asyncio.run(main())
+```
+
+On first run, your browser will open to Keycloak's authorization page. After login, the client receives a token and caches it for subsequent runs.
+
+## Features
+
+### JWT Token Validation
+
+- **Signature Verification**: Validates tokens against Keycloak's JWKS endpoint
+- **Expiration Checking**: Automatically rejects expired tokens
+- **Issuer Validation**: Ensures tokens come from your specific Keycloak realm
+- **Scope Enforcement**: Verifies required OAuth scopes are present
+- **Audience Validation**: Optional validation that tokens target your server (configure `audience`)
+
+### User Claims
+
+Access user information from Keycloak JWT tokens:
+
+```python
+from fastmcp.server.dependencies import get_access_token
+
+@mcp.tool
+async def admin_only_tool() -> str:
+    """A tool only available to admin users."""
+    token = get_access_token()
+    roles = token.claims.get("realm_access", {}).get("roles", [])
+    if "admin" not in roles:
+        raise ValueError("This tool requires admin access")
+    return "Admin access granted!"
+```
+
+## Advanced Configuration
+
+### Custom Token Verifier
+
+```python
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.server.auth.providers.keycloak import KeycloakAuthProvider
+
+custom_verifier = JWTVerifier(
+    jwks_uri="http://localhost:8080/realms/myrealm/protocol/openid-connect/certs",
+    issuer="http://localhost:8080/realms/myrealm",
+    audience="my-resource-server",
+    required_scopes=["api:read", "api:write"],
+)
+
+auth = KeycloakAuthProvider(
+    realm_url="http://localhost:8080/realms/myrealm",
+    base_url="http://localhost:8000",
+    token_verifier=custom_verifier,
+)
+```

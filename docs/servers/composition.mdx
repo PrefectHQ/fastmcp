@@ -39,6 +39,7 @@ main.mount(weather)
 Mount remote HTTP servers or subprocess-based MCP servers using `create_proxy()`:
 
 ```python
+from pathlib import Path
 from fastmcp import FastMCP
 from fastmcp.server import create_proxy
 
@@ -48,7 +49,7 @@ mcp = FastMCP("Orchestrator")
 mcp.mount(create_proxy("http://api.example.com/mcp"), namespace="api")
 
 # Mount local Python scripts (file paths work directly)
-mcp.mount(create_proxy("./my_server.py"), namespace="local")
+mcp.mount(create_proxy(Path("./my_server.py")), namespace="local")
 ```
 
 ### Mounting npm/uvx Packages
@@ -112,6 +113,8 @@ For advanced configuration, see [Proxying](/servers/providers/proxy).
 When mounting multiple servers, use namespaces to avoid naming conflicts:
 
 ```python
+from fastmcp import FastMCP
+
 weather = FastMCP("Weather")
 calendar = FastMCP("Calendar")
 
@@ -143,11 +146,17 @@ main.mount(calendar, namespace="calendar")
 
 Namespacing uses [transforms](/servers/transforms/transforms) under the hood.
 
+Resource and template URIs without `://`, such as `urn:example:config`, remain unchanged and can be read using their listed identifiers. Namespaces do not isolate these URIs from collisions; equal identifiers use the normal [provider resolution order](#conflict-resolution).
+
 ## Dynamic Composition
 
 Because `mount()` creates a live link, you can add components to a child server after mounting and they'll be immediately available through the parent:
 
 ```python
+from fastmcp import FastMCP
+
+dynamic_server = FastMCP("Dynamic")
+
 main = FastMCP("Main")
 main.mount(dynamic_server, namespace="dynamic")
 
@@ -157,6 +166,14 @@ def added_later() -> str:
     return "Added after mounting!"
 ```
 
+## Protocol Extensions
+
+<VersionBadge version="4.1.0" />
+
+When you mount a local FastMCP server, its [provider-bundled extensions](/servers/extensions#provider-extensions) follow the components to the parent. Extensions that opt into automatic registration give the parent the capabilities and request methods its clients need. Configure an extension explicitly on the parent to choose its settings for all mounted providers.
+
+Compose providers that need new extensions before the parent starts. Once extension lifespans have begun, additional providers can use extensions already registered on the root. The [startup rules](/servers/extensions#startup) also apply through nested mounts and aggregates.
+
 ## Tag Filtering
 
 <VersionBadge version="3.0.0" />
@@ -164,6 +181,8 @@ def added_later() -> str:
 Parent server tag filters apply recursively to mounted servers:
 
 ```python
+from fastmcp import FastMCP
+
 api_server = FastMCP("API")
 
 @api_server.tool(tags={"production"})
@@ -199,25 +218,32 @@ If low latency is critical, consider implementing caching strategies or limiting
 Custom HTTP routes defined with `@server.custom_route()` are also forwarded when mounting:
 
 ```python
+from fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+
 subserver = FastMCP("Sub")
 
 @subserver.custom_route("/health", methods=["GET"])
-async def health_check():
-    return {"status": "ok"}
+async def health_check(request: Request) -> Response:
+    return JSONResponse({"status": "ok"})
 
 main = FastMCP("Main")
 main.mount(subserver, namespace="sub")
 
-# /health is now accessible through main's HTTP app
+# /health is now accessible through main's HTTP app.
+# Custom route paths are not namespaced by mount(namespace=...).
 ```
 
 ## Conflict Resolution
 
 <VersionBadge version="3.0.0" />
 
-When mounting multiple servers with the same namespace (or no namespace), the **most recently mounted** server takes precedence for conflicting component names:
+When mounting multiple servers with the same namespace (or no namespace), FastMCP queries all mounted providers for a requested component and returns the highest matching version. If two unversioned components (or two equal versions) use the same identifier, the provider registered first wins.
 
 ```python
+from fastmcp import FastMCP
+
 server_a = FastMCP("A")
 server_b = FastMCP("B")
 
@@ -233,5 +259,5 @@ main = FastMCP("Main")
 main.mount(server_a)
 main.mount(server_b)
 
-# shared_tool returns "From B" (most recently mounted)
+# shared_tool returns "From A" (first mounted, same unversioned key)
 ```

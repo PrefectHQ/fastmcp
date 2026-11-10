@@ -6,15 +6,15 @@ from mcp.server.auth.provider import AuthorizationParams, AuthorizeError
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyHttpUrl, AnyUrl
 
-from fastmcp.server.auth.oauth_proxy import OAuthProxy
-from fastmcp.server.auth.oauth_proxy.proxy import (
-    _normalize_resource_url,
-    _server_url_has_query,
+from fastmcp.server.auth.identity_assertion import (
+    normalize_resource_url,
+    server_url_has_query,
 )
+from fastmcp.server.auth.oauth_proxy import OAuthProxy
 
 
 class TestNormalizeResourceUrl:
-    """Unit tests for the _normalize_resource_url helper function."""
+    """Unit tests for the normalize_resource_url helper function."""
 
     @pytest.mark.parametrize(
         "url,expected",
@@ -46,7 +46,7 @@ class TestNormalizeResourceUrl:
     )
     def test_normalizes_urls_correctly(self, url: str, expected: str):
         """Test that URLs are normalized by stripping query params, fragments, and trailing slashes."""
-        assert _normalize_resource_url(url) == expected
+        assert normalize_resource_url(url) == expected
 
     @pytest.mark.parametrize(
         "url,has_query",
@@ -58,9 +58,9 @@ class TestNormalizeResourceUrl:
             ("https://example.com/mcp?a=1&b=2", True),
         ],
     )
-    def test_server_url_has_query(self, url: str, has_query: bool):
+    def testserver_url_has_query(self, url: str, has_query: bool):
         """Test detection of query parameters in server URLs."""
-        assert _server_url_has_query(url) == has_query
+        assert server_url_has_query(url) == has_query
 
 
 class TestResourceURLValidation:
@@ -108,6 +108,7 @@ class TestResourceURLValidation:
             await proxy_with_resource_url.authorize(client, params)
 
         assert exc_info.value.error == "invalid_target"
+        assert exc_info.value.error_description is not None
         assert "Resource does not match" in exc_info.value.error_description
 
     async def test_authorize_accepts_matching_resource(self, proxy_with_resource_url):

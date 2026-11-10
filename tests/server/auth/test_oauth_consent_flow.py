@@ -12,11 +12,13 @@ This test suite verifies:
 9. Consent binding cookie prevents confused deputy attacks (GHSA-rww4-4w9c-7733)
 """
 
+import asyncio
 import re
 import secrets
 import time
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.provider import AuthorizationParams
@@ -27,6 +29,10 @@ from starlette.testclient import TestClient
 
 from fastmcp.server.auth.auth import AccessToken, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.oauth_proxy.consent import (
+    _CONSENT_STATE_COOKIE_BASE,
+    _MAX_CSRF_TOKENS,
+)
 from fastmcp.server.auth.oauth_proxy.models import OAuthTransaction
 
 
@@ -111,6 +117,26 @@ def oauth_proxy_https_remember():
     )
 
 
+@pytest.fixture
+def oauth_proxy_https_path():
+    """OAuthProxy with a path component in base_url (no trailing slash).
+
+    Exercises the RFC 9207 issuer consistency across a base_url shape where
+    naive normalization (e.g. force-appending a trailing slash) would produce
+    an `iss` value that no longer matches the discovery document's `issuer`.
+    """
+    return OAuthProxy(
+        upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+        upstream_token_endpoint="https://github.com/login/oauth/access_token",
+        upstream_client_id="client-id",
+        upstream_client_secret="client-secret",
+        token_verifier=_Verifier(),
+        base_url="https://myserver.example/oauth",
+        client_storage=MemoryStore(),
+        jwt_signing_key="test-secret",
+    )
+
+
 async def _start_flow(
     proxy: OAuthProxy, client_id: str, redirect: str
 ) -> tuple[str, str]:
@@ -145,6 +171,49 @@ def _extract_csrf(html: str) -> str | None:
     """Extract CSRF token from HTML form."""
     m = re.search(r"name=\"csrf_token\"\s+value=\"([^\"]+)\"", html)
     return m.group(1) if m else None
+
+
+def _consent_state_cookie_names(client: httpx.AsyncClient | TestClient) -> list[str]:
+    """Names of the per-token consent-state cookies currently held."""
+    prefix = f"__Host-{_CONSENT_STATE_COOKIE_BASE}_"
+    return [c.name for c in client.cookies.jar if c.name.startswith(prefix)]
+
+
+class _RenderGate:
+    """Holds arrivals until `parties` of them are waiting, then releases all.
+
+    asyncio.Barrier would do this, but it is 3.11+ and fastmcp supports 3.10.
+    Single-threaded event loop, so the counter needs no lock.
+    """
+
+    def __init__(self, parties: int) -> None:
+        self._parties = parties
+        self._arrived = 0
+        self._opened = asyncio.Event()
+
+    async def wait(self) -> None:
+        self._arrived += 1
+        if self._arrived >= self._parties:
+            self._opened.set()
+        await self._opened.wait()
+
+
+def _gate_transaction_reads(proxy: OAuthProxy, gate: _RenderGate) -> None:
+    """Hold every transaction read open until the gate releases.
+
+    Parks concurrent consent renders in the window where each has read the
+    transaction and none has stored its token yet. That interleaving is what
+    loses a token when tokens are appended to the transaction: both handlers
+    read the same value, both append, and the second write wins.
+    """
+    original_get = proxy._transaction_store.get
+
+    async def gated_get(*args, **kwargs):
+        result = await original_get(*args, **kwargs)
+        await gate.wait()
+        return result
+
+    proxy._transaction_store.get = gated_get  # ty: ignore[invalid-assignment]
 
 
 class TestServerSideStorage:
@@ -517,6 +586,248 @@ class TestCSRFDoubleSubmit:
             assert response.status_code == 403
 
 
+class TestConcurrentConsentRenders:
+    """A transaction can be rendered more than once before it is submitted."""
+
+    async def test_earlier_render_still_submittable(self, oauth_proxy_with_storage):
+        """A second render must not invalidate the form from the first one.
+
+        A consent URL gets loaded twice more often than you would think: a
+        reload, a browser preload, an extension re-fetching it. Each render
+        issues a new CSRF token, and if that replaces the previous one, the
+        page the user is actually looking at is already dead when they click
+        Approve. They get "Invalid or expired consent token" on a transaction
+        that has not expired, and retrying does not help.
+        """
+        txn_id, _ = await _start_flow(
+            oauth_proxy_with_storage,
+            "concurrent-render-client",
+            "http://localhost:9090/callback",
+        )
+
+        app = Starlette(routes=oauth_proxy_with_storage.get_routes())
+        # https base_url so the Secure/__Host- consent cookie is retained
+        # between requests, the way it is in a browser.
+        with TestClient(app, base_url="https://myserver.com") as test_client:
+            first = _extract_csrf(test_client.get(f"/consent?txn_id={txn_id}").text)
+            second = _extract_csrf(test_client.get(f"/consent?txn_id={txn_id}").text)
+            assert first and second
+            # Each render gets its own token, so a token stays bound to the
+            # browser it was issued to and the double-submit check keeps working.
+            assert first != second
+
+            # The user submits the page they had open, which is the first one.
+            response = test_client.post(
+                "/consent",
+                data={"action": "approve", "txn_id": txn_id, "csrf_token": first},
+                follow_redirects=False,
+            )
+            assert response.status_code == 302
+
+    async def test_forged_token_still_rejected_without_cookie(
+        self, oauth_proxy_with_storage
+    ):
+        """Keeping older tokens valid must not weaken the double-submit check.
+
+        An attacker who renders the consent page for a transaction they started
+        learns a token that stays valid. It is still useless against a victim's
+        browser, because it never lands in the victim's cookie.
+        """
+        txn_id, _ = await _start_flow(
+            oauth_proxy_with_storage,
+            "concurrent-render-attacker",
+            "http://localhost:9090/callback",
+        )
+
+        app = Starlette(routes=oauth_proxy_with_storage.get_routes())
+        with TestClient(app, base_url="https://myserver.com") as attacker_client:
+            attacker_token = _extract_csrf(
+                attacker_client.get(f"/consent?txn_id={txn_id}").text
+            )
+            assert attacker_token
+
+        with TestClient(app, base_url="https://myserver.com") as victim_client:
+            victim_client.get(f"/consent?txn_id={txn_id}")
+            response = victim_client.post(
+                "/consent",
+                data={
+                    "action": "approve",
+                    "txn_id": txn_id,
+                    "csrf_token": attacker_token,
+                },
+                follow_redirects=False,
+            )
+            assert response.status_code == 403
+
+    @pytest.mark.parametrize("submitted", [0, 1])
+    async def test_overlapping_renders_both_submittable(
+        self, oauth_proxy_with_storage, submitted
+    ):
+        """Two renders in flight at once must both survive.
+
+        Sequential renders are the common case, but nothing serialises them.
+        Two handlers can read the same transaction before either has stored its
+        token, and if tokens live in a list on the transaction the second write
+        drops the first — there is no compare-and-swap on `AsyncKeyValue` to
+        catch it, and it happens across processes sharing one backend too.
+
+        The gate forces exactly that interleaving. Both responses are applied to
+        one cookie jar, the way a browser applies them, and then whichever form
+        the user happened to be looking at is submitted.
+        """
+        txn_id, _ = await _start_flow(
+            oauth_proxy_with_storage,
+            "overlapping-render-client",
+            "http://localhost:9090/callback",
+        )
+
+        gate = _RenderGate(2)
+        _gate_transaction_reads(oauth_proxy_with_storage, gate)
+
+        app = Starlette(routes=oauth_proxy_with_storage.get_routes())
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="https://myserver.com",
+        ) as client:
+            first, second = await asyncio.gather(
+                client.get(f"/consent?txn_id={txn_id}"),
+                client.get(f"/consent?txn_id={txn_id}"),
+            )
+            tokens = [_extract_csrf(first.text), _extract_csrf(second.text)]
+            assert all(tokens)
+            # Each render still issues its own token, so a token stays unique
+            # to the browser it was handed to.
+            assert tokens[0] != tokens[1]
+            # Both responses left their own cookie; neither overwrote the other.
+            assert len(_consent_state_cookie_names(client)) == 2
+
+            response = await client.post(
+                "/consent",
+                data={
+                    "action": "approve",
+                    "txn_id": txn_id,
+                    "csrf_token": tokens[submitted],
+                },
+            )
+            assert response.status_code == 302
+
+
+class TestConsentStateCookieScope:
+    """Consent state is per transaction and bounded."""
+
+    async def test_completing_one_flow_leaves_another_submittable(
+        self, oauth_proxy_with_storage
+    ):
+        """Approving one transaction must not clear a different pending one.
+
+        A browser can have two consent flows open — two clients connecting, or
+        one client retried in a second tab. Consent state held as a single flat
+        list cannot express that: completing either flow wipes both, and the
+        one still on screen fails the double-submit check on Approve.
+        """
+        first_txn, _ = await _start_flow(
+            oauth_proxy_with_storage, "pending-flow-a", "http://localhost:9090/callback"
+        )
+        second_txn, _ = await _start_flow(
+            oauth_proxy_with_storage, "pending-flow-b", "http://localhost:9090/callback"
+        )
+
+        app = Starlette(routes=oauth_proxy_with_storage.get_routes())
+        with TestClient(app, base_url="https://myserver.com") as client:
+            first_token = _extract_csrf(client.get(f"/consent?txn_id={first_txn}").text)
+            second_token = _extract_csrf(
+                client.get(f"/consent?txn_id={second_txn}").text
+            )
+            assert first_token and second_token
+
+            completed = client.post(
+                "/consent",
+                data={
+                    "action": "approve",
+                    "txn_id": first_txn,
+                    "csrf_token": first_token,
+                },
+                follow_redirects=False,
+            )
+            assert completed.status_code == 302
+            # The flow still on screen is unaffected.
+            still_open = client.post(
+                "/consent",
+                data={
+                    "action": "approve",
+                    "txn_id": second_txn,
+                    "csrf_token": second_token,
+                },
+                follow_redirects=False,
+            )
+            assert still_open.status_code == 302
+
+            # Both flows are done, so nothing is left behind either.
+            assert _consent_state_cookie_names(client) == []
+
+    async def test_completing_a_flow_removes_only_its_own_state(
+        self, oauth_proxy_with_storage
+    ):
+        """Approve clears the transaction it completed and nothing else."""
+        first_txn, _ = await _start_flow(
+            oauth_proxy_with_storage, "scoped-flow-a", "http://localhost:9090/callback"
+        )
+        second_txn, _ = await _start_flow(
+            oauth_proxy_with_storage, "scoped-flow-b", "http://localhost:9090/callback"
+        )
+
+        app = Starlette(routes=oauth_proxy_with_storage.get_routes())
+        with TestClient(app, base_url="https://myserver.com") as client:
+            first_token = _extract_csrf(client.get(f"/consent?txn_id={first_txn}").text)
+            client.get(f"/consent?txn_id={second_txn}")
+            assert first_token
+            before = set(_consent_state_cookie_names(client))
+            assert len(before) == 2
+
+            client.post(
+                "/consent",
+                data={
+                    "action": "approve",
+                    "txn_id": first_txn,
+                    "csrf_token": first_token,
+                },
+                follow_redirects=False,
+            )
+
+            after = set(_consent_state_cookie_names(client))
+            assert len(after) == 1
+            assert after < before
+
+    async def test_consent_state_cookies_are_bounded(self, oauth_proxy_with_storage):
+        """Repeated renders must not grow the Cookie header without limit.
+
+        One cookie per issued token is what keeps concurrent renders from
+        overwriting each other, so the count has to be capped somewhere. The
+        newest render always survives the cull.
+        """
+        txn_id, _ = await _start_flow(
+            oauth_proxy_with_storage,
+            "bounded-render-client",
+            "http://localhost:9090/callback",
+        )
+
+        app = Starlette(routes=oauth_proxy_with_storage.get_routes())
+        with TestClient(app, base_url="https://myserver.com") as client:
+            newest = None
+            for _ in range(_MAX_CSRF_TOKENS + 3):
+                newest = _extract_csrf(client.get(f"/consent?txn_id={txn_id}").text)
+            assert newest
+
+            assert len(_consent_state_cookie_names(client)) <= _MAX_CSRF_TOKENS
+
+            response = client.post(
+                "/consent",
+                data={"action": "approve", "txn_id": txn_id, "csrf_token": newest},
+                follow_redirects=False,
+            )
+            assert response.status_code == 302
+
+
 class TestStoragePersistence:
     """Tests for state persistence across storage backends."""
 
@@ -631,10 +942,179 @@ class TestConsentSecurity:
             q = parse_qs(parsed.query)
             assert q.get("error") == ["access_denied"]
             assert q.get("state") == ["client-state-xyz"]
+            assert q.get("iss") == ["https://myserver.example/"]
             # Signed denied cookie should be set
             assert "MCP_DENIED_CLIENTS" in ";\n".join(
                 r.headers.get("set-cookie", "").splitlines()
             )
+
+    async def test_deny_redirect_does_not_duplicate_iss_already_in_redirect_uri(
+        self, oauth_proxy_https_remember
+    ):
+        """RFC 9207 P2 regression: a registered redirect_uri may already
+        carry its own `iss` query parameter. Explicit consent denial must
+        not append a second `iss` on top of it -- RFC 6749 §3.1 forbids a
+        response parameter appearing more than once -- and every other
+        query byte on the registered URI (a valueless `flag` and a
+        non-UTF-8 percent-encoded `sig`) must survive untouched.
+        """
+        client_redirect = "http://localhost:5009/callback?iss=tenant&flag&sig=%FF%FE"
+        txn_id, _ = await _start_flow(
+            oauth_proxy_https_remember, "client-dup-iss", client_redirect
+        )
+        app = Starlette(routes=oauth_proxy_https_remember.get_routes())
+        with TestClient(app) as c:
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "deny", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            assert r.status_code in (302, 303)
+            loc = r.headers.get("location", "")
+            query = urlparse(loc).query
+            q = parse_qs(query)
+            assert q.get("error") == ["access_denied"]
+            # Exactly one `iss`, corrected to the canonical value -- a
+            # duplicate would make this list have length 2.
+            assert q.get("iss") == ["https://myserver.example/"]
+            # Other query bytes from the registered redirect_uri survive
+            # byte-for-byte.
+            assert "flag" in query
+            assert "sig=%FF%FE" in query
+
+    async def test_deny_redirect_issuer_matches_path_base_url_metadata(
+        self, oauth_proxy_https_path
+    ):
+        """Consent-denial `iss` must match the discovery document exactly.
+
+        Regression test for a base_url with a path and no trailing slash
+        (`https://myserver.example/oauth`): the metadata `issuer` is the
+        unmodified base_url, so the denial redirect's `iss` must match it
+        byte-for-byte rather than force-appending a trailing slash.
+        """
+        client_redirect = "http://localhost:5008/callback"
+        txn_id, _ = await _start_flow(
+            oauth_proxy_https_path, "client-path", client_redirect
+        )
+        app = Starlette(routes=oauth_proxy_https_path.get_routes())
+        with TestClient(app) as c:
+            metadata = c.get("/.well-known/oauth-authorization-server").json()
+            assert metadata["issuer"] == "https://myserver.example/oauth"
+
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "deny", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            assert r.status_code in (302, 303)
+            q = parse_qs(urlparse(r.headers.get("location", "")).query)
+            assert q.get("error") == ["access_denied"]
+            assert q.get("iss") == [metadata["issuer"]]
+
+    async def test_remembered_denial_redirects_with_issuer(
+        self, oauth_proxy_https_remember
+    ):
+        """Remembered consent denial redirects with RFC 9207 issuer."""
+        client_id = "client-denied"
+        redirect = "http://localhost:5007/callback"
+        txn_id, _ = await _start_flow(oauth_proxy_https_remember, client_id, redirect)
+        app = Starlette(routes=oauth_proxy_https_remember.get_routes())
+        with TestClient(app) as c:
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "deny", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            set_cookie = ";\n".join(r.headers.get("set-cookie", "").splitlines())
+            m = re.search(r"__Host-MCP_DENIED_CLIENTS=([^;]+)", set_cookie)
+            assert m
+            denied_cookie = m.group(1)
+
+            new_txn, _ = await _start_flow(
+                oauth_proxy_https_remember, client_id, redirect
+            )
+            c.cookies.set("__Host-MCP_DENIED_CLIENTS", denied_cookie)
+            r2 = c.get(
+                f"/consent?txn_id={new_txn}",
+                headers={"Sec-Fetch-Site": "none"},
+                follow_redirects=False,
+            )
+
+            assert r2.status_code in (302, 303)
+            loc = r2.headers.get("location", "")
+            parsed = urlparse(loc)
+            assert parsed.scheme == "http" and parsed.netloc.startswith("localhost")
+            q = parse_qs(parsed.query)
+            assert q.get("error") == ["access_denied"]
+            assert q.get("state") == ["client-state-xyz"]
+            assert q.get("iss") == ["https://myserver.example/"]
+
+    async def test_remembered_denial_does_not_duplicate_iss_already_in_redirect_uri(
+        self, oauth_proxy_https_remember
+    ):
+        """RFC 9207 P2 regression: the *remembered/silent* denial path is a
+        separate call site from the explicit deny above, and must
+        independently avoid duplicating `iss` when the registered
+        redirect_uri already carries one.
+        """
+        client_id = "client-denied-dup-iss"
+        redirect = "http://localhost:5010/callback?iss=tenant&flag&sig=%FF%FE"
+        txn_id, _ = await _start_flow(oauth_proxy_https_remember, client_id, redirect)
+        app = Starlette(routes=oauth_proxy_https_remember.get_routes())
+        with TestClient(app) as c:
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "deny", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            set_cookie = ";\n".join(r.headers.get("set-cookie", "").splitlines())
+            m = re.search(r"__Host-MCP_DENIED_CLIENTS=([^;]+)", set_cookie)
+            assert m
+            denied_cookie = m.group(1)
+
+            new_txn, _ = await _start_flow(
+                oauth_proxy_https_remember, client_id, redirect
+            )
+            c.cookies.set("__Host-MCP_DENIED_CLIENTS", denied_cookie)
+            r2 = c.get(
+                f"/consent?txn_id={new_txn}",
+                headers={"Sec-Fetch-Site": "none"},
+                follow_redirects=False,
+            )
+
+            assert r2.status_code in (302, 303)
+            loc = r2.headers.get("location", "")
+            query = urlparse(loc).query
+            q = parse_qs(query)
+            assert q.get("error") == ["access_denied"]
+            assert q.get("state") == ["client-state-xyz"]
+            # Exactly one `iss`, corrected to the canonical value -- a
+            # duplicate would make this list have length 2.
+            assert q.get("iss") == ["https://myserver.example/"]
+            # Other query bytes from the registered redirect_uri survive
+            # byte-for-byte.
+            assert "flag" in query
+            assert "sig=%FF%FE" in query
 
     async def test_approve_sets_cookie_and_redirects_to_upstream(
         self, oauth_proxy_https_remember

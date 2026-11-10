@@ -1,18 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, TypedDict, cast
+from typing import Annotated, Any, ClassVar, Self, TypedDict, cast
 
-from mcp.types import Icon
+from mcp_types import Icon
 from pydantic import BeforeValidator, Field
-from typing_extensions import Self, TypeVar
+from typing_extensions import TypeVar
 
-from fastmcp.server.tasks.config import TaskConfig
+from fastmcp.utilities.tasks import TaskConfig
 from fastmcp.utilities.types import FastMCPBaseModel
-
-if TYPE_CHECKING:
-    from docket import Docket
-    from docket.execution import Execution
 
 T = TypeVar("T", default=Any)
 
@@ -38,6 +34,35 @@ def get_fastmcp_metadata(meta: dict[str, Any] | None) -> FastMCPMeta:
             return cast(FastMCPMeta, metadata)
 
     return {}
+
+
+def public_result_meta(meta: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Strip FastMCP's internal bookkeeping out of component meta.
+
+    Component `meta` carries private entries under the `fastmcp` namespace
+    (e.g. `_internal.visibility`) that must never reach the wire. Listings
+    already filter these via `FastMCPComponent.get_meta()`; results that
+    carry component meta (resource contents, prompt results) need the same
+    treatment.
+
+    Returns None when nothing public remains, so components without user
+    metadata keep an absent `_meta` rather than an empty object.
+    """
+    if not meta:
+        return None
+
+    public = dict(meta)
+    fastmcp_meta = public.get("fastmcp")
+    if isinstance(fastmcp_meta, dict):
+        public_fastmcp = {
+            key: value for key, value in fastmcp_meta.items() if not key.startswith("_")
+        }
+        if public_fastmcp:
+            public["fastmcp"] = public_fastmcp
+        else:
+            public.pop("fastmcp")
+
+    return public or None
 
 
 def _convert_set_default_none(maybe_set: set[T] | Sequence[T] | None) -> set[T]:
@@ -118,7 +143,11 @@ class FastMCPComponent(FastMCPBaseModel):
     )
     task_config: Annotated[
         TaskConfig,
-        Field(description="Background task execution configuration (SEP-1686)."),
+        Field(
+            description="Background task execution configuration (SEP-2663). "
+            "Only tools support task execution; other component types always "
+            "carry the default 'forbidden' config."
+        ),
     ] = Field(default_factory=lambda: TaskConfig(mode="forbidden"))
 
     @classmethod
@@ -223,36 +252,6 @@ class FastMCPComponent(FastMCPBaseModel):
     def copy(self) -> Self:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """Create a copy of the component."""
         return self.model_copy()
-
-    def register_with_docket(self, docket: Docket) -> None:
-        """Register this component with docket for background execution.
-
-        No-ops if task_config.mode is "forbidden". Subclasses override to
-        register their callable (self.run, self.read, self.render, or self.fn).
-        """
-        # Base implementation: no-op (subclasses override)
-
-    async def add_to_docket(
-        self, docket: Docket, *args: Any, **kwargs: Any
-    ) -> Execution:
-        """Schedule this component for background execution via docket.
-
-        Subclasses override this to handle their specific calling conventions:
-        - Tool: add_to_docket(docket, arguments: dict, **kwargs)
-        - Resource: add_to_docket(docket, **kwargs)
-        - ResourceTemplate: add_to_docket(docket, params: dict, **kwargs)
-        - Prompt: add_to_docket(docket, arguments: dict | None, **kwargs)
-
-        The **kwargs are passed through to docket.add() (e.g., key=task_key).
-        """
-        if not self.task_config.supports_tasks():
-            raise RuntimeError(
-                f"Cannot add {self.__class__.__name__} '{self.name}' to docket: "
-                f"task execution not supported"
-            )
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not implement add_to_docket()"
-        )
 
     def get_span_attributes(self) -> dict[str, Any]:
         """Return span attributes for telemetry.

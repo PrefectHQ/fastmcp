@@ -4,33 +4,34 @@ This module re-exports dependency injection symbols to provide a clean,
 centralized import location for all dependency-related functionality.
 
 DI features (Depends, CurrentContext, CurrentFastMCP) work without pydocket
-using the uncalled-for DI engine. Only task-related dependencies (CurrentDocket,
-CurrentWorker) and background task execution require fastmcp[tasks].
+using the uncalled-for DI engine. The docket-specific dependencies
+(``CurrentDocket``, ``CurrentWorker``) live in the ``fastmcp-tasks`` package
+(``fastmcp_tasks.dependencies``).
 """
 
-from uncalled_for import Dependency, Depends, Shared
+from typing import Any
+
+from uncalled_for import CallArgument, CycleError, Dependency, Depends, Shared
 
 from fastmcp.server.dependencies import (
     CurrentAccessToken,
     CurrentContext,
-    CurrentDocket,
     CurrentFastMCP,
     CurrentHeaders,
     CurrentRequest,
-    CurrentWorker,
     Progress,
     ProgressLike,
     TokenClaim,
 )
 
 __all__ = [
+    "CallArgument",
     "CurrentAccessToken",
     "CurrentContext",
-    "CurrentDocket",
     "CurrentFastMCP",
     "CurrentHeaders",
     "CurrentRequest",
-    "CurrentWorker",
+    "CycleError",
     "Dependency",
     "Depends",
     "Progress",
@@ -38,3 +39,17 @@ __all__ = [
     "Shared",
     "TokenClaim",
 ]
+
+# Docket-specific dependencies moved to the fastmcp-tasks package. Point users
+# there instead of raising a bare AttributeError.
+_MOVED_TO_TASKS = {"CurrentDocket", "CurrentWorker"}
+
+
+def __getattr__(name: str) -> Any:
+    if name in _MOVED_TO_TASKS:
+        raise ImportError(
+            f"{name!r} moved to the fastmcp-tasks package. Install it with "
+            f"`pip install 'fastmcp[tasks]'` and import from "
+            f"`fastmcp_tasks.dependencies`."
+        )
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

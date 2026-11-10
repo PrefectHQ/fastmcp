@@ -26,7 +26,7 @@ This guide focuses specifically on using FastMCP servers with Claude Desktop. Fo
 Claude Desktop traditionally requires MCP servers to run locally using STDIO transport, where your server communicates with Claude through standard input/output rather than HTTP. However, users on certain plans now have access to remote server support as well.
 
 <Tip>
-If you don't have access to remote server support or need to connect to remote servers, you can create a **proxy server** that runs locally via STDIO and forwards requests to remote HTTP servers. See the [Proxy Servers](#proxy-servers) section below.
+If you don't have access to remote server support or need to connect to remote servers, you can create a **proxy server** that runs locally via STDIO and forwards requests to remote HTTP servers. See the [Remote Servers](#remote-servers) section below.
 </Tip>
 
 ## Create a Server
@@ -80,6 +80,8 @@ After installation, restart Claude Desktop completely. You should see a hammer i
 
 FastMCP provides several ways to manage your server's dependencies when installing in Claude Desktop:
 
+If your server declares its dependencies in `pyproject.toml`, use the [`--project` option](#python-version-and-project-directory) to select that Python project.
+
 **Individual packages**: Use the `--with` flag to specify packages your server needs. You can use this flag multiple times:
 
 ```bash
@@ -113,6 +115,12 @@ Alternatively, you can use a `fastmcp.json` configuration file (recommended):
 }
 ```
 
+Pass the configuration file to the install command in place of the server file:
+
+```bash
+fastmcp install claude-desktop fastmcp.json
+```
+
 
 #### Python Version and Project Directory
 
@@ -124,13 +132,13 @@ FastMCP allows you to control the Python environment for your server:
 fastmcp install claude-desktop server.py --python 3.11
 ```
 
-**Project directory**: Use `--project` to run your server within a specific project directory. This ensures that `uv` will discover all `pyproject.toml`, `uv.toml`, and `.python-version` files from that project:
+**Project directory**: Use `--project` to select the directory containing your MCP server's `pyproject.toml`. FastMCP passes this to `uv run --project`, which discovers the project's configuration and installs its dependencies into the project environment:
 
 ```bash
-fastmcp install claude-desktop server.py --project /path/to/my-project
+fastmcp install claude-desktop /path/to/mcp-server/server.py --project /path/to/mcp-server
 ```
 
-When you specify a project directory, all relative paths in your server will be resolved from that directory, and the project's virtual environment will be used.
+`--project` selects the Python environment without changing the server's working directory. If your server reads local files, use absolute paths or resolve them relative to the server file.
 
 #### Environment Variables
 
@@ -141,7 +149,7 @@ Claude Desktop runs servers in a completely isolated environment with no access 
 If your server needs environment variables (like API keys), you must include them:
 
 ```bash
-fastmcp install claude-desktop server.py --server-name "Weather Server" \
+fastmcp install claude-desktop server.py --name "Weather Server" \
   --env API_KEY=your-api-key \
   --env DEBUG=true
 ```
@@ -149,7 +157,7 @@ fastmcp install claude-desktop server.py --server-name "Weather Server" \
 Or load them from a `.env` file:
 
 ```bash
-fastmcp install claude-desktop server.py --server-name "Weather Server" --env-file .env
+fastmcp install claude-desktop server.py --name "Weather Server" --env-file .env
 ```
 <Warning>
 - **`uv` must be installed and available in your system PATH**. Claude Desktop runs in its own isolated environment and needs `uv` to manage dependencies.
@@ -267,7 +275,7 @@ from fastmcp.server import create_proxy
 
 # Create a proxy to a remote server
 proxy = create_proxy(
-    "https://example.com/mcp/sse",
+    "https://example.com/mcp",
     name="Remote Server Proxy"
 )
 
@@ -279,14 +287,14 @@ if __name__ == "__main__":
 
 For authenticated remote servers, create an authenticated client following the guidance in the [client auth documentation](/clients/auth/bearer) and pass it to the proxy:
 
-```python auth_proxy_server.py {7}
+```python auth_proxy_server.py {8}
 from fastmcp import Client
 from fastmcp.client.auth import BearerAuth
 from fastmcp.server import create_proxy
 
 # Create authenticated client
 client = Client(
-    "https://api.example.com/mcp/sse",
+    "https://api.example.com/mcp",
     auth=BearerAuth(token="your-access-token")
 )
 
@@ -296,4 +304,3 @@ proxy = create_proxy(client, name="Authenticated Proxy")
 if __name__ == "__main__":
     proxy.run()
 ```
-

@@ -1,0 +1,396 @@
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from fastmcp import Client, Context, FastMCP, FastMCPApp
+from fastmcp.client.auth import OAuth
+from fastmcp.client.elicitation import ElicitResult
+from fastmcp.client.logging import LogMessage
+from fastmcp.client.transports import (
+    FastMCPTransport,
+    SSETransport,
+    StreamableHttpTransport,
+)
+from fastmcp.exceptions import ToolError
+from fastmcp.server.providers.addressing import hashed_backend_name
+from fastmcp.server.providers.proxy import FastMCPProxy
+from fastmcp.tools import FunctionTool
+from fastmcp.utilities.versions import VersionSpec
+from fastmcp_remote.cli import (
+    IgnoreTools,
+    build_proxy,
+    build_transport,
+    parse_args,
+    parse_header,
+    parse_verify,
+    run,
+)
+
+
+def sample_tool() -> str:
+    return "ok"
+
+
+def test_parse_header_accepts_spaced_value():
+    assert parse_header("Authorization: Bearer token") == (
+        "Authorization",
+        "Bearer token",
+    )
+
+
+def test_parse_header_preserves_spaces_inside_value():
+    assert parse_header("X-Client-Name: My MCP Host") == (
+        "X-Client-Name",
+        "My MCP Host",
+    )
+
+
+def test_parse_header_preserves_colons_inside_value():
+    assert parse_header("X-Callback-Url: https://example.com/oauth/callback") == (
+        "X-Callback-Url",
+        "https://example.com/oauth/callback",
+    )
+
+
+def test_parse_header_expands_environment_variables_in_value(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("AUTH_HEADER", "Bearer token with spaces")
+
+    assert parse_header("Authorization:${AUTH_HEADER}") == (
+        "Authorization",
+        "Bearer token with spaces",
+    )
+
+
+def test_parse_header_rejects_missing_environment_variable():
+    with pytest.raises(SystemExit):
+        parse_args(["https://example.com/mcp", "--header", "Authorization:${MISSING}"])
+
+
+def test_parse_header_accepts_unspaced_value():
+    assert parse_header("Authorization:Bearer token") == (
+        "Authorization",
+        "Bearer token",
+    )
+
+
+def test_parse_header_rejects_missing_colon():
+    with pytest.raises(SystemExit):
+        parse_args(["https://example.com/mcp", "--header", "Authorization"])
+
+
+def test_http_urls_are_allowed():
+    config = parse_args(["http://localhost:8000/mcp", "--auth", "none"])
+
+    assert config.url == "http://localhost:8000/mcp"
+
+
+def test_auth_defaults_to_oauth(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", str(tmp_path))
+    config = parse_args(["https://example.com/mcp"])
+
+    transport = build_transport(config)
+
+    assert isinstance(transport, StreamableHttpTransport)
+    assert isinstance(transport.auth, OAuth)
+
+
+def test_authorization_header_disables_oauth_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", str(tmp_path))
+    config = parse_args(
+        [
+            "https://example.com/mcp",
+            "--header",
+            "Authorization: Bearer token",
+        ]
+    )
+
+    transport = build_transport(config)
+
+    assert isinstance(transport, StreamableHttpTransport)
+    assert transport.auth is None
+    assert transport.headers == {"Authorization": "Bearer token"}
+
+
+def test_explicit_oauth_keeps_oauth_with_authorization_header(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", str(tmp_path))
+    config = parse_args(
+        [
+            "https://example.com/mcp",
+            "--header",
+            "Authorization: Bearer token",
+            "--auth",
+            "oauth",
+        ]
+    )
+
+    transport = build_transport(config)
+
+    assert isinstance(transport.auth, OAuth)
+
+
+def test_oauth_callback_options_pass_to_fastmcp_oauth(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", str(tmp_path))
+    config = parse_args(
+        [
+            "https://example.com/mcp",
+            "8765",
+            "--host",
+            "127.0.0.1",
+            "--auth-timeout",
+            "12.5",
+        ]
+    )
+
+    transport = build_transport(config)
+
+    assert isinstance(transport.auth, OAuth)
+    assert transport.auth.context.client_metadata.redirect_uris is not None
+    assert str(transport.auth.context.client_metadata.redirect_uris[0]) == (
+        "http://127.0.0.1:8765/callback"
+    )
+    assert transport.auth._callback_timeout == 12.5
+
+
+def test_resource_isolates_token_storage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", str(tmp_path))
+    default_config = parse_args(["https://example.com/mcp"])
+    resource_config = parse_args(
+        ["https://example.com/mcp", "--resource", "linear-prod"]
+    )
+
+    assert default_config.storage_dir == tmp_path
+    assert resource_config.storage_dir.parent == tmp_path / "resources"
+    assert resource_config.storage_dir != default_config.storage_dir
+
+
+def test_sse_transport_strategy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", str(tmp_path))
+    config = parse_args(["https://example.com/sse", "--transport", "sse"])
+
+    transport = build_transport(config)
+
+    assert isinstance(transport, SSETransport)
+
+
+@pytest.mark.parametrize("value", ["false", "False", "0", "no", "off"])
+def test_parse_verify_disables_verification(value: str):
+    assert parse_verify(value) is False
+
+
+@pytest.mark.parametrize("value", ["true", "True", "1", "yes", "on"])
+def test_parse_verify_enables_verification(value: str):
+    assert parse_verify(value) is True
+
+
+def test_parse_verify_treats_other_values_as_ca_bundle_path():
+    assert parse_verify("/etc/ssl/ca-bundle.pem") == "/etc/ssl/ca-bundle.pem"
+
+
+def test_verify_defaults_to_none(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", str(tmp_path))
+    config = parse_args(["https://example.com/mcp", "--auth", "none"])
+
+    assert config.verify is None
+    assert build_transport(config).verify is None
+
+
+def test_verify_false_disables_verification_on_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", str(tmp_path))
+    config = parse_args(
+        ["https://example.com/mcp", "--auth", "none", "--verify", "false"]
+    )
+
+    transport = build_transport(config)
+
+    assert config.verify is False
+    assert isinstance(transport, StreamableHttpTransport)
+    assert transport.verify is False
+
+
+def test_verify_ca_bundle_path_passes_to_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", str(tmp_path))
+    ca_bundle = "/etc/ssl/custom-ca.pem"
+    config = parse_args(
+        ["https://example.com/mcp", "--auth", "none", "--verify", ca_bundle]
+    )
+
+    assert build_transport(config).verify == ca_bundle
+
+
+def test_verify_passes_to_sse_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", str(tmp_path))
+    config = parse_args(
+        [
+            "https://example.com/sse",
+            "--transport",
+            "sse",
+            "--auth",
+            "none",
+            "--verify",
+            "false",
+        ]
+    )
+
+    transport = build_transport(config)
+
+    assert isinstance(transport, SSETransport)
+    assert transport.verify is False
+
+
+async def test_ignore_tools_transform_filters_matching_names():
+    tool = FunctionTool.from_function(sample_tool, name="delete_user")
+    transform = IgnoreTools(["delete*"])
+
+    async def call_next(
+        name: str, *, version: VersionSpec | None = None
+    ) -> FunctionTool:
+        return tool
+
+    assert await transform.list_tools([tool]) == []
+    assert await transform.get_tool("delete_user", call_next) is None
+
+
+def records_remote(calls: list[str]) -> FastMCP:
+    app = FastMCPApp("records")
+
+    @app.tool()
+    def delete_records(marker: str) -> str:
+        calls.append(marker)
+        return f"ran {marker}"
+
+    remote = FastMCP("remote")
+    remote.add_provider(app)
+    return remote
+
+
+@pytest.mark.parametrize("pattern", ["delete_records", "delete*", "*"])
+async def test_ignored_tool_is_unknown_by_listed_and_hashed_name(pattern: str):
+    calls: list[str] = []
+    proxy = build_proxy(Client(records_remote(calls)), [pattern])
+
+    async with Client(proxy) as client:
+        assert "delete_records" not in [t.name for t in await client.list_tools()]
+        with pytest.raises(ToolError, match="Unknown tool"):
+            await client.call_tool("delete_records", {"marker": "by-name"})
+        with pytest.raises(ToolError, match="Unknown tool"):
+            await client.call_tool(
+                hashed_backend_name("records", "delete_records"),
+                {"marker": "by-hash"},
+            )
+
+    assert calls == []
+
+
+async def test_ignore_pattern_matches_remote_namespaced_name_for_hashed_calls():
+    calls: list[str] = []
+    app = FastMCPApp("contacts")
+
+    @app.tool()
+    def save(name: str) -> str:
+        calls.append(name)
+        return f"saved {name}"
+
+    remote = FastMCP("remote")
+    remote.add_provider(app, namespace="crm")
+    proxy = build_proxy(Client(remote), ["crm_*"])
+
+    async with Client(proxy) as client:
+        with pytest.raises(ToolError, match="Unknown tool"):
+            await client.call_tool(
+                hashed_backend_name("contacts", "save"), {"name": "alice"}
+            )
+
+    assert calls == []
+
+
+async def test_tool_not_ignored_is_callable_by_hashed_name():
+    calls: list[str] = []
+    app = FastMCPApp("contacts")
+
+    @app.tool()
+    def save(name: str) -> str:
+        calls.append(name)
+        return f"saved {name}"
+
+    remote = FastMCP("remote")
+    remote.add_provider(app)
+    proxy = build_proxy(Client(remote), ["delete*"])
+
+    async with Client(proxy) as client:
+        result = await client.call_tool(
+            hashed_backend_name("contacts", "save"), {"name": "alice"}
+        )
+
+    assert result.data == "saved alice"
+    assert calls == ["alice"]
+
+
+async def test_run_forwards_server_initiated_requests_to_handshake_front(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    remote = FastMCP("remote")
+
+    @remote.tool
+    async def confirm(ctx: Context) -> str:
+        await ctx.info("hello from remote")
+        await ctx.report_progress(1, 2)
+        result = await ctx.elicit("Proceed?", response_type=bool)
+        return f"elicit action={result.action}"
+
+    served: list[FastMCPProxy] = []
+
+    async def run_async(self: FastMCPProxy, **kwargs: Any) -> None:
+        served.append(self)
+
+    monkeypatch.setattr(FastMCPProxy, "run_async", run_async)
+    monkeypatch.setattr(
+        "fastmcp_remote.cli.build_transport", lambda config: FastMCPTransport(remote)
+    )
+    await run(parse_args(["https://example.com/mcp", "--auth", "none"]))
+
+    prompts: list[str] = []
+    logs: list[LogMessage] = []
+    progress: list[tuple[float, float | None]] = []
+
+    async def elicitation_handler(message, response_type, params, ctx):
+        prompts.append(message)
+        return ElicitResult(action="accept", content={"value": True})
+
+    async def log_handler(message: LogMessage) -> None:
+        logs.append(message)
+
+    async def progress_handler(
+        value: float, total: float | None, message: str | None
+    ) -> None:
+        progress.append((value, total))
+
+    async with Client(
+        served[0],
+        mode="legacy",
+        elicitation_handler=elicitation_handler,
+        log_handler=log_handler,
+        progress_handler=progress_handler,
+    ) as client:
+        result = await client.call_tool("confirm", {})
+
+    assert result.data == "elicit action=accept"
+    assert prompts == ["Proceed?"]
+    assert [log.data["msg"] for log in logs] == ["hello from remote"]
+    assert progress == [(1, 2)]

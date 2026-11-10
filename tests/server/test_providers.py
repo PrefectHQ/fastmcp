@@ -4,7 +4,8 @@ from collections.abc import Sequence
 from typing import Any
 
 import pytest
-from mcp.types import AnyUrl, TextContent
+from mcp_types import TextContent
+from pydantic import AnyUrl
 
 from fastmcp import FastMCP
 from fastmcp.prompts.base import Prompt

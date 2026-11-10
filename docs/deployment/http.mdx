@@ -79,17 +79,21 @@ The ASGI approach shines in production environments where you need reliability a
 
 ### Custom Path
 
-By default, your MCP server is accessible at `/mcp/` on your domain. You can customize this path to fit your URL structure or avoid conflicts with existing endpoints. This is particularly useful when integrating MCP into an existing application or following specific API conventions.
+By default, your MCP server is accessible at `/mcp` on your domain. You can customize this path to fit your URL structure or avoid conflicts with existing endpoints. This is particularly useful when integrating MCP into an existing application or following specific API conventions.
 
 ```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("My Server")
+
 # Option 1: With mcp.run()
-mcp.run(transport="http", host="0.0.0.0", port=8000, path="/api/mcp/")
+mcp.run(transport="http", host="0.0.0.0", port=8000, path="/api/mcp")
 
 # Option 2: With ASGI app
-app = mcp.http_app(path="/api/mcp/")
+app = mcp.http_app(path="/api/mcp")
 ```
 
-Now your server is accessible at `http://localhost:8000/api/mcp/`.
+Now your server is accessible at `http://localhost:8000/api/mcp`.
 
 ### Authentication
 
@@ -101,15 +105,111 @@ FastMCP supports multiple authentication methods to secure your remote server. S
 
 If you're mounting an authenticated server under a path prefix, see [Mounting Authenticated Servers](#mounting-authenticated-servers) below for important routing considerations.
 
+### Host and Origin Protection
+
+FastMCP can validate `Host` and browser `Origin` headers before requests reach MCP session handling. The same settings apply to Streamable HTTP and to the legacy SSE transport. This request guard protects localhost-bound servers from DNS rebinding attacks, and it stays opt-in to preserve compatibility with existing ASGI, serverless, and reverse-proxy deployments.
+
+Think of this as a request guard rather than CORS middleware. It decides whether a request can reach MCP session handling. CORS remains a separate browser response-header policy; configure CORS middleware separately when browser JavaScript must read cross-origin responses.
+
+Enable strict validation with `host_origin_protection=True`. When you deploy behind a public hostname, add the hostname clients use to reach your MCP endpoint. If a browser-based MCP client runs on a separate origin, add that origin as well:
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("My Server")
+
+app = mcp.http_app(
+    host_origin_protection=True,
+    allowed_hosts=["mcp.example.com"],
+    allowed_origins=["https://app.example.com"],
+)
+```
+
+For the direct server approach, pass the same values to `run()`:
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("My Server")
+
+if __name__ == "__main__":
+    mcp.run(
+        transport="http",
+        host="0.0.0.0",
+        port=8000,
+        host_origin_protection=True,
+        allowed_hosts=["mcp.example.com"],
+        allowed_origins=["https://app.example.com"],
+    )
+```
+
+You can also configure these values with environment variables:
+
+```bash
+export FASTMCP_HTTP_HOST_ORIGIN_PROTECTION=true
+export FASTMCP_HTTP_ALLOWED_HOSTS='["mcp.example.com"]'
+export FASTMCP_HTTP_ALLOWED_ORIGINS='["https://app.example.com"]'
+```
+
+Use `host_origin_protection="auto"` to protect localhost-bound direct servers while allowing ASGI, serverless, and reverse-proxy deployments to keep their existing Host handling unless they configure explicit trust rules. The default `host_origin_protection=False` disables the request guard: FastMCP then provides no Host/Origin validation or DNS-rebinding protection for this endpoint. This reduces protection compared with `True`; if you rely on a reverse proxy for these checks, you must configure and enforce them there. Authentication and CORS serve separate purposes and do not replace Host/Origin validation.
+
+### Gateway Routing Headers
+
+<VersionBadge version="4.0.0" />
+
+A gateway, load balancer, or reverse proxy in front of your MCP server often needs to route a request before it reads the JSON-RPC body — the body may be an SSE stream, or the gateway may simply want to avoid parsing it. On a connection that negotiates the modern `2026-07-28` protocol, Streamable HTTP clients built on the MCP Python SDK (including FastMCP's own client) attach routing information to each request as HTTP headers so an intermediary can dispatch on headers alone:
+
+- `Mcp-Method` carries the JSON-RPC method (for example `tools/call`) on every request.
+- `Mcp-Name` carries the target's name on named operations — the tool name for `tools/call`, the prompt name for `prompts/get`, the resource URI for `resources/read`.
+- `Mcp-Param-*` carries selected argument values for a `tools/call`, one header per opted-in parameter.
+
+FastMCP's HTTP transport neither strips nor rewrites these headers, so a gateway sees them exactly as the client sent them. The `Host`/`Origin` request guard inspects only `Host` and `Origin` and leaves the routing headers untouched.
+
+<Warning>
+These headers are a feature of the modern `2026-07-28` protocol. A client connected over an earlier protocol revision — including one running in legacy mode or one that has fallen back to a legacy server — sends no routing headers at all. Design gateway routing to require the headers rather than assume their presence: if a request arrives without them, fall back to inspecting the body or route it to a default backend, rather than dropping it.
+</Warning>
+
+To expose an argument as an `Mcp-Param-*` header, annotate the parameter with the `x-mcp-header` JSON Schema extension. FastMCP carries the annotation into the tool's advertised input schema, and a conforming client mirrors the argument into a header named `Mcp-Param-<token>`:
+
+```python
+from typing import Annotated
+
+from pydantic import Field
+
+from fastmcp import FastMCP
+
+mcp = FastMCP("My Server")
+
+@mcp.tool
+def query_tenant(
+    tenant: Annotated[str, Field(json_schema_extra={"x-mcp-header": "Tenant"})],
+    sql: str,
+) -> str:
+    """A call to this tool sends the tenant value as an `Mcp-Param-Tenant` header."""
+    ...
+```
+
+A gateway can now route on `Mcp-Param-Tenant` — for example, pinning each tenant to a dedicated backend — without inspecting the request body. The annotation is only permitted on `string`, `integer`, and `boolean` parameters. These headers advertise routing intent; treat them as untrusted hints, since the server still validates the request body as the source of truth.
+
+<Tip>
+When you put a FastMCP [proxy](/servers/providers/proxy) in front of another server, the proxy re-advertises each backend tool's `x-mcp-header` annotation, so routing headers work across the proxy hop as well. The headers themselves are regenerated per hop rather than forwarded verbatim, since each describes a single HTTP request.
+</Tip>
+
 ### Health Checks
 
 Health check endpoints are essential for monitoring your deployed server and ensuring it's responding correctly. FastMCP allows you to add custom routes alongside your MCP endpoints, making it easy to implement health checks that work with both deployment approaches.
 
 ```python
+from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from fastmcp import FastMCP
+
+mcp = FastMCP("My Server")
+
+
 @mcp.custom_route("/health", methods=["GET"])
-async def health_check(request):
+async def health_check(request: Request) -> JSONResponse:
     return JSONResponse({"status": "healthy", "service": "mcp-server"})
 ```
 
@@ -156,6 +256,8 @@ Most MCP clients, including those that you access through a browser like ChatGPT
 
 CORS (Cross-Origin Resource Sharing) is needed when JavaScript running in a web browser connects directly to your MCP server. This is different from using an LLM through a browser—in that case, the browser connects to the LLM service, and the LLM service connects to your MCP server (no CORS needed).
 
+Host and Origin protection runs before CORS when it is active for a request. Add browser client origins to `allowed_origins` so trusted browser requests reach the CORS middleware, then configure CORS to let browser JavaScript read the MCP response headers it needs. Setting `allowed_origins` trusts the request; it does not emit `Access-Control-Allow-Origin` or other CORS response headers.
+
 Browser-based MCP clients that need CORS include:
 
 - **MCP Inspector** - Browser-based debugging tool for testing MCP servers
@@ -179,6 +281,8 @@ middleware = [
         allow_headers=[
             "mcp-protocol-version",
             "mcp-session-id",
+            "mcp-method",
+            "mcp-name",
             "Authorization",
             "Content-Type",
         ],
@@ -192,7 +296,7 @@ app = mcp.http_app(middleware=middleware)
 **Key configuration details:**
 
 - **`allow_origins`**: Specify exact origins (e.g., `["http://localhost:3000"]`) rather than `["*"]` for production deployments
-- **`allow_headers`**: Must include `mcp-protocol-version`, `mcp-session-id`, and `Authorization` (for authenticated servers)
+- **`allow_headers`**: Must include `mcp-protocol-version`, `mcp-session-id`, and `Authorization` (for authenticated servers). Clients on the `2026-07-28` protocol also send the `mcp-method` and `mcp-name` [routing headers](#gateway-routing-headers), plus one `Mcp-Param-*` header for each tool parameter annotated with `x-mcp-header`; list those too
 - **`expose_headers`**: Must include `mcp-session-id` so JavaScript can read the session ID from responses and send it in subsequent requests
 
 Without `expose_headers=["mcp-session-id"]`, browsers will receive the session ID but JavaScript won't be able to access it, causing session management to fail.
@@ -214,10 +318,17 @@ When running tools that take a long time to complete, you may encounter issues w
 To enable SSE polling, configure an `EventStore` when creating your HTTP application:
 
 ```python
+import asyncio
+
 from fastmcp import FastMCP, Context
 from fastmcp.server.event_store import EventStore
 
 mcp = FastMCP("My Server")
+
+
+async def do_expensive_work() -> None:
+    await asyncio.sleep(1)
+
 
 @mcp.tool
 async def long_running_task(ctx: Context) -> str:
@@ -260,8 +371,11 @@ The `retry_interval` parameter (in milliseconds) controls how long clients wait 
 By default, `EventStore` uses in-memory storage. For production deployments with multiple server instances, you can provide a custom storage backend using the `key_value` package:
 
 ```python
+from fastmcp import FastMCP
 from fastmcp.server.event_store import EventStore
 from key_value.aio.stores.redis import RedisStore
+
+mcp = FastMCP("My Server")
 
 # Use Redis for distributed deployments
 redis_store = RedisStore(url="redis://localhost:6379")
@@ -295,7 +409,7 @@ def analyze(data: str) -> dict:
     return {"result": f"Analyzed: {data}"}
 
 # Create the ASGI app
-mcp_app = mcp.http_app(path='/mcp')
+mcp_app = mcp.http_app(path="/mcp")
 
 # Create a Starlette app and mount the MCP server
 app = Starlette(
@@ -307,7 +421,7 @@ app = Starlette(
 )
 ```
 
-The MCP endpoint will be available at `/mcp-server/mcp/` of the resulting Starlette app.
+The MCP endpoint will be available at `/mcp-server/mcp` of the resulting Starlette app.
 
 <Warning>
 For Streamable HTTP transport, you **must** pass the lifespan context from the FastMCP app to the resulting Starlette app, as nested lifespans are not recognized. Otherwise, the FastMCP server's session manager will not be properly initialized.
@@ -326,7 +440,7 @@ from starlette.routing import Mount
 mcp = FastMCP("MyServer")
 
 # Create the ASGI app
-mcp_app = mcp.http_app(path='/mcp')
+mcp_app = mcp.http_app(path="/mcp")
 
 # Create nested application structure
 inner_app = Starlette(routes=[Mount("/inner", app=mcp_app)])
@@ -336,7 +450,7 @@ app = Starlette(
 )
 ```
 
-In this setup, the MCP server is accessible at the `/outer/inner/mcp/` path.
+In this setup, the MCP server is accessible at the `/outer/inner/mcp` path.
 
 ### FastAPI Integration
 
@@ -454,7 +568,7 @@ base_url="http://localhost:8000/api"  # Includes mount prefix
 mcp_path="/mcp"  # Internal MCP path, NOT the mount prefix
 ```
 
-**`issuer_url`** (optional) controls the authorization server identity for OAuth discovery. Defaults to `base_url`.
+**`issuer_url`** (optional) controls the authorization server identity for OAuth discovery. Defaults to `base_url`. It sets the `issuer` advertised in the authorization server metadata and the `iss` on issued tokens, while the endpoints in that metadata continue to point at `base_url`.
 
 ```python
 # Usually not needed - just set base_url and it works
@@ -584,7 +698,7 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
 
-For more details on OAuth authentication, see the [Authentication guide](/servers/auth).
+For more details on OAuth authentication, see the [Authentication guide](/servers/auth/authentication).
 
 ## Production Deployment
 
@@ -608,7 +722,7 @@ When deploying FastMCP behind a load balancer or running multiple server instanc
 
 #### Understanding Sessions
 
-By default, FastMCP's Streamable HTTP transport maintains server-side sessions. Sessions enable stateful MCP features like [elicitation](/servers/elicitation) and [sampling](/servers/sampling), where the server needs to maintain context across multiple requests from the same client.
+By default, FastMCP's Streamable HTTP transport maintains server-side sessions. A session holds the context a server keeps across multiple requests from the same client, and it carries the handshake-era back-channel that server-initiated requests like [elicitation](/servers/elicitation) push down.
 
 This works perfectly for single-instance deployments. However, sessions are stored in memory on each server instance, which creates challenges when scaling horizontally.
 
@@ -646,6 +760,10 @@ app = mcp.http_app(stateless_http=True)
 **Option 2: Via `run()`**
 
 ```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("My Server")
+
 if __name__ == "__main__":
     mcp.run(transport="http", stateless_http=True)
 ```
@@ -691,9 +809,7 @@ If you're using the [OAuth Proxy](/servers/auth/oauth-proxy), FastMCP issues its
 
 **Default Behavior (Development Only):**
 
-By default, FastMCP automatically manages cryptographic keys:
-- **Mac/Windows**: Keys are generated and stored in your system keyring, surviving server restarts. Suitable **only** for development and local testing.
-- **Linux**: Keys are ephemeral (random salt at startup), so tokens are invalidated on restart.
+By default, FastMCP automatically manages cryptographic keys the same way on every platform: the signing key is deterministically derived from your OAuth client secret, so it survives server restarts as long as the secret doesn't change. Suitable **only** for development and local testing.
 
 This automatic approach is convenient for development but not suitable for production deployments.
 
@@ -702,16 +818,20 @@ This automatic approach is convenient for development but not suitable for produ
 Production requires explicit key management to ensure tokens survive restarts and can be shared across multiple server instances. This requires the following two things working together:
 
 1. **Explicit JWT signing key** for signing tokens issued to clients
-3. **Persistent network-accessible storage** for upstream tokens (wrapped in `FernetEncryptionWrapper` to encrypt sensitive data at rest)
+2. **Persistent network-accessible storage** for upstream tokens (wrapped in `FernetEncryptionWrapper` to encrypt sensitive data at rest)
 
 **Configuration:**
 
 Add two parameters to your auth provider:
 
-```python {8-12}
+```python {12-16}
+import os
+
+from cryptography.fernet import Fernet
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
-from cryptography.fernet import Fernet
+
+from fastmcp.server.auth.providers.github import GitHubProvider
 
 auth = GitHubProvider(
     client_id=os.environ["GITHUB_CLIENT_ID"],
@@ -725,7 +845,7 @@ auth = GitHubProvider(
 )
 ```
 
-Both parameters are required for production. Without an explicit signing key, keys are signed using a key derived from the client_secret, which will cause invalidation upon rotation of the client secret. Without persistent storage, tokens are local to the server and won't be trusted across hosts. **Wrap your storage backend in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** - without encryption, tokens are stored in plaintext.
+Both parameters are required for production. Without an explicit signing key, tokens are signed with a key derived from the client secret, so rotating the client secret invalidates every issued token. Without persistent storage, tokens are local to the server and won't be trusted across hosts. **Wrap your storage backend in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** - without encryption, tokens are stored in plaintext.
 
 For more details on the token architecture and key management, see [OAuth Proxy Key and Storage Management](/servers/auth/oauth-proxy#key-and-storage-management).
 
@@ -855,11 +975,15 @@ location /api/ {
 }
 ```
 
-Note the trailing `/` on both `location /api/` and `proxy_pass http://127.0.0.1:8000/` — this ensures nginx strips the `/api` prefix before forwarding to your server. If you're using OAuth authentication with a mount prefix, see [Mounting Authenticated Servers](#mounting-authenticated-servers) for additional configuration.
+Note the trailing `/` on both `location /api/` and `proxy_pass http://127.0.0.1:8000/` — this ensures nginx strips the `/api` prefix before forwarding to your server.
+
+If you serve the legacy SSE transport this way, also set Uvicorn's `root_path` to the stripped prefix (`--root-path /api`, or `uvicorn_config={"root_path": "/api"}` with `mcp.run()`) so the server advertises its message endpoint as `/api/messages/`. Only set `root_path` when a proxy strips the prefix: a client that connects directly to a server with `root_path` set gets the prefix twice and a 404.
+
+If you're using OAuth authentication with a mount prefix, see [Mounting Authenticated Servers](#mounting-authenticated-servers) for additional configuration.
 
 ## Testing Your Deployment
 
-Once your server is deployed, you'll need to verify it's accessible and functioning correctly. For comprehensive testing strategies including connectivity tests, client testing, and authentication testing, see the [Testing Your Server](/development/tests) guide.
+Once your server is deployed, connect to its URL with the [FastMCP client](/clients/client) to confirm it is reachable and lists the tools you expect. To test your server's behavior in code, see [Testing](/servers/testing).
 
 ## Hosting Your Server
 
@@ -871,4 +995,4 @@ This guide has shown you how to create an HTTP-accessible MCP server, but you'll
 - **Edge platforms** (Cloudflare Workers)
 - **Kubernetes clusters** (self-managed or managed)
 
-The key requirements are Python 3.10+ support and the ability to expose an HTTP port. Most providers will require you to package your server (requirements.txt, Dockerfile, etc.) according to their deployment format. For managed, zero-configuration deployment, see [Prefect Horizon](/deployment/prefect-horizon).
+The key requirements are Python 3.11+ support and the ability to expose an HTTP port. Most providers will require you to package your server (requirements.txt, Dockerfile, etc.) according to their deployment format. For managed, zero-configuration deployment, see [FastMCP Gateway](/deployment/fastmcp-gateway).

@@ -7,6 +7,7 @@ try:
     from google.genai import Client as GoogleGenaiClient
     from google.genai.types import (
         Candidate,
+        FinishReason,
         FunctionCall,
         FunctionCallingConfigMode,
         GenerateContentResponse,
@@ -14,7 +15,7 @@ try:
         Part,
         UserContent,
     )
-    from mcp.types import (
+    from mcp_types import (
         AudioContent,
         CreateMessageResult,
         ImageContent,
@@ -66,7 +67,7 @@ def test_convert_sampling_messages_to_google_genai_content():
 
 def test_convert_single_image_content_to_google_genai():
     part = _sampling_content_to_google_genai_part(
-        ImageContent(type="image", data="YWJj", mimeType="image/png")
+        ImageContent(type="image", data="YWJj", mime_type="image/png")
     )
 
     assert part.inline_data is not None
@@ -76,7 +77,7 @@ def test_convert_single_image_content_to_google_genai():
 
 def test_convert_single_audio_content_to_google_genai():
     part = _sampling_content_to_google_genai_part(
-        AudioContent(type="audio", data="YWJj", mimeType="audio/wav")
+        AudioContent(type="audio", data="YWJj", mime_type="audio/wav")
     )
 
     assert part.inline_data is not None
@@ -89,7 +90,7 @@ def test_convert_image_message_to_google_genai_content():
         messages=[
             SamplingMessage(
                 role="user",
-                content=ImageContent(type="image", data="YWJj", mimeType="image/jpeg"),
+                content=ImageContent(type="image", data="YWJj", mime_type="image/jpeg"),
             )
         ],
     )
@@ -105,7 +106,7 @@ def test_convert_audio_message_to_google_genai_content():
         messages=[
             SamplingMessage(
                 role="user",
-                content=AudioContent(type="audio", data="YWJj", mimeType="audio/mp3"),
+                content=AudioContent(type="audio", data="YWJj", mime_type="audio/mp3"),
             )
         ],
     )
@@ -123,7 +124,7 @@ def test_convert_list_content_with_image_and_text():
                 role="user",
                 content=[
                     TextContent(type="text", text="What is in this image?"),
-                    ImageContent(type="image", data="YWJj", mimeType="image/png"),
+                    ImageContent(type="image", data="YWJj", mime_type="image/png"),
                 ],
             )
         ],
@@ -144,7 +145,7 @@ def test_convert_list_content_with_audio_and_text():
                 role="user",
                 content=[
                     TextContent(type="text", text="Transcribe this audio"),
-                    AudioContent(type="audio", data="YWJj", mimeType="audio/wav"),
+                    AudioContent(type="audio", data="YWJj", mime_type="audio/wav"),
                 ],
             )
         ],
@@ -190,6 +191,7 @@ async def test_response_to_create_message_result():
     # Create a mock response
     mock_response = MagicMock(spec=GenerateContentResponse)
     mock_response.text = "HELPFUL CONTENT FROM GEMINI"
+    mock_response.candidates = [Candidate(finish_reason=FinishReason.STOP)]
 
     result: CreateMessageResult = _response_to_create_message_result(
         response=mock_response, model="gemini-2.0-flash-exp"
@@ -198,7 +200,21 @@ async def test_response_to_create_message_result():
         content=TextContent(type="text", text="HELPFUL CONTENT FROM GEMINI"),
         role="assistant",
         model="gemini-2.0-flash-exp",
+        stop_reason="endTurn",
     )
+
+
+async def test_response_to_create_message_result_reports_max_tokens():
+    """Without tools, a reply cut off at max_tokens must say so too."""
+    mock_response = MagicMock(spec=GenerateContentResponse)
+    mock_response.text = "partial"
+    mock_response.candidates = [Candidate(finish_reason=FinishReason.MAX_TOKENS)]
+
+    result = _response_to_create_message_result(
+        response=mock_response, model="gemini-2.0-flash-exp"
+    )
+
+    assert result.stop_reason == "maxTokens"
 
 
 def test_convert_tool_choice_to_google_genai():
@@ -243,14 +259,15 @@ def test_sampling_content_to_google_genai_part_tool_result():
     """Test converting ToolResultContent to Google GenAI Part with FunctionResponse."""
     content = ToolResultContent(
         type="tool_result",
-        toolUseId="get_weather_abc123",
+        tool_use_id="get_weather_abc123",
         content=[TextContent(type="text", text="Weather is sunny")],
     )
 
-    part = _sampling_content_to_google_genai_part(content)
+    part = _sampling_content_to_google_genai_part(
+        content, {"get_weather_abc123": "get_weather"}
+    )
 
     assert part.function_response is not None
-    # Function name is extracted from toolUseId by removing the UUID suffix
     assert part.function_response.name == "get_weather"
     assert part.function_response.response == {"result": "Weather is sunny"}
 
@@ -259,30 +276,44 @@ def test_sampling_content_to_google_genai_part_tool_result_empty():
     """Test converting empty ToolResultContent to Google GenAI Part."""
     content = ToolResultContent(
         type="tool_result",
-        toolUseId="my_tool_xyz789",
+        tool_use_id="my_tool_xyz789",
         content=[],
     )
 
-    part = _sampling_content_to_google_genai_part(content)
+    part = _sampling_content_to_google_genai_part(
+        content, {"my_tool_xyz789": "my_tool"}
+    )
 
     assert part.function_response is not None
     assert part.function_response.name == "my_tool"
     assert part.function_response.response == {"result": ""}
 
 
-def test_sampling_content_to_google_genai_part_tool_result_no_underscore():
-    """Test ToolResultContent when toolUseId has no underscore (fallback)."""
+def test_sampling_content_to_google_genai_part_tool_result_uses_paired_name():
+    """Tool-use IDs are opaque and must resolve through their paired call."""
     content = ToolResultContent(
         type="tool_result",
-        toolUseId="simplefunction",
+        tool_use_id="call_opaque_123",
         content=[TextContent(type="text", text="Result")],
     )
 
-    part = _sampling_content_to_google_genai_part(content)
+    part = _sampling_content_to_google_genai_part(
+        content, {"call_opaque_123": "lookup_customer"}
+    )
 
-    # When no underscore, the full ID is used as the name
     assert part.function_response is not None
-    assert part.function_response.name == "simplefunction"
+    assert part.function_response.name == "lookup_customer"
+
+
+def test_sampling_content_to_google_genai_part_tool_result_requires_matching_call():
+    content = ToolResultContent(
+        type="tool_result",
+        tool_use_id="call_opaque_123",
+        content=[TextContent(type="text", text="Result")],
+    )
+
+    with pytest.raises(ValueError, match="No matching ToolUseContent"):
+        _sampling_content_to_google_genai_part(content)
 
 
 def test_convert_messages_with_tool_use():
@@ -317,20 +348,93 @@ def test_convert_messages_with_tool_result():
     msgs = _convert_messages_to_google_genai_content(
         messages=[
             SamplingMessage(
+                role="assistant",
+                content=ToolUseContent(
+                    type="tool_use",
+                    id="get_weather_123",
+                    name="get_weather",
+                    input={},
+                ),
+            ),
+            SamplingMessage(
                 role="user",
                 content=ToolResultContent(
                     type="tool_result",
-                    toolUseId="get_weather_123",
+                    tool_use_id="get_weather_123",
                     content=[TextContent(type="text", text="Sunny, 72F")],
                 ),
             ),
         ],
     )
 
-    assert len(msgs) == 1
-    assert isinstance(msgs[0], UserContent)
-    assert msgs[0].parts[0].function_response is not None
-    assert msgs[0].parts[0].function_response.name == "get_weather"
+    assert len(msgs) == 2
+    assert isinstance(msgs[1], UserContent)
+    assert msgs[1].parts[0].function_response is not None
+    assert msgs[1].parts[0].function_response.name == "get_weather"
+
+
+def test_convert_messages_matches_multiple_tool_results_by_id():
+    msgs = _convert_messages_to_google_genai_content(
+        messages=[
+            SamplingMessage(
+                role="assistant",
+                content=[
+                    ToolUseContent(
+                        type="tool_use",
+                        id="call_opaque_123",
+                        name="lookup_customer",
+                        input={"id": "C-1"},
+                    ),
+                    ToolUseContent(
+                        type="tool_use",
+                        id="lookup_order_12345678",
+                        name="lookup_order",
+                        input={"id": "O-1"},
+                    ),
+                ],
+            ),
+            SamplingMessage(
+                role="user",
+                content=[
+                    ToolResultContent(
+                        type="tool_result",
+                        tool_use_id="lookup_order_12345678",
+                        content=[TextContent(type="text", text="order")],
+                    ),
+                    ToolResultContent(
+                        type="tool_result",
+                        tool_use_id="call_opaque_123",
+                        content=[TextContent(type="text", text="customer")],
+                    ),
+                ],
+            ),
+        ]
+    )
+
+    assert isinstance(msgs[0], ModelContent)
+    function_calls = [part.function_call for part in msgs[0].parts]
+    assert all(function_call is not None for function_call in function_calls)
+    assert [
+        function_call.name
+        for function_call in function_calls
+        if function_call is not None
+    ] == [
+        "lookup_customer",
+        "lookup_order",
+    ]
+    assert isinstance(msgs[1], UserContent)
+    function_responses = [part.function_response for part in msgs[1].parts]
+    assert all(
+        function_response is not None for function_response in function_responses
+    )
+    assert [
+        function_response.name
+        for function_response in function_responses
+        if function_response is not None
+    ] == [
+        "lookup_order",
+        "lookup_customer",
+    ]
 
 
 def test_convert_messages_with_multiple_content_blocks():
@@ -338,12 +442,21 @@ def test_convert_messages_with_multiple_content_blocks():
     msgs = _convert_messages_to_google_genai_content(
         messages=[
             SamplingMessage(
+                role="assistant",
+                content=ToolUseContent(
+                    type="tool_use",
+                    id="get_weather_xyz",
+                    name="get_weather",
+                    input={},
+                ),
+            ),
+            SamplingMessage(
                 role="user",
                 content=[
                     TextContent(type="text", text="I need weather info."),
                     ToolResultContent(
                         type="tool_result",
-                        toolUseId="get_weather_xyz",
+                        tool_use_id="get_weather_xyz",
                         content=[TextContent(type="text", text="Cloudy")],
                     ),
                 ],
@@ -351,11 +464,11 @@ def test_convert_messages_with_multiple_content_blocks():
         ],
     )
 
-    assert len(msgs) == 1
-    assert isinstance(msgs[0], UserContent)
-    assert len(msgs[0].parts) == 2
-    assert msgs[0].parts[0].text == "I need weather info."
-    assert msgs[0].parts[1].function_response is not None
+    assert len(msgs) == 2
+    assert isinstance(msgs[1], UserContent)
+    assert len(msgs[1].parts) == 2
+    assert msgs[1].parts[0].text == "I need weather info."
+    assert msgs[1].parts[1].function_response is not None
 
 
 def test_response_to_result_with_tools_text_only():
@@ -372,7 +485,7 @@ def test_response_to_result_with_tools_text_only():
 
     assert result.role == "assistant"
     assert result.model == "gemini-2.0-flash"
-    assert result.stopReason == "endTurn"
+    assert result.stop_reason == "endTurn"
     assert isinstance(result.content, list)
     assert len(result.content) == 1
     assert result.content[0].type == "text"
@@ -394,7 +507,7 @@ def test_response_to_result_with_tools_function_call():
 
     result = _response_to_result_with_tools(mock_response, model="gemini-2.0-flash")
 
-    assert result.stopReason == "toolUse"
+    assert result.stop_reason == "toolUse"
     assert isinstance(result.content, list)
     assert len(result.content) == 1
     tool_use = result.content[0]
@@ -421,7 +534,7 @@ def test_response_to_result_with_tools_mixed_content():
 
     result = _response_to_result_with_tools(mock_response, model="gemini-2.0-flash")
 
-    assert result.stopReason == "toolUse"
+    assert result.stop_reason == "toolUse"
     assert isinstance(result.content, list)
     assert len(result.content) == 2
     text_content = result.content[0]
@@ -576,7 +689,7 @@ def test_normal_response_text_and_function_call():
     assert isinstance(result.content[1], ToolUseContent)  # ty: ignore[not-subscriptable]
     assert result.content[1].name == "lookup"  # ty: ignore[not-subscriptable]
     assert result.content[1].input == {"q": "test"}  # ty: ignore[not-subscriptable]
-    assert result.stopReason == "toolUse"
+    assert result.stop_reason == "toolUse"
 
 
 def test_thought_with_function_call_keeps_function_call():
@@ -598,4 +711,4 @@ def test_thought_with_function_call_keeps_function_call():
     assert len(result.content) == 1  # ty: ignore[invalid-argument-type]
     assert isinstance(result.content[0], ToolUseContent)  # ty: ignore[not-subscriptable]
     assert result.content[0].name == "get_weather"  # ty: ignore[not-subscriptable]
-    assert result.stopReason == "toolUse"
+    assert result.stop_reason == "toolUse"

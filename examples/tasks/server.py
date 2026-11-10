@@ -1,75 +1,65 @@
-"""
-FastMCP Tasks Example Server
+"""FastMCP background-tasks example server (SEP-2663).
 
-Demonstrates background task execution with progress tracking using Docket.
+Run this in one terminal, then drive it from `client.py` in another. It exposes
+one `task=True` tool that reports progress as it works, so you can watch the
+client poll a real background task over HTTP.
 
-Setup:
-    1. Start Redis: docker compose up -d
-    2. Load environment: source .envrc
-    3. Run server: fastmcp run server.py
+    # From the fastmcp root (memory:// backend, no Redis needed):
+    python examples/tasks/server.py
 
-The example uses Redis by default to demonstrate distributed task execution
-and the fastmcp tasks CLI commands.
+The server listens on http://localhost:8000/mcp. The tasks extension runs its
+Docket worker in-process on the default `memory://` backend, so several tasks
+submitted at once execute concurrently (worker concurrency defaults to 10).
+Point `FASTMCP_DOCKET_URL` at Redis to distribute work across separate worker
+processes instead — see README.md.
 """
 
 import asyncio
 import logging
+from datetime import timedelta
 from typing import Annotated
-
-from docket import Logged
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Progress
+from fastmcp.utilities.tasks import TaskConfig
+from fastmcp_tasks import TasksExtension
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s")
+logger = logging.getLogger("tasks-example")
 
-# Create server
+# Enable SEP-2663 background tasks. With no arguments the extension reads the
+# FASTMCP_DOCKET_* environment and falls back to an in-process memory:// worker.
 mcp = FastMCP("Tasks Example")
+mcp.add_extension(TasksExtension())
 
 
-@mcp.tool(task=True)
+# A short poll interval keeps the example snappy: the client observes each
+# task finishing within ~1s. The default is 5s, tuned for real workloads.
+@mcp.tool(task=TaskConfig(poll_interval=timedelta(seconds=1)))
 async def slow_computation(
-    duration: Annotated[int, Logged],
+    label: Annotated[str, "A name for this run, echoed back in progress logs"],
+    duration: Annotated[int, "How many seconds the computation should take (1-60)"],
     progress: Progress = Progress(),
 ) -> str:
+    """Spend `duration` seconds working, reporting progress once per second.
+
+    Marked `task=True`, so a task-aware client runs it in the background and
+    polls for progress and the final result instead of blocking on the call.
     """
-    Perform a slow computation that takes `duration` seconds.
+    if not 1 <= duration <= 60:
+        raise ValueError("duration must be between 1 and 60 seconds")
 
-    This tool demonstrates progress tracking with background tasks.
-    It logs progress every 1-2 seconds and reports progress via Docket.
-
-    Args:
-        duration: Number of seconds the computation should take (1-60)
-
-    Returns:
-        A completion message with the total duration
-    """
-    if duration < 1 or duration > 60:
-        raise ValueError("Duration must be between 1 and 60 seconds")
-
-    logger.info(f"Starting slow computation for {duration} seconds")
-
-    # Set total progress units
+    logger.info("[%s] starting — %ds", label, duration)
     await progress.set_total(duration)
 
-    # Process each second
-    for i in range(duration):
-        # Sleep for 1 second
+    for elapsed in range(1, duration + 1):
         await asyncio.sleep(1)
-
-        # Update progress
-        elapsed = i + 1
-        remaining = duration - elapsed
         await progress.increment()
-        await progress.set_message(
-            f"Working... {elapsed}/{duration}s ({remaining}s remaining)"
-        )
+        await progress.set_message(f"{label}: {elapsed}/{duration}s")
 
-        # Log every 1-2 seconds
-        if elapsed % 2 == 0 or elapsed == duration:
-            logger.info(f"Progress: {elapsed}/{duration}s")
+    logger.info("[%s] done", label)
+    return f"{label} finished in {duration}s"
 
-    logger.info(f"Completed computation in {duration} seconds")
-    return f"Computation completed successfully in {duration} seconds!"
+
+if __name__ == "__main__":
+    mcp.run(transport="http", host="127.0.0.1", port=8000)

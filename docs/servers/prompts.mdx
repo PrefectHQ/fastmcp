@@ -64,6 +64,8 @@ Functions with `*args` or `**kwargs` are not supported as prompts. This restrict
 While FastMCP infers the name and description from your function, you can override these and add additional metadata using arguments to the `@mcp.prompt` decorator:
 
 ```python
+from pydantic import Field
+
 @mcp.prompt(
     name="analyze_data_request",          # Custom prompt name
     description="Creates a request to analyze data with specific parameters",  # Custom description
@@ -95,10 +97,6 @@ def data_analysis_prompt(
   A set of strings used to categorize the prompt. These can be used by the server and, in some cases, by clients to filter or group available prompts.
 </ParamField>
 
-<ParamField body="enabled" type="bool" default="True">
-  <Warning>Deprecated in v3.0.0. Use `mcp.enable()` / `mcp.disable()` at the server level instead.</Warning>
-  A boolean to enable or disable the prompt. See [Component Visibility](#component-visibility) for the recommended approach.
-</ParamField>
 
 <ParamField body="icons" type="list[Icon] | None">
   <VersionBadge version="2.13.0" />
@@ -116,6 +114,10 @@ def data_analysis_prompt(
   <VersionBadge version="3.0.0" />
 
   Optional version identifier for this prompt. See [Versioning](/servers/versioning) for details.
+</ParamField>
+
+<ParamField body="auth" type="AuthCheck | list[AuthCheck] | None">
+  Authorization checks the caller must pass to see and render the prompt. See [Authorization](/servers/authorization) for details.
 </ParamField>
 </Card>
 
@@ -156,17 +158,17 @@ def analyze_data(
   "arguments": [
     {
       "name": "numbers",
-      "description": "Provide as a JSON string matching the following schema: {\"items\":{\"type\":\"integer\"},\"type\":\"array\"}",
+      "description": "Provide a value matching the following JSON schema: {\"items\":{\"type\":\"integer\"},\"type\":\"array\"}. Encode non-string values as JSON.",
       "required": true
     },
     {
       "name": "metadata", 
-      "description": "Provide as a JSON string matching the following schema: {\"additionalProperties\":{\"type\":\"string\"},\"type\":\"object\"}",
+      "description": "Provide a value matching the following JSON schema: {\"additionalProperties\":{\"type\":\"string\"},\"type\":\"object\"}. Encode non-string values as JSON.",
       "required": true
     },
     {
       "name": "threshold",
-      "description": "Provide as a JSON string matching the following schema: {\"type\":\"number\"}",
+      "description": "Provide a value matching the following JSON schema: {\"type\":\"number\"}. Encode non-string values as JSON.",
       "required": true
     }
   ]
@@ -187,6 +189,7 @@ def analyze_data(
 **But you can still call it directly with proper types:**
 ```python
 # This also works for direct calls
+prompt = await mcp.get_prompt("analyze_data")
 result = await prompt.render({
     "numbers": [1, 2, 3, 4, 5],
     "metadata": {"source": "api", "version": "1.0"}, 
@@ -222,6 +225,26 @@ def analyze_data(dataset: str, method: str = "summary") -> str:
 The free-form text above the `Args` section — whether a single line or multiple paragraphs — becomes the prompt description, and each argument's docstring entry becomes the description on the corresponding `PromptArgument` in the MCP protocol. Sections like `Returns`, `Raises`, and `Example` are excluded from the description but otherwise ignored.
 
 If an argument already has an explicit description — via `Annotated[x, "..."]` or `Field(description=...)` — that description takes precedence over the docstring. This makes it safe to adopt docstring-based descriptions incrementally: existing annotations keep working, and docstrings fill in the gaps.
+
+### Argument Titles
+
+An argument's name is what clients send, so it is usually short. To show clients a human-readable label instead, give the parameter a title with `Field(title=...)`:
+
+```python
+from typing import Annotated
+
+from pydantic import Field
+
+
+@mcp.prompt
+def write_story(
+    topic: Annotated[str, Field(title="Story topic")],
+    tone: str = Field(default="playful", title="Tone of voice"),
+) -> str:
+    return f"Write a {tone} short story about {topic}."
+```
+
+The title becomes the `title` of the corresponding `PromptArgument` in the MCP protocol. Arguments without an explicit title are listed without one. A proxy keeps the argument titles its backend lists.
 
 ### Return Values
 
@@ -314,7 +337,7 @@ return PromptResult("Please help me with this task")  # auto-converts to single 
   Messages to return. Strings are wrapped as a single user Message.
 </ParamField>
 <ParamField body="description" type="str | None">
-  Optional description of the prompt result. If not provided, defaults to the prompt's docstring.
+  Optional description of this rendered prompt result. Plain `str` and `list[Message | str]` returns inherit the prompt definition description automatically, but an explicit `PromptResult` uses the description you pass here and otherwise leaves it unset.
 </ParamField>
 <ParamField body="meta" type="dict[str, Any] | None">
   Result-level metadata, included in the MCP response's `_meta` field. Use this for runtime metadata like categorization, priority, or other client-specific data.
@@ -367,7 +390,7 @@ def internal_prompt() -> str:
     return "Internal system prompt"
 
 # Disable specific prompts by key
-mcp.disable(keys={"prompt:internal_prompt"})
+mcp.disable(names={"internal_prompt"})
 
 # Disable prompts by tag
 mcp.disable(tags={"internal"})
@@ -383,6 +406,8 @@ See [Visibility](/servers/visibility) for the complete visibility control API in
 FastMCP supports both standard (`def`) and asynchronous (`async def`) functions as prompts. Synchronous functions automatically run in a threadpool to avoid blocking the event loop.
 
 ```python
+import aiohttp
+
 # Synchronous prompt (runs in threadpool)
 @mcp.prompt
 def simple_question(question: str) -> str:
@@ -428,19 +453,25 @@ For full documentation on the Context object and all its capabilities, see the [
 FastMCP automatically sends `notifications/prompts/list_changed` notifications to connected clients when prompts are added, enabled, or disabled. This allows clients to stay up-to-date with the current prompt set without manually polling for changes.
 
 ```python
-@mcp.prompt
+from fastmcp.prompts import prompt
+
+@prompt
 def example_prompt() -> str:
     return "Hello!"
 
 # These operations trigger notifications:
 mcp.add_prompt(example_prompt)               # Sends prompts/list_changed notification
-mcp.disable(keys={"prompt:example_prompt"})  # Sends prompts/list_changed notification
-mcp.enable(keys={"prompt:example_prompt"})   # Sends prompts/list_changed notification
+mcp.disable(names={"example_prompt"})  # Sends prompts/list_changed notification
+mcp.enable(names={"example_prompt"})   # Sends prompts/list_changed notification
 ```
 
 Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.
 
 Clients can handle these notifications using a [message handler](/clients/notifications) to automatically refresh their prompt lists or update their interfaces.
+
+## Requesting Input
+
+A prompt can ask the client for information before it renders. On an MCP 2026-07-28 connection, return an `InputRequiredResult` describing what you need; the client answers and re-issues the `prompts/get`, and your function runs again with the answer on `ctx.input_responses`. See [Elicitation](/servers/elicitation#prompts-and-resources) for the full pattern.
 
 ## Server Behavior
 
@@ -448,14 +479,14 @@ Clients can handle these notifications using a [message handler](/clients/notifi
 
 <VersionBadge version="2.1.0" />
 
-You can configure how the FastMCP server handles attempts to register multiple prompts with the same name. Use the `on_duplicate_prompts` setting during `FastMCP` initialization.
+You can configure how the FastMCP server handles attempts to register the same prompt twice. Identity is the component's type, name, and version together, so a prompt may share a name with a tool, and two versions of one prompt coexist. The `on_duplicate` setting covers every component type, so it applies to prompts alongside tools and resources.
 
 ```python
 from fastmcp import FastMCP
 
 mcp = FastMCP(
     name="PromptServer",
-    on_duplicate_prompts="error"  # Raise an error if a prompt name is duplicated
+    on_duplicate="error"  # Raise an error on an exact duplicate
 )
 
 @mcp.prompt

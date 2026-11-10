@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING
+from urllib.parse import parse_qs, urlparse
 
 from mcp.server.auth.handlers.authorize import (
     AuthorizationHandler as SDKAuthorizationHandler,
@@ -23,6 +24,7 @@ from pydantic import AnyHttpUrl
 from starlette.requests import Request
 from starlette.responses import Response
 
+from fastmcp.server.auth.redirect_validation import build_client_redirect
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.ui import (
     INFO_BOX_STYLES,
@@ -175,8 +177,10 @@ class AuthorizationHandler(SDKAuthorizationHandler):
 
     def __init__(
         self,
+        *,
         provider: OAuthAuthorizationServerProvider,
         base_url: AnyHttpUrl | str,
+        issuer_url: AnyHttpUrl | str | None = None,
         server_name: str | None = None,
         server_icon_url: str | None = None,
     ):
@@ -185,10 +189,17 @@ class AuthorizationHandler(SDKAuthorizationHandler):
         Args:
             provider: OAuth authorization server provider
             base_url: Base URL of the server for constructing endpoint URLs
+            issuer_url: Authorization server issuer identifier. Defaults to
+                `base_url`, which is correct whenever the server's identity and
+                its endpoint locations are the same URL.
             server_name: Optional server name for branding
             server_icon_url: Optional server icon URL for branding
         """
         super().__init__(provider)
+        # Unnormalized on purpose: this must match the discovery document's
+        # `issuer` field byte-for-byte per RFC 9207, and that field is built
+        # from the same unmodified issuer_url (see OAuthProxy.get_routes()).
+        self._issuer = str(issuer_url if issuer_url is not None else base_url)
         self._base_url = str(base_url).rstrip("/")
         self._server_name = server_name
         self._server_icon_url = server_icon_url
@@ -209,6 +220,31 @@ class AuthorizationHandler(SDKAuthorizationHandler):
         # Call the SDK handler
         response = await super().handle(request)
 
+        if 300 <= response.status_code < 400 and "location" in response.headers:
+            redirect_url = response.headers["location"]
+            redirect_params = parse_qs(urlparse(redirect_url).query)
+            # RFC 9207: any client-facing authorization response — success
+            # (`code`) or error (`error`) — must carry `iss`. The base SDK
+            # handler's redirect target is normally `/consent` or the
+            # upstream IdP (neither carries `code`/`error`), but a provider
+            # can override `authorize()` to redirect straight back to the
+            # client (e.g. when consent/upstream is skipped entirely), so
+            # this must not be gated on "error" alone.
+            if "error" in redirect_params or "code" in redirect_params:
+                # `build_client_redirect` owns the "set `iss` idempotently"
+                # invariant: a provider's `authorize()` override (or the
+                # client's own registered redirect_uri) may already carry an
+                # `iss` — matching or not — and RFC 6749 §3.1 forbids a
+                # response parameter from appearing more than once. A
+                # mismatched existing value is already unusable to a
+                # spec-compliant client (it validates `iss` against the
+                # discovery document's `issuer`, i.e. `self._issuer`), so
+                # the helper corrects it to the canonical value rather than
+                # leaving it broken or appending a duplicate.
+                response.headers["location"] = build_client_redirect(
+                    redirect_url, {}, iss=self._issuer
+                )
+
         # Check if this is a client not found error
         if response.status_code == 400:
             # Try to extract client_id from request for enhanced error
@@ -216,11 +252,16 @@ class AuthorizationHandler(SDKAuthorizationHandler):
             if request.method == "GET":
                 client_id = request.query_params.get("client_id")
             else:
-                form = await request.form()
-                client_id_value = form.get("client_id")
-                # Ensure client_id is a string, not UploadFile
-                if isinstance(client_id_value, str):
-                    client_id = client_id_value
+                # The SDK handler has already parsed POST form data. Re-reading
+                # it here can raise "Stream consumed" when parsing failed and
+                # the request body cannot be replayed. Only enhance errors when
+                # the SDK left a successfully parsed form cached on the request.
+                form = getattr(request, "_form", None)
+                if form is not None:
+                    client_id_value = form.get("client_id")
+                    # Ensure client_id is a string, not UploadFile
+                    if isinstance(client_id_value, str):
+                        client_id = client_id_value
 
             # If we have a client_id and the error is about it not being found,
             # enhance the response
@@ -238,7 +279,10 @@ class AuthorizationHandler(SDKAuthorizationHandler):
                             )
                 except Exception:
                     # If we can't parse the response, just return the original
-                    pass
+                    logger.debug(
+                        "Failed to parse authorize error response for enhancement",
+                        exc_info=True,
+                    )
 
         return response
 

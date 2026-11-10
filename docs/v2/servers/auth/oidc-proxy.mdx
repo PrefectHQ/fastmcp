@@ -199,7 +199,7 @@ auth = OIDCProxy(
 </ParamField>
 
 <ParamField body="require_authorization_consent" type='bool | Literal["remember", "external"]' default="True">
-  Consent screen behavior for authorization requests. Accepts `True` (default; always prompt — strongest protection), `"remember"` (silent consent on return visits via signed cookie, gated by `Sec-Fetch-Site` to block AS-in-the-middle attacks), `"external"` (consent handled by upstream IdP or custom page), or `False` (disable entirely; local/testing only). See the [OAuthProxy documentation](/v2/servers/auth/oauth-proxy) for full details on each mode and the security trade-offs.
+  Consent screen behavior for authorization requests. Accepts `True` (default; always prompt — strongest protection), `"remember"` (silent consent on return visits via signed cookie, gated by `Sec-Fetch-Site` to block AS-in-the-middle attacks), `"external"` (same authorization path as `False`, but the warning is suppressed because the operator asserts that equivalent protections are enforced externally), or `False` (disable entirely; local/testing only). See the [OAuthProxy documentation](/v2/servers/auth/oauth-proxy) for full details on each mode and the security trade-offs.
 </ParamField>
 
 <ParamField body="consent_csp_policy" type="str | None" default="None">

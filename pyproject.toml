@@ -2,8 +2,8 @@
 name = "fastmcp"
 dynamic = ["version", "dependencies", "optional-dependencies"]
 description = "The fast, Pythonic way to build MCP servers and clients."
-authors = [{ name = "Jeremiah Lowin" }]
-requires-python = ">=3.10"
+authors = [{ name = "Jeremiah Lowin" }, { name = "Nate Nowack" }]
+requires-python = ">=3.11"
 readme = "README.md"
 license = "Apache-2.0"
 keywords = [
@@ -19,10 +19,11 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Typing :: Typed",
 ]
 
@@ -56,9 +57,10 @@ anthropic = ["fastmcp-slim[anthropic]=={{ version }}"]
 apps = ["fastmcp-slim[apps]=={{ version }}"]
 azure = ["fastmcp-slim[azure]=={{ version }}"]
 code-mode = ["fastmcp-slim[code-mode]=={{ version }}"]
+jev = ["fastmcp-slim[jev]=={{ version }}"]
 gemini = ["fastmcp-slim[gemini]=={{ version }}"]
 openai = ["fastmcp-slim[openai]=={{ version }}"]
-tasks = ["fastmcp-slim[tasks]=={{ version }}"]
+tasks = ["fastmcp-tasks=={{ version }}"]
 
 [tool.uv-dynamic-versioning]
 vcs = "git"
@@ -67,16 +69,25 @@ bump = true
 fallback-version = "0.0.0"
 
 [tool.uv.workspace]
-members = ["fastmcp_slim"]
+members = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks"]
 
 [tool.uv]
 default-groups = ["dev"]
+exclude-newer = "1 week"
+# The cooldown above refuses anything published in the last week. Exempt the
+# first-party packages, whose fresh releases we install deliberately, the
+# MCP SDK, where a new major is the only version satisfying our floor and so
+# has nothing older to fall back to, and uncalled-for, the DI engine whose
+# releases we adopt deliberately. Monty 1.1.0 supplies Python 3.15 wheels.
+# Authlib is exempt so security fixes can bypass the cooldown.
+exclude-newer-package = { authlib = false, certifi = false, fastmcp = false, fastmcp-slim = false, fastmcp-remote = false, prefab-ui = false, mcp = false, mcp-types = false, uncalled-for = false, pydocket = false, pydantic-monty = false, pydantic-monty-client = false, pydantic-monty-runtime = false }
 
 [dependency-groups]
 dev = [
     "dirty-equals>=0.9.0",
-    "fastmcp[anthropic,apps,azure,code-mode,gemini,openai,tasks]",
+    "fastmcp[anthropic,apps,azure,code-mode,gemini,jev,openai,tasks]",
     "fastapi>=0.115.12",
+    "fastmcp-remote",
     "opentelemetry-sdk>=1.20.0",
     "inline-snapshot[dirty-equals]>=0.27.2",
     "ipython>=8.12.3",
@@ -89,13 +100,12 @@ dev = [
     "pytest-cov>=6.1.1",
     "pytest-env>=1.1.5",
     "pytest-flakefinder>=1.1.0",
-    "pytest-httpx>=0.35.0",
     "pytest-report>=0.2.1",
     "pytest-retry>=1.7.0",
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6.1",
     "ruff>=0.12.8",
-    "ty>=0.0.29",
+    "ty>=0.0.89",
     "prek>=0.2.12",
     "loq>=0.1.0a3",
     "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",
@@ -105,6 +115,8 @@ dev = [
 [tool.uv.sources]
 fastmcp = { workspace = true }
 fastmcp-slim = { workspace = true }
+fastmcp-remote = { workspace = true }
+fastmcp-tasks = { workspace = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -123,9 +135,10 @@ env = [
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
     "client_process: marks tests that spawn client processes via stdio transport. These can create issues when run in the same CI environment as other subprocess-based tests.",
+    "subprocess_heavy: marks tests that spawn a fresh Python interpreter which imports FastMCP. Each one costs a full interpreter's memory and startup, so they run serially alongside client_process tests rather than competing with parallel xdist workers.",
     "conformance: marks MCP conformance tests (require Node.js/npx)",
 ]
-pythonpath = ["fastmcp_slim"]
+pythonpath = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks"]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
@@ -133,11 +146,39 @@ python_functions = ["test_*"]
 addopts = ["--inline-snapshot=disable"]
 
 [tool.ty.src]
-include = ["fastmcp_slim", "tests"]
-exclude = ["**/node_modules", "**/__pycache__", ".venv", ".git", "dist"]
+include = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks", "tests", "examples"]
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    ".venv",
+    ".git",
+    "dist",
+    # Example subtrees excluded from the ty gate. Each either pins its own
+    # fastmcp (resolved against a different install) or requires a third-party
+    # dependency not installed in this tree.
+    "examples/testing_demo",             # own uv.lock, targets fastmcp v1 on purpose
+    "examples/atproto_mcp",              # needs atproto (+ its own package)
+    "examples/smart_home",              # needs phue
+    "examples/apps/qr_server",          # needs qrcode
+    "examples/providers/sqlite",        # needs aiosqlite
+    "examples/fastmcp_config_demo",     # needs pyautogui, Pillow
+    "examples/screenshot.py",           # needs pyautogui, Pillow
+    "examples/memory.py",               # needs asyncpg, numpy, pydantic_ai, pgvector
+    "examples/get_file.py",             # needs aiohttp
+    "tests/downstream/smoke_*.py",      # needs langchain / pydantic_ai, installed per-job in CI
+]
 
 [tool.ty.environment]
-python-version = "3.10"
+python-version = "3.11"
+# Pin the platform ty checks against to the one CI uses. Without it ty uses the
+# host platform, and on Windows typeshed's fcntl has no flock/LOCK_EX/LOCK_UN,
+# so tests/utilities/json_schema_type/test_real_world_schemas.py fails the ty
+# hook for Windows contributors while ubuntu-latest stays green.
+python-platform = "linux"
+
+[tool.ty.analysis]
+# prefab_ui is the apps SDK and is not installed here.
+replace-imports-with-any = ["prefab_ui.**"]
 
 [tool.ty.rules]
 division-by-zero = "warn"
@@ -158,6 +199,19 @@ ignore = [
     "PERF203",
     "PLR0913",
     "SIM102",
+    # flake8-bandit rules with a high false-positive rate in this codebase:
+    # `assert` is idiomatic Python (S101); subprocess calls here already use
+    # arg lists, not shell strings (S603); and "password"/"token"-named
+    # parameters and defaults are routinely non-secret in an OAuth/JWT
+    # framework (S105-S107). S606/S607 (bare command name, e.g. "uv") are a
+    # style preference, not a vulnerability, for our CLI's subprocess use.
+    "S101",
+    "S105",
+    "S106",
+    "S107",
+    "S603",
+    "S606",
+    "S607",
 ]
 extend-select = [
     "B",
@@ -175,6 +229,7 @@ extend-select = [
     "PLE",
     "RSE",
     "RUF",
+    "S",
     "SIM",
     "SLOT",
     "T20",
@@ -183,7 +238,7 @@ extend-select = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["fastmcp"]
+known-first-party = ["fastmcp", "fastmcp_remote"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "I001", "RUF013"]
@@ -206,6 +261,7 @@ known-first-party = ["fastmcp"]
     "PLE",
     "RSE",
     "RUF",
+    "S",
     "SIM",
     "SLOT",
     "T20",
@@ -214,3 +270,4 @@ known-first-party = ["fastmcp"]
 
 [tool.codespell]
 ignore-words-list = "asend,shttp,te"
+ignore-regex = 'caf%C3%A9'

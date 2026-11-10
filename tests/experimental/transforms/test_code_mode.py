@@ -1,13 +1,16 @@
+import asyncio
 import importlib
+import importlib.util
 import json
-from typing import Any
+from typing import Any, cast
 
 import pytest
-from mcp.types import ImageContent, TextContent
+from mcp_types import ImageContent, TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.experimental.transforms.code_mode import (
+    _DEFAULT_LIMITS,
     CodeMode,
     GetSchemas,
     GetToolCatalog,
@@ -17,6 +20,11 @@ from fastmcp.experimental.transforms.code_mode import (
 )
 from fastmcp.server.context import Context
 from fastmcp.tools.base import Tool, ToolResult
+
+requires_monty = pytest.mark.skipif(
+    importlib.util.find_spec("pydantic_monty") is None,
+    reason="pydantic-monty is required for the real Monty sandbox provider",
+)
 
 
 def _unwrap_result(result: ToolResult) -> Any:
@@ -629,7 +637,7 @@ async def test_code_mode_execute_non_text_content_stringified() -> None:
 
     @mcp.tool
     def image_tool() -> ImageContent:
-        return ImageContent(type="image", data="base64data", mimeType="image/png")
+        return ImageContent(type="image", data="base64data", mime_type="image/png")
 
     mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 
@@ -683,6 +691,172 @@ async def test_code_mode_sandbox_error_surfaces_as_tool_error() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Real Monty sandbox end-to-end (issue #4263)
+#
+# Every execute test above runs through the exec-based
+# _UnsafeTestSandboxProvider, so the real MontySandboxProvider + call_tool
+# path is otherwise uncovered. These tests drive call_tool through the actual
+# pydantic-monty sandbox, the path #4263 reported as broken.
+# ---------------------------------------------------------------------------
+
+
+@requires_monty
+@pytest.mark.parametrize("async_tool", [False, True])
+async def test_code_mode_monty_execute_call_tool(async_tool: bool) -> None:
+    """call_tool resolves and returns through the real Monty sandbox.
+
+    The reported failure ("empty result") could not be reproduced on a
+    directly-registered tool: ``return await call_tool(...)`` returns the
+    value for both sync and async backend tools.
+    """
+    mcp = FastMCP("CodeMode Monty Execute")
+
+    if async_tool:
+
+        @mcp.tool
+        async def add(x: int, y: int) -> int:
+            return x + y
+    else:
+
+        @mcp.tool
+        def add(x: int, y: int) -> int:
+            return x + y
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    result = await _run_tool(
+        mcp, "execute", {"code": "return await call_tool('add', {'x': 2, 'y': 3})"}
+    )
+    assert _unwrap_result(result) == {"result": 5}
+
+
+@requires_monty
+async def test_code_mode_monty_execute_string_result() -> None:
+    """A string-returning tool round-trips through the real Monty sandbox."""
+    mcp = FastMCP("CodeMode Monty String")
+
+    @mcp.tool
+    def greet(name: str) -> str:
+        return f"Hello, {name}!"
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    result = await _run_tool(
+        mcp, "execute", {"code": "return await call_tool('greet', {'name': 'World'})"}
+    )
+    assert _unwrap_string_result(result) == "Hello, World!"
+
+
+@requires_monty
+async def test_code_mode_monty_execute_chaining() -> None:
+    """Multiple sequential call_tool() calls chain through the real sandbox."""
+    mcp = FastMCP("CodeMode Monty Chaining")
+
+    @mcp.tool
+    def add(x: int, y: int) -> int:
+        return x + y
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {
+            "code": (
+                "a = await call_tool('add', {'x': 1, 'y': 2})\n"
+                "b = await call_tool('add', {'x': a['result'], 'y': 10})\n"
+                "return b"
+            )
+        },
+    )
+    assert _unwrap_result(result) == {"result": 13}
+
+
+@requires_monty
+@pytest.mark.parametrize(
+    ("failing_call", "expected_message"),
+    [
+        ("await call_tool('no_such_tool', {})", "Unknown tool: no_such_tool"),
+        (
+            "await call_tool('boom', {})",
+            "call_tool('boom') failed: deliberate tool failure",
+        ),
+    ],
+    ids=["unknown-tool", "tool-error"],
+)
+async def test_code_mode_monty_call_tool_errors_are_catchable(
+    failing_call: str, expected_message: str
+) -> None:
+    """Sandbox code can catch call_tool errors and preserve prior work."""
+    mcp = FastMCP("CodeMode Monty Catch Errors")
+
+    @mcp.tool
+    def add(x: int, y: int) -> int:
+        return x + y
+
+    @mcp.tool
+    def boom() -> None:
+        raise ToolError("deliberate tool failure")
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    code = (
+        "total = (await call_tool('add', {'x': 2, 'y': 3}))['result']\n"
+        "caught = None\n"
+        "try:\n"
+        f"    {failing_call}\n"
+        "except Exception as exc:\n"
+        "    caught = str(exc)\n"
+        "return {'caught': caught, 'total': total}"
+    )
+    result = await _run_tool(mcp, "execute", {"code": code})
+
+    assert _unwrap_result(result) == {
+        "caught": expected_message,
+        "total": 5,
+    }
+
+
+@requires_monty
+async def test_code_mode_monty_uncaught_call_tool_error_surfaces() -> None:
+    """Uncaught backend errors still propagate out of the sandbox."""
+    mcp = FastMCP("CodeMode Monty Uncaught Error")
+
+    @mcp.tool
+    def boom() -> None:
+        raise ToolError("deliberate tool failure")
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    with pytest.raises(ToolError, match="deliberate tool failure"):
+        await _run_tool(mcp, "execute", {"code": "return await call_tool('boom', {})"})
+
+
+@requires_monty
+async def test_code_mode_monty_bare_call_returns_empty() -> None:
+    """Pins the reported #4263 symptom as a usage error, not a sandbox bug.
+
+    The report's code called ``call_tool`` bare — ``print(call_tool(...))``
+    without ``await`` or ``return``. ``call_tool`` is async, so a bare call
+    hands back an unawaited coroutine, and ``print`` returns ``None``; the
+    block therefore returns nothing and ``execute`` yields an empty result.
+    """
+    mcp = FastMCP("CodeMode Monty Bare Call")
+
+    @mcp.tool
+    def greet(name: str) -> str:
+        return f"Hello, {name}!"
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    result = await _run_tool(
+        mcp, "execute", {"code": "print(call_tool('greet', {'name': 'World'}))"}
+    )
+    assert result.content == []
+    assert result.structured_content is None
+
+
+# ---------------------------------------------------------------------------
 # Sandbox provider tests
 # ---------------------------------------------------------------------------
 
@@ -704,14 +878,398 @@ async def test_monty_provider_raises_informative_error_when_missing(
         await provider.run("return 1")
 
 
-async def test_monty_provider_forwards_limits() -> None:
-    provider = MontySandboxProvider(limits={"max_duration_secs": 0.1})
+@pytest.mark.parametrize(
+    "limits",
+    [
+        {"max_feed_duration_secs": 0.1},
+        {"max_turn_duration_secs": 0.1},
+    ],
+)
+async def test_monty_provider_forwards_limits(limits: dict[str, float]) -> None:
+    provider = MontySandboxProvider(limits=cast(Any, limits))
+    original_limits = limits.copy()
 
     with pytest.raises(Exception, match="time limit exceeded"):
         await provider.run("x = 0\nfor _ in range(10**9):\n    x += 1")
 
+    assert limits == original_limits
 
-async def test_monty_provider_no_limits_by_default() -> None:
+
+@pytest.mark.parametrize("key", ["max_allocations", "max_duration_secs"])
+async def test_monty_provider_rejects_unsupported_limits(key: str) -> None:
+    provider = MontySandboxProvider(limits=cast(Any, {key: 1}))
+
+    with pytest.raises(
+        ValueError,
+        match=rf"Unsupported Monty resource limits: {key!r}.*max_memory",
+    ):
+        await provider.run("return list(range(10_000))")
+
+
+async def test_monty_provider_forwards_inputs() -> None:
     provider = MontySandboxProvider()
+
+    result = await provider.run("return value + 1", inputs={"value": 2})
+
+    assert result == 3
+
+
+async def test_monty_provider_applies_default_limits() -> None:
+    provider = MontySandboxProvider()
+    assert provider.limits == _DEFAULT_LIMITS
+    # Default limits are generous enough for ordinary code.
     result = await provider.run("return 1 + 2")
     assert result == 3
+
+
+async def test_monty_provider_explicit_none_disables_limits() -> None:
+    provider = MontySandboxProvider(limits=None)
+    assert provider.limits is None
+    result = await provider.run("return 1 + 2")
+    assert result == 3
+
+
+async def test_monty_provider_explicit_limits_override_defaults() -> None:
+    provider = MontySandboxProvider(limits={"max_feed_duration_secs": 0.1})
+    assert provider.limits == {"max_feed_duration_secs": 0.1}
+
+
+async def test_monty_provider_default_limits_are_not_shared_between_instances() -> None:
+    """Each default provider must own its limits dict.
+
+    `limits` is a mutable public attribute; if instances shared the
+    module-level baseline, mutating one would silently change the defaults
+    for every other default provider in the process.
+    """
+    a = MontySandboxProvider()
+    b = MontySandboxProvider()
+
+    assert a.limits is not b.limits
+    assert a.limits is not _DEFAULT_LIMITS
+
+    assert a.limits is not None
+    a.limits["max_feed_duration_secs"] = 1
+
+    assert b.limits == {"max_feed_duration_secs": 30.0, "max_memory": 100_000_000}
+    assert _DEFAULT_LIMITS == {
+        "max_feed_duration_secs": 30.0,
+        "max_memory": 100_000_000,
+    }
+
+
+async def test_code_mode_max_tool_calls_default_is_50() -> None:
+    assert CodeMode().max_tool_calls == 50
+
+
+async def test_code_mode_max_tool_calls_enforced() -> None:
+    mcp = FastMCP("CodeMode ToolCap")
+
+    @mcp.tool
+    def ping() -> str:
+        return "pong"
+
+    mcp.add_transform(
+        CodeMode(sandbox_provider=_UnsafeTestSandboxProvider(), max_tool_calls=3)
+    )
+
+    code = "\n".join(
+        [
+            "results = []",
+            "for _ in range(5):",
+            "    results.append(await call_tool('ping', {}))",
+            "return results",
+        ]
+    )
+    with pytest.raises(ToolError, match=r"Tool call limit exceeded: at most 3"):
+        await _run_tool(mcp, "execute", {"code": code})
+
+
+async def test_code_mode_max_tool_calls_none_is_unlimited() -> None:
+    mcp = FastMCP("CodeMode ToolCapNone")
+
+    @mcp.tool
+    def ping() -> str:
+        return "pong"
+
+    mcp.add_transform(
+        CodeMode(sandbox_provider=_UnsafeTestSandboxProvider(), max_tool_calls=None)
+    )
+
+    code = "\n".join(
+        [
+            "n = 0",
+            "for _ in range(60):",
+            "    await call_tool('ping', {})",
+            "    n += 1",
+            "return n",
+        ]
+    )
+    result = await _run_tool(mcp, "execute", {"code": code})
+    assert _unwrap_result(result) == 60
+
+
+async def test_monty_provider_cancels_future_when_task_cancelled() -> None:
+    """Cancelling the awaiting task must cancel the underlying sandbox future.
+
+    Otherwise the Monty worker keeps running to completion after a
+    client disconnects or the request times out. A subclass overrides the
+    launch seam so the cancellation handling in `run()` is exercised against
+    a controllable future rather than a live sandbox worker.
+    """
+    loop = asyncio.get_running_loop()
+    sandbox_future: asyncio.Future[Any] = loop.create_future()
+    sandbox_started = asyncio.Event()
+
+    class _NeverFinishingProvider(MontySandboxProvider):
+        async def _run_monty(
+            self,
+            pydantic_monty: Any,
+            *,
+            code: str,
+            inputs: Any,
+            external_functions: Any,
+        ) -> Any:
+            sandbox_started.set()
+            return await sandbox_future
+
+    provider = _NeverFinishingProvider()
+    task = asyncio.create_task(provider.run("return 1"))
+
+    await sandbox_started.wait()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert sandbox_future.cancelled()
+
+
+@requires_monty
+async def test_code_mode_is_error_result_raises_in_sandbox() -> None:
+    """A backend returning an is_error ToolResult interrupts the chain.
+
+    Regression: proxied backend failures arrive as ToolResult(is_error=True)
+    rather than raising, and previously flowed into sandbox code as an
+    ordinary return value.
+    """
+    mcp = FastMCP("CodeMode IsError")
+
+    @mcp.tool
+    def flaky() -> ToolResult:
+        return ToolResult(content="backend exploded", is_error=True)
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    code = (
+        "caught = None\n"
+        "try:\n"
+        "    value = await call_tool('flaky', {})\n"
+        "except Exception as exc:\n"
+        "    caught = str(exc)\n"
+        "return {'caught': caught}"
+    )
+    result = await _run_tool(mcp, "execute", {"code": code})
+    caught = _unwrap_result(result)["caught"]
+    assert caught is not None
+    assert "call_tool('flaky') failed" in caught
+    assert "backend exploded" in caught
+
+
+@requires_monty
+async def test_code_mode_validation_error_names_valid_parameters() -> None:
+    """A bad-argument failure names the caller's tool and its parameters."""
+    mcp = FastMCP("CodeMode BadArgs")
+
+    @mcp.tool
+    def greet(name: str, punctuation: str = "!") -> str:
+        return f"hi {name}{punctuation}"
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    code = (
+        "caught = None\n"
+        "try:\n"
+        "    await call_tool('greet', {'nom': 'x'})\n"
+        "except Exception as exc:\n"
+        "    caught = str(exc)\n"
+        "return {'caught': caught}"
+    )
+    result = await _run_tool(mcp, "execute", {"code": code})
+    caught = _unwrap_result(result)["caught"]
+    assert caught is not None
+    assert "call_tool('greet') failed" in caught
+    assert "Valid parameters for greet" in caught
+    assert "name*" in caught  # required marker
+    assert "punctuation" in caught
+
+
+async def test_code_mode_get_schema_renders_enums_and_defaults() -> None:
+    """Detailed schemas surface enum values and defaults, not just types."""
+    from typing import Literal
+
+    mcp = FastMCP("CodeMode RichSchema")
+
+    @mcp.tool
+    def rank(
+        sort: Literal["trending", "top"] = "trending",
+        limit: int = 10,
+    ) -> str:
+        """Rank things."""
+        return sort
+
+    mcp.add_transform(CodeMode())
+
+    result = await _run_tool(mcp, "get_schema", {"tools": ["rank"]})
+    unwrapped = _unwrap_result(result)
+    text = unwrapped["result"] if isinstance(unwrapped, dict) else unwrapped
+    assert 'one of "trending"/"top"' in text
+    assert 'default "trending"' in text
+    assert "default 10" in text
+    # Per-parameter descriptions stay out of this level: on real catalogs they
+    # cost ~300% more than bare types where enums and defaults cost ~40%, and
+    # the `full` level already emits the raw schema that carries them.
+    assert "Rank things" in text  # the tool's own description still renders
+    assert "\u2014" not in text  # but no per-parameter description dashes
+
+
+async def test_code_mode_get_schema_names_return_fields_one_level_down() -> None:
+    """A typed return no longer renders as an opaque object[]."""
+    from pydantic import BaseModel
+
+    class Note(BaseModel):
+        text: str
+
+    class Card(BaseModel):
+        id: str
+        url: str
+        note: Note | None = None
+
+    class Page(BaseModel):
+        items: list[Card]
+        has_more: bool
+
+    mcp = FastMCP("CodeMode NestedReturns")
+
+    @mcp.tool
+    def list_cards() -> Page:
+        """List cards."""
+        return Page(items=[], has_more=False)
+
+    mcp.add_transform(CodeMode())
+
+    result = await _run_tool(mcp, "get_schema", {"tools": ["list_cards"]})
+    unwrapped = _unwrap_result(result)
+    text = unwrapped["result"] if isinstance(unwrapped, dict) else unwrapped
+    assert "- `items` (object[], required): `id`, `url`, `note`" in text
+    assert "- `has_more` (boolean, required)" in text
+    # One level only: Note's fields are not expanded under Card.
+    assert "`text`" not in text
+
+
+@pytest.mark.parametrize("content", [[], ["image"]])
+async def test_error_result_without_text_uses_generic_message(
+    content: list[str],
+) -> None:
+    mcp = FastMCP("Non-text errors")
+    blocks = [
+        ImageContent(type="image", data="A" * 4096, mime_type="image/png")
+        for _ in content
+    ]
+
+    @mcp.tool
+    def fail() -> ToolResult:
+        return ToolResult(content=blocks, is_error=True)
+
+    mcp.add_transform(CodeMode())
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {
+            "code": 'try:\n    await call_tool("fail", {})\nexcept Exception as exc:\n    return str(exc)'
+        },
+    )
+    message = str(_unwrap_result(result))
+    assert message == "call_tool('fail') failed: tool returned an error"
+
+
+@pytest.mark.parametrize("text", ["backend exploded", ""])
+async def test_error_result_preserves_text_with_structured_content(text: str) -> None:
+    mcp = FastMCP("Structured errors")
+
+    @mcp.tool
+    def fail() -> ToolResult:
+        return ToolResult(content=text, structured_content={"code": 42}, is_error=True)
+
+    mcp.add_transform(CodeMode())
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {
+            "code": 'try:\n    await call_tool("fail", {})\nexcept Exception as exc:\n    return str(exc)'
+        },
+    )
+    message = str(_unwrap_result(result))
+    assert (text or "42") in message
+    assert "call_tool('fail') failed" in message
+
+
+async def test_mounted_validation_error_uses_public_identity() -> None:
+    child = FastMCP("Orders")
+
+    @child.tool
+    def search(query: str) -> str:
+        return query
+
+    mcp = FastMCP("Mounted")
+    mcp.mount(child, namespace="orders")
+    mcp.add_transform(CodeMode())
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {
+            "code": 'try:\n    await call_tool("orders_search", {"wrong": "value"})\nexcept Exception as exc:\n    return str(exc)'
+        },
+    )
+    message = str(_unwrap_result(result))
+    assert "call_tool('orders_search') failed" in message
+    assert "query: Missing required argument" in message
+    assert "wrong: Unexpected keyword argument" in message
+    assert "Valid parameters for orders_search" in message
+    assert "call[search]" not in message
+    assert "https://" not in message
+
+
+async def test_detailed_schema_enum_union_rules() -> None:
+    from typing import Literal
+
+    mcp = FastMCP("Unions")
+
+    @mcp.tool
+    def send(
+        mixed: Literal["a"] | int = 3,
+        merged: Literal["x"] | Literal["y", "z"] | None = None,
+    ) -> str:
+        return str(mixed)
+
+    mcp.add_transform(CodeMode())
+    result = await _run_tool(mcp, "get_schema", {"tools": ["send"]})
+    text = str(_unwrap_result(result))
+    assert 'one of "a"' not in text
+    assert "default 3" in text
+    assert 'one of "x"/"y"/"z"' in text
+
+
+async def test_detailed_schema_includes_single_value_literals() -> None:
+    from typing import Literal
+
+    mcp = FastMCP("Literals")
+
+    @mcp.tool
+    def send(kind: Literal["email"], optional: Literal["sms"] | None = None) -> str:
+        return kind
+
+    mcp.add_transform(CodeMode())
+    result = await _run_tool(mcp, "get_schema", {"tools": ["send"]})
+    text = str(_unwrap_result(result))
+    assert 'one of "email"' in text
+    assert 'one of "sms"' in text

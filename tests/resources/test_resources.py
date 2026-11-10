@@ -1,10 +1,11 @@
-import mcp.types
+import mcp_types
 import pytest
 from pydantic import AnyUrl, BaseModel
 
 from fastmcp import Client, FastMCP
 from fastmcp.resources import Resource, ResourceContent, ResourceResult
 from fastmcp.resources.function_resource import FunctionResource
+from tests.conftest import user_meta
 
 
 class TestResourceValidation:
@@ -174,9 +175,9 @@ class TestResourceContent:
             content="hello", mime_type="text/plain", meta={"k": "v"}
         )
         mcp_content = content.to_mcp_resource_contents("resource://test")
-        assert isinstance(mcp_content, mcp.types.TextResourceContents)
+        assert isinstance(mcp_content, mcp_types.TextResourceContents)
         assert mcp_content.text == "hello"
-        assert mcp_content.mimeType == "text/plain"
+        assert mcp_content.mime_type == "text/plain"
         assert str(mcp_content.uri) == "resource://test"
         assert mcp_content.meta == {"k": "v"}
 
@@ -186,9 +187,9 @@ class TestResourceContent:
             content=b"\x00\x01\x02", mime_type="application/octet-stream"
         )
         mcp_content = content.to_mcp_resource_contents("resource://binary")
-        assert isinstance(mcp_content, mcp.types.BlobResourceContents)
+        assert isinstance(mcp_content, mcp_types.BlobResourceContents)
         assert mcp_content.blob == "AAEC"  # base64 of \x00\x01\x02
-        assert mcp_content.mimeType == "application/octet-stream"
+        assert mcp_content.mime_type == "application/octet-stream"
 
 
 class TestResourceResult:
@@ -250,9 +251,9 @@ class TestResourceResult:
             meta={"source": "test"},
         )
         mcp_result = result.to_mcp_result("resource://test")
-        assert isinstance(mcp_result, mcp.types.ReadResourceResult)
+        assert isinstance(mcp_result, mcp_types.ReadResourceResult)
         assert len(mcp_result.contents) == 1
-        assert isinstance(mcp_result.contents[0], mcp.types.TextResourceContents)
+        assert isinstance(mcp_result.contents[0], mcp_types.TextResourceContents)
         assert mcp_result.contents[0].text == "hello"
         assert str(mcp_result.contents[0].uri) == "resource://test"
         assert mcp_result.meta == {"source": "test"}
@@ -323,7 +324,7 @@ class TestResourceMetaPropagation:
 
         async with Client(mcp) as client:
             result = await client.read_resource_mcp("test://with-meta")
-            assert result.meta == {"version": "2.0", "source": "test"}
+            assert user_meta(result.meta) == {"version": "2.0", "source": "test"}
 
     async def test_resource_content_meta_received_by_client(self):
         """Meta set on ResourceContent is received by MCP client."""
@@ -355,7 +356,7 @@ class TestResourceMetaPropagation:
 
         async with Client(mcp) as client:
             result = await client.read_resource_mcp("test://both-meta")
-            assert result.meta == {"result_key": "result_val"}
+            assert user_meta(result.meta) == {"result_key": "result_val"}
             assert result.contents[0].meta == {"item_key": "item_val"}
 
     async def test_json_native_return_preserves_component_meta(self):
@@ -370,3 +371,72 @@ class TestResourceMetaPropagation:
             result = await client.read_resource_mcp("test://json-meta")
             assert len(result.contents) == 1
             assert result.contents[0].meta == {"csp": "default-src 'none'"}
+
+    async def test_list_resource_content_return_preserves_component_meta(self):
+        """A list[ResourceContent] return must carry component meta on every item."""
+        mcp = FastMCP()
+        component_meta = {"ui": {"csp": "default-src none"}, "team": "infra"}
+
+        @mcp.resource("test://list-meta", meta=component_meta)
+        def list_resource() -> list[ResourceContent]:
+            return [ResourceContent("a"), ResourceContent("b")]
+
+        async with Client(mcp) as client:
+            result = await client.read_resource_mcp("test://list-meta")
+
+        assert len(result.contents) == 2
+        assert [content.meta for content in result.contents] == [
+            component_meta,
+            component_meta,
+        ]
+
+    async def test_list_resource_content_item_meta_overrides_component_meta(self):
+        """Item-level keys win over component keys; other component keys merge in."""
+        mcp = FastMCP()
+        component_meta = {"ui": {"csp": "default-src none"}, "team": "infra"}
+
+        @mcp.resource("test://list-meta-override", meta=component_meta)
+        def list_resource() -> list[ResourceContent]:
+            return [
+                ResourceContent("a", meta={"team": "app", "own": 1}),
+                ResourceContent("b"),
+            ]
+
+        async with Client(mcp) as client:
+            result = await client.read_resource_mcp("test://list-meta-override")
+
+        assert [content.meta for content in result.contents] == [
+            {"ui": {"csp": "default-src none"}, "team": "app", "own": 1},
+            {"ui": {"csp": "default-src none"}, "team": "infra"},
+        ]
+
+    async def test_str_return_still_preserves_component_meta(self):
+        """Control: the str path keeps attaching component meta."""
+        mcp = FastMCP()
+
+        @mcp.resource("test://str-meta", meta={"csp": "default-src 'none'"})
+        def str_resource() -> str:
+            return "hello"
+
+        async with Client(mcp) as client:
+            result = await client.read_resource_mcp("test://str-meta")
+
+        assert len(result.contents) == 1
+        assert result.contents[0].text == "hello"
+        assert result.contents[0].meta == {"csp": "default-src 'none'"}
+
+    async def test_empty_list_return_is_unchanged(self):
+        """Control: an empty list still serializes to a single JSON item."""
+        mcp = FastMCP()
+
+        @mcp.resource("test://empty-list", meta={"csp": "default-src 'none'"})
+        def empty_list() -> list[ResourceContent]:
+            return []
+
+        async with Client(mcp) as client:
+            result = await client.read_resource_mcp("test://empty-list")
+
+        assert len(result.contents) == 1
+        assert result.contents[0].text == "[]"
+        assert result.contents[0].mime_type == "text/plain"
+        assert result.contents[0].meta == {"csp": "default-src 'none'"}

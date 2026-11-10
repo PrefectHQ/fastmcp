@@ -53,7 +53,7 @@ The main server class orchestrates the stateless request building approach:
 
 ```python
 class FastMCPOpenAPI(FastMCP):
-    def __init__(self, openapi_spec: dict, client: httpx.AsyncClient, **kwargs):
+    def __init__(self, openapi_spec: dict, client: httpx2.AsyncClient, **kwargs):
         # 1. Parse OpenAPI spec to HTTP routes with pre-calculated schemas
         self._routes = parse_openapi_to_http_routes(openapi_spec)
         
@@ -92,7 +92,7 @@ OpenAPI Spec → HTTPRoute with Pre-calculated Fields → RequestDirector → HT
 2. **RequestDirector Setup**: openapi-core Spec initialized for request building
 3. **Component Creation**: Create components with RequestDirector reference
 4. **Request Building**: RequestDirector builds HTTP request from flat parameters
-5. **Request Execution**: Execute request with httpx client
+5. **Request Execution**: Execute request with httpx2 client
 6. **Response Processing**: Return structured MCP response
 
 ## Key Features

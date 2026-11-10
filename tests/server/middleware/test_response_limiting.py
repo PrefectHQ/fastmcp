@@ -1,7 +1,7 @@
 """Tests for ResponseLimitingMiddleware."""
 
 import pytest
-from mcp.types import ImageContent, TextContent
+from mcp_types import ImageContent, TextContent
 from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
@@ -50,6 +50,19 @@ class TestResponseLimitingMiddleware:
             # Verify truncated result fits within limit
             assert len(result.content[0].text.encode("utf-8")) < 500
 
+    async def test_truncation_preserves_is_error(self, mcp_server: FastMCP):
+        """Truncating an error result keeps it an error."""
+        mcp_server.add_middleware(ResponseLimitingMiddleware(max_size=500))
+
+        @mcp_server.tool()
+        def failing_tool() -> ToolResult:
+            return ToolResult(content="upstream failed: " + "x" * 1000, is_error=True)
+
+        async with Client(mcp_server) as client:
+            result = await client.call_tool("failing_tool", {}, raise_on_error=False)
+            assert result.is_error is True
+            assert "[Response truncated due to size limit]" in result.content[0].text
+
     async def test_tool_filtering(self, mcp_server: FastMCP):
         """Test that tool filtering only applies to specified tools."""
         mcp_server.add_middleware(
@@ -57,14 +70,18 @@ class TestResponseLimitingMiddleware:
         )
 
         @mcp_server.tool()
-        def limited_tool() -> ToolResult:
-            return ToolResult(content=[TextContent(type="text", text="x" * 10_000)])
+        def limited_tool() -> str:
+            return "x" * 10_000
 
         @mcp_server.tool()
-        def unlimited_tool() -> ToolResult:
-            return ToolResult(content=[TextContent(type="text", text="y" * 10_000)])
+        def unlimited_tool() -> str:
+            return "y" * 10_000
 
         async with Client(mcp_server) as client:
+            tools = {tool.name: tool for tool in await client.list_tools()}
+            assert tools["limited_tool"].output_schema is None
+            assert tools["unlimited_tool"].output_schema is not None
+
             # Limited tool should be truncated
             result = await client.call_tool("limited_tool", {})
             assert "[Response truncated" in result.content[0].text
@@ -78,10 +95,13 @@ class TestResponseLimitingMiddleware:
         mcp_server.add_middleware(ResponseLimitingMiddleware(max_size=100, tools=[]))
 
         @mcp_server.tool()
-        def any_tool() -> ToolResult:
-            return ToolResult(content=[TextContent(type="text", text="x" * 10_000)])
+        def any_tool() -> str:
+            return "x" * 10_000
 
         async with Client(mcp_server) as client:
+            tools = await client.list_tools()
+            assert tools[0].output_schema is not None
+
             result = await client.call_tool("any_tool", {})
             # Should NOT be truncated
             assert "[Response truncated" not in result.content[0].text
@@ -127,7 +147,7 @@ class TestResponseLimitingMiddleware:
         def binary_tool() -> ToolResult:
             return ToolResult(
                 content=[
-                    ImageContent(type="image", data="x" * 10_000, mimeType="image/png")
+                    ImageContent(type="image", data="x" * 10_000, mime_type="image/png")
                 ]
             )
 
@@ -152,11 +172,10 @@ class TestResponseLimitingMiddleware:
     async def test_truncation_does_not_break_output_schema_tools(
         self, mcp_server: FastMCP
     ):
-        """Truncating a tool with outputSchema must not cause validation errors.
+        """Truncating a tool with outputSchema must not cause client validation errors.
 
-        Regression test for #3717: the MCP SDK rejects truncated results
-        from tools with outputSchema because structured_content is dropped.
-        We verify the server returns a successful (non-error) truncated result.
+        Regression test for #4926: an end-to-end client rejects truncated results
+        when tools/list still advertises the original outputSchema.
         """
         mcp_server.add_middleware(ResponseLimitingMiddleware(max_size=1_000))
 
@@ -164,7 +183,12 @@ class TestResponseLimitingMiddleware:
         def big_answer() -> Answer:
             return Answer(text="x" * 2_000)
 
-        result = await mcp_server.call_tool("big_answer", {})
+        async with Client(mcp_server) as client:
+            tools = await client.list_tools()
+            assert tools[0].output_schema is None
+            result = await client.call_tool("big_answer", {})
+
+        assert result.is_error is False
         first = result.content[0]
         assert isinstance(first, TextContent)
         assert "[Response truncated" in first.text

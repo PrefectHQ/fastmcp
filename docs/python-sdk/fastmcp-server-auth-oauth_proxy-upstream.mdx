@@ -1,0 +1,73 @@
+---
+title: upstream
+sidebarTitle: upstream
+---
+
+# `fastmcp.server.auth.oauth_proxy.upstream`
+
+
+httpx2-based upstream OAuth2 token client.
+
+Replaces `authlib.integrations.httpx_client.AsyncOAuth2Client` for the OAuth
+proxy's upstream token-endpoint calls. authlib's httpx integration imports the
+legacy `httpx` package — which authlib does not declare as a dependency and
+FastMCP no longer ships — so importing it on a clean install fails.
+
+This module reimplements the narrow surface the proxy uses (`fetch_token`,
+`refresh_token`, `client_secret`, `aclose`) on `httpx2.AsyncClient`, preserving
+authlib's wire behavior exactly:
+
+- form-encoded POST token requests with authlib's default headers
+- `client_secret_basic` (latin-1 basic auth, authlib-style), `client_secret_post`,
+  and `none` client authentication methods
+- falsy parameters dropped from the request body
+- `expires_at` computed onto the returned token dict
+- the previous refresh token injected into the response when the server does
+  not rotate it
+- `OAuthError` (authlib's httpx-free core error class) raised for RFC 6749
+  error responses, and 5xx responses raised as HTTP status errors
+
+
+## Classes
+
+### `AsyncOAuth2Client` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/upstream.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Minimal async OAuth2 client for upstream token-endpoint interactions.
+
+Drop-in replacement for the slice of authlib's `AsyncOAuth2Client` that
+`OAuthProxy` uses. Subclasses of `OAuthProxy` that override
+`_create_upstream_oauth_client` may return any object with the same
+`fetch_token`/`refresh_token`/`client_secret`/`aclose` surface.
+
+
+**Methods:**
+
+#### `aclose` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/upstream.py#L63" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+aclose(self) -> None
+```
+
+#### `fetch_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/upstream.py#L111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+fetch_token(self, url: str, **params: Any) -> dict[str, Any]
+```
+
+Exchange an authorization grant for tokens at the token endpoint.
+
+Falsy parameters are dropped from the request body, matching authlib.
+
+
+#### `refresh_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/upstream.py#L126" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+refresh_token(self, url: str, **params: Any) -> dict[str, Any]
+```
+
+Fetch a new access token using a refresh token.
+
+If the server does not rotate the refresh token, the previous one is
+injected into the returned dict, matching authlib.
+

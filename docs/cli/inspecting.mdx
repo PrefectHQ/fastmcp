@@ -15,20 +15,22 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 fastmcp inspect server.py
 ```
 
-```
-Server: MyServer
-Instructions: A helpful MCP server
-Version: 1.0.0
+```text
+Server
+  Name:         MyServer
+  Version:      1.0.0
+  Generation:   2
+  Instructions: A helpful MCP server
 
-Components:
-  Tools: 5
-  Prompts: 2
-  Resources: 3
-  Templates: 1
+Components
+  Tools:        5
+  Prompts:      2
+  Resources:    3
+  Templates:    1
 
-Environment:
-  FastMCP: 2.0.0
-  MCP: 1.0.0
+Environment
+  FastMCP:      4.2.0
+  MCP:          2.3.0
 
 Use --format [fastmcp|mcp] for complete JSON output
 ```
@@ -37,7 +39,7 @@ Use --format [fastmcp|mcp] for complete JSON output
 
 For programmatic use, two JSON formats are available:
 
-**FastMCP format** (`--format fastmcp`) includes everything FastMCP knows about the server — tool tags, enabled status, output schemas, annotations, and custom metadata. Field names use `snake_case`. This is the format for debugging and introspecting FastMCP servers.
+**FastMCP format** (`--format fastmcp`) includes everything FastMCP knows about the server — component keys, tags, output schemas, annotations, custom metadata, and the server's capabilities. Field names use `snake_case`. This is the format for debugging and introspecting FastMCP servers.
 
 **MCP protocol format** (`--format mcp`) shows exactly what MCP clients see through the protocol — only standard MCP fields, `camelCase` names, no FastMCP-specific extensions. This is the format for verifying client compatibility and debugging what clients actually receive.
 
@@ -55,6 +57,11 @@ fastmcp inspect server.py --format mcp -o manifest.json
 | ------ | ---- | ----------- |
 | Format | `--format`, `-f` | `fastmcp` or `mcp` (required when using `-o`) |
 | Output File | `--output`, `-o` | Save to file instead of stdout |
+| Python | `--python` | Python version to use when running via `uv` |
+| Extra Packages | `--with` | Additional packages to install (repeatable) |
+| Project | `--project` | Run within a specific uv project directory |
+| Requirements | `--with-requirements` | Install from a requirements file |
+| Skip Env | `--skip-env` | Do not set up a uv environment |
 
 ## Entrypoints
 

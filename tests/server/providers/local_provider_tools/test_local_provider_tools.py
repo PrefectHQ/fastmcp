@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from mcp.types import (
+from mcp_types import (
     AudioContent,
     EmbeddedResource,
     ImageContent,
@@ -123,7 +123,7 @@ class TestToolReturnTypes:
         content = result.content[0]
         assert isinstance(content, ImageContent)
         assert content.type == "image"
-        assert content.mimeType == "image/png"
+        assert content.mime_type == "image/png"
         decoded = base64.b64decode(content.data)
         assert decoded == b"fake png data"
 
@@ -142,7 +142,7 @@ class TestToolReturnTypes:
         content = result.content[0]
         assert isinstance(content, AudioContent)
         assert content.type == "audio"
-        assert content.mimeType == "audio/wav"
+        assert content.mime_type == "audio/wav"
         decoded = base64.b64decode(content.data)
         assert decoded == b"fake wav data"
 
@@ -162,7 +162,7 @@ class TestToolReturnTypes:
         assert isinstance(content, EmbeddedResource)
         assert content.type == "resource"
         resource = content.resource
-        assert resource.mimeType == "application/octet-stream"
+        assert resource.mime_type == "application/octet-stream"
         assert hasattr(resource, "blob")
         blob_data = getattr(resource, "blob")
         decoded = base64.b64decode(blob_data)
@@ -179,12 +179,12 @@ class TestToolReturnTypes:
         assert isinstance(content1, TextContent)
         assert content1.text == "Hello"
         assert isinstance(content2, ImageContent)
-        assert content2.mimeType == "application/octet-stream"
+        assert content2.mime_type == "application/octet-stream"
         assert content2.data == "abc"
         assert isinstance(content3, EmbeddedResource)
         assert content3.type == "resource"
         resource = content3.resource
-        assert resource.mimeType == "application/octet-stream"
+        assert resource.mime_type == "application/octet-stream"
         assert hasattr(resource, "blob")
         blob_data = getattr(resource, "blob")
         decoded = base64.b64decode(blob_data)
@@ -208,7 +208,7 @@ class TestToolReturnTypes:
         assert content1.text == "text message"
         content2 = result.content[1]
         assert isinstance(content2, ImageContent)
-        assert content2.mimeType == "image/png"
+        assert content2.mime_type == "image/png"
         assert base64.b64decode(content2.data) == b"test image data"
         content3 = result.content[2]
         assert isinstance(content3, TextContent)
@@ -235,7 +235,7 @@ class TestToolReturnTypes:
         assert content1.text == "text message"
         content2 = result.content[1]
         assert isinstance(content2, AudioContent)
-        assert content2.mimeType == "audio/wav"
+        assert content2.mime_type == "audio/wav"
         assert base64.b64decode(content2.data) == b"test audio data"
         content3 = result.content[2]
         assert isinstance(content3, TextContent)
@@ -264,7 +264,7 @@ class TestToolReturnTypes:
         assert isinstance(content2, EmbeddedResource)
         assert content2.type == "resource"
         resource = content2.resource
-        assert resource.mimeType == "application/octet-stream"
+        assert resource.mime_type == "application/octet-stream"
         assert hasattr(resource, "blob")
         blob_data = getattr(resource, "blob")
         assert base64.b64decode(blob_data) == b"test file data"

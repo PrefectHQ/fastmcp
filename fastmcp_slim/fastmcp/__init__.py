@@ -6,17 +6,17 @@ from importlib.metadata import PackageNotFoundError, version as _version
 from typing import TYPE_CHECKING
 
 from fastmcp import _install_hints
+from fastmcp._warnings import FastMCPDeprecationWarning
 from fastmcp.settings import Settings
 from fastmcp.utilities.logging import configure_logging as _configure_logging
 
 if TYPE_CHECKING:
     from fastmcp.client import Client as Client
+    from fastmcp.client.group import ClientGroup as ClientGroup
     from fastmcp.apps.app import FastMCPApp as FastMCPApp
-    from fastmcp.exceptions import (
-        FastMCPDeprecationWarning as FastMCPDeprecationWarning,
-    )
     from fastmcp.server.context import Context as Context
     from fastmcp.server.server import FastMCP as FastMCP
+    from fastmcp.skills import Skill as Skill
 
 settings = Settings()
 if settings.log_enabled:
@@ -25,23 +25,26 @@ if settings.log_enabled:
         enable_rich_tracebacks=settings.enable_rich_tracebacks,
     )
 
+# Install camelCase compatibility shims for MCP SDK v2's snake_case rename.
+# Installed unconditionally; each shim's getter checks the live
+# `mcp_camelcase_compat` setting at read time, so the bridge can be toggled at
+# runtime. Patches only mcp_types model classes, no client chain.
+from fastmcp import _compat
+
+_compat.install()
+
 try:
     __version__ = _version("fastmcp-slim")
 except PackageNotFoundError:
     __version__ = _version("fastmcp")
 
 if settings.deprecation_warnings:
-    try:
-        from fastmcp.exceptions import FastMCPDeprecationWarning
-    except ImportError:
-        pass
-    else:
-        warnings.simplefilter("default", FastMCPDeprecationWarning)
+    warnings.simplefilter("default", FastMCPDeprecationWarning)
 
 
 # --- Lazy imports for performance (see #3292) ---
-# Client and the client submodule are deferred so that server-only users
-# don't pay for the client import chain. Do not convert back to top-level.
+# Client exports and the client submodule are deferred so that server-only users
+# don't pay for the client import chain. Do not make these eager module imports.
 
 
 def __getattr__(name: str) -> object:
@@ -52,6 +55,13 @@ def __getattr__(name: str) -> object:
             raise ImportError(_install_hints.CLIENT_SUPPORT) from exc
 
         return Client
+    if name == "ClientGroup":
+        try:
+            from fastmcp.client.group import ClientGroup
+        except ImportError as exc:
+            raise ImportError(_install_hints.CLIENT_SUPPORT) from exc
+
+        return ClientGroup
     if name == "Context":
         try:
             from fastmcp.server.context import Context
@@ -73,10 +83,10 @@ def __getattr__(name: str) -> object:
             raise ImportError(_install_hints.APP_SUPPORT) from exc
 
         return FastMCPApp
-    if name == "FastMCPDeprecationWarning":
-        from fastmcp.exceptions import FastMCPDeprecationWarning
+    if name == "Skill":
+        from fastmcp.skills import Skill
 
-        return FastMCPDeprecationWarning
+        return Skill
     if name == "client":
         try:
             return importlib.import_module("fastmcp.client")
@@ -92,9 +102,11 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "Client",
+    "ClientGroup",
     "Context",
     "FastMCP",
     "FastMCPApp",
     "FastMCPDeprecationWarning",
+    "Skill",
     "settings",
 ]

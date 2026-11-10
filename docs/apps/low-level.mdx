@@ -43,7 +43,7 @@ def chart_view() -> str:
 
 ## AppConfig
 
-`AppConfig` controls how a tool or resource participates in the Apps extension. Import it from `fastmcp.server.apps`:
+`AppConfig` controls how a tool or resource participates in the Apps extension. Import it from `fastmcp.apps`:
 
 ```python
 from fastmcp.apps import AppConfig
@@ -69,13 +69,26 @@ def my_tool() -> str:
 
 The `visibility` field controls where a tool appears:
 
-- `["model"]` — visible to the LLM (the default behavior)
-- `["app"]` — only callable from within the app UI, hidden from the LLM
+- `["model"]` — visible to the LLM
+- `["app"]` — callable from within the app UI, kept out of the LLM's tool list
 - `["model", "app"]` — both
+
+Omitting `visibility` defaults to both audiences.
 
 This is useful when you have tools that only make sense as part of the app's interactive flow, not as standalone LLM actions.
 
+**App tool visibility is not a security boundary.** `visibility=["app"]` asks the host to omit a tool from the model's tool list; it does not authorize callers or prevent direct `tools/call` requests. The server cannot distinguish a model-originated request from an app-originated request on the same MCP connection. Any client that knows the tool's name can call it, subject to the server's [authentication](/servers/auth/authentication) and [authorization](/servers/authorization) checks. Enforce sensitive operations with those checks and server-side validation, rather than relying on visibility.
+
+Visibility is a declaration, and on `tools/list` the host does the filtering — the division the MCP Apps specification defines. Every tool is advertised carrying its `visibility` metadata, which is also what lets a proxy or gateway forward it: an intermediary can only route to a tool it can see.
+
+FastMCP also applies the declaration to its own model-facing surfaces. [Tool search](/servers/transforms/tool-search) and code mode exclude app-only tools from their results and call-tool proxies. This keeps the model's discovery consistent with the declared audience; direct MCP calls still use the server's authentication and authorization rules.
+
 ```python
+from fastmcp import FastMCP
+from fastmcp.apps import AppConfig
+
+mcp = FastMCP("My App Server")
+
 @mcp.tool(
     app=AppConfig(
         resource_uri="ui://my-app/view.html",
@@ -83,8 +96,8 @@ This is useful when you have tools that only make sense as part of the app's int
     )
 )
 def refresh_data() -> str:
-    """Only callable from the app UI, not by the LLM."""
-    return fetch_latest()
+    """Refresh data for the app UI."""
+    return "Latest data"
 ```
 
 ### AppConfig fields
@@ -212,11 +225,11 @@ import base64
 import io
 
 import qrcode
-from mcp import types
 
 from fastmcp import FastMCP
 from fastmcp.apps import AppConfig, ResourceCSP
 from fastmcp.tools import ToolResult
+from mcp.types import ImageContent
 
 mcp = FastMCP("QR Code Server")
 
@@ -236,7 +249,7 @@ def generate_qr(text: str = "https://gofastmcp.com") -> ToolResult:
     b64 = base64.b64encode(buffer.getvalue()).decode()
 
     return ToolResult(
-        content=[types.ImageContent(type="image", data=b64, mimeType="image/png")]
+        content=[ImageContent(type="image", data=b64, mime_type="image/png")]
     )
 
 

@@ -1,0 +1,125 @@
+---
+title: identity_assertion
+sidebarTitle: identity_assertion
+---
+
+# `fastmcp.server.auth.identity_assertion`
+
+
+Server-side identity assertion (ID-JAG) support for FastMCP (SEP-990).
+
+.. warning::
+    **Beta Feature**: Identity assertion support is currently in beta. The API
+    may change in future releases. Please report any issues you encounter.
+
+SEP-990 defines an enterprise "on-behalf-of" flow. A corporate identity provider
+(Okta, Entra, etc.) issues an *ID-JAG* (Identity Assertion JWT Authorization
+Grant) that asserts an employee's identity to a specific MCP authorization
+server. The client presents that ID-JAG at the token endpoint using the RFC 7523
+``urn:ietf:params:oauth:grant-type:jwt-bearer`` grant (the RFC 8693 token-exchange
+profile). This module validates the assertion and lets the authorization server
+mint a short-lived access token carrying the asserted subject, with no refresh
+token — the client re-exchanges a fresh ID-JAG instead, and revocation lives at
+the IdP.
+
+This module provides:
+
+- ``IdentityAssertion``: a small pydantic config model attached to ``OAuthProxy``
+  via the ``identity_assertion`` parameter.
+- ``IdentityAssertionValidator``: validates an ID-JAG per RFC 7523 §3 and the
+  SEP-990 processing rules, reusing FastMCP's :class:`JWTVerifier` for signature,
+  issuer, audience, and expiry checks, and enforcing ``typ``, ``sub`` presence,
+  and ``jti`` replay protection on top.
+
+
+## Functions
+
+### `normalize_resource_url` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L474" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+normalize_resource_url(url: str) -> str
+```
+
+
+Normalize a resource URL by removing query parameters and trailing slashes.
+
+RFC 8707 allows clients to include query parameters in resource URLs, but
+the server's configured resource URL typically doesn't include them. This
+normalizes both sides for comparison by stripping query and fragment.
+
+
+### `server_url_has_query` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L487" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+server_url_has_query(url: str) -> bool
+```
+
+
+Check if a URL has query parameters.
+
+
+## Classes
+
+### `IdentityAssertion` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Configuration for server-side identity assertion (ID-JAG) support.
+
+When attached to an :class:`~fastmcp.server.auth.oauth_proxy.OAuthProxy` via the
+``identity_assertion`` parameter, the proxy's token endpoint accepts the RFC 7523
+``jwt-bearer`` grant carrying an ID-JAG issued by one of the ``trusted_issuers``,
+and mints a short-lived FastMCP access token for the asserted subject.
+
+
+### `IdentityAssertionError` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when an ID-JAG fails validation.
+
+The message is for server-side logging only; the token endpoint maps this to a
+generic OAuth error response and does not leak the detail to the client.
+
+
+### `IdentityAssertionValidator` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L191" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Validates ID-JAG assertions for the SEP-990 jwt-bearer grant.
+
+Reuses :class:`JWTVerifier` for signature, issuer, audience, and expiry checks
+(with JWKS fetching and caching), and layers on the SEP-990 processing rules
+that the generic verifier does not cover: the ``typ`` JOSE header, a mandatory
+``sub``, and ``jti`` replay rejection.
+
+JTI replay protection mirrors :class:`CIMDAssertionValidator`: seen ``jti``
+values are cached until the assertion would expire anyway, with periodic
+cleanup and an emergency size cap. Like CIMD, the cache is per-process, so
+replay protection is not shared across horizontally-scaled workers or
+replicas; see the identity-assertion docs for the deployment caveat.
+
+
+**Methods:**
+
+#### `validate` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L327" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+validate(self, assertion: str) -> dict
+```
+
+Validate an ID-JAG and return its claims.
+
+**Args:**
+- `assertion`: The compact-serialized ID-JAG JWT.
+- `client_id`: The authenticated client presenting the assertion. Must
+match the assertion's signed `client_id` claim — checked before
+the jti is recorded as consumed, so an assertion presented by
+the wrong client is rejected without burning it for the right
+one.
+- `resource_url`: This server's resource URL, if configured. Must match
+the assertion's signed `resource` claim, for the same reason.
+
+**Returns:**
+- The verified claims (including `sub`, `iss`, and any `resource`/`scope`).
+
+**Raises:**
+- `IdentityAssertionError`: If the assertion is invalid for any reason.
+

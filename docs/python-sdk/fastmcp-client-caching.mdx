@@ -1,0 +1,102 @@
+---
+title: caching
+sidebarTitle: caching
+---
+
+# `fastmcp.client.caching`
+
+
+A client response cache store backed by AsyncKeyValue.
+
+The MCP SDK's client response cache (SEP-2549) reads and writes through a
+pluggable `ResponseCacheStore` protocol; the default is a per-client in-memory
+LRU. This module adapts that protocol onto the `AsyncKeyValue` key-value
+abstraction FastMCP already uses for its other state-management surfaces (the
+event store, the OAuth proxy, the response-caching middleware), so a fleet of
+FastMCP clients — for example a set of proxy replicas — can share one
+Redis-backed response cache.
+
+Because a shared store mingles cached responses across principals, the SDK
+requires an explicit `partition` on any custom store (and FastMCP additionally
+requires a `target_id`). The partition is folded into every stored key so
+entries can never collide or leak across authorization contexts, and the
+adapter round-trips each result through a small type-tagged envelope validated
+against an allowlist of cacheable result models — a stored value that names an
+unknown type is treated as a miss, never imported by name.
+
+Example:
+    ```python
+    from fastmcp import Client
+    from fastmcp.client.caching import KeyValueResponseCacheStore
+    from mcp.client.caching import CacheConfig
+    from key_value.aio.stores.redis import RedisStore
+
+    store = KeyValueResponseCacheStore(storage=RedisStore(url="redis://localhost"))
+    config = CacheConfig(store=store, partition="tenant-a", target_id="weather-api")
+    client = Client("https://example.com/mcp", mode="auto", cache=config)
+    ```
+
+
+## Classes
+
+### `KeyValueResponseCacheStore` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/caching.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A `ResponseCacheStore` backed by any `AsyncKeyValue` store.
+
+Implements the SDK client response cache contract (`get`/`set`/`delete`/
+`clear`) over the key-value abstraction FastMCP already uses elsewhere, so a
+distributed deployment can point every client at one shared backend (memory,
+Redis, etc.). Pass an instance as `CacheConfig(store=...)`; the SDK requires
+an explicit `partition` on any custom store, and FastMCP additionally
+requires a `target_id`.
+
+Each adapter instance owns one collection (`collection`), so `clear()` only
+affects its own namespace and never another tenant's data. `clear()` needs
+the backend to support collection destruction or key enumeration; against a
+backend that supports neither it is a no-op and entries age out by TTL (a
+warning is logged once).
+
+The SDK wraps every store call defensively — a raised operation degrades to
+a cache miss rather than failing the request — so this adapter does not
+re-wrap its own operations.
+
+**Args:**
+- `storage`: The `AsyncKeyValue` backend. Defaults to an in-process `MemoryStore`.
+- `collection`: Collection namespace for this adapter's entries.
+
+
+**Methods:**
+
+#### `get` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/caching.py#L156" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get(self, key: CacheKey) -> CacheEntry | None
+```
+
+#### `set` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/caching.py#L170" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set(self, key: CacheKey, entry: CacheEntry) -> None
+```
+
+#### `delete` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/caching.py#L186" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delete(self, key: CacheKey) -> None
+```
+
+#### `clear` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/caching.py#L189" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+clear(self) -> None
+```
+
+Clear this adapter's collection only.
+
+Prefers deleting each enumerated key (which leaves the collection
+usable), and falls back to whole-collection destruction. Against a
+backend that supports neither, this is a no-op (entries age out by TTL)
+and a warning is logged once. Either path is scoped to this adapter's
+own collection, so a shared store's other tenants are never touched.
+

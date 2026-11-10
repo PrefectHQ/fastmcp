@@ -26,149 +26,49 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import html
 import io
 import json
 import logging
 import os
 import re
+import secrets
 import signal
 import sys
 import tarfile
 import tempfile
-import time
 import webbrowser
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import urlencode
 
-import httpcore
-import httpx
+import httpcore2
+import httpx2
 import uvicorn
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, Response, StreamingResponse
 from starlette.routing import Route
 
+from fastmcp.cli.apps_dev_log import _log_response_bytes, _MessageLog
+from fastmcp.cli.apps_dev_security import DevSessionMiddleware
+from fastmcp.utilities.json_schema_type import safe_create_model
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# MCP message log (captures proxy traffic for the dev UI log panel)
-# ---------------------------------------------------------------------------
-
-
-class _MessageLog:
-    """In-memory buffer of MCP JSON-RPC messages flowing through the proxy."""
-
-    def __init__(self) -> None:
-        self._entries: list[dict[str, Any]] = []
-        self._counter = 0
-        self._request_methods: dict[int | str, str] = {}
-        self._request_times: dict[int | str, float] = {}
-
-    def log_request(self, body: dict[str, Any]) -> None:
-        method = body.get("method", "unknown")
-        jsonrpc_id = body.get("id")
-        timestamp = time.time()
-        if jsonrpc_id is not None:
-            self._request_methods[jsonrpc_id] = method
-            self._request_times[jsonrpc_id] = timestamp
-        self._counter += 1
-        self._entries.append(
-            {
-                "id": self._counter,
-                "timestamp": timestamp,
-                "direction": "request",
-                "method": method,
-                "body": body,
-            }
-        )
-
-    def log_response(self, body: dict[str, Any]) -> None:
-        # Server-initiated notifications have "method" but no "id"
-        if "method" in body and "id" not in body:
-            self._counter += 1
-            self._entries.append(
-                {
-                    "id": self._counter,
-                    "timestamp": time.time(),
-                    "direction": "notification",
-                    "method": body.get("method", "unknown"),
-                    "body": body,
-                }
-            )
-            return
-
-        jsonrpc_id = body.get("id")
-        method = (
-            self._request_methods.pop(jsonrpc_id, None)
-            if jsonrpc_id is not None
-            else None
-        )
-        request_time = (
-            self._request_times.pop(jsonrpc_id, None)
-            if jsonrpc_id is not None
-            else None
-        )
-        timestamp = time.time()
-        duration_ms = (
-            round((timestamp - request_time) * 1000, 1) if request_time else None
-        )
-        self._counter += 1
-        self._entries.append(
-            {
-                "id": self._counter,
-                "timestamp": timestamp,
-                "direction": "response",
-                "method": method,
-                "body": body,
-                "duration_ms": duration_ms,
-            }
-        )
-
-    def get_since(self, since_id: int = 0) -> list[dict[str, Any]]:
-        return [e for e in self._entries if e["id"] > since_id]
-
-    def log_bridge(self, body: dict[str, Any]) -> None:
-        method = body.get("method", "unknown")
-        self._counter += 1
-        self._entries.append(
-            {
-                "id": self._counter,
-                "timestamp": time.time(),
-                "direction": "bridge",
-                "method": method,
-                "body": body,
-            }
-        )
-
-    def clear(self) -> None:
-        self._entries.clear()
-        self._request_methods.clear()
-        self._request_times.clear()
-
-
-def _log_response_bytes(log: _MessageLog, raw: bytes, content_type: str) -> None:
-    """Parse accumulated proxy response bytes and log as message entries."""
-    if not raw:
-        return
-    try:
-        if "text/event-stream" in content_type:
-            for line in raw.decode("utf-8", errors="replace").splitlines():
-                if line.startswith("data: "):
-                    with contextlib.suppress(json.JSONDecodeError):
-                        log.log_response(json.loads(line[6:]))
-        else:
-            body = json.loads(raw)
-            if isinstance(body, list):
-                for item in body:
-                    log.log_response(item)
-            else:
-                log.log_response(body)
-    except (json.JSONDecodeError, TypeError):
-        pass
+def _json_for_script(value: Any) -> str:
+    """Serialize JSON for embedding inside an HTML script element."""
+    return (
+        json.dumps(value)
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
 
 
 _EXT_APPS_VERSION = "1.0.1"
@@ -297,7 +197,7 @@ _HOST_HTML_TEMPLATE = """\
 </head>
 <body>
   <div id="status">Launching {tool_name}…</div>
-  <iframe id="app-frame"></iframe>
+  <iframe id="app-frame" sandbox="allow-scripts allow-forms"></iframe>
   <script type="module">
     import {{ AppBridge, PostMessageTransport, getToolUiResourceUri }}
       from "/js/app-bridge.js";
@@ -330,14 +230,12 @@ _HOST_HTML_TEMPLATE = """\
       // (synchronously, before React mounts) so it sends its ui/initialize
       // request very early — potentially before the iframe's load event fires.
       // Fix: create the AppBridge and call bridge.connect() BEFORE loading the
-      // iframe so our window.addEventListener is registered first.  We pass
-      // null as the PostMessageTransport source so early messages from the
-      // not-yet-known renderer window are not filtered out.  After the iframe
-      // loads we update transport.eventTarget / .eventSource to the real
-      // renderer window; the load-event microtask always runs before the
-      // message macrotask, so the response reaches the correct window.
+      // iframe so our window.addEventListener is registered first.  The
+      // iframe's contentWindow stays the same object when the iframe
+      // navigates, so the transport accepts messages only from the renderer
+      // from the start.
       const serverCaps = client.getServerCapabilities();
-      const transport = new PostMessageTransport(iframe.contentWindow, null);
+      const transport = new PostMessageTransport(iframe.contentWindow, iframe.contentWindow);
       const bridge = new AppBridge(
         client,
         {{ name: "fastmcp-dev", version: "1.0.0" }},
@@ -359,7 +257,16 @@ _HOST_HTML_TEMPLATE = """\
       );
 
       bridge.onopenlink = async ({{ url }}) => {{
-        window.open(url, "_blank", "noopener,noreferrer");
+        // Apps run in an isolated frame; only open external web links on
+        // their behalf, never pages of the dev UI itself.
+        const target = new URL(url, window.location.href);
+        if (
+          (target.protocol !== "https:" && target.protocol !== "http:") ||
+          target.origin === window.location.origin
+        ) {{
+          return {{ isError: true }};
+        }}
+        window.open(target.href, "_blank", "noopener,noreferrer");
         return {{}};
       }};
       bridge.onmessage = async () => ({{}});
@@ -371,8 +278,6 @@ _HOST_HTML_TEMPLATE = """\
         await bridge.sendToolResult(result);
         status.style.display = "none";
         iframe.style.display = "block";
-        // Prevent horizontal scrollbar when vertical scrollbar appears
-        try {{ iframe.contentDocument.documentElement.style.overflowX = "hidden"; }} catch(e) {{}}
       }};
 
       // Start listening before the iframe loads
@@ -383,12 +288,6 @@ _HOST_HTML_TEMPLATE = """\
       const loaded = new Promise(r => {{ iframe.addEventListener("load", r, {{ once: true }}); }});
       iframe.src = frameUrl;
       await loaded;
-
-      // Update transport to the real renderer window.  This microtask runs
-      // before the ui/initialize message macrotask, ensuring the response
-      // is dispatched to the correct window.
-      transport.eventTarget = iframe.contentWindow;
-      transport.eventSource = iframe.contentWindow;
     }}
 
     main().catch(err => {{
@@ -591,6 +490,7 @@ _LOG_PANEL_HTML = """\
 <script>
 (function() {
   var lastId = 0, totalCount = 0, panelWidth = 360;
+  var maxRenderedEntries = 500;
   var panel = document.getElementById("mcp-log-panel");
   var entries = document.getElementById("mcp-log-entries");
   var countEl = document.getElementById("mcp-log-count");
@@ -877,6 +777,9 @@ _LOG_PANEL_HTML = """\
           if (!shouldShow(el)) el.style.display = "none";
           entries.appendChild(el);
         }
+        while (entries.children.length > maxRenderedEntries) {
+          entries.removeChild(entries.firstElementChild);
+        }
         if (atBottom || (firstPoll && panelVisible)) entries.scrollTop = entries.scrollHeight;
         firstPoll = false;
       })
@@ -885,6 +788,8 @@ _LOG_PANEL_HTML = """\
   }
 
   window.addEventListener("message", function(event) {
+    var frame = document.getElementById("app-frame");
+    if (!frame || event.source !== frame.contentWindow) return;
     var data = event.data;
     if (typeof data === "string") {
       try { data = JSON.parse(data); } catch(e) { return; }
@@ -1015,7 +920,7 @@ def _model_from_schema(tool_name: str, input_schema: dict[str, Any]) -> type[Any
             ),
         )
 
-    return pydantic.create_model(f"{tool_name.title()}Form", **field_definitions)
+    return safe_create_model(f"{tool_name.title()}Form", field_definitions)
 
 
 def _build_picker_html(tools: list[dict[str, Any]]) -> str:
@@ -1039,7 +944,7 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
         from prefab_ui.components.form import Form
         from prefab_ui.rx import RESULT, Rx
     except ImportError:
-        return "<html><body><p>prefab-ui not installed. Run: pip install fastmcp[apps]</p></body></html>"
+        return "<html><body><p>prefab-ui not installed. Run: pip install 'fastmcp[apps]'</p></body></html>"
 
     if not tools:
         with Column(gap=4, css_class="p-6 max-w-2xl mx-auto") as view:
@@ -1081,15 +986,15 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
                 model = _model_from_schema(name, input_schema)
 
                 form_body: dict[str, Any] = {"tool": name}
-                for field_name in model.model_fields:
-                    form_body[field_name] = Rx(field_name)
+                for field_name, field_info in model.model_fields.items():
+                    form_body[field_info.alias or field_name] = Rx(field_name)
 
                 json_body: dict[str, Any] = {
                     "tool": name,
                     "__json_args__": Rx("__json_args__"),
                 }
 
-                on_error = ShowToast(Rx("$error"), variant="error")  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                on_error = ShowToast(Rx("$error"), variant="error")  # type: ignore[arg-type]
 
                 input_mode = f"_mode_{name}"
                 _desc_max_lines = 10
@@ -1204,11 +1109,11 @@ async def _list_tools(mcp_url: str) -> list[dict[str, Any]]:
         return []
 
     try:
-        async with streamable_http_client(mcp_url) as (read, write, _):  # noqa: SIM117
+        async with streamable_http_client(mcp_url) as (read, write):  # noqa: SIM117
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.list_tools()
-                return [t.model_dump() for t in result.tools]
+                return [t.model_dump(by_alias=True) for t in result.tools]
     except Exception as exc:
         logger.debug(f"Could not list tools from {mcp_url}: {exc}")
         return []
@@ -1219,15 +1124,14 @@ async def _read_mcp_resource(mcp_url: str, uri: str) -> str | None:
     try:
         from mcp import ClientSession
         from mcp.client.streamable_http import streamable_http_client
-        from pydantic import AnyUrl
     except ImportError:
         return None
 
     try:
-        async with streamable_http_client(mcp_url) as (read, write, _):  # noqa: SIM117
+        async with streamable_http_client(mcp_url) as (read, write):  # noqa: SIM117
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.read_resource(AnyUrl(uri))
+                result = await session.read_resource(uri)
                 for content in result.contents:
                     text = getattr(content, "text", None)
                     if text:
@@ -1288,7 +1192,7 @@ def _fetch_app_bridge_bundle_sync(
     # We do this before the (potentially cached) app-bridge download so that
     # any network error is surfaced early and clearly.
     types_url = f"{sdk_base}/types.js"
-    with httpx.Client(timeout=30.0) as client:
+    with httpx2.Client(timeout=30.0) as client:
         resp = client.get(types_url, follow_redirects=True)
         resp.raise_for_status()
         types_content = resp.text
@@ -1302,7 +1206,7 @@ def _fetch_app_bridge_bundle_sync(
     zod_wrapper_path = zod_wrapper_match.group(1)  # e.g. /zod@^4.3.5/v4?target=es2022
 
     zod_wrapper_url = f"https://esm.sh{zod_wrapper_path}"
-    with httpx.Client(timeout=30.0) as client:
+    with httpx2.Client(timeout=30.0) as client:
         resp = client.get(zod_wrapper_url, follow_redirects=True)
         resp.raise_for_status()
         wrapper_content = resp.text
@@ -1332,7 +1236,7 @@ def _fetch_app_bridge_bundle_sync(
         return app_bridge_js, import_map_json
 
     npm_url = f"https://registry.npmjs.org/@modelcontextprotocol/ext-apps/-/ext-apps-{version}.tgz"
-    with httpx.Client(timeout=30.0) as client:
+    with httpx2.Client(timeout=30.0) as client:
         resp = client.get(npm_url, follow_redirects=True)
         resp.raise_for_status()
         data = resp.content
@@ -1370,13 +1274,35 @@ async def _fetch_app_bridge_bundle(
 # ---------------------------------------------------------------------------
 
 
+# The picker is part of the dev UI; it opens the launch pages /api/launch returns.
+_PICKER_OPEN_LINK_JS = """bridge.onopenlink = async ({ url }) => {
+        const target = new URL(url, window.location.href);
+        if (target.protocol !== "https:" && target.protocol !== "http:") {
+          return { isError: true };
+        }
+        window.location.href = target.href;
+        return {};
+      };"""
+
+_UNFORWARDED_PROXY_HEADERS = frozenset(
+    {"host", "content-length", "cookie", "origin", "referer"}
+)
+
+
 def _make_dev_app(
     mcp_url: str,
     app_bridge_js: str,
     import_map_tag: str,
     message_log: _MessageLog,
+    log_panel: bool,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8080,
+    session_token: str | None = None,
 ) -> Starlette:
-    """Build the Starlette dev server application."""
+    """Build the authenticated Starlette development host."""
+    token = session_token or secrets.token_urlsafe(32)
+    launches: dict[str, tuple[str, dict[str, Any]]] = {}
 
     async def picker(request: Request) -> HTMLResponse:
         """AppBridge host page — loads the picker app in an iframe and wires the bridge."""
@@ -1388,35 +1314,46 @@ def _make_dev_app(
             frame_display="block",
             mcp_sdk_version=_MCP_SDK_VERSION,
             iframe_src_json=json.dumps("/picker-app"),
-            on_open_link="bridge.onopenlink = async ({ url }) => { window.location.href = url; return {}; };",
+            on_open_link=_PICKER_OPEN_LINK_JS,
             on_initialized="bridge.oninitialized = async () => {};",
         )
-        return HTMLResponse(_inject_log_panel(host_html))
+        return (
+            HTMLResponse(_inject_log_panel(host_html))
+            if log_panel
+            else HTMLResponse(host_html)
+        )
 
     async def picker_app(request: Request) -> HTMLResponse:
         """Prefab picker UI — tool list with one tab per UI tool."""
         try:
             raw_tools = await _list_tools(mcp_url)
             ui_tools = [t for t in raw_tools if _has_ui_resource(t)]
-            html = _build_picker_html(ui_tools)
+            page_html = _build_picker_html(ui_tools)
         except Exception as exc:
             logger.exception("Error building picker UI")
-            html = f"<pre style='padding:2rem;color:red'>Error: {exc}</pre>"
-        return HTMLResponse(html)
+            page_html = f"<pre style='padding:2rem;color:red'>Error: {html.escape(str(exc))}</pre>"
+        return HTMLResponse(page_html)
 
     async def launch(request: Request) -> HTMLResponse:
-        """Host page: GET /launch?tool=name&args={...}"""
-        tool = request.query_params.get("tool", "")
-        args_raw = request.query_params.get("args", "{}")
-        tool_args = json.loads(args_raw)
+        """Host page: GET /launch?id=... for a launch created by /api/launch."""
+        launch = launches.get(request.query_params.get("id", ""))
+        if launch is None:
+            return HTMLResponse(
+                "Unknown launch. Start tools from the dev UI picker.", status_code=404
+            )
+        tool, tool_args = launch
         host_html = _HOST_HTML_TEMPLATE.format(
-            tool_name=tool,
+            tool_name=html.escape(tool, quote=True),
             import_map_tag=import_map_tag,
-            tool_name_json=json.dumps(tool),
-            tool_args_json=json.dumps(tool_args),
+            tool_name_json=_json_for_script(tool),
+            tool_args_json=_json_for_script(tool_args),
             mcp_sdk_version=_MCP_SDK_VERSION,
         )
-        return HTMLResponse(_inject_log_panel(host_html))
+        return (
+            HTMLResponse(_inject_log_panel(host_html))
+            if log_panel
+            else HTMLResponse(host_html)
+        )
 
     async def api_launch(request: Request) -> Response:
         """Picker form submits here; returns a /launch URL string for OpenLink."""
@@ -1469,8 +1406,11 @@ def _make_dev_app(
                         except (json.JSONDecodeError, TypeError):
                             pass
                 tool_args[k] = v
-        args_json = quote(json.dumps(tool_args))
-        url = f"/launch?tool={tool}&args={args_json}"
+        # Launch pages run tools, so their URLs name a stored launch instead
+        # of carrying the tool and arguments.
+        launch_id = secrets.token_urlsafe(16)
+        launches[launch_id] = (tool, tool_args)
+        url = "/launch?" + urlencode({"id": launch_id})
         return Response(
             content=json.dumps(url),
             media_type="application/json",
@@ -1505,7 +1445,7 @@ def _make_dev_app(
         body = await request.body()
 
         # Log MCP requests
-        if body and request.method == "POST":
+        if log_panel and body and request.method == "POST":
             try:
                 req_json = json.loads(body)
                 if isinstance(req_json, list):
@@ -1517,24 +1457,30 @@ def _make_dev_app(
             except (json.JSONDecodeError, TypeError):
                 pass
 
+        # The dev server has already checked the browser's session and origin.
+        # Forward the request as its own, without the browser's cookies or
+        # origin headers.
         headers = {
             k: v
             for k, v in request.headers.items()
-            if k.lower() not in ("host", "content-length")
+            if k.lower() not in _UNFORWARDED_PROXY_HEADERS
+            and not k.lower().startswith("sec-fetch-")
         }
 
         # Use a reasonable default timeout to prevent the proxy from hanging
         # if the backend server is unresponsive.
-        client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, read=None))
+        client = httpx2.AsyncClient(
+            timeout=httpx2.Timeout(60.0, read=None), trust_env=False
+        )
 
-        async def _stream_and_cleanup(resp: httpx.Response) -> Any:
+        async def _stream_and_cleanup(resp: httpx2.Response) -> Any:
             is_sse = "text/event-stream" in resp.headers.get("content-type", "")
             buf: list[bytes] = []
             sse_buf = ""
             try:
                 async for chunk in resp.aiter_bytes():
                     yield chunk
-                    if is_sse:
+                    if log_panel and is_sse:
                         # Parse SSE events incrementally
                         sse_buf += chunk.decode("utf-8", errors="replace")
                         while "\r\n\r\n" in sse_buf or "\n\n" in sse_buf:
@@ -1549,18 +1495,18 @@ def _make_dev_app(
                                 if line.startswith("data: "):
                                     with contextlib.suppress(json.JSONDecodeError):
                                         message_log.log_response(json.loads(line[6:]))
-                    else:
+                    elif log_panel:
                         buf.append(chunk)
             except (
-                httpx.RemoteProtocolError,
-                httpx.ReadError,
-                httpx.ReadTimeout,
-                httpcore.RemoteProtocolError,
+                httpx2.RemoteProtocolError,
+                httpx2.ReadError,
+                httpx2.ReadTimeout,
+                httpcore2.RemoteProtocolError,
             ):
                 pass  # Connection closed during shutdown — not an error
             finally:
                 # Log non-SSE responses (JSON) after stream completes
-                if buf:
+                if log_panel and buf:
                     _log_response_bytes(message_log, b"".join(buf), "application/json")
                 with contextlib.suppress(Exception):
                     await resp.aclose()
@@ -1595,7 +1541,7 @@ def _make_dev_app(
                 headers=fwd_headers,
                 media_type=content_type or "application/octet-stream",
             )
-        except (httpx.ConnectError, httpx.ConnectTimeout):
+        except (httpx2.ConnectError, httpx2.ConnectTimeout):
             await client.aclose()
             return Response(
                 content=json.dumps({"error": "MCP server not reachable"}).encode(),
@@ -1615,7 +1561,8 @@ def _make_dev_app(
     async def api_logs_bridge(request: Request) -> Response:
         """Log a bridge message (postMessage between app iframe and host)."""
         data = await request.json()
-        message_log.log_bridge(data.get("body", data))
+        if log_panel:
+            message_log.log_bridge(data.get("body", data))
         return Response(content="{}", media_type="application/json")
 
     async def api_logs_clear(request: Request) -> Response:
@@ -1639,7 +1586,10 @@ def _make_dev_app(
                 proxy_mcp,
                 methods=["GET", "POST", "DELETE", "PUT", "PATCH", "OPTIONS"],
             ),
-        ]
+        ],
+        middleware=[
+            Middleware(DevSessionMiddleware, host=host, port=port, token=token)
+        ],
     )
 
 
@@ -1653,6 +1603,7 @@ async def _start_user_server(
     mcp_port: int,
     *,
     reload: bool = True,
+    host: str = "127.0.0.1",
 ) -> asyncio.subprocess.Process:
     """Start the user's MCP server as a subprocess on mcp_port."""
     cmd = [
@@ -1663,6 +1614,8 @@ async def _start_user_server(
         server_spec,
         "--transport",
         "http",
+        "--host",
+        host,
         "--port",
         str(mcp_port),
         "--no-banner",
@@ -1672,6 +1625,8 @@ async def _start_user_server(
     else:
         cmd.append("--no-reload")
     env = {**os.environ, "FASTMCP_LOG_LEVEL": "WARNING"}
+    # Validate Host and Origin on the spawned server unless the user chose a mode.
+    env.setdefault("FASTMCP_HTTP_HOST_ORIGIN_PROTECTION", "auto")
     process = await asyncio.create_subprocess_exec(
         *cmd,
         env=env,
@@ -1684,15 +1639,15 @@ async def _wait_for_server(url: str, timeout: float = 15.0) -> bool:
     """Poll until the server is accepting connections."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
-    async with httpx.AsyncClient() as client:
+    async with httpx2.AsyncClient(trust_env=False) as client:
         while loop.time() < deadline:
             try:
                 await client.get(url, timeout=1.0)
                 return True
             except (
-                httpx.ConnectError,
-                httpx.RemoteProtocolError,
-                httpx.TimeoutException,
+                httpx2.ConnectError,
+                httpx2.RemoteProtocolError,
+                httpx2.TimeoutException,
             ):
                 await asyncio.sleep(0.25)
     return False
@@ -1704,6 +1659,8 @@ async def run_dev_apps(
     mcp_port: int = 8000,
     dev_port: int = 8080,
     reload: bool = True,
+    host: str = "127.0.0.1",
+    log_panel: bool = True,
 ) -> None:
     """Start the full dev environment for a FastMCPApp server.
 
@@ -1711,8 +1668,18 @@ async def run_dev_apps(
     on *dev_port* (with an /mcp proxy to the user's server), then opens
     the browser.
     """
-    mcp_url = f"http://localhost:{mcp_port}/mcp"
-    dev_url = f"http://localhost:{dev_port}"
+    # Reach servers bound to every interface through loopback.
+    local_host = {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(host, host)  # noqa: S104
+    mcp_url = (
+        f"http://{local_host}:{mcp_port}/mcp"
+        if ":" not in local_host
+        else f"http://[{local_host}]:{mcp_port}/mcp"
+    )
+    dev_url = (
+        f"http://{local_host}:{dev_port}"
+        if ":" not in local_host
+        else f"http://[{local_host}]:{dev_port}"
+    )
 
     user_proc: asyncio.subprocess.Process | None = None
 
@@ -1727,10 +1694,20 @@ async def run_dev_apps(
             (dev_port, "dev UI", "--dev-port"),
         ]:
             in_use = False
-            for family, addr in (
-                (socket.AF_INET, ("127.0.0.1", port)),
-                (socket.AF_INET6, ("::1", port, 0, 0)),
-            ):
+            _targets = (
+                (
+                    (socket.AF_INET, ("127.0.0.1", port)),
+                    (socket.AF_INET6, ("::1", port, 0, 0)),
+                )
+                if host == "127.0.0.1"
+                else (
+                    ((socket.AF_INET6, (host, port, 0, 0)),)
+                    if ":" in host
+                    else ((socket.AF_INET, (host, port)),)
+                )
+            )
+
+            for family, addr in _targets:
                 try:
                     with socket.socket(family, socket.SOCK_STREAM) as s:
                         if s.connect_ex(addr) == 0:
@@ -1751,7 +1728,9 @@ async def run_dev_apps(
         # Start the server first so user_proc is assigned before anything
         # that might fail (e.g. npm fetch).  This ensures the finally
         # cleanup can kill the subprocess even if the bundle fetch raises.
-        user_proc = await _start_user_server(server_spec, mcp_port, reload=reload)
+        user_proc = await _start_user_server(
+            server_spec, mcp_port, reload=reload, host=host
+        )
         app_bridge_js, import_map_json = await _fetch_app_bridge_bundle(
             _EXT_APPS_VERSION, _MCP_SDK_VERSION
         )
@@ -1764,12 +1743,29 @@ async def run_dev_apps(
         if not ready:
             raise RuntimeError(f"User server did not start on port {mcp_port}")
 
-        logger.info(f"FastMCP dev UI at {dev_url}")
+        session_token = secrets.token_urlsafe(32)
+        startup_url = dev_url + "/?" + urlencode({"token": session_token})
+        # Print the URL on its own line so log formatting never wraps it.
+        print(f"\nFastMCP dev UI: {startup_url}\n", file=sys.stderr, flush=True)
+        if host not in {"127.0.0.1", "localhost", "::1"}:
+            logger.warning(
+                "The dev UI is bound to a non-loopback interface. "
+                "Keep its startup URL private; HTTP does not encrypt the session."
+            )
 
-        dev_app = _make_dev_app(mcp_url, app_bridge_js, import_map_tag, _MessageLog())
+        dev_app = _make_dev_app(
+            mcp_url,
+            app_bridge_js,
+            import_map_tag,
+            _MessageLog(),
+            log_panel,
+            host=host,
+            port=dev_port,
+            session_token=session_token,
+        )
         config = uvicorn.Config(
             dev_app,
-            host="localhost",
+            host=host,
             port=dev_port,
             log_level="warning",
             ws="websockets-sansio",
@@ -1781,7 +1777,7 @@ async def run_dev_apps(
 
         async def _open_browser() -> None:
             await asyncio.sleep(0.8)
-            webbrowser.open(dev_url)
+            webbrowser.open(startup_url)
 
         await asyncio.gather(server.serve(), _open_browser())
 

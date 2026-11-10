@@ -6,7 +6,7 @@ returns 404 at root level when a FastMCP app is mounted under a path prefix.
 The fix uses MCP SDK 1.17+ which implements RFC 9728 path-scoped well-known URLs.
 """
 
-import httpx
+import httpx2
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 from pydantic import AnyHttpUrl
@@ -50,8 +50,8 @@ class TestOAuthMounting:
         mcp = FastMCP("test-server", auth=auth_provider)
         mcp_app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_app),
             base_url="https://api.example.com",
         ) as client:
             # RFC 9728: path-scoped well-known URL
@@ -96,8 +96,8 @@ class TestOAuthMounting:
             lifespan=mcp_app.lifespan,
         )
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=parent_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=parent_app),
             base_url="https://api.example.com",
         ) as client:
             # The CORRECT RFC 9728 path-scoped well-known URL at root
@@ -140,8 +140,8 @@ class TestOAuthMounting:
             lifespan=mcp_app.lifespan,
         )
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=parent_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=parent_app),
             base_url="https://api.example.com",
         ) as client:
             # The MCP endpoint should work at /api/mcp (mounted correctly)
@@ -183,8 +183,8 @@ class TestOAuthMounting:
             lifespan=mcp_app.lifespan,
         )
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=outer_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=outer_app),
             base_url="https://api.example.com",
         ) as client:
             # RFC 9728: path-scoped well-known URL for nested mounting
@@ -209,7 +209,8 @@ class TestOAuthMounting:
         Scenario: FastMCP server mounted at /api prefix
         - issuer_url: https://api.example.com (root level)
         - base_url: https://api.example.com/api (includes mount prefix)
-        - Expected: metadata declares endpoints at base_url
+        - Expected: metadata declares endpoints at base_url and issuer at
+          issuer_url
         """
         # Create OAuth proxy with different base_url and issuer_url
         token_verifier = StaticTokenVerifier(tokens=test_tokens)
@@ -239,8 +240,8 @@ class TestOAuthMounting:
             lifespan=mcp_app.lifespan,
         )
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=parent_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=parent_app),
             base_url="https://api.example.com",
         ) as client:
             # Fetch the authorization server metadata
@@ -261,12 +262,10 @@ class TestOAuthMounting:
                 == "https://api.example.com/api/register"
             )
 
-            # The issuer field should use base_url (where the server is actually running)
-            # Note: MCP SDK may or may not add a trailing slash
-            assert metadata["issuer"] in [
-                "https://api.example.com/api",
-                "https://api.example.com/api/",
-            ]
+            # The issuer field reports issuer_url: it is the identifier the
+            # client used for RFC 8414 discovery, and §3.3 requires the two to
+            # match. Only the endpoint URLs follow base_url.
+            assert metadata["issuer"] == "https://api.example.com/"
 
     async def test_oauth_authorization_server_metadata_path_aware_discovery(
         self, test_tokens
@@ -332,8 +331,8 @@ class TestOAuthMounting:
             lifespan=mcp_app.lifespan,
         )
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=parent_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=parent_app),
             base_url="https://api.example.com",
         ) as client:
             # Path-aware authorization server metadata should be accessible
@@ -382,3 +381,102 @@ class TestOAuthMounting:
 
         # Should be at root (no path suffix) when issuer_url is root
         assert auth_server_routes[0].path == "/.well-known/oauth-authorization-server"
+
+    async def test_oidc_discovery_alias_path_aware(self, test_tokens):
+        """Test that /.well-known/openid-configuration aliases are added for path-aware issuers.
+
+        RFC 8414 §5 allows servers to expose OAuth metadata at the OIDC discovery path.
+        The MCP SDK client probes both paths; fastmcp must respond to either.
+
+        For a path-aware issuer (e.g. https://api.example.com/api) two OIDC paths
+        are registered:
+        - /.well-known/openid-configuration/api  (RFC 8414 §5, path-aware)
+        - /.well-known/openid-configuration      (OIDC 1.0 / reverse-proxy compat)
+        """
+        token_verifier = StaticTokenVerifier(tokens=test_tokens)
+        auth_provider = OAuthProxy(
+            upstream_authorization_endpoint="https://upstream.example.com/authorize",
+            upstream_token_endpoint="https://upstream.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=token_verifier,
+            base_url="https://api.example.com/api",
+            client_storage=MemoryStore(),
+        )
+
+        well_known_routes = auth_provider.get_well_known_routes(mcp_path="/mcp")
+
+        oidc_routes = [r for r in well_known_routes if "openid-configuration" in r.path]
+        oidc_paths = {r.path for r in oidc_routes}
+
+        assert "/.well-known/openid-configuration/api" in oidc_paths  # RFC 8414 §5
+        assert (
+            "/.well-known/openid-configuration" in oidc_paths
+        )  # OIDC 1.0 / proxy compat
+
+    async def test_oidc_discovery_alias_root(self, test_tokens):
+        """Test that /.well-known/openid-configuration alias is added for root issuers."""
+        token_verifier = StaticTokenVerifier(tokens=test_tokens)
+        auth_provider = OAuthProxy(
+            upstream_authorization_endpoint="https://upstream.example.com/authorize",
+            upstream_token_endpoint="https://upstream.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=token_verifier,
+            base_url="https://api.example.com/api",
+            issuer_url="https://api.example.com",
+            client_storage=MemoryStore(),
+        )
+
+        well_known_routes = auth_provider.get_well_known_routes(mcp_path="/mcp")
+
+        oidc_routes = [r for r in well_known_routes if "openid-configuration" in r.path]
+        assert len(oidc_routes) == 1
+        assert oidc_routes[0].path == "/.well-known/openid-configuration"
+
+    async def test_oidc_discovery_returns_auth_server_metadata(self, test_tokens):
+        """Test that /.well-known/openid-configuration returns valid OAuth server metadata.
+
+        The response must include the core RFC 8414 fields so that OIDC-aware
+        clients (e.g. Claude Desktop backend) can discover the authorization endpoint.
+        """
+        token_verifier = StaticTokenVerifier(tokens=test_tokens)
+        auth_provider = OAuthProxy(
+            upstream_authorization_endpoint="https://upstream.example.com/authorize",
+            upstream_token_endpoint="https://upstream.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=token_verifier,
+            base_url="https://api.example.com/api",
+            client_storage=MemoryStore(),
+        )
+
+        mcp = FastMCP("test-server", auth=auth_provider)
+        mcp_app = mcp.http_app(path="/mcp")
+        well_known_routes = auth_provider.get_well_known_routes(mcp_path="/mcp")
+
+        parent_app = Starlette(
+            routes=[
+                *well_known_routes,
+                Mount("/api", app=mcp_app),
+            ],
+            lifespan=mcp_app.lifespan,
+        )
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=parent_app),
+            base_url="https://api.example.com",
+        ) as client:
+            # Path-aware OIDC discovery (RFC 8414 §5)
+            response = await client.get("/.well-known/openid-configuration/api")
+            assert response.status_code == 200
+            metadata = response.json()
+            assert "authorization_endpoint" in metadata
+            assert "token_endpoint" in metadata
+
+            # Root OIDC discovery (OIDC 1.0 / reverse-proxy compat)
+            response = await client.get("/.well-known/openid-configuration")
+            assert response.status_code == 200
+            metadata = response.json()
+            assert "authorization_endpoint" in metadata
+            assert "token_endpoint" in metadata

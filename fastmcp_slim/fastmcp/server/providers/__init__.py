@@ -32,14 +32,15 @@ from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
 from fastmcp.server.providers.filesystem import FileSystemProvider
 from fastmcp.server.providers.local_provider import LocalProvider
-from fastmcp.server.providers.skills import (
-    ClaudeSkillsProvider,
-    SkillProvider,
-    SkillsDirectoryProvider,
-    SkillsProvider,
-)
 
 if TYPE_CHECKING:
+    from fastmcp.server.providers.skills import (
+        ClaudeSkillsProvider as ClaudeSkillsProvider,
+    )
+    from fastmcp.server.providers.skills import SkillProvider as SkillProvider
+    from fastmcp.server.providers.skills import (
+        SkillsDirectoryProvider as SkillsDirectoryProvider,
+    )
     from fastmcp.server.providers.openapi import OpenAPIProvider as OpenAPIProvider
     from fastmcp.server.providers.proxy import ProxyProvider as ProxyProvider
 
@@ -54,7 +55,6 @@ __all__ = [
     "ProxyProvider",
     "SkillProvider",
     "SkillsDirectoryProvider",
-    "SkillsProvider",  # Backwards compatibility alias for SkillsDirectoryProvider
 ]
 
 
@@ -68,4 +68,9 @@ def __getattr__(name: str) -> object:
         from fastmcp.server.providers.openapi import OpenAPIProvider
 
         return OpenAPIProvider
+    if name in ("SkillProvider", "SkillsDirectoryProvider", "ClaudeSkillsProvider"):
+        # Deprecated providers; constructing one warns with the replacement.
+        from fastmcp.server.providers import skills
+
+        return getattr(skills, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -4,7 +4,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-from httpx import Response
+from httpx2 import Response
 from pydantic import AnyHttpUrl
 
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration, OIDCProxy
@@ -360,7 +360,7 @@ class TestOIDCConfiguration:
 
 def validate_get_oidc_configuration(oidc_configuration, strict, timeout_seconds):
     """Validate get_oidc_configuration call."""
-    with patch("httpx.get") as mock_get:
+    with patch("httpx2.get") as mock_get:
         mock_response = MagicMock(spec=Response)
         mock_response.json.return_value = oidc_configuration
         mock_get.return_value = mock_response
@@ -409,7 +409,7 @@ class TestGetOIDCConfiguration:
         self, invalid_oidc_configuration_dict
     ) -> None:
         """Test with invalid response and strict set to False."""
-        with patch("httpx.get") as mock_get:
+        with patch("httpx2.get") as mock_get:
             mock_response = MagicMock(spec=Response)
             mock_response.json.return_value = invalid_oidc_configuration_dict
             mock_get.return_value = mock_response
@@ -880,3 +880,241 @@ class TestOIDCProxyInitialization:
                 "audience": "original-audience",
                 "custom": "value",
             }
+
+
+class TestDiscoveryTimeout:
+    """Discovery timeout defaults and propagation (#4353, #4365)."""
+
+    def _construct_and_capture_timeout(self, valid_oidc_configuration_dict, construct):
+        """Construct a provider with mocked discovery, returning the timeout used."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            mock_get.return_value = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            construct()
+            mock_get.assert_called_once()
+            return mock_get.call_args.kwargs["timeout_seconds"]
+
+    def test_oidc_proxy_defaults_to_bounded_timeout(
+        self, valid_oidc_configuration_dict
+    ):
+        """OIDCProxy applies a bounded discovery timeout when none is given."""
+        timeout = self._construct_and_capture_timeout(
+            valid_oidc_configuration_dict,
+            lambda: OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                jwt_signing_key="test-secret",
+            ),
+        )
+        assert timeout == 10
+
+    @pytest.mark.parametrize("timeout_seconds", [3, None])
+    def test_oidc_proxy_forwards_explicit_timeout(
+        self, valid_oidc_configuration_dict, timeout_seconds
+    ):
+        """An explicit timeout (including None as an escape hatch) is forwarded."""
+        timeout = self._construct_and_capture_timeout(
+            valid_oidc_configuration_dict,
+            lambda: OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                jwt_signing_key="test-secret",
+                timeout_seconds=timeout_seconds,
+            ),
+        )
+        assert timeout == timeout_seconds
+
+    def test_auth0_provider_defaults_to_bounded_timeout(
+        self, valid_oidc_configuration_dict
+    ):
+        """Auth0Provider exposes and defaults the discovery timeout."""
+        from fastmcp.server.auth.providers.auth0 import Auth0Provider
+
+        timeout = self._construct_and_capture_timeout(
+            valid_oidc_configuration_dict,
+            lambda: Auth0Provider(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                audience="test-audience",
+                base_url=TEST_BASE_URL,
+            ),
+        )
+        assert timeout == 10
+
+    def test_aws_cognito_provider_defaults_to_bounded_timeout(
+        self, valid_oidc_configuration_dict
+    ):
+        """AWSCognitoProvider exposes and defaults the discovery timeout."""
+        from fastmcp.server.auth.providers.aws import AWSCognitoProvider
+
+        timeout = self._construct_and_capture_timeout(
+            valid_oidc_configuration_dict,
+            lambda: AWSCognitoProvider(
+                user_pool_id="eu-central-1_XXXXXXXXX",
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+            ),
+        )
+        assert timeout == 10
+
+    def test_oci_provider_defaults_to_bounded_timeout(
+        self, valid_oidc_configuration_dict
+    ):
+        """OCIProvider exposes and defaults the discovery timeout."""
+        from fastmcp.server.auth.providers.oci import OCIProvider
+
+        timeout = self._construct_and_capture_timeout(
+            valid_oidc_configuration_dict,
+            lambda: OCIProvider(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+            ),
+        )
+        assert timeout == 10
+
+
+class TestOIDCProxyValidScopes:
+    """Tests for the valid_scopes parameter on OIDCProxy."""
+
+    def test_valid_scopes_widens_advertised_set(self, valid_oidc_configuration_dict):
+        """valid_scopes broadens the advertised/registerable set beyond required_scopes."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            proxy = OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                required_scopes=["openid"],
+                valid_scopes=["openid", "email", "calendar"],
+                jwt_signing_key="test-secret",
+            )
+
+            assert proxy.client_registration_options is not None
+            assert proxy.client_registration_options.valid_scopes == [
+                "openid",
+                "email",
+                "calendar",
+            ]
+            assert proxy.client_registration_options.default_scopes == [
+                "openid",
+                "email",
+                "calendar",
+            ]
+            assert proxy._default_scope_str == "openid email calendar"
+
+    def test_valid_scopes_defaults_to_required_scopes(
+        self, valid_oidc_configuration_dict
+    ):
+        """Omitting valid_scopes falls back to required_scopes (existing behavior)."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            proxy = OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                required_scopes=["read", "write"],
+                jwt_signing_key="test-secret",
+            )
+
+            assert proxy.client_registration_options is not None
+            assert proxy.client_registration_options.valid_scopes == ["read", "write"]
+
+    def test_valid_scopes_with_custom_token_verifier(
+        self, valid_oidc_configuration_dict
+    ):
+        """valid_scopes is allowed alongside a custom token_verifier (no error)."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            custom_verifier = IntrospectionTokenVerifier(
+                introspection_url="https://example.com/oauth/introspect",
+                client_id="introspection-client",
+                client_secret="introspection-secret",
+                required_scopes=["read"],
+            )
+
+            proxy = OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                token_verifier=custom_verifier,
+                valid_scopes=["read", "write", "admin"],
+                jwt_signing_key="test-secret",
+            )
+
+            assert proxy.client_registration_options is not None
+            assert proxy.client_registration_options.valid_scopes == [
+                "read",
+                "write",
+                "admin",
+            ]
+
+    def test_valid_scopes_preserved_with_verify_id_token(
+        self, valid_oidc_configuration_dict
+    ):
+        """verify_id_token restores required_scopes without clobbering valid_scopes."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            proxy = OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                required_scopes=["read"],
+                valid_scopes=["read", "write", "admin"],
+                verify_id_token=True,
+                jwt_signing_key="test-secret",
+            )
+
+            # Enforcement floor is restored to required_scopes...
+            assert proxy.required_scopes == ["read"]
+            # ...but the advertised/registerable set keeps the full valid_scopes.
+            assert proxy.client_registration_options is not None
+            assert proxy.client_registration_options.valid_scopes == [
+                "read",
+                "write",
+                "admin",
+            ]
+            assert proxy.client_registration_options.default_scopes == [
+                "read",
+                "write",
+                "admin",
+            ]
+            assert proxy._default_scope_str == "read write admin"

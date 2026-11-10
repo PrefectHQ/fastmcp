@@ -5,11 +5,14 @@ import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from pydantic import ValidationError
+from starlette.testclient import TestClient
 
-from fastmcp.cli.cli import inspector, run
+from fastmcp.cli.apps_dev import _make_dev_app, _MessageLog
+from fastmcp.cli.cli import apps, inspector, run
 from fastmcp.cli.run import (
     create_mcp_config_server,
     is_url,
@@ -293,14 +296,14 @@ class TestV1ServerAsync:
         """Test that v1 server uses async stdio method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -317,7 +320,7 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_stdio_async", new_callable=AsyncMock
+            SDKServer, "run_stdio_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file), transport="stdio")
             run_mock.assert_called_once()
@@ -326,14 +329,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server uses async http method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -350,23 +353,24 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file), transport="http")
-            run_mock.assert_called_once()
+            # No path/stateless flags: defaults must be left to the SDK.
+            run_mock.assert_called_once_with()
 
     async def test_run_v1_server_streamable_http(self, tmp_path):
         """Test that v1 server uses async streamable-http method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -383,23 +387,23 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file), transport="streamable-http")
-            run_mock.assert_called_once()
+            run_mock.assert_called_once_with()
 
     async def test_run_v1_server_sse(self, tmp_path):
         """Test that v1 server uses async sse method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -416,23 +420,23 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_sse_async", new_callable=AsyncMock
+            SDKServer, "run_sse_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file), transport="sse")
-            run_mock.assert_called_once()
+            run_mock.assert_called_once_with()
 
     async def test_run_v1_server_default_transport(self, tmp_path):
         """Test that v1 server uses streamable-http by default."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -449,23 +453,23 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file))
-            run_mock.assert_called_once()
+            run_mock.assert_called_once_with()
 
     async def test_run_v1_server_with_host_port(self, tmp_path):
         """Test that v1 server receives host/port settings."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -482,12 +486,222 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(
                 str(test_file), transport="http", host="0.0.0.0", port=9000
             )
-            run_mock.assert_called_once()
+            # Only host/port are forwarded; path/stateless stay at SDK defaults.
+            run_mock.assert_called_once_with(host="0.0.0.0", port=9000)
+
+    async def test_run_v1_server_transport_is_fourth_positional(self):
+        """The documented positional call must keep binding ``transport`` fourth.
+
+        ``run_v1_server_async(server, host, port, "sse")`` previously bound
+        ``"sse"`` to ``path`` and started Streamable HTTP instead of SSE.
+        """
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.mcpserver import MCPServer as SDKServer
+
+        from fastmcp.cli.run import run_v1_server_async
+
+        server = SDKServer("V1Server")
+        with (
+            patch.object(
+                SDKServer, "run_stdio_async", new_callable=AsyncMock
+            ) as stdio_mock,
+            patch.object(
+                SDKServer, "run_streamable_http_async", new_callable=AsyncMock
+            ) as http_mock,
+            patch.object(
+                SDKServer, "run_sse_async", new_callable=AsyncMock
+            ) as sse_mock,
+        ):
+            await run_v1_server_async(server, "0.0.0.0", 9000, "sse")
+
+        sse_mock.assert_awaited_once_with(host="0.0.0.0", port=9000)
+        http_mock.assert_not_awaited()
+        stdio_mock.assert_not_awaited()
+
+    async def test_run_v1_server_http_with_path_and_stateless(self, tmp_path):
+        """Test that v1 Streamable HTTP receives --path and --stateless."""
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.mcpserver import MCPServer as SDKServer
+
+        from fastmcp.cli.run import run_command
+
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.mcpserver import MCPServer as FastMCP
+
+mcp = FastMCP("V1Server")
+""")
+
+        with patch.object(
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
+        ) as run_mock:
+            await run_command(
+                str(test_file), transport="http", path="/custom", stateless=True
+            )
+            run_mock.assert_called_once_with(
+                streamable_http_path="/custom", stateless_http=True
+            )
+
+    async def test_run_v1_server_streamable_http_with_path(self, tmp_path):
+        """Test that v1 Streamable HTTP receives --path."""
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.mcpserver import MCPServer as SDKServer
+
+        from fastmcp.cli.run import run_command
+
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.mcpserver import MCPServer as FastMCP
+
+mcp = FastMCP("V1Server")
+""")
+
+        with patch.object(
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
+        ) as run_mock:
+            await run_command(
+                str(test_file), transport="streamable-http", path="/custom"
+            )
+            run_mock.assert_called_once_with(streamable_http_path="/custom")
+
+    async def test_run_v1_server_stateless_without_path(self, tmp_path):
+        """Test that --stateless alone leaves the SDK path default untouched."""
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.mcpserver import MCPServer as SDKServer
+
+        from fastmcp.cli.run import run_command
+
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.mcpserver import MCPServer as FastMCP
+
+mcp = FastMCP("V1Server")
+""")
+
+        with patch.object(
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
+        ) as run_mock:
+            await run_command(str(test_file), transport="http", stateless=True)
+            run_mock.assert_called_once_with(stateless_http=True)
+
+    async def test_run_v1_server_sse_with_path(self, tmp_path):
+        """Test that v1 SSE receives --path (and no unsupported stateless kwarg)."""
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.mcpserver import MCPServer as SDKServer
+
+        from fastmcp.cli.run import run_command
+
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.mcpserver import MCPServer as FastMCP
+
+mcp = FastMCP("V1Server")
+""")
+
+        with patch.object(
+            SDKServer, "run_sse_async", new_callable=AsyncMock
+        ) as run_mock:
+            # The SDK has no stateless SSE mode; only sse_path may be forwarded.
+            await run_command(
+                str(test_file), transport="sse", path="/custom", stateless=True
+            )
+            run_mock.assert_called_once_with(sse_path="/custom")
+
+    async def test_run_v1_server_forwards_cli_options(self, tmp_path):
+        """Test that run_command threads every parsed option into the v1 runner."""
+        from unittest.mock import ANY, AsyncMock, patch
+
+        from fastmcp.cli.run import run_command
+
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.mcpserver import MCPServer as FastMCP
+
+mcp = FastMCP("V1Server")
+""")
+
+        with patch(
+            "fastmcp.cli.run.run_v1_server_async", new_callable=AsyncMock
+        ) as run_mock:
+            await run_command(
+                str(test_file),
+                transport="http",
+                host="0.0.0.0",
+                port=9000,
+                path="/custom",
+                stateless=True,
+                log_level="DEBUG",
+            )
+
+            run_mock.assert_awaited_once_with(
+                ANY,
+                host="0.0.0.0",
+                port=9000,
+                path="/custom",
+                stateless=True,
+                log_level="DEBUG",
+                transport="http",
+            )
+
+    async def test_run_v1_server_applies_log_level(self, tmp_path):
+        """Test that --log-level is applied to the SDK server settings."""
+        from unittest.mock import patch
+
+        from mcp.server.mcpserver import MCPServer as SDKServer
+
+        from fastmcp.cli.run import run_command
+
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.mcpserver import MCPServer as FastMCP
+
+mcp = FastMCP("V1Server")
+""")
+
+        captured: dict[str, str] = {}
+
+        async def capture_log_level(server_self, **_kwargs):
+            captured["log_level"] = server_self.settings.log_level
+
+        with patch.object(SDKServer, "run_streamable_http_async", capture_log_level):
+            await run_command(str(test_file), transport="http", log_level="DEBUG")
+
+        assert captured["log_level"] == "DEBUG"
+
+    async def test_run_v1_server_keeps_default_log_level(self, tmp_path):
+        """Test that the SDK log level is untouched when --log-level is absent."""
+        from unittest.mock import patch
+
+        from mcp.server.mcpserver import MCPServer as SDKServer
+
+        from fastmcp.cli.run import run_command
+
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.mcpserver import MCPServer as FastMCP
+
+mcp = FastMCP("V1Server")
+""")
+
+        captured: dict[str, str] = {}
+
+        async def capture_log_level(server_self, **_kwargs):
+            captured["log_level"] = server_self.settings.log_level
+
+        with patch.object(SDKServer, "run_streamable_http_async", capture_log_level):
+            await run_command(str(test_file), transport="http")
+
+        assert captured["log_level"] == "INFO"
 
 
 class TestSkipSource:
@@ -958,6 +1172,81 @@ class TestRunWithReloadWithServerArgs:
         assert any("Detected changes" in record.message for record in caplog.records)
         assert call_count == 2, f"Restart logic was not triggered for {reload_cmd}"
 
+    async def test_run_with_needs_uv_forwards_stateless_flag(self):
+        """`--stateless` should survive the uv-wrapped subprocess path."""
+        mock_config = MagicMock()
+        mock_config.deployment.transport = None
+        mock_config.deployment.host = None
+        mock_config.deployment.port = None
+        mock_config.deployment.path = None
+        mock_config.deployment.log_level = None
+        mock_config.deployment.args = ()
+        mock_config.environment.build_command = lambda cmd: ["uv", "run", *cmd]
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with (
+            patch(
+                "fastmcp.cli.cli.load_and_merge_config",
+                return_value=(mock_config, "server.py"),
+            ),
+            patch(
+                "fastmcp.cli.cli.subprocess.run", return_value=mock_result
+            ) as mock_run,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            await run("server.py", stateless=True)
+
+        assert exc_info.value.code == 0
+        cmd = mock_run.call_args.args[0]
+        assert "--stateless" in cmd
+        assert cmd[cmd.index("--stateless") - 3 : cmd.index("--stateless") + 1] == [
+            "fastmcp",
+            "run",
+            "server.py",
+            "--stateless",
+        ]
+
+    @pytest.mark.parametrize("reload", [False, True])
+    async def test_run_with_needs_uv_forwards_skip_source_flag(self, reload):
+        """`--skip-source` should survive the uv-wrapped subprocess path."""
+        mock_config = MagicMock()
+        mock_config.deployment.transport = None
+        mock_config.deployment.host = None
+        mock_config.deployment.port = None
+        mock_config.deployment.path = None
+        mock_config.deployment.log_level = None
+        mock_config.deployment.args = ()
+        mock_config.environment.build_command = lambda cmd: ["uv", "run", *cmd]
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with (
+            patch(
+                "fastmcp.cli.cli.load_and_merge_config",
+                return_value=(mock_config, "server.py"),
+            ),
+            patch(
+                "fastmcp.cli.cli.subprocess.run", return_value=mock_result
+            ) as mock_run,
+            patch(
+                "fastmcp.cli.run.run_with_reload", new_callable=AsyncMock
+            ) as mock_reload,
+        ):
+            if reload:
+                await run("server.py", skip_source=True, reload=True)
+                cmd = mock_reload.call_args.args[0]
+            else:
+                with pytest.raises(SystemExit):
+                    await run("server.py", skip_source=True)
+                cmd = mock_run.call_args.args[0]
+
+        assert cmd[:4] == ["uv", "run", "fastmcp", "run"]
+        assert "--skip-source" in cmd
+        assert cmd.index("--skip-source") < cmd.index("--skip-env")
+
 
 class TestInspectorModuleMode:
     """Test the inspector command's module-mode handling."""
@@ -991,3 +1280,358 @@ class TestInspectorModuleMode:
         # --module should be in the subprocess command
         cmd = mock_subprocess.call_args[0][0]
         assert "--module" in cmd
+        # `fastmcp run --module` ignores --transport and warns about it
+        assert "--transport" not in cmd
+
+
+class TestInspectorServerLoading:
+    """The inspector leaves loading the server to the configured environment."""
+
+    async def test_server_is_not_imported_in_the_invoking_environment(
+        self, tmp_path: Path
+    ):
+        """A dependency supplied only via --with must not be imported up front."""
+        server_file = tmp_path / "server.py"
+        server_file.write_text(
+            "import fastmcp_missing_dependency_for_test\n"
+            "from fastmcp import FastMCP\n\n"
+            "mcp = FastMCP('test')\n"
+        )
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+
+        with (
+            patch("fastmcp.cli.cli._get_npx_command", return_value="npx"),
+            patch(
+                "fastmcp.cli.cli.subprocess.run", return_value=mock_process
+            ) as mock_subprocess,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            await inspector(
+                str(server_file),
+                with_packages=["fastmcp_missing_dependency_for_test"],
+            )
+
+        assert exc_info.value.code == 0
+        cmd = mock_subprocess.call_args.args[0]
+        assert cmd[:2] == ["npx", "@modelcontextprotocol/inspector"]
+        assert "fastmcp_missing_dependency_for_test" in cmd
+
+
+class TestInspectorHttpDeployment:
+    """Test the inspector command with an HTTP deployment in fastmcp.json."""
+
+    @pytest.fixture
+    def http_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        monkeypatch.delenv("SERVER_PORT", raising=False)
+        server_file = tmp_path / "server.py"
+        server_file.write_text("from fastmcp import FastMCP\n\nmcp = FastMCP('test')\n")
+        config_file = tmp_path / "fastmcp.json"
+        config_file.write_text(
+            json.dumps(
+                {
+                    "source": {"path": str(server_file), "entrypoint": "mcp"},
+                    "deployment": {"transport": "http", "port": 8000},
+                }
+            )
+        )
+        return config_file
+
+    async def _run_inspector(self, config_file: Path, **kwargs) -> MagicMock:
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+        with (
+            patch("fastmcp.cli.cli._get_npx_command", return_value="npx"),
+            patch(
+                "fastmcp.cli.cli.subprocess.run", return_value=mock_process
+            ) as mock_subprocess,
+            pytest.raises(SystemExit),
+        ):
+            await inspector(str(config_file), **kwargs)
+        return mock_subprocess
+
+    async def test_server_runs_over_stdio(self, http_config: Path):
+        """The Inspector connects over stdio, so the child must not serve HTTP."""
+        mock_subprocess = await self._run_inspector(http_config)
+
+        assert mock_subprocess.call_args.args[0] == [
+            "npx",
+            "@modelcontextprotocol/inspector",
+            "fastmcp",
+            "run",
+            str(http_config),
+            "--no-banner",
+            "--transport",
+            "stdio",
+            "--reload",
+        ]
+
+    async def test_deployment_port_is_not_the_proxy_port(self, http_config: Path):
+        """The MCP server's HTTP port is unrelated to the Inspector proxy port."""
+        mock_subprocess = await self._run_inspector(http_config)
+
+        assert "SERVER_PORT" not in mock_subprocess.call_args.kwargs["env"]
+
+    async def test_server_port_option_sets_the_proxy_port(self, http_config: Path):
+        mock_subprocess = await self._run_inspector(http_config, server_port=6277)
+
+        assert mock_subprocess.call_args.kwargs["env"]["SERVER_PORT"] == "6277"
+
+
+class TestRunDevApps:
+    """Test running dev apps with the run command."""
+
+    def test_launch_escapes_tool_name_in_html_contexts(self):
+        """Test /launch escapes the tool query parameter in HTML sinks."""
+        starlette_app = _make_dev_app(
+            mcp_url="http://127.0.0.1:8000/mcp",
+            app_bridge_js="// js",
+            import_map_tag="",
+            message_log=_MessageLog(),
+            log_panel=False,
+            session_token="test-dev-session",
+        )
+        client = TestClient(
+            starlette_app,
+            base_url="http://127.0.0.1:8080",
+            raise_server_exceptions=False,
+        )
+
+        client.get("/?token=test-dev-session")
+
+        payload = "</title><script>alert(1)</script><img src=x onerror=alert(2)>"
+        launch_url = client.post(
+            "/api/launch", json={"tool": payload, "__json_args__": "{}"}
+        ).json()
+        response = client.get(launch_url)
+
+        assert response.status_code == 200
+        assert payload not in response.text
+        assert (
+            "&lt;/title&gt;&lt;script&gt;alert(1)&lt;/script&gt;"
+            "&lt;img src=x onerror=alert(2)&gt;"
+        ) in response.text
+        assert "\\u003c/script\\u003e" in response.text
+
+    def test_launch_serializes_args_safely_inside_script(self):
+        """Test /launch escapes argument values embedded in the script element."""
+        starlette_app = _make_dev_app(
+            mcp_url="http://127.0.0.1:8000/mcp",
+            app_bridge_js="// js",
+            import_map_tag="",
+            message_log=_MessageLog(),
+            log_panel=False,
+            session_token="test-dev-session",
+        )
+        client = TestClient(
+            starlette_app,
+            base_url="http://127.0.0.1:8080",
+            raise_server_exceptions=False,
+        )
+
+        client.get("/?token=test-dev-session")
+
+        payload = {"name": "</script><script>alert(1)</script>&"}
+        launch_url = client.post(
+            "/api/launch",
+            json={"tool": "safe_tool", "__json_args__": json.dumps(payload)},
+        ).json()
+        response = client.get(launch_url)
+
+        assert response.status_code == 200
+        assert json.dumps(payload) not in response.text
+        assert (
+            '"\\u003c/script\\u003e\\u003cscript\\u003ealert(1)'
+            '\\u003c/script\\u003e\\u0026"'
+        ) in response.text
+
+    def test_api_launch_stores_launch_behind_generated_url(self):
+        """Test /api/launch returns a launch URL that names a stored launch."""
+        starlette_app = _make_dev_app(
+            mcp_url="http://127.0.0.1:8000/mcp",
+            app_bridge_js="// js",
+            import_map_tag="",
+            message_log=_MessageLog(),
+            log_panel=False,
+            session_token="test-dev-session",
+        )
+        client = TestClient(
+            starlette_app,
+            base_url="http://127.0.0.1:8080",
+            raise_server_exceptions=False,
+        )
+
+        client.get("/?token=test-dev-session")
+        response = client.post(
+            "/api/launch",
+            json={
+                "tool": "tool&name=<script>",
+                "__json_args__": '{"value": "</script>"}',
+            },
+        )
+
+        assert response.status_code == 200
+        url = response.json()
+        query = parse_qs(urlsplit(url).query)
+        assert list(query) == ["id"]
+        page = client.get(url).text
+        assert "tool&amp;name=&lt;script&gt;" in page
+        assert '{"value": "\\u003c/script\\u003e"}' in page
+
+    @pytest.mark.parametrize(
+        "host, expected_host",
+        [
+            ("0.0.0.0", "127.0.0.1"),
+            ("127.0.0.1", "127.0.0.1"),
+            ("192.0.2.2", "192.0.2.2"),
+        ],
+    )
+    async def test_run_dev_apps_with_host(self, host, expected_host):
+        """Test run command can run a dev app with below new options for issue 4121.
+        - host option to support binding specific address other than localhost.
+        """
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+
+        mock_server = AsyncMock()
+        mock_server.install_signal_handlers = MagicMock()
+        mock_server.serve = AsyncMock()
+
+        mock_uvicorn = MagicMock()
+        mock_uvicorn.Config = MagicMock()
+        mock_uvicorn.Server.return_value = mock_server
+
+        mock_make_dev_app = MagicMock(return_value=MagicMock())
+        mock_webbrowser_open = MagicMock()
+
+        with (
+            patch(
+                "fastmcp.cli.apps_dev._start_user_server",
+                new_callable=AsyncMock,
+                return_value=mock_proc,
+            ),
+            patch(
+                "fastmcp.cli.apps_dev._fetch_app_bridge_bundle",
+                new_callable=AsyncMock,
+                return_value=("js_content", "{}"),
+            ),
+            patch(
+                "fastmcp.cli.apps_dev._wait_for_server",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("fastmcp.cli.apps_dev._make_dev_app", mock_make_dev_app),
+            patch("fastmcp.cli.apps_dev.uvicorn", mock_uvicorn),
+            patch("fastmcp.cli.apps_dev.webbrowser.open", mock_webbrowser_open),
+            patch("fastmcp.cli.apps_dev.asyncio.sleep", new_callable=AsyncMock),
+            patch("socket.socket"),
+        ):
+            await apps("server.py", host=host)
+
+        make_dev_app_first_arg = mock_make_dev_app.call_args[0][0]
+        assert expected_host in make_dev_app_first_arg
+
+        webbrowser_open_first_arg = mock_webbrowser_open.call_args[0][0]
+        assert expected_host in webbrowser_open_first_arg
+
+        assert mock_uvicorn.Config.call_args.kwargs["host"] == host
+
+    @pytest.mark.parametrize(
+        "log_panel, expected_log_panel",
+        [
+            (True, True),
+            (False, False),
+        ],
+    )
+    async def test_run_dev_apps_log_panel_propagation(
+        self, log_panel, expected_log_panel
+    ):
+        """Test run command can run a dev app with below new options for issue 4121.
+        - toggle log-panel option to hide log/debug message in normal cases.
+
+        The test divided into two parts:
+        - first, verify if log_panel is correctly propagated to _make_dev_app.
+        - second, verify if _make_dev_app calls _inject_log_panel only when log_panel=True
+
+        This test function implements the first part, and the second part is implemented in test_make_dev_app_log_panel_controls_inject
+        """
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+
+        mock_server = AsyncMock()
+        mock_server.install_signal_handlers = MagicMock()
+        mock_server.serve = AsyncMock()
+
+        mock_uvicorn = MagicMock()
+        mock_uvicorn.Config = MagicMock()
+        mock_uvicorn.Server.return_value = mock_server
+
+        mock_make_dev_app = MagicMock(return_value=MagicMock())
+        mock_webbrowser_open = MagicMock()
+
+        with (
+            patch(
+                "fastmcp.cli.apps_dev._start_user_server",
+                new_callable=AsyncMock,
+                return_value=mock_proc,
+            ),
+            patch(
+                "fastmcp.cli.apps_dev._fetch_app_bridge_bundle",
+                new_callable=AsyncMock,
+                return_value=("js_content", "{}"),
+            ),
+            patch(
+                "fastmcp.cli.apps_dev._wait_for_server",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("fastmcp.cli.apps_dev._make_dev_app", mock_make_dev_app),
+            patch("fastmcp.cli.apps_dev.uvicorn", mock_uvicorn),
+            patch("fastmcp.cli.apps_dev.webbrowser.open", mock_webbrowser_open),
+            patch("fastmcp.cli.apps_dev.asyncio.sleep", new_callable=AsyncMock),
+            patch("socket.socket"),
+        ):
+            await apps("server.py", log_panel=log_panel)
+
+        # log_panel is the 5th positional argument to _make_dev_app
+        actual_log_panel = mock_make_dev_app.call_args[0][4]
+        assert actual_log_panel is expected_log_panel
+
+    @pytest.mark.parametrize("log_panel", [True, False])
+    def test_make_dev_app_log_panel_controls_inject(self, log_panel):
+        """Test if _make_dev_app calls _inject_log_panel only when log_panel=True, regarding issue 4121:
+        - toggle log-panel option to hide log/debug message in normal cases.
+
+        The test divided into two parts:
+        - first, verify if log_panel is correctly propagated to _make_dev_app.
+        - second, verify if _make_dev_app calls _inject_log_panel only when log_panel=True
+
+        This test function implements the second part, and the first part is implemented in test_run_dev_apps_log_panel_propagation
+        """
+
+        mock_message_log = _MessageLog()
+
+        with patch(
+            "fastmcp.cli.apps_dev._inject_log_panel",
+            return_value="<html>injected</html>",
+        ) as mock_inject:
+            starlette_app = _make_dev_app(
+                mcp_url="http://127.0.0.1:8000/mcp",
+                app_bridge_js="// js",
+                import_map_tag="",
+                message_log=mock_message_log,
+                log_panel=log_panel,
+                session_token="test-dev-session",
+            )
+            client = TestClient(
+                starlette_app,
+                base_url="http://127.0.0.1:8080",
+                raise_server_exceptions=False,
+            )
+            client.get("/?token=test-dev-session")
+
+        if log_panel:
+            mock_inject.assert_called_once()
+        else:
+            mock_inject.assert_not_called()

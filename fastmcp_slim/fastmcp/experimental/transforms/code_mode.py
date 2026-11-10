@@ -1,15 +1,20 @@
+import asyncio
 import importlib
 import json
+import sys
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 
 if TYPE_CHECKING:
     from pydantic_monty import ResourceLimits
 
-from mcp.types import TextContent
-from pydantic import Field
 
-from fastmcp.exceptions import NotFoundError
+import anyio
+from mcp_types import TextContent
+from pydantic import Field
+from pydantic import ValidationError as PydanticValidationError
+
+from fastmcp.exceptions import NotFoundError, ToolError, ValidationError
 from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.catalog import CatalogTransform
@@ -48,6 +53,64 @@ def _ensure_async(fn: Callable[..., Any]) -> Callable[..., Any]:
         return fn(*args, **kwargs)
 
     return wrapper
+
+
+_VALIDATION_ERROR_MARKERS = (
+    "validation error for",
+    "unexpected keyword argument",
+    "missing required argument",
+)
+
+
+def _legible_call_error(
+    tool_name: str, tool: Tool, error: dict[str, Any] | str | Exception
+) -> str:
+    """Rewrite a failed call's error for the model that wrote the code.
+
+    A failed `call_tool` raises so the failure interrupts the chain instead of
+    flowing onward as a return value. Validation failures get the tool's
+    parameter list appended — the error names what was wrong, the schema names
+    what would be right — and always speak in the name the caller used, not
+    the backend's internal identity.
+    """
+    validation = isinstance(error, ValidationError)
+    if validation and isinstance(error.__cause__, PydanticValidationError):
+        text = "; ".join(
+            f"{'.'.join(str(part) for part in item['loc']) or 'arguments'}: {item['msg']}"
+            for item in error.__cause__.errors(include_url=False)
+        )
+    else:
+        text = json.dumps(error) if isinstance(error, dict) else str(error)
+    message = f"call_tool({tool_name!r}) failed: {text}"
+    if validation or any(
+        marker in text.lower() for marker in _VALIDATION_ERROR_MARKERS
+    ):
+        properties = (tool.parameters or {}).get("properties")
+        if isinstance(properties, dict) and properties:
+            required = set((tool.parameters or {}).get("required") or [])
+            params = ", ".join(
+                name + ("*" if name in required else "") for name in properties
+            )
+            message += f"\nValid parameters for {tool_name} (* = required): {params}"
+    return message
+
+
+def _error_detail(result: ToolResult) -> dict[str, Any] | str:
+    """What an `is_error` result tells the model: text, else structured, else generic.
+
+    Non-text blocks are never stringified; an image's base64 payload would
+    swamp the model's context without explaining the failure.
+    """
+    text = "\n".join(
+        item.text
+        for item in result.content
+        if isinstance(item, TextContent) and item.text
+    )
+    if text:
+        return text
+    if result.structured_content is not None:
+        return result.structured_content
+    return "tool returned an error"
 
 
 def _unwrap_tool_result(result: ToolResult) -> dict[str, Any] | str:
@@ -91,23 +154,60 @@ class SandboxProvider(Protocol):
     ) -> Any: ...
 
 
+class _UnsetType:
+    """Sentinel distinguishing "argument omitted" from an explicit value."""
+
+    def __repr__(self) -> str:
+        return "UNSET"
+
+
+_UNSET = _UnsetType()
+
+
+_DEFAULT_LIMITS: "ResourceLimits" = {
+    "max_feed_duration_secs": 30.0,
+    "max_memory": 100_000_000,  # 100 MB
+}
+"""Baseline limits applied when ``MontySandboxProvider`` is constructed
+without an explicit ``limits`` argument. Pass ``limits=None`` to disable
+configurable time, memory, and GC limits, or a dict to override."""
+
+
 class MontySandboxProvider:
     """Sandbox provider backed by `pydantic-monty`.
 
     Args:
         limits: Resource limits for sandbox execution. Supported keys:
-            ``max_duration_secs`` (float), ``max_allocations`` (int),
-            ``max_memory`` (int), ``max_recursion_depth`` (int),
-            ``gc_interval`` (int).  All are optional; omit a key to
-            leave that limit uncapped.
+            `max_feed_duration_secs` (float), `max_turn_duration_secs` (float),
+            `max_memory` (int),
+            `max_recursion_depth` (int), and `gc_interval` (int).
+            Time, memory, and GC limits are optional; omit a key to disable
+            it. Recursion depth defaults to Monty's standard maximum of 1,000.
+            Duration limits measure sandbox execution time, excluding time
+            waiting on host callbacks. The feed limit covers the whole execution;
+            the turn limit resets after each host round trip.
+            Unsupported keys raise `ValueError` rather than being silently
+            ignored.
+
+            When the argument is omitted entirely, a conservative baseline
+            is applied (``max_feed_duration_secs=30``, ``max_memory=100 MB``) so
+            the out-of-box configuration is not unbounded. Pass
+            ``limits=None`` to disable configurable time, memory, and GC
+            limits, or a dict to set your own. Monty's standard recursion
+            limit still applies.
     """
 
     def __init__(
         self,
         *,
-        limits: "ResourceLimits | None" = None,
+        limits: "ResourceLimits | None | _UnsetType" = _UNSET,
     ) -> None:
-        self.limits = limits
+        # Copy the baseline so each provider owns its dict — `limits` is a
+        # mutable public attribute, and sharing the module-level object would
+        # let one provider's edits leak into every other default provider.
+        self.limits: ResourceLimits | None = (
+            _DEFAULT_LIMITS.copy() if isinstance(limits, _UnsetType) else limits
+        )
 
     async def run(
         self,
@@ -124,18 +224,93 @@ class MontySandboxProvider:
                 "Install it with `fastmcp[code-mode]` or pass a custom SandboxProvider."
             ) from exc
 
+        if self.limits is not None:
+            supported_limits = pydantic_monty.ResourceLimits.__annotations__.keys()
+            unsupported_limits = self.limits.keys() - supported_limits
+            if unsupported_limits:
+                unsupported = ", ".join(repr(key) for key in sorted(unsupported_limits))
+                supported = ", ".join(sorted(supported_limits))
+                raise ValueError(
+                    f"Unsupported Monty resource limits: {unsupported}. "
+                    f"Supported limits: {supported}."
+                )
+
+        # Monty currently leaves Python callbacks running when a sandbox exits:
+        # https://github.com/pydantic/monty/issues/821
+        # Keep their tasks alive and join them before leaving this execution.
+        pending: set[asyncio.Task[Any]] = set()
+        finished = False
+
+        def track(fn: Callable[..., Any]) -> Callable[..., Any]:
+            async_fn = _ensure_async(fn)
+
+            async def wrapped(*args: Any, **kwargs: Any) -> Any:
+                # A callback queued by the native bridge may start after exit.
+                if finished:
+                    raise asyncio.CancelledError
+                task = asyncio.current_task()
+                assert task is not None
+                pending.add(task)
+                try:
+                    return await async_fn(*args, **kwargs)
+                finally:
+                    pending.discard(task)
+
+            return wrapped
+
         inputs = inputs or {}
         async_functions = {
-            key: _ensure_async(value)
-            for key, value in (external_functions or {}).items()
+            key: track(value) for key, value in (external_functions or {}).items()
         }
 
-        monty = pydantic_monty.Monty(code, inputs=list(inputs))
-        return await monty.run_async(
-            inputs=inputs or None,
-            external_functions=async_functions or None,
-            limits=self.limits,
+        future = asyncio.ensure_future(
+            self._run_monty(
+                pydantic_monty,
+                code=code,
+                inputs=inputs or None,
+                external_functions=async_functions or None,
+            )
         )
+        try:
+            return await future
+        except asyncio.CancelledError:
+            # Awaiting alone does not stop the sandbox worker when the
+            # surrounding task is cancelled (e.g. an HTTP client disconnects
+            # mid-execution). Explicitly cancel so the Monty runtime tears the
+            # worker down instead of leaving it running to completion.
+            future.cancel()
+            raise
+        finally:
+            finished = True
+            tasks = tuple(pending)
+            for task in tasks:
+                task.cancel()
+            # Preserve async finally blocks even under AnyIO request cancellation.
+            with anyio.CancelScope(shield=True):
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _run_monty(
+        self,
+        pydantic_monty: Any,
+        *,
+        code: str,
+        inputs: dict[str, Any] | None,
+        external_functions: dict[str, Callable[..., Any]] | None,
+    ) -> Any:
+        """Run code in an isolated sandbox session.
+
+        Isolated so the cancellation handling in `run()` can be exercised
+        without a live `pydantic-monty` runtime.
+        """
+        async with (
+            pydantic_monty.AsyncMonty() as pool,
+            pool.checkout(limits=self.limits) as session,
+        ):
+            return await session.feed_run(
+                code,
+                inputs=inputs,
+                external_lookup=external_functions,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +322,7 @@ ToolDetailLevel = Literal["brief", "detailed", "full"]
 """Detail level for discovery tool output.
 
 - ``"brief"``: tool names and one-line descriptions
-- ``"detailed"``: compact markdown with parameter names, types, and required markers
+- ``"detailed"``: compact markdown with parameter names, types, literal values, defaults, and required markers
 - ``"full"``: complete JSON schema
 """
 
@@ -201,7 +376,8 @@ class Search:
         if search_fn is None:
             from fastmcp.server.transforms.search.bm25 import BM25SearchTransform
 
-            _bm25 = BM25SearchTransform(max_results=default_limit or 50)
+            # Search applies the per-call limit after ranking all matches.
+            _bm25 = BM25SearchTransform(max_results=sys.maxsize)
             search_fn = _bm25._search
         self._search_fn = search_fn
         self._name = name
@@ -247,7 +423,9 @@ class Search:
                 ]
             results = await search_fn(tools, query)
             if limit is not None:
-                results = results[:limit]
+                # A limit is a maximum count, not a slice offset: clamp negatives
+                # so ``limit=-1`` does not mean "all but the last match".
+                results = results[: max(limit, 0)]
             rendered = _render_tools(results, detail)
             if len(results) < catalog_size and detail != "full":
                 n = len(results)
@@ -454,10 +632,12 @@ class CodeMode(CatalogTransform):
         discovery_tools: list[DiscoveryToolFactory] | None = None,
         execute_tool_name: str = "execute",
         execute_description: str | None = None,
+        max_tool_calls: int | None = 50,
     ) -> None:
         super().__init__()
         self.execute_tool_name = execute_tool_name
         self.execute_description = execute_description
+        self.max_tool_calls = max_tool_calls
         self.sandbox_provider = sandbox_provider or MontySandboxProvider()
 
         self._discovery_factories = (
@@ -526,6 +706,7 @@ class CodeMode(CatalogTransform):
 
     def _make_execute_tool(self) -> Tool:
         transform = self
+        max_tool_calls = self.max_tool_calls
 
         async def execute(
             code: Annotated[
@@ -540,13 +721,31 @@ class CodeMode(CatalogTransform):
         ) -> Any:
             """Execute tool calls using Python code."""
 
+            call_count = 0
+
             async def call_tool(tool_name: str, params: dict[str, Any]) -> Any:
+                nonlocal call_count
+                if max_tool_calls is not None:
+                    call_count += 1
+                    if call_count > max_tool_calls:
+                        raise ToolError(
+                            f"Tool call limit exceeded: at most {max_tool_calls} "
+                            "call_tool() invocations are allowed per execute()."
+                        )
+
                 backend_tools = await transform.get_tool_catalog(ctx)
                 tool = transform._find_tool(tool_name, backend_tools)
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {tool_name}")
 
-                result = await ctx.fastmcp.call_tool(tool.name, params)
+                try:
+                    result = await ctx.fastmcp.call_tool(tool.name, params)
+                except (ToolError, ValidationError) as exc:
+                    raise ToolError(_legible_call_error(tool_name, tool, exc)) from exc
+                if result.is_error:
+                    raise ToolError(
+                        _legible_call_error(tool_name, tool, _error_detail(result))
+                    )
                 return _unwrap_tool_result(result)
 
             return await transform.sandbox_provider.run(

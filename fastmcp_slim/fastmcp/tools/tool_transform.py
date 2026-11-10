@@ -1,30 +1,33 @@
 from __future__ import annotations
 
 import inspect
-import warnings
 from collections.abc import Callable
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, cast
 
-import pydantic_core
-from mcp.types import ToolAnnotations
+import mcp_types
+from mcp_types import ToolAnnotations
 from pydantic import ConfigDict
+from pydantic import ValidationError as PydanticValidationError
 from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator
 from pydantic.json_schema import SkipJsonSchema
 
-import fastmcp
-from fastmcp.exceptions import FastMCPDeprecationWarning
-from fastmcp.tools.base import Tool, ToolResult, _convert_to_content
-from fastmcp.tools.function_parsing import ParsedFunction
+from fastmcp.tools.base import (
+    InputRequiredToolResult,
+    Tool,
+    ToolResult,
+)
+from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
+from fastmcp.tools.function_tool import FunctionTool, _ToolBodyError, _wrap_body_errors
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
 from fastmcp.utilities.components import _convert_set_default_none
-from fastmcp.utilities.json_schema import compress_schema
+from fastmcp.utilities.json_schema import _METADATA_KEYS, compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     FastMCPBaseModel,
@@ -35,6 +38,89 @@ from fastmcp.utilities.types import (
 )
 
 logger = get_logger(__name__)
+
+# Metadata preserved when replacing a property's JSON Schema type.
+_PROPERTY_PRESERVE_KEYS = _METADATA_KEYS | frozenset({"default", "examples", "example"})
+
+
+def _is_preserved_property_key(key: str) -> bool:
+    # `x-` extension keys are annotations (UI and vendor hints), not validation.
+    return key in _PROPERTY_PRESERVE_KEYS or key.startswith("x-")
+
+
+def _strip_structural_schema_keys(schema: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in schema.items() if _is_preserved_property_key(k)}
+
+
+def _schema_has_structural_keys(schema: dict[str, Any]) -> bool:
+    return any(not _is_preserved_property_key(key) for key in schema)
+
+
+def _structural_kind(schema: dict[str, Any]) -> tuple[Any, ...]:
+    """Type identity, excluding validation constraints and property metadata."""
+    for key in ("anyOf", "oneOf", "allOf"):
+        if key in schema:
+            branch_kinds: set[tuple[Any, ...]] = set()
+            for branch in schema[key]:
+                kind = _structural_kind(branch)
+                if key == "anyOf" and kind and kind[0] == "anyOf":
+                    branch_kinds.update(kind[1])
+                else:
+                    branch_kinds.add(kind)
+            if key == "anyOf" and len(branch_kinds) == 1:
+                return next(iter(branch_kinds))
+            return (key, frozenset(branch_kinds))
+    if "$ref" in schema:
+        return ("$ref", schema["$ref"])
+
+    schema_type = schema.get("type")
+    if schema_type is None:
+        # Mixed Literals omit type, so their values supply the primitive types.
+        values = schema.get("enum", [schema["const"]] if "const" in schema else [])
+        literal_types = {
+            type(None): "null",
+            bool: "boolean",
+            int: "integer",
+            float: "number",
+            str: "string",
+        }
+        if any(type(value) not in literal_types for value in values):
+            return ()
+        kinds = frozenset(("type", literal_types[type(value)]) for value in values)
+        if len(kinds) == 1:
+            return next(iter(kinds))
+        return ("anyOf", kinds) if kinds else ()
+
+    if isinstance(schema_type, list):
+        return (
+            "anyOf",
+            frozenset(
+                _structural_kind({**schema, "type": branch}) for branch in schema_type
+            ),
+        )
+    if schema_type == "array":
+        items = schema.get("items", {})
+        return (
+            "type",
+            "array",
+            _structural_kind(items) if isinstance(items, dict) else items,
+            tuple(_structural_kind(item) for item in schema.get("prefixItems", [])),
+        )
+    if schema_type == "object":
+        # Constrained dictionary keys put their value schema under patterns.
+        # The patterns constrain keys, but do not change their value types.
+        values = list(schema.get("patternProperties", {}).values())
+        if not values or "additionalProperties" in schema:
+            values.append(schema.get("additionalProperties", True))
+        return (
+            "type",
+            "object",
+            frozenset(
+                _structural_kind(value) if isinstance(value, dict) else value
+                for value in values
+            ),
+        )
+    return ("type", schema_type)
 
 
 # Context variable to store current transformed tool
@@ -238,6 +324,50 @@ class ArgTransformConfig(FastMCPBaseModel):
         return ArgTransform(**self.model_dump(exclude_unset=True))  # pyright: ignore[reportAny]
 
 
+#: Meta namespaces the framework owns. An override replaces the caller-facing
+#: meta wholesale, but these carry a component's app membership, identity, and
+#: visibility — what intermediaries use to recognize a tool they are
+#: forwarding. Both are needed together: an identity that survives a rename
+#: while its ``ui.visibility`` marker does not leaves a tool that can be named
+#: but no longer answers to its identity.
+_FRAMEWORK_META_NAMESPACES = ("fastmcp", "ui")
+
+
+def _apply_meta_override(
+    source_meta: dict[str, Any] | None,
+    override: dict[str, Any] | None | NotSetT,
+) -> dict[str, Any] | None:
+    """Apply a transform's ``meta=`` override, preserving framework namespaces.
+
+    An override replaces the caller-facing meta wholesale, which is what users
+    expect. Framework-owned namespaces are carried across regardless, since a
+    transform that renames a tool must not silently unwire it — values the
+    override supplies for those namespaces still win key by key.
+    """
+    if isinstance(override, NotSetT):
+        return source_meta
+
+    source = source_meta or {}
+    preserved = {
+        namespace: dict(source[namespace])
+        for namespace in _FRAMEWORK_META_NAMESPACES
+        if isinstance(source.get(namespace), dict) and source[namespace]
+    }
+
+    if override is None:
+        return preserved or None
+
+    merged = dict(override)
+    for namespace, source_values in preserved.items():
+        override_values = override.get(namespace)
+        merged[namespace] = (
+            {**source_values, **override_values}
+            if isinstance(override_values, dict)
+            else source_values
+        )
+    return merged
+
+
 class TransformedTool(Tool):
     """A tool that is transformed from another tool.
 
@@ -294,6 +424,11 @@ class TransformedTool(Tool):
                 if self.transform_args:
                     # Find the original parameter name that maps to this param_name
                     for orig_name, transform in self.transform_args.items():
+                        if transform.hide:
+                            # Hidden parameters are not part of the schema and
+                            # their factory defaults are applied when forwarding
+                            # to the parent, so they must not fill visible ones.
+                            continue
                         transform_name = (
                             transform.name
                             if transform.name is not NotSet
@@ -310,60 +445,53 @@ class TransformedTool(Tool):
                                 break
 
                 if not has_factory_default:
-                    arguments[param_name] = param_schema["default"]
+                    arguments[param_name] = deepcopy(param_schema["default"])
 
         token = _current_tool.set(self)
         try:
-            if is_coroutine_function(self.fn):
-                result = await self.fn(**arguments)
-            else:
-                result = await call_sync_fn_in_threadpool(self.fn, **arguments)
-                if inspect.isawaitable(result):
-                    result = await result
+            from fastmcp.server.dependencies import without_injected_parameters
+
+            body_fn = _wrap_body_errors(self.fn, materialize_generators=True)
+            fn = without_injected_parameters(body_fn)
+            try:
+                if is_coroutine_function(fn):
+                    result = await fn(**arguments)
+                else:
+                    result = await call_sync_fn_in_threadpool(fn, **arguments)
+                    if inspect.isawaitable(result):
+                        result = await result
+                result = await FunctionTool._materialize_generator(result)
+            except PydanticValidationError as exc:
+                raise _ToolBodyError(str(exc)) from exc
+
+            # A multi-round-trip ask (SEP-2322) is not output data: it must
+            # reach the wire handler intact, never reshaped by output_schema
+            # (which would rebuild it as a plain empty ToolResult and drop the
+            # input_required payload). A custom transform fn may return the raw
+            # `InputRequiredResult`, like any tool body; wrap it the same way.
+            if isinstance(result, InputRequiredToolResult):
+                return result
+            if isinstance(result, mcp_types.InputRequiredResult):
+                return InputRequiredToolResult(result)
 
             # If transform function returns ToolResult, respect our output_schema setting
             if isinstance(result, ToolResult):
                 if self.output_schema is None:
                     return result
-                elif self.output_schema.get(
-                    "type"
-                ) != "object" and not self.output_schema.get("x-fastmcp-wrap-result"):
+                elif not _is_object_schema(
+                    self.output_schema
+                ) and not self.output_schema.get("x-fastmcp-wrap-result"):
                     # Non-object explicit schemas disable structured content
                     return ToolResult(
                         content=result.content,
                         structured_content=None,
+                        is_error=result.is_error,
+                        meta=result.meta,
                     )
                 else:
                     return result
 
-            # Otherwise convert to content and create ToolResult with proper structured content
-
-            unstructured_result = _convert_to_content(
-                result, serializer=self.serializer
-            )
-
-            structured_output = None
-            # First handle structured content based on output schema, if any
-            if self.output_schema is not None:
-                if self.output_schema.get("x-fastmcp-wrap-result"):
-                    # Schema says wrap - always wrap in result key
-                    structured_output = {"result": result}
-                else:
-                    structured_output = result
-            # If no output schema, try to serialize the result. If it is a dict, use
-            # it as structured content. If it is not a dict, ignore it.
-            if structured_output is None:
-                try:
-                    structured_output = pydantic_core.to_jsonable_python(result)
-                    if not isinstance(structured_output, dict):
-                        structured_output = None
-                except Exception:
-                    pass
-
-            return ToolResult(
-                content=unstructured_result,
-                structured_content=structured_output,
-            )
+            return self.convert_result(result)
         finally:
             _current_tool.reset(token)
 
@@ -380,7 +508,6 @@ class TransformedTool(Tool):
         transform_args: dict[str, ArgTransform] | None = None,
         annotations: ToolAnnotations | NotSetT | None = NotSet,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
-        serializer: Callable[[Any], str] | NotSetT | None = NotSet,  # Deprecated
         meta: dict[str, Any] | NotSetT | None = NotSet,
     ) -> TransformedTool:
         """Create a transformed tool from a parent tool.
@@ -402,7 +529,6 @@ class TransformedTool(Tool):
             output_schema: Control output schema for structured outputs:
                 - None (default): Inherit from transform_fn if available, then parent tool
                 - dict: Use custom output schema
-            serializer: Deprecated. Return ToolResult from your tools for full control over serialization.
             meta: Control meta information:
                 - NotSet (default): Inherit from parent tool
                 - dict: Use custom meta information
@@ -457,18 +583,6 @@ class TransformedTool(Tool):
         """
         tool = Tool._ensure_tool(tool)
 
-        if (
-            serializer is not NotSet
-            and serializer is not None
-            and fastmcp.settings.deprecation_warnings
-        ):
-            warnings.warn(
-                "The `serializer` parameter is deprecated. "
-                "Return ToolResult from your tools for full control over serialization. "
-                "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
         transform_args = transform_args or {}
 
         if transform_fn is not None:
@@ -538,7 +652,14 @@ class TransformedTool(Tool):
                 # ArgTransform takes precedence over function signature
                 # Start with function schema as base, then override with transformed schema
                 final_schema = cls._merge_schema_with_precedence(
-                    parsed_fn.input_schema, schema
+                    parsed_fn.input_schema,
+                    schema,
+                    structural_override_properties=cls._arg_transform_type_override_names(
+                        transform_args
+                    ),
+                    explicit_required_properties=cls._arg_transform_explicit_required_names(
+                        transform_args
+                    ),
                 )
             else:
                 # With **kwargs, function can access all transformed params
@@ -547,7 +668,14 @@ class TransformedTool(Tool):
 
                 # Start with function schema as base, then override with transformed schema
                 final_schema = cls._merge_schema_with_precedence(
-                    parsed_fn.input_schema, schema
+                    parsed_fn.input_schema,
+                    schema,
+                    structural_override_properties=cls._arg_transform_type_override_names(
+                        transform_args
+                    ),
+                    explicit_required_properties=cls._arg_transform_explicit_required_names(
+                        transform_args
+                    ),
                 )
 
         # Additional validation: check for naming conflicts after transformation
@@ -584,27 +712,25 @@ class TransformedTool(Tool):
             description if not isinstance(description, NotSetT) else tool.description
         )
         final_title = title if not isinstance(title, NotSetT) else tool.title
-        final_meta = meta if not isinstance(meta, NotSetT) else tool.meta
+        final_meta = _apply_meta_override(tool.meta, meta)
         final_annotations = (
             annotations if not isinstance(annotations, NotSetT) else tool.annotations
-        )
-        final_serializer = (
-            serializer if not isinstance(serializer, NotSetT) else tool.serializer
         )
 
         transformed_tool = cls(
             fn=final_fn,
+            return_type=parsed_fn.return_type if parsed_fn is not None else None,
             forwarding_fn=forwarding_fn,
             parent_tool=tool,
             name=final_name,
             version=final_version,
             title=final_title,
             description=final_description,
+            icons=tool.icons,
             parameters=final_schema,
             output_schema=final_output_schema,
             tags=tags or tool.tags,
             annotations=final_annotations,
-            serializer=final_serializer,
             meta=final_meta,
             transform_args=transform_args,
             auth=tool.auth,
@@ -705,7 +831,8 @@ class TransformedTool(Tool):
         schema = {
             "type": "object",
             "properties": new_props,
-            "required": list(new_required),
+            # Iterate props (not the set) for deterministic ordering
+            "required": [p for p in new_props if p in new_required],
             "additionalProperties": False,
         }
 
@@ -819,8 +946,8 @@ class TransformedTool(Tool):
             # nested inside this property while $ref values still point to
             # "#/$defs/..." at the root, leaving the references dangling.
             extracted_defs = type_schema.pop("$defs", {})
-            # Update the schema with the type information from TypeAdapter
-            new_schema.update(type_schema)
+            preserved = _strip_structural_schema_keys(new_schema)
+            new_schema = {**type_schema, **preserved}
 
         # Handle examples transformation
         if transform.examples is not NotSet:
@@ -829,14 +956,54 @@ class TransformedTool(Tool):
         return new_name, new_schema, is_required, extracted_defs
 
     @staticmethod
+    def _arg_transform_type_override_names(
+        transform_args: dict[str, ArgTransform] | None,
+    ) -> frozenset[str]:
+        if not transform_args:
+            return frozenset()
+        names: set[str] = set()
+        for old_name, transform in transform_args.items():
+            if transform.hide or transform.type is NotSet:
+                continue
+            if transform.name is not NotSet and transform.name is not None:
+                names.add(transform.name)
+            else:
+                names.add(old_name)
+        return frozenset(names)
+
+    @staticmethod
+    def _arg_transform_explicit_required_names(
+        transform_args: dict[str, ArgTransform] | None,
+    ) -> frozenset[str]:
+        if not transform_args:
+            return frozenset()
+        names: set[str] = set()
+        for old_name, transform in transform_args.items():
+            if transform.hide or transform.required is NotSet or not transform.required:
+                continue
+            if transform.name is not NotSet and transform.name is not None:
+                names.add(transform.name)
+            else:
+                names.add(old_name)
+        return frozenset(names)
+
+    @staticmethod
     def _merge_schema_with_precedence(
-        base_schema: dict[str, Any], override_schema: dict[str, Any]
+        base_schema: dict[str, Any],
+        override_schema: dict[str, Any],
+        *,
+        structural_override_properties: frozenset[str] | None = None,
+        explicit_required_properties: frozenset[str] | None = None,
     ) -> dict[str, Any]:
         """Merge two schemas, with the override schema taking precedence.
 
         Args:
             base_schema: Base schema to start with
             override_schema: Schema that takes precedence for overlapping properties
+            structural_override_properties: Property names whose structural schema
+                comes from the override (e.g. ArgTransform(type=...) on the parent).
+            explicit_required_properties: Property names marked
+                ArgTransform(required=True), which never inherit a base default.
 
         Returns:
             Merged schema with override taking precedence
@@ -846,13 +1013,46 @@ class TransformedTool(Tool):
 
         override_props = override_schema.get("properties", {})
         override_required = set(override_schema.get("required", []))
+        structural_override_properties = structural_override_properties or frozenset()
+        explicit_required_properties = explicit_required_properties or frozenset()
 
         # Override properties
         for param_name, param_schema in override_props.items():
             if param_name in merged_props:
-                # Merge the schemas, with override taking precedence
                 base_param = merged_props[param_name].copy()
-                base_param.update(param_schema)
+                if param_name in structural_override_properties:
+                    structural = {
+                        key: value
+                        for key, value in param_schema.items()
+                        if not _is_preserved_property_key(key)
+                    }
+                    preserved_override = _strip_structural_schema_keys(param_schema)
+                    preserved_base = _strip_structural_schema_keys(base_param)
+                    base_param = {**structural, **preserved_override}
+                    for key, value in preserved_base.items():
+                        if key in preserved_override:
+                            continue
+                        if (
+                            key == "default"
+                            and param_name in explicit_required_properties
+                        ):
+                            continue
+                        base_param[key] = value
+                elif _schema_has_structural_keys(base_param) and _structural_kind(
+                    base_param
+                ) != _structural_kind(param_schema):
+                    param_schema = _strip_structural_schema_keys(param_schema)
+                    base_param.update(param_schema)
+                else:
+                    if "enum" in base_param or "const" in base_param:
+                        # A Literal in the transform_fn signature declares its
+                        # own value set, which replaces the parent's.
+                        param_schema = {
+                            key: value
+                            for key, value in param_schema.items()
+                            if key not in ("enum", "const")
+                        }
+                    base_param.update(param_schema)
                 merged_props[param_name] = base_param
             else:
                 merged_props[param_name] = param_schema.copy()
@@ -897,7 +1097,11 @@ class TransformedTool(Tool):
         result = {
             "type": "object",
             "properties": merged_props,
-            "required": list(final_required),
+            # Iterate props (not the set) for deterministic ordering; keep any
+            # required names not present in properties (sorted) rather than
+            # silently dropping them.
+            "required": [p for p in merged_props if p in final_required]
+            + sorted(final_required - set(merged_props)),
             "additionalProperties": False,
         }
 

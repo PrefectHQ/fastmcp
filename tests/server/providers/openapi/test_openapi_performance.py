@@ -4,10 +4,11 @@ These tests ensure that large OpenAPI schemas (like GitHub's API) parse quickly
 and don't regress to the slow performance we had before optimization.
 """
 
+import os
 import time
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 
 from fastmcp import FastMCP
@@ -34,9 +35,14 @@ class TestOpenAPIPerformance:
         rather a canary to ensure we don't regress significantly.
         """
 
-        # Download the full GitHub API schema (typically ~10MB)
-        response = httpx.get(
-            "https://raw.githubusercontent.com/github/rest-api-description/refs/heads/main/descriptions-next/ghes-3.17/ghes-3.17.json",
+        # Download the full GitHub API schema (typically ~10MB), pinned so the
+        # timing measures our parser rather than upstream growth. Anonymous
+        # downloads from raw.githubusercontent.com get rate limited in CI, so
+        # authenticate when CI provides a token.
+        token = os.environ.get("FASTMCP_GITHUB_TOKEN")
+        response = httpx2.get(
+            "https://raw.githubusercontent.com/github/rest-api-description/524bcb0799ab2b14c239d68e8e1e7f4508a631f9/descriptions-next/ghes-3.17/ghes-3.17.json",
+            headers={"Authorization": f"Bearer {token}"} if token else None,
             timeout=30.0,  # Allow time for download
         )
         response.raise_for_status()
@@ -46,7 +52,7 @@ class TestOpenAPIPerformance:
         start_time = time.time()
 
         # This should complete quickly with our optimizations
-        mcp_server = FastMCP.from_openapi(schema, httpx.AsyncClient())
+        mcp_server = FastMCP.from_openapi(schema, httpx2.AsyncClient())
 
         elapsed_time = time.time() - start_time
 
@@ -127,7 +133,7 @@ class TestOpenAPIPerformance:
 
         # Time the parsing
         start_time = time.time()
-        mcp_server = FastMCP.from_openapi(schema, httpx.AsyncClient())
+        mcp_server = FastMCP.from_openapi(schema, httpx2.AsyncClient())
         elapsed_time = time.time() - start_time
 
         # Should be very fast for medium schemas (well under 1 second)

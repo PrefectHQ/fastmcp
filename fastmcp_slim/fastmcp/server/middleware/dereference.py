@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Any
 
-import mcp.types as mt
+import mcp_types as mt
 from typing_extensions import override
 
 from fastmcp.resources.template import ResourceTemplate

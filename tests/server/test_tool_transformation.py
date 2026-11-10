@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -253,7 +253,7 @@ async def test_openapi_path_params_not_duplicated_in_description():
         },
     }
 
-    async with httpx.AsyncClient(base_url="http://localhost") as http_client:
+    async with httpx2.AsyncClient(base_url="http://localhost") as http_client:
         mcp = FastMCP.from_openapi(openapi_spec=spec, client=http_client)
 
         # Hide one of the two path params
@@ -277,9 +277,9 @@ async def test_openapi_path_params_not_duplicated_in_description():
             assert tool.description == "My endpoint"
 
             # Hidden param gone from schema, visible param still present
-            assert "version" not in tool.inputSchema.get("properties", {})
-            assert "user_id" in tool.inputSchema["properties"]
+            assert "version" not in tool.input_schema.get("properties", {})
+            assert "user_id" in tool.input_schema["properties"]
             assert (
-                tool.inputSchema["properties"]["user_id"]["description"]
+                tool.input_schema["properties"]["user_id"]["description"]
                 == "The user ID"
             )

@@ -224,7 +224,7 @@ def _build_quote_with_images_embed(
     quote_uri: str, image_urls: list[str], image_alts: list[str] | None, client
 ):
     """Build quote embed with images."""
-    import httpx
+    import httpx2
 
     # Get the quoted post
     quoted_post = client.app.bsky.feed.get_posts(params={"uris": [quote_uri]})
@@ -239,7 +239,7 @@ def _build_quote_with_images_embed(
     alts = image_alts or [""] * len(image_urls)
 
     for i, url in enumerate(image_urls[:4]):
-        response = httpx.get(url, follow_redirects=True)
+        response = httpx2.get(url, follow_redirects=True)
         response.raise_for_status()
 
         # Upload to blob storage
@@ -267,7 +267,7 @@ def _send_images(
     client,
 ):
     """Send post with images using the client's send_images method."""
-    import httpx
+    import httpx2
 
     # Ensure alt_texts has same length as images
     if image_alts is None:
@@ -279,7 +279,7 @@ def _send_images(
     alts = []
     for i, url in enumerate(image_urls[:4]):  # Max 4 images
         # Download image (follow redirects)
-        response = httpx.get(url, follow_redirects=True)
+        response = httpx2.get(url, follow_redirects=True)
         response.raise_for_status()
 
         image_data.append(response.content)

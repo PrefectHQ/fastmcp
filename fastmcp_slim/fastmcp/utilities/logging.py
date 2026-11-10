@@ -1,7 +1,9 @@
 """Logging utilities for FastMCP."""
 
 import contextlib
+import importlib.util
 import logging
+from pathlib import Path
 from typing import Any, Literal, cast
 
 from rich.console import Console
@@ -9,6 +11,17 @@ from rich.logging import RichHandler
 from typing_extensions import override
 
 import fastmcp
+
+
+def _get_package_path(package: str) -> str | None:
+    """Return a package directory without importing the package."""
+    try:
+        spec = importlib.util.find_spec(package)
+    except ImportError:
+        return None
+    if spec is None or spec.origin is None:
+        return None
+    return str(Path(spec.origin).parent)
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -83,14 +96,11 @@ def configure_logging(
     # no path or level name to maximize width available for the traceback
     # suppress framework frames and limit the number of frames to 3
 
-    import pydantic
-
-    try:
-        import mcp
-    except ImportError:
-        tracebacks_suppress = [fastmcp, pydantic]
-    else:
-        tracebacks_suppress = [fastmcp, mcp, pydantic]
+    tracebacks_suppress = [
+        package_path
+        for package in ("fastmcp", "mcp", "pydantic")
+        if (package_path := _get_package_path(package)) is not None
+    ]
 
     # Build traceback kwargs with defaults that can be overridden
     traceback_kwargs = {
@@ -178,16 +188,19 @@ _level_to_no: dict[
 
 
 class _ClampedLogFilter(logging.Filter):
+    logger: logging.Logger
     min_level: tuple[int, str] | None
     max_level: tuple[int, str] | None
 
     def __init__(
         self,
+        logger: logging.Logger,
         min_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         | None = None,
         max_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         | None = None,
     ):
+        self.logger = logger
         self.min_level = None
         self.max_level = None
 
@@ -206,7 +219,9 @@ class _ClampedLogFilter(logging.Filter):
             if record.levelno > max_level_no:
                 record.levelno = max_level_no
                 record.levelname = max_level_name
-                return True
+                # `Logger.log` checked the original level before filters ran, so
+                # drop the record if the logger isn't enabled for the clamped level.
+                return self.logger.isEnabledFor(max_level_no)
 
         if self.min_level:
             min_level_no, min_level_name = self.min_level
@@ -226,7 +241,8 @@ def _clamp_logger(
     """Clamp the logger to a minimum and maximum level.
 
     If min_level is provided, messages logged at a lower level than `min_level` will have their level increased to `min_level`.
-    If max_level is provided, messages logged at a higher level than `max_level` will have their level decreased to `max_level`.
+    If max_level is provided, messages logged at a higher level than `max_level` will have their level decreased to `max_level`,
+    and are dropped if the logger is not enabled for `max_level`.
 
     Args:
         min_level: The lower bound of the clamp
@@ -234,7 +250,11 @@ def _clamp_logger(
     """
     _unclamp_logger(logger=logger)
 
-    logger.addFilter(filter=_ClampedLogFilter(min_level=min_level, max_level=max_level))
+    logger.addFilter(
+        filter=_ClampedLogFilter(
+            logger=logger, min_level=min_level, max_level=max_level
+        )
+    )
 
 
 def _unclamp_logger(logger: logging.Logger) -> None:

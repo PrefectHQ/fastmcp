@@ -98,8 +98,11 @@ For production HTTP deployment with authentication and advanced configuration, s
 Server-Sent Events (SSE) transport was the original HTTP-based transport for MCP. While still supported for backward compatibility, it has limitations compared to the newer Streamable HTTP transport. SSE only supports server-to-client streaming, making it less efficient for bidirectional communication.
 
 ```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer")
+
 if __name__ == "__main__":
-    # SSE transport - use HTTP instead for new projects
     mcp.run(transport="sse", host="127.0.0.1", port=8000)
 ```
 
@@ -136,7 +139,7 @@ fastmcp run server.py --with pandas --with numpy
 fastmcp run server.py --with-requirements requirements.txt
 
 # Combine multiple options
-fastmcp run server.py --python 3.10 --with httpx --transport http
+fastmcp run server.py --python 3.12 --with httpx --transport http
 
 # Run within a specific project directory
 fastmcp run server.py --project /path/to/project
@@ -169,7 +172,7 @@ During development, you can use the `--reload` flag to automatically restart you
 fastmcp run server.py --reload
 ```
 
-The server watches for changes to Python files in the current directory and restarts automatically when you save changes. This provides a fast feedback loop during development without manually stopping and starting the server.
+The server watches the current directory and restarts when you save a source file. The watcher covers Python files along with common frontend, markup, style, config, and image files (`.js`, `.ts`, `.html`, `.css`, `.json`, `.toml`, `.svg`, and similar), so changes to app assets also trigger a restart.
 
 ```bash
 # Watch specific directories for changes
@@ -180,7 +183,7 @@ fastmcp run server.py --reload --transport http --port 8080
 ```
 
 <Note>
-Auto-reload uses stateless mode to enable seamless restarts. For stdio transport, this is fully featured. For HTTP transport, some bidirectional features like elicitation are not available during reload mode.
+Auto-reload uses stateless mode to enable seamless restarts. For stdio transport, this is fully featured. For HTTP transport, handshake-era `ctx.elicit()` is not available during reload mode; the modern guard pattern (returning `InputRequiredResult`) needs no session back-channel and is unaffected.
 </Note>
 
 SSE transport does not support auto-reload due to session limitations. Use HTTP transport instead if you need both network access and auto-reload.
@@ -240,7 +243,7 @@ if __name__ == "__main__":
     mcp.run(transport="http")  # Health check at http://localhost:8000/health
 ```
 
-Custom routes are served by the same web server as your MCP endpoint. They're available at the root of your domain while the MCP endpoint is at `/mcp/`. For more complex web applications, consider [mounting your MCP server into a FastAPI or Starlette app](/deployment/http#integration-with-web-frameworks).
+Custom routes are served by the same web server as your MCP endpoint. They're available at the root of your domain while the MCP endpoint is at `/mcp`. For more complex web applications, consider [mounting your MCP server into a FastAPI or Starlette app](/deployment/http#integration-with-web-frameworks).
 
 ## Alternative Initialization Patterns
 

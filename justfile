@@ -1,4 +1,4 @@
-api_ref_package := "fastmcp-slim[anthropic,apps,azure,code-mode,full,gemini,openai,tasks] @ file://" + justfile_directory() + "/fastmcp_slim"
+api_ref_package := "fastmcp-slim[anthropic,apps,azure,client,code-mode,gemini,openai,server] @ file://" + justfile_directory() + "/fastmcp_slim"
 
 # Build the project
 build:

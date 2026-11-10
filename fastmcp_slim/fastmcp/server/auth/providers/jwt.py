@@ -4,29 +4,19 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import time
-import warnings
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Literal, TypeAlias, cast
 
-import httpx
-
-with warnings.catch_warnings():
-    # authlib.jose emits AuthlibDeprecationWarning on import; suppress it so
-    # importing this provider does not trigger the warning under
-    # `warnings.simplefilter("error")`. The `authlib.deprecate` import lives
-    # inside this block too: importing it for the first time runs
-    # `warnings.simplefilter("always", AuthlibDeprecationWarning)` at module
-    # scope, which would otherwise leak past `catch_warnings()` and clobber
-    # the caller's filter for subsequent Authlib deprecations. See
-    # jlowin/fastmcp#4098.
-    from authlib.deprecate import AuthlibDeprecationWarning
-
-    warnings.simplefilter("ignore", AuthlibDeprecationWarning)
-    from authlib.jose import JsonWebKey, JsonWebToken
-    from authlib.jose.errors import JoseError
+import anyio
+import httpx2
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from joserfc import jwk, jwt
+from joserfc.errors import JoseError
+from joserfc.jws import JWSRegistry
+from joserfc.registry import JWS_HEADER_REGISTRY
 from pydantic import AnyHttpUrl, SecretStr
 from typing_extensions import TypedDict
 
@@ -36,6 +26,51 @@ from fastmcp.utilities.auth import decode_jwt_header, parse_scopes
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+JWKKeyData: TypeAlias = dict[str, str | list[str]]
+SUPPORTED_JWS_HEADER_FIELDS = frozenset(JWS_HEADER_REGISTRY)
+
+
+def _key_type_for_algorithm(algorithm: str) -> Literal["oct", "RSA", "EC", "OKP"]:
+    if algorithm.startswith("HS"):
+        return "oct"
+    if algorithm.startswith(("RS", "PS")):
+        return "RSA"
+    if algorithm.startswith("ES"):
+        return "EC"
+    if algorithm in {"EdDSA", "Ed25519", "Ed448"}:
+        return "OKP"
+    raise ValueError(f"Unsupported algorithm: {algorithm}.")
+
+
+def _import_key_for_algorithm(key: str | bytes | JWKKeyData, algorithm: str):
+    return jwk.import_key(key, _key_type_for_algorithm(algorithm))
+
+
+def _jwk_to_pem(key_data: JWKKeyData) -> str:
+    key_type = key_data.get("kty")
+    if key_type == "RSA":
+        return jwk.import_key(key_data, "RSA").as_pem().decode("utf-8")
+    if key_type == "EC":
+        return jwk.import_key(key_data, "EC").as_pem().decode("utf-8")
+    if key_type == "OKP":
+        return jwk.import_key(key_data, "OKP").as_pem().decode("utf-8")
+    raise ValueError(f"Unsupported JWK key type: {key_type!r}")
+
+
+def _has_unsupported_critical_headers(header: dict[str, Any]) -> bool:
+    crit = header.get("crit")
+    if crit is None:
+        return False
+    if not isinstance(crit, list):
+        return True
+
+    return any(
+        not isinstance(header_name, str)
+        or header_name not in header
+        or header_name not in SUPPORTED_JWS_HEADER_FIELDS
+        for header_name in crit
+    )
 
 
 class JWKData(TypedDict, total=False):
@@ -47,6 +82,8 @@ class JWKData(TypedDict, total=False):
     alg: str  # Algorithm (e.g., "RS256")
     n: str  # Modulus (for RSA keys)
     e: str  # Exponent (for RSA keys)
+    crv: str  # Curve name (for EC and OKP keys)
+    x: str  # Public key coordinate (for EC and OKP keys)
     x5c: list[str]  # X.509 certificate chain (for JWKs)
     x5t: str  # X.509 certificate thumbprint (for JWKs)
 
@@ -145,12 +182,12 @@ class RSAKeyPair:
             payload.update(additional_claims)
 
         # Create JWT
-        jwt_lib = JsonWebToken(["RS256"])
-        token_bytes = jwt_lib.encode(
-            header, payload, self.private_key.get_secret_value()
+        signing_key = _import_key_for_algorithm(
+            self.private_key.get_secret_value(), "RS256"
         )
+        token = jwt.encode(header, payload, signing_key, algorithms=["RS256"])
 
-        return token_bytes.decode("utf-8")
+        return token
 
 
 def _looks_like_pem_public_key(key: str | bytes) -> bool:
@@ -169,10 +206,11 @@ def _looks_like_pem_public_key(key: str | bytes) -> bool:
 
 class JWTVerifier(TokenVerifier):
     """
-    JWT token verifier supporting both asymmetric (RSA/ECDSA) and symmetric (HMAC) algorithms.
+    JWT token verifier supporting asymmetric (RSA/ECDSA/EdDSA) and symmetric (HMAC) algorithms.
 
     This verifier validates JWT tokens using various signing algorithms:
-    - **Asymmetric algorithms** (RS256/384/512, ES256/384/512, PS256/384/512):
+    - **Asymmetric algorithms** (RS256/384/512, ES256/384/512, PS256/384/512,
+      Ed25519, Ed448, and legacy EdDSA):
       Uses public/private key pairs. Ideal for external clients and services where
       only the authorization server has the private key.
     - **Symmetric algorithms** (HS256/384/512): Uses a shared secret for both
@@ -197,7 +235,8 @@ class JWTVerifier(TokenVerifier):
         required_scopes: list[str] | None = None,
         base_url: AnyHttpUrl | str | None = None,
         ssrf_safe: bool = False,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
+        jwks_refresh_interval: float = 30.0,
     ):
         """
         Initialize a JWTVerifier configured to validate JWTs using either a static key or a JWKS endpoint.
@@ -207,21 +246,25 @@ class JWTVerifier(TokenVerifier):
             jwks_uri: URI to fetch a JSON Web Key Set; used when verifying tokens with remote JWKS.
             issuer: Expected issuer claim value or list of allowed issuer values.
             audience: Expected audience claim value or list of allowed audience values.
-            algorithm: JWT signing algorithm to accept (default: "RS256"). Supported: HS256/384/512, RS256/384/512, ES256/384/512, PS256/384/512.
+            algorithm: JWT signing algorithm to accept (default: "RS256"). Supported: HS256/384/512, RS256/384/512, ES256/384/512, PS256/384/512, Ed25519, Ed448, and legacy EdDSA.
             required_scopes: Scopes that must be present in validated tokens.
             base_url: Base URL passed to the parent TokenVerifier.
             ssrf_safe: If True, JWKS fetches use SSRF protection (HTTPS-only,
                 public IPs, DNS pinning). Enable when the JWKS URI comes from
                 untrusted input (e.g. CIMD documents). Defaults to False so
                 operator-configured JWKS URIs (including localhost) work normally.
-            http_client: Optional httpx.AsyncClient for connection pooling. When provided,
+            http_client: Optional httpx2.AsyncClient for connection pooling. When provided,
                 the client is reused for JWKS fetches and the caller is responsible for
                 its lifecycle. When None (default), a fresh client is created per fetch.
                 Cannot be used with ssrf_safe=True.
+            jwks_refresh_interval: Minimum seconds between JWKS refresh attempts,
+                including failed attempts. Defaults to 30. Set to zero to refresh
+                on every cache miss. Known keys remain usable for the cache TTL.
 
         Raises:
             ValueError: If neither or both of `public_key` and `jwks_uri` are provided,
-                if `algorithm` is unsupported, or if `http_client` is provided with `ssrf_safe=True`.
+                if `algorithm` is unsupported, if `http_client` is provided with
+                `ssrf_safe=True`, or if `jwks_refresh_interval` is negative or non-finite.
         """
         if not public_key and not jwks_uri:
             raise ValueError("Either public_key or jwks_uri must be provided")
@@ -250,6 +293,9 @@ class JWTVerifier(TokenVerifier):
             "PS256",
             "PS384",
             "PS512",
+            "EdDSA",
+            "Ed25519",
+            "Ed448",
         }:
             raise ValueError(f"Unsupported algorithm: {algorithm}.")
 
@@ -278,17 +324,22 @@ class JWTVerifier(TokenVerifier):
         self.algorithm = algorithm
         self.issuer = issuer
         self.audience = audience
+        if not math.isfinite(jwks_refresh_interval) or jwks_refresh_interval < 0:
+            raise ValueError("jwks_refresh_interval must be finite and non-negative")
+
         self.public_key = public_key
         self.jwks_uri = jwks_uri
         self.ssrf_safe = ssrf_safe
         self._http_client = http_client
-        self.jwt = JsonWebToken([self.algorithm])
         self.logger = get_logger(__name__)
 
         # Simple JWKS cache
         self._jwks_cache: dict[str, str] = {}
         self._jwks_cache_time: float = 0
         self._cache_ttl = 3600  # 1 hour
+        self._jwks_refresh_interval = jwks_refresh_interval
+        self._jwks_last_refresh_attempt: float | None = None
+        self._shared_jwks_refresh_lock = anyio.Lock()
 
     async def _get_verification_key(self, token: str) -> str | bytes:
         """Get the verification key for the token."""
@@ -305,11 +356,11 @@ class JWTVerifier(TokenVerifier):
             raise ValueError(f"Failed to extract key ID from token: {e}") from e
 
     async def _get_jwks_key(self, kid: str | None) -> str:
-        """Fetch key from JWKS with simple caching and SSRF protection."""
+        """Resolve a key, sharing refreshes and retaining fresh cached keys."""
         if not self.jwks_uri:
             raise ValueError("JWKS URI not configured")
 
-        current_time = time.time()
+        current_time = time.monotonic()
 
         # Check cache first
         if current_time - self._jwks_cache_time < self._cache_ttl:
@@ -319,28 +370,88 @@ class JWTVerifier(TokenVerifier):
                 # If no kid but only one key cached, use it
                 return next(iter(self._jwks_cache.values()))
 
+        async with self._shared_jwks_refresh_lock:
+            current_time = time.monotonic()
+            fresh = current_time - self._jwks_cache_time < self._cache_ttl
+            if fresh:
+                if kid and kid in self._jwks_cache:
+                    return self._jwks_cache[kid]
+                if not kid and len(self._jwks_cache) == 1:
+                    return next(iter(self._jwks_cache.values()))
+
+            if (
+                self._jwks_last_refresh_attempt is not None
+                and current_time - self._jwks_last_refresh_attempt
+                < self._jwks_refresh_interval
+            ):
+                raise ValueError(
+                    "No matching fresh JWKS key; refresh available shortly"
+                )
+
+            self._jwks_last_refresh_attempt = current_time
+            return await self._refresh_jwks_key(kid)
+
+    async def _refresh_jwks_key(self, kid: str | None) -> str:
+        """Refresh the complete key set while holding the refresh lock."""
         # Fetch JWKS — with SSRF protection when enabled (untrusted URIs)
         try:
             jwks_data = await self._fetch_jwks()
 
-            # Cache all keys
-            self._jwks_cache = {}
+            # Cache all usable keys. A key that cannot be converted is skipped
+            # rather than failing the whole set — per RFC 7517 §5, clients
+            # should ignore JWKs they don't understand. Otherwise one exotic
+            # key published by the authorization server would reject every
+            # token, including ones signed by supported keys in the same set
+            # (#4515).
+            keys: dict[str, str] = {}
+            skipped_kids: set[str] = set()
+            expected_key_type = _key_type_for_algorithm(self.algorithm)
             for key_data in jwks_data.get("keys", []):
+                if not isinstance(key_data, dict):
+                    self.logger.debug("Skipping non-object JWKS entry: %r", key_data)
+                    continue
                 key_kid = key_data.get("kid")
-                jwk = JsonWebKey.import_key(key_data)
-                public_key = jwk.get_public_key()
+                if key_data.get("kty") != expected_key_type:
+                    self.logger.debug(
+                        "Skipping JWKS key %r: key type %r is incompatible "
+                        "with algorithm %s",
+                        key_kid,
+                        key_data.get("kty"),
+                        self.algorithm,
+                    )
+                    if key_kid:
+                        skipped_kids.add(key_kid)
+                    continue
+                try:
+                    public_key = _jwk_to_pem(key_data)
+                except (JoseError, TypeError, KeyError, ValueError) as e:
+                    self.logger.debug("Skipping unusable JWKS key %r: %s", key_kid, e)
+                    if key_kid:
+                        skipped_kids.add(key_kid)
+                    continue
 
                 if key_kid:
-                    self._jwks_cache[key_kid] = public_key
+                    keys[key_kid] = public_key
                 else:
                     # Key without kid - use a default identifier
-                    self._jwks_cache["_default"] = public_key
+                    keys["_default"] = public_key
 
-            self._jwks_cache_time = current_time
+            self._jwks_cache = keys
+            self._jwks_cache_time = time.monotonic()
 
             # Select the appropriate key
             if kid:
                 if kid not in self._jwks_cache:
+                    if kid in skipped_kids:
+                        self.logger.debug(
+                            "JWKS key lookup failed: key ID '%s' is present "
+                            "but its key type is unsupported",
+                            kid,
+                        )
+                        raise ValueError(
+                            f"Key ID '{kid}' found in JWKS but its key type "
+                            "is unsupported"
+                        )
                     self.logger.debug(
                         "JWKS key lookup failed: key ID '%s' not found", kid
                     )
@@ -360,11 +471,11 @@ class JWTVerifier(TokenVerifier):
         except (SSRFError, SSRFFetchError) as e:
             self.logger.debug("JWKS fetch blocked by SSRF protection: %s", e)
             raise ValueError(f"Failed to fetch JWKS: {e}") from e
-        except httpx.HTTPError as e:
+        except httpx2.HTTPError as e:
             raise ValueError(f"Failed to fetch JWKS: {e}") from e
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JWKS JSON: {e}") from e
-        except (JoseError, TypeError, KeyError) as e:
+        except (JoseError, TypeError, KeyError, ValueError) as e:
             self.logger.debug("JWKS key processing failed: %s", e)
             raise ValueError(f"Failed to process JWKS: {e}") from e
 
@@ -385,11 +496,23 @@ class JWTVerifier(TokenVerifier):
             async with (
                 contextlib.nullcontext(self._http_client)
                 if self._http_client is not None
-                else httpx.AsyncClient(timeout=httpx.Timeout(10.0))
+                else httpx2.AsyncClient(timeout=httpx2.Timeout(10.0))
             ) as client:
                 response = await client.get(self.jwks_uri)
                 response.raise_for_status()
                 return response.json()
+
+    def _validate_issuer(self, issuer: Any) -> bool:
+        """Check a token's `iss` claim against the configured issuer(s).
+
+        Subclasses override this to implement provider-specific rules, such as
+        accepting a family of related issuers.
+        """
+        if isinstance(self.issuer, list):
+            # self.issuer is a list - the token issuer must match one of them
+            return issuer in self.issuer
+        # self.issuer is a string - check for equality
+        return issuer == self.issuer
 
     def _extract_scopes(self, claims: dict[str, Any]) -> list[str]:
         """
@@ -423,7 +546,23 @@ class JWTVerifier(TokenVerifier):
             verification_key = await self._get_verification_key(token)
 
             # Decode and verify the JWT token
-            claims = self.jwt.decode(token, verification_key)
+            key = _import_key_for_algorithm(verification_key, self.algorithm)
+            header = decode_jwt_header(token)
+            if _has_unsupported_critical_headers(header):
+                self.logger.debug(
+                    "Token validation failed: unsupported critical JWT header"
+                )
+                return None
+
+            claims = jwt.decode(
+                token,
+                key,
+                algorithms=[self.algorithm],
+                registry=JWSRegistry(
+                    algorithms=[self.algorithm],
+                    strict_check_header=False,
+                ),
+            ).claims
 
             # Extract client ID early for logging
             client_id = (
@@ -450,16 +589,7 @@ class JWTVerifier(TokenVerifier):
             if self.issuer:
                 iss = claims.get("iss")
 
-                # Handle different combinations of issuer types
-                issuer_valid = False
-                if isinstance(self.issuer, list):
-                    # self.issuer is a list - check if token issuer matches any expected issuer
-                    issuer_valid = iss in self.issuer
-                else:
-                    # self.issuer is a string - check for equality
-                    issuer_valid = iss == self.issuer
-
-                if not issuer_valid:
+                if not self._validate_issuer(iss):
                     self.logger.warning(
                         "Bearer token rejected for client %s: issuer mismatch "
                         "(got %r, expected %r)",
@@ -524,6 +654,7 @@ class JWTVerifier(TokenVerifier):
                 client_id=str(client_id),
                 scopes=scopes,
                 expires_at=int(exp) if exp is not None else None,
+                subject=claims.get("sub"),
                 claims=claims,
             )
 
@@ -612,5 +743,6 @@ class StaticTokenVerifier(TokenVerifier):
             client_id=token_data["client_id"],
             scopes=scopes,
             expires_at=expires_at,
+            subject=token_data.get("sub"),
             claims=token_data,
         )

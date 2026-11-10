@@ -1,60 +1,75 @@
-# FastMCP Tasks Example
+# FastMCP Background Tasks Example
 
-Demonstrates background task execution with Docket, including progress tracking, distributed backends, and CLI worker management.
+A runnable client/server pair for SEP-2663 background tasks. The server exposes
+one `task=True` tool that reports progress as it works; the client drives it
+three ways — transparently, through an explicit handle, and several at once in
+parallel.
 
-## Setup
+This runs on the in-memory backend by default, so there's nothing to install or
+start beyond the two processes.
+
+## Run it
+
+In one terminal, start the server:
 
 ```bash
-# From the fastmcp root directory
-uv sync
+uv sync                              # from the fastmcp root, once
+python examples/tasks/server.py      # listens on http://127.0.0.1:8000/mcp
+```
 
-# Start Redis
+In another terminal, drive it from the client:
+
+```bash
+# Transparent — call_tool runs the background task and returns its result
+python examples/tasks/client.py --duration 8
+
+# Explicit handle — returns immediately, poll it yourself, then collect
+python examples/tasks/client.py handle --duration 6
+
+# Parallel — fire several tasks at once and watch them overlap
+python examples/tasks/client.py parallel
+python examples/tasks/client.py parallel 8 6 4 2
+```
+
+The `parallel` run is the one to watch: four tasks of decreasing duration all
+start at once and total wall-clock tracks the *longest* task rather than the
+sum, because the worker runs them concurrently.
+
+## How it works
+
+The server enables tasks with one line:
+
+```python
+mcp = FastMCP("Tasks Example")
+mcp.add_extension(TasksExtension())
+```
+
+The client opts in by importing `fastmcp_tasks` (which it does to use
+`call_tool_task`). That single import enables task support for every `Client`
+in the process — without it, a `Client` never advertises the tasks capability,
+so the server would run the calls synchronously.
+
+## Distributed workers (optional)
+
+The default `memory://` backend runs the worker in the server process. To run
+workers as separate processes, point Docket at Redis and start it first:
+
+```bash
 cd examples/tasks
 docker compose up -d
+export FASTMCP_DOCKET_URL=redis://localhost:24242/0   # or: direnv allow
 
-# Load environment (or source .envrc manually)
-direnv allow
-
-# Run the server
-fastmcp run server.py
+python server.py                                        # in one terminal
+python -m fastmcp_tasks.worker_cli worker server.py     # extra worker(s) in others
 ```
 
-For single-process mode without Redis, set `FASTMCP_DOCKET_URL=memory://` (note: CLI workers won't work).
+| Backend      | Workers                         |
+| ------------ | ------------------------------- |
+| `memory://`  | in-process only (default)       |
+| `redis://…`  | distributed across processes    |
 
-## Running the Client
+## Learn more
 
-```bash
-# Background execution with progress callbacks
-python examples/tasks/client.py --duration 10
-
-# Immediate execution (blocks)
-python examples/tasks/client.py immediate --duration 5
-```
-
-## Starting Additional Workers
-
-With Redis, you can run additional workers to process tasks in parallel:
-
-```bash
-fastmcp tasks worker server.py
-
-# Configure via environment:
-export FASTMCP_DOCKET_CONCURRENCY=20
-fastmcp tasks worker server.py
-```
-
-**Backend options:**
-- `memory://` - Single-process only (default)
-- `redis://` - Distributed, multi-process (Redis or Valkey)
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FASTMCP_DOCKET_URL` | `memory://` | Docket backend URL |
-
-## Learn More
-
-- [FastMCP Tasks Documentation](https://gofastmcp.com/docs/tasks)
-- [Docket Documentation](https://github.com/PrefectHQ/docket)
-- [MCP Task Protocol (SEP-1686)](https://spec.modelcontextprotocol.io/specification/architecture/tasks/)
+- [Server background tasks](https://gofastmcp.com/servers/tasks)
+- [Client background tasks](https://gofastmcp.com/clients/tasks)
+- [Docket](https://github.com/chrisguidry/docket)

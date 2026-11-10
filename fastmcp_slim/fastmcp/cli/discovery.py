@@ -97,30 +97,39 @@ def _parse_mcp_servers(
     if not servers_dict:
         return []
 
-    normalized = {
-        name: _normalize_server_entry(entry)
-        for name, entry in servers_dict.items()
-        if isinstance(entry, dict)
-    }
+    discovered: list[DiscoveredServer] = []
+    for name, entry in servers_dict.items():
+        if not isinstance(entry, dict):
+            continue
 
-    try:
-        config = MCPConfig.from_dict({"mcpServers": normalized})
-    except Exception as exc:
-        logger.warning("Could not parse MCP servers from %s: %s", config_path, exc)
-        return []
+        normalized = _normalize_server_entry(entry)
+        try:
+            config = MCPConfig.from_dict({"mcpServers": {name: normalized}})
+        except Exception as exc:
+            logger.warning(
+                "Could not parse MCP server %r from %s: %s",
+                name,
+                config_path,
+                exc,
+            )
+            continue
 
-    return [
-        DiscoveredServer(
-            name=name, source=source, config=server, config_path=config_path
+        discovered.append(
+            DiscoveredServer(
+                name=name,
+                source=source,
+                config=config.mcpServers[name],
+                config_path=config_path,
+            )
         )
-        for name, server in config.mcpServers.items()
-    ]
+
+    return discovered
 
 
 def _parse_mcp_config(path: Path, source: str) -> list[DiscoveredServer]:
     """Parse an mcpServers-style JSON file into discovered servers."""
     try:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
     except OSError as exc:
         logger.debug("Could not read %s: %s", path, exc)
         return []
@@ -158,7 +167,7 @@ def _scan_claude_code(start_dir: Path) -> list[DiscoveredServer]:
     """Scan ``~/.claude.json`` for global and project-scoped MCP servers."""
     path = Path.home() / ".claude.json"
     try:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
     except OSError:
         return []
 
@@ -171,26 +180,42 @@ def _scan_claude_code(start_dir: Path) -> list[DiscoveredServer]:
     if not isinstance(data, dict):
         return []
 
-    results: list[DiscoveredServer] = []
+    global_results: list[DiscoveredServer] = []
+    project_results: list[DiscoveredServer] = []
 
     # Global servers
     if global_servers := data.get("mcpServers"):
         if isinstance(global_servers, dict):
-            results.extend(
+            global_results.extend(
                 _parse_mcp_servers(
                     global_servers, source="claude-code", config_path=path
                 )
             )
 
-    # Project-scoped servers matching start_dir
-    resolved_dir = str(start_dir.resolve())
+    # Project-scoped servers matching start_dir. Claude Code keys
+    # ``projects`` by a raw path string, and on Windows it writes forward
+    # slashes where ``Path.resolve()`` produces backslashes, so fall back to
+    # comparing paths when the exact key is missing. Only one entry is used so
+    # stale duplicate spellings of the same directory don't collide.
+    resolved_dir = start_dir.resolve()
     projects = data.get("projects", {})
     if isinstance(projects, dict):
-        project_data = projects.get(resolved_dir, {})
+        project_data = projects.get(str(resolved_dir))
+        if project_data is None:
+            project_data = next(
+                (
+                    candidate
+                    for key, candidate in projects.items()
+                    if isinstance(key, str)
+                    and isinstance(candidate, dict)
+                    and _is_same_project_dir(key, resolved_dir)
+                ),
+                None,
+            )
         if isinstance(project_data, dict):
             if project_servers := project_data.get("mcpServers"):
                 if isinstance(project_servers, dict):
-                    results.extend(
+                    project_results.extend(
                         _parse_mcp_servers(
                             project_servers,
                             source="claude-code",
@@ -198,7 +223,21 @@ def _scan_claude_code(start_dir: Path) -> list[DiscoveredServer]:
                         )
                     )
 
-    return results
+    # Claude Code's project-local entries override same-name user entries.
+    # Returning both under the same qualified name makes the CLI ambiguous and
+    # would otherwise select the lower-priority user definition.
+    project_names = {server.name for server in project_results}
+    return [
+        server for server in global_results if server.name not in project_names
+    ] + project_results
+
+
+def _is_same_project_dir(stored: str, resolved_start: Path) -> bool:
+    """Return whether a Claude Code ``projects`` key names *resolved_start*."""
+    try:
+        return Path(stored).expanduser().resolve() == resolved_start
+    except (OSError, RuntimeError, ValueError):
+        return False
 
 
 def _scan_cursor_workspace(start_dir: Path) -> list[DiscoveredServer]:
@@ -252,7 +291,8 @@ def _scan_goose() -> list[DiscoveredServer]:
     """Scan Goose config for MCP server extensions.
 
     Goose uses YAML (``~/.config/goose/config.yaml``) with a different
-    schema — MCP servers are defined as ``extensions`` with ``type: stdio``.
+    schema — MCP servers are defined as ``extensions`` with ``type: stdio``
+    or ``type: streamable_http``. Legacy ``type: sse`` is also recognized.
     """
     if sys.platform == "win32":
         config_dir = Path(
@@ -269,7 +309,7 @@ def _scan_goose() -> list[DiscoveredServer]:
 
     path = config_dir / "config.yaml"
     try:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
     except OSError:
         return []
 
@@ -302,6 +342,12 @@ def _scan_goose() -> list[DiscoveredServer]:
             }
         elif ext_type == "sse" and "uri" in ext:
             servers[name] = {"url": ext["uri"], "transport": "sse"}
+        elif ext_type == "streamable_http" and "uri" in ext:
+            servers[name] = {
+                "url": ext["uri"],
+                "transport": "http",
+                "headers": ext.get("headers", {}),
+            }
 
     return _parse_mcp_servers(servers, source="goose", config_path=path)
 

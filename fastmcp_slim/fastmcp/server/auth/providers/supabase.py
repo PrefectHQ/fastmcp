@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-import httpx
+import httpx2
 from pydantic import AnyHttpUrl
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -153,7 +153,7 @@ class SupabaseProvider(RemoteAuthProvider):
         async def oauth_authorization_server_metadata(request):
             """Forward Supabase OAuth authorization server metadata with FastMCP customizations."""
             try:
-                async with httpx.AsyncClient() as client:
+                async with httpx2.AsyncClient() as client:
                     response = await client.get(
                         f"{self.project_url}/{self.auth_route}/.well-known/oauth-authorization-server"
                     )

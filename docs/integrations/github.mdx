@@ -69,7 +69,7 @@ from fastmcp.server.auth.providers.github import GitHubProvider
 # The GitHubProvider handles GitHub's token format and validation
 auth_provider = GitHubProvider(
     client_id="Ov23liAbcDefGhiJkLmN",  # Your GitHub OAuth App Client ID
-    client_secret="github_pat_...",     # Your GitHub OAuth App Client Secret
+    client_secret="your-github-client-secret",  # Your GitHub OAuth App Client Secret
     base_url="http://localhost:8000",   # Must match your OAuth App configuration
     # redirect_path="/auth/callback"   # Default value, customize if needed
 )
@@ -151,7 +151,7 @@ from cryptography.fernet import Fernet
 # Production setup with encrypted persistent token storage
 auth_provider = GitHubProvider(
     client_id="Ov23liAbcDefGhiJkLmN",
-    client_secret="github_pat_...",
+    client_secret="your-github-client-secret",
     base_url="https://your-production-domain.com",
 
     # Production token management

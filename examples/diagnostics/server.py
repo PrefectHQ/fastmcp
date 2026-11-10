@@ -3,11 +3,11 @@
 import asyncio
 import os
 import subprocess
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import httpx
+import httpx2
 
 from fastmcp import FastMCP
 from fastmcp.server import create_proxy
@@ -17,7 +17,7 @@ ECHO_SERVER_URL = f"http://localhost:{ECHO_SERVER_PORT}/sse"
 
 
 @asynccontextmanager
-async def lifespan(server: FastMCP) -> AsyncIterator[None]:
+async def lifespan(server: FastMCP) -> AsyncGenerator[None, None]:
     """Start echo server subprocess and mount proxy to it."""
     echo_path = Path(__file__).parent.parent / "echo.py"
 
@@ -44,7 +44,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[None]:
     )
 
     # Wait for server to be ready (async to avoid blocking event loop)
-    async with httpx.AsyncClient() as client:
+    async with httpx2.AsyncClient() as client:
         for _ in range(50):
             try:
                 await client.get(

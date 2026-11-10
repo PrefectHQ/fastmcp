@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from fastmcp import Context, FastMCP
 from fastmcp.client.client import Client
@@ -13,6 +13,8 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
     get_elicitation_schema,
+    handle_elicit_accept,
+    parse_elicit_response_type,
     validate_elicitation_json_schema,
 )
 
@@ -54,7 +56,7 @@ async def test_elicitation_implicit_acceptance(fastmcp_server):
         return response_type(name="Bob")
 
     async with Client(
-        fastmcp_server, elicitation_handler=elicitation_handler
+        fastmcp_server, mode="legacy", elicitation_handler=elicitation_handler
     ) as client:
         result = await client.call_tool("ask_for_name")
         assert result.data == "Hello, Bob!"
@@ -69,7 +71,7 @@ async def test_elicitation_implicit_acceptance_must_be_dict(fastmcp_server):
         return "Bob"
 
     async with Client(
-        fastmcp_server, elicitation_handler=elicitation_handler
+        fastmcp_server, mode="legacy", elicitation_handler=elicitation_handler
     ) as client:
         with pytest.raises(
             ToolError,
@@ -149,6 +151,70 @@ def test_enum_elicitation_schema_inline_untitled():
     ]
 
 
+def test_enum_elicitation_schema_inline_when_enum_reused():
+    """An enum shared by several fields is inlined in each of them."""
+
+    class Currency(Enum):
+        USD = "usd"
+        EUR = "eur"
+
+    class Conversion(BaseModel):
+        source: Currency
+        target: Currency = Field(default=Currency.EUR, description="Target")
+        accepted: list[Currency]
+
+    schema = get_elicitation_schema(Conversion)
+
+    assert "$defs" not in schema
+    assert "$ref" not in str(schema)
+    assert schema["properties"] == {
+        "source": {"enum": ["usd", "eur"], "title": "Currency", "type": "string"},
+        "target": {
+            "default": "eur",
+            "description": "Target",
+            "enum": ["usd", "eur"],
+            "title": "Currency",
+            "type": "string",
+        },
+        "accepted": {
+            "items": {"enum": ["usd", "eur"], "title": "Currency", "type": "string"},
+            "title": "Accepted",
+            "type": "array",
+        },
+    }
+
+
+async def test_elicit_model_with_reused_enum():
+    """ctx.elicit() accepts a response type whose fields share an enum."""
+
+    class Currency(Enum):
+        USD = "usd"
+        EUR = "eur"
+
+    @dataclass
+    class Conversion:
+        source: Currency
+        target: Currency
+
+    mcp = FastMCP("TestServer")
+
+    @mcp.tool
+    async def convert(ctx: Context) -> str:
+        result = await ctx.elicit("Pick currencies", response_type=Conversion)
+        assert isinstance(result, AcceptedElicitation)
+        assert result.data == Conversion(source=Currency.USD, target=Currency.EUR)
+        return f"{result.data.source.value} -> {result.data.target.value}"
+
+    async def elicitation_handler(message, response_type, params, ctx):
+        return ElicitResult(action="accept", content={"source": "usd", "target": "eur"})
+
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
+        result = await client.call_tool("convert", {})
+        assert result.data == "usd -> eur"
+
+
 async def test_dict_based_titled_single_select():
     """Test dict-based titled single-select enum."""
     mcp = FastMCP("TestServer")
@@ -170,7 +236,7 @@ async def test_dict_based_titled_single_select():
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema follows SEP-1330 pattern with type: "string"
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
@@ -182,7 +248,9 @@ async def test_dict_based_titled_single_select():
 
         return ElicitResult(action="accept", content={"value": "low"})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("my_tool", {})
         assert result.data == "low"
 
@@ -200,22 +268,26 @@ async def test_list_list_multi_select_untitled():
         if result.action == "accept":
             assert isinstance(result, AcceptedElicitation)
             assert isinstance(result.data, list)
-            return ",".join(result.data)  # type: ignore[no-matching-overload]  # ty:ignore[no-matching-overload]
+            return ",".join(result.data)  # type: ignore[no-matching-overload]
         return "declined"
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema has array with enum pattern
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
         assert value_schema["type"] == "array"
         assert "enum" in value_schema["items"]
         assert value_schema["items"]["enum"] == ["bug", "feature", "documentation"]
+        # Required by the 2025-11-25 multi-select schema; validating clients reject it otherwise
+        assert value_schema["items"]["type"] == "string"
 
         return ElicitResult(action="accept", content={"value": ["bug", "feature"]})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("my_tool", {})
         assert result.data == "bug,feature"
 
@@ -238,12 +310,12 @@ async def test_list_dict_multi_select_titled():
         if result.action == "accept":
             assert isinstance(result, AcceptedElicitation)
             assert isinstance(result.data, list)
-            return ",".join(result.data)  # type: ignore[no-matching-overload]  # ty:ignore[no-matching-overload]
+            return ",".join(result.data)  # type: ignore[no-matching-overload]
         return "declined"
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema has array with SEP-1330 compliant items (anyOf pattern)
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
@@ -256,7 +328,9 @@ async def test_list_dict_multi_select_titled():
 
         return ElicitResult(action="accept", content={"value": ["low", "high"]})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("my_tool", {})
         assert result.data == "low,high"
 
@@ -310,7 +384,7 @@ async def test_list_enum_multi_select_direct():
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema has array with enum pattern
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
@@ -320,9 +394,47 @@ async def test_list_enum_multi_select_direct():
 
         return ElicitResult(action="accept", content={"value": ["low", "high"]})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("my_tool", {})
         assert result.data == "low,high"
+
+
+CHOICE_SHORTHANDS = [
+    pytest.param(["low", "high"], "high", "urgent", id="single-select"),
+    pytest.param(
+        {"low": {"title": "Low"}, "high": {"title": "High"}},
+        "high",
+        "urgent",
+        id="titled-single-select",
+    ),
+    pytest.param([["bug", "feature"]], ["feature"], ["urgent"], id="multi-select"),
+    pytest.param([["bug", "feature"]], ["feature"], "feature", id="multi-select-str"),
+    pytest.param(
+        [{"bug": {"title": "Bug"}, "feature": {"title": "Feature"}}],
+        ["bug", "feature"],
+        ["bug", "urgent"],
+        id="titled-multi-select",
+    ),
+]
+
+
+@pytest.mark.parametrize("response_type, valid, invalid", CHOICE_SHORTHANDS)
+def test_choice_shorthand_accepts_offered_choices(response_type, valid, invalid):
+    config = parse_elicit_response_type(response_type)
+
+    result = handle_elicit_accept(config, {"value": valid})
+
+    assert result.data == valid
+
+
+@pytest.mark.parametrize("response_type, valid, invalid", CHOICE_SHORTHANDS)
+def test_choice_shorthand_rejects_values_not_offered(response_type, valid, invalid):
+    config = parse_elicit_response_type(response_type)
+
+    with pytest.raises(ValidationError):
+        handle_elicit_accept(config, {"value": invalid})
 
 
 async def test_validation_allows_enum_arrays():
@@ -514,3 +626,13 @@ class TestElicitationDefaults:
 
         assert "default" in props["string_field"]
         assert "default" in props["integer_field"]
+
+
+def test_scalar_elicitation_schema_omits_wrapper_title() -> None:
+    """Scalar/list wrappers must not leak the internal class name on the wire."""
+    from fastmcp.server.elicitation import parse_elicit_response_type
+
+    schema = parse_elicit_response_type(["yes", "no"]).schema
+
+    assert "title" not in schema
+    assert schema["properties"]["value"]["enum"] == ["yes", "no"]

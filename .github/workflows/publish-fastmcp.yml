@@ -15,19 +15,51 @@ jobs:
     name: Upload fastmcp to PyPI
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'release')
+    outputs:
+      is_prerelease: ${{ steps.package_version.outputs.is_prerelease }}
+      version: ${{ steps.package_version.outputs.version }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
 
       - name: Build fastmcp
         run: uv build --package fastmcp
+
+      - name: Read built package version
+        id: package_version
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import email.parser
+          import re
+          import zipfile
+          from pathlib import Path
+
+          wheel = next(Path("dist").glob("fastmcp-*.whl"))
+          metadata_name = next(
+              name for name in zipfile.ZipFile(wheel).namelist()
+              if name.endswith(".dist-info/METADATA")
+          )
+          metadata = email.parser.Parser().parsestr(
+              zipfile.ZipFile(wheel).read(metadata_name).decode()
+          )
+          version = metadata["Version"]
+          public_version = version.partition("+")[0]
+          is_prerelease = bool(
+              re.search(
+                  r"(?i)(?:^|[0-9.])(?:a|b|c|rc|alpha|beta|pre|preview|dev)[0-9]*",
+                  public_version,
+              )
+          )
+          print(f"version={version}")
+          print(f"is_prerelease={str(is_prerelease).lower()}")
+          PY
 
       - name: Verify matching fastmcp-slim is published
         run: |
@@ -83,5 +115,124 @@ jobs:
           echo "fastmcp-slim ${SLIM_VERSION} is not available on PyPI; refusing to publish fastmcp." >&2
           exit 1
 
+      - name: Verify matching fastmcp-tasks is published
+        run: |
+          TASKS_VERSION=$(python - <<'PY'
+          import email.parser
+          import re
+          import zipfile
+          from pathlib import Path
+
+          wheel = next(Path("dist").glob("fastmcp-*.whl"))
+          metadata_name = next(
+              name for name in zipfile.ZipFile(wheel).namelist()
+              if name.endswith(".dist-info/METADATA")
+          )
+          metadata = email.parser.Parser().parsestr(
+              zipfile.ZipFile(wheel).read(metadata_name).decode()
+          )
+          # fastmcp-tasks is pinned via the optional `tasks` extra, so its
+          # Requires-Dist entry carries an `extra == "tasks"` marker — unlike the
+          # base slim dependency, do not skip marked entries here.
+          #
+          # Print nothing when there is no such pin. Release lines that resolve
+          # the `tasks` extra through fastmcp-slim instead of a standalone
+          # fastmcp-tasks package have nothing here to verify.
+          for value in metadata.get_all("Requires-Dist", []):
+              requirement, _, _marker = value.partition(";")
+              match = re.fullmatch(r"fastmcp-tasks==([^;\s]+)", requirement.strip())
+              if match:
+                  print(match.group(1))
+                  break
+          PY
+          )
+
+          if [ -z "$TASKS_VERSION" ]; then
+            echo "This build does not pin fastmcp-tasks; the [tasks] extra cannot be uninstallable, so there is nothing to verify."
+            exit 0
+          fi
+
+          for attempt in {1..12}; do
+            if python - "$TASKS_VERSION" <<'PY'
+          import json
+          import sys
+          import urllib.request
+
+          version = sys.argv[1]
+          url = f"https://pypi.org/pypi/fastmcp-tasks/{version}/json"
+          with urllib.request.urlopen(url, timeout=30) as response:
+              json.load(response)
+          PY
+            then
+              exit 0
+            fi
+
+            echo "fastmcp-tasks ${TASKS_VERSION} is not available on PyPI yet; retrying (${attempt}/12)."
+            sleep 10
+          done
+
+          echo "fastmcp-tasks ${TASKS_VERSION} is not available on PyPI; refusing to publish fastmcp (the [tasks] extra would be uninstallable)." >&2
+          exit 1
+
       - name: Publish fastmcp to PyPI
         run: uv publish -v dist/fastmcp-*.tar.gz dist/fastmcp-*.whl
+
+  update-published-docs:
+    name: Open published-docs PR
+    runs-on: ubuntu-latest
+    needs: pypi-publish
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.event == 'release' && needs['pypi-publish'].outputs.is_prerelease != 'true'
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - name: Generate Marvin App token
+        id: marvin-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        with:
+          app-id: ${{ secrets.MARVIN_APP_ID }}
+          private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+          token: ${{ steps.marvin-token.outputs.token }}
+
+      - name: Check release line
+        id: release_line
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git fetch origin "${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+          if git merge-base --is-ancestor HEAD "refs/remotes/origin/${DEFAULT_BRANCH}"; then
+            echo "update_published_docs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "update_published_docs=false" >> "$GITHUB_OUTPUT"
+            echo "Release commit is not on ${DEFAULT_BRANCH}; skipping published-docs update."
+          fi
+
+      - name: Prepare published docs tree
+        if: steps.release_line.outputs.update_published_docs == 'true'
+        env:
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          git fetch origin published-docs
+          git switch --force-create published-docs origin/published-docs
+          git read-tree --reset -u "$RELEASE_SHA"
+          test "$(git write-tree)" = "$(git rev-parse "${RELEASE_SHA}^{tree}")"
+
+      - name: Open published docs PR
+        if: steps.release_line.outputs.update_published_docs == 'true'
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
+        with:
+          token: ${{ steps.marvin-token.outputs.token }}
+          base: published-docs
+          branch: marvin/publish-docs-v${{ needs.pypi-publish.outputs.version }}
+          commit-message: "Publish FastMCP v${{ needs.pypi-publish.outputs.version }} docs"
+          title: "Publish FastMCP v${{ needs.pypi-publish.outputs.version }} docs"
+          body: "Updates `published-docs` to the exact release tree. Merging publishes the documentation to production."
+          delete-branch: true
+          author: "marvin-context-protocol[bot] <225465937+marvin-context-protocol[bot]@users.noreply.github.com>"
+          committer: "marvin-context-protocol[bot] <225465937+marvin-context-protocol[bot]@users.noreply.github.com>"

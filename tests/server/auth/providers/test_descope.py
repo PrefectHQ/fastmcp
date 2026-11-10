@@ -1,16 +1,27 @@
 """Tests for Descope OAuth provider."""
 
 import os
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
-import httpx
+import httpx2
 import pytest
+from mcp import MCPError
+from starlette.requests import Request
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
-from fastmcp.server.auth.providers.descope import DescopeProvider
-from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.server.auth.providers.descope import (
+    DescopeProvider,
+    _DescopeJWTVerifier,
+)
+from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
+
+PROJECT_LEVEL_OPENID_CONFIGURATION = {
+    "issuer": "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU",
+    "scopes_supported": ["mcp:read"],
+    "jwks_uri": "https://api.descope.com/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/jwks.json",
+}
 
 
 class TestDescopeProvider:
@@ -65,6 +76,229 @@ class TestDescopeProvider:
         )
         assert str(provider3.descope_base_url) == "https://api.descope.com"
         assert provider3.project_id == "P2abc123"
+
+    def test_project_level_config_url_parsing(self):
+        """Test project-level well-known URLs without the agentic path segment."""
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration",
+            base_url="https://myserver.com",
+        )
+
+        assert provider.project_id == "P2v9EBlmO4XTrOwMRfsY1jeUONxU"
+        assert str(provider.descope_base_url) == "https://api.descope.com"
+        assert isinstance(provider.token_verifier, JWTVerifier)
+        assert (
+            provider.token_verifier.issuer
+            == "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU"
+        )
+        assert provider.openid_configuration_url == (
+            "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
+        )
+        assert provider.oauth_authorization_server_metadata_url == (
+            "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/oauth-authorization-server"
+        )
+
+    def test_construction_is_network_free(self):
+        """Construction must not perform discovery I/O, even when it is enabled."""
+        config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
+
+        no_network = AsyncMock(side_effect=AssertionError("no network during init"))
+        with patch("httpx2.AsyncClient.get", new=no_network):
+            provider = DescopeProvider(
+                config_url=config_url,
+                base_url="https://myserver.com",
+            )
+
+        # Discovery is enabled but deferred; nothing has been fetched yet.
+        assert provider._scopes_discovery_enabled is True
+        assert provider._scopes_supported is None
+        assert provider._discovered_scopes is None
+        assert provider._scopes_discovered is False
+        assert provider.token_verifier.required_scopes == []
+
+    async def test_discover_scopes_supported_lazily(self):
+        """scopes_supported are discovered lazily and cached after first fetch."""
+        config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
+        provider = DescopeProvider(
+            config_url=config_url,
+            base_url="https://myserver.com",
+        )
+
+        mock_response = httpx2.Response(
+            200,
+            json=PROJECT_LEVEL_OPENID_CONFIGURATION,
+            request=httpx2.Request("GET", config_url),
+        )
+
+        with patch(
+            "httpx2.AsyncClient.get", new=AsyncMock(return_value=mock_response)
+        ) as mock_get:
+            scopes = await provider._get_scopes_supported()
+            # A second call returns the cached result without another fetch.
+            scopes_again = await provider._get_scopes_supported()
+
+        assert scopes == ["mcp:read"]
+        assert scopes_again == ["mcp:read"]
+        assert provider._discovered_scopes == ["mcp:read"]
+        assert provider._scopes_discovered is True
+        mock_get.assert_awaited_once()
+
+    async def test_scope_discovery_retries_after_transient_failure(self):
+        """A transient discovery failure is not cached and is retried."""
+        config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
+        provider = DescopeProvider(
+            config_url=config_url,
+            base_url="https://myserver.com",
+        )
+
+        failing = AsyncMock(side_effect=httpx2.ConnectError("boom"))
+        with patch("httpx2.AsyncClient.get", new=failing):
+            first = await provider._get_scopes_supported()
+
+        # Failure yields no scopes and is not frozen for the provider's lifetime.
+        assert first is None
+        assert provider._scopes_discovered is False
+        assert provider._discovered_scopes is None
+
+        mock_response = httpx2.Response(
+            200,
+            json=PROJECT_LEVEL_OPENID_CONFIGURATION,
+            request=httpx2.Request("GET", config_url),
+        )
+        with patch("httpx2.AsyncClient.get", new=AsyncMock(return_value=mock_response)):
+            second = await provider._get_scopes_supported()
+
+        assert second == ["mcp:read"]
+        assert provider._scopes_discovered is True
+
+    async def test_empty_scope_discovery_is_cached_as_success(self):
+        """An explicitly empty Descope scope list is a successful discovery."""
+        config_url = (
+            "https://api.descope.com/v1/apps/P2abc123/.well-known/openid-configuration"
+        )
+        provider = DescopeProvider(
+            config_url=config_url,
+            base_url="https://myserver.com",
+        )
+        mock_response = httpx2.Response(
+            200,
+            json={"scopes_supported": []},
+            request=httpx2.Request("GET", config_url),
+        )
+
+        with patch(
+            "httpx2.AsyncClient.get", new=AsyncMock(return_value=mock_response)
+        ) as mock_get:
+            first = await provider._get_scopes_supported()
+            second = await provider._get_scopes_supported()
+
+        assert first == []
+        assert second == []
+        assert provider._scopes_discovered is True
+        assert provider._discovered_scopes == []
+        mock_get.assert_awaited_once()
+
+    def test_get_routes_is_network_free(self):
+        """get_routes must not perform discovery I/O when building routes."""
+        config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
+        provider = DescopeProvider(
+            config_url=config_url,
+            base_url="https://myserver.com",
+        )
+
+        no_network = AsyncMock(side_effect=AssertionError("no network at get_routes"))
+        with patch("httpx2.AsyncClient.get", new=no_network):
+            routes = provider.get_routes("/mcp")
+
+        paths = [route.path for route in routes]
+        assert any("oauth-protected-resource" in path for path in paths)
+        assert any("oauth-authorization-server" in path for path in paths)
+
+    async def test_project_level_metadata_failure_is_not_retried(self):
+        """Identical project-level primary and fallback URLs are fetched once."""
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/P2abc123/.well-known/openid-configuration",
+            base_url="https://myserver.com",
+        )
+        metadata_route = next(
+            route
+            for route in provider.get_routes("/mcp")
+            if route.path == "/.well-known/oauth-authorization-server"
+        )
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": metadata_route.path,
+                "headers": [],
+            }
+        )
+
+        failing = AsyncMock(side_effect=httpx2.ConnectError("boom"))
+        with patch("httpx2.AsyncClient.get", new=failing):
+            response = await metadata_route.endpoint(request)
+
+        assert response.status_code == 500
+        failing.assert_awaited_once_with(
+            provider.oauth_authorization_server_metadata_url
+        )
+
+    def test_scopes_supported_and_required_scopes_can_differ(self):
+        """Test that scopes_supported and required_scopes can be configured independently."""
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/agentic/P2abc123/M123/.well-known/openid-configuration",
+            base_url="https://myserver.com",
+            scopes_supported=["mcp:read", "mcp:write"],
+            required_scopes=["mcp:read"],
+        )
+
+        assert provider._scopes_supported == ["mcp:read", "mcp:write"]
+        assert provider.token_verifier.required_scopes == ["mcp:read"]
+
+    def test_explicit_required_scopes_skip_discovery(self):
+        """Test that explicit required_scopes disable well-known discovery."""
+        config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
+
+        provider = DescopeProvider(
+            config_url=config_url,
+            base_url="https://myserver.com",
+            required_scopes=["custom:scope"],
+        )
+
+        assert provider._scopes_discovery_enabled is False
+        assert provider.token_verifier.required_scopes == ["custom:scope"]
+        assert provider._scopes_supported is None
+
+    def test_explicit_scopes_supported_skip_discovery(self):
+        """Test that explicit scopes_supported disable well-known discovery."""
+        config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
+
+        provider = DescopeProvider(
+            config_url=config_url,
+            base_url="https://myserver.com",
+            scopes_supported=["custom:advertised"],
+        )
+
+        assert provider._scopes_discovery_enabled is False
+        assert provider._scopes_supported == ["custom:advertised"]
+        assert provider.token_verifier.required_scopes == []
+
+    def test_custom_token_verifier_scopes_skip_discovery(self):
+        """Scopes supplied by a custom verifier retain the parent behavior."""
+        token_verifier = JWTVerifier(
+            public_key="secret",
+            algorithm="HS256",
+            required_scopes=["custom:scope"],
+        )
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/P2abc123/.well-known/openid-configuration",
+            base_url="https://myserver.com",
+            token_verifier=token_verifier,
+        )
+
+        assert provider._scopes_discovery_enabled is False
+        assert provider._scopes_supported is None
+        assert provider.token_verifier.scopes_supported == ["custom:scope"]
 
     def test_requires_config_url_or_project_id_and_descope_base_url(self):
         """Test that either config_url or both project_id and descope_base_url are required."""
@@ -124,14 +358,12 @@ class TestDescopeProvider:
         assert str(provider.descope_base_url) == "https://api.descope.com"
         assert isinstance(provider.token_verifier, JWTVerifier)
         assert (
-            provider.token_verifier.issuer
-            == "https://api.descope.com/v1/apps/agentic/P2new123/M123"
+            provider.token_verifier.issuer == "https://api.descope.com/v1/apps/P2new123"
         )
 
     def test_jwt_verifier_configured_correctly(self):
         """Test that JWT verifier is configured correctly."""
         config_url = "https://api.descope.com/v1/apps/agentic/P2abc123/M123/.well-known/openid-configuration"
-        issuer_url = "https://api.descope.com/v1/apps/agentic/P2abc123/M123"
 
         provider = DescopeProvider(
             config_url=config_url,
@@ -144,9 +376,145 @@ class TestDescopeProvider:
             provider.token_verifier.jwks_uri
             == "https://api.descope.com/P2abc123/.well-known/jwks.json"
         )
-        assert provider.token_verifier.issuer == issuer_url
-        assert isinstance(provider.token_verifier, JWTVerifier)
         assert provider.token_verifier.audience == "P2abc123"
+
+    def test_mcp_server_config_url_expects_the_project_level_issuer(self):
+        """Descope mints project-level issuers even for MCP server config URLs."""
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/agentic/P2abc123/M123/.well-known/openid-configuration",
+            base_url="https://myserver.com",
+        )
+
+        assert isinstance(provider.token_verifier, _DescopeJWTVerifier)
+        assert (
+            provider.token_verifier.issuer == "https://api.descope.com/v1/apps/P2abc123"
+        )
+        # The MCP server URL remains the advertised authorization server.
+        assert [str(server) for server in provider.authorization_servers] == [
+            "https://api.descope.com/v1/apps/agentic/P2abc123/M123"
+        ]
+
+    def test_issuers_are_scoped_to_the_configured_project(self):
+        """The verifier derives both issuer families from the project."""
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/P2abc123/.well-known/openid-configuration",
+            base_url="https://myserver.com",
+        )
+
+        assert isinstance(provider.token_verifier, _DescopeJWTVerifier)
+        assert (
+            provider.token_verifier.project_issuer
+            == "https://api.descope.com/v1/apps/P2abc123"
+        )
+        assert (
+            provider.token_verifier.agentic_issuer
+            == "https://api.descope.com/v1/apps/agentic/P2abc123"
+        )
+
+    @pytest.mark.parametrize(
+        "config_url",
+        [
+            "https://api.descope.com/v1/apps/P2abc123/.well-known/openid-configuration",
+            "https://api.descope.com/v1/apps/agentic/P2abc123/M123/.well-known/openid-configuration",
+        ],
+        ids=["project-level-config", "mcp-server-config"],
+    )
+    @pytest.mark.parametrize(
+        "token_issuer",
+        [
+            "https://api.descope.com/v1/apps/P2abc123",
+            "https://api.descope.com/v1/apps/agentic/P2abc123/M123",
+            "https://api.descope.com/v1/apps/P2abc123/T2tenant456",
+        ],
+        ids=["project-level-issuer", "mcp-server-issuer", "tenant-issuer"],
+    )
+    async def test_every_issuer_form_is_accepted(
+        self, config_url: str, token_issuer: str
+    ):
+        """Both config URL forms accept all three issuer forms of the project."""
+        key_pair = RSAKeyPair.generate()
+        provider = DescopeProvider(
+            config_url=config_url, base_url="https://myserver.com"
+        )
+        token = key_pair.create_token(
+            subject="user-123",
+            issuer=token_issuer,
+            audience="P2abc123",
+        )
+
+        with patch.object(
+            JWTVerifier,
+            "_get_verification_key",
+            new=AsyncMock(return_value=key_pair.public_key),
+        ):
+            access_token = await provider.token_verifier.verify_token(token)
+
+        assert access_token is not None
+        assert access_token.claims["iss"] == token_issuer
+
+    async def test_old_api_accepts_every_issuer_form(self):
+        """project_id + descope_base_url derive the same project-scoped issuers."""
+        key_pair = RSAKeyPair.generate()
+        provider = DescopeProvider(
+            project_id="P2abc123",
+            descope_base_url="https://api.descope.com",
+            base_url="https://myserver.com",
+        )
+        tokens = [
+            key_pair.create_token(issuer=issuer, audience="P2abc123")
+            for issuer in (
+                "https://api.descope.com/v1/apps/P2abc123",
+                "https://api.descope.com/v1/apps/agentic/P2abc123/M123",
+                "https://api.descope.com/v1/apps/P2abc123/T2tenant456",
+            )
+        ]
+
+        with patch.object(
+            JWTVerifier,
+            "_get_verification_key",
+            new=AsyncMock(return_value=key_pair.public_key),
+        ):
+            for token in tokens:
+                assert await provider.token_verifier.verify_token(token) is not None
+
+    @pytest.mark.parametrize(
+        "token_issuer",
+        [
+            # Another project entirely.
+            "https://api.descope.com/v1/apps/agentic/P2other456/M123",
+            # Extra path segments below an MCP server.
+            "https://api.descope.com/v1/apps/agentic/P2abc123/M123/extra",
+            # The agentic path with no MCP server ID.
+            "https://api.descope.com/v1/apps/agentic/P2abc123",
+            # A different Descope deployment.
+            "https://evil.example.com/v1/apps/agentic/P2abc123/M123",
+            # A tenant of a different project.
+            "https://api.descope.com/v1/apps/P2other456/T2tenant789",
+            # A project ID that merely starts with the configured one.
+            "https://api.descope.com/v1/apps/P2abc123456",
+            # Another project's project-level issuer.
+            "https://api.descope.com/v1/apps/P2other456",
+        ],
+    )
+    async def test_issuers_outside_the_project_are_rejected(self, token_issuer: str):
+        """Only issuers of the configured project, plus one ID segment, pass."""
+        key_pair = RSAKeyPair.generate()
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/P2abc123/.well-known/openid-configuration",
+            base_url="https://myserver.com",
+        )
+        token = key_pair.create_token(
+            subject="user-123",
+            issuer=token_issuer,
+            audience="P2abc123",
+        )
+
+        with patch.object(
+            JWTVerifier,
+            "_get_verification_key",
+            new=AsyncMock(return_value=key_pair.public_key),
+        ):
+            assert await provider.token_verifier.verify_token(token) is None
 
     def test_required_scopes_support(self):
         """Test that required_scopes are supported and passed to JWT verifier."""
@@ -221,13 +589,58 @@ def client_with_headless_oauth(mcp_server_url: str) -> Client:
 
 
 class TestDescopeProviderIntegration:
+    async def test_protected_resource_metadata_serves_discovered_scopes(self):
+        """The protected resource metadata endpoint advertises discovered scopes."""
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/agentic/P2test123/M123/.well-known/openid-configuration",
+            base_url="http://localhost:4321",
+        )
+        mcp = FastMCP(auth=provider)
+
+        with patch(
+            "fastmcp.server.auth.providers.descope._discover_scopes",
+            new=AsyncMock(return_value=["mcp:read"]),
+        ):
+            async with run_server_async(mcp, transport="http") as url:
+                metadata_url = url.replace(
+                    "/mcp", "/.well-known/oauth-protected-resource/mcp"
+                )
+                async with httpx2.AsyncClient() as client:
+                    response = await client.get(metadata_url)
+
+        response.raise_for_status()
+        assert response.json()["scopes_supported"] == ["mcp:read"]
+        assert response.headers["cache-control"] == "public, max-age=3600"
+
+    async def test_failed_scope_discovery_is_not_cached(self):
+        """Clients can retry metadata discovery immediately after a failure."""
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/agentic/P2test123/M123/.well-known/openid-configuration",
+            base_url="http://localhost:4321",
+        )
+        mcp = FastMCP(auth=provider)
+
+        with patch(
+            "fastmcp.server.auth.providers.descope._discover_scopes",
+            new=AsyncMock(return_value=None),
+        ):
+            async with run_server_async(mcp, transport="http") as url:
+                metadata_url = url.replace(
+                    "/mcp", "/.well-known/oauth-protected-resource/mcp"
+                )
+                async with httpx2.AsyncClient() as client:
+                    response = await client.get(metadata_url)
+
+        response.raise_for_status()
+        assert "scopes_supported" not in response.json()
+        assert response.headers["cache-control"] == "no-store"
+
     async def test_unauthorized_access(self, mcp_server_url: str):
-        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        # SDK v2 surfaces the server's 401 as a generic MCPError at the client
+        # boundary rather than re-raising httpx2.HTTPStatusError.
+        with pytest.raises(MCPError):
             async with Client(mcp_server_url) as client:
                 tools = await client.list_tools()  # noqa: F841
-
-        assert isinstance(exc_info.value, httpx.HTTPStatusError)
-        assert exc_info.value.response.status_code == 401
         assert "tools" not in locals()
 
     # async def test_authorized_access(self, client_with_headless_oauth: Client):

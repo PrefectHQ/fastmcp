@@ -21,7 +21,7 @@ def _is_rate_limit_error(excinfo, report=None) -> bool:
     if exc_type == "BrokenResourceError":
         return True
 
-    # httpx.HTTPStatusError with 429 status
+    # httpx2.HTTPStatusError with 429 status
     if exc_type == "HTTPStatusError":
         try:
             if hasattr(exc, "response") and exc.response.status_code == 429:

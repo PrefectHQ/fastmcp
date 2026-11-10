@@ -1,0 +1,1834 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelcontextprotocol.io/ext-tasks/schema.json",
+  "title": "MCP Tasks Extension",
+  "description": "JSON Schema for MCP Tasks extension protocol messages. Extension Identifier: io.modelcontextprotocol/tasks",
+  "$defs": {
+    "CancelTaskRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "jsonrpc": {
+          "type": "string",
+          "const": "2.0"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "method": {
+          "type": "string",
+          "const": "tasks/cancel"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "taskId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ],
+      "additionalProperties": false
+    },
+    "CancelTaskResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "_meta": {
+          "type": "object",
+          "properties": {
+            "progressToken": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              ]
+            },
+            "io.modelcontextprotocol/related-task": {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "taskId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": {}
+        }
+      },
+      "additionalProperties": {}
+    },
+    "CancelledTask": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "const": "cancelled"
+        },
+        "statusMessage": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "lastUpdatedAt": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pollIntervalMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "taskId",
+        "status",
+        "createdAt",
+        "lastUpdatedAt",
+        "ttlMs"
+      ],
+      "additionalProperties": false
+    },
+    "CompletedTask": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "const": "completed"
+        },
+        "statusMessage": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "lastUpdatedAt": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pollIntervalMs": {
+          "type": "number"
+        },
+        "result": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "taskId",
+        "status",
+        "createdAt",
+        "lastUpdatedAt",
+        "ttlMs",
+        "result"
+      ],
+      "additionalProperties": false
+    },
+    "CreateTaskResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "_meta": {
+              "type": "object",
+              "properties": {
+                "progressToken": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  ]
+                },
+                "io.modelcontextprotocol/related-task": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": {}
+            }
+          },
+          "additionalProperties": {}
+        },
+        {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "working"
+                },
+                {
+                  "type": "string",
+                  "const": "input_required"
+                },
+                {
+                  "type": "string",
+                  "const": "completed"
+                },
+                {
+                  "type": "string",
+                  "const": "failed"
+                },
+                {
+                  "type": "string",
+                  "const": "cancelled"
+                }
+              ]
+            },
+            "statusMessage": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "lastUpdatedAt": {
+              "type": "string"
+            },
+            "ttlMs": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pollIntervalMs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "taskId",
+            "status",
+            "createdAt",
+            "lastUpdatedAt",
+            "ttlMs"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "DetailedTask": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "const": "working"
+            },
+            "statusMessage": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "lastUpdatedAt": {
+              "type": "string"
+            },
+            "ttlMs": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pollIntervalMs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "taskId",
+            "status",
+            "createdAt",
+            "lastUpdatedAt",
+            "ttlMs"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "const": "input_required"
+            },
+            "statusMessage": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "lastUpdatedAt": {
+              "type": "string"
+            },
+            "ttlMs": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pollIntervalMs": {
+              "type": "number"
+            },
+            "inputRequests": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {},
+                  {},
+                  {}
+                ]
+              }
+            }
+          },
+          "required": [
+            "taskId",
+            "status",
+            "createdAt",
+            "lastUpdatedAt",
+            "ttlMs",
+            "inputRequests"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "const": "completed"
+            },
+            "statusMessage": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "lastUpdatedAt": {
+              "type": "string"
+            },
+            "ttlMs": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pollIntervalMs": {
+              "type": "number"
+            },
+            "result": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "taskId",
+            "status",
+            "createdAt",
+            "lastUpdatedAt",
+            "ttlMs",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "const": "failed"
+            },
+            "statusMessage": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "lastUpdatedAt": {
+              "type": "string"
+            },
+            "ttlMs": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pollIntervalMs": {
+              "type": "number"
+            },
+            "error": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "taskId",
+            "status",
+            "createdAt",
+            "lastUpdatedAt",
+            "ttlMs",
+            "error"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "const": "cancelled"
+            },
+            "statusMessage": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "lastUpdatedAt": {
+              "type": "string"
+            },
+            "ttlMs": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pollIntervalMs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "taskId",
+            "status",
+            "createdAt",
+            "lastUpdatedAt",
+            "ttlMs"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "FailedTask": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "const": "failed"
+        },
+        "statusMessage": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "lastUpdatedAt": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pollIntervalMs": {
+          "type": "number"
+        },
+        "error": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "taskId",
+        "status",
+        "createdAt",
+        "lastUpdatedAt",
+        "ttlMs",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "GetTaskRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "jsonrpc": {
+          "type": "string",
+          "const": "2.0"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "method": {
+          "type": "string",
+          "const": "tasks/get"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "taskId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ],
+      "additionalProperties": false
+    },
+    "GetTaskResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "_meta": {
+              "type": "object",
+              "properties": {
+                "progressToken": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  ]
+                },
+                "io.modelcontextprotocol/related-task": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": {}
+            }
+          },
+          "additionalProperties": {}
+        },
+        {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "const": "working"
+                },
+                "statusMessage": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "lastUpdatedAt": {
+                  "type": "string"
+                },
+                "ttlMs": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pollIntervalMs": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "taskId",
+                "status",
+                "createdAt",
+                "lastUpdatedAt",
+                "ttlMs"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "const": "input_required"
+                },
+                "statusMessage": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "lastUpdatedAt": {
+                  "type": "string"
+                },
+                "ttlMs": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pollIntervalMs": {
+                  "type": "number"
+                },
+                "inputRequests": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {},
+                      {},
+                      {}
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "taskId",
+                "status",
+                "createdAt",
+                "lastUpdatedAt",
+                "ttlMs",
+                "inputRequests"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "const": "completed"
+                },
+                "statusMessage": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "lastUpdatedAt": {
+                  "type": "string"
+                },
+                "ttlMs": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pollIntervalMs": {
+                  "type": "number"
+                },
+                "result": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "taskId",
+                "status",
+                "createdAt",
+                "lastUpdatedAt",
+                "ttlMs",
+                "result"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "const": "failed"
+                },
+                "statusMessage": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "lastUpdatedAt": {
+                  "type": "string"
+                },
+                "ttlMs": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pollIntervalMs": {
+                  "type": "number"
+                },
+                "error": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "taskId",
+                "status",
+                "createdAt",
+                "lastUpdatedAt",
+                "ttlMs",
+                "error"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "const": "cancelled"
+                },
+                "statusMessage": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "lastUpdatedAt": {
+                  "type": "string"
+                },
+                "ttlMs": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pollIntervalMs": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "taskId",
+                "status",
+                "createdAt",
+                "lastUpdatedAt",
+                "ttlMs"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      ]
+    },
+    "InputRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {},
+        {},
+        {}
+      ]
+    },
+    "InputRequests": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {},
+          {},
+          {}
+        ]
+      }
+    },
+    "InputRequiredTask": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "const": "input_required"
+        },
+        "statusMessage": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "lastUpdatedAt": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pollIntervalMs": {
+          "type": "number"
+        },
+        "inputRequests": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {},
+              {},
+              {}
+            ]
+          }
+        }
+      },
+      "required": [
+        "taskId",
+        "status",
+        "createdAt",
+        "lastUpdatedAt",
+        "ttlMs",
+        "inputRequests"
+      ],
+      "additionalProperties": false
+    },
+    "InputResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {},
+        {},
+        {}
+      ]
+    },
+    "InputResponses": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {},
+          {},
+          {}
+        ]
+      }
+    },
+    "Task": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "working"
+            },
+            {
+              "type": "string",
+              "const": "input_required"
+            },
+            {
+              "type": "string",
+              "const": "completed"
+            },
+            {
+              "type": "string",
+              "const": "failed"
+            },
+            {
+              "type": "string",
+              "const": "cancelled"
+            }
+          ]
+        },
+        "statusMessage": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "lastUpdatedAt": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pollIntervalMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "taskId",
+        "status",
+        "createdAt",
+        "lastUpdatedAt",
+        "ttlMs"
+      ],
+      "additionalProperties": false
+    },
+    "TaskStatusNotificationParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "_meta": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "additionalProperties": {}
+        },
+        {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "const": "working"
+                },
+                "statusMessage": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "lastUpdatedAt": {
+                  "type": "string"
+                },
+                "ttlMs": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pollIntervalMs": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "taskId",
+                "status",
+                "createdAt",
+                "lastUpdatedAt",
+                "ttlMs"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "const": "input_required"
+                },
+                "statusMessage": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "lastUpdatedAt": {
+                  "type": "string"
+                },
+                "ttlMs": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pollIntervalMs": {
+                  "type": "number"
+                },
+                "inputRequests": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {},
+                      {},
+                      {}
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "taskId",
+                "status",
+                "createdAt",
+                "lastUpdatedAt",
+                "ttlMs",
+                "inputRequests"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "const": "completed"
+                },
+                "statusMessage": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "lastUpdatedAt": {
+                  "type": "string"
+                },
+                "ttlMs": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pollIntervalMs": {
+                  "type": "number"
+                },
+                "result": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "taskId",
+                "status",
+                "createdAt",
+                "lastUpdatedAt",
+                "ttlMs",
+                "result"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "const": "failed"
+                },
+                "statusMessage": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "lastUpdatedAt": {
+                  "type": "string"
+                },
+                "ttlMs": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pollIntervalMs": {
+                  "type": "number"
+                },
+                "error": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "taskId",
+                "status",
+                "createdAt",
+                "lastUpdatedAt",
+                "ttlMs",
+                "error"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "const": "cancelled"
+                },
+                "statusMessage": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "lastUpdatedAt": {
+                  "type": "string"
+                },
+                "ttlMs": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pollIntervalMs": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "taskId",
+                "status",
+                "createdAt",
+                "lastUpdatedAt",
+                "ttlMs"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      ]
+    },
+    "TaskStatusNotification": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "jsonrpc": {
+          "type": "string",
+          "const": "2.0"
+        },
+        "method": {
+          "type": "string",
+          "const": "notifications/tasks"
+        },
+        "params": {
+          "allOf": [
+            {
+              "type": "object",
+              "properties": {
+                "_meta": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "additionalProperties": {}
+            },
+            {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "const": "working"
+                    },
+                    "statusMessage": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "lastUpdatedAt": {
+                      "type": "string"
+                    },
+                    "ttlMs": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "pollIntervalMs": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "taskId",
+                    "status",
+                    "createdAt",
+                    "lastUpdatedAt",
+                    "ttlMs"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "const": "input_required"
+                    },
+                    "statusMessage": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "lastUpdatedAt": {
+                      "type": "string"
+                    },
+                    "ttlMs": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "pollIntervalMs": {
+                      "type": "number"
+                    },
+                    "inputRequests": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "anyOf": [
+                          {},
+                          {},
+                          {}
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "taskId",
+                    "status",
+                    "createdAt",
+                    "lastUpdatedAt",
+                    "ttlMs",
+                    "inputRequests"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "const": "completed"
+                    },
+                    "statusMessage": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "lastUpdatedAt": {
+                      "type": "string"
+                    },
+                    "ttlMs": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "pollIntervalMs": {
+                      "type": "number"
+                    },
+                    "result": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "taskId",
+                    "status",
+                    "createdAt",
+                    "lastUpdatedAt",
+                    "ttlMs",
+                    "result"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "const": "failed"
+                    },
+                    "statusMessage": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "lastUpdatedAt": {
+                      "type": "string"
+                    },
+                    "ttlMs": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "pollIntervalMs": {
+                      "type": "number"
+                    },
+                    "error": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "taskId",
+                    "status",
+                    "createdAt",
+                    "lastUpdatedAt",
+                    "ttlMs",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "const": "cancelled"
+                    },
+                    "statusMessage": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "lastUpdatedAt": {
+                      "type": "string"
+                    },
+                    "ttlMs": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "pollIntervalMs": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "taskId",
+                    "status",
+                    "createdAt",
+                    "lastUpdatedAt",
+                    "ttlMs"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "method",
+        "params"
+      ],
+      "additionalProperties": false
+    },
+    "TaskStatus": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "working"
+        },
+        {
+          "type": "string",
+          "const": "input_required"
+        },
+        {
+          "type": "string",
+          "const": "completed"
+        },
+        {
+          "type": "string",
+          "const": "failed"
+        },
+        {
+          "type": "string",
+          "const": "cancelled"
+        }
+      ]
+    },
+    "TaskSubscriptionAcknowledgedNotifications": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "taskIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "TaskSubscriptionNotifications": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "taskIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "TasksExtensionCapability": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "not": {}
+      }
+    },
+    "UpdateTaskRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "jsonrpc": {
+          "type": "string",
+          "const": "2.0"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "method": {
+          "type": "string",
+          "const": "tasks/update"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string"
+            },
+            "inputResponses": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {},
+                  {},
+                  {}
+                ]
+              }
+            }
+          },
+          "required": [
+            "taskId",
+            "inputResponses"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ],
+      "additionalProperties": false
+    },
+    "UpdateTaskResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "_meta": {
+          "type": "object",
+          "properties": {
+            "progressToken": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              ]
+            },
+            "io.modelcontextprotocol/related-task": {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "taskId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": {}
+        }
+      },
+      "additionalProperties": {}
+    },
+    "WorkingTask": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "const": "working"
+        },
+        "statusMessage": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "lastUpdatedAt": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pollIntervalMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "taskId",
+        "status",
+        "createdAt",
+        "lastUpdatedAt",
+        "ttlMs"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

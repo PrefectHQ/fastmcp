@@ -3,10 +3,12 @@
 import sys
 import tempfile
 import warnings
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import mcp.types
+import mcp_types
 import pytest
 from inline_snapshot import snapshot
 from key_value.aio.stores.filetree import (
@@ -21,7 +23,7 @@ from key_value.aio.wrappers.statistics.wrapper import (
     PutStatistics,
 )
 from mcp.server.lowlevel.helper_types import ReadResourceContents
-from mcp.types import TextContent, TextResourceContents
+from mcp_types import TextContent, TextResourceContents
 from pydantic import AnyUrl, BaseModel
 
 from fastmcp import Context, FastMCP
@@ -29,10 +31,11 @@ from fastmcp.client.client import CallToolResult, Client
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.prompts.base import Message, Prompt
 from fastmcp.prompts.function_prompt import FunctionPrompt
-from fastmcp.resources.base import Resource
+from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
 from fastmcp.server.middleware.caching import (
     ANONYMOUS_AUTH_KEY,
-    CachableToolResult,
+    CacheableResourceResult,
+    CacheableToolResult,
     CallToolSettings,
     ResponseCachingMiddleware,
     ResponseCachingStatistics,
@@ -40,8 +43,14 @@ from fastmcp.server.middleware.caching import (
     _make_get_prompt_cache_key,
     _make_read_resource_cache_key,
 )
-from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
+from fastmcp.server.middleware.middleware import (
+    CallNext,
+    Middleware,
+    MiddlewareContext,
+)
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.utilities.tasks import TaskConfig
+from tests.conftest import user_meta
 
 TEST_URI = AnyUrl("https://test_uri")
 
@@ -64,7 +73,7 @@ SAMPLE_RESOURCE = Resource.from_function(
 )
 
 SAMPLE_PROMPT = Prompt.from_function(fn=sample_prompt_fn, name="test_prompt")
-SAMPLE_GET_PROMPT_RESULT = mcp.types.GetPromptResult(
+SAMPLE_GET_PROMPT_RESULT = mcp_types.GetPromptResult(
     messages=[Message("test_text").to_mcp_prompt_message()]
 )
 SAMPLE_TOOL = Tool(name="test_tool", parameters={"param1": "value1", "param2": 42})
@@ -146,9 +155,9 @@ class TrackingCalculator:
         return str(self.crazy_calls)
 
     async def update_tool_list(self, context: Context):
-        import mcp.types
+        import mcp_types
 
-        await context.send_notification(mcp.types.ToolListChangedNotification())
+        await context.send_notification(mcp_types.ToolListChangedNotification())
 
     def add_tools(self, fastmcp: FastMCP, prefix: str = ""):
         _ = fastmcp.add_tool(tool=Tool.from_function(fn=self.add, name=f"{prefix}add"))
@@ -206,10 +215,10 @@ def tracking_calculator() -> TrackingCalculator:
 
 
 @pytest.fixture
-def mock_context() -> MiddlewareContext[mcp.types.CallToolRequestParams]:
+def mock_context() -> MiddlewareContext[mcp_types.CallToolRequestParams]:
     """Create a mock middleware context for tool calls."""
-    context = MagicMock(spec=MiddlewareContext[mcp.types.CallToolRequestParams])
-    context.message = mcp.types.CallToolRequestParams(
+    context = MagicMock(spec=MiddlewareContext[mcp_types.CallToolRequestParams])
+    context.message = mcp_types.CallToolRequestParams(
         name="test_tool", arguments={"param1": "value1", "param2": 42}
     )
     context.method = "tools/call"
@@ -217,7 +226,7 @@ def mock_context() -> MiddlewareContext[mcp.types.CallToolRequestParams]:
 
 
 @pytest.fixture
-def mock_call_next() -> CallNext[mcp.types.CallToolRequestParams, ToolResult]:
+def mock_call_next() -> CallNext[mcp_types.CallToolRequestParams, ToolResult]:
     """Create a mock call_next function."""
     return AsyncMock(
         return_value=ToolResult(
@@ -283,6 +292,42 @@ class TestResponseCachingMiddleware:
         )
         assert middleware1._matches_tool_cache_settings(tool_name=tool_name) is result
 
+    @pytest.mark.parametrize(
+        ("first", "second"),
+        [
+            ({"a": 5, "b": 3}, {"b": 3, "a": 5}),
+            ({"q": {"x": 1, "y": 2}}, {"q": {"y": 2, "x": 1}}),
+            ({"items": [{"x": 1, "y": 2}]}, {"items": [{"y": 2, "x": 1}]}),
+        ],
+        ids=["top level", "nested dict", "dict inside a list"],
+    )
+    def test_call_tool_cache_key_ignores_argument_order(
+        self, first: dict[str, Any], second: dict[str, Any]
+    ):
+        assert _make_call_tool_cache_key(
+            mcp_types.CallToolRequestParams(name="tool", arguments=first)
+        ) == _make_call_tool_cache_key(
+            mcp_types.CallToolRequestParams(name="tool", arguments=second)
+        )
+
+    def test_get_prompt_cache_key_ignores_argument_order(self):
+        assert _make_get_prompt_cache_key(
+            mcp_types.GetPromptRequestParams(
+                name="prompt", arguments={"a": "5", "b": "3"}
+            )
+        ) == _make_get_prompt_cache_key(
+            mcp_types.GetPromptRequestParams(
+                name="prompt", arguments={"b": "3", "a": "5"}
+            )
+        )
+
+    def test_call_tool_cache_key_distinguishes_arguments(self):
+        assert _make_call_tool_cache_key(
+            mcp_types.CallToolRequestParams(name="tool", arguments={"a": 5, "b": 3})
+        ) != _make_call_tool_cache_key(
+            mcp_types.CallToolRequestParams(name="tool", arguments={"a": 3, "b": 5})
+        )
+
 
 @pytest.mark.skipif(
     sys.platform == "win32",
@@ -339,7 +384,7 @@ class TestResponseCachingMiddlewareIntegration:
         """Test that tool list caching works with a real FastMCP server."""
 
         async with Client(caching_server) as client:
-            pre_tool_list: list[mcp.types.Tool] = await client.list_tools()
+            pre_tool_list: list[mcp_types.Tool] = await client.list_tools()
             assert len(pre_tool_list) == 5
 
             # Add a tool and make sure it's missing from the list tool response
@@ -347,10 +392,127 @@ class TestResponseCachingMiddlewareIntegration:
                 tool=Tool.from_function(fn=tracking_calculator.add, name="add_2")
             )
 
-            post_tool_list: list[mcp.types.Tool] = await client.list_tools()
+            post_tool_list: list[mcp_types.Tool] = await client.list_tools()
             assert len(post_tool_list) == 5
 
             assert pre_tool_list == post_tool_list
+
+    @pytest.mark.parametrize(
+        "contents",
+        [
+            b"",
+            b"hello",
+            b"\x89PNG\r\n\x1a\n",
+            bytes(range(256)),
+            "",
+            "hello",
+            "coffee \u2615",
+            "aGVsbG8=",
+            [
+                ResourceContent("text", meta={"item": "text"}),
+                ResourceContent(b"\xff\x00", meta={"item": "binary"}),
+                ResourceContent(b"hello", mime_type="text/plain"),
+            ],
+        ],
+        ids=[
+            "empty-bytes",
+            "ascii-bytes",
+            "png-header",
+            "all-bytes",
+            "empty-text",
+            "ascii-text",
+            "unicode-text",
+            "base64-like-text",
+            "mixed",
+        ],
+    )
+    async def test_resource_contents_survive_cache(
+        self,
+        caching_server: FastMCP,
+        contents: str | bytes | list[ResourceContent],
+    ) -> None:
+        expected = ResourceResult(
+            contents
+            if isinstance(contents, list)
+            else [
+                ResourceContent(
+                    contents,
+                    mime_type="application/octet-stream",
+                    meta={"item": "sample"},
+                )
+            ],
+            meta={"result": "sample"},
+        )
+        calls = 0
+
+        @caching_server.resource("data://cached-content")
+        def sample() -> ResourceResult:
+            nonlocal calls
+            calls += 1
+            return expected
+
+        async with Client(caching_server) as client:
+            for _ in range(2):
+                result = await client.read_resource_mcp("data://cached-content")
+                assert (
+                    result.contents
+                    == expected.to_mcp_result("data://cached-content").contents
+                )
+                assert user_meta(result.meta) == expected.meta
+
+        assert calls == 1
+
+    async def test_list_operations_preserve_component_metadata(self):
+        """Base component fields should survive conversion through the cache."""
+        from fastmcp.server.extensions import ServerExtension
+        from fastmcp.utilities.tasks import TASKS_EXTENSION_ID
+
+        class _StubTasksExtension(ServerExtension):
+            identifier = TASKS_EXTENSION_ID
+
+        icon = mcp_types.Icon(src="https://example.com/component.png")
+        mcp = FastMCP("MetadataServer")
+        mcp.add_middleware(ResponseCachingMiddleware())
+        # A task-enabled tool requires the tasks extension to serve; register a
+        # stub so the metadata (execution.task_support) can be verified end-to-end.
+        mcp.add_extension(_StubTasksExtension())
+
+        @mcp.tool(icons=[icon], task=TaskConfig(mode="optional"))
+        async def greet() -> str:
+            return "hello"
+
+        @mcp.resource("resource://metadata", icons=[icon])
+        def metadata_resource() -> str:
+            return "resource"
+
+        @mcp.prompt(icons=[icon])
+        def metadata_prompt() -> str:
+            return "prompt"
+
+        cached_tools = await mcp.list_tools()
+        cached_resources = await mcp.list_resources()
+        cached_prompts = await mcp.list_prompts()
+        assert type(cached_tools[0]) is Tool
+        assert type(cached_resources[0]) is Resource
+        assert type(cached_prompts[0]) is Prompt
+        assert not hasattr(cached_tools[0], "fn")
+        assert not hasattr(cached_resources[0], "fn")
+        assert not hasattr(cached_prompts[0], "fn")
+
+        # Pinned to legacy: the tool's `execution.task_support` (SEP-1686) is
+        # advertised in the handshake-era tool listing; the modern listing omits it.
+        async with Client(mcp, mode="legacy") as client:
+            for _ in range(2):
+                tools = await client.list_tools()
+                resources = await client.list_resources()
+                prompts = await client.list_prompts()
+
+                assert tools[0].icons == [icon]
+                assert tools[0].execution == mcp_types.ToolExecution(
+                    task_support="optional"
+                )
+                assert resources[0].icons == [icon]
+                assert prompts[0].icons == [icon]
 
     async def test_call_tool(
         self,
@@ -370,6 +532,18 @@ class TestResponseCachingMiddlewareIntegration:
                 "add", {"a": 5, "b": 3}
             )
             assert call_tool_result_one == call_tool_result_two
+
+    async def test_call_tool_with_reordered_arguments_hits_cache(
+        self,
+        caching_server: FastMCP,
+        tracking_calculator: TrackingCalculator,
+    ):
+        async with Client[FastMCPTransport](transport=caching_server) as client:
+            first = await client.call_tool("add", {"a": 5, "b": 3})
+            second = await client.call_tool("add", {"b": 3, "a": 5})
+
+        assert first == second
+        assert tracking_calculator.add_calls == 1
 
     async def test_call_tool_very_large_value(
         self,
@@ -417,13 +591,13 @@ class TestResponseCachingMiddlewareIntegration:
     ):
         """Test that list resources caching works with a real FastMCP server."""
         async with Client[FastMCPTransport](transport=caching_server) as client:
-            pre_resource_list: list[mcp.types.Resource] = await client.list_resources()
+            pre_resource_list: list[mcp_types.Resource] = await client.list_resources()
 
             assert len(pre_resource_list) == 3
 
             tracking_calculator.add_resources(fastmcp=caching_server)
 
-            post_resource_list: list[mcp.types.Resource] = await client.list_resources()
+            post_resource_list: list[mcp_types.Resource] = await client.list_resources()
             assert len(post_resource_list) == 3
 
             assert pre_resource_list == post_resource_list
@@ -449,13 +623,13 @@ class TestResponseCachingMiddlewareIntegration:
     ):
         """Test that list prompts caching works with a real FastMCP server."""
         async with Client[FastMCPTransport](transport=caching_server) as client:
-            pre_prompt_list: list[mcp.types.Prompt] = await client.list_prompts()
+            pre_prompt_list: list[mcp_types.Prompt] = await client.list_prompts()
 
             assert len(pre_prompt_list) == 1
 
             tracking_calculator.add_prompts(fastmcp=caching_server)
 
-            post_prompt_list: list[mcp.types.Prompt] = await client.list_prompts()
+            post_prompt_list: list[mcp_types.Prompt] = await client.list_prompts()
 
             assert len(post_prompt_list) == 1
 
@@ -503,7 +677,7 @@ class TestResponseCachingMiddlewareIntegration:
             assert statistics == snapshot(
                 ResponseCachingStatistics(
                     list_tools=KVStoreCollectionStatistics(
-                        get=GetStatistics(count=2, hit=1, miss=1),
+                        get=GetStatistics(count=1, hit=0, miss=1),
                         put=PutStatistics(count=1),
                     ),
                     call_tool=KVStoreCollectionStatistics(
@@ -518,7 +692,7 @@ class TestResponseCachingMiddlewareIntegration:
             assert statistics == snapshot(
                 ResponseCachingStatistics(
                     list_tools=KVStoreCollectionStatistics(
-                        get=GetStatistics(count=2, hit=1, miss=1),
+                        get=GetStatistics(count=1, hit=0, miss=1),
                         put=PutStatistics(count=1),
                     ),
                     call_tool=KVStoreCollectionStatistics(
@@ -529,7 +703,7 @@ class TestResponseCachingMiddlewareIntegration:
             )
 
 
-class TestCachableToolResult:
+class TestCacheableToolResult:
     def test_wrap_and_unwrap(self):
         tool_result = ToolResult(
             "unstructured content",
@@ -537,11 +711,63 @@ class TestCachableToolResult:
             meta={"meta": "data"},
         )
 
-        cached_tool_result = CachableToolResult.wrap(tool_result).unwrap()
+        cached_tool_result = CacheableToolResult.wrap(tool_result).unwrap()
 
         assert cached_tool_result.content == tool_result.content
         assert cached_tool_result.structured_content == tool_result.structured_content
         assert cached_tool_result.meta == tool_result.meta
+
+    def test_wrap_and_unwrap_preserves_is_error(self):
+        tool_result = ToolResult("boom", is_error=True)
+
+        cached_tool_result = CacheableToolResult.wrap(tool_result).unwrap()
+
+        assert cached_tool_result.is_error is True
+
+
+class TestErrorResultsAreNotCached:
+    """Regression tests for issue #4395: an error result was cached for the full
+    TTL, so a transient failure permanently shadowed the tool until it expired."""
+
+    async def test_error_result_is_not_cached(self):
+        mcp = FastMCP("ErrorCachingTestServer")
+        mcp.add_middleware(ResponseCachingMiddleware(cache_storage=MemoryStore()))
+
+        call_count = 0
+
+        @mcp.tool
+        def flakey() -> ToolResult:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return ToolResult("upstream 503", is_error=True)
+            return ToolResult("recovered")
+
+        async with Client(mcp) as client:
+            first = await client.call_tool("flakey", {}, raise_on_error=False)
+            assert first.is_error is True
+
+            # The tool must actually run again rather than replay the error.
+            second = await client.call_tool("flakey", {}, raise_on_error=False)
+            assert second.is_error is False
+            assert call_count == 2
+
+    async def test_successful_result_is_still_cached(self):
+        mcp = FastMCP("SuccessCachingTestServer")
+        mcp.add_middleware(ResponseCachingMiddleware(cache_storage=MemoryStore()))
+
+        call_count = 0
+
+        @mcp.tool
+        def stable() -> str:
+            nonlocal call_count
+            call_count += 1
+            return "ok"
+
+        async with Client(mcp) as client:
+            await client.call_tool("stable", {})
+            await client.call_tool("stable", {})
+            assert call_count == 1
 
 
 class TestCachingWithImportedServerPrefixes:
@@ -588,13 +814,16 @@ class TestCachingWithImportedServerPrefixes:
     ):
         """Resource URIs should retain prefix after being served from cache."""
         async with Client(parent_with_imported_child) as client:
-            # First call populates cache
-            resources_first = await client.list_resources()
-            resource_uris_first = [str(r.uri) for r in resources_first]
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", UserWarning)
 
-            # Second call should come from cache
-            resources_cached = await client.list_resources()
-            resource_uris_cached = [str(r.uri) for r in resources_cached]
+                # First call populates cache
+                resources_first = await client.list_resources()
+                resource_uris_first = [str(r.uri) for r in resources_first]
+
+                # Second call should come from cache
+                resources_cached = await client.list_resources()
+                resource_uris_cached = [str(r.uri) for r in resources_cached]
 
             # All resources should have prefix in URI path in both calls
             # Resources get path-style prefix: resource://child/path
@@ -637,9 +866,34 @@ class TestCachingWithImportedServerPrefixes:
             assert tracking_calculator.add_calls == 1
 
 
+def test_resource_cache_accepts_existing_text_entries() -> None:
+    cached = CacheableResourceResult.model_validate(
+        {
+            "contents": [
+                {
+                    "content": "aGVsbG8=",
+                    "mime_type": "application/octet-stream",
+                    "meta": {"item": "sample"},
+                }
+            ],
+            "meta": {"result": "sample"},
+        }
+    )
+    assert cached.unwrap() == ResourceResult(
+        [
+            ResourceContent(
+                "aGVsbG8=",
+                mime_type="application/octet-stream",
+                meta={"item": "sample"},
+            )
+        ],
+        meta={"result": "sample"},
+    )
+
+
 class TestCacheKeyGeneration:
     def test_call_tool_key_is_hashed_and_does_not_include_raw_input(self):
-        msg = mcp.types.CallToolRequestParams(
+        msg = mcp_types.CallToolRequestParams(
             name="toolX",
             arguments={"password": "secret", "path": "../../etc/passwd"},
         )
@@ -651,8 +905,8 @@ class TestCacheKeyGeneration:
         assert "../../etc/passwd" not in key
 
     def test_read_resource_key_is_hashed_and_does_not_include_raw_uri(self):
-        msg = mcp.types.ReadResourceRequestParams(
-            uri=AnyUrl("file:///tmp/../../etc/shadow?token=abcd")
+        msg = mcp_types.ReadResourceRequestParams(
+            uri="file:///tmp/../../etc/shadow?token=abcd"
         )
 
         key = _make_read_resource_cache_key(msg)
@@ -662,7 +916,7 @@ class TestCacheKeyGeneration:
         assert "token=abcd" not in key
 
     def test_get_prompt_key_is_hashed_and_stable(self):
-        msg = mcp.types.GetPromptRequestParams(
+        msg = mcp_types.GetPromptRequestParams(
             name="promptY",
             arguments={"api_key": "ABC123", "scope": "admin"},
         )
@@ -674,7 +928,7 @@ class TestCacheKeyGeneration:
         assert key == _make_get_prompt_cache_key(msg)
 
     def test_call_tool_key_partitions_by_auth(self):
-        msg = mcp.types.CallToolRequestParams(name="t", arguments={"a": 1})
+        msg = mcp_types.CallToolRequestParams(name="t", arguments={"a": 1})
 
         anon = _make_call_tool_cache_key(msg)
         user_a = _make_call_tool_cache_key(msg, auth_key="user_a")
@@ -685,7 +939,7 @@ class TestCacheKeyGeneration:
         assert user_a != anon
 
     def test_read_resource_key_partitions_by_auth(self):
-        msg = mcp.types.ReadResourceRequestParams(uri=AnyUrl("file:///tmp/x"))
+        msg = mcp_types.ReadResourceRequestParams(uri="file:///tmp/x")
 
         user_a = _make_read_resource_cache_key(msg, auth_key="user_a")
         user_b = _make_read_resource_cache_key(msg, auth_key="user_b")
@@ -693,7 +947,7 @@ class TestCacheKeyGeneration:
         assert user_a != user_b
 
     def test_get_prompt_key_partitions_by_auth(self):
-        msg = mcp.types.GetPromptRequestParams(name="p", arguments={"a": "1"})
+        msg = mcp_types.GetPromptRequestParams(name="p", arguments={"a": "1"})
 
         user_a = _make_get_prompt_cache_key(msg, auth_key="user_a")
         user_b = _make_get_prompt_cache_key(msg, auth_key="user_b")
@@ -839,3 +1093,83 @@ class TestAuthAwareCaching:
             assert {p.name for p in prompts} == {"public_prompt"}
         finally:
             auth_context_var.reset(tok)
+
+
+class CountingDownstream(Middleware):
+    """Counts the list calls that get past the caching middleware, i.e. cache misses."""
+
+    def __init__(self) -> None:
+        self.list_calls = 0
+
+    async def on_list_tools(
+        self,
+        context: MiddlewareContext[mcp_types.ListToolsRequest],
+        call_next: CallNext[mcp_types.ListToolsRequest, Sequence[Tool]],
+    ) -> Sequence[Tool]:
+        self.list_calls += 1
+        return await call_next(context)
+
+    async def on_list_resources(
+        self,
+        context: MiddlewareContext[mcp_types.ListResourcesRequest],
+        call_next: CallNext[mcp_types.ListResourcesRequest, Sequence[Resource]],
+    ) -> Sequence[Resource]:
+        self.list_calls += 1
+        return await call_next(context)
+
+    async def on_list_prompts(
+        self,
+        context: MiddlewareContext[mcp_types.ListPromptsRequest],
+        call_next: CallNext[mcp_types.ListPromptsRequest, Sequence[Prompt]],
+    ) -> Sequence[Prompt]:
+        self.list_calls += 1
+        return await call_next(context)
+
+
+class TestEmptyListCaching:
+    """An empty list is a cached result, not a cache miss.
+
+    Regression tests for issue #4733: the list hooks tested the cached value for
+    truthiness, so a server - or a per-user filtered view - with nothing to list
+    re-ran the listing on every single request and never served a cache hit.
+    """
+
+    @pytest.mark.parametrize("operation", ["tools", "resources", "prompts"])
+    async def test_empty_list_is_served_from_cache(self, operation: str):
+        counter = CountingDownstream()
+        mcp_server = FastMCP("test", middleware=[ResponseCachingMiddleware(), counter])
+
+        list_operation = getattr(mcp_server, f"list_{operation}")
+        for _ in range(3):
+            assert len(await list_operation()) == 0
+
+        assert counter.list_calls == 1
+
+    async def test_empty_filtered_view_is_served_from_cache(self):
+        from mcp.server.auth.middleware.auth_context import auth_context_var
+        from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+
+        from fastmcp.server.auth import AccessToken, require_scopes
+
+        counter = CountingDownstream()
+        mcp_server = FastMCP("test", middleware=[ResponseCachingMiddleware(), counter])
+
+        @mcp_server.tool(auth=require_scopes("admin"))
+        def admin_only() -> str:
+            return "ok"
+
+        token = AccessToken(
+            token="token-read",
+            client_id="test-client",
+            scopes=["read"],
+            expires_at=None,
+            claims={},
+        )
+        tok = auth_context_var.set(AuthenticatedUser(token))
+        try:
+            for _ in range(3):
+                assert len(await mcp_server.list_tools()) == 0
+        finally:
+            auth_context_var.reset(tok)
+
+        assert counter.list_calls == 1

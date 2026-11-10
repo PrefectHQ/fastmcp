@@ -120,7 +120,7 @@ class TestDiscordTokenVerifier:
         mock_client.get.return_value = token_info_response
 
         with patch(
-            "fastmcp.server.auth.providers.discord.httpx.AsyncClient"
+            "fastmcp.server.auth.providers.discord.httpx2.AsyncClient"
         ) as mock_client_class:
             mock_client_class.return_value.__aenter__.return_value = mock_client
             result = await verifier.verify_token("token")

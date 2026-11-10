@@ -21,7 +21,7 @@ The enhancement adds:
 
 ## Functions
 
-### `create_unregistered_client_html` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/handlers/authorize.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_unregistered_client_html` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/handlers/authorize.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_unregistered_client_html(client_id: str, registration_endpoint: str, discovery_endpoint: str, server_name: str | None = None, server_icon_url: str | None = None, title: str = 'Client Not Registered') -> str
@@ -44,7 +44,7 @@ Create styled HTML error page for unregistered client attempts.
 
 ## Classes
 
-### `AuthorizationHandler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/handlers/authorize.py#L161" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AuthorizationHandler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/handlers/authorize.py#L163" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Authorization handler with enhanced error responses for unregistered clients.
@@ -63,7 +63,7 @@ while providing actionable guidance to fix the error.
 
 **Methods:**
 
-#### `handle` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/handlers/authorize.py#L196" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `handle` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/handlers/authorize.py#L207" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 handle(self, request: Request) -> Response

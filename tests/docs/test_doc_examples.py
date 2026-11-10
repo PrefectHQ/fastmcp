@@ -18,6 +18,7 @@ import ast
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from pytest_examples import CodeExample
 from pytest_examples.find_examples import _extract_code_chunks
 
@@ -101,6 +102,8 @@ def _check_fastmcp_imports(example: CodeExample) -> list[str]:
     return errors
 
 
+# This scans the entire docs corpus and imports optional integrations on cold CI.
+@pytest.mark.timeout(30)
 def test_doc_examples_quality():
     """Doc examples should not regress in syntax or import correctness.
 
@@ -119,6 +122,13 @@ def test_doc_examples_quality():
         err = _check_syntax(ex)
         if err:
             syntax_failures.append(err)
+            continue
+
+        # Frozen version snapshots (docs/v2/, docs/v3/) document older FastMCP
+        # releases, so their imports are validated against a package that no
+        # longer ships them. Syntax-check them above, but skip live-import
+        # validation.
+        if Path(ex.path).relative_to(DOCS_DIR).parts[0] in ("v2", "v3"):
             continue
 
         import_failures.extend(_check_fastmcp_imports(ex))

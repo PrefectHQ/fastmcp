@@ -172,6 +172,45 @@ def test_tool_transform_config_removes_meta(sample_tool):
     assert transformed.meta is None
 
 
+def test_meta_override_preserves_fastmcp_namespace(sample_tool):
+    """A meta override replaces caller meta but keeps framework-owned data.
+
+    The fastmcp namespace carries app membership and the identity hash that
+    intermediaries match on. A rename via config must not destroy it.
+    """
+    sample_tool.meta = {"original": True, "fastmcp": {"app": "crm", "tool_hash": "abc"}}
+    transformed = Tool.from_tool(sample_tool, meta={"custom": True})
+    assert transformed.meta == {
+        "custom": True,
+        "fastmcp": {"app": "crm", "tool_hash": "abc"},
+    }
+
+
+def test_meta_none_preserves_fastmcp_namespace(sample_tool):
+    """Clearing meta clears caller meta, not the framework namespace."""
+    sample_tool.meta = {"original": True, "fastmcp": {"app": "crm", "tool_hash": "abc"}}
+    transformed = Tool.from_tool(sample_tool, meta=None)
+    assert transformed.meta == {"fastmcp": {"app": "crm", "tool_hash": "abc"}}
+
+
+def test_meta_override_can_extend_fastmcp_namespace(sample_tool):
+    """An override may add to the fastmcp namespace without dropping its keys."""
+    sample_tool.meta = {"fastmcp": {"app": "crm", "tool_hash": "abc"}}
+    transformed = Tool.from_tool(sample_tool, meta={"fastmcp": {"extra": 1}})
+    assert transformed.meta == {
+        "fastmcp": {"app": "crm", "tool_hash": "abc", "extra": 1}
+    }
+
+
+def test_config_meta_override_preserves_identity_hash(sample_tool):
+    """The fastmcp.json `tools:` path goes through the same preservation."""
+    sample_tool.meta = {"fastmcp": {"app": "crm", "tool_hash": "abc"}}
+    config = ToolTransformConfig(name="renamed", meta={"team": "growth"})
+    transformed = config.apply(sample_tool)
+    assert transformed.meta is not None
+    assert transformed.meta["fastmcp"]["tool_hash"] == "abc"
+
+
 # Enabled field tests
 def test_tool_transform_config_enabled_defaults_to_true(sample_tool):
     """Test that enabled defaults to True and no visibility metadata is set."""

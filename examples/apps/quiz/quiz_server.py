@@ -28,12 +28,20 @@ from prefab_ui.components import (
     Text,
 )
 from prefab_ui.rx import ERROR, RESULT, Rx
+from typing_extensions import TypedDict
 
 from fastmcp import FastMCP, FastMCPApp
 
 app = FastMCPApp("Quiz")
 
-DEFAULT_QUESTIONS = [
+
+class Question(TypedDict):
+    question: str
+    options: list[str]
+    correct: int
+
+
+DEFAULT_QUESTIONS: list[Question] = [
     {
         "question": "What is the capital of Australia?",
         "options": ["Sydney", "Melbourne", "Canberra", "Perth"],
@@ -102,7 +110,7 @@ def submit_answer(
 @app.ui()
 def take_quiz(
     topic: str = "General Knowledge",
-    questions: list[dict] | None = None,
+    questions: list[Question] | None = None,
 ) -> PrefabApp:
     """Launch a quiz UI.
 
