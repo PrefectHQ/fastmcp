@@ -4,7 +4,7 @@ import inspect
 
 import pytest
 
-from fastmcp import FastMCP
+from fastmcp import Client, FastMCP
 from fastmcp.contrib.mcp_mixin import (
     MCPMixin,
     mcp_prompt,
@@ -344,6 +344,57 @@ class TestMCPMixin:
         assert prompt.meta == {"priority": "high", "category": "analysis"}
 
 
+class TestMCPMixinRegistrationDoesNotReadAttributes:
+    """Registration should only look at methods, not evaluate other attributes."""
+
+    async def test_register_all_does_not_evaluate_properties(self):
+        evaluated: list[str] = []
+
+        class MyMixin(MCPMixin):
+            @property
+            def connection(self) -> str:
+                evaluated.append("connection")
+                raise RuntimeError("not connected")
+
+            @mcp_tool()
+            def sample_tool(self):
+                pass
+
+            @mcp_resource(uri="test://resource")
+            def sample_resource(self):
+                return "data"
+
+            @mcp_prompt()
+            def sample_prompt(self):
+                return "prompt text"
+
+        mcp = FastMCP()
+        MyMixin().register_all(mcp)
+
+        assert evaluated == []
+        assert [t.name for t in await mcp.list_tools()] == ["sample_tool"]
+        assert [str(r.uri) for r in await mcp.list_resources()] == ["test://resource"]
+        assert [p.name for p in await mcp.list_prompts()] == ["sample_prompt"]
+
+    async def test_static_and_class_methods_are_still_registered(self):
+        class MyMixin(MCPMixin):
+            @staticmethod
+            @mcp_tool()
+            def static_tool():
+                pass
+
+            @classmethod
+            @mcp_tool()
+            def class_tool(cls):
+                pass
+
+        mcp = FastMCP()
+        MyMixin().register_tools(mcp)
+
+        names = {t.name for t in await mcp.list_tools()}
+        assert names == {"static_tool", "class_tool"}
+
+
 class TestMCPMixinKwargsSync:
     """Verify that the valid-kwarg sets stay in sync with from_function signatures."""
 
@@ -549,3 +600,117 @@ class TestMCPMixinNewParams:
         # list_prompts() filters by auth context; check internal provider directly
         prompts = await mcp.local_provider.list_prompts()
         assert any(p.name == "secure_prompt" for p in prompts)
+
+
+class TestMCPMixinResourceTemplates:
+    """A URI with `{param}` placeholders registers a resource template."""
+
+    @pytest.mark.parametrize(
+        "prefix, separator, expected_template, expected_name, expected_static, read_uri",
+        [
+            (
+                None,
+                _DEFAULT_SEPARATOR_RESOURCE,
+                "users://{user_id}/profile",
+                "profile",
+                "users://all",
+                "users://42/profile",
+            ),
+            (
+                "pref",
+                _DEFAULT_SEPARATOR_RESOURCE,
+                f"pref{_DEFAULT_SEPARATOR_RESOURCE}users://{{user_id}}/profile",
+                f"pref{_DEFAULT_SEPARATOR_RESOURCE}profile",
+                f"pref{_DEFAULT_SEPARATOR_RESOURCE}users://all",
+                f"pref{_DEFAULT_SEPARATOR_RESOURCE}users://42/profile",
+            ),
+            (
+                "pref",
+                "-",
+                "pref-users://{user_id}/profile",
+                "pref-profile",
+                "pref-users://all",
+                "pref-users://42/profile",
+            ),
+        ],
+        ids=["No prefix", "Default separator", "Custom separator"],
+    )
+    async def test_templated_uri_registers_template(
+        self,
+        prefix,
+        separator,
+        expected_template,
+        expected_name,
+        expected_static,
+        read_uri,
+    ):
+        mcp = FastMCP()
+
+        class MyMixin(MCPMixin):
+            @mcp_resource(uri="users://{user_id}/profile")
+            def profile(self, user_id: str) -> str:
+                return f"profile of {user_id}"
+
+            @mcp_resource(uri="users://all")
+            def everyone(self) -> str:
+                return "everyone"
+
+        MyMixin().register_resources(mcp, prefix=prefix, separator=separator)
+
+        async with Client(mcp) as client:
+            templates = await client.list_resource_templates()
+            assert [(t.uri_template, t.name) for t in templates] == [
+                (expected_template, expected_name)
+            ]
+
+            # The templated method is not also listed as a static resource.
+            resources = await client.list_resources()
+            assert [str(r.uri) for r in resources] == [expected_static]
+
+            result = await client.read_resource(read_uri)
+            assert len(result) == 1
+            assert result[0].text == "profile of 42"
+
+    async def test_template_enabled_false_skips_registration(self):
+        mcp = FastMCP()
+
+        class MyMixin(MCPMixin):
+            @mcp_resource(uri="test://{item}/hidden", enabled=False)
+            def hidden(self, item: str) -> str:
+                return item
+
+            @mcp_resource(uri="test://{item}/visible")
+            def visible(self, item: str) -> str:
+                return item
+
+        MyMixin().register_resources(mcp)
+
+        async with Client(mcp) as client:
+            templates = await client.list_resource_templates()
+            assert [t.uri_template for t in templates] == ["test://{item}/visible"]
+
+    async def test_template_params_forwarded(self):
+        mcp = FastMCP()
+
+        class MyMixin(MCPMixin):
+            @mcp_resource(
+                uri="test://{item}",
+                title="Item Title",
+                description="An item",
+                mime_type="application/json",
+                tags={"data"},
+                meta={"category": "data"},
+            )
+            def item(self, item: str) -> str:
+                return item
+
+        MyMixin().register_resources(mcp)
+
+        templates = await mcp.local_provider.list_resource_templates()
+        assert len(templates) == 1
+        template = templates[0]
+        assert template.title == "Item Title"
+        assert template.description == "An item"
+        assert template.mime_type == "application/json"
+        assert template.tags == {"data"}
+        assert template.meta == {"category": "data"}

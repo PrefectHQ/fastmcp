@@ -222,3 +222,25 @@ async def test_failed_refresh_does_not_reuse_expired_keys(
         clock[0] += 31
         assert await verifier._get_jwks_key("current") == original
     assert len(requests) == 3
+
+
+async def test_subclass_lock_around_inherited_lookup_does_not_deadlock(
+    key_data: dict[str, Any],
+):
+    class LockingVerifier(JWTVerifier):
+        def __init__(self, **kwargs: Any):
+            super().__init__(**kwargs)
+            self._jwks_refresh_lock = asyncio.Lock()
+
+        async def _get_jwks_key(self, kid: str | None) -> str:
+            async with self._jwks_refresh_lock:
+                return await super()._get_jwks_key(kid)
+
+    async def respond(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json={"keys": [key_data]})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        verifier = LockingVerifier(
+            jwks_uri="https://issuer.example/keys", http_client=client
+        )
+        assert await asyncio.wait_for(verifier._get_jwks_key("current"), 1)

@@ -7,7 +7,7 @@ sidebarTitle: elicitation
 
 ## Functions
 
-### `parse_elicit_response_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L143" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `parse_elicit_response_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L168" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 parse_elicit_response_type(response_type: Any, response_title: str | None = None, response_description: str | None = None) -> ElicitConfig
@@ -35,7 +35,7 @@ because in those cases the user already controls field metadata via
 ``Field(title=..., description=...)``.
 
 
-### `handle_elicit_accept` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L310" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `handle_elicit_accept` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L337" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 handle_elicit_accept(config: ElicitConfig, content: Any) -> AcceptedElicitation[Any]
@@ -52,7 +52,7 @@ Handle an accepted elicitation response.
 - AcceptedElicitation with the extracted/validated data
 
 
-### `get_elicitation_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L369" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_elicitation_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L400" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_elicitation_schema(response_type: type[T]) -> dict[str, Any]
@@ -65,7 +65,7 @@ Get the schema for an elicitation response.
 - `response_type`: The type of the response
 
 
-### `validate_elicitation_json_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L395" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `validate_elicitation_json_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L426" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_elicitation_json_schema(schema: dict[str, Any]) -> None
@@ -90,7 +90,7 @@ This ensures the schema is compatible with MCP elicitation requirements:
 
 ## Classes
 
-### `ElicitationJsonSchema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ElicitationJsonSchema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L37" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Custom JSON schema generator for MCP elicitation that always inlines enums.
@@ -102,7 +102,25 @@ Optionally adds enumNames for better UI display when available.
 
 **Methods:**
 
-#### `generate_inner` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L44" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `definitions_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L50" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+definitions_schema(self, schema: core_schema.DefinitionsSchema) -> JsonSchemaValue
+```
+
+Record shared enum definitions so references to them can be inlined.
+
+
+#### `definition_ref_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L59" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+definition_ref_schema(self, schema: core_schema.DefinitionReferenceSchema) -> JsonSchemaValue
+```
+
+Inline references to shared enums; enum definitions are never emitted.
+
+
+#### `generate_inner` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L68" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_inner(self, schema: core_schema.CoreSchema) -> JsonSchemaValue
@@ -111,7 +129,7 @@ generate_inner(self, schema: core_schema.CoreSchema) -> JsonSchemaValue
 Override to prevent ref generation for enums and handle list schemas.
 
 
-#### `list_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L81" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_schema(self, schema: core_schema.ListSchema) -> JsonSchemaValue
@@ -120,7 +138,7 @@ list_schema(self, schema: core_schema.ListSchema) -> JsonSchemaValue
 Generate schema for list types, detecting enum items for multi-select.
 
 
-#### `enum_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L94" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `enum_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 enum_schema(self, schema: core_schema.EnumSchema) -> JsonSchemaValue
@@ -132,21 +150,22 @@ Always generates enum pattern: `{"enum": [value, ...]}`
 Titled enums are handled separately via dict-based syntax in ctx.elicit().
 
 
-### `AcceptedElicitation` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AcceptedElicitation` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L129" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Result when user accepts the elicitation.
 
 
-### `ScalarElicitationType` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L113" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ScalarElicitationType` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L137" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
-### `ElicitConfig` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ElicitConfig` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/elicitation.py#L142" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration for an elicitation request.
 
 **Attributes:**
 - `schema`: The JSON schema to send to the client
-- `response_type`: The type to validate responses with (None for raw schemas)
+- `response_type`: The type to validate responses with. For raw schemas,
+it validates the extracted "value".
 - `is_raw`: True if schema was built directly (extract "value" from response)
 

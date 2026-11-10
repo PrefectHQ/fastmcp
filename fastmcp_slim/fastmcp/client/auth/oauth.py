@@ -423,9 +423,20 @@ class OAuth(OAuthClientProvider):
             result_ready=result_ready,
         )
 
+        async def serve() -> None:
+            try:
+                await server.serve()
+            except SystemExit as exc:
+                # uvicorn exits the process when it cannot bind its port
+                raise OSError(
+                    "OAuth callback server could not start on "
+                    f"http://{self._callback_host}:{self.redirect_port}; "
+                    "is the port already in use?"
+                ) from exc
+
         # Run server until response is received with timeout logic
         async with anyio.create_task_group() as tg:
-            tg.start_soon(server.serve)
+            tg.start_soon(serve)
             logger.info(
                 f"🎧 OAuth callback server started on http://{self._callback_host}:{self.redirect_port}"
             )
