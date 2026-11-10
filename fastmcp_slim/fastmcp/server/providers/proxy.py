@@ -1704,18 +1704,26 @@ async def default_proxy_elicitation_handler(
     context: ServerRequestContext[Any, Any],
 ) -> ElicitResult:
     """Forward elicitation request from remote server to proxy's connected clients."""
-    ctx = get_context()
-    # requestedSchema only exists on ElicitRequestFormParams, not ElicitRequestURLParams
-    requested_schema = (
-        params.requested_schema
-        if isinstance(params, ElicitRequestFormParams)
-        else {"type": "object", "properties": {}}
-    )
-    result = await ctx.session.elicit(
-        message=message,
-        requested_schema=requested_schema,
-        related_request_id=ctx.request_id,
-    )
+    if isinstance(params, ElicitRequestFormParams):
+        ctx = get_context()
+        result = await ctx.session.elicit(
+            message=message,
+            requested_schema=params.requested_schema,
+            related_request_id=ctx.request_id,
+        )
+    else:
+        if params.elicitation_id is None:
+            raise ValueError(
+                "URL-mode elicitation request from the remote server has no "
+                "elicitationId; the proxy cannot forward it."
+            )
+        ctx = get_context()
+        result = await ctx.session.elicit_url(
+            message=message,
+            url=params.url,
+            elicitation_id=params.elicitation_id,
+            related_request_id=ctx.request_id,
+        )
     return ElicitResult(action=result.action, content=result.content)
 
 

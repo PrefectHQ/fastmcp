@@ -6,6 +6,7 @@ from anyio import create_task_group
 from mcp import CreateMessageResult
 from mcp_types import (
     ElicitRequestFormParams,
+    ElicitRequestURLParams,
     ImageContent,
     LoggingLevel,
     ModelHint,
@@ -22,7 +23,11 @@ from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingPar
 from fastmcp.exceptions import ToolError
 from fastmcp.server import create_proxy
 from fastmcp.server.elicitation import AcceptedElicitation
-from fastmcp.server.providers.proxy import ProxyClient, _create_client_factory
+from fastmcp.server.providers.proxy import (
+    ProxyClient,
+    _create_client_factory,
+    default_proxy_elicitation_handler,
+)
 
 
 class TestProxyClientEraDefault:
@@ -143,6 +148,17 @@ def fastmcp_server():
             return f"Hello, {result.data.name}!"
         else:
             return "No name provided."
+
+    @mcp.tool
+    async def elicit_url(context: Context) -> str:
+        # Handshake-era URL-mode elicitation, sent through the SDK session.
+        result = await context.session.elicit_url(
+            message="Sign in to continue",
+            url="https://example.com/oauth/start",
+            elicitation_id="elicit-1",
+            related_request_id=context.origin_request_id,
+        )
+        return result.action
 
     @mcp.tool
     async def log(
@@ -339,6 +355,45 @@ class TestProxyClient:
             await client.call_tool("elicit", {})
 
         assert elicitation_handler_called
+
+    async def test_elicit_url_request(self, proxy_server: FastMCP):
+        """
+        Test that the proxy client forwards a URL-mode `elicit` request as URL mode.
+        """
+        received: list[ElicitRequestParams] = []
+
+        async def elicitation_handler(
+            message, response_type, params: ElicitRequestParams, ctx
+        ):
+            received.append(params)
+            return ElicitResult(action="accept")
+
+        async with Client(
+            proxy_server, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
+            result = await client.call_tool("elicit_url", {})
+            assert result.data == "accept"
+
+        assert len(received) == 1
+        assert isinstance(received[0], ElicitRequestURLParams)
+        assert received[0].message == "Sign in to continue"
+        assert received[0].url == "https://example.com/oauth/start"
+        assert received[0].elicitation_id == "elicit-1"
+
+    async def test_elicit_url_request_without_elicitation_id(self):
+        """
+        Test that the proxy rejects a URL-mode request that has no elicitation ID.
+        """
+        params = ElicitRequestURLParams(
+            mode="url", message="Sign in", url="https://example.com/oauth/start"
+        )
+        with pytest.raises(ValueError, match="no elicitationId"):
+            await default_proxy_elicitation_handler(
+                "Sign in",
+                dict,
+                params,
+                None,  # ty: ignore[invalid-argument-type]
+            )
 
     async def test_elicit_accept_response(self, proxy_server: FastMCP):
         """
