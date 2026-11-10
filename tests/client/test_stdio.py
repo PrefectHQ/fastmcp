@@ -150,6 +150,7 @@ class TestPartialConstruction:
 
         transport.__del__()  # must not raise
 
+    @pytest.mark.filterwarnings("error::pytest.PytestUnraisableExceptionWarning")
     def test_failed_subclass_construction_is_collectable(self, tmp_path):
         not_python = tmp_path / "server.txt"
         not_python.write_text("not a python script", encoding="utf-8")
@@ -157,7 +158,9 @@ class TestPartialConstruction:
         with pytest.raises(ValueError, match="Not a Python script"):
             PythonStdioTransport(script_path=not_python)
 
-        gc_collect_harder()
+        # One full pass runs the half-built transport's __del__; repeated passes
+        # over a large xdist worker heap can exceed the test timeout.
+        gc.collect()
 
     def test_failed_subclass_construction_does_not_fabricate_an_event(self, tmp_path):
         """The guard must skip the event, not invent one to set."""
