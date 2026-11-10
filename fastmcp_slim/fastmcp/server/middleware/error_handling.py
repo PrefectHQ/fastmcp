@@ -9,7 +9,7 @@ from typing import Any
 import anyio
 from mcp import MCPError
 
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import NotFoundError, ValidationError
 
 from .middleware import CallNext, Middleware, MiddlewareContext
 
@@ -87,21 +87,22 @@ class ErrorHandlingMiddleware(Middleware):
         if not self.transform_errors:
             return error
 
-        # Map common exceptions to appropriate MCP error codes
+        # Map common exceptions to appropriate MCP error codes. Match subclasses
+        # too: pydantic's ValidationError, for one, is a ValueError.
         error_type = type(error.__cause__) if error.__cause__ else type(error)
 
-        if error_type in (ValueError, TypeError):
+        if issubclass(error_type, (ValueError, TypeError, ValidationError)):
             return MCPError(code=-32602, message=f"Invalid params: {error!s}")
-        elif error_type in (FileNotFoundError, KeyError, NotFoundError):
+        elif issubclass(error_type, (FileNotFoundError, KeyError, NotFoundError)):
             # MCP spec defines -32002 specifically for resource not found
             method = context.method or ""
             if method.startswith("resources/"):
                 return MCPError(code=-32002, message=f"Resource not found: {error!s}")
             return MCPError(code=-32001, message=f"Not found: {error!s}")
-        elif error_type is PermissionError:
+        elif issubclass(error_type, PermissionError):
             return MCPError(code=-32000, message=f"Permission denied: {error!s}")
         # asyncio.TimeoutError is a subclass of TimeoutError in Python 3.10, alias in 3.11+
-        elif error_type in (TimeoutError, asyncio.TimeoutError):
+        elif issubclass(error_type, (TimeoutError, asyncio.TimeoutError)):
             return MCPError(code=-32000, message=f"Request timeout: {error!s}")
         else:
             return MCPError(code=-32603, message=f"Internal error: {error!s}")

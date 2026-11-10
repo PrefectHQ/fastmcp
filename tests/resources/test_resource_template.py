@@ -1,7 +1,7 @@
 import asyncio
 import functools
 import threading
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import quote
 
 import pytest
@@ -9,7 +9,7 @@ from mcp.types import TextResourceContents
 from pydantic import BaseModel, Field
 
 from fastmcp import Client, Context, FastMCP
-from fastmcp.resources import ResourceTemplate
+from fastmcp.resources import ResourceContent, ResourceTemplate
 from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.resources.template import (
     build_regex,
@@ -915,6 +915,34 @@ class TestMalformedURITemplates:
         scalar = template.model_copy(update={"_list_query_params": frozenset()})
         assert scalar.matches("items://all?tags=a,b") == {"tags": "a,b"}
 
+    async def test_mounted_template_wrapper_preserves_list_query_params(self):
+        from fastmcp.exceptions import ResourceSecurityError
+        from fastmcp.server.providers.fastmcp_provider import (
+            FastMCPProviderResourceTemplate,
+        )
+
+        child = FastMCP("child", resource_security=None)
+
+        @child.resource("files://{category}{?paths}")
+        def read_files(
+            category: str, paths: list[str] = Field(default_factory=list)
+        ) -> str:
+            return str(paths)
+
+        [source] = await child.list_resource_templates()
+        wrapped = FastMCPProviderResourceTemplate.wrap(child, source)
+        assert wrapped.matches("files://docs?paths=a,b") == {
+            "category": "docs",
+            "paths": ["a", "b"],
+        }
+
+        parent = FastMCP("parent")
+        parent.mount(child)
+        with pytest.raises(ResourceSecurityError):
+            await parent.read_resource("files://docs?paths=safe.txt,..")
+        with pytest.raises(ResourceSecurityError):
+            await parent.read_resource("files://docs?paths=safe.txt,/etc/passwd")
+
     def test_shared_pattern_cache_is_bounded(self):
         """Template strings can come from a proxied server, so the shared cache
         must not grow with every template a remote ever sends."""
@@ -1072,6 +1100,53 @@ class TestMalformedURITemplates:
             "test://items/{id}",
         )
         assert result == {"id": "a#b"}
+
+    def test_literal_query_in_template_still_matches(self):
+        result = match_uri_template(
+            "search://items?q=abc",
+            "search://items?q={q}",
+        )
+        assert result == {"q": "abc"}
+
+    def test_literal_query_in_template_rejects_other_query(self):
+        result = match_uri_template(
+            "search://items?page=abc",
+            "search://items?q={q}",
+        )
+        assert result is None
+
+    def test_literal_query_in_template_round_trips_reserved_value(self):
+        template = "search://items?q={q}"
+        uri = expand_uri_template(template, {"q": "a b&c=d/e"})
+        assert match_uri_template(uri, template) == {"q": "a b&c=d/e"}
+
+    def test_literal_query_in_template_round_trips_empty_value(self):
+        template = "search://items?q={q}"
+        uri = expand_uri_template(template, {"q": ""})
+        assert uri == "search://items?q="
+        assert match_uri_template(uri, template) == {"q": ""}
+
+    def test_literal_query_in_template_rejects_extra_key(self):
+        """A raw `&` starts another key, so it never ends up inside the value."""
+        result = match_uri_template(
+            "search://items?q=abc&page=2",
+            "search://items?q={q}",
+        )
+        assert result is None
+
+    def test_literal_query_in_template_with_two_keys(self):
+        result = match_uri_template(
+            "search://items?q=a/b&page=2",
+            "search://items?q={q}&page={page}",
+        )
+        assert result == {"q": "a/b", "page": "2"}
+
+    def test_literal_query_in_template_wildcard_stops_at_ampersand(self):
+        result = match_uri_template(
+            "search://items?q=abc&page=2",
+            "search://items?q={q*}",
+        )
+        assert result is None
 
     def test_query_param_with_blank_and_present_values(self):
         """Mix of blank and non-blank query values are both surfaced."""
@@ -1455,7 +1530,7 @@ class TestTemplateMimeType:
         """A string return honors the template's declared mime_type."""
         mcp = FastMCP()
 
-        kwargs = {"mime_type": declared} if declared else {}
+        kwargs: dict[str, Any] = {"mime_type": declared} if declared else {}
 
         @mcp.resource("data://report/{name}", **kwargs)
         def report(name: str) -> str:
@@ -1771,3 +1846,52 @@ class TestNonExplodedListQueryParams:
             [contents] = await client.read_resource(uri)
             assert isinstance(contents, TextResourceContents)
             assert contents.text == expected
+
+
+class TestLiteralQueryInTemplate:
+    """A template may spell its query out literally: `search://items?q={q}`."""
+
+    @pytest.mark.parametrize("via", ["direct", "mount", "proxy"])
+    async def test_template_with_literal_query_is_readable(self, via: str):
+        child = FastMCP("child")
+
+        @child.resource("search://items?q={q}")
+        def search(q: str) -> str:
+            return f"q={q}"
+
+        uri = "search://items?q=abc"
+        if via == "direct":
+            server = child
+        elif via == "mount":
+            server = FastMCP("parent")
+            server.mount(child, namespace="ns")
+            uri = "search://ns/items?q=abc"
+        else:
+            server = create_proxy(child)
+
+        async with Client(server) as client:
+            [template] = await client.list_resource_templates()
+            assert template.uri_template == uri.replace("abc", "{q}")
+            [contents] = await client.read_resource(uri)
+            assert isinstance(contents, TextResourceContents)
+            assert contents.text == "q=abc"
+
+
+class TestTemplateComponentMetaPropagation:
+    """A template's component meta must reach list[ResourceContent] reads."""
+
+    async def test_list_resource_content_return_preserves_template_meta(self):
+        mcp = FastMCP()
+        component_meta = {"ui": {"csp": "default-src none"}, "team": "infra"}
+
+        @mcp.resource("data://multi/{id}", meta=component_meta)
+        def multi(id: str) -> list[ResourceContent]:
+            return [ResourceContent("a"), ResourceContent("b", meta={"own": 1})]
+
+        async with Client(mcp) as client:
+            result = await client.read_resource_mcp("data://multi/1")
+
+        assert [content.meta for content in result.contents] == [
+            component_meta,
+            {**component_meta, "own": 1},
+        ]
