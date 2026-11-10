@@ -36,18 +36,10 @@ TOOLS = {
     "sleep",
     "stamp",
 }
-# Gaps a FastMCP proxy already had in 4.0.5. Checks named here are expected to
-# fail through the proxy and are reported as known gaps, not failures.
-PROXY_GAPS = {
-    "logging": "a proxy with a stdio backend drops log messages (also in 4.0.5)",
-}
-LEGACY_PROXY_GAPS = {
-    **PROXY_GAPS,
-    "elicitation": (
-        "a handshake-era client gets no elicitation through a proxy whose backend "
-        "negotiated 2026-07-28 (also in 4.0.5)"
-    ),
-}
+# Known gaps a FastMCP proxy has. Checks named here are expected to fail through
+# the proxy and are reported as known gaps, not failures.
+PROXY_GAPS: dict[str, str] = {}
+LEGACY_PROXY_GAPS: dict[str, str] = {**PROXY_GAPS}
 # Template reads that past releases got wrong: literals `AnyUrl` leaves as written
 # or encodes, and both list query styles, each with the text the server returns.
 TEMPLATE_READS = {
