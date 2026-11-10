@@ -1,4 +1,4 @@
-"""Tests for skills client utilities."""
+"""Tests for the deprecated skills client utilities."""
 
 from __future__ import annotations
 
@@ -19,9 +19,13 @@ from fastmcp.utilities.skills import (
     SkillSummary,
     download_skill,
     get_skill_manifest,
-    list_skill_summaries,
     list_skills,
     sync_skills,
+)
+
+# Every helper here is deprecated; `TestDeprecation` checks the warnings.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::fastmcp._warnings.FastMCPDeprecationWarning"
 )
 
 
@@ -103,18 +107,30 @@ def skills_server(skills_dir: Path) -> FastMCP:
     return mcp
 
 
-class TestListSkillSummaries:
-    async def test_list_skills_is_a_deprecated_alias(self, skills_server: FastMCP):
+class TestDeprecation:
+    @pytest.mark.filterwarnings("default::fastmcp._warnings.FastMCPDeprecationWarning")
+    async def test_each_helper_warns_once_with_its_replacement(
+        self, skills_server: FastMCP, tmp_path: Path
+    ):
         async with Client(skills_server) as client:
-            with pytest.warns(FastMCPDeprecationWarning, match="list_skill_summaries"):
-                skills = await list_skills(client)
-            expected = await list_skill_summaries(client)
+            with pytest.warns(FastMCPDeprecationWarning, match=r"client\.list_skills"):
+                await list_skills(client)
+            with pytest.warns(FastMCPDeprecationWarning, match=r"client\.get_skill"):
+                await get_skill_manifest(client, "pdf-processing")
+            with pytest.warns(FastMCPDeprecationWarning, match="to_directory") as one:
+                await download_skill(client, "pdf-processing", tmp_path / "one")
+            with pytest.warns(FastMCPDeprecationWarning) as record:
+                await sync_skills(client, tmp_path / "all")
+        assert len(one) == 1
+        assert len(record) == 1
+        assert one[0].filename == record[0].filename == __file__
+        assert "4.3" in str(record[0].message)
 
-        assert skills == expected
 
+class TestListSkills:
     async def test_lists_available_skills(self, skills_server: FastMCP):
         async with Client(skills_server) as client:
-            skills = await list_skill_summaries(client)
+            skills = await list_skills(client)
 
         assert len(skills) == 3
         names = {s.name for s in skills}
@@ -122,7 +138,7 @@ class TestListSkillSummaries:
 
     async def test_returns_skill_summary_objects(self, skills_server: FastMCP):
         async with Client(skills_server) as client:
-            skills = await list_skill_summaries(client)
+            skills = await list_skills(client)
 
         for skill in skills:
             assert isinstance(skill, SkillSummary)
@@ -132,7 +148,7 @@ class TestListSkillSummaries:
 
     async def test_includes_descriptions(self, skills_server: FastMCP):
         async with Client(skills_server) as client:
-            skills = await list_skill_summaries(client)
+            skills = await list_skills(client)
 
         by_name = {s.name: s for s in skills}
         assert by_name["pdf-processing"].description == "Process PDF documents"
@@ -141,7 +157,7 @@ class TestListSkillSummaries:
     async def test_empty_server_returns_empty_list(self):
         mcp = FastMCP("Empty")
         async with Client(mcp) as client:
-            skills = await list_skill_summaries(client)
+            skills = await list_skills(client)
 
         assert skills == []
 
@@ -165,7 +181,7 @@ class TestListSkillSummaries:
             return "# Wrong suffix"
 
         async with Client(mcp) as client:
-            skills = await list_skill_summaries(client)
+            skills = await list_skills(client)
 
         assert skills == [
             SkillSummary(
@@ -386,6 +402,50 @@ class TestDownloadSkill:
         assert client.requested_uris == [
             "skill://malicious/_manifest",
             "skill://malicious/SKILL.md",
+        ]
+
+    async def test_quotes_manifest_paths_when_reading_resources(self, tmp_path: Path):
+        manifest = {
+            "skill": "encoded",
+            "files": [
+                {"path": "100 score.md", "size": 5, "hash": "sha256:space"},
+                {"path": "100%20score.md", "size": 6, "hash": "sha256:percent"},
+                {"path": "notes#1.md", "size": 5, "hash": "sha256:hash"},
+                {"path": "team/ref.md", "size": 6, "hash": "sha256:nested"},
+            ],
+        }
+        client = FakeResourceReader(
+            {
+                "skill://encoded/_manifest": [
+                    text_resource("skill://encoded/_manifest", json.dumps(manifest))
+                ],
+                "skill://encoded/100%20score.md": [
+                    text_resource("skill://encoded/100%20score.md", "SPACE")
+                ],
+                "skill://encoded/100%2520score.md": [
+                    text_resource("skill://encoded/100%2520score.md", "PERCENT")
+                ],
+                "skill://encoded/notes%231.md": [
+                    text_resource("skill://encoded/notes%231.md", "HASH!")
+                ],
+                "skill://encoded/team/ref.md": [
+                    text_resource("skill://encoded/team/ref.md", "NESTED")
+                ],
+            }
+        )
+
+        result = await download_skill(cast(Client, client), "encoded", tmp_path)
+
+        assert (result / "100 score.md").read_text() == "SPACE"
+        assert (result / "100%20score.md").read_text() == "PERCENT"
+        assert (result / "notes#1.md").read_text() == "HASH!"
+        assert (result / "team" / "ref.md").read_text() == "NESTED"
+        assert client.requested_uris == [
+            "skill://encoded/_manifest",
+            "skill://encoded/100%20score.md",
+            "skill://encoded/100%2520score.md",
+            "skill://encoded/notes%231.md",
+            "skill://encoded/team/ref.md",
         ]
 
     async def test_downloads_blob_resources(self, tmp_path: Path):
