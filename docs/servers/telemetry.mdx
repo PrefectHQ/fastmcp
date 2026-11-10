@@ -453,6 +453,7 @@ FastMCP implements the [OpenTelemetry MCP semantic conventions](https://opentele
 | `jsonrpc.request.id` | JSON-RPC request ID (on server spans for inbound requests) |
 | `mcp.resource.uri` | The resource URI (for resource operations) |
 | `gen_ai.tool.name` | Tool name (on `tools/call` spans) |
+| `gen_ai.operation.name` | `execute_tool` (on `tools/call` spans) |
 | `gen_ai.prompt.name` | Prompt name (on `prompts/get` spans) |
 | `error.type` | Error classification (the JSON-RPC error code for protocol errors, `tool_error` for ToolError, otherwise exception class name) |
 | `rpc.response.status_code` | JSON-RPC error code (on spans that failed with a protocol error) |

@@ -38,6 +38,7 @@ class TestToolTracing:
         assert span.attributes["mcp.method.name"] == "tools/call"
         # gen_ai semantic conventions
         assert span.attributes["gen_ai.tool.name"] == "greet"
+        assert span.attributes["gen_ai.operation.name"] == "execute_tool"
         # RPC attributes must NOT be present
         assert "rpc.system" not in span.attributes
         assert "rpc.service" not in span.attributes
@@ -194,6 +195,7 @@ class TestPromptTracing:
         assert span.attributes["mcp.method.name"] == "prompts/get"
         # gen_ai semantic conventions
         assert span.attributes["gen_ai.prompt.name"] == "greeting"
+        assert "gen_ai.operation.name" not in span.attributes
         # RPC attributes must NOT be present
         assert "rpc.system" not in span.attributes
         assert "rpc.service" not in span.attributes
