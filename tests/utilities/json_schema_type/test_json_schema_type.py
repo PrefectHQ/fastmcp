@@ -521,3 +521,542 @@ class TestUnsupportedPatternFallback:
             warnings.simplefilter("error", UserWarning)
             T = json_schema_to_type(schema)  # must not warn
         TypeAdapter(T).validate_python("hello")
+
+
+class TestAllOfOneOf:
+    """allOf and oneOf composition, previously returning Any."""
+
+    def test_allof_merges_properties(self):
+        """allOf sub-schemas should be merged into a single object type."""
+        schema = {
+            "allOf": [
+                {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                },
+                {
+                    "type": "object",
+                    "properties": {"age": {"type": "integer"}},
+                },
+            ]
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+
+        result = ta.validate_python({"name": "Alice", "age": 30})
+        assert result.name == "Alice"
+        assert result.age == 30
+
+    def test_allof_preserves_required(self):
+        """Required fields from all allOf sub-schemas should be enforced."""
+        schema = {
+            "allOf": [
+                {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                },
+                {
+                    "type": "object",
+                    "properties": {"age": {"type": "integer"}},
+                },
+            ]
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+
+        with pytest.raises(ValidationError):
+            ta.validate_python({"age": 30})  # missing required 'name'
+
+    def test_allof_with_ref(self):
+        """allOf with $ref should resolve and merge the referenced schema."""
+        schema = {
+            "allOf": [
+                {"$ref": "#/$defs/Base"},
+                {
+                    "type": "object",
+                    "properties": {"extra": {"type": "string"}},
+                },
+            ],
+            "$defs": {
+                "Base": {
+                    "type": "object",
+                    "properties": {"id": {"type": "integer"}},
+                    "required": ["id"],
+                }
+            },
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+
+        result = ta.validate_python({"id": 1, "extra": "hello"})
+        assert result.id == 1
+        assert result.extra == "hello"
+
+    def test_oneof_creates_union(self):
+        """oneOf should create a Union type that accepts any sub-schema."""
+        schema = {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": {"const": "dog"},
+                        "breed": {"type": "string"},
+                    },
+                    "required": ["kind", "breed"],
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": {"const": "cat"},
+                        "indoor": {"type": "boolean"},
+                    },
+                    "required": ["kind", "indoor"],
+                },
+            ]
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+
+        dog = ta.validate_python({"kind": "dog", "breed": "lab"})
+        assert dog.kind == "dog"
+
+        cat = ta.validate_python({"kind": "cat", "indoor": True})
+        assert cat.indoor is True
+
+    def test_oneof_with_scalars(self):
+        """oneOf with scalar types should create a Union."""
+        schema = {
+            "oneOf": [
+                {"type": "string"},
+                {"type": "integer"},
+            ]
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+
+        assert ta.validate_python("hello") == "hello"
+        assert ta.validate_python(42) == 42
+
+    def test_nested_allof(self):
+        """allOf inside allOf should be flattened recursively."""
+        schema = {
+            "allOf": [
+                {
+                    "allOf": [
+                        {"type": "object", "properties": {"a": {"type": "string"}}},
+                        {"type": "object", "properties": {"b": {"type": "integer"}}},
+                    ]
+                },
+                {"type": "object", "properties": {"c": {"type": "boolean"}}},
+            ]
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"a": "x", "b": 1, "c": True})
+        assert result.a == "x"
+        assert result.b == 1
+        assert result.c is True
+
+    def test_allof_ref_to_allof(self):
+        """allOf with $ref pointing to another allOf should resolve fully."""
+        schema = {
+            "allOf": [
+                {"$ref": "#/$defs/Combined"},
+                {"type": "object", "properties": {"extra": {"type": "string"}}},
+            ],
+            "$defs": {
+                "Combined": {
+                    "allOf": [
+                        {
+                            "type": "object",
+                            "properties": {"x": {"type": "integer"}},
+                            "required": ["x"],
+                        },
+                        {
+                            "type": "object",
+                            "properties": {"y": {"type": "integer"}},
+                            "required": ["y"],
+                        },
+                    ]
+                }
+            },
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"x": 1, "y": 2, "extra": "hi"})
+        assert result.x == 1
+        assert result.y == 2
+        assert result.extra == "hi"
+
+    def test_allof_with_sibling_properties(self):
+        """Sibling properties on the same schema as allOf should be included."""
+        schema = {
+            "properties": {"local": {"type": "string"}},
+            "required": ["local"],
+            "allOf": [
+                {
+                    "type": "object",
+                    "properties": {"inherited": {"type": "integer"}},
+                }
+            ],
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+
+        result = ta.validate_python({"local": "hi", "inherited": 42})
+        assert result.local == "hi"
+        assert result.inherited == 42
+
+        with pytest.raises(ValidationError):
+            ta.validate_python({"inherited": 42})  # missing required 'local'
+
+    def test_oneof_with_dict_branch(self):
+        """oneOf with a map-like object branch should produce dict[str, X]."""
+        schema = {
+            "oneOf": [
+                {"type": "string"},
+                {
+                    "type": "object",
+                    "additionalProperties": {"type": "integer"},
+                },
+            ]
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+
+        assert ta.validate_python("hello") == "hello"
+        assert ta.validate_python({"x": 1, "y": 2}) == {"x": 1, "y": 2}
+
+    def test_allof_false_sub_schema_is_unsatisfiable(self):
+        """allOf containing `false` should produce an unsatisfiable type."""
+        schema = {
+            "allOf": [
+                {"type": "object", "properties": {"name": {"type": "string"}}},
+                False,
+            ]
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+
+        with pytest.raises(ValidationError):
+            ta.validate_python({"name": "Alice"})
+
+    def test_allof_only_false_is_unsatisfiable(self):
+        """allOf with only `false` should produce an unsatisfiable type."""
+        schema = {"allOf": [False]}
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+
+        with pytest.raises(ValidationError):
+            ta.validate_python({"any": "value"})
+
+    def test_allof_ref_to_boolean_schema(self):
+        """allOf with a $ref resolving to `false` should be unsatisfiable."""
+        schema = {
+            "allOf": [
+                {"$ref": "#/$defs/Never"},
+                {"type": "object", "properties": {"name": {"type": "string"}}},
+            ],
+            "$defs": {"Never": False},
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+
+        with pytest.raises(ValidationError):
+            ta.validate_python({"name": "Alice"})
+
+    def test_additional_properties_empty_schema_is_allow_any(self):
+        """additionalProperties: {} is equivalent to additionalProperties: true per spec."""
+        schema = {
+            "type": "object",
+            "additionalProperties": {},
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        # Should accept any values (empty schema = true = allow everything)
+        assert ta.validate_python({"x": 1, "y": "two"}) == {"x": 1, "y": "two"}
+
+    def test_additional_properties_empty_schema_with_properties(self):
+        """properties + additionalProperties: {} should produce Pydantic model (extra=allow)."""
+        from pydantic import BaseModel
+
+        schema = {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "additionalProperties": {},
+        }
+        T = json_schema_to_type(schema)
+        assert issubclass(T, BaseModel)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"name": "Alice", "extra_key": 42})
+        assert result.name == "Alice"  # ty: ignore[unresolved-attribute]
+
+    def test_property_declared_twice_must_satisfy_both(self):
+        """A property declared by the parent and an allOf child must satisfy both."""
+        schema = {
+            "properties": {"name": {"type": "string"}},
+            "allOf": [
+                {"type": "object", "properties": {"name": {"type": "string"}}},
+                {"type": "object", "properties": {"age": {"type": "integer"}}},
+            ],
+        }
+        ta = TypeAdapter(json_schema_to_type(schema))
+        result = ta.validate_python({"name": "Alice"})
+        assert result.name == "Alice"
+        with pytest.raises(ValidationError):
+            ta.validate_python({"name": 42})
+
+    def test_conflicting_property_declarations_reject_nothing(self):
+        """Declarations that can't be merged leave the property unconstrained."""
+        schema = {
+            "properties": {"name": {"type": "integer"}},
+            "allOf": [
+                {"type": "object", "properties": {"name": {"type": "string"}}},
+                {"type": "object", "properties": {"age": {"type": "integer"}}},
+            ],
+        }
+        ta = TypeAdapter(json_schema_to_type(schema))
+        result = ta.validate_python({"name": 42})
+        assert result.name == 42
+
+    def test_allof_additional_properties_false_wins(self):
+        """When allOf children conflict on additionalProperties, false should win."""
+        schema = {
+            "allOf": [
+                {
+                    "type": "object",
+                    "properties": {"a": {"type": "string"}},
+                    "additionalProperties": True,
+                },
+                {
+                    "type": "object",
+                    "properties": {"b": {"type": "integer"}},
+                    "additionalProperties": False,
+                },
+            ],
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"a": "hello", "b": 1})
+        assert result.a == "hello"
+        assert result.b == 1
+
+    def test_oneof_with_null_branch(self):
+        """oneOf with null branch should produce Optional type."""
+        schema = {
+            "oneOf": [
+                {"type": "string"},
+                {"type": "null"},
+            ]
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        assert ta.validate_python("hello") == "hello"
+        assert ta.validate_python(None) is None
+
+    def test_properties_with_anyof_not_shortcircuited(self):
+        """Schema with properties + anyOf should NOT shortcircuit to dataclass."""
+        schema = {
+            "properties": {"base": {"type": "string"}},
+            "anyOf": [
+                {"properties": {"variant_a": {"type": "integer"}}},
+                {"properties": {"variant_b": {"type": "boolean"}}},
+            ],
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"base": "val"})
+        assert result is not None
+
+    def test_allof_with_only_required_no_properties(self):
+        """allOf child with only required (no properties) merges correctly."""
+        schema = {
+            "allOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "age": {"type": "integer"},
+                    },
+                },
+                {"required": ["name"]},
+            ]
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"name": "Alice"})
+        assert result.name == "Alice"
+        with pytest.raises(ValidationError):
+            ta.validate_python({"age": 30})
+
+    def test_oneof_with_empty_additional_properties_dict(self):
+        """oneOf branch with additionalProperties: {} should produce dict[str, Any]."""
+        schema = {
+            "oneOf": [
+                {"type": "string"},
+                {"type": "object", "additionalProperties": {}},
+            ]
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        assert ta.validate_python("hello") == "hello"
+        assert ta.validate_python({"x": 1}) == {"x": 1}
+
+    def test_allof_with_sibling_additional_properties_true(self):
+        """properties + additionalProperties: true + allOf should preserve extra keys."""
+        from pydantic import BaseModel
+
+        schema = {
+            "additionalProperties": True,
+            "allOf": [
+                {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                },
+            ],
+        }
+        T = json_schema_to_type(schema)
+        assert issubclass(T, BaseModel)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"name": "Alice", "extra": "kept"})
+        assert result.name == "Alice"  # ty: ignore[unresolved-attribute]
+
+    def test_typed_object_allof_enforces_members(self):
+        """{"type": "object", "allOf": [...]} at the root merges its members."""
+        schema = {
+            "type": "object",
+            "allOf": [
+                {"properties": {"a": {"type": "string"}}, "required": ["a"]},
+                {"properties": {"b": {"type": "integer"}}},
+            ],
+        }
+        ta = TypeAdapter(json_schema_to_type(schema))
+        result = ta.validate_python({"a": "x", "b": 1})
+        assert result.b == 1
+        with pytest.raises(ValidationError):
+            ta.validate_python({"b": 1})
+
+    def test_typed_object_allof_takes_name(self):
+        schema = {
+            "type": "object",
+            "allOf": [{"properties": {"a": {"type": "string"}}}, {"required": ["a"]}],
+        }
+        T = json_schema_to_type(schema, name="Named")
+        assert T.__name__ == "Named"
+
+    def test_oneof_keeps_sibling_constraints(self):
+        """Sibling properties and required apply alongside every oneOf branch."""
+        outer = {
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+            "required": ["id"],
+            "oneOf": [
+                {"properties": {"x": {"type": "integer"}}, "required": ["x"]},
+                {"properties": {"y": {"type": "integer"}}, "required": ["y"]},
+            ],
+        }
+        schema = {"type": "object", "properties": {"outer": outer}}
+        ta = TypeAdapter(json_schema_to_type(schema))
+        result = ta.validate_python({"outer": {"id": "1", "x": 2}})
+        assert result.outer.x == 2
+        with pytest.raises(ValidationError):
+            ta.validate_python({"outer": {"x": 2}})
+
+    def test_anyof_keeps_sibling_constraints(self):
+        schema = {
+            "properties": {"id": {"type": "string"}},
+            "required": ["id"],
+            "anyOf": [{"properties": {"a": {"type": "integer"}}}],
+        }
+        ta = TypeAdapter(json_schema_to_type(schema))
+        result = ta.validate_python({"id": "1", "a": 2})
+        assert result.a == 2
+        with pytest.raises(ValidationError):
+            ta.validate_python({"a": 1})
+
+    def test_allof_of_one_scalar_schema(self):
+        schema = {"allOf": [{"type": "string", "minLength": 2}]}
+        ta = TypeAdapter(json_schema_to_type(schema))
+        assert ta.validate_python("ok") == "ok"
+        with pytest.raises(ValidationError):
+            ta.validate_python(1)
+
+    def test_allof_wrapping_ref_converts_the_ref(self):
+        item = {
+            "type": "object",
+            "title": "Item",
+            "properties": {"id": {"type": "integer"}},
+            "required": ["id"],
+        }
+        schema = {
+            "type": "object",
+            "properties": {
+                "item": {"description": "An item", "allOf": [{"$ref": "#/$defs/Item"}]}
+            },
+            "$defs": {"Item": item},
+        }
+        ta = TypeAdapter(json_schema_to_type(schema))
+        result = ta.validate_python({"item": {"id": 1}})
+        assert type(result.item).__name__ == "Item"
+        with pytest.raises(ValidationError):
+            ta.validate_python({"item": {}})
+
+    def test_unmergeable_allof_keeps_parent_constraints(self):
+        """Members that can't be merged are dropped; the parent still applies."""
+        schema = {
+            "type": "object",
+            "properties": {"a": {"type": "string"}},
+            "required": ["a"],
+            "allOf": [
+                {"minProperties": 1},
+                {"properties": {"b": {"type": "integer"}}},
+            ],
+        }
+        ta = TypeAdapter(json_schema_to_type(schema))
+        result = ta.validate_python({"a": "x", "b": "not checked"})
+        assert result.a == "x"
+        with pytest.raises(ValidationError):
+            ta.validate_python({"b": 1})
+
+    def test_allof_with_unknown_keyword_rejects_nothing(self):
+        """An OpenAPI nullable wrapper must still accept null."""
+        item = {"type": "object", "properties": {"id": {"type": "integer"}}}
+        schema = {
+            "nullable": True,
+            "allOf": [{"$ref": "#/$defs/Item"}],
+            "$defs": {"Item": item},
+        }
+        ta = TypeAdapter(json_schema_to_type(schema))
+        assert ta.validate_python(None) is None
+
+    def test_allof_ref_cycle(self):
+        schema = {
+            "allOf": [
+                {"$ref": "#/$defs/A"},
+                {"properties": {"q": {"type": "string"}}},
+            ],
+            "$defs": {"A": {"allOf": [{"$ref": "#/$defs/A"}]}},
+        }
+        ta = TypeAdapter(json_schema_to_type(schema))
+        assert ta.validate_python({"q": "x"}) == {"q": "x"}
+
+    def test_root_allof_keeps_self_reference(self):
+        base = {
+            "type": "object",
+            "properties": {"value": {"type": "integer"}},
+            "required": ["value"],
+        }
+        schema = {
+            "title": "Node",
+            "allOf": [{"$ref": "#/$defs/Base"}],
+            "properties": {"children": {"type": "array", "items": {"$ref": "#"}}},
+            "$defs": {"Base": base},
+        }
+        T = json_schema_to_type(schema)
+        assert T.__name__ == "Node"
+        node = TypeAdapter(T).validate_python(
+            {"value": 1, "children": [{"value": 2, "children": []}]}
+        )
+        assert node.children[0].value == 2

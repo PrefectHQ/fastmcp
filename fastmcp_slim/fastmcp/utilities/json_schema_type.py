@@ -230,6 +230,31 @@ _MAX_CONVERSION_DEPTH = 64
 _MAX_NESTING = 4 * _MAX_CONVERSION_DEPTH
 _MAX_CONVERSION_STEPS = 50_000
 
+_COMPOSITION_KEYWORDS = frozenset({"allOf", "anyOf", "oneOf"})
+# Keywords that describe a schema without restricting the values it accepts.
+_ANNOTATION_KEYWORDS = frozenset(
+    {
+        "$anchor",
+        "$comment",
+        "$defs",
+        "$id",
+        "$schema",
+        "default",
+        "definitions",
+        "deprecated",
+        "description",
+        "discriminator",
+        "examples",
+        "readOnly",
+        "title",
+        "writeOnly",
+    }
+)
+# Object keywords that allOf members merge on.
+_MERGEABLE_OBJECT_KEYWORDS = frozenset(
+    {"type", "properties", "required", "additionalProperties"}
+)
+
 
 @dataclass
 class _Conversion:
@@ -381,11 +406,14 @@ def _convert_normalized(schema: dict[str, Any], name: str | None) -> type:
     token = _conversion.set(conversion)
     try:
         # Always use the top-level schema for references
-        if schema.get("type") == "object":
+        composed = bool(_COMPOSITION_KEYWORDS & schema.keys())
+        if schema.get("type") == "object" and not composed:
             result = _object_schema_to_type(schema, schemas=schema, name=name)
-        elif name:
+        elif name and schema.get("type") != "object":
             raise ValueError(f"Can not apply name to non-object schema: {name}")
         else:
+            if name:
+                schema = {**schema, "title": name}
             result = _schema_to_type(schema, schemas=schema)
         _resolve_recursive_types(conversion)
         # Publish only complete graphs: another conversion must not reuse a
@@ -848,6 +876,10 @@ def _object_schema_to_type(
     """
     has_properties = bool(schema.get("properties"))
     additional_props = schema.get("additionalProperties")
+    # Per JSON Schema, an empty schema {} means "accept anything" —
+    # equivalent to additionalProperties: true.
+    if isinstance(additional_props, dict) and not additional_props:
+        additional_props = True
     class_name = name if name is not None else schema.get("title")
 
     if not has_properties and additional_props:
@@ -921,7 +953,11 @@ def _convert_schema(
     if not schema:
         return object
 
-    if "type" not in schema and "properties" in schema:
+    if (
+        "type" not in schema
+        and "properties" in schema
+        and not _COMPOSITION_KEYWORDS & schema.keys()
+    ):
         # A schema with properties but no "type" is still an object schema. When
         # it allows additional properties, take the object path so unknown keys
         # are kept, exactly as if "type": "object" were spelled out.
@@ -952,13 +988,7 @@ def _convert_schema(
                 _resolve_ref(ref, schemas), schemas, resolving_refs | {ref}
             )
         ref_type = resolved_refs[ref]
-        # Draft 4-7 treat a $ref object as a reference only. In newer drafts,
-        # constraints next to a reference also apply to that use of the type.
-        if (
-            schemas.get("$schema", "")
-            .rstrip("#")
-            .endswith(("/draft-04/schema", "/draft-06/schema", "/draft-07/schema"))
-        ):
+        if _ref_siblings_ignored(schemas):
             return ref_type
         siblings = {
             k: v
@@ -1017,29 +1047,17 @@ def _convert_schema(
     if "enum" in schema:
         return _create_enum(f"Enum_{len(_classes)}", schema["enum"])
 
-    # Handle anyOf unions
     if "anyOf" in schema:
-        types: list[type | Any] = [
-            _schema_to_type(subschema, schemas, resolving_refs)
-            for subschema in schema["anyOf"]
-        ]
+        return _convert_union(schema, "anyOf", schemas, resolving_refs)
 
-        # Check if one of the types is None (null)
-        has_null = type(None) in types
-        types = [t for t in types if t is not type(None)]
+    if "allOf" in schema:
+        return _convert_all_of(schema, schemas, resolving_refs)
 
-        if len(types) == 0:
-            return type(None)
-        elif len(types) == 1:
-            if has_null:
-                return Union[types[0], type(None)]  # type: ignore # noqa: UP007
-            else:
-                return types[0]
-        else:
-            if has_null:
-                return Union[(*types, type(None))]  # type: ignore
-            else:
-                return Union[tuple(types)]  # type: ignore # noqa: UP007
+    # Treat oneOf like anyOf. A Union accepts values that match more than one
+    # branch, which JSON Schema's oneOf rejects; the conversion may accept more
+    # than the schema does, but must never reject a valid value.
+    if "oneOf" in schema:
+        return _convert_union(schema, "oneOf", schemas, resolving_refs)
 
     schema_type = schema.get("type")
     if not schema_type:
@@ -1072,6 +1090,227 @@ def _convert_schema(
         return Union[tuple(types)]  # type: ignore # noqa: UP007
 
     return _get_from_type_handler(schema, schemas, resolving_refs)(schema)
+
+
+def _ref_siblings_ignored(schemas: Mapping[str, Any]) -> bool:
+    """Draft 4-7 treat a $ref object as a reference only. In newer drafts,
+    constraints next to a reference also apply to that use of the type."""
+    return (
+        schemas.get("$schema", "")
+        .rstrip("#")
+        .endswith(("/draft-04/schema", "/draft-06/schema", "/draft-07/schema"))
+    )
+
+
+def _without(schema: Mapping[str, Any], keyword: str) -> dict[str, Any]:
+    return {k: v for k, v in schema.items() if k != keyword}
+
+
+def _only_annotates(schema: Any) -> bool:
+    """Whether a schema accepts every value (`true`, or annotations only)."""
+    if isinstance(schema, bool):
+        return schema
+    return isinstance(schema, Mapping) and set(schema) <= _ANNOTATION_KEYWORDS
+
+
+def _convert_union(
+    schema: Mapping[str, Any],
+    keyword: str,
+    schemas: Mapping[str, Any],
+    resolving_refs: frozenset[str],
+) -> type | ForwardRef:
+    """Convert anyOf or oneOf to a Union of its branches."""
+    branches = schema[keyword]
+    parent = _without(schema, keyword)
+    if not set(parent) <= _ANNOTATION_KEYWORDS | {"type"}:
+        # Sibling keywords such as properties and required apply alongside
+        # every branch, so each branch becomes the allOf of both.
+        branches = [
+            {**parent, "allOf": [*parent.get("allOf", []), branch]}
+            for branch in branches
+        ]
+    types: list[type | Any] = [
+        _schema_to_type(branch, schemas, resolving_refs) for branch in branches
+    ]
+
+    # Check if one of the types is None (null)
+    has_null = type(None) in types
+    types = [t for t in types if t is not type(None)]
+
+    if len(types) == 0:
+        return type(None)
+    elif len(types) == 1:
+        if has_null:
+            return Union[types[0], type(None)]  # type: ignore # noqa: UP007
+        else:
+            return types[0]
+    else:
+        if has_null:
+            return Union[(*types, type(None))]  # type: ignore
+        else:
+            return Union[tuple(types)]  # type: ignore # noqa: UP007
+
+
+class _Unmergeable(Exception):
+    """An allOf member that cannot be merged into a single object schema."""
+
+
+def _convert_all_of(
+    schema: Mapping[str, Any],
+    schemas: Mapping[str, Any],
+    resolving_refs: frozenset[str],
+) -> type | ForwardRef:
+    """Convert allOf by merging its members into one object schema.
+
+    The result must never reject a value the composition accepts. When the
+    members can't be merged faithfully, the schema converts without its allOf,
+    which accepts everything the full schema accepts.
+    """
+    parent = _without(schema, "allOf")
+
+    def convert(merged: dict[str, Any]) -> type | ForwardRef:
+        if schema is schemas:
+            # Keep the root's identity so "$ref": "#" still names its class.
+            root = {**parent, **merged}
+            return _schema_to_type(root, root, resolving_refs)
+        return _schema_to_type(merged, schemas, resolving_refs)
+
+    def without_all_of() -> type | ForwardRef:
+        return Any if _only_annotates(parent) else convert(parent)
+
+    members = schema["allOf"]
+    if not isinstance(members, list):
+        return without_all_of()
+    if any(member is False for member in members):
+        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+
+    # allOf wrapping a single schema, often a $ref with a description beside it.
+    constraining = [member for member in members if not _only_annotates(member)]
+    if (
+        len(constraining) == 1
+        and set(parent) <= _ANNOTATION_KEYWORDS | {"type"}
+        and parent.get("type", "object") == "object"
+    ):
+        return _schema_to_type(constraining[0], schemas, resolving_refs)
+
+    try:
+        flattened: list[Mapping[str, Any] | bool] = [parent]
+        for member in members:
+            flattened.extend(_all_of_members(member, schemas, resolving_refs))
+        if any(member is False for member in flattened):
+            return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        merged = _merge_object_members(flattened)
+    except _Unmergeable:
+        return without_all_of()
+
+    for annotation in ("title", "description"):
+        if annotation in parent:
+            merged[annotation] = parent[annotation]
+    return convert(merged)
+
+
+def _all_of_members(
+    member: Any,
+    schemas: Mapping[str, Any],
+    resolving_refs: frozenset[str],
+    seen_refs: frozenset[str] = frozenset(),
+) -> list[Mapping[str, Any] | bool]:
+    """Flatten an allOf member, resolving $refs and nested allOf."""
+    conversion = _conversion.get()
+    conversion.steps += 1
+    if conversion.steps > _MAX_CONVERSION_STEPS:
+        raise ValueError("JSON schema is too large to convert")
+    if isinstance(member, bool):
+        return [member]
+    if not isinstance(member, Mapping):
+        raise _Unmergeable
+    members: list[Mapping[str, Any] | bool] = []
+    if "$ref" in member:
+        ref = member["$ref"]
+        if (
+            not isinstance(ref, str)
+            or ref == "#"
+            or ref in seen_refs
+            or ref in resolving_refs
+        ):
+            raise _Unmergeable
+        try:
+            resolved = _resolve_ref(ref, schemas)
+        except (AttributeError, TypeError) as e:
+            raise _Unmergeable from e
+        members.extend(
+            _all_of_members(resolved, schemas, resolving_refs, seen_refs | {ref})
+        )
+        if _ref_siblings_ignored(schemas):
+            return members
+        member = _without(member, "$ref")
+    if "allOf" in member:
+        nested = member["allOf"]
+        if not isinstance(nested, list):
+            raise _Unmergeable
+        for item in nested:
+            members.extend(_all_of_members(item, schemas, resolving_refs, seen_refs))
+        member = _without(member, "allOf")
+    members.append(member)
+    return members
+
+
+def _merge_object_members(
+    members: list[Mapping[str, Any] | bool],
+) -> dict[str, Any]:
+    """Merge object schemas that must all hold into one object schema.
+
+    A property declared by several members must satisfy each declaration, so
+    it becomes the allOf of them. The merged schema forbids additional
+    properties when any member does: a key outside every member's properties
+    fails that member too.
+    """
+    properties: dict[str, list[Any]] = {}
+    required: list[str] = []
+    additional: bool | None = None
+    for member in members:
+        if member is True:
+            continue
+        if isinstance(member, bool) or not set(member) <= (
+            _ANNOTATION_KEYWORDS | _MERGEABLE_OBJECT_KEYWORDS
+        ):
+            raise _Unmergeable
+        if member.get("type", "object") != "object":
+            raise _Unmergeable
+        member_properties = member.get("properties", {})
+        member_required = member.get("required", [])
+        if not isinstance(member_properties, Mapping) or not isinstance(
+            member_required, list
+        ):
+            raise _Unmergeable
+        for prop_name, prop_schema in member_properties.items():
+            declarations = properties.setdefault(prop_name, [])
+            if prop_schema not in declarations:
+                declarations.append(prop_schema)
+        required.extend(member_required)
+        additional_props = member.get("additionalProperties")
+        if additional_props is False:
+            additional = False
+        elif additional_props is True or additional_props == {}:
+            if additional is None:
+                additional = True
+        elif additional_props is not None:
+            raise _Unmergeable
+
+    merged: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            prop_name: declarations[0]
+            if len(declarations) == 1
+            else {"allOf": declarations}
+            for prop_name, declarations in properties.items()
+        },
+    }
+    if required:
+        merged["required"] = list(dict.fromkeys(required))
+    if additional is not None:
+        merged["additionalProperties"] = additional
+    return merged
 
 
 def _sanitize_name(name: str) -> str:
