@@ -197,13 +197,26 @@ def _forwardable_request_meta(ctx: Context | None) -> dict[str, Any] | None:
     return forwarded or None
 
 
-def _forwardable_server_meta(meta: dict[str, Any] | None) -> dict[str, Any]:
-    """Backend result metadata that may cross onto the frontend connection."""
-    return {
+def _forwardable_server_meta(
+    meta: dict[str, Any] | None,
+    identity: ProxyIdentity = "proxy",
+) -> dict[str, Any]:
+    """Backend result metadata that may cross onto the frontend connection.
+
+    Connection-owned keys never cross. The backend's ``serverInfo`` stamp is an
+    identity decision at the response boundary: under the default ``"proxy"``
+    identity it is dropped so the gateway's own seam stamps the gateway
+    identity, and under ``"upstream"`` it is preserved so terminal results keep
+    advertising the backend, matching what discovery advertised.
+    """
+    forwarded = {
         key: value
         for key, value in (meta or {}).items()
-        if key not in _CONNECTION_META_KEYS and key != mcp_types.SERVER_INFO_META_KEY
+        if key not in _CONNECTION_META_KEYS
     }
+    if identity != "upstream":
+        forwarded.pop(mcp_types.SERVER_INFO_META_KEY, None)
+    return forwarded
 
 
 def _session_request_meta(
@@ -345,10 +358,18 @@ class ProxyTool(Tool):
 
     task_config: TaskConfig = TaskConfig(mode="forbidden")
     _backend_name: str | None = None
+    _identity: ProxyIdentity = "proxy"
 
-    def __init__(self, client_factory: ClientFactoryT, **kwargs: Any):
+    def __init__(
+        self,
+        client_factory: ClientFactoryT,
+        *,
+        identity: ProxyIdentity = "proxy",
+        **kwargs: Any,
+    ):
         super().__init__(**kwargs)
         self._client_factory = client_factory
+        self._identity = identity
 
     async def _get_client(self) -> Client:
         """Gets a client instance by calling the sync or async factory."""
@@ -368,11 +389,16 @@ class ProxyTool(Tool):
 
     @classmethod
     def from_mcp_tool(
-        cls, client_factory: ClientFactoryT, mcp_tool: mcp_types.Tool
+        cls,
+        client_factory: ClientFactoryT,
+        mcp_tool: mcp_types.Tool,
+        *,
+        identity: ProxyIdentity = "proxy",
     ) -> ProxyTool:
         """Factory method to create a ProxyTool from a raw MCP tool schema."""
         return cls(
             client_factory=client_factory,
+            identity=identity,
             name=mcp_tool.name,
             title=mcp_tool.title,
             description=mcp_tool.description,
@@ -465,6 +491,7 @@ class ProxyTool(Tool):
             # and the client still raises on isError by default.
             # Preserve backend's meta (includes task metadata for background tasks)
             structured_content = tool_result.structured_content
+            meta = _forwardable_server_meta(tool_result.meta, self._identity) or None
             has_structured_content = (
                 "structured_content" in tool_result.model_fields_set
             )
@@ -478,14 +505,14 @@ class ProxyTool(Tool):
                 return RawStructuredToolResult(
                     content=tool_result.content,
                     structured_content=structured_content,
-                    meta=tool_result.meta,
+                    meta=meta,
                     is_error=tool_result.is_error,
                 )
 
             return ToolResult(
                 content=tool_result.content,
                 structured_content=structured_content,
-                meta=tool_result.meta,
+                meta=meta,
                 is_error=tool_result.is_error,
             )
 
@@ -502,17 +529,20 @@ class ProxyResource(Resource):
     task_config: TaskConfig = TaskConfig(mode="forbidden")
     _cached_content: ResourceResult | None = None
     _backend_uri: str | None = None
+    _identity: ProxyIdentity = "proxy"
 
     def __init__(
         self,
         client_factory: ClientFactoryT,
         *,
         _cached_content: ResourceResult | None = None,
+        identity: ProxyIdentity = "proxy",
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
         self._client_factory = client_factory
         self._cached_content = _cached_content
+        self._identity = identity
 
     async def _get_client(self) -> Client:
         """Gets a client instance by calling the sync or async factory."""
@@ -535,11 +565,14 @@ class ProxyResource(Resource):
         cls,
         client_factory: ClientFactoryT,
         mcp_resource: mcp_types.Resource,
+        *,
+        identity: ProxyIdentity = "proxy",
     ) -> ProxyResource:
         """Factory method to create a ProxyResource from a raw MCP resource schema."""
 
         return cls(
             client_factory=client_factory,
+            identity=identity,
             uri=mcp_resource.uri,
             name=mcp_resource.name,
             title=mcp_resource.title,
@@ -600,7 +633,8 @@ class ProxyResource(Resource):
                     raise ResourceError(f"Unsupported content type: {type(item)}")
 
             return ResourceResult(
-                contents=contents, meta=_forwardable_server_meta(result.meta) or None
+                contents=contents,
+                meta=_forwardable_server_meta(result.meta, self._identity) or None,
             )
 
     def get_span_attributes(self) -> dict[str, Any]:
@@ -615,10 +649,18 @@ class ProxyTemplate(ResourceTemplate):
 
     task_config: TaskConfig = TaskConfig(mode="forbidden")
     _backend_uri_template: str | None = None
+    _identity: ProxyIdentity = "proxy"
 
-    def __init__(self, client_factory: ClientFactoryT, **kwargs: Any):
+    def __init__(
+        self,
+        client_factory: ClientFactoryT,
+        *,
+        identity: ProxyIdentity = "proxy",
+        **kwargs: Any,
+    ):
         super().__init__(**kwargs)
         self._client_factory = client_factory
+        self._identity = identity
 
     async def _get_client(self) -> Client:
         """Gets a client instance by calling the sync or async factory."""
@@ -638,12 +680,17 @@ class ProxyTemplate(ResourceTemplate):
 
     @classmethod
     def from_mcp_template(  # type: ignore[override]
-        cls, client_factory: ClientFactoryT, mcp_template: mcp_types.ResourceTemplate
+        cls,
+        client_factory: ClientFactoryT,
+        mcp_template: mcp_types.ResourceTemplate,
+        *,
+        identity: ProxyIdentity = "proxy",
     ) -> ProxyTemplate:  # ty:ignore[invalid-method-override]
         """Factory method to create a ProxyTemplate from a raw MCP template schema."""
 
         return cls(
             client_factory=client_factory,
+            identity=identity,
             uri_template=mcp_template.uri_template,
             name=mcp_template.name,
             title=mcp_template.title,
@@ -681,6 +728,7 @@ class ProxyTemplate(ResourceTemplate):
             # handler, which unwraps it.
             return ProxyResource(
                 client_factory=self._client_factory,
+                identity=self._identity,
                 uri=parameterized_uri,
                 name=self.name,
                 title=self.title,
@@ -720,11 +768,13 @@ class ProxyTemplate(ResourceTemplate):
                 raise ResourceError(f"Unsupported content type: {type(item)}")
 
         cached_content = ResourceResult(
-            contents=contents, meta=_forwardable_server_meta(result.meta) or None
+            contents=contents,
+            meta=_forwardable_server_meta(result.meta, self._identity) or None,
         )
 
         return ProxyResource(
             client_factory=self._client_factory,
+            identity=self._identity,
             uri=parameterized_uri,
             name=self.name,
             title=self.title,
@@ -752,10 +802,18 @@ class ProxyPrompt(Prompt):
 
     task_config: TaskConfig = TaskConfig(mode="forbidden")
     _backend_name: str | None = None
+    _identity: ProxyIdentity = "proxy"
 
-    def __init__(self, client_factory: ClientFactoryT, **kwargs):
+    def __init__(
+        self,
+        client_factory: ClientFactoryT,
+        *,
+        identity: ProxyIdentity = "proxy",
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self._client_factory = client_factory
+        self._identity = identity
 
     async def _get_client(self) -> Client:
         """Gets a client instance by calling the sync or async factory."""
@@ -775,7 +833,11 @@ class ProxyPrompt(Prompt):
 
     @classmethod
     def from_mcp_prompt(
-        cls, client_factory: ClientFactoryT, mcp_prompt: mcp_types.Prompt
+        cls,
+        client_factory: ClientFactoryT,
+        mcp_prompt: mcp_types.Prompt,
+        *,
+        identity: ProxyIdentity = "proxy",
     ) -> ProxyPrompt:
         """Factory method to create a ProxyPrompt from a raw MCP prompt schema."""
         arguments = [
@@ -789,6 +851,7 @@ class ProxyPrompt(Prompt):
         ]
         return cls(
             client_factory=client_factory,
+            identity=identity,
             name=mcp_prompt.name,
             title=mcp_prompt.title,
             description=mcp_prompt.description,
@@ -841,7 +904,7 @@ class ProxyPrompt(Prompt):
             return PromptResult(
                 messages=messages,
                 description=result.description,
-                meta=result.meta,
+                meta=_forwardable_server_meta(result.meta, self._identity) or None,
             )
 
     def get_span_attributes(self) -> dict[str, Any]:
@@ -915,6 +978,7 @@ class ProxyProvider(Provider):
         client_factory: ClientFactoryT,
         cache_ttl: float | None = None,
         *,
+        identity: ProxyIdentity = "proxy",
         skills: bool = False,
     ):
         """Initialize a ProxyProvider.
@@ -922,16 +986,21 @@ class ProxyProvider(Provider):
         Args:
             client_factory: A callable that returns a Client instance when called.
                            This gives you full control over session creation and reuse.
-                           Can be either a synchronous or asynchronous function.
+                           Can be either a synchronous or an asynchronous function.
             cache_ttl: How long (in seconds) to cache component lists for
                       individual lookups.  Defaults to 300.  Set to 0 to
                       disable caching.
+            identity: Whether proxied results carry the gateway's server
+                      identity (``"proxy"``, the default) or keep the backend's
+                      (``"upstream"``), matching what ``ProxyMetadataMiddleware``
+                      advertises for discovery.
             skills: Forward the backend's Skills discovery (`skills/list` and
                 `skills/get`). Registers `SkillsExtension` on the server
                 this provider is added to.
         """
         super().__init__()
         self.client_factory = client_factory
+        self.identity = identity
         self._skills = skills
         self._cache_ttl = cache_ttl if cache_ttl is not None else _DEFAULT_CACHE_TTL
         self._tools_cache: _CacheEntry[Tool] | None = None
@@ -944,6 +1013,25 @@ class ProxyProvider(Provider):
         self._resources_generation = 0
         self._templates_generation = 0
         self._prompts_generation = 0
+
+    def _use_identity(self, identity: ProxyIdentity) -> None:
+        """Adopt the identity a ``ProxyMetadataMiddleware`` was explicitly given.
+
+        Cached components carry the identity they were built with, so a change
+        drops the caches and advances the generations to keep in-flight
+        listings from caching components built under the old identity.
+        """
+        if identity == self.identity:
+            return
+        self.identity = identity
+        self._tools_cache = None
+        self._resources_cache = None
+        self._templates_cache = None
+        self._prompts_cache = None
+        self._tools_generation += 1
+        self._resources_generation += 1
+        self._templates_generation += 1
+        self._prompts_generation += 1
 
     def required_extensions(self) -> Sequence[ServerExtension]:
         if not self._skills:
@@ -972,7 +1060,10 @@ class ProxyProvider(Provider):
             async with client:
                 mcp_tools = await client.list_tools()
                 tools = [
-                    ProxyTool.from_mcp_tool(self.client_factory, t) for t in mcp_tools
+                    ProxyTool.from_mcp_tool(
+                        self.client_factory, t, identity=self.identity
+                    )
+                    for t in mcp_tools
                 ]
         except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
@@ -1046,7 +1137,9 @@ class ProxyProvider(Provider):
             async with client:
                 mcp_resources = await client.list_resources()
                 resources = [
-                    ProxyResource.from_mcp_resource(self.client_factory, r)
+                    ProxyResource.from_mcp_resource(
+                        self.client_factory, r, identity=self.identity
+                    )
                     for r in mcp_resources
                 ]
         except MCPError as e:
@@ -1088,7 +1181,9 @@ class ProxyProvider(Provider):
             async with client:
                 mcp_templates = await client.list_resource_templates()
                 templates = [
-                    ProxyTemplate.from_mcp_template(self.client_factory, t)
+                    ProxyTemplate.from_mcp_template(
+                        self.client_factory, t, identity=self.identity
+                    )
                     for t in mcp_templates
                 ]
         except MCPError as e:
@@ -1130,7 +1225,9 @@ class ProxyProvider(Provider):
             async with client:
                 mcp_prompts = await client.list_prompts()
                 prompts = [
-                    ProxyPrompt.from_mcp_prompt(self.client_factory, p)
+                    ProxyPrompt.from_mcp_prompt(
+                        self.client_factory, p, identity=self.identity
+                    )
                     for p in mcp_prompts
                 ]
         except MCPError as e:
@@ -1224,17 +1321,24 @@ class ProxyMetadataMiddleware(Middleware):
     Instructions and namespaced metadata are forwarded with frontend values
     taking precedence. Protocol versions, capabilities, cache policy, and result
     type are never copied from the backend. ``identity`` controls whether server
-    identity remains the gateway's or uses the backend's when available.
+    identity remains the gateway's or uses the backend's when available. It
+    defaults to the provider's identity; an explicit value also applies to the
+    provider's proxied results, so discovery and results always agree.
     """
 
     def __init__(
         self,
         provider: ProxyProvider,
         *,
-        identity: ProxyIdentity = "proxy",
+        identity: ProxyIdentity | None = None,
     ) -> None:
+        if identity is None:
+            identity = provider.identity
         if identity not in ("proxy", "upstream"):
             raise ValueError("identity must be 'proxy' or 'upstream'")
+        # Results must report the same identity discovery advertises, so an
+        # explicit identity here also decides the provider's result stamps.
+        provider._use_identity(identity)
         self.provider = provider
         self.identity = identity
 
@@ -1531,7 +1635,8 @@ class FastMCPProxy(FastMCP):
                 operations. Defaults to ``"warn"`` for compatibility; use
                 ``"raise"`` when the proxy should surface upstream failures.
             identity: Whether clients see the proxy's server identity or the
-                upstream server's when available. Defaults to ``"proxy"``
+                upstream server's when available, in discovery and in proxied
+                result metadata. Defaults to ``"proxy"``
                 for compatibility.
             skills: Forward the backend's Skills discovery.
             **kwargs: Additional settings for the FastMCP server.
@@ -1539,9 +1644,9 @@ class FastMCPProxy(FastMCP):
         super().__init__(**kwargs)
         self.provider_error_strategy = provider_error_strategy
         self.client_factory = client_factory
-        provider = ProxyProvider(client_factory, skills=skills)
+        provider = ProxyProvider(client_factory, identity=identity, skills=skills)
         self.add_provider(provider)
-        self.middleware.append(ProxyMetadataMiddleware(provider, identity=identity))
+        self.middleware.append(ProxyMetadataMiddleware(provider))
         self._setup_proxy_ping_handler()
 
     async def _get_client(self) -> Client:

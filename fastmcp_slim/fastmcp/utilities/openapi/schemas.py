@@ -4,6 +4,7 @@ import re
 from collections import Counter
 from typing import Any
 
+from fastmcp.utilities.json_schema import ref_target_name
 from fastmcp.utilities.logging import get_logger
 
 from .json_schema_converter import (
@@ -94,13 +95,13 @@ _SUBSCHEMA_KEYWORDS = (
 def _ref_component_name(ref: str) -> str | None:
     """Return the component schema a local `$ref` points into, if any.
 
-    The name is the segment after `#/$defs/` or `#/components/schemas/`, so
-    `#/$defs/Pet/properties/status` needs the `Pet` definition.
+    The name is the decoded segment after `#/$defs/` or
+    `#/components/schemas/`, so `#/$defs/Pet/properties/status` needs the
+    `Pet` definition and `#/$defs/a~1b` needs `a/b`.
     """
-    for prefix in ("#/$defs/", "#/components/schemas/"):
-        if ref.startswith(prefix):
-            return ref.removeprefix(prefix).split("/")[0] or None
-    return None
+    if not ref.startswith("#/"):
+        return None
+    return ref_target_name(ref, roots=(("$defs",), ("components", "schemas")))
 
 
 def _replace_ref_with_defs(
