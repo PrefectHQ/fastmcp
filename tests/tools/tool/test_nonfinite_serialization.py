@@ -41,6 +41,17 @@ class TestNonFiniteStructuredContentRejected:
             with pytest.raises(ToolError, match="non-finite"):
                 await client.call_tool("scalar", {})
 
+    async def test_negative_infinity_scalar_raises(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def scalar() -> float:
+            return float("-inf")
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match=r"non-finite float \(-inf\)"):
+                await client.call_tool("scalar", {})
+
     async def test_nan_in_dict_raises_with_value_and_path(self):
         mcp = FastMCP()
 
@@ -182,9 +193,7 @@ class TestDocumentedResidualBehavior:
                 await client.call_tool("stats", {})
 
         # Pin the boundary behavior: no ToolError, just the model's null.
-        assert _serialize_to_jsonable(Stats(mean=float("nan")), Stats) == {
-            "mean": None
-        }
+        assert _serialize_to_jsonable(Stats(mean=float("nan")), Stats) == {"mean": None}
 
     def test_default_serializer_rewrites_non_finite_to_null(self):
         """`default_serializer` (the text-content path) still nulls non-finites.
