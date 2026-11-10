@@ -98,8 +98,11 @@ For production HTTP deployment with authentication and advanced configuration, s
 Server-Sent Events (SSE) transport was the original HTTP-based transport for MCP. While still supported for backward compatibility, it has limitations compared to the newer Streamable HTTP transport. SSE only supports server-to-client streaming, making it less efficient for bidirectional communication.
 
 ```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer")
+
 if __name__ == "__main__":
-    # SSE transport - use HTTP instead for new projects
     mcp.run(transport="sse", host="127.0.0.1", port=8000)
 ```
 
@@ -169,7 +172,7 @@ During development, you can use the `--reload` flag to automatically restart you
 fastmcp run server.py --reload
 ```
 
-The server watches for changes to Python files in the current directory and restarts automatically when you save changes. This provides a fast feedback loop during development without manually stopping and starting the server.
+The server watches the current directory and restarts when you save a source file. The watcher covers Python files along with common frontend, markup, style, config, and image files (`.js`, `.ts`, `.html`, `.css`, `.json`, `.toml`, `.svg`, and similar), so changes to app assets also trigger a restart.
 
 ```bash
 # Watch specific directories for changes
