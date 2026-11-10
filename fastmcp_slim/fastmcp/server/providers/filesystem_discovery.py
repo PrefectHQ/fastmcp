@@ -372,6 +372,7 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
                         annotations=meta.annotations,
                         meta=meta.meta,
                         auth=meta.auth,
+                        security=meta.security,
                     )
                 else:
                     resource = Resource.from_function(
@@ -418,7 +419,8 @@ def discover_and_import(root: Path) -> DiscoveryResult:
         DiscoveryResult with components and any failed files.
 
     Note:
-        Files that fail to import are tracked in failed_files, not logged.
+        Files that fail to import or construct components are tracked in
+        failed_files, not logged. No components from a failed file are returned.
         The caller is responsible for logging/handling failures.
         Files with no components are silently skipped.
     """
@@ -427,11 +429,11 @@ def discover_and_import(root: Path) -> DiscoveryResult:
     for file_path in discover_files(root):
         try:
             module = import_module_from_file(file_path, provider_root=root)
+            components = extract_components(module)
         except Exception as e:
             result.failed_files[file_path] = str(e)
             continue
 
-        components = extract_components(module)
         for component in components:
             result.components.append((file_path, component))
 

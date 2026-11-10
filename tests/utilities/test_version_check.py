@@ -131,6 +131,11 @@ class TestFetchLatestVersion:
             version = _fetch_latest_version()
             assert version is None
 
+    def test_fetch_invalid_url(self):
+        """Invalid URL errors during client setup return None (#5638)."""
+        with patch("httpx2.get", side_effect=httpx2.InvalidURL("Invalid proxy URL")):
+            assert _fetch_latest_version() is None
+
     def test_fetch_invalid_response(self):
         """Invalid response returns None."""
         mock_response = MagicMock()
