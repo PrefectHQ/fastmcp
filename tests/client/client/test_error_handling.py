@@ -179,6 +179,63 @@ class TestErrorHandling:
                 await client.read_resource(AnyUrl("error://resource/123"))
             assert "This is a resource error (xyz)" in str(excinfo.value)
 
+    async def test_general_prompt_exceptions_are_not_masked_by_default(self):
+        mcp = FastMCP("TestServer")
+
+        @mcp.prompt
+        def exception_prompt(topic: str) -> str:
+            raise RuntimeError("This is an internal error (sensitive)")
+
+        client = Client(transport=FastMCPTransport(mcp))
+
+        async with client:
+            with pytest.raises(Exception) as excinfo:
+                await client.get_prompt("exception_prompt", {"topic": "x"})
+            assert "Error rendering prompt" in str(excinfo.value)
+            assert "sensitive" in str(excinfo.value)
+            assert "internal error" in str(excinfo.value)
+
+    @pytest.mark.parametrize("is_async", [False, True])
+    async def test_general_prompt_exceptions_are_masked_when_enabled(
+        self, is_async: bool
+    ):
+        mcp = FastMCP("TestServer", mask_error_details=True)
+
+        if is_async:
+
+            @mcp.prompt
+            async def exception_prompt(topic: str) -> str:
+                raise RuntimeError("This is an internal error (sensitive)")
+        else:
+
+            @mcp.prompt
+            def exception_prompt(topic: str) -> str:
+                raise RuntimeError("This is an internal error (sensitive)")
+
+        client = Client(transport=FastMCPTransport(mcp))
+
+        async with client:
+            with pytest.raises(Exception) as excinfo:
+                await client.get_prompt("exception_prompt", {"topic": "x"})
+            assert "Error rendering prompt" in str(excinfo.value)
+            assert "sensitive" not in str(excinfo.value)
+            assert "internal error" not in str(excinfo.value)
+
+    @pytest.mark.parametrize("mask_error_details", [False, True])
+    async def test_prompt_errors_are_sent_to_client(self, mask_error_details: bool):
+        mcp = FastMCP("TestServer", mask_error_details=mask_error_details)
+
+        @mcp.prompt
+        async def error_prompt(topic: str) -> str:
+            raise PromptError("This is a prompt error (xyz)")
+
+        client = Client(transport=FastMCPTransport(mcp))
+
+        async with client:
+            with pytest.raises(Exception) as excinfo:
+                await client.get_prompt("error_prompt", {"topic": "x"})
+            assert "This is a prompt error (xyz)" in str(excinfo.value)
+
 
 class TestCallToolRaiseOnError:
     """Tests for call_tool error handling with raise_on_error."""

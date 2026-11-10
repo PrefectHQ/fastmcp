@@ -22,6 +22,8 @@ mcp = FastMCP("MyServer")
 Instructions help clients (and the LLMs behind them) understand what your server does and how to use it effectively.
 
 ```python
+from fastmcp import FastMCP
+
 mcp = FastMCP(
     "DataAnalysis",
     instructions="Provides tools for analyzing numerical datasets. Start with get_summary() for an overview.",
@@ -35,6 +37,10 @@ FastMCP servers expose three types of components to clients, each serving a dist
 **Tools** are functions that clients invoke to perform actions or access external systems.
 
 ```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("Demo")
+
 @mcp.tool
 def multiply(a: float, b: float) -> float:
     """Multiplies two numbers together."""
@@ -44,6 +50,10 @@ def multiply(a: float, b: float) -> float:
 **Resources** expose data that clients can read — passive data sources rather than invocable functions.
 
 ```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("Demo")
+
 @mcp.resource("data://config")
 def get_config() -> dict:
     return {"theme": "dark", "version": "1.0"}
@@ -52,6 +62,10 @@ def get_config() -> dict:
 **Prompts** are reusable message templates that guide LLM interactions.
 
 ```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("Demo")
+
 @mcp.prompt
 def analyze_data(data_points: list[float]) -> str:
     formatted_data = ", ".join(str(point) for point in data_points)
@@ -84,8 +98,12 @@ FastMCP supports several transports:
 - **SSE**: Legacy web transport (deprecated)
 
 ```python
-# Run with HTTP transport
-mcp.run(transport="http", host="127.0.0.1", port=9000)
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer")
+
+if __name__ == "__main__":
+    mcp.run(transport="http", host="127.0.0.1", port=9000)
 ```
 
 The server can also be run using the FastMCP CLI. For detailed information on transports and deployment, see [Running Your Server](/deployment/running-server).
@@ -93,7 +111,7 @@ The server can also be run using the FastMCP CLI. For detailed information on tr
 
 ## Configuration Reference
 
-The `FastMCP` constructor accepts parameters organized into four categories: identity, composition, behavior, and handlers.
+The `FastMCP` constructor accepts parameters organized into four categories: identity, composition, behavior, and storage.
 
 ### Identity
 
@@ -189,7 +207,7 @@ These parameters tune how the server processes requests and communicates with cl
 </ParamField>
 
 <ParamField body="tasks" type="bool | None" default="False">
-  Enable background task support. When `True`, tools and resources can return `CreateTaskResult` to run work asynchronously while the client polls for results
+  Server-wide default for the `task` argument of `@mcp.tool`. When `True`, every tool that doesn't set `task` itself supports background execution. Requires the `fastmcp-tasks` package; see [Background Tasks](/servers/tasks)
 </ParamField>
 
 <ParamField body="client_log_level" type="LoggingLevel | None">
@@ -199,7 +217,15 @@ These parameters tune how the server processes requests and communicates with cl
 </ParamField>
 
 <ParamField body="dereference_schemas" type="bool" default="True">
-  Automatically dereference `$ref` pointers in JSON schemas generated from complex Pydantic models. Most clients require flat schemas without `$ref`, so this should usually stay enabled
+  Automatically dereference `$ref` pointers in JSON schemas generated from complex Pydantic models. Most clients require flat schemas without `$ref`, so this should usually stay enabled. Schemas whose inlined form would be very large keep their `$defs`, with only a root-level `$ref` resolved, as recursive schemas already do.
+</ParamField>
+
+<ParamField body="resource_security" type="ResourceSecurity | None" default="DEFAULT_RESOURCE_SECURITY">
+  Server-wide path-security policy for templated resources, applied to every template that doesn't set its own `security`. The default rejects traversal, absolute paths, and null bytes in parameter values; `None` disables screening. See [Path Security](/servers/resources#path-security)
+</ParamField>
+
+<ParamField body="request_state_security" type="RequestStateSecurity | None" default="None">
+  Signing policy for the request state that multi-round-trip requests echo back to the server. When `None`, state is sealed under a per-process key, which works for a single process; deployments with several replicas must pass a policy with shared keys. See [Multi-replica deployments](/servers/elicitation#multi-replica-deployments)
 </ParamField>
 
 <ParamField body="cache_ttl" type="int | None" default="None">
@@ -248,6 +274,10 @@ The hint is inert on its own: a client only reuses a response if it opts into ca
 Tags let you categorize components and selectively expose them. This is useful for creating different views of your server for different environments or user types.
 
 ```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer")
+
 @mcp.tool(tags={"public", "utility"})
 def public_tool() -> str:
     return "This tool is public"
@@ -267,6 +297,8 @@ To hide a component by default, disable it at the server level with `mcp.disable
 </Tip>
 
 ```python
+from fastmcp import FastMCP
+
 # Only expose components tagged with "public"
 mcp = FastMCP()
 mcp.enable(tags={"public"}, only=True)

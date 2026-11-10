@@ -5,12 +5,12 @@ for validation with Pydantic. It supports:
 
 - Basic types (string, number, integer, boolean, null)
 - Complex types (arrays, objects)
-- Format constraints (date-time, email, uri)
+- Format constraints (date-time, date, time, duration, uuid, email, uri)
 - Numeric constraints (minimum, maximum, multipleOf)
 - String constraints (minLength, maxLength, pattern)
 - Array constraints (minItems, maxItems, uniqueItems)
 - Object properties with defaults
-- References and recursive schemas
+- References and recursive schemas (including sibling constraints on scalar references)
 - Enums and constants
 - Union types
 
@@ -55,20 +55,31 @@ from __future__ import annotations
 import hashlib
 import json
 import keyword
+import math
 import re
+import sys
+import threading
 import warnings
-from collections.abc import Callable, Mapping
+from collections import OrderedDict
+from collections.abc import Callable, Hashable, Mapping
+from contextvars import ContextVar
 from copy import deepcopy
-from dataclasses import MISSING, field, make_dataclass
-from datetime import date, datetime
+from dataclasses import MISSING, dataclass, field, fields, is_dataclass, make_dataclass
+from datetime import date, datetime, time, timedelta
+from functools import lru_cache
 from typing import (
     Annotated,
     Any,
     ForwardRef,
+    Generic,
     Literal,
+    NotRequired,
+    TypeVar,
     Union,
     cast,
+    get_type_hints,
 )
+from uuid import UUID
 
 from pydantic import (
     AnyUrl,
@@ -78,14 +89,35 @@ from pydantic import (
     EmailStr,
     Field,
     Json,
+    PlainValidator,
     StringConstraints,
     TypeAdapter,
+    create_model,
     model_validator,
 )
+from pydantic.fields import FieldInfo
 from pydantic_core import SchemaError as _PydanticSchemaError
-from typing_extensions import NotRequired, TypedDict
+from typing_extensions import TypedDict
 
 __all__ = ["JSONSchema", "json_schema_to_type"]
+
+
+def _check_nesting(schema: Any) -> None:
+    """Raise `ValueError` if dicts and lists in the schema nest too deeply.
+
+    Normalizing and hashing a schema recurse once per level of nesting. This
+    check measures the depth without recursing, so a schema that is too deep
+    fails with the same error as one that exceeds the conversion depth limit.
+    """
+    stack: list[tuple[Any, int]] = [(schema, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if depth > _MAX_NESTING:
+            raise ValueError("JSON schema is too deeply nested to convert")
+        if isinstance(node, dict):
+            stack.extend((child, depth + 1) for child in node.values())
+        elif isinstance(node, list):
+            stack.extend((child, depth + 1) for child in node)
 
 
 def _normalize_yaml_types(obj: Any) -> Any:
@@ -120,12 +152,113 @@ _UnsatisfiableType = Annotated[Any, BeforeValidator(_reject_all)]
 
 FORMAT_TYPES: dict[str, Any] = {
     "date-time": datetime,
+    "date": date,
+    "time": time,
+    "duration": timedelta,
+    "uuid": UUID,
     "email": EmailStr,
     "uri": AnyUrl,
     "json": Json,
 }
 
-_classes: dict[tuple[str, Any], type | None] = {}
+_V = TypeVar("_V")
+
+
+class _LRUCache(Generic[_V]):
+    """Least recently used cache bounded by entry count and total weight.
+
+    Each entry's weight is the serialized size of the whole schema the
+    conversion started from. A generated class refers to the classes of its
+    properties and keeps the schema it was built from, so it retains as much
+    as the root schema describes. Charging that size keeps the total memory
+    held by the cache within `max_weight`. An entry heavier than `max_weight`
+    is not stored.
+    """
+
+    def __init__(self, max_entries: int, max_weight: int) -> None:
+        self.max_entries = max_entries
+        self.max_weight = max_weight
+        self._items: OrderedDict[Hashable, tuple[_V, int]] = OrderedDict()
+        self._weight = 0
+        self._lock = threading.Lock()
+
+    def get(self, key: Hashable) -> _V | None:
+        with self._lock:
+            item = self._items.get(key)
+            if item is None:
+                return None
+            self._items.move_to_end(key)
+            return item[0]
+
+    def put(self, key: Hashable, value: _V, weight: int) -> None:
+        with self._lock:
+            previous = self._items.pop(key, None)
+            if previous is not None:
+                self._weight -= previous[1]
+            if weight > self.max_weight:
+                return
+            self._items[key] = (value, weight)
+            self._weight += weight
+            while len(self._items) > self.max_entries or self._weight > self.max_weight:
+                _, (_, evicted_weight) = self._items.popitem(last=False)
+                self._weight -= evicted_weight
+
+    def clear(self) -> None:
+        with self._lock:
+            self._items.clear()
+            self._weight = 0
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+
+# Generated classes keyed by (schema hash + root schema hash, class name). Each
+# class is weighted by the size of its root schema, so a conversion whose root
+# is larger than the weight limit adds nothing to the cache.
+_classes: _LRUCache[type] = _LRUCache(max_entries=5000, max_weight=4_000_000)
+# TypeAdapters for whole schemas, keyed by schema hash. They hold their
+# classes, so they are bounded the same way.
+_adapters: _LRUCache[TypeAdapter[Any]] = _LRUCache(
+    max_entries=1000, max_weight=4_000_000
+)
+
+# Limits on a single conversion. Depth counts nested schemas and `$ref` hops;
+# steps count every schema visited.
+_MAX_CONVERSION_DEPTH = 64
+# Nesting of dicts and lists in the input. Each nested schema takes at most two
+# levels (such as `properties` and then the property's schema).
+_MAX_NESTING = 4 * _MAX_CONVERSION_DEPTH
+_MAX_CONVERSION_STEPS = 50_000
+
+
+@dataclass
+class _Conversion:
+    """State for one `json_schema_to_type` call."""
+
+    root_hash: str
+    root_size: int
+    # Sanitized name of the class generated for the root schema; `"$ref": "#"`
+    # resolves to that class.
+    root_class_name: str
+    resolved_refs: dict[str, Any] = field(default_factory=dict)
+    building: set[tuple[str, str]] = field(default_factory=set)
+    classes: dict[tuple[str, str], type] = field(default_factory=dict)
+    recursive_refs: dict[str, tuple[str, str]] = field(default_factory=dict)
+    # Model fields whose default failed its probe, possibly only because a
+    # recursive reference was still unresolved; rechecked after resolution.
+    unchecked_defaults: list[tuple[type[BaseModel], str]] = field(default_factory=list)
+    depth: int = 0
+    steps: int = 0
+
+    def reference(self, key: tuple[str, str]) -> ForwardRef:
+        """Refer to a class's identity rather than its possibly shared display name."""
+        digest = hashlib.sha256(repr(key).encode()).hexdigest()
+        name = f"_FastMCPRef_{digest}"
+        self.recursive_refs[name] = key
+        return ForwardRef(name)
+
+
+_conversion: ContextVar[_Conversion] = ContextVar("json_schema_conversion")
 
 
 class JSONSchema(TypedDict):
@@ -178,7 +311,8 @@ def json_schema_to_type(
         A Python type (typically a dataclass for objects) with Pydantic validation
 
     Raises:
-        ValueError: If a name is provided for a non-object schema
+        ValueError: If a name is provided for a non-object schema, or if the
+            schema is too deeply nested or too large to convert.
 
     Examples:
         Create a dataclass from an object schema:
@@ -226,21 +360,116 @@ def json_schema_to_type(
     if schema is False:
         return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
 
+    _check_nesting(schema)
+
     # Normalise YAML-parsed types (datetime/date → str, non-str keys → str)
     # so that downstream json.dumps/hashing and default values work correctly.
-    schema = _normalize_yaml_types(schema)
+    return _convert_normalized(_normalize_yaml_types(schema), name)
 
-    # Always use the top-level schema for references
-    if schema.get("type") == "object":
-        return _object_schema_to_type(schema, schemas=schema, name=name)
-    elif name:
-        raise ValueError(f"Can not apply name to non-object schema: {name}")
-    result = _schema_to_type(schema, schemas=schema)
-    return result  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+
+def _convert_normalized(schema: dict[str, Any], name: str | None) -> type:
+    root_hash, root_size = _schema_digest(schema)
+    # `title` can carry any JSON value in a malformed schema; only a string
+    # (including the empty string) is a valid class-name source.
+    title = schema.get("title")
+    root_title = title if isinstance(title, str) else "Root"
+    conversion = _Conversion(
+        root_hash=root_hash,
+        root_size=root_size,
+        root_class_name=_sanitize_name(name or root_title),
+    )
+    token = _conversion.set(conversion)
+    try:
+        # Always use the top-level schema for references
+        if schema.get("type") == "object":
+            result = _object_schema_to_type(schema, schemas=schema, name=name)
+        elif name:
+            raise ValueError(f"Can not apply name to non-object schema: {name}")
+        else:
+            result = _schema_to_type(schema, schemas=schema)
+        _resolve_recursive_types(conversion)
+        # Publish only complete graphs: another conversion must not reuse a
+        # class whose recursive fields still depend on this conversion's namespace.
+        for key, cls in conversion.classes.items():
+            _classes.put(key, cls, conversion.root_size)
+        return result  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+    finally:
+        _conversion.reset(token)
+
+
+def _resolve_recursive_types(conversion: _Conversion) -> None:
+    """Bind recursive fields after every class in the conversion has been built."""
+    if not conversion.recursive_refs:
+        return
+    namespace = {
+        name: conversion.classes[key] for name, key in conversion.recursive_refs.items()
+    }
+    # Root references use the root's public name, including when a nested
+    # mutually recursive class also points back to the conversion root.
+    for cls in conversion.classes.values():
+        if cls.__name__ == conversion.root_class_name:
+            namespace[conversion.root_class_name] = cls
+    for cls in conversion.classes.values():
+        if is_dataclass(cls):
+            hints = get_type_hints(
+                cls,
+                localns={cls.__name__: cls, **namespace},
+                include_extras=True,
+            )
+            cls.__annotations__.update(hints)
+            for dataclass_field in fields(cls):
+                dataclass_field.type = hints[dataclass_field.name]
+    for cls in conversion.classes.values():
+        if issubclass(cls, BaseModel):
+            cls.model_rebuild(
+                force=True, _types_namespace={cls.__name__: cls, **namespace}
+            )
+    rechecked: set[type[BaseModel]] = set()
+    for model, field_name in conversion.unchecked_defaults:
+        field_info = model.model_fields[field_name]
+        if _default_is_valid(field_info.annotation, field_info.default):
+            field_info.validate_default = True
+            rechecked.add(model)
+    for model in rechecked:
+        model.model_rebuild(
+            force=True, _types_namespace={model.__name__: model, **namespace}
+        )
+
+
+def _default_is_valid(field_type: Any, default: Any) -> bool:
+    try:
+        TypeAdapter(field_type).validate_python(default)
+    except Exception:
+        # Invalid, or not checkable yet because a recursive reference is unresolved
+        return False
+    return True
+
+
+def json_schema_to_type_adapter(schema: Mapping[str, Any] | bool) -> TypeAdapter[Any]:
+    """Return a cached `TypeAdapter` for `json_schema_to_type(schema)`.
+
+    Adapters are cached by schema content in a bounded cache, so the classes
+    they hold are released when they are evicted.
+    """
+    if isinstance(schema, bool):
+        return TypeAdapter(json_schema_to_type(schema))
+    _check_nesting(schema)
+    schema = _normalize_yaml_types(schema)
+    key, size = _schema_digest(schema)
+    adapter = _adapters.get(key)
+    if adapter is None:
+        adapter = TypeAdapter(_convert_normalized(schema, None))
+        _adapters.put(key, adapter, size)
+    return adapter
 
 
 def _hash_schema(schema: Mapping[str, Any]) -> str:
-    """Generate a deterministic hash for schema caching.
+    """Generate a deterministic hash for schema caching."""
+    return _schema_digest(schema)[0]
+
+
+def _schema_digest(schema: Mapping[str, Any] | bool) -> tuple[str, int]:
+    """Return a deterministic hash of the schema and its serialized size.
 
     Handles non-JSON-native types (datetime, date, bool keys) that can
     appear in schemas loaded from YAML, which auto-parses date strings.
@@ -252,7 +481,8 @@ def _hash_schema(schema: Mapping[str, Any]) -> str:
     except TypeError:
         # Mixed key types (bool + str) can't be sorted; fall back
         raw = json.dumps(schema, default=str)
-    return hashlib.sha256(raw.encode()).hexdigest()
+    encoded = raw.encode()
+    return hashlib.sha256(encoded).hexdigest(), len(encoded)
 
 
 def _resolve_ref(ref: str, schemas: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -260,8 +490,24 @@ def _resolve_ref(ref: str, schemas: Mapping[str, Any]) -> Mapping[str, Any]:
     path = ref.replace("#/", "").split("/")
     current = schemas
     for part in path:
+        part = part.replace("~1", "/").replace("~0", "~")
         current = current.get(part, {})
     return current
+
+
+def _count(value: Any, *, maximum: bool = False) -> Any:
+    """Normalize a JSON Schema count such as minLength or maxItems for Pydantic.
+
+    JSON allows writing a count as `2.0`. A count above `sys.maxsize` exceeds any
+    real length: as a maximum it constrains nothing and is dropped, and as a
+    minimum it is clamped to a value Pydantic accepts that still rejects
+    everything.
+    """
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if isinstance(value, int) and not isinstance(value, bool) and value > sys.maxsize:
+        return None if maximum else sys.maxsize + 1
+    return value
 
 
 def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]:
@@ -269,27 +515,24 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
     if "const" in schema:
         return Literal[schema["const"]]  # type: ignore
 
-    if fmt := schema.get("format"):
-        if fmt == "uri":
-            return AnyUrl
-        elif fmt == "uri-reference":
-            return str
-        return FORMAT_TYPES.get(fmt, str)
+    fmt = schema.get("format")
+    base: Any = FORMAT_TYPES.get(fmt, str) if fmt else str
 
     constraints = {
         k: v
         for k, v in {
-            "min_length": schema.get("minLength"),
-            "max_length": schema.get("maxLength"),
+            "min_length": _count(schema.get("minLength")),
+            "max_length": _count(schema.get("maxLength"), maximum=True),
             "pattern": schema.get("pattern"),
         }.items()
         if v is not None
     }
 
     if not constraints:
-        return str
+        return base
 
     annotated: Any = Annotated[str, StringConstraints(**constraints)]
+    unsupported_pattern: str | None = None
 
     if "pattern" in constraints:
         try:
@@ -305,6 +548,7 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
                 stacklevel=2,
             )
             pattern_field = Field(json_schema_extra={"x-unsupported-pattern": pattern})
+            unsupported_pattern = pattern
             if constraints:
                 annotated = Annotated[
                     str, StringConstraints(**constraints), pattern_field
@@ -312,7 +556,92 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
             else:
                 annotated = Annotated[str, pattern_field]  # type: ignore[valid-type]
 
-    return annotated
+    if base is str:
+        return annotated
+    constrained = _constrain_raw_string(base, **constraints)
+    if unsupported_pattern is None:
+        return constrained
+    # The dropped pattern stays visible for the shapes a `format` maps to a
+    # non-str type too, as the module docstring's third point promises.
+    return _with_pattern_marker(constrained, unsupported_pattern)
+
+
+@lru_cache(maxsize=1024)
+def _with_pattern_marker(constrained: Any, pattern: str) -> Any:
+    return Annotated[
+        constrained, Field(json_schema_extra={"x-unsupported-pattern": pattern})
+    ]
+
+
+@lru_cache(maxsize=1024)
+def _constrain_raw_string(
+    base: Any,
+    min_length: int | None = None,
+    max_length: int | None = None,
+    pattern: str | None = None,
+) -> Any:
+    """Apply string keywords to the raw instance before `base` parses it, as JSON Schema does.
+
+    Cached so a schema seen on every tool call maps to one type, and so one TypeAdapter.
+    """
+    raw = TypeAdapter(
+        Annotated[
+            str,
+            StringConstraints(
+                min_length=min_length, max_length=max_length, pattern=pattern
+            ),
+        ]
+    )
+    return Annotated[
+        base,
+        BeforeValidator(lambda v: raw.validate_python(v) if isinstance(v, str) else v),
+    ]
+
+
+def _exclusive_bound(schema: Mapping[str, Any], modifier: str, bound: str) -> Any:
+    """Value for a strict bound, or None when the schema states no strict bound.
+
+    ``exclusiveMinimum``/``exclusiveMaximum`` take a number since draft-06. Draft-04
+    instead writes a boolean that tightens the numeric sibling: ``{"minimum": 1,
+    "exclusiveMinimum": true}`` excludes 1. Passing that boolean straight through as
+    Pydantic's ``gt``/``lt`` reads it as the number 1, which rejects every value
+    except 0 regardless of the sibling.
+    """
+    value = schema.get(modifier)
+    if isinstance(value, bool):
+        return schema.get(bound) if value else None
+    return value
+
+
+def _inclusive_bound(
+    schema: Mapping[str, Any], modifier: str, bound: str, *, lower: bool
+) -> Any:
+    """Value for a non-strict bound, or None when a strict bound replaces the sibling.
+
+    A boolean ``true`` (draft-04) always replaces the sibling: ``{"minimum": 1,
+    "exclusiveMinimum": true}`` means exactly ``minimum > 1``.
+
+    A numeric ``exclusiveMinimum``/``exclusiveMaximum`` (draft-06+) is instead a
+    separate keyword, and an instance must satisfy both. The sibling is redundant —
+    and can be dropped — only when the exclusive bound is at least as strict, which
+    compares ``exclusive >= minimum`` for a lower bound and ``exclusive <= maximum``
+    for an upper one. A *looser* numeric exclusive must keep the sibling, otherwise
+    the generated ``lt``/``gt`` widens the accepted range: ``{"maximum": 10,
+    "exclusiveMaximum": 15}`` would accept 12.
+    """
+    value = schema.get(bound)
+    exclusive = schema.get(modifier)
+    if exclusive is True:
+        return None
+    if (
+        isinstance(exclusive, (int, float))
+        and not isinstance(exclusive, bool)
+        and isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and (exclusive >= value if lower else exclusive <= value)
+    ):
+        return None
+    return value
 
 
 def _create_numeric_type(
@@ -325,10 +654,10 @@ def _create_numeric_type(
     constraints = {
         k: v
         for k, v in {
-            "gt": schema.get("exclusiveMinimum"),
-            "ge": schema.get("minimum"),
-            "lt": schema.get("exclusiveMaximum"),
-            "le": schema.get("maximum"),
+            "gt": _exclusive_bound(schema, "exclusiveMinimum", "minimum"),
+            "ge": _inclusive_bound(schema, "exclusiveMinimum", "minimum", lower=True),
+            "lt": _exclusive_bound(schema, "exclusiveMaximum", "maximum"),
+            "le": _inclusive_bound(schema, "exclusiveMaximum", "maximum", lower=False),
             "multiple_of": schema.get("multipleOf"),
         }.items()
         if v is not None
@@ -337,15 +666,108 @@ def _create_numeric_type(
     return Annotated[base, Field(**constraints)] if constraints else base  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
 
 
-def _create_enum(name: str, values: list[Any]) -> type:
+def _create_enum(name: str, values: list[Any]) -> Any:
     """Create enum type from list of values."""
     if not values:
         # Empty enum means no value is valid (same semantics as ``false``
         # schema).  Return the unsatisfiable type instead of ``Literal[()]``
         # which triggers an AssertionError in Pydantic.
-        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        return _UnsatisfiableType
     # Always return Literal for enum fields to preserve the literal nature
-    return Literal[tuple(values)]  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
+    literal = Literal[tuple(values)]  # ty:ignore[invalid-type-form]
+    if all(value is None or isinstance(value, str) for value in values):
+        return literal
+
+    try:
+        hash(literal)
+    except TypeError:
+        hashable = False
+    else:
+        hashable = True
+
+    # Pydantic matches Literal values with Python equality, so True would pass
+    # for 1, also inside arrays and objects.
+    def check(value: Any) -> Any:
+        for allowed in values:
+            if _json_values_equal(value, allowed):
+                return allowed if hashable else value
+        raise ValueError(f"Input should be one of {values!r}")
+
+    if not hashable:
+        # A Literal holding an object or array cannot be hashed into a Union.
+        return Annotated[
+            Any, BeforeValidator(check), Field(json_schema_extra={"enum": values})
+        ]
+    return Annotated[literal, PlainValidator(check, json_schema_input_type=literal)]
+
+
+def _json_values_equal(left: Any, right: Any) -> bool:
+    """Compare JSON values without treating booleans as numbers."""
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
+
+    if isinstance(left, Mapping) or isinstance(right, Mapping):
+        if not isinstance(left, Mapping) or not isinstance(right, Mapping):
+            return False
+        return left.keys() == right.keys() and all(
+            _json_values_equal(left[key], right[key]) for key in left
+        )
+
+    if isinstance(left, (list, tuple)) or isinstance(right, (list, tuple)):
+        if not isinstance(left, (list, tuple)) or not isinstance(right, (list, tuple)):
+            return False
+        return len(left) == len(right) and all(
+            _json_values_equal(left_item, right_item)
+            for left_item, right_item in zip(left, right, strict=True)
+        )
+
+    return left == right
+
+
+def _json_value_key(value: Any) -> tuple[Any, ...]:
+    """Build a hashable, type-tagged key for standard JSON values."""
+    value_type = type(value)
+    if value is None:
+        return ("null",)
+    if value_type is bool:
+        return ("boolean", value)
+    if value_type is int or value_type is float:
+        if value_type is float and not math.isfinite(value):
+            raise TypeError("Not a standard JSON number")
+        # Equal ints/floats already share a hash, without rounding large ints.
+        return ("number", value)
+    if value_type is str:
+        return ("string", value)
+    if value_type is list:
+        return ("array", tuple(_json_value_key(item) for item in value))
+    if value_type is dict and all(type(key) is str for key in value):
+        return (
+            "object",
+            frozenset((key, _json_value_key(item)) for key, item in value.items()),
+        )
+    raise TypeError("Not a standard JSON value")
+
+
+def _validate_unique_items(value: Any) -> Any:
+    """Reject duplicate JSON array items while preserving list semantics."""
+    if not isinstance(value, (list, tuple)):
+        return value
+
+    try:
+        seen: set[tuple[Any, ...]] = set()
+        for item in value:
+            key = _json_value_key(item)
+            if key in seen:
+                raise ValueError("Array items must be unique")
+            seen.add(key)
+    except (TypeError, RecursionError):
+        # Preserve existing comparisons for non-JSON Python values, including
+        # equality between those values and standard JSON values.
+        for index, item in enumerate(value):
+            if any(_json_values_equal(item, previous) for previous in value[:index]):
+                raise ValueError("Array items must be unique") from None
+
+    return value
 
 
 def _create_array_type(
@@ -353,9 +775,22 @@ def _create_array_type(
     schemas: Mapping[str, Any],
     resolving_refs: frozenset[str],
 ) -> type | Annotated[Any, ...]:
-    """Create list/set type with optional constraints."""
+    """Create list/tuple type with optional constraints."""
+    prefix_items = schema.get("prefixItems")
     items = schema.get("items", {})
-    if isinstance(items, list):
+    if isinstance(prefix_items, list) and schema.get("minItems") == len(
+        prefix_items
+    ) == schema.get("maxItems"):
+        # A positional schema (JSON Schema 2020-12) whose length is pinned to
+        # the number of positions is an exact tuple — this is the shape a
+        # fixed-length tuple annotation serializes to. Hydrate every position
+        # from its own schema so positional items keep their types instead of
+        # degrading to untyped objects.
+        positional_types = tuple(
+            _schema_to_type(s, schemas, resolving_refs) for s in prefix_items
+        )
+        base = tuple[positional_types]  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
+    elif isinstance(items, list):
         # Handle positional item schemas
         item_types = [_schema_to_type(s, schemas, resolving_refs) for s in items]
         combined = Union[tuple(item_types)]  # noqa: UP007
@@ -363,19 +798,26 @@ def _create_array_type(
     else:
         # Handle single item schema
         item_type = _schema_to_type(items, schemas, resolving_refs)
-        base_class = set if schema.get("uniqueItems") else list
-        base = base_class[item_type]
+        base = list[item_type]  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
 
     constraints = {
         k: v
         for k, v in {
-            "min_length": schema.get("minItems"),
-            "max_length": schema.get("maxItems"),
+            "min_length": _count(schema.get("minItems")),
+            "max_length": _count(schema.get("maxItems"), maximum=True),
         }.items()
         if v is not None
     }
 
-    return Annotated[base, Field(**constraints)] if constraints else base  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
+    if schema.get("uniqueItems") is True:
+        constraints["json_schema_extra"] = {"uniqueItems": True}
+        return Annotated[
+            base,
+            BeforeValidator(_validate_unique_items),
+            Field(**constraints),
+        ]  # type: ignore[return-value]
+
+    return Annotated[base, Field(**constraints)] if constraints else base  # type: ignore[return-value]
 
 
 def _return_Any() -> Any:
@@ -449,7 +891,25 @@ def _schema_to_type(
     schemas: Mapping[str, Any],
     resolving_refs: frozenset[str] = frozenset(),
 ) -> type | ForwardRef:
-    """Convert schema to appropriate Python type."""
+    """Convert schema to appropriate Python type, within the conversion limits."""
+    conversion = _conversion.get()
+    conversion.steps += 1
+    if conversion.depth >= _MAX_CONVERSION_DEPTH:
+        raise ValueError("JSON schema is too deeply nested to convert")
+    if conversion.steps > _MAX_CONVERSION_STEPS:
+        raise ValueError("JSON schema is too large to convert")
+    conversion.depth += 1
+    try:
+        return _convert_schema(schema, schemas, resolving_refs)
+    finally:
+        conversion.depth -= 1
+
+
+def _convert_schema(
+    schema: Mapping[str, Any] | bool,
+    schemas: Mapping[str, Any],
+    resolving_refs: frozenset[str],
+) -> type | ForwardRef:
     # Boolean schemas are valid in JSON Schema draft-06+:
     # true means "any value is valid" (equivalent to {}),
     # false means "no value is valid" (unsatisfiable).
@@ -462,6 +922,13 @@ def _schema_to_type(
         return object
 
     if "type" not in schema and "properties" in schema:
+        # A schema with properties but no "type" is still an object schema. When
+        # it allows additional properties, take the object path so unknown keys
+        # are kept, exactly as if "type": "object" were spelled out.
+        if schema.get("additionalProperties"):
+            return _object_schema_to_type(
+                schema, schemas, resolving_refs=resolving_refs
+            )
         return _create_dataclass(schema, schema.get("title", "<unknown>"), schemas)
 
     # Handle references first
@@ -469,7 +936,7 @@ def _schema_to_type(
         ref = schema["$ref"]
         # Handle self-reference
         if ref == "#":
-            return ForwardRef(schema.get("title", "Root"))
+            return ForwardRef(_conversion.get().root_class_name)
         if ref in resolving_refs:
             resolved = _resolve_ref(ref, schemas)
             if isinstance(resolved, Mapping) and (
@@ -477,12 +944,75 @@ def _schema_to_type(
             ):
                 return _schema_to_type(resolved, schemas, resolving_refs)
             return Any
-        return _schema_to_type(
-            _resolve_ref(ref, schemas), schemas, resolving_refs | {ref}
+        # Convert each reference once per conversion, so a definition shared
+        # by many references is not expanded again for every path to it.
+        resolved_refs = _conversion.get().resolved_refs
+        if ref not in resolved_refs:
+            resolved_refs[ref] = _schema_to_type(
+                _resolve_ref(ref, schemas), schemas, resolving_refs | {ref}
+            )
+        ref_type = resolved_refs[ref]
+        # Draft 4-7 treat a $ref object as a reference only. In newer drafts,
+        # constraints next to a reference also apply to that use of the type.
+        if (
+            schemas.get("$schema", "")
+            .rstrip("#")
+            .endswith(("/draft-04/schema", "/draft-06/schema", "/draft-07/schema"))
+        ):
+            return ref_type
+        siblings = {
+            k: v
+            for k, v in schema.items()
+            if k
+            in (
+                "type",
+                "format",
+                "const",
+                "enum",
+                "minLength",
+                "maxLength",
+                "pattern",
+                "minimum",
+                "maximum",
+                "exclusiveMinimum",
+                "exclusiveMaximum",
+                "multipleOf",
+            )
+        }
+        if not siblings:
+            return ref_type
+        resolved = _resolve_ref(ref, schemas)
+        seen = {ref}
+        while isinstance(resolved, Mapping) and "$ref" in resolved:
+            next_ref = resolved["$ref"]
+            if next_ref in seen:
+                return ref_type
+            seen.add(next_ref)
+            resolved = _resolve_ref(next_ref, schemas)
+        if not isinstance(resolved, Mapping) or resolved.get("type") not in (
+            "string",
+            "integer",
+            "number",
+            "boolean",
+            "null",
+        ):
+            return ref_type
+        sibling_type = _schema_to_type(
+            {"type": resolved["type"], **siblings}, schemas, resolving_refs
         )
+        sibling_adapter = TypeAdapter(cast(Any, sibling_type))
+
+        def validate_siblings(value: Any) -> Any:
+            # Validate the original input, before formats turn strings into
+            # dates/URLs. Keep both validators intact: merging their metadata
+            # could replace a stricter constraint on the referenced type.
+            sibling_adapter.validate_python(value)
+            return value
+
+        return cast(type, Annotated[ref_type, BeforeValidator(validate_siblings)])
 
     if "const" in schema:
-        return Literal[schema["const"]]  # type: ignore
+        return _create_enum(f"Const_{len(_classes)}", [schema["const"]])
 
     if "enum" in schema:
         return _create_enum(f"Enum_{len(_classes)}", schema["enum"])
@@ -502,7 +1032,7 @@ def _schema_to_type(
             return type(None)
         elif len(types) == 1:
             if has_null:
-                return types[0] | None  # type: ignore
+                return Union[types[0], type(None)]  # type: ignore # noqa: UP007
             else:
                 return types[0]
         else:
@@ -519,6 +1049,16 @@ def _schema_to_type(
         # Create a copy of the schema for each type, but keep all constraints
         types: list[type | Any] = []
         for t in schema_type:
+            if t == "object" and schema is schemas:
+                # The root narrowed to its object member: convert the schema
+                # itself, not a copy, so the generated class keeps the root
+                # identity (and name) that "$ref": "#" resolves to.
+                types.append(
+                    _object_schema_to_type(
+                        schema, schemas, resolving_refs=resolving_refs
+                    )
+                )
+                continue
             type_schema = dict(schema)
             type_schema["type"] = t
             types.append(_schema_to_type(type_schema, schemas, resolving_refs))
@@ -526,7 +1066,7 @@ def _schema_to_type(
         types = [t for t in types if t is not type(None)]
         if has_null:
             if len(types) == 1:
-                return types[0] | None  # type: ignore
+                return Union[types[0], type(None)]  # type: ignore # noqa: UP007
             else:
                 return Union[(*types, type(None))]  # type: ignore
         return Union[tuple(types)]  # type: ignore # noqa: UP007
@@ -553,6 +1093,58 @@ def _sanitize_name(name: str) -> str:
     if keyword.iskeyword(cleaned):
         cleaned = f"{cleaned}_"
     return cleaned
+
+
+_BASE_MODEL_MEMBERS = frozenset(dir(BaseModel))
+
+
+def _is_reserved_field_name(name: str) -> bool:
+    """Whether a property name would act as a class or Pydantic control name.
+
+    Leading underscores cover dunders, Pydantic private attributes, and the
+    `create_model` keyword arguments. Members in the `model_` namespace are
+    Pydantic's own API.
+    """
+    return name.startswith("_") or (
+        name.startswith("model_") and name in _BASE_MODEL_MEMBERS
+    )
+
+
+def safe_create_model(
+    name: str,
+    field_definitions: Mapping[str, tuple[Any, Any]],
+    *,
+    config: ConfigDict | None = None,
+) -> type[BaseModel]:
+    """Create a Pydantic model whose field names come from untrusted input.
+
+    Each property name only ever becomes a field. A reserved name is stored
+    under a generated field name with the original name as its alias, so it
+    validates and dumps (with `by_alias=True`) under its original name.
+
+    Args:
+        name: The model class name.
+        field_definitions: Maps each property name to `(annotation, default)`,
+            where `default` may be a `FieldInfo` or `...` for required fields.
+        config: Optional model configuration.
+    """
+    fields: dict[str, Any] = {}
+    for prop_name, (annotation, default) in field_definitions.items():
+        field_name = prop_name
+        if _is_reserved_field_name(prop_name):
+            base = f"field_{_sanitize_name(prop_name).lstrip('_')}"
+            field_name = base
+            counter = 2
+            while field_name in fields or field_name in field_definitions:
+                field_name = f"{base}_{counter}"
+                counter += 1
+            if isinstance(default, FieldInfo):
+                annotation = Annotated[annotation, default]
+                default = Field(alias=prop_name)
+            else:
+                default = Field(default=default, alias=prop_name)
+        fields[field_name] = (annotation, default)
+    return create_model(name, __config__=config, **fields)
 
 
 def _get_default_value(
@@ -584,6 +1176,24 @@ def _create_field_with_default(
     return field(default=default_value)
 
 
+def _nested_class_name(
+    sanitized_name: str,
+    conversion: _Conversion,
+    schema: Mapping[str, Any],
+    schemas: Mapping[str, Any] | None,
+) -> str:
+    """Disambiguate a nested class named like the conversion root.
+
+    Pydantic resolves a class's annotations with the class's own name bound
+    to that class before the conversion root, so a nested class sharing the
+    root's name would capture every ``"$ref": "#"`` reference inside it.
+    Keep the root name pointing at the root class.
+    """
+    if sanitized_name == conversion.root_class_name and schema is not schemas:
+        return f"{sanitized_name}_2"
+    return sanitized_name
+
+
 def _create_pydantic_model(
     schema: Mapping[str, Any],
     name: str | None = None,
@@ -595,58 +1205,80 @@ def _create_pydantic_model(
     if name is None:
         raise ValueError("Name is required")
     sanitized_name = _sanitize_name(name)
+    conversion = _conversion.get()
+    sanitized_name = _nested_class_name(sanitized_name, conversion, schema, schemas)
     schema_hash = _hash_schema(schema)
-    cache_key = (schema_hash, sanitized_name)
+    # Nested classes bake the root class name into their forward references,
+    # so conversions that differ only in the root's name must not share
+    # cache entries.
+    cache_key = (
+        schema_hash + conversion.root_hash + conversion.root_class_name,
+        sanitized_name,
+    )
 
     # Return existing class if already built
-    if cache_key in _classes:
-        existing = _classes[cache_key]
-        if existing is None:
-            return ForwardRef(sanitized_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+    existing = conversion.classes.get(cache_key) or _classes.get(cache_key)
+    if existing is not None:
         return existing
+    # A recursive reference to a class that is still being built
+    if cache_key in conversion.building:
+        return conversion.reference(cache_key)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
 
-    # Place placeholder for recursive references
-    _classes[cache_key] = None
+    conversion.building.add(cache_key)
+    try:
+        cls = _build_pydantic_model(
+            schema, sanitized_name, schemas or {}, resolving_refs
+        )
+    finally:
+        conversion.building.discard(cache_key)
+    conversion.classes[cache_key] = cls
+    return cls
 
+
+def _build_pydantic_model(
+    schema: Mapping[str, Any],
+    name: str,
+    schemas: Mapping[str, Any],
+    resolving_refs: frozenset[str],
+) -> type:
     properties = schema.get("properties", {})
     required = schema.get("required", [])
 
-    # Build field annotations and defaults
-    annotations = {}
-    defaults = {}
-
+    field_definitions: dict[str, tuple[Any, Any]] = {}
+    unchecked: list[str] = []
     for prop_name, prop_schema in properties.items():
         # Boolean schemas (JSON Schema draft-06+): resolve type directly,
         # then use an empty dict for .get() calls below.
         if isinstance(prop_schema, bool):
-            field_type = _schema_to_type(prop_schema, schemas or {}, resolving_refs)
+            field_type = _schema_to_type(prop_schema, schemas, resolving_refs)
             prop_schema = {}
         else:
-            field_type = _schema_to_type(prop_schema, schemas or {}, resolving_refs)
+            field_type = _schema_to_type(prop_schema, schemas, resolving_refs)
 
         # Handle defaults
         default_value = prop_schema.get("default", MISSING)
         if default_value is not MISSING:
-            defaults[prop_name] = default_value
-            annotations[prop_name] = field_type
+            # Check if the default value is valid against the field type.
+            # Only set validate_default=True when it passes, so that:
+            # 1. Valid defaults get hydrated (e.g., date strings → date objects)
+            # 2. Invalid defaults are preserved as-is rather than causing
+            #    validation errors that would be caught and logged during parsing
+            validate_default = _default_is_valid(field_type, default_value)
+            if not validate_default:
+                unchecked.append(prop_name)
+            field_definitions[prop_name] = (
+                field_type,
+                Field(default=default_value, validate_default=validate_default),
+            )
         elif prop_name in required:
-            annotations[prop_name] = field_type
+            field_definitions[prop_name] = (field_type, ...)
         else:
-            annotations[prop_name] = Union[field_type, type(None)]  # type: ignore[misc]  # noqa: UP007  # ty:ignore[invalid-type-form]
-            defaults[prop_name] = None
+            field_definitions[prop_name] = (Union[field_type, type(None)], None)  # type: ignore[misc]  # noqa: UP007  # ty:ignore[invalid-type-form]
 
-    # Create Pydantic model class
-    cls_dict = {
-        "__annotations__": annotations,
-        "model_config": ConfigDict(extra="allow"),
-        **defaults,
-    }
-
-    cls = type(sanitized_name, (BaseModel,), cls_dict)
-
-    # Store completed class
-    _classes[cache_key] = cls
-    return cls
+    model = safe_create_model(name, field_definitions, config=ConfigDict(extra="allow"))
+    conversion = _conversion.get()
+    conversion.unchecked_defaults.extend((model, prop) for prop in unchecked)
+    return model
 
 
 def _create_dataclass(
@@ -661,27 +1293,51 @@ def _create_dataclass(
     if name is None:
         raise ValueError("Name is required")
     sanitized_name = _sanitize_name(name)
+    conversion = _conversion.get()
+    sanitized_name = _nested_class_name(sanitized_name, conversion, schema, schemas)
     schema_hash = _hash_schema(schema)
-    cache_key = (schema_hash, sanitized_name)
-    original_schema = dict(schema)  # Store copy for validator
+    # Nested classes bake the root class name into their forward references,
+    # so conversions that differ only in the root's name must not share
+    # cache entries.
+    cache_key = (
+        schema_hash + conversion.root_hash + conversion.root_class_name,
+        sanitized_name,
+    )
 
     # Return existing class if already built
-    if cache_key in _classes:
-        existing = _classes[cache_key]
-        if existing is None:
-            return ForwardRef(sanitized_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+    existing = conversion.classes.get(cache_key) or _classes.get(cache_key)
+    if existing is not None:
         return existing
+    # A recursive reference to a class that is still being built
+    if cache_key in conversion.building:
+        return conversion.reference(cache_key)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
 
-    # Place placeholder for recursive references
-    _classes[cache_key] = None
+    conversion.building.add(cache_key)
+    try:
+        cls = _build_dataclass(schema, sanitized_name, schemas or {}, resolving_refs)
+    finally:
+        conversion.building.discard(cache_key)
+    if isinstance(cls, type):
+        conversion.classes[cache_key] = cls
+    return cls
+
+
+def _build_dataclass(
+    schema: Mapping[str, Any],
+    sanitized_name: str,
+    schemas: Mapping[str, Any],
+    resolving_refs: frozenset[str],
+) -> Any:
+    original_schema = dict(schema)  # Store copy for validator
 
     if "$ref" in schema:
         ref = schema["$ref"]
         if ref == "#":
-            return ForwardRef(sanitized_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+            # "#" resolves to the conversion root, not to this class.
+            return ForwardRef(_conversion.get().root_class_name)
         if ref in resolving_refs:
             return Any
-        schema = _resolve_ref(ref, schemas or {})
+        schema = _resolve_ref(ref, schemas)
         resolving_refs = resolving_refs | {ref}
 
     properties = schema.get("properties", {})
@@ -703,13 +1359,14 @@ def _create_dataclass(
         # Boolean schemas (JSON Schema draft-06+): resolve type directly,
         # then use an empty dict for .get() calls below.
         if isinstance(prop_schema, bool):
-            field_type = _schema_to_type(prop_schema, schemas or {}, resolving_refs)
+            field_type = _schema_to_type(prop_schema, schemas, resolving_refs)
             prop_schema = {}
         elif prop_schema.get("$ref") == "#":
-            # Check for self-reference in property
-            field_type = ForwardRef(sanitized_name)
+            # A direct "#" reference points at the conversion root, which
+            # may be a different class than the one being built here.
+            field_type = ForwardRef(_conversion.get().root_class_name)
         else:
-            field_type = _schema_to_type(prop_schema, schemas or {}, resolving_refs)
+            field_type = _schema_to_type(prop_schema, schemas, resolving_refs)
 
         default_val = prop_schema.get("default", MISSING)
         is_required = prop_name in required
@@ -746,9 +1403,6 @@ def _create_dataclass(
         return data
 
     cls._apply_defaults = _apply_defaults  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-
-    # Store completed class
-    _classes[cache_key] = cls
     return cls
 
 

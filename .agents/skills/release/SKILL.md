@@ -10,8 +10,12 @@ the current major and `release/3.x` for 3.x maintenance. Every step runs against
 branch, including the docs PR, so a maintenance entry lands in the maintenance
 branch's own changelog above its newest 3.x entry. The tag triggers `Publish fastmcp-slim to PyPI`;
 its success fans out to `fastmcp-tasks`, `fastmcp-remote`, and `fastmcp`, and the
-`fastmcp` publish job opens the `published-docs` PR that makes gofastmcp.com reflect
-the release. Two hand-maintained docs files mirror every release and must be on the
+`fastmcp` publish job opens the `published-docs` PR for stable release-triggered
+publication when the release SHA is an ancestor of the default branch. Prereleases
+and manual package-workflow dispatch do not open that PR. Mintlify builds `docs/`
+from `published-docs` at `https://gofastmcp.com/docs`; the separate
+`PrefectHQ/gofastmcp-website` repository deploys its `main` to Vercel for the landing
+page and `/docs` proxy. Two hand-maintained docs files mirror every release and must be on the
 tagged commit, so the docs PR always lands first. PyPI releases are immutable; a bad
 one gets a follow-up patch, never a re-tag.
 
@@ -22,11 +26,54 @@ one gets a follow-up patch, never a re-tag.
    ```bash
    git fetch origin && git log v<prev>..origin/<branch> --format='%h %s'
    gh api -X POST repos/PrefectHQ/fastmcp/releases/generate-notes \
-     -f tag_name=v<new> -f target_commitish=<branch> -f previous_tag_name=v<prev> --jq .body
+     -f tag_name=v<new> -f target_commitish=<branch> -f previous_tag_name=v<prev> --jq .body \
+     > /tmp/generated-notes.md
+   uv run scripts/release_contributor_credit.py /tmp/generated-notes.md \
+     > /tmp/contributor-credit.json
    ```
 
    Read the two most recent releases for voice: `gh release list -L 5`, then
    `gh release view <tag>` on each.
+
+   **Review the scan's attribution candidates.** The helper batch-fetches metadata
+   only for PRs in the generated notes. It suggests shared credit for human authors
+   of the PR commits and final merged commit, plus issue reporters whose issues
+   are closed by a maintainer PR, even when their co-author trailer is missing. Human co-authors
+   are included even when the PR has no linked issue. It excludes known
+   agent identities and bots; a GitHub `User` identity alone does not prove someone
+   is human. Maintainer permission checks are reused across PRs.
+
+   Supplemental attribution is for community contributors. Keep the PR author's
+   credit and any credit already present, but do not add other maintainers or
+   investigate their first-time status. Routine maintainer backports need no fresh
+   attribution audit and no request for guidance. Preserve existing community credit.
+
+   Apply the suggested entries to `/tmp/generated-notes.md`, for example
+   `Fix issue #123 by @jlowin and @reporter in <PR URL>`. Check the flagged exceptions:
+   unknown commit identities, missing reporter co-authorship, and issue closures
+   that do not represent a contribution (such as administrative duplicate closure).
+   Inspect individual PRs or issues only to resolve these discrepancies, rather than
+   re-reading every PR. The helper is read-only; it does not change notes or decide
+   who is a new contributor. Check prior contribution history only for people
+   listed in `first_time_review`: added contributors and GitHub's first-time
+   candidates. Earlier co-authorship and credited issue implementations count too.
+   Add verified first-time contributors to `New Contributors` with the resolving
+   PR link, and keep returning contributors in the shared change entries.
+
+   **Update both contributor counts after attribution is complete.** Count distinct
+   human GitHub accounts across the release entries for the total contributor count,
+   and distinct accounts in the final `New Contributors` list for the first-time
+   count. Count each person once across multiple PRs or roles, and exclude agents
+   and bots. The helper's `total_contributors` is the proposed total; its
+   `generated_first_time_count` is only the original baseline, not the final count.
+   Resolve unknown identities and opt-outs before finalizing totals. Include the
+   final counts in the release introduction (for example, `Thanks to our 12
+   contributors, including 3 first-time contributors.`), and update any other
+   contributor totals in the notes to agree. These counts and shared attribution
+   must appear in both the GitHub release and the docs changelog.
+   Follow [Contributor credit](../../../docs/development/contributing.mdx#contributor-credit),
+   honor opt-outs, and deduplicate entries. Save the completed generated notes to
+   `/tmp/generated-notes.md`.
 
 2. **Propose titles.** Titles are `v<version>: <pun>`, pun on the release's main
    theme from the release preview. Check prior titles with
@@ -41,11 +88,16 @@ one gets a follow-up patch, never a re-tag.
 3. **Write the notes file** outside the repository (a temp directory), intro only.
    The release title is the heading, so the file has none.
 
+   Also write `/tmp/release-notes.md` containing that intro followed by the completed
+   `/tmp/generated-notes.md`. This is the exact body to publish; use the same completed
+   generated notes for the docs entry. Do not regenerate plain GitHub notes at
+   publication and discard the added contributor credit.
+
 4. **Docs entries.** Branch `docs/changelog-<new>` from `origin/<branch>` and insert
    both blocks (the last argument is the branch the notes are generated against):
 
    ```bash
-   uv run .agents/skills/release/scripts/changelog_entry.py v<new> v<prev> "<pun>" /tmp/notes.md <branch>
+   uv run .agents/skills/release/scripts/changelog_entry.py v<new> v<prev> "<pun>" /tmp/notes.md <branch> --release-notes /tmp/generated-notes.md
    ```
 
    Validate, and repeat until it reports no errors; a parse error names the file
@@ -66,12 +118,19 @@ one gets a follow-up patch, never a re-tag.
    helper (it refuses to insert a label that already exists), and land that as a
    follow-up docs PR before tagging.
 
+   Refresh contributor attribution and both temporary notes files along with the
+   preview when new changes enter the release. The docs-only changelog PR can appear
+   in the GitHub notes without appearing in its own mirror, as described above.
+
    ```bash
    gh release create v<new> --target <branch> --title "v<new>: <pun>" \
-     --generate-notes --notes-start-tag v<prev> --notes-file /tmp/notes.md
+     --notes-file /tmp/release-notes.md
    ```
 
-   `v<prev>` is the last stable tag on that branch. The compare link at the bottom of the created release must read `v<prev>...v<new>`.
+   `v<prev>` is the last stable tag on that branch, passed as `previous_tag_name` in
+   the notes preview. The compare link at the bottom of the created release must
+   read `v<prev>...v<new>`. Verify the published contributor entries and
+   `New Contributors` list against the completed notes.
 
 6. **Watch the fan-out.** The slim run is keyed to the tag; the others are
    `workflow_run` events on the default branch, so select them by workflow name.
@@ -87,8 +146,9 @@ one gets a follow-up patch, never a re-tag.
    Confirm each package with `curl -fsS https://pypi.org/pypi/<pkg>/<new>/json | jq .info.version`;
    the unversioned endpoint lags a few minutes.
 
-7. **Publish docs** (`main` releases only; maintenance releases skip this step and
-   leave gofastmcp.com on the current major). When the `fastmcp` run finishes, its last job has opened
+7. **Publish docs** (eligible stable releases from the default-branch lineage only;
+   maintenance releases leave gofastmcp.com/docs on the current major). After a
+   successful eligible `fastmcp` run, its last job has opened
    `Publish FastMCP v<new> docs` against `published-docs`:
 
    ```bash
@@ -96,6 +156,8 @@ one gets a follow-up patch, never a re-tag.
    gh pr merge <n> --merge --admin
    ```
 
+   Before merging, apply the publication checks below to the PR's exact release
+   tree; a later fix on `main` does not change an existing release candidate.
    Merging pushes `published-docs`, which runs the `Deploy docs` workflow: it asks
    Mintlify's admin API for a deployment of the tip and waits for the verdict.
    That run is the signal that the site changed; the merge alone proves nothing.
@@ -110,13 +172,16 @@ one gets a follow-up patch, never a re-tag.
    `gh workflow run deploy-docs.yml --ref published-docs` once their incident clears.
 
    Verify through the markdown endpoints, which bypass the HTML edge cache:
-   `curl -fsS https://gofastmcp.com/changelog.md | grep -c "<pun>"`, and the same
+   `curl -fsS https://gofastmcp.com/docs/changelog.md | grep -c "<pun>"`, and the same
    for `updates.md` and any page the release touched.
 
 ## Publishing docs by hand
 
 Used when a deploy failed and was fixed on `main`, or for a docs change outside a
 release. The publication commit must match `main`'s tree exactly.
+
+Before preparing the PR, apply the publication checks below to the selected main
+tree. This publishes the entire tree, not just the changed page.
 
 ```bash
 git fetch origin main published-docs
@@ -130,6 +195,30 @@ gh pr merge <n> --merge --admin
 
 Then watch the `Deploy docs` run and verify the endpoints as in step 7.
 
+## Publication checks
+
+Invoking this skill or requesting documentation alone does not authorize a merge,
+package release, docs publication, or infrastructure change. Use the maintainer's
+explicit scope. Follow repository review policy unless the maintainer explicitly
+authorizes an available admin merge; example flags alone do not grant permission.
+An agent review is not an independent human GitHub approval.
+
+Compare `docs/docs.json` in the actual publication candidate (the release SHA for
+an automatic PR, selected main SHA for a manual PR) with `published-docs`. Preserve
+`logo.href = https://gofastmcp.com`,
+`seo.metatags.canonical = https://gofastmcp.com/docs`, and
+`seo.organization.logo = https://gofastmcp.com/docs/assets/brand/wordmark.png`.
+If missing, hold publication and reconcile the source and candidate through review.
+A main-only fix does not repair an already generated release tree.
+
+After Deploy docs succeeds, verify changed pages and their `.md` forms under
+`/docs`, search, assets, and version switching. For routing changes also verify
+old links redirect to one `/docs` prefix with queries and browser anchors intact,
+production canonicals, and root `/mcp` initialization, tools/list, and read-only
+search. Ordinary publication leaves domains and Mintlify's `/docs` base path alone.
+Manual dispatch or rerunning an old Deploy docs run deploys the configured tip;
+it does not restore that run's historical tree.
+
 ## Template: notes file for a patch
 
 ```
@@ -141,14 +230,15 @@ connections instead of raising.
 ## Gotchas
 
 - `--generate-notes` copies PR titles verbatim; a title containing `<1`, `{`, or `}`
-  breaks MDX. `scripts/changelog_entry.py` wraps those in backticks; the validator
-  in step 4 catches anything it misses.
+  breaks MDX, and `__name__` renders as bold. `scripts/changelog_entry.py` wraps
+  those in backticks; the validator in step 4 catches anything else.
 - Mintlify's GitHub App also deploys on its own, but it only rebuilds files
   changed since the last commit it recorded, and it records commits it failed on
   or skipped. Only the `Deploy docs` run's verdict counts; its API-triggered
   deployment is what brings a page a skipped deploy left stale back in line.
-- Without `--notes-start-tag`, a prerelease tag becomes the changelog start and the
-  PR list is silently truncated.
+- Always pass the last stable tag as `previous_tag_name` when generating notes;
+  otherwise a prerelease tag can truncate the PR list. Publish the completed notes
+  with `--notes-file`, rather than replacing them with `--generate-notes`.
 - Maintenance releases publish packages and notes but never repoint `published-docs`;
   their changelog entries go on the maintenance branch under the matching major section.
 
@@ -156,5 +246,5 @@ connections instead of raising.
 
 Each of these prints a count above zero:
 `curl -fsS https://pypi.org/pypi/fastmcp/<new>/json | grep -c '"version"'`,
-`curl -fsS https://gofastmcp.com/changelog.md | grep -c "<pun>"`,
-`curl -fsS https://gofastmcp.com/updates.md | grep -c "<pun>"`.
+`curl -fsS https://gofastmcp.com/docs/changelog.md | grep -c "<pun>"`,
+`curl -fsS https://gofastmcp.com/docs/updates.md | grep -c "<pun>"`.

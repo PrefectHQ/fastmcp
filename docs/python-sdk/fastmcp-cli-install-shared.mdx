@@ -10,7 +10,7 @@ Shared utilities for install commands.
 
 ## Functions
 
-### `validate_server_name` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/install/shared.py#L28" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `validate_server_name` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/install/shared.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_server_name(name: str) -> str
@@ -22,7 +22,70 @@ Validate that a server name is safe for use as a subprocess argument.
 Raises SystemExit if the name contains shell metacharacters.
 
 
-### `parse_env_var` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/install/shared.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `quote_windows_batch_argument` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/install/shared.py#L80" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+quote_windows_batch_argument(argument: str) -> str
+```
+
+
+Quote one argument for a command line that runs a `.cmd` or `.bat` file.
+
+The result reaches the program that the batch file launches as the
+original literal string. This follows the batch file argument quoting in
+Rust's standard library: arguments are wrapped in double quotes so cmd.exe
+treats `&`, `|`, `<`, `>`, `^`, parentheses and similar characters as
+text, including when the batch file expands them again through `%*`.
+Embedded quotes are doubled, which both cmd.exe and the Microsoft C
+runtime read as a literal quote. Each `%` is rewritten so cmd.exe does not
+expand environment variables. Delayed `!` expansion is disabled by the
+command processor options in `windows_batch_command_line`.
+
+**Raises:**
+- `ValueError`: If the argument contains a line break. cmd.exe ends the
+command at a line break, so it cannot be passed literally.
+
+
+### `windows_batch_command_line` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/install/shared.py#L113" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+windows_batch_command_line(command: Sequence[str]) -> str
+```
+
+
+Build a cmd.exe command line that runs a batch file with literal arguments.
+
+`command[0]` is the batch file path and the remaining items are its
+arguments. The returned string is passed verbatim to `CreateProcess` with
+cmd.exe as the executable. Command extensions are enabled for the `%`
+handling, delayed expansion and AutoRun commands are disabled, and `/s`
+makes cmd.exe remove exactly the outer pair of quotes.
+
+**Raises:**
+- `ValueError`: If the batch file path or an argument cannot be passed.
+
+
+### `run_cli_command` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/install/shared.py#L142" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run_cli_command(command: list[str]) -> subprocess.CompletedProcess[str]
+```
+
+
+Run a client CLI so that it receives each argument literally.
+
+On Windows, a `.cmd` or `.bat` file always runs through cmd.exe, which
+would otherwise interpret operators and `%` expansions in the arguments.
+For those files the command line is built with
+`windows_batch_command_line`. Other executables, and every executable on
+other platforms, receive the argument list directly.
+
+**Raises:**
+- `subprocess.CalledProcessError`: If the command exits with an error.
+- `ValueError`: If an argument cannot be passed to a batch file.
+
+
+### `parse_env_var` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/install/shared.py#L166" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 parse_env_var(env_var: str) -> tuple[str, str]
@@ -32,7 +95,7 @@ parse_env_var(env_var: str) -> tuple[str, str]
 Parse environment variable string in format KEY=VALUE.
 
 
-### `process_common_args` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/install/shared.py#L58" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `process_common_args` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/install/shared.py#L182" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 process_common_args(server_spec: str, server_name: str | None, with_packages: list[str] | None, env_vars: list[str] | None, env_file: Path | None) -> tuple[Path, str | None, str, list[str], dict[str, str] | None]
@@ -44,7 +107,7 @@ Process common arguments shared by all install commands.
 Handles both fastmcp.json config files and traditional file.py:object syntax.
 
 
-### `open_deeplink` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/install/shared.py#L174" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `open_deeplink` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/install/shared.py#L298" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 open_deeplink(url: str) -> bool

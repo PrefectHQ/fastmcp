@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastmcp.prompts.base import Prompt
 from fastmcp.resources.base import Resource
+from fastmcp.resources.security import INHERIT_SECURITY
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
 from fastmcp.server.providers.filesystem_discovery import (
     discover_and_import,
@@ -290,6 +291,37 @@ def get_profile(user_id: str) -> dict:
         component = components[0]
         assert isinstance(component, FunctionResourceTemplate)
         assert component.uri_template == "users://{user_id}/profile"
+
+    def test_extract_resource_template_preserves_security(self, tmp_path: Path):
+        """Resource templates discovered from files should keep their security policy."""
+        template_file = tmp_path / "secure_templates.py"
+        template_file.write_text(
+            """\
+from fastmcp.resources import ResourceSecurity, resource
+
+POLICY = ResourceSecurity(exempt_params={"ref"})
+
+@resource("git://diff/{ref}", security=POLICY)
+def exempt(ref: str) -> str:
+    return ref
+
+@resource("git://show/{ref}", security=None)
+def unscreened(ref: str) -> str:
+    return ref
+
+@resource("git://log/{ref}")
+def default(ref: str) -> str:
+    return ref
+"""
+        )
+
+        module = import_module_from_file(template_file)
+        components = extract_components(module)
+
+        templates = {c.name: c for c in components if isinstance(c, ResourceTemplate)}
+        assert templates["exempt"].security is module.POLICY
+        assert templates["unscreened"].security is None
+        assert templates["default"].security is INHERIT_SECURITY
 
 
 class TestDiscoverAndImport:

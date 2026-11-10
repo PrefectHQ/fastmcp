@@ -19,7 +19,15 @@ concurrency:
 
 jobs:
   label-issue-or-pr:
-    if: github.actor != 'dependabot[bot]'
+    # claude-code-action refuses non-human actors (Bot type) unless they are
+    # in its allowed_bots list, so any bot-authored PR or issue that reaches
+    # this job fails the run. Marvin's own PRs are allow-listed in the action;
+    # every other bot — dependabot, prefect-renovate, whatever comes next —
+    # is either self-labeled by its integration or not worth triage tokens.
+    # Skip them here so a bot-authored event is a clean skip, not a red run.
+    if: >-
+      !endsWith(github.actor, '[bot]') ||
+      github.actor == 'marvin-context-protocol[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -27,32 +35,25 @@ jobs:
       issues: write
       pull-requests: write
 
-    # TEMPORARY PIN — remove once upstream ships a fix.
-    #
-    # Claude Code 2.1.216 regressed the sandbox that claude-code-action wraps
-    # every Bash call in when `allowed_non_write_users` is set: the mountpoint
-    # walk fails closed, so every command — down to `true` — dies with
-    # `bwrap: Can't create file at /home/.mcp.json: Permission denied`.
-    # Marvin still reads the issue and picks correct labels, then cannot run
-    # the helper that applies them, so triage silently applied zero labels
-    # from 2026-07-20 onward while every run reported success.
-    #
-    # 2.1.215 is the last release without the regression.
+    # Pinned Claude Code. The repository instructions are AGENTS.md, which
+    # Claude Code reads natively from 2.1.281 on. Releases 2.1.216 through
+    # 2.1.226 broke every Bash call under the action's sandbox (`bwrap: Can't
+    # create file at /home/.mcp.json`), which let triage apply zero labels
+    # while reporting success; the sandbox check below fails the run instead.
     # https://github.com/anthropics/claude-code/issues/79997
-    # https://github.com/anthropics/claude-code-action/issues/1547
     env:
-      PINNED_CLAUDE_CODE_VERSION: "2.1.215"
+      PINNED_CLAUDE_CODE_VERSION: "2.1.282"
 
     steps:
       - name: Checkout base repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ github.repository }}
           ref: ${{ github.event.repository.default_branch }}
 
       - name: Generate Marvin App token
         id: marvin-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         with:
           app-id: ${{ secrets.MARVIN_APP_ID }}
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
@@ -65,6 +66,17 @@ jobs:
           permission-issues: write
           permission-pull-requests: write
 
+      - name: Read repository labels
+        id: repository-labels
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          labels=$(gh api --paginate --slurp "repos/$REPO/labels?per_page=100" \
+            | jq -c 'add | map({name, description})')
+          printf 'labels=%s\n' "$labels" >> "$GITHUB_OUTPUT"
+
       - name: Set triage prompt
         id: triage-prompt
         run: |
@@ -72,7 +84,7 @@ jobs:
           PROMPT<<PROMPT_END
           You're an issue triage assistant for FastMCP, a Python framework for building Model Context Protocol servers and clients. Your task is to analyze issues/PRs and apply appropriate labels.
 
-          IMPORTANT: Your primary action should be to apply labels using the locked-down helper `.github/scripts/triage-label.sh`. DO NOT post comments EXCEPT when applying the too-long label (see below).
+          IMPORTANT: Your primary action should be to apply labels using the locked-down helper `.github/scripts/triage-label.sh`. DO NOT post comments. When you apply too-long, the workflow posts the comment for you (see below).
 
           CRITICAL — LABEL MECHANICS:
           - Apply labels ONLY through the helper, which adds or removes repository labels on THIS issue/PR. It already knows the target repo and number (from the workflow environment) — you never pass them:
@@ -80,7 +92,7 @@ jobs:
             remove: `bash .github/scripts/triage-label.sh remove "label1"`
           - The helper uses the additive REST labels endpoint, so it works for both issues and PRs and never clobbers labels applied by other workflows — notably the Require Issue Link workflow's `missing-issue-link` control label, which must survive or an auto-closed PR won't reopen when its author is assigned.
           - The helper is your ONLY GitHub write access. Do NOT use raw `gh api`, `gh issue edit`, `gh pr edit`, or any other mutation — they are not available to you.
-          - Only apply labels that exist in the repository (from `gh label list` in step 1). Never invent labels.
+          - Only apply labels from the complete repository label list below. Never invent labels.
           - Use `remove` only to correct a label you believe is wrong, and never remove the control labels `missing-issue-link`, `bypass-issue-check`, or `trusted-contributor`.
 
           Issue/PR Information:
@@ -90,8 +102,8 @@ jobs:
 
           TRIAGE PROCESS:
 
-          1. Get available labels:
-             Run: `gh label list`
+          1. Read the available labels and descriptions collected from every repository label page:
+             ${{ steps.repository-labels.outputs.labels }}
 
           2. Retrieve issue/PR details using GitHub tools:
              - mcp__github__get_issue: Get the issue/PR details
@@ -100,7 +112,7 @@ jobs:
 
           3. Analyze and apply labels based on these guidelines:
 
-          CORE CATEGORIES (apply EXACTLY ONE - these are mutually exclusive; skip if applying too-long):
+          CORE CATEGORIES (apply EXACTLY ONE - these are mutually exclusive, including when applying too-long):
           - bug: Reports of broken functionality OR PRs that fix bugs
           - enhancement: New functions/endpoints, improvements to existing features, internal tooling, workflow improvements, minor new capabilities
           - feature: ONLY for major headline functionality worthy of a blog post announcement (2-4 per release, never for issues)
@@ -131,9 +143,7 @@ jobs:
           - invalid: Spam, completely off-topic, or nonsensical (often LLM-generated)
           - too-long: Apply when an issue or PR doesn't conform to CONTRIBUTING.md. Issues should be a short problem description, an MRE, and expected vs. actual behavior — not a design document. PRs should have a focused description of the change — not a report. We don't need proposed solutions or design alternatives (the issue should describe the problem and let maintainers architect the fix), summaries of what tests cover, explanations of code we can read ourselves, or speculative root-cause analysis. Common LLM failure modes to watch for: verbose "diagnostic" writeups, large proposed patches in issue bodies, multi-section reports restating what's visible in the diff, numbered lists of possible approaches or solutions, "suggested" schemas/shapes/APIs, generic analysis that doesn't reference specific code, and "Notes" sections. But these are heuristics, not rules — a complex PR may legitimately need more context, and a brief submission can still be low-quality. Judge by whether the content helps a reviewer or just adds noise. When applying too-long, still apply the core category and area labels — too-long is a format signal, not a replacement for categorization. Issues still need to be findable by category.
 
-          WHEN APPLYING too-long: After labeling, post a brief comment using mcp__github__add_issue_comment:
-            "Thanks for the report. This issue goes beyond what our contributor guidelines ask for — we just need a short problem description and an MRE. Please see our [contributing guidelines](https://github.com/PrefectHQ/fastmcp/blob/main/CONTRIBUTING.md) and condense this issue. We'll triage it once it's trimmed down."
-            Use this exact text (or very close to it). Do not editorialize or add details.
+          WHEN APPLYING too-long: A later workflow step posts the contributing-guidelines comment. Do not post it yourself.
 
           AREA LABELS (apply ONLY when thematically central to the issue):
           - cli: Issues primarily about FastMCP CLI commands (run, dev, install)
@@ -158,7 +168,7 @@ jobs:
 
           4. Apply selected labels:
              Add them with `bash .github/scripts/triage-label.sh add "label1" "label2"`.
-             DO NOT post any comments unless applying too-long (see above)
+             DO NOT post any comments
           PROMPT_END
           EOF
 
@@ -171,7 +181,10 @@ jobs:
       - name: Install pinned Claude Code
         id: pin-claude
         run: |
-          curl -fsSL https://claude.ai/install.sh | bash -s -- "$PINNED_CLAUDE_CODE_VERSION"
+          installer="$RUNNER_TEMP/claude-install.sh"
+          curl -fsSL --connect-timeout 30 --retry 3 --retry-delay 5 --retry-all-errors \
+            --output "$installer" https://claude.ai/install.sh
+          bash "$installer" "$PINNED_CLAUDE_CODE_VERSION"
           echo "path=$HOME/.local/bin/claude" >> "$GITHUB_OUTPUT"
           "$HOME/.local/bin/claude" --version
 
@@ -187,7 +200,7 @@ jobs:
           allowed_non_write_users: "*"
           allowed_bots: "marvin-context-protocol"
           claude_args: |
-            --allowedTools "Bash(gh label list:*)","Bash(bash .github/scripts/triage-label.sh:*)",mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__add_issue_comment,mcp__github__get_pull_request,mcp__github__get_pull_request_files
+            --allowedTools "Bash(bash .github/scripts/triage-label.sh:*)",mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__get_pull_request,mcp__github__get_pull_request_files
           settings: |
             {
               "model": "claude-sonnet-5",
@@ -197,6 +210,36 @@ jobs:
                 "TRIAGE_NUMBER": "${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}"
               }
             }
+
+      # Marvin has no comment tool. When it applies too-long, this step posts
+      # the contributing-guidelines comment on this issue or PR, once.
+      - name: Post too-long comment
+        env:
+          GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
+        run: |
+          if [[ ! "$NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "::error::Issue or PR number must be numeric, got: $NUMBER"
+            exit 1
+          fi
+          labels=$(gh api --paginate "repos/$REPO/issues/$NUMBER/labels" --jq '.[].name')
+          if ! grep -qx "too-long" <<<"$labels"; then
+            echo "too-long was not applied; no comment."
+            exit 0
+          fi
+
+          marker="goes beyond what our contributor guidelines ask for"
+          bot_comments=$(gh api --paginate "repos/$REPO/issues/$NUMBER/comments" \
+            --jq '.[] | select(.user.type == "Bot") | .body')
+          if grep -qF "$marker" <<<"$bot_comments"; then
+            echo "The too-long comment is already posted."
+            exit 0
+          fi
+
+          message="Thanks for the report. This issue goes beyond what our contributor guidelines ask for — we just need a short problem description and an MRE. Please see our [contributing guidelines](https://github.com/PrefectHQ/fastmcp/blob/main/CONTRIBUTING.md) and condense this issue. We'll triage it once it's trimmed down."
+          gh api "repos/$REPO/issues/$NUMBER/comments" -f body="$message" > /dev/null
+          echo "Posted the too-long comment on #$NUMBER."
 
       # Triage is fire-and-forget: nobody watches a green run, so a broken
       # allowlist has to fail the job or it goes unnoticed indefinitely — a
@@ -236,8 +279,7 @@ jobs:
                 | map(.tool_input.command // "")
                 | { total: length,
                     granted: map(select(
-                      startswith("gh label list")
-                      or startswith("bash .github/scripts/triage-label.sh")
+                      startswith("bash .github/scripts/triage-label.sh")
                     ))
                   }
                 | "\(.total)\t\(.granted | length)\t\(.granted | join(" | "))"
@@ -290,7 +332,7 @@ jobs:
 
       - name: Upload Marvin execution log
         if: always() && steps.marvin.conclusion != 'skipped'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: marvin-triage-execution-log
           path: |

@@ -299,9 +299,23 @@ class ParsedFunction:
                         "Functions with **kwargs are not supported as tools"
                     )
 
-        # collect name and description before we potentially modify the function
-        fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
-        outer_docstring = parse_docstring(fn)
+        # Keep the partial's bound signature, and fall back to the wrapped
+        # callable only for metadata the partial hasn't explicitly overridden.
+        target = fn
+        partial_name = None
+        partial_docstring = ParsedDocstring()
+        has_partial_docstring = False
+        while isinstance(target, functools.partial):
+            partial_name = partial_name or getattr(target, "__name__", None)
+            if not has_partial_docstring and "__doc__" in target.__dict__:
+                partial_docstring = parse_docstring(target)
+                has_partial_docstring = True
+            target = target.func
+        fn_name = partial_name or getattr(target, "__name__", None)
+        fn_name = fn_name or target.__class__.__name__
+        outer_docstring = (
+            partial_docstring if has_partial_docstring else parse_docstring(target)
+        )
 
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
@@ -316,11 +330,25 @@ class ParsedFunction:
         # describes __init__, so falling back to it would risk injecting
         # constructor docs into __call__'s schema on overlapping names.
         # The description, however, comes from the class docstring (which
-        # describes what the tool IS) when present.
-        inner_docstring = parse_docstring(fn)
+        # describes what the tool IS) when present. A partial likewise keeps
+        # its own partially-bound signature but declares its parameters in
+        # the wrapped function's docstring.
+        if isinstance(fn, functools.partial):
+            doc_fn = target if inspect.isroutine(target) else target.__call__
+        else:
+            doc_fn = fn
+        inner_docstring = parse_docstring(doc_fn)
         parsed_docstring = ParsedDocstring(
-            description=outer_docstring.description or inner_docstring.description,
-            parameters=inner_docstring.parameters,
+            description=(
+                outer_docstring.description
+                if has_partial_docstring
+                else outer_docstring.description or inner_docstring.description
+            ),
+            parameters=(
+                partial_docstring.parameters
+                if has_partial_docstring
+                else inner_docstring.parameters
+            ),
         )
 
         # Transform Context type annotations to Depends() for unified DI
@@ -335,9 +363,21 @@ class ParsedFunction:
         wrapper_fn = without_injected_parameters(fn)
 
         input_type_adapter = get_cached_typeadapter(wrapper_fn)
-        input_schema = input_type_adapter.json_schema()
+        raw_input_schema = input_type_adapter.json_schema()
 
-        input_schema = compress_schema(input_schema, prune_titles=True)
+        input_schema = compress_schema(raw_input_schema, prune_titles=True)
+
+        # Pruning drops every title, since Pydantic derives one from each
+        # parameter name. Restore the ones the author wrote with
+        # Field(title=...): those are display labels a client can't rederive.
+        properties = input_schema.get("properties", {})
+        title_from_name = GenerateJsonSchema().get_title_from_name
+        for param_name, raw_property in raw_input_schema.get("properties", {}).items():
+            if param_name not in properties or not isinstance(raw_property, dict):
+                continue
+            title = raw_property.get("title")
+            if isinstance(title, str) and title != title_from_name(param_name):
+                properties[param_name]["title"] = title
 
         # Inject parameter descriptions from the docstring into the schema.
         # Explicit annotations (Field(description=...), Annotated[x, "..."])

@@ -4,18 +4,24 @@ import keyword
 import re
 import sys
 import textwrap
+from collections import defaultdict
 from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import urlparse
 
 import cyclopts
+import httpx2
 import mcp_types
 import pydantic_core
 from mcp import MCPError
 from rich.console import Console
 
 from fastmcp.cli.client import _build_client, resolve_server_spec
+from fastmcp.client.auth.bearer import BearerAuth
+from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.transports.base import ClientTransport
+from fastmcp.client.transports.http import StreamableHttpTransport
+from fastmcp.client.transports.sse import SSETransport
 from fastmcp.client.transports.stdio import StdioTransport
 from fastmcp.utilities.logging import get_logger
 
@@ -119,13 +125,31 @@ def _format_schema_for_help(schema: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _serialize_auth(auth: httpx2.Auth) -> str:
+    """Serialize a remote transport's auth to an ``auth=`` argument.
+
+    Covers what a server config can express: a bearer token, or the ``"oauth"``
+    flag (which stands for a default OAuth flow). Anything else, such as a custom
+    ``httpx2.Auth``, raises ``ValueError`` instead of being dropped silently.
+    """
+    if type(auth) is OAuth:
+        return repr("oauth")
+    if isinstance(auth, BearerAuth):
+        return repr(auth.token.get_secret_value())
+    raise ValueError(
+        f"Cannot generate a CLI for a server using {type(auth).__name__} "
+        "authentication: it cannot be written as a Python expression."
+    )
+
+
 def serialize_transport(
     resolved: str | dict[str, Any] | ClientTransport,
 ) -> tuple[str, set[str]]:
     """Serialize a resolved transport to a Python expression string.
 
     Returns ``(expression, extra_imports)`` where *extra_imports* is a set of
-    import lines needed by the expression.
+    import lines needed by the expression. Raises ``ValueError`` for a transport
+    that cannot be written as a Python expression.
     """
     if isinstance(resolved, str):
         return repr(resolved), set()
@@ -140,11 +164,32 @@ def serialize_transport(
         imports = {"from fastmcp.client.transports import StdioTransport"}
         return expr, imports
 
+    if isinstance(resolved, (StreamableHttpTransport, SSETransport)):
+        cls_name = (
+            "SSETransport"
+            if isinstance(resolved, SSETransport)
+            else "StreamableHttpTransport"
+        )
+        parts = [f"url={resolved.url!r}"]
+        if resolved.headers:
+            parts.append(f"headers={resolved.headers!r}")
+        if resolved.auth is not None:
+            parts.append(f"auth={_serialize_auth(resolved.auth)}")
+        if isinstance(resolved, SSETransport) and resolved.sse_read_timeout is not None:
+            parts.append(
+                f"sse_read_timeout={resolved.sse_read_timeout.total_seconds()!r}"
+            )
+        expr = f"{cls_name}({', '.join(parts)})"
+        imports = {f"from fastmcp.client.transports import {cls_name}"}
+        return expr, imports
+
     if isinstance(resolved, dict):
         return repr(resolved), set()
 
-    # Fallback: try repr
-    return repr(resolved), set()
+    raise ValueError(
+        f"Cannot generate a CLI for a {type(resolved).__name__}: "
+        "it cannot be written as a Python expression."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -163,11 +208,83 @@ def _to_python_identifier(name: str) -> str:
     return safe
 
 
+def _resolve_tool_param_flags(
+    properties: dict[str, Any],
+) -> dict[str, tuple[str, str | None]]:
+    """Resolve CLI flags for tool parameters, disambiguating colliding names.
+
+    Returns a mapping of ``prop_name -> (cli_flag, explicit_name)`` where:
+    - ``cli_flag`` is the flag string for documentation / invocation (e.g. ``--user-id`` or ``--userId``).
+    - ``explicit_name`` is the explicit flag to pass to ``cyclopts.Parameter(name=...)``,
+      or ``None`` if the parameter can rely on cyclopts' default name transform.
+    """
+    items: list[tuple[str, str, str, str]] = []
+    for prop_name in properties:
+        safe_name = _to_python_identifier(prop_name)
+        if safe_name in {"_call_tool", "isinstance", "json", "str"}:
+            safe_name = f"{safe_name}_"
+        default_flag = _param_to_cli_flag(prop_name)
+        norm_key = default_flag.replace("_", "-")
+        items.append((prop_name, safe_name, default_flag, norm_key))
+
+    groups: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
+    for prop_name, safe_name, default_flag, norm_key in items:
+        groups[norm_key].append((prop_name, safe_name, default_flag))
+
+    # Fast path: no collisions anywhere in the tool
+    if all(len(group) == 1 for group in groups.values()):
+        return {
+            prop_name: (default_flag, None) for prop_name, _, default_flag, _ in items
+        }
+
+    result: dict[str, tuple[str, str | None]] = {}
+    assigned_norms: set[str] = set()
+
+    # Pass 1: non-colliding flags claim their default
+    for norm_key, group_items in groups.items():
+        if len(group_items) == 1:
+            prop_name, _safe_name, default_flag = group_items[0]
+            result[prop_name] = (default_flag, None)
+            assigned_norms.add(norm_key)
+
+    # Pass 2: resolve colliding flags
+    for norm_key, group_items in groups.items():
+        if len(group_items) <= 1:
+            continue
+
+        # If exactly one matches the default flag in lowercase snake_case, let it keep the default
+        exact_default = [
+            (p, s, d)
+            for p, s, d in group_items
+            if f"--{p.replace('_', '-')}".lower() == d and p.islower()
+        ]
+        default_prop = exact_default[0][0] if len(exact_default) == 1 else None
+
+        for prop_name, safe_name, default_flag in group_items:
+            if prop_name == default_prop and norm_key not in assigned_norms:
+                result[prop_name] = (default_flag, None)
+                assigned_norms.add(norm_key)
+            else:
+                candidate = f"--{safe_name.rstrip('_')}"
+                norm = candidate.replace("_", "-")
+                if norm in assigned_norms:
+                    suffix = 2
+                    while f"{norm}-{suffix}" in assigned_norms:
+                        suffix += 1
+                    candidate = f"{candidate}-{suffix}"
+                    norm = candidate.replace("_", "-")
+                assigned_norms.add(norm)
+                result[prop_name] = (candidate, candidate)
+
+    return result
+
+
 def _tool_function_source(tool: mcp_types.Tool) -> str:
     """Generate the source for a single ``@call_tool_app.command`` function."""
     schema = tool.input_schema
     properties: dict[str, Any] = schema.get("properties", {})
     required = set(schema.get("required", []))
+    param_flags = _resolve_tool_param_flags(properties)
 
     # Build parameter lines and track which need JSON parsing
     param_lines: list[str] = []
@@ -180,6 +297,10 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
         help_text = prop_schema.get("description", "")
         is_required = prop_name in required
         safe_name = _to_python_identifier(prop_name)
+        if safe_name in {"_call_tool", "isinstance", "json", "str"}:
+            # The command body refers to these names, so a parameter must not
+            # shadow them. Cyclopts drops the trailing underscore from the flag.
+            safe_name = f"{safe_name}_"
 
         # Check for name collisions after sanitization
         if safe_name in seen_names:
@@ -195,16 +316,12 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             help_text = f"{help_text}\\n{schema_help}" if help_text else schema_help
             json_params.append((prop_name, safe_name))
 
-        # Escape special characters in help text
-        help_escaped = (
-            help_text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-        )
+        _, explicit_name = param_flags[prop_name]
+        flag_arg = f'name="{explicit_name}", ' if explicit_name else ""
 
         # Build parameter annotation
         if is_required:
-            annotation = (
-                f'Annotated[{py_type}, cyclopts.Parameter(help="{help_escaped}")]'
-            )
+            annotation = f"Annotated[{py_type}, cyclopts.Parameter({flag_arg}help={help_text!r})]"
             param_lines.append(f"    {safe_name}: {annotation},")
         else:
             default = prop_schema.get("default")
@@ -212,26 +329,23 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
                 # For complex types with defaults, serialize to JSON string
                 if needs_json:
                     default_str = pydantic_core.to_json(default, fallback=str).decode()
-                    annotation = f'Annotated[{py_type}, cyclopts.Parameter(help="{help_escaped}")]'
+                    annotation = f"Annotated[{py_type}, cyclopts.Parameter({flag_arg}help={help_text!r})]"
                     param_lines.append(
                         f"    {safe_name}: {annotation} = {default_str!r},"
                     )
                 else:
-                    annotation = f'Annotated[{py_type}, cyclopts.Parameter(help="{help_escaped}")]'
+                    annotation = f"Annotated[{py_type}, cyclopts.Parameter({flag_arg}help={help_text!r})]"
                     param_lines.append(f"    {safe_name}: {annotation} = {default!r},")
             else:
-                # For list types, default to empty list; others default to None
-                if py_type.startswith("list["):
-                    annotation = f'Annotated[{py_type}, cyclopts.Parameter(help="{help_escaped}")]'
-                    param_lines.append(f"    {safe_name}: {annotation} = [],")
-                else:
-                    annotation = f'Annotated[{py_type} | None, cyclopts.Parameter(help="{help_escaped}")]'
-                    param_lines.append(f"    {safe_name}: {annotation} = None,")
+                annotation = f"Annotated[{py_type} | None, cyclopts.Parameter({flag_arg}help={help_text!r})]"
+                param_lines.append(f"    {safe_name}: {annotation} = None,")
 
         call_args.append(f"{prop_name!r}: {safe_name}")
 
-    # Function name: sanitize to valid Python identifier
-    fn_name = _to_python_identifier(tool.name)
+    # Function name: prefixed so that no tool name can replace one of the
+    # script's own globals or builtins (a tool named "app" would replace the
+    # cyclopts app). The command name comes from name= below, not from this.
+    fn_name = _to_python_identifier(f"tool_{tool.name}")
 
     # Docstring - use single-quoted docstrings to avoid triple-quote escaping issues
     description = (tool.description or "").replace("\\", "\\\\").replace("'", "\\'")
@@ -250,26 +364,26 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
     lines.append(") -> None:")
     lines.append(f"    '''{description}'''")
 
-    # Add JSON parsing for complex parameters
-    if json_params:
-        lines.append("    # Parse JSON parameters")
-        for _prop_name, safe_name in json_params:
+    dict_items = ", ".join(call_args)
+    if call_args:
+        arguments_name = "_arguments"
+        while arguments_name in seen_names:
+            arguments_name += "_"
+        lines.append(f"    {arguments_name} = {{{dict_items}}}")
+        lines.append("    # Omit missing options before decoding explicit JSON null.")
+        lines.append(
+            f"    {arguments_name} = {{k: v for k, v in {arguments_name}.items() "
+            f"if v is not None or k in {tuple(sorted(required))!r}}}"
+        )
+        for prop_name, _safe_name in json_params:
+            value = f"{arguments_name}[{prop_name!r}]"
             lines.append(
-                f"    {safe_name}_parsed = json.loads({safe_name}) if isinstance({safe_name}, str) else {safe_name}"
+                f"    if {prop_name!r} in {arguments_name} and isinstance({value}, str):"
             )
-        lines.append("")
-
-    # Build call arguments, using parsed versions for JSON params
-    call_arg_parts = []
-    for prop_name in properties:
-        safe_name = _to_python_identifier(prop_name)
-        if any(pn == prop_name for pn, _ in json_params):
-            call_arg_parts.append(f"{prop_name!r}: {safe_name}_parsed")
-        else:
-            call_arg_parts.append(f"{prop_name!r}: {safe_name}")
-
-    dict_items = ", ".join(call_arg_parts)
-    lines.append(f"    await _call_tool({tool.name!r}, {{{dict_items}}})")
+            lines.append(f"        {value} = json.loads({value})")
+        lines.append(f"    await _call_tool({tool.name!r}, {arguments_name})")
+    else:
+        lines.append(f"    await _call_tool({tool.name!r}, {{}})")
     lines.append("")
 
     return "\n".join(lines)
@@ -278,6 +392,11 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
 # ---------------------------------------------------------------------------
 # Full script generation
 # ---------------------------------------------------------------------------
+
+
+def _docstring_text(text: str) -> str:
+    """Escape text for use inside a triple-quoted docstring literal."""
+    return text.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
 
 
 def generate_cli_script(
@@ -297,9 +416,9 @@ def generate_cli_script(
     # --- Header ---
     lines: list[str] = []
     lines.append("#!/usr/bin/env python3")
-    lines.append(f'"""CLI for {server_name} MCP server.')
+    lines.append(f'"""CLI for {_docstring_text(server_name)} MCP server.')
     lines.append("")
-    lines.append(f"Generated by: fastmcp generate-cli {server_spec}")
+    lines.append(f"Generated by: fastmcp generate-cli {_docstring_text(server_spec)}")
     lines.append('"""')
     lines.append("")
 
@@ -368,14 +487,8 @@ def generate_cli_script(
 
 
         async def _call_tool(tool_name: str, arguments: dict) -> None:
-            # Filter out None values and empty lists (defaults for optional array params)
-            filtered = {
-                k: v
-                for k, v in arguments.items()
-                if v is not None and (not isinstance(v, list) or len(v) > 0)
-            }
             async with Client(CLIENT_SPEC) as client:
-                result = await client.call_tool(tool_name, filtered, raise_on_error=False)
+                result = await client.call_tool(tool_name, arguments, raise_on_error=False)
                 _print_tool_result(result)
                 if result.is_error:
                     sys.exit(1)""")
@@ -569,11 +682,12 @@ def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
     schema = tool.input_schema
     properties: dict[str, Any] = schema.get("properties", {})
     required = set(schema.get("required", []))
+    param_flags = _resolve_tool_param_flags(properties)
 
     # Build example invocation flags
     flag_parts_list: list[str] = []
     for p, p_schema in properties.items():
-        flag = _param_to_cli_flag(p)
+        flag = param_flags[p][0]
         schema_type = p_schema.get("type")
         is_bool = schema_type == "boolean" or (
             isinstance(schema_type, list) and "boolean" in schema_type
@@ -590,7 +704,7 @@ def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
     # Build parameter table rows
     rows: list[str] = []
     for prop_name, prop_schema in properties.items():
-        flag = f"`{_param_to_cli_flag(prop_name)}`"
+        flag = f"`{param_flags[prop_name][0]}`"
         type_label = _schema_type_label(prop_schema).replace("|", "\\|")
         is_required = "yes" if prop_name in required else "no"
         description = prop_schema.get("description", "")
@@ -739,7 +853,12 @@ async def generate_cli_command(
 
     # Resolve the server spec to a transport
     resolved = resolve_server_spec(server_spec)
-    transport_code, extra_imports = serialize_transport(resolved)
+    # Serialize before _build_client, which may replace the transport's auth.
+    try:
+        transport_code, extra_imports = serialize_transport(resolved)
+    except ValueError as exc:
+        console.print(f"[bold red]Error:[/bold red] {exc}")
+        sys.exit(1)
 
     # Derive a human-friendly server name from the spec
     server_name = _derive_server_name(server_spec)
@@ -767,7 +886,7 @@ async def generate_cli_command(
         tools=tools,
     )
 
-    output_path.write_text(script)
+    output_path.write_text(script, encoding="utf-8")
     output_path.chmod(output_path.stat().st_mode | 0o111)  # make executable
 
     console.print(
@@ -781,7 +900,7 @@ async def generate_cli_command(
             cli_filename=output_path.name,
             tools=tools,
         )
-        skill_path.write_text(skill_content)
+        skill_path.write_text(skill_content, encoding="utf-8")
         console.print(f"[green]✓[/green] Wrote [cyan]{skill_path}[/cyan]")
 
     console.print(f"[dim]Run: python {output_path} --help[/dim]")

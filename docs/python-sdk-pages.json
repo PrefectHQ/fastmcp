@@ -24,6 +24,7 @@
     "pages": [
       "python-sdk/fastmcp-cli-__init__",
       "python-sdk/fastmcp-cli-apps_dev",
+      "python-sdk/fastmcp-cli-apps_dev_security",
       "python-sdk/fastmcp-cli-auth",
       "python-sdk/fastmcp-cli-cimd",
       "python-sdk/fastmcp-cli-cli",
@@ -85,6 +86,7 @@
           "python-sdk/fastmcp-client-mixins-__init__",
           "python-sdk/fastmcp-client-mixins-prompts",
           "python-sdk/fastmcp-client-mixins-resources",
+          "python-sdk/fastmcp-client-mixins-skills",
           "python-sdk/fastmcp-client-mixins-tools"
         ]
       },
@@ -126,7 +128,8 @@
       {
         "group": "transforms",
         "pages": [
-          "python-sdk/fastmcp-experimental-transforms-code_mode"
+          "python-sdk/fastmcp-experimental-transforms-code_mode",
+          "python-sdk/fastmcp-experimental-transforms-jev_search"
         ]
       }
     ]
@@ -235,6 +238,7 @@
         "group": "mixins",
         "pages": [
           "python-sdk/fastmcp-server-mixins-__init__",
+          "python-sdk/fastmcp-server-mixins-extensions",
           "python-sdk/fastmcp-server-mixins-lifespan",
           "python-sdk/fastmcp-server-mixins-mcp_operations",
           "python-sdk/fastmcp-server-mixins-transport"
@@ -317,6 +321,17 @@
           "python-sdk/fastmcp-server-transforms-visibility"
         ]
       }
+    ]
+  },
+  {
+    "group": "fastmcp.skills",
+    "pages": [
+      "python-sdk/fastmcp-skills-__init__",
+      "python-sdk/fastmcp-skills-client",
+      "python-sdk/fastmcp-skills-extension",
+      "python-sdk/fastmcp-skills-models",
+      "python-sdk/fastmcp-skills-provider",
+      "python-sdk/fastmcp-skills-skill"
     ]
   },
   {

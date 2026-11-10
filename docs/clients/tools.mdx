@@ -116,9 +116,13 @@ async with client:
 <ResponseField name=".is_error" type="bool">
   Boolean indicating if the tool execution failed.
 </ResponseField>
+
+<ResponseField name=".meta" type="dict[str, Any] | None">
+  The `_meta` object the server attached to the result, if any.
+</ResponseField>
 </Card>
 
-For tools without output schemas or when deserialization fails, `.data` will be `None`. Fall back to content blocks in that case:
+Structured content without an output schema is returned as a dictionary in `.data`, including an empty object (`{}`). When structured content is absent or deserialization fails, `.data` is `None`. Fall back to content blocks in that case:
 
 ```python
 async with client:
@@ -190,6 +194,19 @@ async with client:
 ```
 
 See [Client Metadata](/servers/context#client-metadata) to learn how servers access this data.
+
+## Version Selection
+
+<VersionBadge version="3.0.0" />
+
+When a server exposes multiple versions of a tool, `call_tool()` runs the highest by default. Pass `version` to call a specific one:
+
+```python
+async with client:
+    result = await client.call_tool("calculate", {"x": 1, "y": 2}, version="1.0")
+```
+
+See [Version Discovery](/servers/versioning#version-discovery) for how to discover available versions.
 
 ## Raw Protocol Access
 

@@ -9,7 +9,7 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.0.0" />
 
-`fastmcp list` and `fastmcp call` are general-purpose — you always specify the server, the tool name, and the arguments from scratch. `fastmcp generate-cli` goes further: it connects to a server, reads its tool schemas, and writes a standalone Python script where every tool is a proper subcommand with typed flags, help text, and tab completion. The result is a CLI that feels hand-written for that specific server.
+`fastmcp list` and `fastmcp call` are general-purpose — you always specify the server, the tool name, and the arguments from scratch. `fastmcp generate-cli` goes further: it connects to a server, reads its tool schemas, and writes a standalone Python script where every tool is a proper subcommand with typed flags and help text. The result is a CLI that feels hand-written for that specific server.
 
 MCP tool schemas already contain everything a CLI framework needs — parameter names, types, descriptions, required/optional status, and defaults. `generate-cli` maps that into [cyclopts](https://cyclopts.readthedocs.io/) commands, so JSON Schema types become Python type annotations, descriptions become `--help` text, and required parameters become mandatory flags.
 
@@ -33,28 +33,30 @@ fastmcp generate-cli weather -f
 
 The generated script is a regular Python file — executable, editable, and yours:
 
-```
+```text
 $ python cli.py call-tool --help
-Usage: weather-cli call-tool COMMAND
+Usage: weather call-tool COMMAND
 
 Call a tool on the server
 
-Commands:
-  get_forecast  Get the weather forecast for a city.
-  search_city   Search for a city by name.
+╭─ Commands ──────────────────────────────────────────────────╮
+│ get_forecast  Get the weather forecast for a city.          │
+│ search_city   Search for a city by name.                    │
+╰─────────────────────────────────────────────────────────────╯
 ```
 
 Each tool has typed parameters with help text pulled directly from the server's schema:
 
-```
+```text
 $ python cli.py call-tool get_forecast --help
-Usage: weather-cli call-tool get_forecast [OPTIONS]
+Usage: weather call-tool get_forecast --city STR [OPTIONS]
 
 Get the weather forecast for a city.
 
-Options:
-  --city    [str]  City name (required)
-  --days    [int]  Number of forecast days (default: 3)
+╭─ Parameters ────────────────────────────────────────────────╮
+│ *  --city  City name [required]                             │
+│    --days  Number of forecast days [default: 3]             │
+╰─────────────────────────────────────────────────────────────╯
 ```
 
 Beyond tool commands, the script includes generic MCP operations — `list-tools`, `list-resources`, `read-resource`, `list-prompts`, and `get-prompt` — that always reflect the server's current state, even if tools have changed since generation.
@@ -83,9 +85,11 @@ python cli.py call-tool create_user \
   --metadata '{"role": "admin", "dept": "engineering"}'
 ```
 
+For JSON-encoded parameters whose schema permits `null`, pass `--parameter null` to send an explicit null value. Omitting an optional flag remains distinct and allows its default to apply.
+
 ## Agent Skill
 
-Alongside the CLI script, `generate-cli` writes a `SKILL.md` file — a [Claude Code agent skill](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/skills) that documents every tool's exact invocation syntax, parameter flags, types, and descriptions. An agent can pick up the CLI immediately without running `--help` or experimenting with flag names.
+Alongside the CLI script, `generate-cli` writes a `SKILL.md` file — a [Claude Code agent skill](https://code.claude.com/docs/en/skills) that documents every tool's exact invocation syntax, parameter flags, types, and descriptions. An agent can pick up the CLI immediately without running `--help` or experimenting with flag names.
 
 To skip skill generation:
 

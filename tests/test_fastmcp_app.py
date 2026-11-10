@@ -11,7 +11,7 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 from prefab_ui.app import ResolvedTool
@@ -491,9 +491,9 @@ class TestCallToolAppRouting:
         assert result.content[0].text == "saved bob"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_hashed_name_survives_namespace_mount(self):
-        """The hashed-name path bypasses display-layer transforms entirely.
-        A FastMCPApp mounted under a Namespace transform still has its
-        backend tools reachable via the same hash."""
+        """The hash identifies a tool independently of its name. A FastMCPApp
+        mounted under a Namespace transform still has its backend tools
+        reachable via the same hash."""
         from fastmcp.server.providers.addressing import hashed_backend_name
 
         app = FastMCPApp("crm")
@@ -546,30 +546,6 @@ class TestCallToolAppRouting:
                 await server.call_tool(hashed_backend_name("test", "secret"), {})
         finally:
             _current_transport.reset(token)
-
-    async def test_hashed_name_dispatch_skips_display_name_resolution(self):
-        """A hashed-name call resolves via get_tool_by_hash without going
-        through get_tool, so it never pays the versioned-fallback scan."""
-        from fastmcp.server.providers.addressing import hashed_backend_name
-
-        app = FastMCPApp("contacts")
-
-        @app.tool()
-        def save(name: str) -> str:
-            return f"saved {name}"
-
-        server = FastMCP("Platform")
-        server.add_provider(app)
-
-        with patch.object(
-            server, "get_tool", new=AsyncMock(wraps=server.get_tool)
-        ) as get_tool_spy:
-            result = await server.call_tool(
-                hashed_backend_name("contacts", "save"), {"name": "alice"}
-            )
-
-        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
-        get_tool_spy.assert_not_called()
 
     async def test_two_apps_same_tool_name_routed_by_address(self):
         """Two FastMCPApps each with a `save` tool live at distinct
@@ -899,9 +875,8 @@ class TestComposition:
         names = {t.name for t in tools}
         assert names == {"dashboard", "save"}
 
-    async def test_ui_synthesizes_per_tool_renderer_resource(self):
-        """Each @app.ui() tool gets its own renderer resource synthesized
-        on demand from the server's address registry."""
+    async def test_ui_synthesizes_renderer_resource(self):
+        """An @app.ui() tool gets its renderer resource synthesized on demand."""
         app = FastMCPApp("test")
 
         @app.ui()
@@ -912,7 +887,7 @@ class TestComposition:
         server.add_provider(app)
 
         resources = list(await server.list_resources())
-        prefab = [r for r in resources if "prefab/tool" in str(r.uri)]
+        prefab = [r for r in resources if "prefab/renderer" in str(r.uri)]
         assert len(prefab) == 1
 
 
