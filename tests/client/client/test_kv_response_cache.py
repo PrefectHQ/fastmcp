@@ -179,6 +179,45 @@ class TestClear:
         assert await store_a.get(key) is None
         assert await store_b.get(key) is not None  # untouched
 
+    async def test_clear_removes_more_than_one_page_of_keys(self):
+        """Backends list at most one page of keys per call; clear() drains them all."""
+        backend = MemoryStore()
+        store = KeyValueResponseCacheStore(backend, collection="cache")
+        key = _key("p1")
+        await store.set(
+            key,
+            CacheEntry(
+                value=_tools_result(), scope="public", expires_at=time.time() + 60
+            ),
+        )
+        filler = [f"filler-{i}" for i in range(10_050)]
+        await backend.put_many(
+            filler, [{"v": i} for i in range(len(filler))], collection="cache"
+        )
+
+        await store.clear()
+
+        assert await store.get(key) is None
+        assert await backend.keys(collection="cache") == []
+
+    async def test_clear_stops_when_backend_deletes_nothing(self):
+        """A backend that keeps listing undeletable keys can't make clear() hang."""
+
+        class UndeletableStore(MemoryStore):
+            async def delete(self, key, *, collection=None) -> bool:
+                return False
+
+            async def delete_many(self, keys, *, collection=None) -> int:
+                return 0
+
+        backend = UndeletableStore()
+        store = KeyValueResponseCacheStore(backend, collection="cache")
+        await backend.put("stuck", {"v": 1}, collection="cache")
+
+        await store.clear()
+
+        assert await backend.keys(collection="cache") == ["stuck"]
+
 
 class TestAllowlist:
     async def test_unknown_type_tag_is_a_miss(self):
