@@ -2,7 +2,7 @@
 
 > **Audience**: LLM-driven engineering agents and human developers
 
-FastMCP is a comprehensive Python framework (Python ≥3.10) for building Model Context Protocol (MCP) servers and clients.
+FastMCP is a comprehensive Python framework (Python ≥3.11) for building Model Context Protocol (MCP) servers and clients.
 
 ## Required Development Workflow
 
@@ -129,7 +129,7 @@ Load the `release` skill to cut one; it holds the procedure. The policy it imple
 - The handwritten notes need the maintainer's sign-off: one or two sentences for a patch, narrative prose for a point release.
 - Generate the changelog from the last stable tag (`previous_tag_name` in the notes API, or `--notes-start-tag` when using CLI generation) so a prerelease tag never truncates it. Complete contributor attribution before publication and publish those completed notes with `--notes-file`.
 - Merge the docs changelog PR on the release branch immediately *before* tagging, so the entry is in the tagged commit.
-- gofastmcp.com serves the `published-docs` branch, which accepts changes only through PRs.
+- gofastmcp.com/docs serves Mintlify docs from `published-docs`, which accepts changes only through PRs. `main` is the docs authoring source. The root website is maintained separately in `PrefectHQ/gofastmcp-website` and deployed by Vercel from its `main` branch.
 
 ### Commit Messages and Agent Attribution
 
@@ -162,7 +162,7 @@ Load the `release` skill to cut one; it holds the procedure. The policy it imple
 
 ### Code Standards
 
-- Python ≥ 3.10 with full type annotations
+- Python ≥ 3.11 with full type annotations
 - Follow existing patterns and maintain consistency
 - **Prioritize readable, understandable code** - clarity over cleverness
 - Avoid obfuscated or confusing patterns even if they're shorter

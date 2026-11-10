@@ -92,8 +92,6 @@ class SkillsExtension(ServerExtension):
                     "use SkillCatalogProvider to publish Skill objects"
                 )
 
-            provider._validate_skill_source()
-
     @property
     def _sources(self) -> tuple[_SkillSource, ...]:
         if self._providers is not None:
@@ -119,10 +117,6 @@ class SkillsExtension(ServerExtension):
             if source is not None:
                 sources.append(source)
             elif isinstance(provider, _SkillSource) and not provider.transforms:
-                try:
-                    provider._validate_skill_source()
-                except ValueError:
-                    continue
                 sources.append(provider)
         return tuple(sources)
 

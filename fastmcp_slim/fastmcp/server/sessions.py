@@ -56,7 +56,7 @@ from typing import (
 from uuid import uuid4
 
 from mcp.server.auth.provider import principal_components
-from uncalled_for import Dependency
+from uncalled_for import Provider as DependencyProvider
 
 from fastmcp.exceptions import FastMCPError
 from fastmcp.server.dependencies import get_access_token, get_server, get_session
@@ -401,7 +401,7 @@ def _current_user_session() -> UserSession | None:
     )
 
 
-class _CurrentSession(Dependency["Session"]):
+class _CurrentSession(DependencyProvider["Session"]):
     """Dependency that injects a per-user `Session` keyed by the request principal.
 
     Mirrors `_CurrentContext`: a `session: UserSession` parameter is rewritten to
@@ -425,7 +425,7 @@ class _CurrentSession(Dependency["Session"]):
         return None
 
 
-class _OptionalCurrentSession(Dependency["Session | None"]):
+class _OptionalCurrentSession(DependencyProvider["Session | None"]):
     """Dependency for an *optional* per-user session (`session: UserSession | None`).
 
     Mirrors `_OptionalCurrentContext`: when the request carries no authenticated

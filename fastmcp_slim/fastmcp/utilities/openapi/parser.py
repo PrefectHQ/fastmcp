@@ -24,7 +24,6 @@ from openapi_pydantic.v3.v3_0 import Response as Response_30
 from openapi_pydantic.v3.v3_0 import Schema as Schema_30
 from pydantic import BaseModel, ValidationError
 
-from fastmcp.utilities.json_schema import ref_target_name
 from fastmcp.utilities.logging import get_logger
 
 from .models import (
@@ -38,6 +37,7 @@ from .models import (
 from .schemas import (
     _combine_schemas_and_map_params,
     _discriminator_target_name,
+    _ref_component_name,
     _replace_ref_with_defs,
 )
 
@@ -530,7 +530,13 @@ class OpenAPIParser(
                                 if isinstance(ref_str, str) and ref_str.startswith(
                                     "#/components/schemas/"
                                 ):
-                                    top_level_schema_name = ref_str.split("/")[-1]
+                                    pointer = ref_str.removeprefix(
+                                        "#/components/schemas/"
+                                    )
+                                    # Only a whole component is a top-level
+                                    # schema; a pointer into one is not.
+                                    if "/" not in pointer:
+                                        top_level_schema_name = pointer
 
                             schema_dict = self._extract_schema_as_dict(media_schema)
                             # Add marker for top-level schema if it was a ref
@@ -619,13 +625,8 @@ class OpenAPIParser(
             if isinstance(obj, dict):
                 if "$ref" in obj and isinstance(obj["$ref"], str):
                     ref = obj["$ref"]
-                    # Handle both converted and unconverted refs. Decode the
-                    # pointer name: schemas are keyed by their decoded names,
-                    # and escaped or percent-encoded references carry the raw
-                    # encoding in the pointer text.
-                    schema_name = ref_target_name(
-                        ref, roots=(("$defs",), ("components", "schemas"))
-                    )
+                    # Handle both converted and unconverted refs
+                    schema_name = _ref_component_name(ref)
                     if schema_name is None:
                         return
 

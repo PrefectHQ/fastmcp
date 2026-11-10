@@ -10,8 +10,12 @@ the current major and `release/3.x` for 3.x maintenance. Every step runs against
 branch, including the docs PR, so a maintenance entry lands in the maintenance
 branch's own changelog above its newest 3.x entry. The tag triggers `Publish fastmcp-slim to PyPI`;
 its success fans out to `fastmcp-tasks`, `fastmcp-remote`, and `fastmcp`, and the
-`fastmcp` publish job opens the `published-docs` PR that makes gofastmcp.com reflect
-the release. Two hand-maintained docs files mirror every release and must be on the
+`fastmcp` publish job opens the `published-docs` PR for stable release-triggered
+publication when the release SHA is an ancestor of the default branch. Prereleases
+and manual package-workflow dispatch do not open that PR. Mintlify builds `docs/`
+from `published-docs` at `https://gofastmcp.com/docs`; the separate
+`PrefectHQ/gofastmcp-website` repository deploys its `main` to Vercel for the landing
+page and `/docs` proxy. Two hand-maintained docs files mirror every release and must be on the
 tagged commit, so the docs PR always lands first. PyPI releases are immutable; a bad
 one gets a follow-up patch, never a re-tag.
 
@@ -142,8 +146,9 @@ one gets a follow-up patch, never a re-tag.
    Confirm each package with `curl -fsS https://pypi.org/pypi/<pkg>/<new>/json | jq .info.version`;
    the unversioned endpoint lags a few minutes.
 
-7. **Publish docs** (`main` releases only; maintenance releases skip this step and
-   leave gofastmcp.com on the current major). When the `fastmcp` run finishes, its last job has opened
+7. **Publish docs** (eligible stable releases from the default-branch lineage only;
+   maintenance releases leave gofastmcp.com/docs on the current major). After a
+   successful eligible `fastmcp` run, its last job has opened
    `Publish FastMCP v<new> docs` against `published-docs`:
 
    ```bash
@@ -151,6 +156,8 @@ one gets a follow-up patch, never a re-tag.
    gh pr merge <n> --merge --admin
    ```
 
+   Before merging, apply the publication checks below to the PR's exact release
+   tree; a later fix on `main` does not change an existing release candidate.
    Merging pushes `published-docs`, which runs the `Deploy docs` workflow: it asks
    Mintlify's admin API for a deployment of the tip and waits for the verdict.
    That run is the signal that the site changed; the merge alone proves nothing.
@@ -165,13 +172,16 @@ one gets a follow-up patch, never a re-tag.
    `gh workflow run deploy-docs.yml --ref published-docs` once their incident clears.
 
    Verify through the markdown endpoints, which bypass the HTML edge cache:
-   `curl -fsS https://gofastmcp.com/changelog.md | grep -c "<pun>"`, and the same
+   `curl -fsS https://gofastmcp.com/docs/changelog.md | grep -c "<pun>"`, and the same
    for `updates.md` and any page the release touched.
 
 ## Publishing docs by hand
 
 Used when a deploy failed and was fixed on `main`, or for a docs change outside a
 release. The publication commit must match `main`'s tree exactly.
+
+Before preparing the PR, apply the publication checks below to the selected main
+tree. This publishes the entire tree, not just the changed page.
 
 ```bash
 git fetch origin main published-docs
@@ -184,6 +194,30 @@ gh pr merge <n> --merge --admin
 ```
 
 Then watch the `Deploy docs` run and verify the endpoints as in step 7.
+
+## Publication checks
+
+Invoking this skill or requesting documentation alone does not authorize a merge,
+package release, docs publication, or infrastructure change. Use the maintainer's
+explicit scope. Follow repository review policy unless the maintainer explicitly
+authorizes an available admin merge; example flags alone do not grant permission.
+An agent review is not an independent human GitHub approval.
+
+Compare `docs/docs.json` in the actual publication candidate (the release SHA for
+an automatic PR, selected main SHA for a manual PR) with `published-docs`. Preserve
+`logo.href = https://gofastmcp.com`,
+`seo.metatags.canonical = https://gofastmcp.com/docs`, and
+`seo.organization.logo = https://gofastmcp.com/docs/assets/brand/wordmark.png`.
+If missing, hold publication and reconcile the source and candidate through review.
+A main-only fix does not repair an already generated release tree.
+
+After Deploy docs succeeds, verify changed pages and their `.md` forms under
+`/docs`, search, assets, and version switching. For routing changes also verify
+old links redirect to one `/docs` prefix with queries and browser anchors intact,
+production canonicals, and root `/mcp` initialization, tools/list, and read-only
+search. Ordinary publication leaves domains and Mintlify's `/docs` base path alone.
+Manual dispatch or rerunning an old Deploy docs run deploys the configured tip;
+it does not restore that run's historical tree.
 
 ## Template: notes file for a patch
 
@@ -212,5 +246,5 @@ connections instead of raising.
 
 Each of these prints a count above zero:
 `curl -fsS https://pypi.org/pypi/fastmcp/<new>/json | grep -c '"version"'`,
-`curl -fsS https://gofastmcp.com/changelog.md | grep -c "<pun>"`,
-`curl -fsS https://gofastmcp.com/updates.md | grep -c "<pun>"`.
+`curl -fsS https://gofastmcp.com/docs/changelog.md | grep -c "<pun>"`,
+`curl -fsS https://gofastmcp.com/docs/updates.md | grep -c "<pun>"`.

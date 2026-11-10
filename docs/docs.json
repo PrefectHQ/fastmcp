@@ -59,6 +59,7 @@
     "drilldown": false
   },
   "logo": {
+    "href": "https://gofastmcp.com",
     "dark": "/assets/brand/wordmark-white.png",
     "light": "/assets/brand/wordmark.png"
   },
@@ -416,7 +417,7 @@
             "icon": "code"
           }
         ],
-        "version": "v4.0.5"
+        "version": "v4"
       },
       {
         "$ref": "./v3-navigation.json"
@@ -561,7 +562,24 @@
     }
   ],
   "search": {
-    "prompt": "Search the docs..."
+    "prompt": "Search..."
+  },
+  "seo": {
+    "metatags": {
+      "canonical": "https://gofastmcp.com/docs"
+    },
+    "organization": {
+      "name": "FastMCP",
+      "legalName": "Prefect Technologies, Inc.",
+      "url": "https://gofastmcp.com",
+      "logo": "https://gofastmcp.com/docs/assets/brand/wordmark.png",
+      "sameAs": [
+        "https://github.com/PrefectHQ/fastmcp",
+        "https://x.com/fastmcp",
+        "https://bsky.app/profile/gofastmcp.com",
+        "https://www.prefect.io"
+      ]
+    }
   },
   "styling": {
     "codeblocks": {
