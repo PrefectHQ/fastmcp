@@ -7,13 +7,12 @@ from contextlib import asynccontextmanager
 
 import pytest
 from pydantic import BaseModel
-from pydantic import ValidationError as PydanticValidationError
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ValidationError
-from fastmcp.tools.function_tool import FunctionTool
+from fastmcp.tools.function_tool import FunctionTool, _ToolBodyError
 
 
 @pytest.mark.parametrize("run_in_thread", [False, True])
@@ -108,7 +107,7 @@ async def test_generator_failure_closes_dependency_after_generator(failure: str)
         with pytest.raises(asyncio.CancelledError):
             await task
     else:
-        error = RuntimeError if failure == "exception" else PydanticValidationError
+        error = RuntimeError if failure == "exception" else _ToolBodyError
         with pytest.raises(error):
             await tool.run({})
     assert events == ["enter", "body", "generator-finally", "exit"]

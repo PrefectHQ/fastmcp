@@ -35,7 +35,7 @@ Usage::
 
 ## Classes
 
-### `FastMCPApp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L149" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FastMCPApp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L159" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A Provider that represents an MCP application.
@@ -48,19 +48,19 @@ can find them by original name even when transforms have been applied.
 
 **Methods:**
 
-#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L173" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self, name_or_fn: F) -> F
 ```
 
-#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L185" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L195" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self, name_or_fn: str | None = None) -> Callable[[F], F]
 ```
 
-#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L196" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L206" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self, name_or_fn: str | AnyFunction | None = None) -> Any
@@ -70,6 +70,9 @@ Register a backend tool that the UI calls via CallTool.
 
 Backend tools default to ``visibility=["app"]``.  Pass ``model=True``
 to also expose the tool to the model (``visibility=["app", "model"]``).
+
+Names matching `__&lt;12 lowercase hex&gt;_&lt;name&gt;` are reserved for generated
+tool addresses and raise `ValueError` at registration.
 
 Supports multiple calling patterns::
 
@@ -83,19 +86,19 @@ Supports multiple calling patterns::
     def save(name: str): ...
 
 
-#### `ui` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L266" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `ui` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L280" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 ui(self, name_or_fn: F) -> F
 ```
 
-#### `ui` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L281" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `ui` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L295" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 ui(self, name_or_fn: str | None = None) -> Callable[[F], F]
 ```
 
-#### `ui` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L295" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `ui` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L309" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 ui(self, name_or_fn: str | AnyFunction | None = None) -> Any
@@ -106,6 +109,9 @@ Register a UI entry-point tool that the model calls.
 Entry-point tools default to ``visibility=["model"]`` and auto-wire
 the Prefab renderer resource and CSP. They are tagged with the app
 name so structured content includes ``_meta.fastmcp.app``.
+
+Names matching `__&lt;12 lowercase hex&gt;_&lt;name&gt;` are reserved for generated
+tool addresses and raise `ValueError` at registration.
 
 Supports multiple calling patterns::
 
@@ -119,7 +125,7 @@ Supports multiple calling patterns::
     def dashboard() -> Component: ...
 
 
-#### `add_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L373" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L391" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_tool(self, tool: Tool | Callable[..., Any]) -> Tool
@@ -127,16 +133,18 @@ add_tool(self, tool: Tool | Callable[..., Any]) -> Tool
 
 Add a tool to this app programmatically.
 
-The tool is tagged with this app's name for routing.
+The tool is tagged with this app's name for routing. Names matching
+`__<12 lowercase hex>_<name>` are reserved for generated tool addresses
+and raise `ValueError` at registration.
 
 
-#### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L432" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L453" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-lifespan(self) -> AsyncIterator[None]
+lifespan(self) -> AsyncGenerator[None, None]
 ```
 
-#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L440" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/app.py#L461" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, transport: Literal['stdio', 'http', 'sse', 'streamable-http'] | None = None, **kwargs: Any) -> None
