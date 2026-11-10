@@ -128,9 +128,8 @@ class ToolDecoratorMixin:
                 task setting (plain functions, or functions whose decorator
                 left `task` unset). `None` keeps the historical default of
                 `False` (forbidden). An already-constructed `Tool` instance
-                is registered as-is — its `task_config` is used as-is, whether or
-                not it was set explicitly (e.g. `Tool.from_function(fn)`
-                without `task=` also materializes `forbidden`).
+                keeps its `task_config`, whether or not it was set explicitly
+                (e.g. `Tool.from_function(fn)` without `task=` is `forbidden`).
         """
         enabled = True
         if not isinstance(tool, Tool):
@@ -174,10 +173,7 @@ class ToolDecoratorMixin:
                     run_in_thread=fmeta.run_in_thread,
                 )
             else:
-                tool = Tool.from_function(
-                    tool,
-                    task=default_task if default_task is not None else None,
-                )
+                tool = Tool.from_function(tool, task=default_task)
         added = self._add_component(tool)
         if added is not tool:
             # on_duplicate="ignore" kept the existing tool; the new one was

@@ -28,6 +28,7 @@ async def test_add_tool_inherits_server_tasks_default():
     mcp = FastMCP("test", tasks=True)
     mcp.add_tool(_async_fn)
     tool = await mcp.get_tool("_async_fn")
+    assert tool is not None
     assert tool.task_config.mode == "optional"
 
 
@@ -35,6 +36,7 @@ async def test_tools_constructor_param_inherits_server_tasks_default():
     """A plain function passed via tools=[...] inherits tasks=True as optional."""
     mcp = FastMCP("test", tasks=True, tools=[_async_fn])
     tool = await mcp.get_tool("_async_fn")
+    assert tool is not None
     assert tool.task_config.mode == "optional"
 
 
@@ -48,6 +50,7 @@ async def test_add_tool_standalone_decorator_inherits_server_tasks_default():
     mcp = FastMCP("test", tasks=True)
     mcp.add_tool(my_tool)
     tool = await mcp.get_tool("my_tool")
+    assert tool is not None
     assert tool.task_config.mode == "optional"
 
 
@@ -61,6 +64,7 @@ async def test_add_tool_explicit_task_false_is_not_overridden():
     mcp = FastMCP("test", tasks=True)
     mcp.add_tool(my_tool)
     tool = await mcp.get_tool("my_tool")
+    assert tool is not None
     assert tool.task_config.mode == "forbidden"
 
 
@@ -69,6 +73,7 @@ async def test_add_tool_prebuilt_tool_instance_is_not_overridden():
     mcp = FastMCP("test", tasks=True)
     mcp.add_tool(Tool.from_function(_async_fn))
     tool = await mcp.get_tool("_async_fn")
+    assert tool is not None
     assert tool.task_config.mode == "forbidden"
 
 
@@ -84,4 +89,5 @@ async def test_add_tool_sync_function_allowed_without_tasks_default():
     mcp = FastMCP("test")
     mcp.add_tool(_sync_fn)
     tool = await mcp.get_tool("_sync_fn")
+    assert tool is not None
     assert tool.task_config.mode == "forbidden"
