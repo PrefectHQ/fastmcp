@@ -1577,3 +1577,71 @@ class TestAllOfReferenceRequestBodies:
             "petType": "cat",
             "meowVolume": 11,
         }
+
+
+class TestNonIdentifierPathParameterNames:
+    """Resource templates for path parameters whose names are not Python
+    identifiers stay readable (#6150). OpenAPI allows names like `{$top}`,
+    `x.y`, or `1id` in path templates."""
+
+    @pytest.fixture
+    def non_identifier_spec(self):
+        def get_op(op_id, param):
+            return {
+                "get": {
+                    "operationId": op_id,
+                    "summary": op_id,
+                    "parameters": [
+                        {
+                            "name": param,
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+
+        return {
+            "openapi": "3.0.3",
+            "info": {"title": "t", "version": "1"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/a/{top}": get_op("plain", "top"),
+                "/b/{$top}": get_op("dollar", "$top"),
+                "/c/{x.y}": get_op("dot", "x.y"),
+                "/d/{1id}": get_op("digit", "1id"),
+            },
+        }
+
+    async def test_non_identifier_path_params_listed_and_readable(
+        self, non_identifier_spec
+    ):
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+
+        def respond(request: httpx2.Request) -> httpx2.Response:
+            return httpx2.Response(200, json={"path": request.url.path})
+
+        async with httpx2.AsyncClient(
+            base_url="https://api.example.com",
+            transport=httpx2.MockTransport(respond),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=non_identifier_spec, client=client, route_maps=route_maps
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+            async with Client(mcp) as mcp_client:
+                templates = await mcp_client.list_resource_templates()
+                assert len(templates) == 4
+
+                expected_paths = {
+                    "resource://plain/x": "/a/x",
+                    "resource://dollar/x": "/b/x",
+                    "resource://dot/x": "/c/x",
+                    "resource://digit/x": "/d/x",
+                }
+                for uri, path in expected_paths.items():
+                    result = (await mcp_client.read_resource(uri))[0]
+                    assert json.loads(result.text) == {"path": path}
