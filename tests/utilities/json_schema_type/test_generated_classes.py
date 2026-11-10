@@ -95,7 +95,7 @@ class TestDescriptiveTitles:
 
         item = TypeAdapter(generated).validate_python(NESTED_ITEMS_VALUE)
 
-        child = item.children[0]  # ty: ignore[unresolved-attribute]
+        child = item.children[0]
         assert isinstance(child, generated)
         assert child.name == "b"
 
@@ -136,7 +136,7 @@ class TestDescriptiveTitles:
 
         item = TypeAdapter(generated).validate_python({"name": "a", "children": value})
 
-        nested = item.children  # ty: ignore[unresolved-attribute]
+        nested = item.children
         child = nested["first"] if isinstance(nested, dict) else nested
         child = child[0] if isinstance(child, list) else child
         assert isinstance(child, generated)
@@ -515,7 +515,7 @@ class TestConversionLimits:
         monkeypatch.setattr(json_schema_type, "_resolve_ref", counting_resolve)
         generated = json_schema_to_type(fanout_schema(depth=8, fanout=3))
 
-        assert TypeAdapter(generated).validate_python({"x": "ok"}).x == "ok"  # ty: ignore[unresolved-attribute]
+        assert TypeAdapter(generated).validate_python({"x": "ok"}).x == "ok"
         assert calls <= 9
 
     def test_long_reference_chain_is_rejected(self):
@@ -575,7 +575,7 @@ class TestConversionLimits:
             {"child": value}
         )
 
-        node: Any = instance.child  # ty: ignore[unresolved-attribute]
+        node: Any = instance.child
         for _ in range(depth):
             node = node.child
         assert node.leaf == "ok"
@@ -701,8 +701,8 @@ class TestClassCache:
 
         string_value = as_string.validate_python({"nested": {"value": "a"}})
         integer_value = as_integer.validate_python({"nested": {"value": 3}})
-        assert string_value.nested.value == "a"  # ty: ignore[unresolved-attribute]
-        assert integer_value.nested.value == 3  # ty: ignore[unresolved-attribute]
+        assert string_value.nested.value == "a"
+        assert integer_value.nested.value == 3
 
     def test_classes_from_one_conversion_are_charged_for_its_root_schema(
         self, monkeypatch: pytest.MonkeyPatch
