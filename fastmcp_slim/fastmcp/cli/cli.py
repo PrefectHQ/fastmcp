@@ -184,7 +184,7 @@ async def inspector(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_requirements: Annotated[
@@ -260,10 +260,9 @@ async def inspector(
             sys.exit(1)
         assert config is not None  # For type checker
 
-        # Skip server-object validation in module mode — the module
-        # manages its own startup and may not expose an importable server.
-        if not module:
-            await config.source.load_server()
+        # Let the child server load the source. Importing it here would happen
+        # outside the configured uv environment and would invoke factories a
+        # second time when `fastmcp run` starts.
 
         env_vars = {}
         if ui_port:
@@ -451,7 +450,7 @@ async def run(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_packages: Annotated[
@@ -811,7 +810,7 @@ async def inspect(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_packages: Annotated[

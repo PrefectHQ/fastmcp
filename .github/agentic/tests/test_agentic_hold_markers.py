@@ -1,9 +1,8 @@
 import pytest
 
+from flows.agentic_github import GitHub
 from flows.agentic_intake import held, route_intake
 from flows.agentic_review_publication import post_review
-from flows.agentic_stack import StackLayer, StackSpec
-from flows.agentic_stack_publication import GitHub, pr_body, verify_pr
 from tests.test_agentic_review_publication import BASE, BOT, HEAD, body
 
 SCHEMA_BODIES = [
@@ -68,54 +67,3 @@ def test_author_holds_still_block_review_delivery(evidence, endpoint, hold):
             GitHub("test-installation", url), 7, HEAD, BASE, BOT, body(), lambda: None
         )
     assert state["posts"] == []
-
-
-@pytest.mark.parametrize("description", SCHEMA_BODIES)
-def test_schema_versions_do_not_prevent_verifying_prepared_draft(description):
-    layer = StackLayer(
-        issue_number=2692,
-        patch="patch",
-        title="Repair enums",
-        body=description,
-        credits=[],
-        evidence_revision="c" * 64,
-    )
-    spec = StackSpec(
-        batch_id="batch",
-        group="schema",
-        trunk_ref="main",
-        trunk_sha=BASE,
-        created_at="2026-10-28T00:00:00Z",
-        publisher_login="automation",
-        publisher_id=10,
-        layers=[layer],
-    )
-    manifest = {
-        "branch": spec.branch(layer),
-        "head_sha": HEAD,
-        "base_ref": "main",
-        "parent_sha": BASE,
-    }
-    pr = {
-        "state": "open",
-        "draft": True,
-        "merged_at": None,
-        "title": layer.title,
-        "body": pr_body(layer),
-        "user": {"id": 10},
-        "labels": [],
-        "head": {
-            "ref": manifest["branch"],
-            "sha": HEAD,
-            "repo": {"full_name": "PrefectHQ/fastmcp"},
-        },
-        "base": {
-            "ref": "main",
-            "sha": BASE,
-            "repo": {"full_name": "PrefectHQ/fastmcp"},
-        },
-    }
-    verify_pr(pr, spec, layer, manifest)
-    pr["labels"] = [{"name": "DNM"}]
-    with pytest.raises(ValueError, match="Explicit hold"):
-        verify_pr(pr, spec, layer, manifest)

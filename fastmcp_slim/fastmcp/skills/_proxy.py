@@ -47,9 +47,6 @@ class _ProxiedSkills:
     def __init__(self, provider: ProxyProvider) -> None:
         self._provider = provider
 
-    def _validate_skill_source(self) -> None:
-        return None
-
     def _owns_skill_resource(self, uri: str) -> bool:
         return uri.startswith("skill://")
 

@@ -271,6 +271,27 @@ async def test_arg_transform_type_precedence_runtime():
     assert "result: 8" in result.content[0].text
 
 
+async def test_hidden_rename_does_not_leak_factory_into_visible_sibling():
+    """A hidden parameter renamed to a visible sibling's name must not
+    override that sibling's schema default with its factory value."""
+
+    @Tool.from_function
+    def base_tool(x: str = "x-default", y: str = "y-default") -> str:
+        return f"{x}|{y}"
+
+    new_tool = Tool.from_tool(
+        base_tool,
+        transform_args={
+            "x": ArgTransform(name="y", hide=True, default_factory=lambda: "factory")
+        },
+    )
+
+    result = await new_tool.run(arguments={})
+    assert isinstance(result.content[0], TextContent)
+    # x is forwarded its factory value; y must keep its schema default
+    assert result.content[0].text == "factory|y-default"
+
+
 async def test_arg_transform_default_factory():
     """Test ArgTransform with default_factory for hidden parameters."""
     import asyncio

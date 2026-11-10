@@ -369,7 +369,7 @@ async def _terminate_process(process: asyncio.subprocess.Process) -> None:
         try:
             await asyncio.wait_for(process.wait(), timeout=3.0)
             return
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
 
         # Force kill the entire process group

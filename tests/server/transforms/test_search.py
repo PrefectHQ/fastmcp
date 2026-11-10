@@ -369,6 +369,25 @@ class TestBM25Search:
         assert results == [updated]
         assert transform._index is index
 
+    async def test_search_rebuilds_when_names_change_but_searchable_text_matches(
+        self,
+    ) -> None:
+        def action() -> str:
+            return "ok"
+
+        first = Tool.from_function(action, name="foo", description="bar")
+        other = Tool.from_function(action, name="baz")
+        # "foo" with description "bar" and the bare name "foo bar" produce the
+        # same searchable text, so a text-only staleness check would keep the
+        # stale name list and fail to resolve the renamed tool.
+        renamed = Tool.from_function(action, name="foo bar")
+
+        transform = BM25SearchTransform()
+        assert await transform._search([first, other], "bar") == [first]
+
+        results = await transform._search([renamed, other], "bar")
+        assert results == [renamed]
+
     async def test_search_rebuilds_when_description_contains_catalog_delimiter(
         self,
     ) -> None:

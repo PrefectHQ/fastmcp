@@ -7,15 +7,14 @@ from copy import deepcopy
 import httpx
 
 from flows.agentic_review_publication import before_delivery
-from flows.agentic_stack_policy import publication_revision, review_revision
+from flows.agentic_stack_policy import review_revision
 
 
-def change_kind(original: dict, current: dict, *, for_review: bool = True) -> str:
-    revision = review_revision if for_review else publication_revision
-    if revision(original) == revision(current):
+def change_kind(original: dict, current: dict) -> str:
+    if review_revision(original) == review_revision(current):
         return "unchanged"
     pinned = {**current, "base_sha": original["base_sha"]}
-    if revision(original) == revision(pinned):
+    if review_revision(original) == review_revision(pinned):
         return "baseline_changed"
     return "stale"
 
@@ -54,11 +53,7 @@ def revalidate(
                     own = [r for r in receipts if r["reviewer_login"] == reviewer]
                     original = before_delivery(original, own, reviewer)
                     current = before_delivery(current, own, reviewer)
-                status = change_kind(
-                    original,
-                    current,
-                    for_review=all(name != "stacks" for name, _ in outcomes),
-                )
+                status = change_kind(original, current)
                 if status == "unchanged":
                     continue
                 if status == "baseline_changed":
