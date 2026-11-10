@@ -180,6 +180,21 @@ class TestResourceOperations:
             assert isinstance(result[0], mt.TextResourceContents)
             assert result[0].text == "content"
 
+    async def test_read_hinted_resource_via_client(self):
+        """Test reading a hinted resource through a server using FastMCPProvider."""
+        sub = FastMCP("Sub", cache_ttl=3600)
+
+        @sub.resource("resource://hinted")
+        def my_resource() -> ResourceResult:
+            return ResourceResult("content", ttl_ms=0)
+
+        main = FastMCP("Main")
+        main.add_provider(FastMCPProvider(sub))
+
+        async with Client(main, mode="auto") as client:
+            read = await client.session.read_resource("resource://hinted")
+            assert read.ttl_ms == 0
+
 
 class TestResourceTemplateOperations:
     """Test resource template operations through FastMCPProvider."""
