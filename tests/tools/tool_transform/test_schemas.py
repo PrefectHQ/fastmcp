@@ -3,6 +3,7 @@ from typing import Annotated, Any
 import pytest
 from dirty_equals import IsList
 from inline_snapshot import snapshot
+from jsonschema import Draft202012Validator
 from mcp_types import TextContent
 from pydantic import BaseModel, Field, TypeAdapter
 
@@ -17,6 +18,28 @@ from fastmcp.tools.tool_transform import (
 
 def get_property(tool: Tool, name: str) -> dict[str, Any]:
     return tool.parameters["properties"][name]
+
+
+def test_renaming_tool_preserves_encoded_parameter_reference():
+    def echo(value: str) -> str:
+        return value
+
+    schema = {
+        "type": "object",
+        "properties": {"value": {"$ref": "#/$defs/Display~1name"}},
+        "required": ["value"],
+        "$defs": {"Display/name": {"type": "string", "minLength": 1}},
+    }
+    parent = FunctionTool(name="echo", parameters=schema, fn=echo)
+
+    transformed = Tool.from_tool(parent, name="renamed_echo")
+    advertised_schema = transformed.to_mcp_tool().input_schema
+
+    assert advertised_schema["$defs"] == schema["$defs"]
+    validator = Draft202012Validator(advertised_schema)
+    assert validator.is_valid({"value": "hello"})
+    assert not validator.is_valid({"value": ""})
+    assert parent.parameters == schema
 
 
 @pytest.fixture
