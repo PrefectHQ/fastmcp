@@ -373,8 +373,14 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         needs_merge = _needs_ref_merge(schema)
         if needs_merge:
             dereferenced = _merge_ref_siblings(schema, dereferenced, schema)
-        # Type assertion: top-level schema is always a dict
-        assert isinstance(dereferenced, dict)
+        # A boolean schema is valid JSON Schema (`true` accepts every
+        # instance, `false` rejects every instance), so a root $ref can
+        # resolve to a non-dict value. jsonref then replaces the whole
+        # schema with that value, and there is nothing to inline into.
+        # Fall back to the same partial resolution used for circular and
+        # oversized schemas rather than failing the entire listing.
+        if not isinstance(dereferenced, dict):
+            return resolve_root_ref(schema)
 
         # Remove $defs since all references have been resolved
         if "$defs" in dereferenced:
