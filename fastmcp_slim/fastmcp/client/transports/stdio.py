@@ -104,9 +104,36 @@ class StdioTransport(ClientTransport):
     ) -> ClientSession | None:
         options = transport_options or TransportOptions()
 
+        # The connection task and the session's streams belong to the event
+        # loop that created them. A session reused from another loop never sees
+        # its responses, so the initialize handshake would hang. Refuse while
+        # another loop is using or establishing the connection, before waiting
+        # on the lock: the lock is bound to one loop and cannot arbitrate
+        # between loops.
+        connect_task = self._connect_task
+        foreign_loop = (
+            connect_task is not None
+            and connect_task.get_loop() is not asyncio.get_running_loop()
+        )
+        if foreign_loop and (self._active_sessions or self._connect_lock.locked()):
+            raise RuntimeError(
+                "This stdio transport has a live session bound to a different "
+                "event loop and another client is still using it. Sharing one "
+                "transport across event loops with overlapping sessions is not "
+                "supported; give each loop its own transport."
+            )
+
         # Serialized so concurrent callers can't each decide to replace the
         # session and race to spawn competing subprocesses.
         async with self._connect_lock:
+            # An idle connection left by another loop is rebuilt on this one.
+            connect_task = self._connect_task
+            if (
+                connect_task is not None
+                and connect_task.get_loop() is not asyncio.get_running_loop()
+            ):
+                await self.disconnect()
+
             # A kept-alive session was built for one client's options; handing it
             # to a client that wants different ones would silently give it the
             # first client's behavior. Rebuild it when it's idle; refuse when
@@ -199,13 +226,38 @@ class StdioTransport(ClientTransport):
         if self._connect_task is None:
             return
 
+        connect_task = self._connect_task
+        owning_loop = connect_task.get_loop()
+
+        # The task can only be signalled and awaited from the loop that owns
+        # it. From any other loop, run the teardown there and wait for it. A
+        # closed loop has already cancelled the task, so there is nothing left
+        # to stop.
+        if owning_loop is not asyncio.get_running_loop():
+            stop_event = self._stop_event
+            self._reset()
+
+            async def stop_on_owning_loop() -> None:
+                stop_event.set()
+                await asyncio.wait({connect_task})
+
+            if owning_loop.is_running():
+                with contextlib.suppress(RuntimeError):
+                    await asyncio.wrap_future(
+                        asyncio.run_coroutine_threadsafe(
+                            stop_on_owning_loop(), owning_loop
+                        )
+                    )
+            elif not owning_loop.is_closed():
+                owning_loop.call_soon_threadsafe(stop_event.set)
+            return
+
         # signal the connection task to stop
         self._stop_event.set()
 
         # Wait without propagating the connection task's cancellation into
         # this caller. Cancellation of this wait therefore still belongs to
         # the caller and must propagate normally.
-        connect_task = self._connect_task
         await asyncio.wait({connect_task})
         try:
             _ = connect_task.result()
@@ -217,7 +269,10 @@ class StdioTransport(ClientTransport):
                 exc_info=True,
             )
 
-        # reset variables and events for potential future reconnects
+        self._reset()
+
+    def _reset(self) -> None:
+        """Clear connection state and events so a future connect starts fresh."""
         self._connect_task = None
         self._session = None
         self._session_future = None

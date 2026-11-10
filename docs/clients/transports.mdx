@@ -114,6 +114,8 @@ For complete isolation between connections, disable session persistence:
 transport = StdioTransport(command="python", args=["server.py"], keep_alive=False)
 ```
 
+A persisted session belongs to the event loop that created it, so reuse from a different loop transparently starts a fresh subprocess instead. Sharing one transport between loops still works, but only reuses the subprocess within a single loop — and it raises if two loops try to hold overlapping sessions on the same transport, which needs one transport per loop.
+
 ## HTTP Transport
 
 <VersionBadge version="2.3.0" />
