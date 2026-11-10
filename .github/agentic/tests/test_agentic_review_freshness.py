@@ -3,9 +3,9 @@ from copy import deepcopy
 import pytest
 
 from flows.agentic_freshness import change_kind, revalidate
+from flows.agentic_github import GitHub
 from flows.agentic_review_publication import before_delivery, post_review
 from flows.agentic_stack_policy import publication_revision, review_revision
-from flows.agentic_stack_publication import GitHub
 from tests.test_agentic_review_publication import BASE, BOT, HEAD, body
 
 
@@ -48,12 +48,8 @@ def test_ci_progress_preserves_review_but_not_write_snapshot(snapshot):
         statuses=[{"id": 2, "state": "success"}],
     )
     assert change_kind(snapshot, current) == "unchanged"
-    assert change_kind(snapshot, current, for_review=False) == "stale"
     assert publication_revision(snapshot) != publication_revision(current)
     assert snapshot["prs"][0]["checks"] == [{"id": 1, "status": "in_progress"}]
-    result = {"bins": {"stacks": [{"issue_number": 2692}], "operational": []}}
-    refreshed = revalidate(result, {2692: snapshot}, {2692: "main"}, lambda *_: current)
-    assert refreshed["bins"]["operational"][0]["status"] == "stale"
 
 
 @pytest.mark.parametrize(

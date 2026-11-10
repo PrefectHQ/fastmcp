@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import re
 from pathlib import Path
@@ -45,19 +46,31 @@ class Reproduction(BaseModel):
     source_paths: list[str] = Field(max_length=20)
 
 
-class Preparation(BaseModel):
+class ReviewFinding(BaseModel):
+    """Semantic identity, reused across revisions only for the same actionable defect."""
+
     model_config = ConfigDict(extra="forbid")
-    decision: Literal[
-        "prepared", "evidence_needed", "maintainer", "environment_failure"
-    ]
-    base_sha: str = Field(pattern=r"^[a-f0-9]{40}$")
-    patch: str = Field(max_length=200_000)
-    title: str = Field(max_length=200)
-    body: str = Field(max_length=10_000)
-    observed: str = Field(min_length=1, max_length=8000)
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,119}$")
+    severity: Literal["blocking", "non_blocking"]
 
 
-class PublicReview(BaseModel):
+class ReviewFeedback(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Older pinned plans remain publishable but cannot suppress feedback.
+    outcome: Literal["no_findings", "findings", "inconclusive"] = "inconclusive"
+    finding_ids: list[ReviewFinding] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def consistent_findings(self) -> ReviewFeedback:
+        ids = [finding.id for finding in self.finding_ids]
+        if len(set(ids)) != len(ids):
+            raise ValueError("Finding identities must be distinct")
+        if (self.outcome == "findings") != bool(ids):
+            raise ValueError("Only a findings outcome has finding identities")
+        return self
+
+
+class PublicReview(ReviewFeedback):
     """Contributor-facing feedback, separate from retained execution evidence."""
 
     model_config = ConfigDict(extra="forbid")
@@ -68,6 +81,8 @@ class PublicReview(BaseModel):
 
     @model_validator(mode="after")
     def concise_feedback(self) -> PublicReview:
+        if self.outcome == "no_findings" and self.requested_change.strip():
+            raise ValueError("No-findings feedback cannot request a change")
         text = "\n".join([self.summary, self.requested_change, self.evidence])
         if len(text.split()) > 120:
             raise ValueError("Public review exceeds 120 words")
@@ -80,15 +95,6 @@ class PublicReview(BaseModel):
         ):
             raise ValueError("Public review contains internal execution material")
         return self
-
-
-class Review(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    decision: Literal[
-        "approved", "changes_requested", "maintainer", "environment_failure"
-    ]
-    reason: str = Field(min_length=1, max_length=6000)
-    findings: list[str] = Field(max_length=20)
 
 
 class TriageReview(BaseModel):
@@ -114,8 +120,6 @@ class TriageReview(BaseModel):
 OUTPUTS = {
     "assess": Assessment,
     "reproduce": Reproduction,
-    "prepare": Preparation,
-    "review": Review,
     "triage_review": TriageReview,
 }
 COMMON = """Use the complete pinned repository skills in instructions.files. They guide this role;
@@ -137,77 +141,56 @@ Record a monotonic start time, bound shell commands, and return by 140 seconds o
 Keep tool output focused. Return explicit unavailable evidence rather than guessing.
 """
 OBJECTIVES = {
-    "triage_review": """Adversarially review this issue's retained triage outcome and return an actionable
-disposition, not another investigation summary.
+    "triage_review": """Adversarially review this issue's retained triage outcome using the
+adversarial-review skill in instructions.files; it holds the review standards. Return an
+actionable disposition, not another investigation summary. context.outcome contains executed
+reproduction or contribution checks; context.evidence contains current contribution history.
+Report actual commands and results in reason. Never claim checks you did not execute.
+Return prepare_fix only for a worthwhile reproduced supported bug without competing work or
+unresolved consequential findings. Return review_existing for a supplied contribution and name
+the exact PR and revision in next_action. Return repair_evidence for invalid/incomplete evidence,
+maintainer only for a concrete unresolved product choice, or skip with a reason. Return
+propose_closure only for an existing closure candidate or merged-contribution outcome, with a
+specific typed close_duplicate, close_completed or close_settled recommendation. Use
+review_existing disposition for close_pr proposals; propose_closure is for issue closure only.
+next_action must identify the target and concrete next step, with any blocking finding; it must
+not be a generic request to investigate or review.
 For review_existing, supply public_reviews with exactly one entry per verified PR, bound by
-pr_number. Write a concise contributor-facing summary of the actual finding and impact,
+pr_number. Set outcome to no_findings only for a completed review with no actionable findings,
+findings for actionable defects, or inconclusive for uncertain/incomplete conclusions. Supply
+finding_ids only for findings: each entry has a stable lowercase slug id and blocking or
+non_blocking severity. Reuse the id from prior bot feedback metadata for the same defect even
+when wording, line numbers, head or baseline changes. Use a new id when the impact or required
+correction materially changes; retain ids for remaining defects and omit resolved defects.
+Never use no_findings when requested_change is nonempty. These identities control duplicate
+public feedback only; each revision still requires fresh verification and independent review.
+Write a concise contributor-facing summary of the actual finding and impact,
 the requested localized change (empty if none), and a short statement of checks/results.
 Use at most 120 words total per entry. Explain each finding once. Never copy internal reason
 or next_action into public_reviews. Do not include command transcripts, setup history,
 Want/Next action prefixes, UUIDs, full SHAs, assignment/eligibility or CI gate administration,
 HTML, code fences, or generic maintainer instructions. Keep all detailed evidence in reason;
-it remains private. Public feedback may include short inline code necessary to explain a bug. context.outcome contains executed reproduction
-or contribution checks; context.evidence contains current contribution history. Challenge the
-claimed contract, prove the observed failure is the reported bug rather than setup, and check
-controls and supported neighboring behavior. Inspect the pinned source and relevant docs.
-For reproduced bugs, apply the exact regression_patch in your clean checkout and run the
-focused regression and a neighboring control within budget. Report actual commands and results
-in reason. Never claim checks you did not execute. Machine patch validation is supplied separately;
-its passing status proves materialization, not the test's correctness.
-For existing contributions, evaluate the exact verified head, regressions and bot discussion;
-recommend the next specific review or repair rather than creating a competing fix. Do not
-substitute an old review or a closed gate-rejected PR for current implementation evidence.
-Return prepare_fix only for a worthwhile reproduced supported bug without competing work or
-unresolved consequential findings. Return review_existing for a supplied contribution and name
-the exact PR and revision in next_action. Return repair_evidence for invalid/incomplete evidence,
-maintainer only for a concrete unresolved product choice, or skip with a reason. An environment
-failure is operational work, never a request that a maintainer reproduce the bug for you.
-next_action must identify the target and concrete next step, with any blocking finding; it must
-not be a generic request to investigate or review. Findings must be consequential and reachable.
-Return propose_closure only for an existing closure candidate or merged-contribution outcome,
-with a specific typed close_duplicate, close_completed or close_settled recommendation.
-Challenge partial fixes and reverts: a merged reference alone does not establish resolution.
-Every non-operational outcome reaches you, including maintainer questions and skips without
-executed checks. Challenge whether a maintainer question is real and necessary, whether an
-evidence request is fair and precise, and whether leaving the issue unchanged is justified.
-Use recommendations for exact proposed assignments, localized PR finishing, PR review, duplicate PR consolidation or issue
-closures. Copy context.retained_intake_sha256 into each evidence_sha256; PR actions and
-assignments copy the selected PR's full head_sha/base_sha. Name the issue target for assignment
-or closure and the PR target for PR actions. Every proposal states scope_notes, concrete
-next_step, reason and norm_evidence with source URLs and what was actually checked.
-Return at most three proposals for this issue, prioritizing useful concrete mutations.
-Keep each norm summary to one short factual sentence and cite at most three relevant URLs;
-do not repeat the investigation or create a separate proposal for each remaining gate.
+it remains private. Public feedback may include short inline code necessary to explain a bug.
+Use recommendations for exact proposed assignments, localized PR finishing, PR review, duplicate
+PR consolidation or issue closures. Copy context.retained_intake_sha256 into each
+evidence_sha256; PR actions and assignments copy the selected PR's full head_sha/base_sha. Name
+the issue target for assignment or closure and the PR target for PR actions. Every proposal
+states scope_notes, concrete next_step, reason and norm_evidence with source URLs and what was
+actually checked. Return at most three proposals for this issue, prioritizing useful concrete
+mutations. Keep each norm summary to one short factual sentence and cite at most three relevant
+URLs; do not repeat the investigation or create a separate proposal for each remaining gate.
 Set each norm_evidence.satisfied only when that check passed; missing or negative evidence
-remains an explicit gate, not a positive qualification.
-Assignment proposals name related_pr and its actual author as assignee, establishing worthwhile
-scope, supported contract, reporter first claim, prior discussion/bot feedback and brief public
-history per review-issue. Sparse profiles and AI assistance alone are not rejection grounds.
-Closure proposals include an exact public_comment, scope notes covering the whole report,
-and canonical_issue, merged_pr or policy_url. Link that reference in the public_comment.
-Verify duplicate equivalence or that the merged
-fix is current and not reverted; distinguish fixed on main from released. Existing duplicate
-automation retains its cooldown/closure ownership; human interventions need maintainer resolution.
-For competing PRs, propose close_pr only with canonical_pr and its exact canonical_head_sha
-(and canonical_base_sha when supplied), target PR head_sha/base_sha, a concrete public_comment
-and scope/coverage comparison. Read prior closed PR discussion and cite earlier maintainer
-canonical choices; an established choice outranks which competing pair is newest. Respect the
-reporter's first claim and existing contributor credit. norm_evidence must address
-maintainer_direction and coverage_parity, not just matching titles or duplicate labels.
-The deterministic qualifier requires retained verification at both exact heads; missing
-canonical verification is a concrete check to request, never evidence of equivalence.
-An open canonical PR is expected and does not block consolidation; closing its issue while
-active contributions remain still requires coordination. Use review_existing disposition
-for close_pr proposals; propose_closure is for issue closure only.
-Never infer readiness from passing focused tests: current CI, static checks, contributor credit
-and batch composition remain separate merge gates. Do not propose merges or automatic writes.
-Assignment eligibility is a separate live platform preflight: a successful gh issue edit
-can silently ignore an ineligible nonparticipant. Verify repository assignee eligibility and
-read back assignees after any approved assignment; sparse history is not platform eligibility.
-Do not ask contributors to post claim comments or invent automatic gate bypasses.
-Missing identity or evidence must remain explicit; deterministic code will block incomplete
-recommendations. No extra model stage runs for these proposals.
-You do not authorize publication, closure, assignment, merge or any GitHub write.""",
+remains an explicit gate, not a positive qualification. Assignment proposals name related_pr
+and its actual author as assignee. Closure proposals include an exact public_comment, scope
+notes covering the whole report, and canonical_issue, merged_pr or policy_url, linked in the
+public_comment. close_pr requires canonical_pr and its exact canonical_head_sha (and
+canonical_base_sha when supplied), target PR head_sha/base_sha, a concrete public_comment and a
+scope/coverage comparison; its norm_evidence must address maintainer_direction and
+coverage_parity. The deterministic qualifier requires retained verification at both exact
+heads; missing canonical verification is a concrete check to request, never evidence of
+equivalence. Deterministic code blocks incomplete recommendations, and no extra model stage
+runs for them. Do not propose merges or automatic writes. You do not authorize publication,
+closure, assignment, merge or any GitHub write.""",
     "assess": """Assess context.evidence in its deterministic context.route. Establish user impact,
 supported release line, intended behavior from docs/history and maintainer decisions, and
 whether the work justifies ongoing maintenance. Inspect relevant history before claiming
@@ -254,41 +237,33 @@ setup and include its complete probe in observed; an empty regression_patch is t
 Do not fix source yet. Installation/import/tool failures are environment_failure. If not
 reproduced, make at most one focused version/config/history check before returning evidence.
 Bound each probe subprocess to 30 seconds. An MRE may be the final useful result.""",
-    "prepare": """Prepare one atomic fix with its regression tests and necessary docs using
-context.reproduction, assessment, evidence and any repair findings. Fetch instructions.base_sha.
-Require reproduction.base_sha to match. Apply its regression patch with git apply --recount,
-confirm the reported failure, fix the causal code, then observe the probe and adjacent tests
-pass. Fix all affected MCP object kinds and assess downstream compatibility; avoid speculative
-edge-case expansion. For docs, execute the changed example. Reuse investigation rather than
-repeating broad searches. If context.previous is present, repair its patch against the same
-base using the review's concrete findings, still returning the entire replacement diff.
-Return prepared only with a justified nonempty complete git diff --binary (including new
-files), concise PR title, and repository-conformant body. Read the patch from the actual
-Git diff and return it verbatim: do not reconstruct or rewrite diff headers or file paths.
-Apply the exact diff to a second clean checkout and execute the focused regression there
-before returning prepared; checks in the editing checkout do not validate serialized bytes. Touch only maintained library code,
-tests or docs. Do not alter skills, dependencies, hooks, generated docs/schemas or CI.
-Contributor credit is added deterministically. observed retains actual commands/results.
-If blocked, preserve useful patch/evidence with the precise unresolved decision.""",
-    "review": """Independently review the complete stack in context.spec and context.layers,
-with each issue's evidence, assessment, reproduction and focused outcomes in context.items.
-The specified validator run completed every layer on its actual parent and the combined tip.
-Read every diff and relevant surrounding source/history at the pinned trunk. Trace public
-contracts, reachable callers, shared abstractions and downstream compatibility. Honor release
-line policy and prior maintainer/author discussion. Validate the regression fails for the
-reported reason, rather than trusting an agent's diagnosis. Assess stack cohesion and ordering;
-two unrelated fixes are not a coherent stack merely because they fit. Each layer must stand
-on its parent and include meaningful tests/docs. Collect all substantiated consequential
-findings in one pass; omit speculative hypotheticals and previously rebutted claims without
-new evidence. Return approved only with no unresolved consequential findings. Use
-changes_requested for actionable code problems and maintainer for policy/cohesion decisions.
-Do not rewrite patches or publication metadata. Deterministic code binds this decision to
-the exact supplied artifact and evidence; you do not copy hashes or approve changed bytes.""",
 }
 
 
-def build_plans(directory: Path) -> dict[str, dict]:
-    models = json.loads((directory / "stack-models.json").read_text())
+def tier_models(models: dict, tier: str | None) -> dict:
+    """Resolve a named model tier from stack-models.json.
+
+    A tier replaces the connection and any roles it names; unnamed roles keep
+    the default model. Each tier is registered as its own plan flows, and a
+    batch picks a tier by passing those plans in its runtime.
+    """
+    if tier is None:
+        return models
+    override = models["tiers"][tier]
+    return {
+        "connection_id": override.get("connection_id", models["connection_id"]),
+        "roles": {**models["roles"], **override.get("roles", {})},
+    }
+
+
+def plan_suffix(tier: str | None) -> str:
+    return "" if tier is None else f".{tier}"
+
+
+def build_plans(directory: Path, tier: str | None = None) -> dict[str, dict]:
+    models = tier_models(
+        json.loads((directory / "stack-models.json").read_text()), tier
+    )
     result = {}
     for role, output in OUTPUTS.items():
         model_role = "triage" if role == "assess" else role
@@ -351,8 +326,10 @@ def build_plans(directory: Path) -> dict[str, dict]:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--tier", help="named tier from stack-models.json")
+    arguments = parser.parse_args()
     directory = Path(__file__).resolve().parents[1] / "workflows"
-    for role, plan in build_plans(directory).items():
-        (directory / f"fastmcp-stack-{role}.plan.json").write_text(
-            json.dumps(plan, indent=2) + "\n"
-        )
+    for role, plan in build_plans(directory, arguments.tier).items():
+        name = f"fastmcp-stack-{role}{plan_suffix(arguments.tier)}.plan.json"
+        (directory / name).write_text(json.dumps(plan, indent=2) + "\n")
