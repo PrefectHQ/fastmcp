@@ -30,6 +30,7 @@ from typing import (
 
 import httpx2
 import mcp_types
+import pydantic_core
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.request_state import RequestStateSecurity
 from mcp.shared.exceptions import MCPError
@@ -101,7 +102,11 @@ from fastmcp.server.transforms import (
     ToolTransform,
     Transform,
 )
-from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
+from fastmcp.server.transforms.visibility import (
+    Visibility,
+    apply_session_transforms,
+    is_enabled,
+)
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.function_tool import FunctionTool
@@ -307,6 +312,93 @@ def _lifespan_proxy(
     return wrap
 
 
+class _SchemaCacheLocalProvider(LocalProvider):
+    """LocalProvider that mirrors registered tools into FastMCP's wire-schema
+    cache, so the SDK's `get_tool_input_schema` hook (Mcp-Param header
+    validation, mcp>=2.3) can resolve locally-registered tools before the first
+    `tools/list`. The cache dict is owned by the FastMCP server and shared by
+    reference; listings merge into it by value (`update`, never `clear`), so an
+    auth-scoped listing cannot drop another principal's cached schemas."""
+
+    def __init__(
+        self,
+        schema_cache: dict[str, dict[str, Any]],
+        server_transforms: list[Transform] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._schema_cache = schema_cache
+        # The owning FastMCP's server-level transform list, shared by
+        # reference so transforms added after construction are visible.
+        self._server_transforms = (
+            server_transforms if server_transforms is not None else []
+        )
+
+    def _seed_schema(self, name: str, candidates: list[Tool]) -> None:
+        """Seed the wire-schema cache for `name` from the tool dispatch and
+        `tools/list` would actually serve: the highest version by the same
+        PEP 440-aware `version_sort_key` used by `_get_tool` and
+        `dedupe_with_versions`. When a transform is installed, the wire schema
+        is only computed on the listing path, so seeding is skipped entirely
+        (and any entry dropped): a miss fails open, a wrong entry (e.g. a
+        pre-transform schema) fails closed (#5666 review)."""
+        transforms = [
+            t
+            for t in (*self._server_transforms, *self._transforms)
+            if not isinstance(t, Visibility)
+        ]
+        if transforms:
+            self._schema_cache.pop(name, None)
+            return
+        latest = max(candidates, key=version_sort_key)
+        try:
+            schema = latest.to_mcp_tool(name=latest.name).input_schema
+        except Exception:
+            # Seeding must never break registration; a missing entry only
+            # means the tool is not header-validated until the next listing.
+            return
+        if isinstance(schema, dict):
+            self._schema_cache[name] = schema
+
+    def add_transform(self, transform: Transform) -> None:
+        super().add_transform(transform)
+        # Entries seeded before this transform are pre-transform schemas.
+        if not isinstance(transform, Visibility):
+            self._schema_cache.clear()
+
+    def add_tool(self, tool: Tool | Callable[..., Any]) -> Tool:
+        added = super().add_tool(tool)
+        # Seed from the version dispatch serves, not necessarily the one just
+        # added: registering an older version after a newer one must not
+        # replace the newer version's schema in the cache.
+        same_name = [
+            component
+            for component in self._components.values()
+            if isinstance(component, Tool) and component.name == added.name
+        ]
+        self._seed_schema(added.name, same_name or [added])
+        return added
+
+    def remove_tool(self, name: str, version: str | None = None) -> None:
+        super().remove_tool(name, version=version)
+        # Evict only when no version of the tool remains: a version-scoped
+        # removal can leave other versions live under the same logical name,
+        # in which case re-seed from the surviving tool instead. A stale schema
+        # would let Mcp-Param header validation reject calls for a tool that
+        # no longer exists (or no longer has this schema) until the next
+        # listing; a miss is fail-open, so dropping the entry is always the
+        # safe direction.
+        surviving = [
+            component
+            for component in self._components.values()
+            if isinstance(component, Tool) and component.name == name
+        ]
+        if not surviving:
+            self._schema_cache.pop(name, None)
+            return
+        self._seed_schema(name, surviving)
+
+
 class StateValue(FastMCPBaseModel):
     """Wrapper for stored context state values."""
 
@@ -370,9 +462,19 @@ class FastMCP(
         self._state_storage: AsyncKeyValue | None = session_state_store
         self.__state_store: PydanticAdapter[StateValue] | None = None
 
+        # Wire-format input schemas, keyed by tool name. Shared by reference
+        # with _SchemaCacheLocalProvider (seeded on local tool registration)
+        # and served to the SDK's `get_tool_input_schema` hook (mcp>=2.3, see
+        # LowLevelServer) so Mcp-Param header validation on `tools/call` does
+        # not fall back to a full `tools/list` per call (#5652). Refreshed in
+        # place from every `tools/list` response.
+        self._wire_input_schemas: dict[str, dict[str, Any]] = {}
+
         # Create LocalProvider for local components
-        self._local_provider: LocalProvider = LocalProvider(
-            on_duplicate=self._on_duplicate
+        self._local_provider: LocalProvider = _SchemaCacheLocalProvider(
+            schema_cache=self._wire_input_schemas,
+            server_transforms=self._transforms,
+            on_duplicate=self._on_duplicate,
         )
 
         for t in transforms or []:
@@ -822,6 +924,11 @@ class FastMCP(
             ```
         """
         self._transforms.append(transform)
+        # Schemas seeded before this transform existed are pre-transform and
+        # would fail closed on Mcp-Param validation; drop them so the next
+        # `tools/list` (which applies the transform) repopulates the cache.
+        if not isinstance(transform, Visibility):
+            self._wire_input_schemas.clear()
 
     async def list_tools(self, *, run_middleware: bool = True) -> Sequence[Tool]:
         """List all enabled tools from providers.
@@ -1780,10 +1887,19 @@ class FastMCP(
         """
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
+                serialized_arguments: dict[str, str] | None = None
+                if arguments:
+                    serialized_arguments = {}
+                    for key, value in arguments.items():
+                        serialized_arguments[key] = (
+                            value
+                            if isinstance(value, str)
+                            else pydantic_core.to_json(value).decode("utf-8")
+                        )
                 mw_context = MiddlewareContext(
                     message=mcp_types.GetPromptRequestParams(
                         name=name,
-                        arguments=arguments,
+                        arguments=serialized_arguments,
                         _meta=_version_request_meta(version),
                     ),
                     source="client",
@@ -1844,6 +1960,27 @@ class FastMCP(
             The tool instance that was added to the server.
         """
         return self._local_provider.add_tool(tool)
+
+    def _get_tool_input_schema(self, name: str) -> dict[str, Any] | None:
+        """Synchronous lookup served to the SDK's `get_tool_input_schema` hook
+        (Mcp-Param header validation on `tools/call`, mcp>=2.3).
+
+        Returns the tool's wire input schema from the cache seeded by local
+        tool registration and refreshed by every `tools/list` response. FastMCP
+        tool resolution is async (providers, middleware, proxies) and cannot
+        run inside this sync hook, so a cache miss returns None — which the SDK
+        treats as fail-open, skipping header validation for that call exactly
+        as it does when a `tools/list` listing fails.
+
+        A stale hit fails closed: listings merge into the cache without pruning,
+        and a mounted or proxied server's own registrations do not reach this
+        server's cache, so an entry for a mounted or proxied tool that was
+        removed or changed upstream keeps validating against the old schema
+        until the next `tools/list` on this server. The cache is keyed by name
+        and holds the highest version's schema, so version-pinned calls are
+        validated against that schema too.
+        """
+        return self._wire_input_schemas.get(name)
 
     @overload
     def tool(
