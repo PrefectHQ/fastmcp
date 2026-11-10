@@ -483,12 +483,6 @@ class FastMCP(
             else fastmcp.settings.client_log_level
         )
 
-        # Per-session minimum log level requested by clients via logging/setLevel,
-        # keyed by session id. Connections without one (stdio, in-memory,
-        # stateless HTTP) keep theirs in `Connection.state`. v2 sessions are
-        # per-request so this state lives on the server, not the session object.
-        self._client_log_levels: dict[str, mcp_types.LoggingLevel] = {}
-
         self.experimental_capabilities: dict[str, dict[str, Any]] = (
             experimental_capabilities or {}
         )

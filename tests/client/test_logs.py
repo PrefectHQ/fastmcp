@@ -7,7 +7,7 @@ from mcp_types import LoggingMessageNotificationParams
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.logging import LogMessage, create_log_callback
-from fastmcp.utilities.tests import asgi_server
+from fastmcp.utilities.tests import asgi_client, asgi_server
 
 
 class LogHandler:
@@ -234,6 +234,28 @@ class TestSetLoggingLevel:
             await second.call_tool("echo_log", {"message": "info msg", "level": "info"})
 
         assert [log.data["msg"] for log in log_handler.logs] == ["info msg"]
+
+    @pytest.mark.parametrize("transport", ["memory", "http"])
+    async def test_level_applies_to_mounted_server_tools(
+        self, fastmcp_server: FastMCP, transport: Literal["memory", "http"]
+    ):
+        """setLevel sent to a parent filters logs from its mounted servers' tools."""
+        parent = FastMCP("parent")
+        parent.mount(fastmcp_server)
+        log_handler = LogHandler()
+        connect = (
+            asgi_client(parent, mode="legacy", log_handler=log_handler.handle_log)
+            if transport == "http"
+            else Client(parent, mode="legacy", log_handler=log_handler.handle_log)
+        )
+        async with connect as client:
+            await client.set_logging_level("warning")
+            await client.call_tool("echo_log", {"message": "info msg", "level": "info"})
+            await client.call_tool(
+                "echo_log", {"message": "error msg", "level": "error"}
+            )
+
+        assert [log.data["msg"] for log in log_handler.logs] == ["error msg"]
 
     @pytest.mark.parametrize("other_mode", ["legacy", "auto"])
     async def test_stateless_http_level_does_not_reach_other_clients(
