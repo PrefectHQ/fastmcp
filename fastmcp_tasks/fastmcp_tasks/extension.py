@@ -88,7 +88,9 @@ class TasksExtension(ServerExtension):
 
     Pass a redis-py `credential_provider` for rotating backend credentials,
     with no credentials in the URL. The provider is runtime configuration,
-    not an environment setting; Docket manages its connections and refreshes.
+    not an environment setting; Docket manages its connections. Streaming
+    providers are rejected until Docket re-authenticates in-use connections
+    without racing other commands for their sockets.
     """
 
     identifier = TASKS_EXTENSION_ID
@@ -105,6 +107,16 @@ class TasksExtension(ServerExtension):
         reconnection_delay: timedelta | None = None,
         minimum_check_interval: timedelta | None = None,
     ) -> None:
+        if credential_provider is not None:
+            from redis.credentials import StreamingCredentialProvider
+
+            if isinstance(credential_provider, StreamingCredentialProvider):
+                raise ValueError(
+                    "Streaming credential providers are not supported yet: a token "
+                    "refresh can hand one Redis connection to two commands at once "
+                    "(redis/redis-py#4433). Use a CredentialProvider that returns "
+                    "current credentials for each new connection."
+                )
         self._credential_provider = credential_provider
         overrides: dict[str, Any] = {
             "url": url,

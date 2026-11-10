@@ -1,0 +1,239 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# FASTMCP_AGENTIC_DIR lets a newer driver operate on an older checkout (rollback).
+cd "${FASTMCP_AGENTIC_DIR:-$(dirname "$0")/..}"
+: "${PREFECT_API_URL:?Set the Prefect Cloud workspace API URL}"
+[[ $PREFECT_API_URL == https://api.prefect.cloud/api/accounts/*/workspaces/* ]] || {
+  echo "Expected a Prefect Cloud workspace API URL" >&2; exit 2;
+}
+unset PREFECT_API_AUTH_STRING
+api() { uv run --locked prefect --no-prompt api "$@" </dev/null; }
+upsert() {
+  local kind=$1 body=$2 name id
+  name=$(jq -r .name "$body")
+  jq -n '{limit:200}' > "$body.filter"
+  id=$(api POST "/$kind/filter" --data "@$body.filter" | jq -r --arg name "$name" 'map(select(.name==$name)) | if length>1 then error("duplicate \($name)") else (.[0].id // "") end')
+  if [[ -n $id ]]; then api PUT "/$kind/$id" --data "@$body" >/dev/null; echo "$id"
+  else api POST "/$kind/" --data "@$body" | jq -er .id; fi
+}
+
+DEPLOYMENTS=(cloud-stack-batch cloud-contribution-verification cloud-triage-intake cloud-triage-verify cloud-triage-finalize)
+TRIGGERS=(fastmcp-triage-on-github-issue fastmcp-triage-on-github-pr)
+json_list() { printf '%s\n' "$@" | jq -R . | jq -sc .; }
+
+validate() {
+  local scratch role
+  scratch=$(mktemp -d)
+  for role in assess reproduce triage_review; do
+    jq '{plan: .}' "workflows/fastmcp-stack-$role.plan.json" > "$scratch/$role.json"
+    api POST /execution-plans/validate --data "@$scratch/$role.json" | jq -e '.valid == true'
+  done
+  rm -rf "$scratch"
+}
+
+register() {
+  local revision published name args=()
+  [[ -z $(git status --porcelain) ]] || {
+    echo 'Commit local changes before registration' >&2; exit 1;
+  }
+  revision=$(git rev-parse HEAD)
+  published=$(gh api "repos/PrefectHQ/fastmcp/commits/$revision" --jq .sha)
+  [[ $published == "$revision" ]] || {
+    echo 'Source commit must be available in PrefectHQ/fastmcp' >&2; exit 1;
+  }
+  for name in "${DEPLOYMENTS[@]}"; do args+=(--name "$name"); done
+  FASTMCP_AGENTIC_REF=$revision uv run --locked prefect --no-prompt deploy \
+    --prefect-file prefect.yaml "${args[@]}"
+}
+
+# Distinct source_sha values pinned by the two triage automations, as a JSON list.
+live_sources() {
+  jq -ec --argjson names "$(json_list "${TRIGGERS[@]}")" '
+    [.[] | select(.name | IN($names[]))] as $found
+    | if ([$found[].name] | sort) != ($names | sort)
+      then error("Expected exactly one of each triage automation") else . end
+    | [$found[].actions[0].parameters.runtime.source_sha] | unique
+    | if all(test("^[a-f0-9]{40}$")) then . else error("Invalid source_sha") end' "$1"
+}
+
+case "${1:-}" in
+  validate)
+    validate
+    ;;
+  register)
+    register
+    ;;
+  deploy)
+    scratch=$(mktemp -d)
+    trap 'rm -rf "$scratch"' EXIT
+    revision=$(git rev-parse HEAD)
+    jq -n '{limit:200}' > "$scratch/filter.json"
+    api POST /automations/filter --data "@$scratch/filter.json" > "$scratch/automations.json"
+    # An interrupted deploy can leave one automation on the target already; treat
+    # the other commit as live so a retry finishes the repin.
+    current=$(live_sources "$scratch/automations.json" | jq -er --arg revision "$revision" '
+      map(select(. != $revision))
+      | if length == 0 then $revision elif length == 1 then .[0]
+        else error("Triage automations are pinned to several commits; repin them by hand") end')
+    if [[ $current == "$revision" ]]; then
+      echo "Already deployed $revision"; exit 0
+    fi
+    git cat-file -e "$current^{commit}" 2>/dev/null || {
+      echo "Live source $current is not in this checkout; fetch full history" >&2; exit 1;
+    }
+    git diff --quiet "$current" "$revision" -- 'workflows/*.plan.json' workflows/stack-models.json || {
+      echo "Execution plans changed since $current; publish them and update the automations' plan versions by hand" >&2; exit 1;
+    }
+    validate
+    jq -n --argjson names "$(json_list "${DEPLOYMENTS[@]}")" \
+      '{deployments:{name:{any_:$names}},flow_runs:{state:{type:{any_:["SCHEDULED","PENDING","RUNNING","PAUSED","CANCELLING"]}}},limit:10}' \
+      > "$scratch/active.json"
+    api POST /flow_runs/filter --data "@$scratch/active.json" > "$scratch/runs.json"
+    jq -e 'length == 0' "$scratch/runs.json" >/dev/null || {
+      echo 'Triage runs are in flight; deploy once they finish:' >&2
+      jq -r '.[] | "  \(.name) \(.state_type)"' "$scratch/runs.json" >&2
+      exit 1
+    }
+    register
+    # Flows refuse to run while their deployment version differs from the pinned
+    # source_sha, so repin both automations immediately after registration.
+    for name in "${TRIGGERS[@]}"; do
+      jq --arg name "$name" --arg sha "$revision" '
+        .[] | select(.name == $name)
+        | .actions[0].parameters.runtime.source_sha = $sha
+        | with_entries(select(.key | IN("name","description","enabled","tags","trigger","actions","actions_on_trigger","actions_on_resolve")))' \
+        "$scratch/automations.json" > "$scratch/$name.json"
+      id=$(jq -er --arg name "$name" '.[] | select(.name == $name) | .id' "$scratch/automations.json")
+      api PUT "/automations/$id" --data "@$scratch/$name.json" >/dev/null
+    done
+    api POST /automations/filter --data "@$scratch/filter.json" > "$scratch/automations.json"
+    [[ $(live_sources "$scratch/automations.json") == "[\"$revision\"]" ]] || {
+      echo 'Automations did not take the new source_sha; roll back by deploying the previous commit' >&2; exit 1;
+    }
+    echo "Deployed $revision (was $current)"
+    ;;
+  intake)
+    config=${2:?intake configuration JSON file required}
+    runtime=${3:?pinned runtime JSON file required}
+    controller=${4:?managed controller deployment UUID required}
+    deployment=${5:?managed intake deployment UUID required}
+    operation=${6:?stable operation id required; reuse after an uncertain response}
+    [[ $controller =~ ^[0-9a-f-]{36}$ && $deployment =~ ^[0-9a-f-]{36}$ ]] || exit 2
+    [[ $operation =~ ^[a-z0-9-]{1,64}$ ]] || exit 2
+    scratch=$(mktemp -d)
+    trap 'rm -rf "$scratch"' EXIT
+    jq -n --slurpfile config "$config" --slurpfile runtime "$runtime" \
+      --arg controller "$controller" --arg operation "$operation" \
+      '{name:$operation,idempotency_key:("fastmcp-intake-"+$operation),parameters:{config:$config[0],runtime:$runtime[0],controller_id:$controller}}' > "$scratch/request.json"
+    api POST "/deployments/$deployment/create_flow_run" --data "@$scratch/request.json"
+    ;;
+  run)
+    batch=${2:?batch JSON file required}
+    runtime=${3:?pinned runtime JSON file required}
+    deployment=${4:?managed stack controller deployment UUID required}
+    [[ $deployment =~ ^[0-9a-f-]{36}$ ]] || exit 2
+    scratch=$(mktemp -d)
+    trap 'rm -rf "$scratch"' EXIT
+    jq -e '.id | test("^[a-z0-9-]{1,40}$")' "$batch" >/dev/null
+    jq -n --slurpfile batch "$batch" --slurpfile runtime "$runtime" \
+      '{name:("stack-"+$batch[0].id),idempotency_key:("fastmcp-stack-"+$batch[0].id),parameters:{batch:$batch[0],runtime:$runtime[0]}}' \
+      > "$scratch/request.json"
+    api POST "/deployments/$deployment/create_flow_run" --data "@$scratch/request.json"
+    ;;
+  results)
+    run=${2:?controller run UUID required}
+    [[ $run =~ ^[0-9a-f-]{36}$ ]] || exit 2
+    scratch=$(mktemp -d)
+    trap 'rm -rf "$scratch"' EXIT
+    api GET "/flow_runs/$run" > "$scratch/run.json"
+    jq '{id,state_type,state_name,parameters:{batch:.parameters.batch}}' "$scratch/run.json"
+    key=$(jq -er '.parameters.batch.id + "-review-bins"' "$scratch/run.json")
+    jq -n --arg run "$run" --arg key "$key" \
+      '{artifacts:{key:{any_:[$key]}},flow_runs:{id:{any_:[$run]}},limit:2}' > "$scratch/filter.json"
+    api POST /artifacts/filter --data "@$scratch/filter.json" | jq -e 'if length==1 then .[0].data else error("Final review bins not available; inspect the run and retained stage artifacts") end'
+    ;;
+  events)
+    runtime=${2:?pinned runtime JSON file required}
+    controller=${3:?managed controller deployment UUID required}
+    deployment=${4:?managed intake deployment UUID required}
+    notify=${5:-}
+    [[ $controller =~ ^[0-9a-f-]{36}$ && $deployment =~ ^[0-9a-f-]{36}$ ]] || exit 2
+    [[ -z $notify || $notify =~ ^[0-9a-f-]{36}$ ]] || exit 2
+    scratch=$(mktemp -d)
+    trap 'rm -rf "$scratch"' EXIT
+    jq -n --rawfile template workflows/events/github-webhook-template.json.j2 \
+      '{name:"fastmcp-triage-github",description:"PrefectHQ/fastmcp issue and pull request events for agentic triage",enabled:true,template:$template}' > "$scratch/webhook.json"
+    webhook=$(upsert webhooks "$scratch/webhook.json")
+    echo "webhook $webhook"
+    for kind in issue pr; do
+      jq -n --slurpfile runtime "$runtime" --arg controller "$controller" --arg deployment "$deployment" --arg kind "$kind" '
+        ($kind == "issue") as $issue |
+        {name:("fastmcp-triage-on-github-" + $kind),
+         description:(if $issue then "Consider changed FastMCP issues for bounded triage" else "Refresh issues referenced by ready FastMCP PRs; this does not review the PR itself" end),
+         enabled:true,
+         trigger:{type:"event",posture:"Reactive",threshold:1,within:60,
+           expect:(if $issue then ["fastmcp.github.issues.opened","fastmcp.github.issues.reopened","fastmcp.github.issues.edited"]
+                   else ["fastmcp.github.pull_request.opened","fastmcp.github.pull_request.reopened","fastmcp.github.pull_request.synchronize","fastmcp.github.pull_request.edited","fastmcp.github.pull_request.ready_for_review"] end),
+           match:({"github.repository":"PrefectHQ/fastmcp","github.kind":$kind,"github.sender.type":"User"}
+             + if $issue then {} else {"github.draft":"false","github.issue-reference":"true","github.relevant-change":"true"} end),
+           match_related:{},after:[],for_each:["prefect.resource.id"]},
+         actions:[{type:"run-deployment",source:"selected",deployment_id:$deployment,job_variables:null,schedule_after:60,
+           parameters:{controller_id:$controller,runtime:$runtime[0],
+             config:({queue:"events",max_items:3,
+               sender:{"__prefect_kind":"jinja",template:"{{ event.resource[\"github.sender.login\"] }}"}}
+               + {(if $issue then "issues" else "pull_requests" end):
+               {"__prefect_kind":"json",value:{"__prefect_kind":"jinja",template:"[{{ event.resource[\"github.number\"]|int }}]"}}})}}],
+         actions_on_trigger:[],actions_on_resolve:[]}' > "$scratch/automation-$kind.json"
+      echo "automation $kind $(upsert automations "$scratch/automation-$kind.json")"
+    done
+    if [[ -n $notify ]]; then
+      jq -n --arg notify "$notify" '
+        {name:"fastmcp-triage-outcome",description:"Post issues a finished intake left for a maintainer; intakes with nothing to decide stay quiet",enabled:true,
+         trigger:{type:"event",posture:"Reactive",threshold:1,within:0,expect:["fastmcp.triage.outcome"],
+           match:{"prefect.resource.id":"fastmcp.triage.intake.*"},match_related:{},
+           after:[],for_each:["prefect.resource.id"]},
+         actions:[{type:"send-notification",block_document_id:$notify,
+           subject:"",body:"{{ event.payload.text }}"}],
+         actions_on_trigger:[],actions_on_resolve:[]}' > "$scratch/automation-notify.json"
+      echo "automation notify $(upsert automations "$scratch/automation-notify.json")"
+      # The outcome notice replaced this run-start notice.
+      jq -n '{limit:200}' > "$scratch/retired.filter"
+      api POST /automations/filter --data "@$scratch/retired.filter" \
+        | jq -r '.[] | select(.name == "fastmcp-triage-run-started") | .id' \
+        | while read -r retired; do
+            api DELETE "/automations/$retired" >/dev/null
+            echo "removed fastmcp-triage-run-started $retired"
+          done
+    fi
+    ;;
+  alerts)
+    runtime=${2:?pinned runtime JSON file required}
+    notify=${3:?notification block document UUID required}
+    [[ $notify =~ ^[0-9a-f-]{36}$ ]] || exit 2
+    scratch=$(mktemp -d)
+    trap 'rm -rf "$scratch"' EXIT
+    jq -n '{deployments:{name:{any_:["cloud-triage-intake"]}},limit:2}' > "$scratch/filter.json"
+    api POST /deployments/filter --data "@$scratch/filter.json" > "$scratch/deployments.json"
+    jq -e 'length == 1' "$scratch/deployments.json" >/dev/null || {
+      echo 'Expected exactly one intake deployment' >&2; exit 1;
+    }
+    jq -n --slurpfile deployments "$scratch/deployments.json" --rawfile body workflows/events/failure-notification.txt.j2 --arg notify "$notify" '
+      ([$deployments[0][].id | "prefect.deployment." + .]) as $scope |
+      {name:"fastmcp-triage-failure-alert",
+       description:"Notify once per failed or degraded intake; child failures are retained in the controller review bins",
+       enabled:true,
+       trigger:{type:"event",posture:"Reactive",threshold:1,within:0,
+         expect:["prefect.flow-run.Failed","prefect.flow-run.Crashed","prefect.flow-run.TimedOut","prefect.flow-run.Degraded"],
+         match:{"prefect.resource.id":"prefect.flow-run.*"},
+         match_related:{"prefect.resource.role":"deployment","prefect.resource.id":$scope},
+         after:[],for_each:["prefect.resource.id"]},
+       actions:[{type:"send-notification",block_document_id:$notify,
+         subject:"",body:$body}],
+       actions_on_trigger:[],actions_on_resolve:[]}' > "$scratch/automation-alert.json"
+    echo "automation alert $(upsert automations "$scratch/automation-alert.json")"
+    ;;
+  *)
+    echo 'Usage: agentic_stack.sh validate | register | deploy | intake CONFIG RUNTIME CONTROLLER DEPLOYMENT OPERATION | run BATCH RUNTIME DEPLOYMENT | results RUN | events RUNTIME CONTROLLER DEPLOYMENT [NOTIFY_BLOCK] | alerts RUNTIME NOTIFY_BLOCK' >&2
+    exit 2
+    ;;
+esac

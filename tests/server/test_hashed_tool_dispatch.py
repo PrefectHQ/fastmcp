@@ -1,7 +1,7 @@
 """Hashed tool names follow the same lookup rules as listed names.
 
 A FastMCPApp backend tool is also callable by its identity-addressed name,
-`<hash>_<local_name>`. Calling a tool that way resolves the same tool, with
+`__<hash>_<local_name>`. Calling a tool that way resolves the same tool, with
 the same transforms, enabled state, auth, and version fallback, as calling it
 by the name the server lists it under.
 """

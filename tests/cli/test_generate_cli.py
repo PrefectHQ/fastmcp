@@ -15,6 +15,7 @@ from fastmcp.cli.client import Client
 from fastmcp.cli.generate import (
     _derive_server_name,
     _param_to_cli_flag,
+    _resolve_tool_param_flags,
     _schema_to_python_type,
     _schema_type_label,
     _to_python_identifier,
@@ -157,10 +158,11 @@ class TestToolFunctionSource:
             },
         )
         source = _tool_function_source(tool)
-        assert "async def greet(" in source
+        assert "async def tool_greet(" in source
         assert "name: Annotated[str" in source
         assert "= None" not in source
-        assert "_call_tool('greet', {'name': name})" in source
+        assert "_arguments = {'name': name}" in source
+        assert "_call_tool('greet', _arguments)" in source
 
     def test_optional_param(self):
         tool = mcp_types.Tool(
@@ -203,7 +205,7 @@ class TestToolFunctionSource:
             input_schema={"properties": {}},
         )
         source = _tool_function_source(tool)
-        assert "async def ping(" in source
+        assert "async def tool_ping(" in source
         assert "_call_tool('ping', {})" in source
 
     def test_preserves_underscores(self):
@@ -215,7 +217,7 @@ class TestToolFunctionSource:
             },
         )
         source = _tool_function_source(tool)
-        assert "async def get_forecast(" in source
+        assert "async def tool_get_forecast(" in source
 
     def test_sanitizes_tool_name(self):
         tool = mcp_types.Tool(
@@ -223,7 +225,7 @@ class TestToolFunctionSource:
             input_schema={"properties": {}},
         )
         source = _tool_function_source(tool)
-        assert "async def my_tool_v2(" in source
+        assert "async def tool_my_tool_v2(" in source
         assert "name='my.tool/v2'" in source
 
     def test_sanitizes_param_name(self):
@@ -306,15 +308,12 @@ class TestToolFunctionSource:
         source = _tool_function_source(tool)
         # Should use str type for complex object
         assert "metadata: Annotated[str | None" in source
-        # Should include JSON schema in help (with escaped quotes)
+        # Should include JSON schema in help
         assert "JSON Schema:" in source
-        assert '\\"type\\": \\"object\\"' in source
-        # Should have JSON parsing with isinstance check
-        assert (
-            "metadata = json.loads(metadata) if isinstance(metadata, str) else metadata"
-            in source
-        )
-        # Should use the decoded value in the call
+        assert '"type": "object"' in source
+        # Should decode retained JSON values without changing the raw parameter.
+        assert "isinstance(_arguments['metadata'], str)" in source
+        assert "_arguments['metadata'] = json.loads(_arguments['metadata'])" in source
         assert "'metadata': metadata" in source
         compile(source, "<test>", "exec")
 
@@ -339,10 +338,7 @@ class TestToolFunctionSource:
         # Nested arrays need JSON parsing
         assert "batches: Annotated[str" in source
         assert "JSON Schema:" in source
-        assert (
-            "batches = json.loads(batches) if isinstance(batches, str) else batches"
-            in source
-        )
+        assert "_arguments['batches'] = json.loads(_arguments['batches'])" in source
         compile(source, "<test>", "exec")
 
     def test_complex_type_with_default(self):
@@ -363,7 +359,7 @@ class TestToolFunctionSource:
         # pydantic_core.to_json produces compact JSON
         assert '= \'{"timeout":30,"retry":true}\'' in source
         # Should parse safely even with default
-        assert "isinstance(options, str)" in source
+        assert "isinstance(_arguments['options'], str)" in source
         compile(source, "<test>", "exec")
 
     def test_name_collision_detection(self):
@@ -453,8 +449,8 @@ class TestGenerateCliScript:
             extra_imports=set(),
             tools=self._make_tools(),
         )
-        assert "async def greet(" in script
-        assert "async def add_numbers(" in script
+        assert "async def tool_greet(" in script
+        assert "async def tool_add_numbers(" in script
 
     def test_contains_generic_commands(self):
         script = generate_cli_script(
@@ -626,8 +622,8 @@ class TestGenerateCliCommand:
         output = tmp_path / "cli.py"
         await generate_cli_command("test-server", str(output))
         content = output.read_text(encoding="utf-8")
-        assert "async def greet(" in content
-        assert "async def add(" in content
+        assert "async def tool_greet(" in content
+        assert "async def tool_add(" in content
 
     @pytest.mark.usefixtures("_patch_client")
     async def test_default_output_path(
@@ -651,7 +647,7 @@ class TestGenerateCliCommand:
         await generate_cli_command("test-server", str(output), force=True)
         content = output.read_text(encoding="utf-8")
         assert content != "existing"
-        assert "async def greet(" in content
+        assert "async def tool_greet(" in content
 
     @pytest.mark.skipif(
         sys.platform == "win32", reason="Unix executable bits N/A on Windows"
@@ -979,3 +975,104 @@ class TestGenerateSkillContent:
         content = generate_skill_content("My Weather API", "cli.py", [])
         assert "# My Weather API CLI" in content
         assert 'name: "my-weather-api-cli"' in content
+
+
+# ---------------------------------------------------------------------------
+# _resolve_tool_param_flags & Flag Collisions (Issue #6294)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveToolParamFlags:
+    def test_no_collisions(self):
+        flags = _resolve_tool_param_flags({"city": {}, "max_days": {}})
+        assert flags == {
+            "city": ("--city", None),
+            "max_days": ("--max-days", None),
+        }
+
+    def test_snake_and_camel_collision(self):
+        flags = _resolve_tool_param_flags({"user_id": {}, "userId": {}})
+        assert flags["user_id"] == ("--user-id", None)
+        assert flags["userId"] == ("--userId", "--userId")
+
+    def test_order_independence(self):
+        flags = _resolve_tool_param_flags({"userId": {}, "user_id": {}})
+        assert flags["user_id"] == ("--user-id", None)
+        assert flags["userId"] == ("--userId", "--userId")
+
+    def test_multiple_collisions(self):
+        flags = _resolve_tool_param_flags({"user_id": {}, "userId": {}, "UserId": {}})
+        assert flags["user_id"] == ("--user-id", None)
+        assert flags["userId"] == ("--userId", "--userId")
+        assert flags["UserId"] == ("--UserId", "--UserId")
+
+    def test_case_collision(self):
+        flags = _resolve_tool_param_flags({"id": {}, "Id": {}})
+        assert flags["id"] == ("--id", None)
+        assert flags["Id"] == ("--Id", "--Id")
+
+    def test_colliding_params_emit_explicit_flag_and_execute(self):
+        tool = mcp_types.Tool(
+            name="lookup",
+            input_schema={
+                "properties": {
+                    "user_id": {"type": "string"},
+                    "userId": {"type": "string"},
+                },
+                "required": ["user_id", "userId"],
+            },
+        )
+        source = _tool_function_source(tool)
+        assert "user_id: Annotated[str, cyclopts.Parameter(help='')]" in source
+        assert (
+            "userId: Annotated[str, cyclopts.Parameter(name=\"--userId\", help='')]"
+            in source
+        )
+        compile(source, "<test>", "exec")
+
+        # End-to-end execution with generate_cli_script and Cyclopts
+        script = generate_cli_script(
+            server_name="users",
+            server_spec="server.py",
+            transport_code='"http://localhost"',
+            extra_imports=set(),
+            tools=[tool],
+        )
+        compile(script, "<generated>", "exec")
+
+        namespace: dict[str, Any] = {}
+        exec(script, namespace)
+        call_tool_app = namespace["call_tool_app"]
+
+        called = []
+
+        async def mock_call_tool(name, args):
+            called.append((name, args))
+
+        namespace["_call_tool"] = mock_call_tool
+
+        call_tool_app(
+            ["lookup", "--user-id", "val1", "--userId", "val2"],
+            result_action="return_value",
+        )
+        assert called == [("lookup", {"user_id": "val1", "userId": "val2"})]
+
+    def test_colliding_flags_in_skill_generation(self):
+        tools = [
+            mcp_types.Tool(
+                name="lookup",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "user_id": {"type": "string"},
+                        "userId": {"type": "string"},
+                    },
+                    "required": ["user_id", "userId"],
+                },
+            )
+        ]
+        content = generate_skill_content("users", "cli.py", tools)
+        assert "--user-id <value>" in content
+        assert "--userId <value>" in content
+        assert "| `--user-id` |" in content
+        assert "| `--userId` |" in content

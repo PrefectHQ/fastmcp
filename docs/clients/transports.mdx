@@ -97,6 +97,13 @@ async def efficient_multiple_operations():
         await client.call_tool("process_data", {"file": "data.csv"})
 ```
 
+A kept-alive session is reused when the transport options and request timeout
+match. Connecting with a different `Client(timeout=...)` restarts an idle
+subprocess. If another client is still connected, the new client shares its
+session and that session's timeout, and FastMCP logs a warning; use separate
+transports when concurrent clients need different defaults. Per-call `timeout`
+overrides do not restart the session.
+
 For complete isolation between connections, disable session persistence:
 
 ```python
@@ -108,6 +115,23 @@ transport = StdioTransport(command="python", args=["server.py"], keep_alive=Fals
 <VersionBadge version="2.3.0" />
 
 HTTP transport connects to MCP servers running as web services. This is the recommended transport for production deployments.
+
+Incoming SSE events are limited to 1 MiB by default. If a server returns larger
+tool results or resources, set `max_sse_event_size` on `StreamableHttpTransport`
+to a byte limit that accommodates them, or use `None` to disable the limit:
+
+```python
+from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
+
+transport = StreamableHttpTransport(
+    "https://api.example.com/mcp",
+    max_sse_event_size=8 * 1024 * 1024,
+)
+client = Client(transport)
+```
+
+The same field is available as `max_sse_event_size` on an [MCP config](/integrations/mcp-json-configuration)'s remote server entry, which forwards it when building the transport. A client created from a bare URL (`Client("https://api.example.com/mcp")`) keeps the 1 MiB default; pass an explicit `StreamableHttpTransport` as above to raise or disable it.
 
 ```python
 from fastmcp import Client
@@ -306,3 +330,7 @@ config = {
     }
 }
 ```
+
+Omit `include_tags` to leave inclusion unrestricted. An empty `include_tags` list
+includes no tools, while an empty `exclude_tags` list excludes none. These filters
+apply to each server in both single-server and multi-server configurations.
