@@ -36,6 +36,7 @@ from pydantic.json_schema import SkipJsonSchema
 from fastmcp.exceptions import ToolError
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
+from fastmcp.utilities.json_schema import is_object_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.prefab import (
     is_prefab_app,
@@ -242,6 +243,40 @@ class ToolResult(BaseModel):
         if self.structured_content is None:
             return self.content
         return self.content, self.structured_content
+
+
+class RawStructuredToolResult(ToolResult):
+    """A proxied result whose structured value need not be an object."""
+
+    structured_content: Any = None
+
+    def __init__(
+        self,
+        content: list[ContentBlock],
+        structured_content: Any,
+        meta: dict[str, Any] | None = None,
+        is_error: bool = False,
+    ) -> None:
+        # The proxy already received wire-format content from the backend.
+        # ToolResult's constructor intentionally rejects non-object values for
+        # ordinary tools; the wire handler wraps these for legacy clients.
+        BaseModel.__init__(
+            self,
+            content=content,
+            structured_content=structured_content,
+            meta=meta,
+            is_error=is_error,
+        )
+
+    def to_mcp_result(self) -> CallToolResult:
+        # Serialize the current public fields so response middleware edits are
+        # reflected on the wire, including when it uses model_copy().
+        return CallToolResult(
+            content=self.content,
+            structured_content=self.structured_content,
+            is_error=self.is_error,
+            _meta=self.meta,  # type: ignore[call-arg]
+        )
 
 
 class InputRequiredToolResult(ToolResult):
@@ -502,7 +537,32 @@ class Tool(FastMCPComponent):
         subclasses can customize dispatch. For example, ``FastMCPProviderTool``
         overrides this to delegate to child-server middleware.
         """
-        return await self.run(arguments)
+        result = await self.run(arguments)
+        return self._mark_non_object_result(result)
+
+    def _mark_non_object_result(self, result: ToolResult) -> ToolResult:
+        """Mark structured content declared by a non-object output schema.
+
+        Legacy MCP clients require object structured content, so the wire
+        handler wraps a `RawStructuredToolResult` under `result` to match the
+        wrapper it advertises for non-object schemas.
+        """
+        if (
+            isinstance(result, RawStructuredToolResult | InputRequiredToolResult)
+            or result.structured_content is None
+            or self.output_schema is None
+            or is_object_schema(self.output_schema)
+        ):
+            return result
+        fastmcp_meta = result.meta.get("fastmcp") if result.meta else None
+        if isinstance(fastmcp_meta, dict) and fastmcp_meta.get("wrap_result") is True:
+            return result
+        return RawStructuredToolResult(
+            content=result.content,
+            structured_content=result.structured_content,
+            meta=result.meta,
+            is_error=result.is_error,
+        )
 
     @classmethod
     def from_tool(

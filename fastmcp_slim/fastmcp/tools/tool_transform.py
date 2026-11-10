@@ -22,14 +22,18 @@ from fastmcp.tools.base import (
     Tool,
     ToolResult,
 )
-from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
+from fastmcp.tools.function_parsing import ParsedFunction
 from fastmcp.tools.function_tool import FunctionTool, _ToolBodyError, _wrap_body_errors
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
 from fastmcp.utilities.components import _convert_set_default_none
-from fastmcp.utilities.json_schema import _METADATA_KEYS, compress_schema
+from fastmcp.utilities.json_schema import (
+    _METADATA_KEYS,
+    compress_schema,
+    is_object_schema,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     FastMCPBaseModel,
@@ -501,9 +505,13 @@ class TransformedTool(Tool):
 
             # If transform function returns ToolResult, respect our output_schema setting
             if isinstance(result, ToolResult):
+                if self.output_schema == self.parent_tool.output_schema:
+                    # A forwarding transform inherits its parent's result
+                    # shape, including modern raw values and legacy wrappers.
+                    return result
                 if self.output_schema is None:
                     return result
-                elif not _is_object_schema(
+                elif not is_object_schema(
                     self.output_schema
                 ) and not self.output_schema.get("x-fastmcp-wrap-result"):
                     # Non-object explicit schemas disable structured content

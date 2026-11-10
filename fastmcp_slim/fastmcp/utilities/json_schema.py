@@ -988,3 +988,57 @@ def compress_schema(
     )
 
     return schema
+
+
+def is_object_schema(
+    schema: dict[str, Any],
+    *,
+    _root_schema: dict[str, Any] | None = None,
+    _seen_refs: set[str] | None = None,
+) -> bool:
+    """Check if a JSON schema represents an object type."""
+    root_schema = _root_schema or schema
+    seen_refs = _seen_refs or set()
+
+    # An explicit type takes precedence over properties, which only constrain
+    # objects and do not exclude other allowed types. A null alternative maps
+    # to absent structured content, so ["object", "null"] still describes an
+    # object result.
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        return [t for t in schema_type if t != "null"] == ["object"]
+    if "type" in schema:
+        return schema_type == "object"
+
+    # Schema with properties but no explicit type is treated as object
+    if "properties" in schema:
+        return True
+
+    # Resolve local $ref definitions and recurse into the target schema.
+    ref = schema.get("$ref")
+    if not isinstance(ref, str) or not ref.startswith("#/"):
+        return False
+
+    if ref in seen_refs:
+        return False
+
+    # Walk the JSON Pointer path from the root schema, unescaping each
+    # token per RFC 6901 (~1 → /, ~0 → ~).
+    pointer = ref.removeprefix("#/")
+    segments = pointer.split("/")
+    target: Any = root_schema
+    for segment in segments:
+        unescaped = segment.replace("~1", "/").replace("~0", "~")
+        if not isinstance(target, dict) or unescaped not in target:
+            return False
+        target = target[unescaped]
+
+    target_schema = target
+    if not isinstance(target_schema, dict):
+        return False
+
+    return is_object_schema(
+        target_schema,
+        _root_schema=root_schema,
+        _seen_refs=seen_refs | {ref},
+    )

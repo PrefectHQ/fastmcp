@@ -63,8 +63,14 @@ from fastmcp.server.providers.aggregate import ProviderErrorStrategy
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.server import FastMCP
 from fastmcp.telemetry import inject_trace_context
-from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
+from fastmcp.tools.base import (
+    InputRequiredToolResult,
+    RawStructuredToolResult,
+    Tool,
+    ToolResult,
+)
 from fastmcp.utilities.components import FastMCPComponent, get_fastmcp_metadata
+from fastmcp.utilities.json_schema import is_object_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.tasks import TaskConfig
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
@@ -484,10 +490,29 @@ class ProxyTool(Tool):
             # backend's content (including non-text and structured content),
             # and the client still raises on isError by default.
             # Preserve backend's meta (includes task metadata for background tasks)
+            structured_content = tool_result.structured_content
+            meta = _forwardable_server_meta(tool_result.meta, self._identity) or None
+            has_structured_content = (
+                "structured_content" in tool_result.model_fields_set
+            )
+            if has_structured_content and (
+                not isinstance(structured_content, dict)
+                or (
+                    self.output_schema is not None
+                    and not is_object_schema(self.output_schema)
+                )
+            ):
+                return RawStructuredToolResult(
+                    content=tool_result.content,
+                    structured_content=structured_content,
+                    meta=meta,
+                    is_error=tool_result.is_error,
+                )
+
             return ToolResult(
                 content=tool_result.content,
-                structured_content=tool_result.structured_content,
-                meta=_forwardable_server_meta(tool_result.meta, self._identity) or None,
+                structured_content=structured_content,
+                meta=meta,
                 is_error=tool_result.is_error,
             )
 
