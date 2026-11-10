@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from fastmcp import FastMCP, FastMCPApp
-from fastmcp.exceptions import ToolError
+from fastmcp import Client, FastMCP, FastMCPApp
+from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.experimental.transforms.code_mode import CodeMode
 from fastmcp.server.middleware.tool_injection import ToolInjectionMiddleware
 from fastmcp.server.providers.addressing import hash_tool, hashed_backend_name
@@ -20,6 +20,7 @@ from fastmcp.server.transforms.search import RegexSearchTransform
 from fastmcp.server.transforms.tool_transform import ToolTransform
 from fastmcp.tools.base import Tool
 from fastmcp.tools.tool_transform import ToolTransformConfig
+from fastmcp.utilities.versions import VersionSpec
 
 prefab_ui = pytest.importorskip("prefab_ui")
 from prefab_ui.actions.mcp import CallTool  # noqa: E402
@@ -46,8 +47,7 @@ def _tool_refs(payload) -> list[str]:
 
 class TestSingleServerRoundTrip:
     async def test_payload_carries_the_servers_own_tool_name(self):
-        """The renderer is handed a name that exists in this server's
-        tools/list, not the identity-addressed form."""
+        """The renderer gets the canonical callback name listed by this server."""
         app = FastMCPApp("contacts")
 
         @app.tool()
@@ -65,7 +65,9 @@ class TestSingleServerRoundTrip:
 
         result = await server.call_tool("contact_form", {})
         assert result.structured_content is not None
-        assert _tool_refs(result.structured_content) == ["save_contact"]
+        assert _tool_refs(result.structured_content) == [
+            hashed_backend_name("contacts", "save_contact")
+        ]
 
     async def test_payload_records_the_identity_behind_each_reference(self):
         """The identity-addressed form survives alongside the rewritten name,
@@ -88,9 +90,8 @@ class TestSingleServerRoundTrip:
         result = await server.call_tool("contact_form", {})
         assert result.structured_content is not None
         names = result.structured_content["_meta"]["fastmcp"]["toolNames"]
-        assert names == {
-            "save_contact": hashed_backend_name("contacts", "save_contact")
-        }
+        address = hashed_backend_name("contacts", "save_contact")
+        assert names == {address: address}
 
     async def test_hashed_name_from_result_is_callable(self):
         """The hashed name that appears in structured_content actually
@@ -200,7 +201,7 @@ async def test_hash_shaped_user_name_round_trip(tool_name: str, composition: str
     result = await server.call_tool("ns_form", {})
     assert result.structured_content is not None
     (ref,) = _tool_refs(result.structured_content)
-    assert ref == f"ns_{tool_name}"
+    assert ref == hashed_backend_name("contacts", tool_name)
     assert ref in [tool.name for tool in await server.list_tools()]
 
     clicked = await server.call_tool(ref, {"name": "Alice"})
@@ -237,14 +238,18 @@ class TestProxiedServerRoundTrip:
         gateway.add_provider(ProxyProvider(lambda: ProxyClient(backend)))
 
         names = [t.name for t in await gateway.list_tools()]
-        assert "save" in names
+        assert hashed_backend_name("contacts", "save") in names
 
     async def test_identity_hash_survives_the_proxy(self):
         backend = self._backend()
         gateway = FastMCP("Gateway")
         gateway.add_provider(ProxyProvider(lambda: ProxyClient(backend)))
 
-        tool = next(t for t in await gateway.list_tools() if t.name == "save")
+        tool = next(
+            t
+            for t in await gateway.list_tools()
+            if t.name == hashed_backend_name("contacts", "save")
+        )
         assert tool.meta is not None
         assert tool.meta["fastmcp"]["tool_hash"] == hash_tool("contacts", "save")
 
@@ -265,7 +270,7 @@ class TestProxiedServerRoundTrip:
         )
 
         names = [t.name for t in await gateway.list_tools()]
-        assert "up_save" in names
+        assert hashed_backend_name("contacts", "save") in names
 
         hashed_name = hashed_backend_name("contacts", "save")
         result = await gateway.call_tool(hashed_name, {"name": "Erin"})
@@ -311,7 +316,9 @@ class TestLateBoundToolNames:
         server.add_provider(self._app(), namespace="crm")
 
         result = await server.call_tool("crm_form", {})
-        assert _tool_refs(result.structured_content) == ["crm_save"]
+        assert _tool_refs(result.structured_content) == [
+            hashed_backend_name("contacts", "save")
+        ]
 
     async def test_name_accumulates_through_nested_mounts(self):
         inner = FastMCP("Inner")
@@ -322,7 +329,9 @@ class TestLateBoundToolNames:
         top.add_provider(mid, namespace="c")
 
         result = await top.call_tool("c_b_a_form", {})
-        assert _tool_refs(result.structured_content) == ["c_b_a_save"]
+        assert _tool_refs(result.structured_content) == [
+            hashed_backend_name("contacts", "save")
+        ]
 
     async def test_gateway_emits_its_own_name_not_the_backends(self):
         backend = FastMCP("Backend")
@@ -334,7 +343,9 @@ class TestLateBoundToolNames:
         )
 
         result = await gateway.call_tool("up_form", {})
-        assert _tool_refs(result.structured_content) == ["up_save"]
+        assert _tool_refs(result.structured_content) == [
+            hashed_backend_name("contacts", "save")
+        ]
 
     async def test_emitted_name_is_callable_on_the_same_server(self):
         """The whole point: what the renderer is told to call, it can call."""
@@ -454,7 +465,8 @@ class TestLateBoundToolNames:
         clicked = await gateway.call_tool(ref, {"name": "alice"})
         assert clicked.content[0].text == "[be] saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
-    async def test_versions_of_one_tool_are_a_single_target(self):
+    @pytest.mark.parametrize("mounted", [False, True])
+    async def test_versions_of_one_tool_are_a_single_target(self, mounted):
         """Versions are listed individually and share an identity, but they
         also share a name that resolves to the highest version on its own.
         Only distinct names mean distinct copies of an app.
@@ -473,15 +485,38 @@ class TestLateBoundToolNames:
                 children=[Button(label="Save", on_click=CallTool(tool="save"))]
             )
 
+        inner = FastMCP("Inner")
+        inner.add_provider(app)
         server = FastMCP("Platform")
-        server.add_provider(app)
+        if mounted:
+            server.mount(inner, namespace="inner")
+        else:
+            server.add_provider(app)
 
-        result = await server.call_tool("form", {})
+        result = await server.call_tool("inner_form" if mounted else "form", {})
         (ref,) = _tool_refs(result.structured_content)
-        assert ref == "save"
+        assert ref == hashed_backend_name("contacts", "save")
 
         clicked = await server.call_tool(ref, {"name": "alice"})
         assert clicked.content[0].text == "v2 saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+
+        older = await server.call_tool(
+            ref, {"name": "alice"}, version=VersionSpec(eq="1.0.0")
+        )
+        assert older.content[0].text == "v1 saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+
+        with pytest.raises(NotFoundError, match="Unknown tool"):
+            await server.call_tool(
+                ref, {"name": "alice"}, version=VersionSpec(eq="3.0.0")
+            )
+
+        server.disable(version=VersionSpec(eq="2.0.0"))
+        with pytest.raises(NotFoundError, match="Unknown tool"):
+            await server.call_tool(
+                ref, {"name": "alice"}, version=VersionSpec(eq="2.0.0")
+            )
+        fallback = await server.call_tool(ref, {"name": "alice"})
+        assert fallback.content[0].text == "v1 saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_distinct_apps_sharing_a_backend_name(self):
         """Identity and name must agree in both directions. Two apps can each
@@ -523,10 +558,11 @@ class TestLateBoundToolNames:
         gateway = FastMCP("Gateway")
         gateway.add_provider(ProxyProvider(lambda: ProxyClient(backend)))
 
-        with pytest.raises(ToolError, match="composed more than once"):
-            await gateway.call_tool(
-                hashed_backend_name("contacts", "save"), {"name": "alice"}
-            )
+        result = await gateway.call_tool(
+            hashed_backend_name("contacts", "save"), {"name": "alice"}
+        )
+        assert result.is_error
+        assert "composed more than once" in result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_middleware_owns_the_names_it_shadows(self):
         """Binding describes the listing a client will see, so it has to run
@@ -562,6 +598,126 @@ class TestLateBoundToolNames:
         clicked = await server.call_tool(ref, {"name": "alice"})
         assert clicked.content[0].text == "[APP] saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
+    async def test_injected_canonical_name_cannot_steal_app_callback(self):
+        app = FastMCPApp("contacts")
+        called: list[str] = []
+
+        @app.tool()
+        def save(name: str) -> str:
+            called.append("app")
+            return name
+
+        def injected(name: str) -> str:
+            called.append("injected")
+            return name
+
+        address = hashed_backend_name("contacts", "save")
+        server = FastMCP("Platform")
+        server.add_provider(app)
+        server.add_middleware(
+            ToolInjectionMiddleware([Tool.from_function(injected, name=address)])
+        )
+
+        with pytest.raises(ToolError, match="reserved"):
+            await server.list_tools()
+        with pytest.raises(ToolError, match="reserved"):
+            await server.call_tool(address, {"name": "Alice"})
+        assert called == []
+
+    async def test_ordinary_canonical_name_cannot_steal_app_callback(self):
+        app = FastMCPApp("contacts")
+        called: list[str] = []
+
+        @app.tool()
+        def save(name: str) -> str:
+            called.append("app")
+            return name
+
+        address = hashed_backend_name("contacts", "save")
+        server = FastMCP("Platform")
+        server.add_provider(app)
+
+        @server.tool(name=address)
+        def ordinary(name: str) -> str:
+            called.append("ordinary")
+            return name
+
+        with pytest.raises(ToolError, match="reserved"):
+            await server.list_tools()
+        with pytest.raises(ToolError, match="reserved"):
+            await server.call_tool(address, {"name": "Alice"})
+        assert called == []
+
+    @pytest.mark.parametrize("injected", [False, True])
+    @pytest.mark.parametrize("blocked", ["disabled", "missing-version"])
+    async def test_unavailable_callback_cannot_call_canonical_shadow(
+        self, injected: bool, blocked: str
+    ):
+        app = FastMCPApp("contacts")
+        called: list[str] = []
+
+        @app.tool()
+        def save(name: str) -> str:
+            called.append("app")
+            return name
+
+        address = hashed_backend_name("contacts", "save")
+        server = FastMCP("Platform")
+        server.add_provider(app)
+
+        def shadow(name: str) -> str:
+            called.append("shadow")
+            return name
+
+        if injected:
+            server.add_middleware(
+                ToolInjectionMiddleware([Tool.from_function(shadow, name=address)])
+            )
+        else:
+            server.add_tool(Tool.from_function(shadow, name=address))
+
+        version = VersionSpec(eq="9.9.9") if blocked == "missing-version" else None
+        if blocked == "disabled":
+            server.disable(names={"save"})
+
+        with pytest.raises(ToolError, match="reserved"):
+            await server.call_tool(address, {"name": "Alice"}, version=version)
+        assert called == []
+
+    @pytest.mark.parametrize("injected", [False, True])
+    async def test_generated_address_is_reserved_without_an_app(self, injected: bool):
+        address = hashed_backend_name("absent", "save")
+        called: list[str] = []
+
+        def ordinary() -> str:
+            called.append("ordinary")
+            return "wrong"
+
+        server = FastMCP("Platform")
+        tool = Tool.from_function(ordinary, name=address)
+        if injected:
+            server.add_middleware(ToolInjectionMiddleware([tool]))
+        else:
+            server.add_tool(tool)
+
+        with pytest.raises(ToolError, match="reserved"):
+            await server.list_tools()
+        with pytest.raises(ToolError, match="reserved"):
+            await server.call_tool(address, {})
+        assert called == []
+
+    @pytest.mark.parametrize("name", ["abcdef012345_save", "__save"])
+    async def test_noncanonical_ordinary_names_still_work(self, name: str):
+        server = FastMCP("Platform")
+
+        @server.tool(name=name)
+        def ordinary() -> str:
+            return "ok"
+
+        assert name in {tool.name for tool in await server.list_tools()}
+        result = await server.call_tool(name, {})
+        assert result.content[0].text == "ok"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+
     async def test_middleware_produced_results_are_rebound(self):
         """Middleware can answer a call itself, and such a result never
         reaches the core dispatch path — so rebinding belongs above the
@@ -590,7 +746,7 @@ class TestLateBoundToolNames:
 
         result = await server.call_tool("injected", {})
         (ref,) = _tool_refs(result.structured_content)
-        assert ref == "save"
+        assert ref == hashed_backend_name("contacts", "save")
 
         clicked = await server.call_tool(ref, {"name": "alice"})
         assert clicked.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
@@ -606,7 +762,11 @@ class TestLateBoundToolNames:
             ToolTransform({"save": ToolTransformConfig(meta={"team": "crm"})})
         )
 
-        transformed = next(t for t in await backend.list_tools() if t.name == "save")
+        transformed = next(
+            t
+            for t in await backend.list_tools()
+            if t.name == hashed_backend_name("contacts", "save")
+        )
         assert transformed.meta is not None
         assert transformed.meta["ui"]["visibility"] == ["app"]
         assert transformed.meta["team"] == "crm"
@@ -644,7 +804,9 @@ class TestLateBoundToolNames:
             server.add_provider(app)
 
         listed = await server.list_tools()
-        assert [t.key for t in listed].count("tool:save@") == 2
+        assert [t.name for t in listed].count(
+            hashed_backend_name("contacts", "save")
+        ) == 2
 
         result = await server.call_tool("form_b", {})
         (ref,) = _tool_refs(result.structured_content)
@@ -697,6 +859,46 @@ class TestDynamicToolAdd:
 
 
 class TestCollision:
+    @pytest.mark.parametrize("proxied", [False, True])
+    async def test_distinct_apps_with_same_callback_round_trip_through_protocol(
+        self, proxied: bool
+    ):
+        server = FastMCP("Platform")
+        for app_name in ("crm", "billing"):
+            app = FastMCPApp(app_name)
+
+            @app.tool()
+            def save(name: str, _app: str = app_name) -> str:
+                return f"{_app}: {name}"
+
+            @app.ui(name=f"{app_name}_form")
+            def form() -> Column:
+                return Column(
+                    children=[Button(label="Save", on_click=CallTool(tool="save"))]
+                )
+
+            server.add_provider(app)
+
+        if proxied:
+            backend = server
+            gateway = FastMCP("Gateway")
+            gateway.add_provider(ProxyProvider(lambda: ProxyClient(backend)))
+            server = gateway
+
+        async with Client(server) as client:
+            listed = {tool.name for tool in await client.list_tools()}
+            refs: dict[str, str] = {}
+            for app_name in ("crm", "billing"):
+                ui = await client.call_tool(f"{app_name}_form", {})
+                (ref,) = _tool_refs(ui.structured_content)
+                refs[app_name] = ref
+                assert ref in listed
+
+            assert refs["crm"] != refs["billing"]
+            for app_name, ref in refs.items():
+                clicked = await client.call_tool(ref, {"name": "Eve"})
+                assert clicked.content[0].text == f"{app_name}: Eve"
+
     async def test_distinct_hashes_resolve_independently(self):
         """Two apps sharing a name but with different tool names hash
         differently, so each tool resolves to itself."""
@@ -729,12 +931,14 @@ class TestCollision:
         """The same app composed into two branches yields two tools with one
         identity. Routing to either would silently execute the wrong branch's
         tool, so the call is refused."""
+        called: list[str] = []
         server = FastMCP("Platform")
         for marker, namespace in (("A", "a"), ("B", "b")):
             app = FastMCPApp("contacts")
 
             @app.tool()
             def save(name: str, _marker: str = marker) -> str:
+                called.append(_marker)
                 return f"from {_marker}: {name}"
 
             server.add_provider(app, namespace=namespace)
@@ -743,6 +947,7 @@ class TestCollision:
             await server.call_tool(
                 hashed_backend_name("contacts", "save"), {"name": "Eve"}
             )
+        assert called == []
 
     async def test_distinct_app_names_route_independently_through_a_gateway(self):
         """The multi-tenant gateway shape: distinct app names stay unambiguous

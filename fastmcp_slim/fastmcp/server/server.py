@@ -91,7 +91,9 @@ from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMi
 from fastmcp.server.mixins.extensions import ExtensionsMixin
 from fastmcp.server.providers import LocalProvider, Provider
 from fastmcp.server.providers.addressing import (
+    is_public_backend_address,
     parse_hashed_backend_name,
+    public_backend_name,
     tool_identity,
 )
 from fastmcp.server.providers.aggregate import AggregateProvider
@@ -663,6 +665,35 @@ class FastMCP(
                     return tool
         return None
 
+    def _public_app_tool_names(self, tools: Sequence[Tool]) -> list[Tool]:
+        """Expose app callbacks by identity after all name transforms."""
+        projected: list[tuple[Tool, str | None]] = []
+        owners: dict[str, set[tuple[str | None, str | None]]] = {}
+        for tool in tools:
+            name = public_backend_name(tool)
+            public_name = name or tool.name
+            app = (tool.meta or {}).get("fastmcp", {}).get("app") if name else None
+            owner = (tool_identity(tool) if name else None, app)
+            owners.setdefault(public_name, set()).add(owner)
+            projected.append((tool, name))
+
+        for tool, name in projected:
+            public_name = name or tool.name
+            if parse_hashed_backend_name(
+                public_name
+            ) is not None and not is_public_backend_address(tool, public_name):
+                raise ToolError(
+                    f"Tool name {public_name!r} is reserved for app callback addresses"
+                )
+            if name is not None and len(owners[name]) > 1:
+                raise ToolError(
+                    f"App callback address {name!r} collides with another tool"
+                )
+        return [
+            tool.model_copy(update={"name": name}) if name is not None else tool
+            for tool, name in projected
+        ]
+
     def required_extensions(self) -> Sequence[ServerExtension]:
         """Bundled extensions and auto-registerable registrations for composition."""
         return self._required_extensions()
@@ -839,10 +870,11 @@ class FastMCP(
                     method="tools/list",
                     fastmcp_context=ctx,
                 )
-                return await self._dispatch_component_middleware(
+                listed = await self._dispatch_component_middleware(
                     context=mw_context,
                     call_next=lambda context: self.list_tools(run_middleware=False),
                 )
+                return self._public_app_tool_names(listed)
 
             # Core logic: list tools
             with server_span("tools/list", "tools/list", self.name, "tool", ""):
@@ -870,7 +902,9 @@ class FastMCP(
                 claimed = {tool.name for tool in injected}
                 tools = [*injected, *(t for t in tools if t.name not in claimed)]
 
-                return [tool for tool in tools if await _component_auth_allows(tool)]
+                return self._public_app_tool_names(
+                    [tool for tool in tools if await _component_auth_allows(tool)]
+                )
 
     async def _get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -929,10 +963,28 @@ class FastMCP(
             else None
         )
         if injected is not None:
+            if parse_hashed_backend_name(name) is not None:
+                raise ToolError(
+                    f"Tool name {name!r} is reserved for app callback addresses"
+                )
             return injected if await _component_auth_allows(injected) else None
 
         tool = await super().get_tool(name, version)
+        hashed = (
+            parse_hashed_backend_name(name)
+            if hashed_lookup_target(self) is None
+            else None
+        )
+        if tool is not None and hashed is not None:
+            if not is_public_backend_address(tool, name):
+                raise ToolError(
+                    f"Tool name {name!r} is reserved for app callback addresses"
+                )
         if tool is None:
+            if hashed is not None:
+                tool = await self.get_tool_by_hash(*hashed, version=version)
+                if tool is not None:
+                    return tool
             return None
 
         # Apply session transforms to single item
@@ -1500,7 +1552,9 @@ class FastMCP(
                     hashed = parse_hashed_backend_name(name)
                     if hashed is not None:
                         digest, local_name = hashed
-                        tool = await self.get_tool_by_hash(digest, local_name)
+                        tool = await self.get_tool_by_hash(
+                            digest, local_name, version=version
+                        )
 
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {name!r}")

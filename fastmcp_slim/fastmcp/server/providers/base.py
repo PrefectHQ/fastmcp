@@ -258,7 +258,13 @@ class Provider:
                 return tool
         return None
 
-    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+    async def get_tool_by_hash(
+        self,
+        tool_hash: str,
+        tool_name: str,
+        *,
+        version: VersionSpec | None = None,
+    ) -> Tool | None:
         """Get an app-visible tool by its identity hash, through `get_tool()`.
 
         The identity hash survives renaming, so `_get_tool_by_hash()` finds
@@ -281,6 +287,7 @@ class Provider:
         Args:
             tool_hash: The identity hash from a `__<hash>_<local_name>` name.
             tool_name: The local tool name from the same name.
+            version: Optional version filter.
 
         Returns:
             The tool if found and not hidden (may be marked disabled), else None.
@@ -299,7 +306,7 @@ class Provider:
         state = _HashedLookup(provider=self, tool=found)
         token = _hashed_lookup.set(state)
         try:
-            tool = await self.get_tool(name)
+            tool = await self.get_tool(name, version=version)
         finally:
             state.active = False
             _hashed_lookup.reset(token)

@@ -47,7 +47,9 @@ async def test_catalog_names_work_for_name_and_app_calls(namespace: bool) -> Non
         server.add_transform(Namespace("team"))
 
     displayed_name = "team_catalog_save" if namespace else "catalog_save"
-    assert displayed_name in {tool.name for tool in await server.list_tools()}
+    assert hashed_backend_name("contacts", "save") in {
+        tool.name for tool in await server.list_tools()
+    }
     ordinary = await server.call_tool(displayed_name, {"name": "Alice"})
     addressed = await server.call_tool(
         hashed_backend_name("contacts", "save"), {"name": "Alice"}
@@ -89,7 +91,9 @@ async def test_catalog_names_select_the_app_tool_version(namespace: bool) -> Non
 
     selected = "2.0"
     displayed_name = f"team_save_{selected}" if namespace else f"save_{selected}"
-    assert displayed_name in {tool.name for tool in await server.list_tools()}
+    assert hashed_backend_name("contacts", "save") in {
+        tool.name for tool in await server.list_tools()
+    }
     ordinary = await server.call_tool(displayed_name, {"name": "Alice"})
     addressed = await server.call_tool(
         hashed_backend_name("contacts", "save"), {"name": "Alice"}

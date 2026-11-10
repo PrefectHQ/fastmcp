@@ -247,6 +247,7 @@ class FastMCPApp(Provider):
             from fastmcp.apps.config import AppConfig, app_config_to_meta_dict
             from fastmcp.server.providers.addressing import (
                 TOOL_HASH_META_KEY,
+                TOOL_NAME_META_KEY,
                 hash_tool,
             )
 
@@ -256,6 +257,7 @@ class FastMCPApp(Provider):
                 "fastmcp": {
                     "app": self.name,
                     TOOL_HASH_META_KEY: hash_tool(self.name, resolved_name),
+                    TOOL_NAME_META_KEY: resolved_name,
                 },
             }
 
@@ -406,6 +408,7 @@ class FastMCPApp(Provider):
 
         from fastmcp.server.providers.addressing import (
             TOOL_HASH_META_KEY,
+            TOOL_NAME_META_KEY,
             hash_tool,
         )
 
@@ -413,6 +416,7 @@ class FastMCPApp(Provider):
         fm = meta.setdefault("fastmcp", {})
         fm["app"] = self.name
         fm[TOOL_HASH_META_KEY] = hash_tool(self.name, tool.name)
+        fm[TOOL_NAME_META_KEY] = tool.name
         ui = meta.setdefault("ui", {})
         if "visibility" not in ui:
             ui["visibility"] = ["app"]
