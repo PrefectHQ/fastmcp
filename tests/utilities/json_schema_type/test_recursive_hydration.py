@@ -135,6 +135,31 @@ def test_recursive_default_hydrates_after_resolution() -> None:
     assert result.node.child is None
 
 
+def test_recursive_default_on_a_reserved_property_name() -> None:
+    generated = json_schema_type.json_schema_to_type(
+        {
+            "type": "object",
+            "properties": {"node": {"$ref": "#/$defs/Node"}},
+            "$defs": {
+                "Node": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "properties": {
+                        "name": {"type": "string"},
+                        "_children": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/Node"},
+                            "default": [],
+                        },
+                    },
+                }
+            },
+        }
+    )
+    result = TypeAdapter[Any](generated).validate_python({"node": {"name": "x"}})
+    assert result.node.field_children == []
+
+
 class HydrationPerson(BaseModel):
     name: str
     pet: HydrationPet | None = None
