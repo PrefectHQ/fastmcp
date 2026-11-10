@@ -46,14 +46,14 @@ jobs:
 
     steps:
       - name: Checkout base repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ github.repository }}
           ref: ${{ github.event.repository.default_branch }}
 
       - name: Generate Marvin App token
         id: marvin-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         with:
           app-id: ${{ secrets.MARVIN_APP_ID }}
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
@@ -332,7 +332,7 @@ jobs:
 
       - name: Upload Marvin execution log
         if: always() && steps.marvin.conclusion != 'skipped'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: marvin-triage-execution-log
           path: |

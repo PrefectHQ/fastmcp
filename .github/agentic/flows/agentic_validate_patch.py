@@ -93,33 +93,6 @@ def apply_patch(repository: Path, patch: str) -> list[str]:
     return paths
 
 
-def validate_tree(repository: Path, paths: list[str]) -> list[dict]:
-    before = subprocess.check_output(
-        ["git", "diff", "HEAD", "--binary"], cwd=repository
-    )
-    checks = [run_command(["uv", "sync"], repository)]
-    checks.append(
-        run_command(["uv", "run", "pytest", "-n", "auto"], repository, timeout=1200)
-    )
-    checks.append(run_command(["uv", "run", "prek", "run", "--all-files"], repository))
-    if any(path.startswith("docs/") for path in paths):
-        checks.append(
-            run_command(["uv", "run", "pytest", "tests/docs", "-n", "0"], repository)
-        )
-        checks.append(
-            run_command(
-                ["npx", "--yes", "mint@latest", "broken-links"], repository / "docs"
-            )
-        )
-    checks.append(run_command(["git", "diff", "--check"], repository))
-    if (
-        subprocess.check_output(["git", "diff", "HEAD", "--binary"], cwd=repository)
-        != before
-    ):
-        raise ValueError("Validation changed the candidate; submit the corrected patch")
-    return checks
-
-
 @task(retries=3, retry_delay_seconds=[2, 5, 10], retry_jitter_factor=1)
 def install_tools(directory: Path) -> None:
     downloads = (

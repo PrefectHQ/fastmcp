@@ -6,7 +6,13 @@ from copy import deepcopy
 from pathlib import Path
 from uuid import UUID
 
-from flows.agentic_stack_plans import COMMON, OBJECTIVES, Assessment, Reproduction
+from flows.agentic_stack_plans import (
+    COMMON,
+    OBJECTIVES,
+    Assessment,
+    Reproduction,
+    tier_models,
+)
 
 BRANCHES = {
     "verify": ("existing_review",),
@@ -15,6 +21,9 @@ BRANCHES = {
     "blocked": ("environment_failure",),
 }
 TERMINAL = ("completed", "failed", "crashed", "cancelled", "timed_out")
+
+
+MODEL_NAMES = {"gpt-6-luna": "Luna"}
 
 
 def assessment_branch(value: dict) -> str:
@@ -39,9 +48,8 @@ def build_triage_plan(models: dict, verify_id: UUID, finalize_id: UUID) -> dict:
     def agent(role: str, inputs: dict, outputs: dict, objective: str) -> dict:
         return {
             "kind": "AgentNode",
-            "label": "Assess issue · Luna"
-            if role == "triage"
-            else "Reproduce bug · Luna",
+            "label": ("Assess issue" if role == "triage" else "Reproduce bug")
+            + f" · {MODEL_NAMES.get(models['roles'][role]['id'], models['roles'][role]['id'])}",
             "model": {
                 "connection_id": models["connection_id"],
                 **models["roles"][role],
@@ -182,11 +190,15 @@ if __name__ == "__main__":
     parser.add_argument("--verify-deployment", type=UUID, required=True)
     parser.add_argument("--finalize-deployment", type=UUID, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--tier", help="named tier from stack-models.json")
     arguments = parser.parse_args()
-    models = json.loads(
-        (
-            Path(__file__).resolve().parents[1] / "workflows/stack-models.json"
-        ).read_text()
+    models = tier_models(
+        json.loads(
+            (
+                Path(__file__).resolve().parents[1] / "workflows/stack-models.json"
+            ).read_text()
+        ),
+        arguments.tier,
     )
     plan = build_triage_plan(
         models, arguments.verify_deployment, arguments.finalize_deployment

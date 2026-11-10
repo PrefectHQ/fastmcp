@@ -6,7 +6,7 @@ from contextlib import contextmanager
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from flows.agentic_stack_publication import REPOSITORY, GitHub
+from flows.agentic_github import REPOSITORY, GitHub
 
 
 class ReviewApp(BaseModel):

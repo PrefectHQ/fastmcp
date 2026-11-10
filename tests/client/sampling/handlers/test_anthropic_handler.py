@@ -226,7 +226,36 @@ def test_message_to_create_message_result():
         content=TextContent(type="text", text="HELPFUL CONTENT FROM A VERY SMART LLM"),
         role="assistant",
         model="claude-3-5-sonnet-20241022",
+        stop_reason="endTurn",
     )
+
+
+@pytest.mark.parametrize(
+    ("anthropic_stop_reason", "expected"),
+    [
+        ("end_turn", "endTurn"),
+        ("stop_sequence", "stopSequence"),
+        ("max_tokens", "maxTokens"),
+    ],
+)
+def test_message_to_create_message_result_maps_stop_reason(
+    anthropic_stop_reason: Any, expected: str
+):
+    """Without tools, a reply cut off at max_tokens must say so too."""
+    message = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        content=[TextBlock(type="text", text="partial")],
+        model="claude-3-5-sonnet-20241022",
+        stop_reason=anthropic_stop_reason,
+        stop_sequence="END" if anthropic_stop_reason == "stop_sequence" else None,
+        usage=Usage(input_tokens=10, output_tokens=20),
+    )
+
+    result = AnthropicSamplingHandler._message_to_create_message_result(message)
+
+    assert result.stop_reason == expected
 
 
 def test_message_to_result_with_tools():
