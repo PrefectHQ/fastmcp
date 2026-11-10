@@ -108,6 +108,7 @@ async def test_call_tool_bulk_single_success(bulk_caller_live: BulkToolCaller):
             CallToolRequestResult(
                 content=[TextContent(type="text", text="value1")],
                 structured_content={"result": "value1"},
+                meta={"fastmcp": {"wrap_result": True}},
                 tool="echo_tool",
                 arguments={"arg1": "value1"},
             )
@@ -126,12 +127,14 @@ async def test_call_tool_bulk_multiple_success(bulk_caller_live: BulkToolCaller)
             CallToolRequestResult(
                 content=[TextContent(type="text", text="value1")],
                 structured_content={"result": "value1"},
+                meta={"fastmcp": {"wrap_result": True}},
                 tool="echo_tool",
                 arguments={"arg1": "value1"},
             ),
             CallToolRequestResult(
                 content=[TextContent(type="text", text="value2")],
                 structured_content={"result": "value2"},
+                meta={"fastmcp": {"wrap_result": True}},
                 tool="echo_tool",
                 arguments={"arg1": "value2"},
             ),
@@ -190,6 +193,7 @@ async def test_call_tool_bulk_error_continues(bulk_caller_live: BulkToolCaller):
             CallToolRequestResult(
                 content=[TextContent(type="text", text="success_value")],
                 structured_content={"result": "success_value"},
+                meta={"fastmcp": {"wrap_result": True}},
                 tool="echo_tool",
                 arguments={"arg1": "success_value"},
             ),
@@ -208,6 +212,7 @@ async def test_call_tools_bulk_single_success(bulk_caller_live: BulkToolCaller):
             CallToolRequestResult(
                 content=[TextContent(type="text", text="value1")],
                 structured_content={"result": "value1"},
+                meta={"fastmcp": {"wrap_result": True}},
                 tool="echo_tool",
                 arguments={"arg1": "value1"},
             )
@@ -231,6 +236,7 @@ async def test_call_tools_bulk_multiple_success(bulk_caller_live: BulkToolCaller
             CallToolRequestResult(
                 content=[TextContent(type="text", text="echo_value")],
                 structured_content={"result": "echo_value"},
+                meta={"fastmcp": {"wrap_result": True}},
                 tool="echo_tool",
                 arguments={"arg1": "echo_value"},
             ),
@@ -294,6 +300,7 @@ async def test_call_tools_bulk_error_continues(bulk_caller_live: BulkToolCaller)
             CallToolRequestResult(
                 content=[TextContent(type="text", text="success_value")],
                 structured_content={"result": "success_value"},
+                meta={"fastmcp": {"wrap_result": True}},
                 tool="echo_tool",
                 arguments={"arg1": "success_value"},
             ),
@@ -329,6 +336,7 @@ async def test_call_tools_bulk_blocks_self_invocation(bulk_caller_live: BulkTool
             CallToolRequestResult(
                 content=[TextContent(type="text", text="success_value")],
                 structured_content={"result": "success_value"},
+                meta={"fastmcp": {"wrap_result": True}},
                 tool="echo_tool",
                 arguments={"arg1": "success_value"},
             ),
