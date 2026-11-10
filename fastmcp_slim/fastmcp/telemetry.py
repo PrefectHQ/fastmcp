@@ -180,6 +180,23 @@ def inject_trace_context(
     return meta
 
 
+def error_span_attributes(exception: BaseException) -> dict[str, str]:
+    """Map an exception to the `error.type` attributes for a failed MCP span.
+
+    Per the MCP semantic conventions, a JSON-RPC error reports its code as
+    both `error.type` and `rpc.response.status_code`; a tool error reports
+    `tool_error`; anything else reports its class name.
+    """
+    from fastmcp.exceptions import MCPError, ToolError
+
+    if isinstance(exception, MCPError):
+        code = str(exception.error.code)
+        return {"error.type": code, "rpc.response.status_code": code}
+    if isinstance(exception, ToolError):
+        return {"error.type": "tool_error"}
+    return {"error.type": type(exception).__qualname__}
+
+
 def record_span_error(span: Span, exception: BaseException) -> None:
     """Record an exception on a span and set error status."""
     span.record_exception(exception)
@@ -305,6 +322,7 @@ __all__ = [
     "INSTRUMENTATION_NAME",
     "TRACE_PARENT_KEY",
     "TRACE_STATE_KEY",
+    "error_span_attributes",
     "extract_trace_context",
     "get_tracer",
     "inject_trace_context",
