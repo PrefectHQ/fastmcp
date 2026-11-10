@@ -18,18 +18,28 @@ class Intake(BaseModel):
     pull_requests: list[PositiveInt] = Field(default_factory=list, max_length=10)
     queue: str | None = Field(default=None, pattern=r"^[a-z0-9-]{1,32}$")
     retry_failed: bool = False
+    # GitHub login whose event started this intake; maintainers' own events are skipped.
+    sender: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$")
 
     def scoped(self) -> bool:
         return bool(self.issues or self.pull_requests)
 
     def scope(self) -> str:
+        identity = [
+            self.branch,
+            sorted(set(self.issues)),
+            sorted(set(self.pull_requests)),
+        ]
         if self.queue:
-            return "fastmcp-intake-" + self.queue
-        return "fastmcp-intake-" + digest([self.branch, sorted(set(self.issues))])[:24]
+            if self.scoped():
+                return f"fastmcp-intake-{self.queue}-{digest(identity)[:24]}"
+            return f"fastmcp-intake-{self.queue}-{digest([self.branch])[:12]}"
+        return "fastmcp-intake-" + digest(identity)[:24]
 
 
+# `&` excludes HTML character references such as Renovate's `&#8203;`.
 REFERENCE = re.compile(
-    r"(?:(?<![\w/])#|github\.com/PrefectHQ/fastmcp/issues/)([1-9][0-9]*)\b"
+    r"(?:(?<![\w/&])#|github\.com/PrefectHQ/fastmcp/issues/)([1-9][0-9]*)\b"
 )
 
 

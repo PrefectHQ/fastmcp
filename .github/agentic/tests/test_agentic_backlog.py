@@ -17,7 +17,15 @@ from flows.agentic_backlog import Intake, due, inventory, settle
 from flows.agentic_freshness import revalidate
 from flows.agentic_intake import evidence_revision, policy_outcome, route_intake
 from flows.agentic_stack_runtime import AgentPlan, Runtime, gh_api, record
-from flows.agentic_triage import admit, checkpoint, dispatch, finish, latest, retain
+from flows.agentic_triage import (
+    admit,
+    attention,
+    checkpoint,
+    dispatch,
+    finish,
+    latest,
+    retain,
+)
 
 
 def issue(number, **extra):
@@ -87,7 +95,7 @@ def test_event_intake_resolves_pull_requests_to_referenced_open_issues(github_se
     read, responses, requests = github_server
     responses["/repos/PrefectHQ/fastmcp/pulls/7"] = {
         "number": 7,
-        "body": "Fixes #5 and https://github.com/PrefectHQ/fastmcp/issues/6; not other/repo#8",
+        "body": "Fixes #5 and https://github.com/PrefectHQ/fastmcp/issues/6; not other/repo#8 or ([#&#8203;8203](https://redirect.github.com/astral-sh/ruff/pull/8203))",
     }
     responses["/repos/PrefectHQ/fastmcp/issues/5"] = issue(5)
     responses["/repos/PrefectHQ/fastmcp/issues/6"] = issue(6, state="closed")
@@ -97,7 +105,8 @@ def test_event_intake_resolves_pull_requests_to_referenced_open_issues(github_se
     assert [row["issue_number"] for row in result["pending"]] == [5, 9]
     assert result["coverage"]["pull_requests"] == 1
     assert "/repos/PrefectHQ/fastmcp/issues/8" not in requests
-    assert config.scope() == Intake(issues=[1], queue="events").scope()
+    assert "/repos/PrefectHQ/fastmcp/issues/8203" not in requests
+    assert config.scope() != Intake(issues=[1], queue="events").scope()
     assert Intake(issues=[9]).scope() != config.scope()
 
 
@@ -252,15 +261,19 @@ def test_queue_recovers_same_controller_and_commits_only_saved_outcomes(
         runtime = Runtime(
             plans={
                 role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-                for role in ("assess", "reproduce", "prepare", "review")
+                for role in (
+                    "assess",
+                    "reproduce",
+                    "triage_review",
+                )
             },
-            validator_id=uuid4(),
             source_sha="b" * 40,
         )
         owner = client.create_flow_run(controller_stub, state=Running()).id
         plan = admit(config, runtime, deployment, owner, read)
         assert len(plan["pending"]) == 3
         assert len(plan["batch"]["groups"][0]["items"]) == 2
+        assert {item["mode"] for item in plan["batch"]["groups"][0]["items"]} == {"mre"}
         assert checkpoint(config.scope())[1] == plan
         child = dispatch.fn(plan)
         assert dispatch.fn(plan) == child
@@ -321,7 +334,7 @@ def test_queue_recovers_same_controller_and_commits_only_saved_outcomes(
         for artifact in client.read_artifacts(
             flow_run_filter=FlowRunFilter(id={"any_": [replacement]})
         ):
-            if artifact.key.endswith(("-committed", "-coverage", "-review-queue")):
+            if artifact.key.endswith(("-committed", "-coverage")):
                 client.delete_artifact(artifact.id)
         before = len(requests)
         responses["/fresh/1"] = (503, {"message": "Unavailable after finalization"})
@@ -350,9 +363,8 @@ def test_event_queue_adds_new_issues_to_retained_pending(github_server):
         runtime = Runtime(
             plans={
                 role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-                for role in ("assess", "reproduce", "prepare", "review")
+                for role in ("assess", "reproduce")
             },
-            validator_id=uuid4(),
             source_sha="b" * 40,
         )
         previous = client.create_flow_run(controller_stub, state=Completed()).id
@@ -370,7 +382,7 @@ def test_event_queue_adds_new_issues_to_retained_pending(github_server):
         ] == [2, 1]
 
 
-def test_event_target_is_admitted_ahead_of_a_full_retained_queue(github_server):
+def test_event_target_preserves_a_separate_retained_backlog(github_server):
     read, responses, _ = github_server
     for number in (1, 2, 3, 4):
         responses[f"/repos/PrefectHQ/fastmcp/issues/{number}"] = issue(number)
@@ -385,9 +397,8 @@ def test_event_target_is_admitted_ahead_of_a_full_retained_queue(github_server):
         runtime = Runtime(
             plans={
                 role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-                for role in ("assess", "reproduce", "prepare", "review")
+                for role in ("assess", "reproduce")
             },
-            validator_id=uuid4(),
             source_sha="b" * 40,
         )
         scope = Intake(queue="events").scope()
@@ -401,7 +412,8 @@ def test_event_target_is_admitted_ahead_of_a_full_retained_queue(github_server):
         owner = client.create_flow_run(controller_stub, state=Running()).id
         config = Intake(pull_requests=[9], queue="events", max_items=1)
         plan = admit(config, runtime, deployment, owner, read)
-        assert [row["issue_number"] for row in plan["pending"]] == [3, 1, 2, 4]
+        assert [row["issue_number"] for row in plan["pending"]] == [3]
+        assert checkpoint(scope)[1]["pending"] == retained
         assert [
             item["issue_number"] for item in plan["batch"]["groups"][0]["items"]
         ] == [3]
@@ -432,9 +444,8 @@ def test_finish_commits_policy_decisions_saved_by_an_older_controller(
         runtime = Runtime(
             plans={
                 role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-                for role in ("assess", "reproduce", "prepare", "review")
+                for role in ("assess", "reproduce")
             },
-            validator_id=uuid4(),
             source_sha="b" * 40,
         )
         owner = client.create_flow_run(controller_stub, state=Running()).id
@@ -463,4 +474,63 @@ def test_finish_commits_policy_decisions_saved_by_an_older_controller(
         )
         assert state["completed"] == [1]
         assert state["review"]["bins"]["decisions"] == [policy_outcome(1, legacy)]
+        assert state["issues"] == [
+            {"issue_number": 1, "title": "Report 1", "author": "reporter"}
+        ]
         assert checkpoint(config.scope()) == (owner, state)
+
+
+def test_different_manual_pr_request_does_not_resume_previous_pr(github_server):
+    read, responses, requests = github_server
+    responses["/repos/PrefectHQ/fastmcp/pulls/10"] = {"body": "Fixes #1"}
+    responses["/repos/PrefectHQ/fastmcp/pulls/20"] = {"body": "Fixes #2"}
+    for number in (1, 2):
+        responses[f"/repos/PrefectHQ/fastmcp/issues/{number}"] = issue(number)
+    responses["/repos/PrefectHQ/fastmcp/commits/main"] = {"sha": "a" * 40}
+    with prefect_test_harness(), get_client(sync_client=True) as client:
+        runtime = Runtime(
+            plans={
+                role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
+                for role in ("assess", "reproduce")
+            },
+            source_sha="b" * 40,
+        )
+        old = client.create_flow_run(controller_stub, state=Running())
+        config = Intake(pull_requests=[10])
+        first = admit(config, runtime, uuid4(), old.id, read)
+        client.set_flow_run_state(old.id, Completed(), force=True)
+        new = client.create_flow_run(controller_stub, state=Running())
+        second = admit(Intake(pull_requests=[20]), runtime, uuid4(), new.id, read)
+        assert first["batch"]["groups"][0]["items"][0]["issue_number"] == 1
+        assert second["batch"]["groups"][0]["items"][0]["issue_number"] == 2
+        assert "/repos/PrefectHQ/fastmcp/pulls/20" in requests
+        assert (
+            Intake(queue="events", branch="main").scope()
+            != Intake(queue="events", branch="release/3.x").scope()
+        )
+
+
+def test_only_unrequeued_operational_work_raises_an_alert():
+    review = {
+        "bins": {
+            "operational": [
+                {"issue_number": 1, "status": "stale", "reason": "Evidence changed"},
+                {"issue_number": 2, "status": "baseline_changed", "reason": "moved"},
+                {
+                    "issue_number": 3,
+                    "error": "ValueError",
+                    "detail": "7 PRs link this issue; review handles at most 6",
+                },
+                {
+                    "issue_number": 4,
+                    "reason": "Review delivery failed",
+                    "detail": "Independent review record is not readable yet",
+                },
+            ]
+        }
+    }
+    assert attention(review) == [
+        "#3: 7 PRs link this issue; review handles at most 6",
+        "#4: Review delivery failed: Independent review record is not readable yet",
+    ]
+    assert attention({"bins": {"operational": review["bins"]["operational"][:2]}}) == []

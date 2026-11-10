@@ -6,13 +6,13 @@ from uuid import UUID
 from prefect.client.orchestration import get_client
 
 from flows.agentic_baseline import refresh_context
+from flows.agentic_github import GitHub
 from flows.agentic_native_cache import (
     find_native_result,
     retain_native_result,
     verified_outcome,
 )
 from flows.agentic_stack import digest
-from flows.agentic_stack_publication import GitHub
 from flows.agentic_stack_runtime import (
     api,
     owner_alive,
@@ -129,7 +129,7 @@ def run_native_stage(
 
 def run_native_triage(
     owner: UUID, admission: Admission
-) -> tuple[str, dict, list[dict]]:
+) -> tuple[str, dict, list[dict], dict]:
     calls = []
     number = admission.requested.issue_number
     for attempt in range(3):
@@ -191,9 +191,10 @@ def run_native_triage(
                 },
             }
         )
+    evidence = admission.item["evidence"]
     record(
         owner,
         f"{admission.batch.id}-issue-{number}-review-evidence",
-        admission.item["evidence"],
+        evidence,
     )
-    return destination, result, calls
+    return destination, result, calls, evidence

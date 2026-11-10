@@ -67,6 +67,7 @@ class StdioTransport(ClientTransport):
         self.log_file = log_file
 
         self._session: ClientSession | None = None
+        self._session_future: asyncio.Future[ClientSession] | None = None
         self._session_options: TransportOptions | None = None
         self._session_read_timeout: float | None = None
         self._active_sessions = 0
@@ -110,21 +111,32 @@ class StdioTransport(ClientTransport):
             # to a client that wants different ones would silently give it the
             # first client's behavior. Rebuild it when it's idle; refuse when
             # another client is using it, since tearing it down would break them.
-            # Compare the timeout value, not callback identity: proxy clients
-            # rebind forwarding callbacks for each request on the same transport.
-            if self._connect_task is not None and (
-                self._session_options != options
-                or self._session_read_timeout
-                != session_kwargs.get("read_timeout_seconds")
-            ):
-                if self._active_sessions:
+            # A different request timeout alone does not refuse: the client
+            # shares the live session and its default timeout, as before the
+            # timeout was compared. Compare the timeout value, not callback
+            # identity: proxy clients rebind forwarding callbacks per request.
+            options_differ = self._session_options != options
+            timeout_differs = self._session_read_timeout != session_kwargs.get(
+                "read_timeout_seconds"
+            )
+            if self._connect_task is not None and (options_differ or timeout_differs):
+                if self._active_sessions and options_differ:
                     raise RuntimeError(
                         "This stdio transport has a live session built for different "
                         "connection options and another client is still using it. "
                         "Sharing one transport across clients that need different "
                         "sessions is not supported; give each client its own transport."
                     )
-                await self.disconnect()
+                if not self._active_sessions:
+                    await self.disconnect()
+                else:
+                    logger.warning(
+                        "Sharing a live stdio session whose request timeout is "
+                        f"{self._session_read_timeout}s; this client's timeout "
+                        f"({session_kwargs.get('read_timeout_seconds')}s) applies "
+                        "only to calls that pass their own timeout. Give each "
+                        "client its own transport to keep separate defaults."
+                    )
 
             # If the connect task completed or the session's streams are dead,
             # the subprocess has exited. Tear down so we can start fresh.
@@ -133,41 +145,50 @@ class StdioTransport(ClientTransport):
             ):
                 await self.disconnect()
 
-            if self._connect_task is not None:
-                return
+            # Preserve the established connect() return value when a ready
+            # keep-alive session is reused. connect_session() yields _session.
+            if self._session is not None:
+                return None
 
-            session_future: asyncio.Future[ClientSession] = asyncio.Future()
+            session_future: asyncio.Future[ClientSession] | None = self._session_future
+            if self._connect_task is None:
+                session_future = asyncio.Future()
+                self._session_future = session_future
 
-            # Recorded before the connect completes: while it is in flight the
-            # session already belongs to these options, and a concurrent caller
-            # comparing against an unset value would read it as a mismatch and
-            # tear down the connection being established.
-            self._session_options = options
-            self._session_read_timeout = session_kwargs.get("read_timeout_seconds")
+                # Recorded before the connect completes: while it is in flight
+                # the session already belongs to these options, and a
+                # concurrent caller comparing against an unset value would read
+                # it as a mismatch and tear down the connection being established.
+                self._session_options = options
+                self._session_read_timeout = session_kwargs.get("read_timeout_seconds")
 
-            # start the connection task
-            self._connect_task = asyncio.create_task(
-                _stdio_transport_connect_task(
-                    command=self.command,
-                    args=self.args,
-                    env=self.env,
-                    cwd=self.cwd,
-                    log_file=self.log_file,
-                    # TODO(ty): remove when ty supports Unpack[TypedDict] inference
-                    session_kwargs=session_kwargs,  # type: ignore[arg-type]
-                    transport_options=options,
-                    ready_event=self._ready_event,
-                    stop_event=self._stop_event,
-                    session_future=session_future,
+                # Start the connection task.
+                self._connect_task = asyncio.create_task(
+                    _stdio_transport_connect_task(
+                        command=self.command,
+                        args=self.args,
+                        env=self.env,
+                        cwd=self.cwd,
+                        log_file=self.log_file,
+                        # TODO(ty): remove when ty supports Unpack[TypedDict] inference
+                        session_kwargs=session_kwargs,  # type: ignore[arg-type]
+                        transport_options=options,
+                        ready_event=self._ready_event,
+                        stop_event=self._stop_event,
+                        session_future=session_future,
+                    )
                 )
-            )
+
+            if session_future is None:
+                raise RuntimeError("Stdio connection has no session future")
 
             # wait for the client to be ready before returning
             await self._ready_event.wait()
 
             # Check if connect task completed with an exception (early failure)
-            if self._connect_task.done():
-                exception = self._connect_task.exception()
+            connect_task = self._connect_task
+            if connect_task is not None and connect_task.done():
+                exception = connect_task.exception()
                 if exception is not None:
                     raise exception
 
@@ -199,6 +220,7 @@ class StdioTransport(ClientTransport):
         # reset variables and events for potential future reconnects
         self._connect_task = None
         self._session = None
+        self._session_future = None
         self._session_options = None
         self._session_read_timeout = None
         self._stop_event = anyio.Event()

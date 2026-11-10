@@ -111,7 +111,7 @@ A component is disabled if it has **any** of the disabled tags. The component do
 
 ### Versions
 
-When a component has several registered versions, `names` matches every one of them. To act on a particular version, filter by `version` with a [`VersionSpec`](/servers/versioning).
+When a component has several registered versions, `names` matches every one of them. To act on a particular version, filter by `version` with a [`VersionSpec`](/servers/versioning). Unversioned components never match a `version` filter.
 
 ```python
 from fastmcp.utilities.versions import VersionSpec
@@ -201,11 +201,10 @@ Allowlist mode is useful for restrictive environments where you want to explicit
 
 ### Allowlist Behavior
 
-When you call `enable(only=True)`:
+When you call `enable(only=True)`, FastMCP adds two rules:
 
-1. Default visibility state switches to "disabled"
-2. Previous allowlists are cleared
-3. Only specified keys/tags become enabled
+1. A rule that disables every component, overriding everything earlier `enable()` calls turned on, including previous allowlists
+2. A rule that enables the components matching your criteria
 
 ```python
 # Start fresh - only enable these specific tools
@@ -364,7 +363,7 @@ Each call adds a rule to the session. The `dangerous_admin_tool` ends up disable
 
 ### Filter Criteria
 
-The session visibility methods accept the same filter criteria as `server.enable()` and `server.disable()`:
+The session visibility methods accept the same filter criteria as `server.enable()` and `server.disable()`, plus `match_all`. They have no `only` parameter; to build a session allowlist, disable with `match_all=True` and then enable what the session should see.
 
 | Parameter | Description |
 |-----------|-------------|
@@ -462,15 +461,23 @@ Sessions start seeing only the activation tools. Calling `activate_finance` reve
 
 ## Client Notifications
 
-When visibility state changes, FastMCP automatically notifies connected clients. Clients supporting the MCP notification protocol receive `list_changed` events and can refresh their component lists.
+Server-level and provider-level `enable()` and `disable()` calls change the rules in place and send no notifications. Connected clients see the change the next time they list components. Session visibility changes are different: they notify the affected session automatically, as described in [Automatic Notifications](#automatic-notifications).
 
-This happens automatically. You don't need to trigger notifications manually.
+To tell a client about a global change made during a request, send the notification from the tool yourself. This reaches only the session that made the request.
 
 ```python
-# This automatically notifies clients
-mcp.disable(tags={"maintenance"})
+import mcp_types
+from fastmcp import FastMCP
+from fastmcp.server.context import Context
 
-# Clients receive: tools/list_changed, resources/list_changed, etc.
+mcp = FastMCP("Server")
+
+@mcp.tool
+async def start_maintenance(ctx: Context) -> str:
+    """Hide maintenance-tagged tools from every client."""
+    mcp.disable(tags={"maintenance"})
+    await ctx.send_notification(mcp_types.ToolListChangedNotification())
+    return "Maintenance tools hidden"
 ```
 
 ## Filtering Logic
