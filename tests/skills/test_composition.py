@@ -10,10 +10,9 @@ from mcp_types import BlobResourceContents, TextResourceContents
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.middleware.authorization import AuthMiddleware
-from fastmcp.server.providers.skills import SkillsDirectoryProvider
 from fastmcp.server.transforms import Namespace
 from fastmcp.skills import MCPSkill, Skill, SkillsClientExtension
-from fastmcp.skills.provider import SkillCatalogProvider
+from fastmcp.skills.provider import SkillCatalogProvider, SkillsDirectoryProvider
 
 REVIEW = Skill(
     name="review",
@@ -88,9 +87,7 @@ async def test_mounted_folder_skills_are_listed(tmp_path: Path):
     (folder / "refs" / "checklist.md").write_bytes(b"- tests\n")
     folders = FastMCP(
         "Folders",
-        providers=[
-            SkillsDirectoryProvider(tmp_path / "skills", experimental_skills=True)
-        ],
+        providers=[SkillsDirectoryProvider(tmp_path / "skills")],
     )
     parent = FastMCP("Parent")
     parent.mount(folders, namespace="ops")
@@ -144,7 +141,7 @@ async def test_server_transforms_disable_discovery_without_failing_mount():
         assert len(await client.list_resources()) == 3
 
 
-async def test_hidden_parent_resource_hides_mounted_template_file(tmp_path: Path):
+async def test_hidden_parent_resource_hides_mounted_folder_file(tmp_path: Path):
     folder = tmp_path / "skills" / "deploy"
     folder.mkdir(parents=True)
     (folder / "SKILL.md").write_bytes(
@@ -153,9 +150,7 @@ async def test_hidden_parent_resource_hides_mounted_template_file(tmp_path: Path
     (folder / "notes.md").write_bytes(b"- tests\n")
     folders = FastMCP(
         "Folders",
-        providers=[
-            SkillsDirectoryProvider(tmp_path / "skills", experimental_skills=True)
-        ],
+        providers=[SkillsDirectoryProvider(tmp_path / "skills")],
     )
     parent = FastMCP("Parent")
 

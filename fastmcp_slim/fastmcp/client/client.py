@@ -318,6 +318,8 @@ class Client(
         timeout: Optional timeout for requests (seconds or timedelta)
         init_timeout: Optional timeout for initial connection (seconds or timedelta).
             Set to 0 to disable. If None, uses the value in the FastMCP global settings.
+        client_info: The identity this client declares to servers. Defaults to
+            `fastmcp` and the installed FastMCP version.
         mode: Protocol-era negotiation at connect time. `"auto"` (the default) probes
             `server/discover` and negotiates the modern era, denylist-falling-back to the
             initialize handshake for any server that is not positive evidence of a modern
@@ -565,7 +567,8 @@ class Client(
             "log_level": "debug",
             "message_handler": effective_message_handler,
             "read_timeout_seconds": read_timeout_seconds,
-            "client_info": client_info,
+            "client_info": client_info
+            or mcp_types.Implementation(name="fastmcp", version=fastmcp.__version__),
             **self._build_extension_kwargs(),
         }
 
@@ -668,6 +671,19 @@ class Client(
     def session(self) -> ClientSession:
         """Get the current active session. Raises RuntimeError if not connected."""
         if self._session_state.session is None:
+            # Inside a held context, a missing session means the connection was
+            # lost, not that the caller forgot to connect. Report that failure:
+            # the transport's own error once the session task has finished, and
+            # the SDK's closed-connection error while it is still unwinding.
+            session_task = self._session_state.session_task
+            if self._session_state.nesting_counter > 0 and session_task is not None:
+                if session_task.done() and not session_task.cancelled():
+                    exc = session_task.exception()
+                    if exc is not None:
+                        raise exc
+                raise MCPError(
+                    code=mcp_types.CONNECTION_CLOSED, message="Connection closed"
+                )
             raise RuntimeError(
                 "Client is not connected. Use the 'async with client:' context manager first."
             )
@@ -1338,6 +1354,8 @@ class Client(
             return await send()
         # A closed (or never-entered) client must raise, never serve cached entries.
         _ = self.session
+        if self.protocol_version not in MODERN_PROTOCOL_VERSIONS:
+            return await send()
         if cursor is not None:
             # Continuation pages skip the cache; an expired cursor means the listing
             # changed, so evict (spec SHOULD) and re-raise.

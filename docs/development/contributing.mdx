@@ -20,7 +20,7 @@ FastMCP prioritizes readable Python, clear APIs, and fixes at the source of a pr
 
 ### Issues and assignment
 
-External PRs must link an issue with an auto-close keyword such as `Fixes #123`. The author must also be assigned to that issue, unless it carries the `prs welcome` label. You can open a linked PR before assignment; it waits with a failing gate check while maintainers evaluate it. A PR without a valid issue link is closed.
+External PRs must link an issue with an auto-close keyword such as `Fixes #123`. The author must also be assigned to that issue, unless it carries the `prs welcome` label. A PR that doesn't meet both conditions is closed automatically. The issue stays open as your report, and the PR reopens on its own once the link is present and a maintainer assigns you.
 
 Assignment commits maintainers to reviewing a contribution, not to merging it. Assigning an author reruns the gate and can reopen their previously closed PR. Update that PR rather than opening a duplicate. The issue reporter has first claim on implementing the fix; an open issue does not by itself mean a maintainer has accepted a proposed solution.
 
@@ -46,7 +46,7 @@ Have your agent read [AGENTS.md](https://github.com/PrefectHQ/fastmcp/blob/main/
 
 ## Set up the repository
 
-Use Python 3.10 or newer and [uv](https://docs.astral.sh/uv/). Fork the repository for an external contribution, clone your fork, then install the workspace dependencies and commit hooks:
+Use Python 3.11 or newer and [uv](https://docs.astral.sh/uv/). Fork the repository for an external contribution, clone your fork, then install the workspace dependencies and commit hooks:
 
 ```bash
 git clone https://github.com/YOUR-USERNAME/fastmcp.git

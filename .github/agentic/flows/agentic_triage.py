@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import tempfile
 import time
 from collections.abc import Callable
@@ -19,13 +20,16 @@ from prefect.client.schemas.filters import (
 from prefect.client.schemas.objects import State
 from prefect.client.schemas.sorting import ArtifactSort
 from prefect.context import FlowRunContext
+from prefect.events import emit_event
 from prefect.states import Completed
 
 from flows.agentic_artifacts import plain, published_reviews, retain_markdown
 from flows.agentic_backlog import Intake, due, inventory, settle
 from flows.agentic_claims import claim_work
 from flows.agentic_freshness import revalidate
+from flows.agentic_github import can_write
 from flows.agentic_intake import evidence_revision, upgrade_policy_outcomes
+from flows.agentic_outcome import outcome_lines, subjects
 from flows.agentic_stack_policy import Batch
 from flows.agentic_stack_runtime import (
     Runtime,
@@ -90,6 +94,17 @@ def github(endpoint: str) -> object:
     }
     environment["GH_TOKEN"] = secret_sync("fastmcp-triage-gh-token")
     return gh_api(endpoint, environment, 60)
+
+
+def maintainer(sender: str, read: Callable[[str], object] = github) -> bool:
+    """Whether the event sender can write to the repository.
+
+    A failed lookup counts as not a maintainer, so an API error never drops an event.
+    """
+    try:
+        return can_write(read, sender)
+    except (RuntimeError, ValueError, OSError, subprocess.SubprocessError):
+        return False
 
 
 def admit(
@@ -229,6 +244,7 @@ def finish(
     completed = []
     pending = plan["pending"]
     receipts = []
+    issues = []
     if plan["batch"]:
         timestamp = plan["batch"]["started_at"]
         if run_id:
@@ -303,6 +319,10 @@ def finish(
             {number: plan["batch"]["groups"][0]["branch"] for number in selected},
             read_evidence,
         )
+        issues = subjects(
+            originals,
+            [item for item in plan["pending"] if item["issue_number"] in selected],
+        )
         pending, completed = settle(pending, selected, result)
         exhausted = [row["issue_number"] for row in pending if row["attempts"] >= 3]
         for item in plan["pending"]:
@@ -331,6 +351,7 @@ def finish(
         "completed": completed,
         "receipts": receipts,
         "review": result,
+        "issues": issues,
     }
     metrics = {
         "published_reviews": len(published_reviews(result)) if result else 0,
@@ -402,32 +423,72 @@ def triage_intake(
     ):
         raise ValueError("Intake requires a bounded managed deployment")
     deadline = datetime.now(UTC) + timedelta(hours=2)
-    with (
-        claim_work([config.scope()], current.id, deadline),
-        tempfile.TemporaryDirectory(prefix="fastmcp-intake-") as temporary,
-    ):
+    with tempfile.TemporaryDirectory(prefix="fastmcp-intake-") as temporary:
         intake_tools(Path(temporary))
-        plan = admit(config, runtime, controller_id, current.id)
-        if plan["phase"] == "committed":
-            return plan
-        try:
-            run_id = dispatch(plan) if plan["batch"] else None
-        except ValueError as error:
-            result = finish(plan, current.id, config.scope(), None, str(error))
-            return Completed(name="Degraded", data=result, message=str(error))
-        while run_id:
-            with get_client(sync_client=True) as client:
-                child = client.read_flow_run(run_id)
-            if child.state is not None and child.state.is_final():
-                break
-            time.sleep(5)
-        result = finish(plan, current.id, config.scope(), run_id)
-        if result["review"] and result["review"]["bins"]["operational"]:
-            reasons = [
-                f"#{item.get('issue_number', '?')}: {item.get('reason') or item.get('status', 'needs operational attention')}"
-                for item in result["review"]["bins"]["operational"]
-            ]
+        if config.sender and maintainer(config.sender):
             return Completed(
-                name="Degraded", data=result, message="; ".join(reasons)[:2000]
+                data={"skipped": "maintainer_sender", "sender": config.sender},
+                message=f"Skipped: {config.sender} is a maintainer",
             )
-        return result
+        with claim_work([config.scope()], current.id, deadline):
+            return triage(config, runtime, controller_id, current.id)
+
+
+def triage(
+    config: Intake, runtime: Runtime, controller_id: UUID, owner: UUID
+) -> dict | State:
+    plan = admit(config, runtime, controller_id, owner)
+    if plan["phase"] == "committed":
+        return plan
+    try:
+        run_id = dispatch(plan) if plan["batch"] else None
+    except ValueError as error:
+        result = finish(plan, owner, config.scope(), None, str(error))
+        return Completed(name="Degraded", data=result, message=str(error))
+    while run_id:
+        with get_client(sync_client=True) as client:
+            child = client.read_flow_run(run_id)
+        if child.state is not None and child.state.is_final():
+            break
+        time.sleep(5)
+    result = finish(plan, owner, config.scope(), run_id)
+    announce(owner, result)
+    reasons = attention(result["review"]) if result["review"] else []
+    if reasons:
+        return Completed(
+            name="Degraded", data=result, message="; ".join(reasons)[:2000]
+        )
+    return result
+
+
+def announce(owner: UUID, state: dict) -> None:
+    """Emit the Slack outcome when any admitted issue now waits on a maintainer."""
+    if not state["review"]:
+        return
+    lines = outcome_lines(state["review"], state.get("issues", []))
+    if lines:
+        emit_event(
+            event="fastmcp.triage.outcome",
+            resource={"prefect.resource.id": f"fastmcp.triage.intake.{owner}"},
+            payload={"text": "\n".join(lines)},
+        )
+
+
+# Evidence that moved during the run is requeued by `settle`, and the GitHub
+# event for the change starts a fresh triage, so it is not worth an alert.
+REQUEUED = frozenset({"stale", "baseline_changed"})
+
+
+def attention(review: dict) -> list[str]:
+    reasons = []
+    for item in review["bins"]["operational"]:
+        if item.get("status") in REQUEUED:
+            continue
+        detail = str(item.get("detail") or "")[:300]
+        reason = item.get("reason") or detail or item.get("status")
+        if item.get("reason") and detail:
+            reason = f"{item['reason']}: {detail}"
+        reasons.append(
+            f"#{item.get('issue_number', '?')}: {reason or 'stopped without a recorded reason'}"
+        )
+    return reasons

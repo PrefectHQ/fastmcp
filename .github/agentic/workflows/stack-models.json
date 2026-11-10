@@ -21,5 +21,23 @@
   "comparison": {
     "id": "claude-haiku-5-5",
     "effort": "medium"
+  },
+  "tiers": {
+    "haiku": {
+      "roles": {
+        "match": {
+          "id": "claude-haiku-5-5",
+          "effort": "low"
+        },
+        "triage": {
+          "id": "claude-haiku-5-5",
+          "effort": "low"
+        },
+        "reproduce": {
+          "id": "claude-haiku-5-5",
+          "effort": "medium"
+        }
+      }
+    }
   }
 }
