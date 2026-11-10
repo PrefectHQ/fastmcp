@@ -10,6 +10,7 @@ from starlette.testclient import TestClient
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
+from fastmcp.server.auth import MultiAuth
 from fastmcp.server.auth.oauth_proxy.models import JTIMapping, UpstreamTokenSet
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.auth.providers.workos import (
@@ -512,11 +513,28 @@ class TestWorkOSProviderRequiredScopes:
         assert result is not None
         assert result.scopes == ["openid", "profile", "email"]
 
+    async def test_load_access_token_rejects_under_scoped_grant(
+        self, provider: WorkOSProvider, httpx_mock: HTTPXMock
+    ):
+        httpx_mock.add_response(url=_USERINFO_URL, json=_USERINFO)
+        token = await self._issue_access_token(provider, scope="openid profile")
+
+        assert await provider.load_access_token(token) is None
+
+    async def test_multi_auth_empty_override_keeps_provider_scopes(
+        self, provider: WorkOSProvider, httpx_mock: HTTPXMock
+    ):
+        httpx_mock.add_response(url=_USERINFO_URL, json=_USERINFO)
+        auth = MultiAuth(server=provider, required_scopes=[])
+        token = await self._issue_access_token(provider, scope="openid profile")
+
+        assert await auth.verify_token(token) is None
+
     @pytest.mark.parametrize(
         ("granted_scope", "expected_status"),
         [
             ("openid profile email", 200),
-            ("openid profile", 403),
+            ("openid profile", 401),
         ],
     )
     async def test_http_app_enforces_required_scopes_on_granted_scopes(
