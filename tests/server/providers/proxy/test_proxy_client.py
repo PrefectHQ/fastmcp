@@ -21,7 +21,11 @@ from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingPar
 from fastmcp.exceptions import ToolError
 from fastmcp.server import create_proxy
 from fastmcp.server.elicitation import AcceptedElicitation
-from fastmcp.server.providers.proxy import ProxyClient, _create_client_factory
+from fastmcp.server.providers.proxy import (
+    ProxyClient,
+    _create_client_factory,
+    default_proxy_elicitation_handler,
+)
 
 
 class TestProxyClientEraDefault:
@@ -324,6 +328,21 @@ class TestProxyClient:
         assert received[0].message == "Sign in to continue"
         assert received[0].url == "https://example.com/oauth/start"
         assert received[0].elicitation_id == "elicit-1"
+
+    async def test_elicit_url_request_without_elicitation_id(self):
+        """
+        Test that the proxy rejects a URL-mode request that has no elicitation ID.
+        """
+        params = ElicitRequestURLParams(
+            mode="url", message="Sign in", url="https://example.com/oauth/start"
+        )
+        with pytest.raises(ValueError, match="no elicitationId"):
+            await default_proxy_elicitation_handler(
+                "Sign in",
+                dict,
+                params,
+                None,  # ty: ignore[invalid-argument-type]
+            )
 
     async def test_elicit_accept_response(self, proxy_server: FastMCP):
         """
