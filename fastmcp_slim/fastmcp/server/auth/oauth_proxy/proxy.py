@@ -2390,12 +2390,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         "expires_at": int(upstream_token_set.expires_at),
                     }
                 )
-                # The verifier checked a token that does not carry the grant's
-                # scopes, so it could not enforce required_scopes. Check them
-                # here against the patched upstream scopes, so the requirement
+                # A verifier without its own required_scopes (e.g. one that
+                # checks an opaque token via userinfo, or an id_token) cannot
+                # enforce the provider's required_scopes. Check them here
+                # against the patched upstream scopes, so the requirement
                 # holds even when an outer layer (e.g. MultiAuth with
                 # required_scopes=[]) does not enforce it.
-                missing_scopes = set(self.required_scopes or []) - set(validated.scopes)
+                missing_scopes = (
+                    set()
+                    if self._token_validator.required_scopes
+                    else set(self.required_scopes or []) - set(validated.scopes)
+                )
                 if missing_scopes:
                     logger.debug(
                         "Upstream token is missing required scopes: %s",
