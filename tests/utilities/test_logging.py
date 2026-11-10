@@ -1,10 +1,17 @@
 import logging
+from collections.abc import Iterator
 from pathlib import Path
 
+import pytest
 from rich.logging import RichHandler
 
 import fastmcp
-from fastmcp.utilities.logging import configure_logging, get_logger
+from fastmcp.utilities.logging import (
+    _clamp_logger,
+    _unclamp_logger,
+    configure_logging,
+    get_logger,
+)
 
 
 def test_logging_doesnt_affect_other_loggers(caplog):
@@ -112,3 +119,59 @@ def test_configure_logging_with_rich_enabled():
         fastmcp.settings.enable_rich_logging = original_enable_rich
         # Reconfigure to restore state
         configure_logging()
+
+
+@pytest.fixture
+def clamped_logger() -> Iterator[logging.Logger]:
+    logger = logging.getLogger("test_logging.clamped")
+    yield logger
+    _unclamp_logger(logger)
+    logger.setLevel(logging.NOTSET)
+
+
+@pytest.mark.parametrize(
+    "level",
+    [logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL],
+    ids=logging.getLevelName,
+)
+def test_max_clamp_drops_record_the_logger_is_not_enabled_for(
+    caplog: pytest.LogCaptureFixture, clamped_logger: logging.Logger, level: int
+):
+    """A record lowered to DEBUG is dropped when the logger is only enabled for INFO."""
+    clamped_logger.setLevel(logging.INFO)
+    _clamp_logger(clamped_logger, max_level="DEBUG")
+
+    clamped_logger.log(level, "hello")
+
+    assert caplog.records == []
+
+
+@pytest.mark.parametrize(
+    "level",
+    [logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL],
+    ids=logging.getLevelName,
+)
+def test_max_clamp_lowers_record_the_logger_is_enabled_for(
+    caplog: pytest.LogCaptureFixture, clamped_logger: logging.Logger, level: int
+):
+    clamped_logger.setLevel(logging.DEBUG)
+    _clamp_logger(clamped_logger, max_level="DEBUG")
+
+    clamped_logger.log(level, "hello")
+
+    assert [(r.levelno, r.levelname, r.getMessage()) for r in caplog.records] == [
+        (logging.DEBUG, "DEBUG", "hello")
+    ]
+
+
+def test_min_clamp_raises_record_to_min_level(
+    caplog: pytest.LogCaptureFixture, clamped_logger: logging.Logger
+):
+    clamped_logger.setLevel(logging.DEBUG)
+    _clamp_logger(clamped_logger, min_level="WARNING")
+
+    clamped_logger.debug("hello")
+
+    assert [(r.levelno, r.levelname, r.getMessage()) for r in caplog.records] == [
+        (logging.WARNING, "WARNING", "hello")
+    ]

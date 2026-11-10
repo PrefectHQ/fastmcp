@@ -32,6 +32,10 @@ class SkillInfo:
     files: list[SkillFileInfo] = field(default_factory=list)
     frontmatter: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def uri_prefix(self) -> str:
+        return f"skill://{self.name}/"
+
 
 def _parse_frontmatter_line_based(frontmatter_text: str) -> dict[str, Any]:
     """Legacy line-based frontmatter parser (key: value only).
