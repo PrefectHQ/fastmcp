@@ -53,7 +53,9 @@ FastMCP passes a `tool_resolver` callback to `to_json()`. Whenever the tree cont
 
 ### Hashed backend tool references
 
-FastMCP still tags app tools with `meta["fastmcp"]["app"]`, but backend routing no longer depends on sending the app name through each tool call. During serialization, FastMCP passes a resolver to `PrefabApp.to_json()`. When the tree contains `CallTool(save_contact)`, the resolver turns it into a deterministic hashed name such as `<hash>_save_contact`, where the hash is derived from the app name and backend tool name.
+FastMCP still tags app tools with `meta["fastmcp"]["app"]`, but backend routing no longer depends on sending the app name through each tool call. During serialization, FastMCP passes a resolver to `PrefabApp.to_json()`. When the tree contains `CallTool(save_contact)`, the resolver turns it into a deterministic hashed name such as `__<hash>_save_contact`, where the hash is derived from the app name and backend tool name.
+
+The `__<12 lowercase hex>_<name>` pattern is reserved for these generated addresses. `FastMCPApp` rejects registered backend and UI tool names matching it, so the resolver can distinguish registered names from addresses. This reservation concerns the name sent in tool calls; a component key such as `tool:save@` is a separate lookup identifier. Other double-underscore names, such as `__save`, remain valid.
 
 That hashed name rides along inside `structuredContent` all the way to the renderer. When the renderer calls the backend tool, it sends the hashed tool name in the normal MCP `tools/call` request. The server recognizes that format and routes through the app-tool lookup path described below.
 
@@ -95,7 +97,9 @@ Give each copy its own app name. Two tenants running the same product want `Fast
 
 ### The hashed lookup fallback
 
-The identity-addressed form `<hash>_<local_name>` remains callable. FastMCP first tries normal tool resolution; if no tool matches and the name has that shape, it calls `get_tool_by_hash(hash, local_name)`, which resolves the tool through the same lookup as its listed name. Transforms, enabled state, and authorization apply to a hashed name exactly as they do to a name call.
+Upgrading a server updates both address generation and lookup automatically. If you deploy an app backend and a proxy gateway separately, upgrade both to use the `__` address format; gateways cannot rewrite identity addresses emitted in the earlier `<hash>_<local_name>` format.
+
+The identity-addressed form `__<hash>_<local_name>` remains callable. FastMCP first tries normal tool resolution; if no tool matches and the name has that shape, it calls `get_tool_by_hash(hash, local_name)`, which resolves the tool through the same lookup as its listed name. Transforms, enabled state, and authorization apply to a hashed name exactly as they do to a name call.
 
 When one identity is claimed by more than one tool — which happens when the same app is composed into two branches — the call is refused rather than resolved, since picking either one would silently route into the wrong branch.
 

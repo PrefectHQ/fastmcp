@@ -550,7 +550,7 @@ def _get_tool_resolver(app_name: str | None = None) -> Callable[..., str] | None
 def _prefab_to_json(app: Any, fastmcp_app_name: str | None = None) -> dict[str, Any]:
     """Serialize a PrefabApp, addressing its peer-tool references by identity.
 
-    The resolver writes each reference as ``<hash>_<local_name>``, and the
+    The resolver writes each reference as ``__<hash>_<local_name>``, and the
     identity behind it is recorded in the payload's meta so that servers
     can re-address the reference on the way out without losing track of
     what it points at.

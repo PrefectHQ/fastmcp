@@ -126,7 +126,7 @@ class BaseLoggingMiddleware(Middleware):
     ) -> Any:
         """Log messages for configured methods."""
 
-        if self.methods and context.method not in self.methods:
+        if self.methods is not None and context.method not in self.methods:
             return await call_next(context)
 
         self._log_message(self._create_before_message(context))

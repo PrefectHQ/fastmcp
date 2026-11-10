@@ -207,7 +207,9 @@ class ClientGroup:
                 # Closed already, or another context entered while we waited.
                 return None
             self._exit_stack = None
-            self._tool_routes.clear()
+            # Keep the known routes: a route needs only its own client, which a
+            # caller may connect without the group. Mark the catalog for lazy
+            # rediscovery, so the next unknown name re-reads every server.
             self._catalog_loaded = False
             return await held.__aexit__(exc_type, exc_value, traceback)
 
@@ -218,6 +220,17 @@ class ClientGroup:
         if disconnected:
             names = ", ".join(repr(name) for name in disconnected)
             raise RuntimeError(f"ClientGroup clients are not connected: {names}")
+
+    def _get_connected_client(self, server_name: str) -> Client[Any]:
+        try:
+            client = self._clients[server_name]
+        except KeyError as exc:
+            raise KeyError(f"Unknown ClientGroup server: {server_name!r}") from exc
+        if not client.is_connected():
+            raise RuntimeError(
+                f"ClientGroup client for server {server_name!r} is not connected"
+            )
+        return client
 
     def _require_route_connected(self, route: ToolRoute) -> None:
         if not route.client.is_connected():
@@ -289,28 +302,14 @@ class ClientGroup:
         self, server_name: str, uri: str, *, cache_mode: CacheMode = "use"
     ) -> MCPSkill:
         """Fetch one skill entry from the named server."""
-        try:
-            client = self._clients[server_name]
-        except KeyError as exc:
-            raise KeyError(f"Unknown ClientGroup server: {server_name!r}") from exc
-        if not client.is_connected():
-            raise RuntimeError(
-                f"ClientGroup client for server {server_name!r} is not connected"
-            )
+        client = self._get_connected_client(server_name)
         return await client.get_skill(uri, cache_mode=cache_mode)
 
     async def read_skill(
         self, server_name: str, uri: str, *, cache_mode: CacheMode = "use"
     ) -> Skill:
         """Read one whole skill from the named server; see `Client.read_skill`."""
-        try:
-            client = self._clients[server_name]
-        except KeyError as exc:
-            raise KeyError(f"Unknown ClientGroup server: {server_name!r}") from exc
-        if not client.is_connected():
-            raise RuntimeError(
-                f"ClientGroup client for server {server_name!r} is not connected"
-            )
+        client = self._get_connected_client(server_name)
         return await client.read_skill(uri, cache_mode=cache_mode)
 
     async def resolve_tool(self, name: str) -> ToolRoute:
