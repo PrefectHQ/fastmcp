@@ -462,6 +462,20 @@ def generate_cli_script(
         # ---------------------------------------------------------------------------
 
 
+        def _type_label(schema):
+            branches = schema.get("anyOf") or schema.get("oneOf")
+            if (
+                "type" not in schema
+                and isinstance(branches, list)
+                and all(isinstance(branch, dict) for branch in branches)
+            ):
+                return " | ".join(_type_label(branch) for branch in branches)
+            schema_type = schema.get("type", "string")
+            if isinstance(schema_type, list):
+                return " | ".join(schema_type)
+            return schema_type
+
+
         def _print_tool_result(result):
             if result.is_error:
                 for block in result.content:
@@ -517,7 +531,7 @@ def generate_cli_script(
                     props = tool.input_schema.get("properties", {})
                     required = set(tool.input_schema.get("required", []))
                     for pname, pschema in props.items():
-                        ptype = pschema.get("type", "string")
+                        ptype = _type_label(pschema)
                         if pname in required:
                             sig_parts.append(f"{pname}: {ptype}")
                         else:
@@ -660,6 +674,14 @@ def _param_to_cli_flag(prop_name: str) -> str:
 
 def _schema_type_label(prop_schema: dict[str, Any]) -> str:
     """Return a human-readable type label for a property schema."""
+    branches = prop_schema.get("anyOf") or prop_schema.get("oneOf")
+    if (
+        "type" not in prop_schema
+        and isinstance(branches, list)
+        and all(isinstance(branch, dict) for branch in branches)
+    ):
+        return " | ".join(_schema_type_label(branch) for branch in branches)
+
     schema_type = prop_schema.get("type", "string")
     if isinstance(schema_type, list):
         labels = [_JSON_SCHEMA_TYPE_LABELS.get(t, t) for t in schema_type]
