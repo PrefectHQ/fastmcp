@@ -51,7 +51,7 @@ This conceptual model helps you understand the purpose of each configuration sec
   },
   "environment": {
     "type": "uv",
-    "python": ">=3.10",
+    "python": ">=3.11",
     "dependencies": ["pandas", "numpy"]
   },
   "deployment": {
@@ -132,7 +132,7 @@ The source configuration determines **WHERE** your server code lives. It tells F
 
 Future releases will support additional source types:
 - **Git repositories** (`type: "git"`) for loading server code directly from version control
-- **Prefect Horizon** (`type: "cloud"`) for hosted servers with automatic scaling and management
+- **FastMCP Gateway** (`type: "cloud"`) for hosted servers with automatic scaling and management
 </Note>
 
 ### Environment Configuration
@@ -155,8 +155,8 @@ FastMCP uses an extensible environment system with a base `Environment` class th
     <ParamField body="python" type="string">
       Python version constraint. Examples:
       - Exact version: `"3.12"`
-      - Minimum version: `">=3.10"`
-      - Version range: `">=3.10,<3.13"`
+      - Minimum version: `">=3.11"`
+      - Version range: `">=3.11,<3.14"`
     </ParamField>
     
     <ParamField body="dependencies" type="list[str]">
@@ -195,7 +195,7 @@ FastMCP uses an extensible environment system with a base `Environment` class th
     ```json
     "environment": {
       "type": "uv",
-      "python": ">=3.10",
+      "python": ">=3.11",
       "dependencies": ["pandas", "numpy"],
       "editable": ["."]
     }
