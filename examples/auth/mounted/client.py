@@ -19,7 +19,6 @@ async def main():
     print("\n--- GitHub Server ---")
     try:
         async with Client(GITHUB_URL, auth="oauth") as client:
-            assert await client.ping()
             print("✅ Successfully authenticated!")
 
             tools = await client.list_tools()
@@ -34,7 +33,6 @@ async def main():
     print("\n--- Google Server ---")
     try:
         async with Client(GOOGLE_URL, auth="oauth") as client:
-            assert await client.ping()
             print("✅ Successfully authenticated!")
 
             tools = await client.list_tools()
