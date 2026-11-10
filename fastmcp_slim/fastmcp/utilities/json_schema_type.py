@@ -424,7 +424,14 @@ def _resolve_recursive_types(conversion: _Conversion) -> None:
                 force=True, _types_namespace={cls.__name__: cls, **namespace}
             )
     rechecked: set[type[BaseModel]] = set()
-    for model, field_name in conversion.unchecked_defaults:
+    for model, property_name in conversion.unchecked_defaults:
+        # safe_create_model stores a reserved property name under a generated
+        # field name with the property name as its alias.
+        field_name = next(
+            name
+            for name, info in model.model_fields.items()
+            if (info.alias or name) == property_name
+        )
         field_info = model.model_fields[field_name]
         if _default_is_valid(field_info.annotation, field_info.default):
             field_info.validate_default = True
