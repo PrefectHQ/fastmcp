@@ -1340,12 +1340,11 @@ class FastMCP(
             # version was requested, respect that.
             if version is not None and version.eq is not None:
                 return None, True
-        elif version is not None and version.eq is not None:
-            # An exact-version request that missed is final: a miss can
-            # encode a lookup-time refusal (auth or a transform) that listing
-            # must not second-guess. Without a version constraint, or with a
-            # range, fall back to the highest listed version that the lookup
-            # path resolves and the session allows.
+        elif not denied and (version is None or version.eq is not None):
+            # A plain lookup miss is final: listing would second-guess the
+            # lookup path and can reach mounted servers unnecessarily. A
+            # denied resource (above) may still fall back for no-version or
+            # range requests, and an exact-version request is always final.
             return None, False
 
         all_resources = [
