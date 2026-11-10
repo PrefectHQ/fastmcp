@@ -1,6 +1,6 @@
 name: 💡 Enhancement Request
 description: Suggest an idea or improvement for FastMCP
-labels: [enhancement, pending]
+labels: [enhancement]
 
 body:
   - type: markdown

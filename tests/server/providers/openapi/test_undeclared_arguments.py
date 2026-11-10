@@ -10,6 +10,7 @@ from jsonschema_path import SchemaPath
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.exceptions import ToolError
+from fastmcp.server.providers.openapi.components import OpenAPITool
 from fastmcp.server.providers.openapi.routing import MCPType, RouteMap
 from fastmcp.utilities.openapi import director, parser
 from fastmcp.utilities.openapi.director import RequestDirector
@@ -104,6 +105,27 @@ async def test_undeclared_arguments_are_ignored(
     _assert_sent_as_configured(request)
     assert str(request.url) == f"{BASE_URL}/health"
     assert request.content == b""
+
+
+async def test_strict_input_validation_rejects_undeclared_arguments() -> None:
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    request_body = {"content": {"application/json": {"schema": schema}}}
+    spec = _spec("/agents", "post", {"requestBody": request_body})
+
+    requests: list[httpx2.Request] = []
+    async with _upstream_client(requests) as http_client:
+        server = FastMCP.from_openapi(
+            openapi_spec=spec, client=http_client, strict_input_validation=True
+        )
+        async with Client(server) as client:
+            with pytest.raises(
+                ToolError, match="Unknown arguments: usage_limits. Accepted: name"
+            ):
+                await client.call_tool(
+                    "operation", {"name": "agent", "usage_limits": {"requests": 5}}
+                )
+
+    assert requests == []
 
 
 async def test_undeclared_arguments_are_ignored_after_schema_precalculation_fails(
@@ -335,3 +357,37 @@ def test_manual_route_with_allof_body_sends_declared_properties() -> None:
     assert route.request_body.content_schema == {
         "application/json": {"allOf": [{"$ref": "#/components/schemas/Thing"}]}
     }
+
+
+async def test_strict_validation_accepts_suffix_on_manual_route() -> None:
+    route = HTTPRoute(
+        path="/users/{id}",
+        method="GET",
+        parameters=[
+            ParameterInfo(
+                name="id", location="path", required=True, schema={"type": "integer"}
+            )
+        ],
+    )
+    requests: list[httpx2.Request] = []
+    async with _upstream_client(requests) as http_client:
+        server = FastMCP(strict_input_validation=True)
+        server.add_tool(
+            OpenAPITool(
+                client=http_client,
+                route=route,
+                director=RequestDirector(SchemaPath.from_dict({})),
+                name="get_user",
+                description="",
+                parameters={
+                    "type": "object",
+                    "properties": {"id": {"type": "integer"}},
+                },
+            )
+        )
+        async with Client(server) as client:
+            await client.call_tool("get_user", {"id__path": 123})
+            with pytest.raises(ToolError, match="Unknown arguments: debug"):
+                await client.call_tool("get_user", {"id": 1, "debug": True})
+
+    assert [str(r.url) for r in requests] == [f"{BASE_URL}/users/123"]

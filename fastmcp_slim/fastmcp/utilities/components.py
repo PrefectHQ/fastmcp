@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Annotated, Any, ClassVar, TypedDict, cast
+from typing import Annotated, Any, ClassVar, Self, TypedDict, cast
 
 from mcp_types import Icon
 from pydantic import BeforeValidator, Field
-from typing_extensions import Self, TypeVar
+from typing_extensions import TypeVar
 
 from fastmcp.utilities.tasks import TaskConfig
 from fastmcp.utilities.types import FastMCPBaseModel
