@@ -10,7 +10,7 @@ for validation with Pydantic. It supports:
 - String constraints (minLength, maxLength, pattern)
 - Array constraints (minItems, maxItems, uniqueItems)
 - Object properties with defaults
-- References and recursive schemas
+- References and recursive schemas (including sibling constraints on scalar references)
 - Enums and constants
 - Union types
 
@@ -64,7 +64,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Hashable, Mapping
 from contextvars import ContextVar
 from copy import deepcopy
-from dataclasses import MISSING, dataclass, field, make_dataclass
+from dataclasses import MISSING, dataclass, field, fields, is_dataclass, make_dataclass
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache
 from typing import (
@@ -73,9 +73,11 @@ from typing import (
     ForwardRef,
     Generic,
     Literal,
+    NotRequired,
     TypeVar,
     Union,
     cast,
+    get_type_hints,
     overload,
 )
 from uuid import UUID
@@ -96,7 +98,7 @@ from pydantic import (
 )
 from pydantic.fields import FieldInfo
 from pydantic_core import SchemaError as _PydanticSchemaError
-from typing_extensions import NotRequired, TypedDict
+from typing_extensions import TypedDict
 
 __all__ = ["JSONSchema", "json_schema_to_type"]
 
@@ -244,8 +246,20 @@ class _Conversion:
     enclosing_class_name: str | None = None
     resolved_refs: dict[str, Any] = field(default_factory=dict)
     building: set[tuple[str, str]] = field(default_factory=set)
+    classes: dict[tuple[str, str], type] = field(default_factory=dict)
+    recursive_refs: dict[str, tuple[str, str]] = field(default_factory=dict)
+    # Model fields whose default failed its probe, possibly only because a
+    # recursive reference was still unresolved; rechecked after resolution.
+    unchecked_defaults: list[tuple[type[BaseModel], str]] = field(default_factory=list)
     depth: int = 0
     steps: int = 0
+
+    def reference(self, key: tuple[str, str]) -> ForwardRef:
+        """Refer to a class's identity rather than its possibly shared display name."""
+        digest = hashlib.sha256(repr(key).encode()).hexdigest()
+        name = f"_FastMCPRef_{digest}"
+        self.recursive_refs[name] = key
+        return ForwardRef(name)
 
 
 _conversion: ContextVar[_Conversion] = ContextVar("json_schema_conversion")
@@ -359,20 +373,25 @@ def json_schema_to_type(
 
 def _convert_normalized(schema: dict[str, Any], name: str | None) -> type:
     root_hash, root_size = _schema_digest(schema)
-    token = _conversion.set(
-        _Conversion(
-            root_hash=root_hash,
-            root_size=root_size,
-            root_class_name=_root_class_name(schema, name),
-        )
+    conversion = _Conversion(
+        root_hash=root_hash,
+        root_size=root_size,
+        root_class_name=_root_class_name(schema, name),
     )
+    token = _conversion.set(conversion)
     try:
         # Always use the top-level schema for references
         if schema.get("type") == "object":
-            return _object_schema_to_type(schema, schemas=schema, name=name)
+            result = _object_schema_to_type(schema, schemas=schema, name=name)
         elif name:
             raise ValueError(f"Can not apply name to non-object schema: {name}")
-        result = _schema_to_type(schema, schemas=schema)
+        else:
+            result = _schema_to_type(schema, schemas=schema)
+        _resolve_recursive_types(conversion)
+        # Publish only complete graphs: another conversion must not reuse a
+        # class whose recursive fields still depend on this conversion's namespace.
+        for key, cls in conversion.classes.items():
+            _classes.put(key, cls, conversion.root_size)
         return result  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
     finally:
         _conversion.reset(token)
@@ -391,6 +410,56 @@ def _root_class_name(schema: Mapping[str, Any], name: str | None) -> str | None:
     if not is_object or not schema.get("properties"):
         return None
     return _sanitize_name(name or _schema_title(schema, "Root"))
+
+
+def _resolve_recursive_types(conversion: _Conversion) -> None:
+    """Bind recursive fields after every class in the conversion has been built."""
+    if not conversion.recursive_refs:
+        return
+    namespace = {
+        name: conversion.classes[key] for name, key in conversion.recursive_refs.items()
+    }
+    # Root references use the root's public name, including when a nested
+    # mutually recursive class also points back to the conversion root.
+    root_class_name = conversion.root_class_name
+    if root_class_name is not None:
+        for cls in conversion.classes.values():
+            if cls.__name__ == root_class_name:
+                namespace[root_class_name] = cls
+    for cls in conversion.classes.values():
+        if is_dataclass(cls):
+            hints = get_type_hints(
+                cls,
+                localns={cls.__name__: cls, **namespace},
+                include_extras=True,
+            )
+            cls.__annotations__.update(hints)
+            for dataclass_field in fields(cls):
+                dataclass_field.type = hints[dataclass_field.name]
+    for cls in conversion.classes.values():
+        if issubclass(cls, BaseModel):
+            cls.model_rebuild(
+                force=True, _types_namespace={cls.__name__: cls, **namespace}
+            )
+    rechecked: set[type[BaseModel]] = set()
+    for model, field_name in conversion.unchecked_defaults:
+        field_info = model.model_fields[field_name]
+        if _default_is_valid(field_info.annotation, field_info.default):
+            field_info.validate_default = True
+            rechecked.add(model)
+    for model in rechecked:
+        model.model_rebuild(
+            force=True, _types_namespace={model.__name__: model, **namespace}
+        )
+
+
+def _default_is_valid(field_type: Any, default: Any) -> bool:
+    try:
+        TypeAdapter(field_type).validate_python(default)
+    except Exception:
+        # Invalid, or not checkable yet because a recursive reference is unresolved
+        return False
+    return True
 
 
 def json_schema_to_type_adapter(schema: Mapping[str, Any] | bool) -> TypeAdapter[Any]:
@@ -480,6 +549,7 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
         return base
 
     annotated: Any = Annotated[str, StringConstraints(**constraints)]
+    unsupported_pattern: str | None = None
 
     if "pattern" in constraints:
         try:
@@ -495,6 +565,7 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
                 stacklevel=2,
             )
             pattern_field = Field(json_schema_extra={"x-unsupported-pattern": pattern})
+            unsupported_pattern = pattern
             if constraints:
                 annotated = Annotated[
                     str, StringConstraints(**constraints), pattern_field
@@ -504,7 +575,19 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
 
     if base is str:
         return annotated
-    return _constrain_raw_string(base, **constraints)
+    constrained = _constrain_raw_string(base, **constraints)
+    if unsupported_pattern is None:
+        return constrained
+    # The dropped pattern stays visible for the shapes a `format` maps to a
+    # non-str type too, as the module docstring's third point promises.
+    return _with_pattern_marker(constrained, unsupported_pattern)
+
+
+@lru_cache(maxsize=1024)
+def _with_pattern_marker(constrained: Any, pattern: str) -> Any:
+    return Annotated[
+        constrained, Field(json_schema_extra={"x-unsupported-pattern": pattern})
+    ]
 
 
 @lru_cache(maxsize=1024)
@@ -858,6 +941,13 @@ def _convert_schema(
         return object
 
     if "type" not in schema and "properties" in schema:
+        # A schema with properties but no "type" is still an object schema. When
+        # it allows additional properties, take the object path so unknown keys
+        # are kept, exactly as if "type": "object" were spelled out.
+        if schema.get("additionalProperties"):
+            return _object_schema_to_type(
+                schema, schemas, resolving_refs=resolving_refs
+            )
         return _create_dataclass(schema, _schema_title(schema, "<unknown>"), schemas)
 
     # Handle references first
@@ -885,7 +975,65 @@ def _convert_schema(
             resolved_refs[ref] = _schema_to_type(
                 _resolve_ref(ref, schemas), schemas, resolving_refs | {ref}
             )
-        return resolved_refs[ref]
+        ref_type = resolved_refs[ref]
+        # Draft 4-7 treat a $ref object as a reference only. In newer drafts,
+        # constraints next to a reference also apply to that use of the type.
+        if (
+            schemas.get("$schema", "")
+            .rstrip("#")
+            .endswith(("/draft-04/schema", "/draft-06/schema", "/draft-07/schema"))
+        ):
+            return ref_type
+        siblings = {
+            k: v
+            for k, v in schema.items()
+            if k
+            in (
+                "type",
+                "format",
+                "const",
+                "enum",
+                "minLength",
+                "maxLength",
+                "pattern",
+                "minimum",
+                "maximum",
+                "exclusiveMinimum",
+                "exclusiveMaximum",
+                "multipleOf",
+            )
+        }
+        if not siblings:
+            return ref_type
+        resolved = _resolve_ref(ref, schemas)
+        seen = {ref}
+        while isinstance(resolved, Mapping) and "$ref" in resolved:
+            next_ref = resolved["$ref"]
+            if next_ref in seen:
+                return ref_type
+            seen.add(next_ref)
+            resolved = _resolve_ref(next_ref, schemas)
+        if not isinstance(resolved, Mapping) or resolved.get("type") not in (
+            "string",
+            "integer",
+            "number",
+            "boolean",
+            "null",
+        ):
+            return ref_type
+        sibling_type = _schema_to_type(
+            {"type": resolved["type"], **siblings}, schemas, resolving_refs
+        )
+        sibling_adapter = TypeAdapter(cast(Any, sibling_type))
+
+        def validate_siblings(value: Any) -> Any:
+            # Validate the original input, before formats turn strings into
+            # dates/URLs. Keep both validators intact: merging their metadata
+            # could replace a stricter constraint on the referenced type.
+            sibling_adapter.validate_python(value)
+            return value
+
+        return cast(type, Annotated[ref_type, BeforeValidator(validate_siblings)])
 
     if "const" in schema:
         return _create_enum(f"Const_{len(_classes)}", [schema["const"]])
@@ -1111,12 +1259,12 @@ def _create_pydantic_model(
     )
 
     # Return existing class if already built
-    existing = _classes.get(cache_key)
+    existing = conversion.classes.get(cache_key) or _classes.get(cache_key)
     if existing is not None:
         return existing
     # A recursive reference to a class that is still being built
     if cache_key in conversion.building:
-        return ForwardRef(sanitized_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        return conversion.reference(cache_key)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
 
     conversion.building.add(cache_key)
     enclosing_class_name = conversion.enclosing_class_name
@@ -1128,7 +1276,7 @@ def _create_pydantic_model(
     finally:
         conversion.enclosing_class_name = enclosing_class_name
         conversion.building.discard(cache_key)
-    _classes.put(cache_key, cls, conversion.root_size)
+    conversion.classes[cache_key] = cls
     return cls
 
 
@@ -1142,6 +1290,7 @@ def _build_pydantic_model(
     required = schema.get("required", [])
 
     field_definitions: dict[str, tuple[Any, Any]] = {}
+    unchecked: list[str] = []
     for prop_name, prop_schema in properties.items():
         # Boolean schemas (JSON Schema draft-06+): resolve type directly,
         # then use an empty dict for .get() calls below.
@@ -1161,13 +1310,9 @@ def _build_pydantic_model(
             # 1. Valid defaults get hydrated (e.g., date strings → date objects)
             # 2. Invalid defaults are preserved as-is rather than causing
             #    validation errors that would be caught and logged during parsing
-            validate_default = False
-            try:
-                TypeAdapter(field_type).validate_python(default_value)  # ty:ignore[invalid-argument-type]
-                validate_default = True
-            except Exception:  # noqa: S110
-                # Default doesn't satisfy its own type; keep it as-is
-                pass
+            validate_default = _default_is_valid(field_type, default_value)
+            if not validate_default:
+                unchecked.append(prop_name)
             field_definitions[prop_name] = (
                 field_type,
                 Field(default=default_value, validate_default=validate_default),
@@ -1181,12 +1326,15 @@ def _build_pydantic_model(
     extra_value_type = None
     if isinstance(additional_props, Mapping):
         extra_value_type = _schema_to_type(additional_props, schemas, resolving_refs)
-    return safe_create_model(
+    model = safe_create_model(
         name,
         field_definitions,
         config=ConfigDict(extra="allow", validate_default=extra_value_type is not None),
         extra_value_type=extra_value_type,
     )
+    conversion = _conversion.get()
+    conversion.unchecked_defaults.extend((model, prop) for prop in unchecked)
+    return model
 
 
 def _create_dataclass(
@@ -1213,12 +1361,12 @@ def _create_dataclass(
     )
 
     # Return existing class if already built
-    existing = _classes.get(cache_key)
+    existing = conversion.classes.get(cache_key) or _classes.get(cache_key)
     if existing is not None:
         return existing
     # A recursive reference to a class that is still being built
     if cache_key in conversion.building:
-        return ForwardRef(sanitized_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        return conversion.reference(cache_key)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
 
     conversion.building.add(cache_key)
     enclosing_class_name = conversion.enclosing_class_name
@@ -1229,7 +1377,7 @@ def _create_dataclass(
         conversion.enclosing_class_name = enclosing_class_name
         conversion.building.discard(cache_key)
     if isinstance(cls, type):
-        _classes.put(cache_key, cls, conversion.root_size)
+        conversion.classes[cache_key] = cls
     return cls
 
 
