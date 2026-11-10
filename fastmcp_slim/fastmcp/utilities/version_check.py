@@ -99,7 +99,7 @@ def _fetch_latest_version(include_prereleases: bool = False) -> str | None:
 
         return str(max(versions))
 
-    except (httpx2.HTTPError, json.JSONDecodeError, KeyError):
+    except (httpx2.HTTPError, httpx2.InvalidURL, json.JSONDecodeError, KeyError):
         return None
 
 
