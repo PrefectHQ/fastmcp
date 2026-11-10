@@ -67,6 +67,7 @@ from copy import deepcopy
 from dataclasses import MISSING, dataclass, field, fields, is_dataclass, make_dataclass
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache
+from types import MappingProxyType
 from typing import (
     Annotated,
     Any,
@@ -244,9 +245,9 @@ class _Conversion:
     building: set[tuple[str, str]] = field(default_factory=set)
     classes: dict[tuple[str, str], type] = field(default_factory=dict)
     recursive_refs: dict[str, tuple[str, str]] = field(default_factory=dict)
-    # Model fields whose default failed its probe, possibly only because a
-    # recursive reference was still unresolved; rechecked after resolution.
-    unchecked_defaults: list[tuple[type[BaseModel], str]] = field(default_factory=list)
+    # Model and dataclass fields whose default failed its probe, possibly only
+    # because a recursive reference was still unresolved; rechecked at the end.
+    unchecked_defaults: list[tuple[type, str]] = field(default_factory=list)
     depth: int = 0
     steps: int = 0
 
@@ -399,7 +400,7 @@ def _convert_normalized(schema: dict[str, Any], name: str | None) -> type:
 
 def _resolve_recursive_types(conversion: _Conversion) -> None:
     """Bind recursive fields after every class in the conversion has been built."""
-    if not conversion.recursive_refs:
+    if not conversion.recursive_refs and not conversion.unchecked_defaults:
         return
     namespace = {
         name: conversion.classes[key] for name, key in conversion.recursive_refs.items()
@@ -410,7 +411,7 @@ def _resolve_recursive_types(conversion: _Conversion) -> None:
         if cls.__name__ == conversion.root_class_name:
             namespace[conversion.root_class_name] = cls
     for cls in conversion.classes.values():
-        if is_dataclass(cls):
+        if conversion.recursive_refs and is_dataclass(cls):
             hints = get_type_hints(
                 cls,
                 localns={cls.__name__: cls, **namespace},
@@ -420,25 +421,43 @@ def _resolve_recursive_types(conversion: _Conversion) -> None:
             for dataclass_field in fields(cls):
                 dataclass_field.type = hints[dataclass_field.name]
     for cls in conversion.classes.values():
-        if issubclass(cls, BaseModel):
+        if conversion.recursive_refs and issubclass(cls, BaseModel):
             cls.model_rebuild(
                 force=True, _types_namespace={cls.__name__: cls, **namespace}
             )
     rechecked: set[type[BaseModel]] = set()
-    for model, field_name in conversion.unchecked_defaults:
-        field_info = model.model_fields[field_name]
-        if _default_is_valid(field_info.annotation, field_info.default):
-            field_info.validate_default = True
-            rechecked.add(model)
+    for cls, field_name in conversion.unchecked_defaults:
+        if issubclass(cls, BaseModel):
+            field_info = cls.model_fields[field_name]
+            # `annotation` alone drops constraints such as `minimum`
+            annotation = field_info.rebuild_annotation()
+            if _default_is_valid(annotation, field_info.default):
+                field_info.validate_default = True
+                rechecked.add(cls)
+            continue
+        dataclass_field = cls.__dataclass_fields__[field_name]  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        factory = dataclass_field.default_factory
+        default = factory() if callable(factory) else dataclass_field.default
+        # A `"#"` reference in a nested dataclass stays a forward reference
+        # to the root, so the probe needs the namespace.
+        if _default_is_valid(dataclass_field.type, default, namespace):
+            dataclass_field.metadata = MappingProxyType(
+                {**dataclass_field.metadata, "validate_default": True}
+            )
     for model in rechecked:
         model.model_rebuild(
             force=True, _types_namespace={model.__name__: model, **namespace}
         )
 
 
-def _default_is_valid(field_type: Any, default: Any) -> bool:
+def _default_is_valid(
+    field_type: Any, default: Any, namespace: dict[str, Any] | None = None
+) -> bool:
     try:
-        TypeAdapter(field_type).validate_python(default)
+        adapter = TypeAdapter(field_type)
+        if namespace:
+            adapter.rebuild(_types_namespace=namespace)
+        adapter.validate_python(default)
     except Exception:
         # Invalid, or not checkable yet because a recursive reference is unresolved
         return False
@@ -1344,6 +1363,7 @@ def _build_dataclass(
     required = schema.get("required", [])
 
     fields: list[tuple[Any, ...]] = []
+    unchecked: list[str] = []
     used_field_names: set[str] = set()
     for prop_name, prop_schema in properties.items():
         field_name = _sanitize_name(prop_name)
@@ -1372,9 +1392,14 @@ def _build_dataclass(
         is_required = prop_name in required
 
         # Include alias in field metadata
-        meta = {"alias": prop_name}
+        meta: dict[str, Any] = {"alias": prop_name}
 
         if default_val is not MISSING:
+            # Only valid defaults are validated (and hydrated); invalid ones
+            # are kept as-is, matching the model path.
+            meta["validate_default"] = _default_is_valid(field_type, default_val)
+            if not meta["validate_default"]:
+                unchecked.append(field_name)
             if isinstance(default_val, dict | list):
                 field_def = field(
                     default_factory=lambda d=default_val: deepcopy(d), metadata=meta
@@ -1399,10 +1424,13 @@ def _build_dataclass(
     @classmethod
     def _apply_defaults(cls, data: Mapping[str, Any]):
         if isinstance(data, dict):
-            return _merge_defaults(data, original_schema)
+            # Omitted fields fall back to the field defaults, which validate
+            # only when valid; object defaults are still merged here.
+            return _merge_defaults(data, original_schema, apply_property_defaults=False)
         return data
 
     cls._apply_defaults = _apply_defaults  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    _conversion.get().unchecked_defaults.extend((cls, f) for f in unchecked)
     return cls
 
 
@@ -1410,6 +1438,8 @@ def _merge_defaults(
     data: Mapping[str, Any],
     schema: Mapping[str, Any],
     parent_default: Mapping[str, Any] | None = None,
+    *,
+    apply_property_defaults: bool = True,
 ) -> dict[str, Any]:
     """Merge defaults with provided data at all levels."""
     # If we have no data
@@ -1447,7 +1477,7 @@ def _merge_defaults(
             continue
 
         # If property is missing, apply defaults in priority order
-        if prop_name not in result:
+        if apply_property_defaults and prop_name not in result:
             if parent_default and prop_name in parent_default:
                 result[prop_name] = parent_default[prop_name]
             elif "default" in prop_schema:
@@ -1467,7 +1497,10 @@ def _merge_defaults(
                 nested_default = prop_schema["default"]
 
             result[prop_name] = _merge_defaults(
-                result[prop_name], prop_schema, nested_default
+                result[prop_name],
+                prop_schema,
+                nested_default,
+                apply_property_defaults=apply_property_defaults,
             )
 
     return result
