@@ -630,9 +630,9 @@ async def test_background_context_logging_without_session():
         _background_task_session_id.reset(token)
 
 
-async def test_background_context_logging_honors_no_session_level(monkeypatch):
-    from unittest.mock import AsyncMock
-
+async def test_background_context_logging_honors_no_session_level(
+    caplog: pytest.LogCaptureFixture,
+):
     from fastmcp.server.dependencies import _background_task_session_id
 
     mcp = FastMCP("test")
@@ -642,12 +642,16 @@ async def test_background_context_logging_honors_no_session_level(monkeypatch):
         task_id="task-1",
         origin_request_id="request-1",
     )
-    sender = AsyncMock()
-    monkeypatch.setattr("fastmcp.server.context._log_to_server_and_client", sender)
+    to_client = logging.getLogger("fastmcp.server.context.to_client")
+    to_client.setLevel(logging.DEBUG)
     token = _background_task_session_id.set("snapshot-session")
     try:
         await context.info("suppressed")
+        await context.warning("emitted")
     finally:
         _background_task_session_id.reset(token)
+        to_client.setLevel(logging.NOTSET)
 
-    sender.assert_not_awaited()
+    assert [r.getMessage() for r in caplog.records if r.name == to_client.name] == [
+        "Sending WARNING to client: emitted"
+    ]
