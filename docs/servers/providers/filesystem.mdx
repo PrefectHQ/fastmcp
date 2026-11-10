@@ -211,13 +211,15 @@ Reload mode adds overhead to every request. Use it only during development, not 
 
 ## Error Handling
 
-When a file fails to import (syntax error, missing dependency, etc.), the provider logs a warning and continues scanning other files. Failed imports don't prevent the server from starting.
+When a file fails to import or construct its components (syntax error, missing dependency, unsupported tool signature, etc.), the provider logs a warning, skips that file, and continues scanning other files. Components from other files remain available at startup and during reloads.
 
 ```
-WARNING - Failed to import /path/to/broken.py: No module named 'missing_dep'
+WARNING - Failed to load /path/to/broken.py: No module named 'missing_dep'
 ```
 
 The provider tracks which files have failed and only re-logs warnings when the file's modification time changes. This prevents log spam when a broken file is repeatedly scanned in reload mode.
+
+Inspect `provider.failed_files` for a snapshot of failures from the most recent load, including component registration errors. Each entry maps a file path to its error message. You can use this to enforce a stricter startup policy without importing the files again.
 
 ## Example Project
 

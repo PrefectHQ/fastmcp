@@ -56,7 +56,7 @@ from mcp.server.auth.provider import (
     RegistrationError,
     TokenError,
 )
-from mcp.server.auth.routes import build_metadata, cors_middleware
+from mcp.server.auth.routes import build_metadata, cors_middleware, create_auth_routes
 from mcp.server.auth.settings import (
     ClientRegistrationOptions,
     RevocationOptions,
@@ -77,6 +77,7 @@ from fastmcp.server.auth.auth import (
     OAuthProvider,
     PrivateKeyJWTClientAuthenticator,
     TokenHandler,
+    TokenVerificationError,
     TokenVerifier,
 )
 from fastmcp.server.auth.cimd import CIMDClientManager
@@ -109,6 +110,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     UpstreamTokenSet,
     _hash_token,
 )
+from fastmcp.server.auth.oauth_proxy.revocation import RevocationProvider
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
 from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client, OAuthError
 from fastmcp.server.auth.redirect_validation import (
@@ -2340,6 +2342,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                                 validated = await self._token_validator.verify_token(
                                     verification_token
                                 )
+                except TokenVerificationError:
+                    raise
                 except Exception as e:
                     logger.debug("Transparent upstream refresh failed: %s", e)
                     # In a distributed deployment, another worker may have
@@ -2357,6 +2361,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                                 )
                                 if validated:
                                     upstream_token_set = reloaded
+                    except TokenVerificationError:
+                        raise
                     except Exception as reload_error:
                         logger.debug(
                             "Re-read of upstream token after refresh failure also failed: %s",
@@ -2401,6 +2407,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             )
             return validated
 
+        except TokenVerificationError:
+            raise
         except Exception as e:
             logger.debug("Token swap validation failed: %s", e)
             return None
@@ -2515,6 +2523,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         This method creates standard OAuth routes and replaces:
         - /authorize endpoint: Enhanced error responses for unregistered clients
         - /token endpoint: OAuth 2.1 compliant error codes
+        - /revoke endpoint: Downstream client ownership without changing user identity
 
         Args:
             mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
@@ -2591,6 +2600,24 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         ),
                         methods=["POST", "OPTIONS"],
                     )
+                )
+            elif (
+                isinstance(route, Route)
+                and route.path == "/revoke"
+                and route.methods is not None
+                and "POST" in route.methods
+            ):
+                # Let the SDK retain its request-size limit, CORS, and other
+                # endpoint protections; only token ownership needs adapting.
+                revocation_routes = create_auth_routes(
+                    provider=RevocationProvider(self),
+                    issuer_url=self.base_url,  # ty: ignore[invalid-argument-type]
+                    revocation_options=self.revocation_options,
+                )
+                custom_routes.extend(
+                    candidate
+                    for candidate in revocation_routes
+                    if candidate.path == route.path
                 )
             elif (
                 isinstance(route, Route)
