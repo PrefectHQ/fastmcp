@@ -12,6 +12,8 @@ import mcp_types
 if TYPE_CHECKING:
     from fastmcp.resources.function_resource import FunctionResource
 
+from typing import Self
+
 import pydantic
 import pydantic_core
 from mcp_types import Annotations, Icon
@@ -25,7 +27,6 @@ from pydantic import (
     model_validator,
 )
 from pydantic.json_schema import SkipJsonSchema
-from typing_extensions import Self
 
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent, public_result_meta

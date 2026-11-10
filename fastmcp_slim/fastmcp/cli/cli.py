@@ -184,7 +184,7 @@ async def inspector(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_requirements: Annotated[
@@ -450,7 +450,7 @@ async def run(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_packages: Annotated[
@@ -810,7 +810,7 @@ async def inspect(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_packages: Annotated[

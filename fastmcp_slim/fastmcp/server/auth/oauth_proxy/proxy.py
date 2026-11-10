@@ -77,6 +77,7 @@ from fastmcp.server.auth.auth import (
     OAuthProvider,
     PrivateKeyJWTClientAuthenticator,
     TokenHandler,
+    TokenVerificationError,
     TokenVerifier,
 )
 from fastmcp.server.auth.cimd import CIMDClientManager
@@ -2340,6 +2341,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                                 validated = await self._token_validator.verify_token(
                                     verification_token
                                 )
+                except TokenVerificationError:
+                    raise
                 except Exception as e:
                     logger.debug("Transparent upstream refresh failed: %s", e)
                     # In a distributed deployment, another worker may have
@@ -2357,6 +2360,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                                 )
                                 if validated:
                                     upstream_token_set = reloaded
+                    except TokenVerificationError:
+                        raise
                     except Exception as reload_error:
                         logger.debug(
                             "Re-read of upstream token after refresh failure also failed: %s",
@@ -2401,6 +2406,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             )
             return validated
 
+        except TokenVerificationError:
+            raise
         except Exception as e:
             logger.debug("Token swap validation failed: %s", e)
             return None
