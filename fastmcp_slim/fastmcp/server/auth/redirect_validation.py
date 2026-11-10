@@ -394,8 +394,9 @@ def matches_allowed_pattern(uri: str, pattern: str) -> bool:
     # loopback patterns too — the RFC 8252 §7.3 flexibility covers the
     # port, not the fragment — and matches
     # _matches_registered_loopback_redirect_uri, which also requires
-    # fragment equality.
-    if uri_parsed.fragment:
+    # fragment equality. Check for `#` directly: urlparse reports an
+    # empty fragment for a bare trailing `#`, which is still a fragment.
+    if "#" in uri:
         return False
 
     # Path must match (with fnmatch wildcards)

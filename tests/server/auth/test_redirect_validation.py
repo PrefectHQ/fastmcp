@@ -409,6 +409,13 @@ class TestFragmentMatching:
             "https://app.example.com/cb?x=1",
         )
 
+    def test_empty_fragment_rejected(self):
+        """A bare trailing `#` is still a fragment component."""
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb#",
+            "https://app.example.com/cb",
+        )
+
     def test_empty_query_matches_queryless_pattern(self):
         """`...?` carries an empty query, equal to a query-less pattern's.
 
