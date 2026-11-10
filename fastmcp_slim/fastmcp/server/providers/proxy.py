@@ -756,6 +756,7 @@ class ProxyPrompt(Prompt):
         arguments = [
             PromptArgument(
                 name=arg.name,
+                title=arg.title,
                 description=arg.description,
                 required=arg.required or False,
             )
