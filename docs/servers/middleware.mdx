@@ -712,7 +712,7 @@ Do not return error values or skip `call_next()` to indicate errors—raise exce
 
 ### Authorizing Resource Access
 
-To restrict which resources a caller can read, implement `check_resource_access` rather than `on_read_resource`. The default `on_read_resource` calls it before every read, and features that describe resources without reading them, such as [Skills discovery](/servers/providers/experimental-skills), call it too, so a resource the caller cannot read is not advertised either. Raise `AuthorizationError` to deny access.
+To restrict which resources a caller can read, implement `check_resource_access` rather than `on_read_resource`. The default `on_read_resource` calls it before every read, and features that describe resources without reading them, such as [Skills discovery](/servers/skills#access-control), call it too, so a resource the caller cannot read is not advertised either. Raise `AuthorizationError` to deny access.
 
 ```python
 from fastmcp.exceptions import AuthorizationError

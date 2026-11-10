@@ -6,7 +6,7 @@ import asyncio
 import logging
 import secrets
 from collections.abc import (
-    AsyncIterator,
+    AsyncGenerator,
     Callable,
     Sequence,
 )
@@ -21,6 +21,7 @@ from typing import (
     Any,
     Generic,
     Literal,
+    Self,
     TypeVar,
     cast,
     get_args,
@@ -42,7 +43,6 @@ from pydantic import AnyUrl
 from pydantic import ValidationError as PydanticValidationError
 from pydantic_core import ErrorType
 from starlette.routing import BaseRoute
-from typing_extensions import Self
 
 import fastmcp
 import fastmcp.server
@@ -170,7 +170,7 @@ def _version_request_meta(
         return None
 
     # RequestParamsMeta does not declare application-specific extension keys.
-    return cast(mcp_types.RequestParamsMeta, {"fastmcp": {"version": version_value}})
+    return {"fastmcp": {"version": version_value}}
 
 
 # The MCP SDK warns "Tool X not listed, no validation will be performed"
@@ -270,7 +270,9 @@ def _get_auth_context() -> tuple[bool, Any]:
 
 
 @asynccontextmanager
-async def default_lifespan(server: FastMCP[LifespanResultT]) -> AsyncIterator[Any]:
+async def default_lifespan(
+    server: FastMCP[LifespanResultT],
+) -> AsyncGenerator[Any, None]:
     """Default lifespan context manager that does nothing.
 
     Args:
@@ -290,7 +292,7 @@ def _lifespan_proxy(
     @asynccontextmanager
     async def wrap(
         low_level_server: LowLevelServer[LifespanResultT],
-    ) -> AsyncIterator[LifespanResultT]:
+    ) -> AsyncGenerator[LifespanResultT, None]:
         # Drive the FastMCP lifespan rather than merely reading it back. The
         # SDK enters this proxy exactly once per manager/server run (via
         # ``StreamableHTTPSessionManager.run`` → ``app.lifespan(app)`` or
@@ -684,13 +686,10 @@ class FastMCP(
         super().add_provider(provider, namespace=namespace)
 
     def _rewrite_prefab_uris(self, tools: list[Tool]) -> list[Tool]:
-        """Replace placeholder Prefab URIs with per-tool hashed ones.
+        """Replace placeholder Prefab URIs with shared renderer identities.
 
-        For each tool whose ``meta.ui.resourceUri`` is the placeholder,
-        reads the tool's stored hash from ``meta.fastmcp.tool_hash``
-        and rewrites the URI to the per-tool form. Also strips CSP from
-        tool meta (it belongs on the resource). Produces ``model_copy``
-        views — originals are untouched.
+        Matching renderer configurations share a URI. Resource-only fields
+        such as CSP are stripped from copies of tool metadata.
         """
         from fastmcp.server.providers.prefab_synthesis import (
             _is_prefab_tool,
@@ -977,7 +976,10 @@ class FastMCP(
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext(
-                    message={},
+                    # Synthesized with only `method`: params stays None, so
+                    # pagination state (e.g. the client's nextCursor) is not
+                    # visible to list middleware hooks.
+                    message=mcp_types.ListResourcesRequest(method="resources/list"),
                     source="client",
                     type="request",
                     method="resources/list",
@@ -997,14 +999,16 @@ class FastMCP(
                 resources = await apply_session_transforms(resources)
                 resources = [r for r in resources if is_enabled(r)]
 
-                # Append synthetic Prefab renderer resources — one per
-                # prefab tool, hashed by mount address. These don't live on
+                # Append synthetic Prefab resources shared by effective
+                # renderer configuration. These don't live on
                 # any provider's storage; they're computed on demand.
                 from fastmcp.server.providers.prefab_synthesis import (
                     synthesize_prefab_resources,
                 )
 
-                resources.extend(await synthesize_prefab_resources(self))
+                known_keys = {resource.key for resource in resources}
+                synthetic = await synthesize_prefab_resources(self)
+                resources.extend(r for r in synthetic if r.key not in known_keys)
 
                 skip_auth, token = _get_auth_context()
                 authorized: list[Resource] = []
@@ -1126,7 +1130,12 @@ class FastMCP(
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext(
-                    message={},
+                    # Synthesized with only `method`: params stays None, so
+                    # pagination state (e.g. the client's nextCursor) is not
+                    # visible to list middleware hooks.
+                    message=mcp_types.ListResourceTemplatesRequest(
+                        method="resources/templates/list"
+                    ),
                     source="client",
                     type="request",
                     method="resources/templates/list",
@@ -1266,7 +1275,10 @@ class FastMCP(
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext(
-                    message={},
+                    # Synthesized with only `method`: params stays None, so
+                    # pagination state (e.g. the client's nextCursor) is not
+                    # visible to list middleware hooks.
+                    message=mcp_types.ListPromptsRequest(method="prompts/list"),
                     source="client",
                     type="request",
                     method="prompts/list",
@@ -1424,7 +1436,7 @@ class FastMCP(
         #   1. Display-name path — the name this server lists the tool
         #      under, resolved through `get_tool`.
         #   2. Hashed-name path — backend tools that opted into
-        #      app-callable visibility, addressed as `<hash>_<local_name>`
+        #      app-callable visibility, addressed as `__<hash>_<local_name>`
         #      and resolved through `get_tool_by_hash`. It applies the same
         #      transforms, visibility, and auth as the display-name path.
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:

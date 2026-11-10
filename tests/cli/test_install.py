@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from fastmcp.cli.install import install_app
+from fastmcp.cli.install.claude_desktop import install_claude_desktop
 from fastmcp.cli.install.mcp_json import install_mcp_json
 from fastmcp.cli.install.shared import validate_server_name
 from fastmcp.cli.install.stdio import install_stdio
@@ -160,6 +161,63 @@ class TestClaudeDesktopInstall:
         command, bound, _ = install_app.parse_args(["claude-desktop", "server.py"])
 
         assert bound.arguments.get("config_path") is None
+
+
+class TestClaudeDesktopConfigFile:
+    """Claude Desktop only creates its config file once the user opens Edit Config."""
+
+    @pytest.fixture
+    def server_file(self, tmp_path: Path) -> Path:
+        server_file = tmp_path / "server.py"
+        server_file.write_text(
+            "from fastmcp import FastMCP\n\nmcp = FastMCP('demo')\n", encoding="utf-8"
+        )
+        return server_file
+
+    @pytest.fixture
+    def config_dir(self, tmp_path: Path) -> Path:
+        config_dir = tmp_path / "claude"
+        config_dir.mkdir()
+        return config_dir
+
+    @pytest.mark.parametrize("existing", [None, "", "  \n\t\n"])
+    def test_install_creates_missing_or_blank_config_file(
+        self, server_file: Path, config_dir: Path, existing: str | None
+    ):
+        config_file = config_dir / "claude_desktop_config.json"
+        if existing is not None:
+            config_file.write_text(existing, encoding="utf-8")
+
+        assert install_claude_desktop(
+            server_file, "mcp", "demo", config_path=config_dir
+        )
+
+        saved = json.loads(config_file.read_text(encoding="utf-8"))
+        assert list(saved["mcpServers"]) == ["demo"]
+        assert saved["mcpServers"]["demo"]["args"][-1] == f"{server_file.resolve()}:mcp"
+
+    def test_install_keeps_other_settings_in_existing_config_file(
+        self, server_file: Path, config_dir: Path
+    ):
+        config_file = config_dir / "claude_desktop_config.json"
+        config_file.write_text(
+            json.dumps(
+                {
+                    "preferences": {"theme": "dark"},
+                    "mcpServers": {"other": {"command": "npx", "args": ["other"]}},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        assert install_claude_desktop(
+            server_file, "mcp", "demo", config_path=config_dir
+        )
+
+        saved = json.loads(config_file.read_text(encoding="utf-8"))
+        assert saved["preferences"] == {"theme": "dark"}
+        assert saved["mcpServers"]["other"]["command"] == "npx"
+        assert saved["mcpServers"]["demo"]["args"][-1] == f"{server_file.resolve()}:mcp"
 
 
 class TestInstallConfigEncoding:

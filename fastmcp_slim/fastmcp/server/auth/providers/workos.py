@@ -20,6 +20,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from fastmcp.server.auth import AccessToken, RemoteAuthProvider, TokenVerifier
+from fastmcp.server.auth.identity_assertion import IdentityAssertion
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.auth import parse_scopes
@@ -187,6 +188,7 @@ class WorkOSProvider(OAuthProxy):
         extra_authorize_params: dict[str, str] | None = None,
         http_client: httpx2.AsyncClient | None = None,
         enable_cimd: bool = True,
+        identity_assertion: IdentityAssertion | None = None,
     ):
         """Initialize WorkOS OAuth provider.
 
@@ -241,6 +243,8 @@ class WorkOSProvider(OAuthProxy):
                 is responsible for its lifecycle. When None (default), a fresh client is created per call.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs (default True). Set to False to disable.
+            identity_assertion: Optional SEP-990 ID-JAG configuration for
+                identity-bound token exchange. Disabled by default.
         """
         # Apply defaults and ensure authkit_domain is a full URL
         authkit_domain_str = authkit_domain
@@ -285,6 +289,7 @@ class WorkOSProvider(OAuthProxy):
             extra_authorize_params=extra_authorize_params,
             valid_scopes=valid_scopes_final,
             enable_cimd=enable_cimd,
+            identity_assertion=identity_assertion,
         )
 
         logger.debug(

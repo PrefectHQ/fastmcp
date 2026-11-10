@@ -1,0 +1,71 @@
+name: Deploy agentic triage
+
+# Registers the triage deployments in Prefect Cloud at a commit on main and
+# repins both triage automations to it. Dispatching an older commit rolls back.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit on main to deploy (blank for main's tip)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-agentic
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: source/.github/agentic
+    env:
+      # prefect-technologies/marvin-bot
+      PREFECT_WORKSPACE_ID: cafa2ffa-f6cc-4ed6-ab76-eaa4ba1ad40e
+      PREFECT_WORKSPACE_HANDLE: prefect-technologies/marvin-bot
+    steps:
+      # The driver always comes from main's tip so older targets can be deployed
+      # (rollback) even when they predate it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: driver
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: source
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require a commit on main
+        run: git merge-base --is-ancestor HEAD origin/main
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "source/.github/agentic/uv.lock"
+      - run: uv sync --locked
+      - name: Resolve workspace API URL
+        env:
+          PREFECT_API_KEY: ${{ secrets.PREFECT_API_KEY }}
+        run: |
+          url=$(curl -fsS -H "Authorization: Bearer $PREFECT_API_KEY" \
+            https://api.prefect.cloud/api/me/workspaces | jq -er \
+            --arg id "$PREFECT_WORKSPACE_ID" --arg handle "$PREFECT_WORKSPACE_HANDLE" '
+              [.[] | select(.workspace_id == $id)]
+              | if length != 1 then error("Workspace not visible to PREFECT_API_KEY")
+                elif .[0].account_handle + "/" + .[0].workspace_handle != $handle
+                then error("Workspace handle mismatch")
+                else "https://api.prefect.cloud/api/accounts/\(.[0].account_id)/workspaces/\(.[0].workspace_id)" end')
+          echo "PREFECT_API_URL=$url" >> "$GITHUB_ENV"
+      - name: Deploy
+        env:
+          PREFECT_API_KEY: ${{ secrets.PREFECT_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: FASTMCP_AGENTIC_DIR="$PWD" bash "$GITHUB_WORKSPACE/driver/.github/agentic/scripts/agentic_stack.sh" deploy

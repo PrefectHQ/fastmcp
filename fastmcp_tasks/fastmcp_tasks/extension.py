@@ -25,7 +25,8 @@ Docket backend/worker and installs the worker-side `Context` hooks core exposes.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
+import copy
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
@@ -87,7 +88,9 @@ class TasksExtension(ServerExtension):
 
     Pass a redis-py `credential_provider` for rotating backend credentials,
     with no credentials in the URL. The provider is runtime configuration,
-    not an environment setting; Docket manages its connections and refreshes.
+    not an environment setting; Docket manages its connections. Streaming
+    providers are rejected until Docket re-authenticates in-use connections
+    without racing other commands for their sockets.
     """
 
     identifier = TASKS_EXTENSION_ID
@@ -104,6 +107,16 @@ class TasksExtension(ServerExtension):
         reconnection_delay: timedelta | None = None,
         minimum_check_interval: timedelta | None = None,
     ) -> None:
+        if credential_provider is not None:
+            from redis.credentials import StreamingCredentialProvider
+
+            if isinstance(credential_provider, StreamingCredentialProvider):
+                raise ValueError(
+                    "Streaming credential providers are not supported yet: a token "
+                    "refresh can hand one Redis connection to two commands at once "
+                    "(redis/redis-py#4433). Use a CredentialProvider that returns "
+                    "current credentials for each new connection."
+                )
         self._credential_provider = credential_provider
         overrides: dict[str, Any] = {
             "url": url,
@@ -122,6 +135,17 @@ class TasksExtension(ServerExtension):
     def docket_settings(self) -> DocketSettings:
         """The resolved Docket settings (backend URL, worker options)."""
         return self._settings
+
+    def clone(self) -> TasksExtension:
+        """Return an unbound copy sharing the configured credential provider.
+
+        Providers may own locks or token-refresh clients that cannot be copied.
+        All other extension state, including resolved settings, is deep-copied.
+        """
+        provider = self._credential_provider
+        extension = copy.deepcopy(self, {id(provider): provider})
+        extension._server_ref = None
+        return extension
 
     def settings(self) -> dict[str, Any]:
         """The tasks extension advertises no per-extension settings."""
@@ -295,7 +319,7 @@ class TasksExtension(ServerExtension):
         return await call_next()
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         """Start the Docket backend/worker and install the worker-side hooks.
 
         Installs core's background-context factory and worker-server resolver for

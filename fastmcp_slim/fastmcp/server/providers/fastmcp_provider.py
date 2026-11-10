@@ -10,7 +10,7 @@ executed.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncGenerator, Generator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Any
 
@@ -311,6 +311,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         # compiled pattern instead of rebuilding it per wrapper.
         template._compiled_pattern()
         wrapped._pattern = template._pattern
+        wrapped._list_query_params = template._list_query_params
         return wrapped
 
     async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
@@ -421,7 +422,7 @@ class FastMCPProvider(Provider):
     @contextmanager
     def _extension_runtime(
         self, available: frozenset[str], *, root: FastMCP | None
-    ) -> Iterator[None]:
+    ) -> Generator[None, None, None]:
         with self.server._extension_runtime(available, root=root):
             yield
 
@@ -487,7 +488,7 @@ class FastMCPProvider(Provider):
         if raw_tool is None:
             return None
         wrapped = FastMCPProviderTool.wrap(self.server, raw_tool)
-        wrapped._original_name = f"{tool_hash}_{tool_name}"
+        wrapped._original_name = f"__{tool_hash}_{tool_name}"
         return wrapped
 
     # -------------------------------------------------------------------------
@@ -611,7 +612,7 @@ class FastMCPProvider(Provider):
     # -------------------------------------------------------------------------
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         """Start the mounted server's lifespan.
 
         Sets ``_lifespan_root_active=True`` to signal to the wrapped server's
