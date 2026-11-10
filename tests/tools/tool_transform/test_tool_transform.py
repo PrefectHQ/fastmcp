@@ -1,12 +1,15 @@
 """Core tool transform functionality."""
 
+import asyncio
 import json
 import re
+import time
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
+import jsonschema
 import pytest
-from mcp_types import TextContent
+from mcp_types import Icon, TextContent
 from pydantic import BaseModel, ConfigDict, Field, with_config
 
 from fastmcp import FastMCP
@@ -101,6 +104,18 @@ def test_from_tool_decorated_function_preserves_metadata():
 
     transformed = Tool.from_tool(search)
     assert transformed.parent_tool.description == "Custom description"
+
+
+def test_from_tool_preserves_icons():
+    icons = [Icon(src="https://example.com/search.png")]
+
+    @tool(icons=icons)
+    def search(q: str) -> list[str]:
+        return []
+
+    transformed = Tool.from_tool(search, name="find_items")
+    assert transformed.icons == icons
+    assert transformed.to_mcp_tool().icons == icons
 
 
 async def test_from_tool_decorated_function_runs(add_tool):
@@ -364,6 +379,109 @@ async def test_arg_transform_type_raises_on_defs_name_collision():
 
     with pytest.raises(ValueError, match=r"\$defs collision for 'Foo'"):
         Tool.from_tool(tool_fn, transform_args={"other": ArgTransform(type=list[Foo])})
+
+
+async def test_arg_transform_type_replaces_parent_type_keywords():
+    """Regression for #5369: ArgTransform(type=...) must replace, not merge, parent types."""
+
+    @Tool.from_function
+    def parent(x: str) -> str:
+        return x
+
+    tool = Tool.from_tool(parent, transform_args={"x": ArgTransform(type=int | None)})
+
+    prop = tool.parameters["properties"]["x"]
+    validator = jsonschema.Draft202012Validator(tool.parameters)
+    assert prop == {
+        "anyOf": [{"type": "integer"}, {"type": "null"}],
+    }
+    assert validator.is_valid({"x": 5})
+    assert validator.is_valid({"x": None})
+    assert not validator.is_valid({"x": "hello"})
+
+
+async def test_transform_fn_type_replaces_forwarded_parent_schema():
+    """Regression for #5369: transform_fn signatures must not inherit parent type keywords."""
+
+    @Tool.from_function
+    def parent(x: str) -> str:
+        return x
+
+    async def child(x: int | None) -> ToolResult:
+        return await forward(x=str(x))
+
+    tool = Tool.from_tool(parent, transform_fn=child, name="g")
+
+    prop = tool.parameters["properties"]["x"]
+    validator = jsonschema.Draft202012Validator(tool.parameters)
+    assert "type" not in prop or prop.get("type") != "string"
+    assert validator.is_valid({"x": 5})
+    assert validator.is_valid({"x": None})
+    assert not validator.is_valid({"x": "hello"})
+
+    async with Client(FastMCP(tools=[tool])) as client:
+        result = await client.call_tool("g", {"x": 5})
+        assert result.data == "5"
+
+
+async def test_arg_transform_type_keeps_transform_fn_default():
+    """ArgTransform(type=...) must not drop defaults declared on transform_fn."""
+
+    @Tool.from_function
+    def parent(x: str) -> str:
+        return x
+
+    async def child(x: int | None = 7) -> ToolResult:
+        return await forward(x=str(x) if x is not None else "")
+
+    tool = Tool.from_tool(
+        parent,
+        transform_fn=child,
+        name="with_default",
+        transform_args={"x": ArgTransform(type=int | None)},
+    )
+
+    prop = tool.parameters["properties"]["x"]
+    assert prop.get("default") == 7
+    assert "x" not in tool.parameters.get("required", [])
+
+    validator = jsonschema.Draft202012Validator(tool.parameters)
+    assert validator.is_valid({})
+    assert validator.is_valid({"x": 5})
+
+
+async def test_transform_fn_reannotation_preserves_parent_validation_keywords():
+    """transform_fn re-annotations must keep parent validation when the type kind is unchanged."""
+
+    @Tool.from_function
+    def parent(
+        mode: Literal["fast", "slow"],
+        n: Annotated[int, Field(ge=1, le=10)],
+        s: Annotated[str, Field(pattern=r"^[a-z]+$", min_length=3)],
+    ) -> str:
+        return f"{mode}:{n}:{s}"
+
+    async def child(mode: str, n: int, s: str) -> ToolResult:
+        return await forward(mode=mode, n=n, s=s)
+
+    tool = Tool.from_tool(
+        parent,
+        transform_fn=child,
+        transform_args={"mode": ArgTransform(description="how fast")},
+    )
+
+    props = tool.parameters["properties"]
+    assert props["mode"] == {
+        "description": "how fast",
+        "enum": ["fast", "slow"],
+        "type": "string",
+    }
+    assert props["n"] == {"maximum": 10, "minimum": 1, "type": "integer"}
+    assert props["s"] == {
+        "minLength": 3,
+        "pattern": "^[a-z]+$",
+        "type": "string",
+    }
 
 
 async def test_forward_with_argument_mapping(add_tool):
@@ -895,3 +1013,218 @@ async def test_transform_fn_depends_is_resolved():
     async with Client(mcp) as client:
         result = await client.call_tool("transformed", {"x": 3})
     assert result.data == 63
+
+
+async def test_transform_fn_sync_generator_yields_values():
+    """A sync generator transform_fn's yielded values reach the client.
+
+    A generator body runs during iteration, not creation. FunctionTool
+    materializes generator bodies inside the invocation; TransformedTool's
+    direct dispatch must do the same or every yielded value is silently
+    lost (empty content, empty structured output).
+    """
+    mcp = FastMCP()
+
+    @mcp.tool
+    def base() -> list[str]:
+        return []
+
+    def gen_fn():
+        yield "a1"
+        yield "b1"
+
+    parent = await mcp.get_tool("base")
+    assert parent is not None
+    mcp.add_tool(Tool.from_tool(parent, name="gen_sync", transform_fn=gen_fn))
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("gen_sync", {})
+    assert result.data == ["a1", "b1"]
+    assert result.structured_content == {"result": ["a1", "b1"]}
+
+
+async def test_transform_fn_async_generator_yields_values():
+    """An async generator transform_fn's yielded values reach the client.
+
+    Async generator functions are not coroutine functions, so without
+    materialization the async generator object is serialized as its repr
+    and the structured-content check fails outright.
+    """
+    mcp = FastMCP()
+
+    @mcp.tool
+    def base() -> list[str]:
+        return []
+
+    async def gen_fn():
+        yield "a1"
+        yield "b1"
+
+    parent = await mcp.get_tool("base")
+    assert parent is not None
+    mcp.add_tool(Tool.from_tool(parent, name="gen_async", transform_fn=gen_fn))
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("gen_async", {})
+    assert result.data == ["a1", "b1"]
+    assert result.structured_content == {"result": ["a1", "b1"]}
+
+
+async def test_transform_fn_blocking_sync_generator_does_not_stall_event_loop():
+    """A blocking sync generator transform_fn body runs on a worker thread.
+
+    A generator body runs during iteration, not creation, so materializing it
+    on the event loop would freeze every concurrent request for the full body
+    duration. Like a plain FunctionTool body, it must be consumed inside the
+    same threadpool call that created it.
+    """
+    loop = asyncio.get_running_loop()
+    per_item_block = 0.06
+    item_count = 5
+    total_block = per_item_block * item_count
+
+    def gen_fn():
+        for i in range(item_count):
+            time.sleep(per_item_block)
+            yield f"s{i}"
+
+    mcp = FastMCP()
+
+    @mcp.tool
+    def base() -> list[str]:
+        return []
+
+    parent = await mcp.get_tool("base")
+    assert parent is not None
+    mcp.add_tool(Tool.from_tool(parent, name="gen_blocking", transform_fn=gen_fn))
+
+    max_gap = 0.0
+
+    async def heartbeat() -> None:
+        nonlocal max_gap
+        while True:
+            tick = loop.time()
+            await asyncio.sleep(0.005)
+            max_gap = max(max_gap, loop.time() - tick)
+
+    async with Client(mcp) as client:
+        await client.call_tool("gen_blocking", {})  # warm up call machinery
+        heartbeat_task = asyncio.create_task(heartbeat())
+        try:
+            # perf_counter, not loop.time(): on Windows the loop clock ticks
+            # every ~15.6ms and can read the full blocking duration as short.
+            started = time.perf_counter()
+            result = await client.call_tool("gen_blocking", {})
+            elapsed = time.perf_counter() - started
+        finally:
+            heartbeat_task.cancel()
+
+    assert result.data == [f"s{i}" for i in range(item_count)]
+    # The body really ran to completion for its full blocking duration...
+    assert elapsed >= total_block
+    # ...but the event loop kept servicing concurrent tasks throughout. With
+    # materialization on the event loop the heartbeat stalls for ~total_block;
+    # the 1/4 threshold keeps plenty of headroom on a loaded CI runner.
+    assert max_gap < total_block / 4
+
+
+async def test_transform_fn_generators_are_materialized():
+    """Generator transform_fn bodies are consumed like plain tool bodies (#5668)."""
+
+    def gen_sync(**kwargs) -> list[str]:  # ty:ignore[invalid-return-type]
+        yield "a1"
+        yield "a2"
+
+    async def gen_async(**kwargs) -> list[str]:  # ty:ignore[invalid-return-type]
+        yield "a1"
+        yield "a2"
+
+    def parent() -> str:
+        return "p"
+
+    parent_tool = Tool.from_function(parent)
+    mcp = FastMCP()
+    mcp.add_tool(Tool.from_tool(parent_tool, transform_fn=gen_sync, name="t_sync"))
+    mcp.add_tool(Tool.from_tool(parent_tool, transform_fn=gen_async, name="t_async"))
+
+    async with Client(mcp) as client:
+        # Non-empty generators are materialized to lists
+        sync_res = await client.call_tool("t_sync", {})
+        assert sync_res.structured_content == {"result": ["a1", "a2"]}
+        assert isinstance(sync_res.content[0], TextContent)
+        assert sync_res.content[0].text == '["a1","a2"]'
+
+        async_res = await client.call_tool("t_async", {})
+        assert async_res.structured_content == {"result": ["a1", "a2"]}
+        assert isinstance(async_res.content[0], TextContent)
+        assert async_res.content[0].text == '["a1","a2"]'
+
+
+async def test_transform_fn_empty_generators():
+    """Empty generators are materialized to empty lists (#5668)."""
+
+    def gen_empty(**kwargs) -> list[str]:  # ty:ignore[invalid-return-type]
+        # Empty generator - no yields, just return
+        if False:  # type: ignore[unreachable]
+            yield
+
+    async def gen_empty_async(**kwargs) -> list[str]:  # ty:ignore[invalid-return-type]
+        # Empty async generator - no yields, just return
+        if False:  # type: ignore[unreachable]
+            yield
+
+    def parent() -> str:
+        return "p"
+
+    parent_tool = Tool.from_function(parent)
+    mcp = FastMCP()
+    mcp.add_tool(Tool.from_tool(parent_tool, transform_fn=gen_empty, name="t_empty"))
+    mcp.add_tool(
+        Tool.from_tool(parent_tool, transform_fn=gen_empty_async, name="t_empty_async")
+    )
+
+    async with Client(mcp) as client:
+        # Empty generators are materialized to empty lists
+        empty_res = await client.call_tool("t_empty", {})
+        assert empty_res.structured_content == {"result": []}
+
+        empty_async_res = await client.call_tool("t_empty_async", {})
+        assert empty_async_res.structured_content == {"result": []}
+
+
+async def test_transform_fn_generators_with_context_injection():
+    """Generator transform_fn with context injection still materializes (#5668)."""
+    mcp = FastMCP()
+
+    @mcp.tool
+    def base(x: int) -> int:
+        return x
+
+    def gen_with_ctx(x: int, ctx: Context) -> list[int]:  # ty:ignore[invalid-return-type]
+        assert isinstance(ctx, Context)
+        yield x * 2
+        yield x * 3
+
+    async def gen_async_with_ctx(x: int, ctx: Context) -> list[int]:  # ty:ignore[invalid-return-type]
+        assert isinstance(ctx, Context)
+        yield x * 2
+        yield x * 3
+
+    parent = await mcp.get_tool("base")
+    assert parent is not None
+
+    mcp.add_tool(Tool.from_tool(parent, name="t_sync_ctx", transform_fn=gen_with_ctx))
+    mcp.add_tool(
+        Tool.from_tool(parent, name="t_async_ctx", transform_fn=gen_async_with_ctx)
+    )
+
+    async with Client(mcp) as client:
+        sync_res = await client.call_tool("t_sync_ctx", {"x": 5})
+        assert sync_res.structured_content == {"result": [10, 15]}
+        assert isinstance(sync_res.content[0], TextContent)
+        assert sync_res.content[0].text == "[10,15]"
+
+        async_res = await client.call_tool("t_async_ctx", {"x": 5})
+        assert async_res.structured_content == {"result": [10, 15]}
+        assert isinstance(async_res.content[0], TextContent)
+        assert async_res.content[0].text == "[10,15]"

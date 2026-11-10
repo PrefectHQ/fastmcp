@@ -16,7 +16,7 @@ be driven legacy or modern by varying ``mode=`` alone:
 from __future__ import annotations
 
 import contextlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import pytest
@@ -119,7 +119,7 @@ class TestAutoMode:
             @contextlib.asynccontextmanager
             async def connect_session(
                 self, **session_kwargs: Unpack[SessionKwargs]
-            ) -> AsyncIterator[ClientSession]:
+            ) -> AsyncGenerator[ClientSession, None]:
                 async with super().connect_session(**session_kwargs) as session:
 
                     async def _reject_discover(version: str) -> dict[str, Any]:
@@ -188,7 +188,7 @@ class TestNonConformantModernPeer:
             @contextlib.asynccontextmanager
             async def connect_session(
                 self, **session_kwargs: Unpack[SessionKwargs]
-            ) -> AsyncIterator[ClientSession]:
+            ) -> AsyncGenerator[ClientSession, None]:
                 async with super().connect_session(**session_kwargs) as session:
 
                     async def _fixed_discover(version: str) -> dict[str, Any]:

@@ -372,6 +372,7 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
                         annotations=meta.annotations,
                         meta=meta.meta,
                         auth=meta.auth,
+                        security=meta.security,
                     )
                 else:
                     resource = Resource.from_function(

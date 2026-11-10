@@ -699,6 +699,42 @@ class TestEnhancedRequireAuthMiddleware:
             assert "error=" not in www_auth
             assert response.content == b""
 
+    @pytest.mark.parametrize("authorization", ["Basic dXNlcjpwYXNz", "Token abc"])
+    def test_non_bearer_scheme_no_error_attribute(self, jwt_verifier, authorization):
+        """An unsupported auth scheme is treated like missing auth (RFC 6750 §3.1)."""
+        server = FastMCP("Test Server")
+        app = create_streamable_http_app(
+            server=server,
+            streamable_http_path="/mcp",
+            auth=jwt_verifier,
+        )
+
+        with TestClient(app) as client:
+            response = client.post("/mcp", headers={"Authorization": authorization})
+
+            assert response.status_code == 401
+            www_auth = response.headers["www-authenticate"]
+            assert www_auth.startswith("Bearer")
+            assert "error=" not in www_auth
+            assert response.content == b""
+
+    def test_lowercase_bearer_scheme_is_still_validated(self, jwt_verifier):
+        """The Bearer scheme is case-insensitive, so a bad token still errors."""
+        server = FastMCP("Test Server")
+        app = create_streamable_http_app(
+            server=server,
+            streamable_http_path="/mcp",
+            auth=jwt_verifier,
+        )
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/mcp", headers={"Authorization": "bearer invalid-token"}
+            )
+
+            assert response.status_code == 401
+            assert 'error="invalid_token"' in response.headers["www-authenticate"]
+
     def test_missing_auth_challenge_includes_supported_scopes(self):
         app = self.create_scoped_app(
             required_scopes=["read"],
