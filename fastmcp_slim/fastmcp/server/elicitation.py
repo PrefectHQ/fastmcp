@@ -115,18 +115,19 @@ class ElicitationJsonSchema(GenerateJsonSchema):
         # Default behavior for non-enum arrays
         return super().list_schema(schema)
 
-    def nullable_schema(self, schema: core_schema.NullableSchema) -> JsonSchemaValue:
-        """Flatten `T | None` to `T`.
-
-        MCP elicitation properties have no null type. An optional field is
-        expressed by leaving it out of `required`, which Pydantic already does for
-        any field with a default.
-        """
-        return self.generate_inner(schema["schema"])
-
     def default_schema(self, schema: core_schema.WithDefaultSchema) -> JsonSchemaValue:
-        """Drop a `None` default, which has no meaning once the null type is gone."""
+        """Offer an optional `T | None` field as a plain `T` property.
+
+        MCP elicitation properties have no null type. A field with a default is
+        left out of `required`, so the client can express "no value" by omitting
+        it. A required `T | None` field keeps its null type and is rejected by
+        schema validation, since narrowing it to `T` would change its contract.
+        """
+        inner = schema["schema"]
+        if inner["type"] == "nullable":
+            schema = {**schema, "schema": inner["schema"]}
         json_schema = super().default_schema(schema)
+        # A `None` default has no meaning once the null type is gone
         if json_schema.get("default") is None:
             json_schema.pop("default", None)
         return json_schema

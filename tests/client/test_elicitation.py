@@ -9,7 +9,7 @@ from typing_extensions import TypedDict
 
 from fastmcp import Context, FastMCP
 from fastmcp.client.client import Client
-from fastmcp.client.elicitation import ElicitResult
+from fastmcp.client.elicitation import ElicitResult, create_elicitation_callback
 from fastmcp.exceptions import ToolError
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
@@ -768,6 +768,27 @@ class TestOptionalFields:
         ) as client:
             result = await client.call_tool("add_contact", {})
             assert result.data == expected
+
+    def test_required_nullable_field_is_rejected(self):
+        class Answer(BaseModel):
+            value: str | None
+
+        with pytest.raises(TypeError, match="union type 'null'"):
+            get_elicitation_schema(Answer)
+
+    async def test_unset_optional_fields_are_omitted_from_the_response(self):
+        async def elicitation_handler(message, response_type, params, ctx):
+            return response_type(name="Ada")
+
+        callback = create_elicitation_callback(elicitation_handler)
+        params = mcp_types.ElicitRequestFormParams(
+            message="Enter the contact",
+            requested_schema=get_elicitation_schema(Contact),
+        )
+        result = await callback(cast(Any, None), params)
+
+        assert isinstance(result, mcp_types.ElicitResult)
+        assert result.content == {"name": "Ada", "country": "US"}
 
 
 class TestResponseTypeRequired:
