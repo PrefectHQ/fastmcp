@@ -39,8 +39,9 @@ logger = get_logger(__name__)
 class Message(pydantic.BaseModel):
     """Wrapper for prompt message with auto-serialization.
 
-    Accepts any content - strings pass through, other types
-    (dict, list, BaseModel) are JSON-serialized to text.
+    Accepts any content - strings and MCP content blocks (TextContent,
+    ImageContent, AudioContent, ResourceLink, EmbeddedResource) pass through
+    unchanged, other types (dict, list, BaseModel) are JSON-serialized to text.
 
     Example:
         ```python
