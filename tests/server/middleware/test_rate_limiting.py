@@ -2,6 +2,7 @@
 
 import asyncio
 import warnings
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -16,6 +17,7 @@ from fastmcp.server.middleware.rate_limiting import (
     SlidingWindowRateLimiter,
     SlidingWindowRateLimitingMiddleware,
     TokenBucketRateLimiter,
+    _PerClientLimiterCache,
 )
 
 
@@ -65,8 +67,8 @@ class TestTokenBucketRateLimiter:
         """Test token refill over time."""
         current_time = 0.0
         monkeypatch.setattr(
-            "fastmcp.server.middleware.rate_limiting.time.time",
-            lambda: current_time,
+            "fastmcp.server.middleware.rate_limiting.time",
+            SimpleNamespace(monotonic=lambda: current_time),
         )
 
         limiter = TokenBucketRateLimiter(
@@ -83,6 +85,20 @@ class TestTokenBucketRateLimiter:
         current_time += 0.25
         assert await limiter.consume(2) is True
 
+    async def test_wall_clock_step_back_does_not_drain_tokens(self, monkeypatch):
+        """A backwards step of the wall clock (an NTP correction, say) is not
+        negative elapsed time."""
+        wall_time = 1_000_000.0
+        monkeypatch.setattr(
+            "fastmcp.server.middleware.rate_limiting.time",
+            SimpleNamespace(time=lambda: wall_time, monotonic=lambda: 0.0),
+        )
+
+        limiter = TokenBucketRateLimiter(capacity=5, refill_rate=1.0)
+
+        wall_time -= 3600
+        assert await limiter.consume(1) is True
+
     async def test_denied_consumes_do_not_freeze_clock(self, monkeypatch):
         """Regression for #4056: a client that retries quickly after being
         denied must not be able to bypass the configured refill rate.
@@ -93,8 +109,8 @@ class TestTokenBucketRateLimiter:
         """
         current_time = 0.0
         monkeypatch.setattr(
-            "fastmcp.server.middleware.rate_limiting.time.time",
-            lambda: current_time,
+            "fastmcp.server.middleware.rate_limiting.time",
+            SimpleNamespace(monotonic=lambda: current_time),
         )
 
         limiter = TokenBucketRateLimiter(capacity=10, refill_rate=10.0)
@@ -150,8 +166,8 @@ class TestSlidingWindowRateLimiter:
         """Test sliding window behavior."""
         current_time = 0.0
         monkeypatch.setattr(
-            "fastmcp.server.middleware.rate_limiting.time.time",
-            lambda: current_time,
+            "fastmcp.server.middleware.rate_limiting.time",
+            SimpleNamespace(monotonic=lambda: current_time),
         )
 
         limiter = SlidingWindowRateLimiter(max_requests=2, window_seconds=1)
@@ -165,6 +181,24 @@ class TestSlidingWindowRateLimiter:
         current_time += 1.1
 
         # Should be able to make requests again
+        assert await limiter.is_allowed() is True
+
+    async def test_wall_clock_step_back_does_not_extend_window(self, monkeypatch):
+        """A backwards step of the wall clock must not keep old requests inside
+        the window."""
+        wall_time = 1_000_000.0
+        monotonic_time = 0.0
+        monkeypatch.setattr(
+            "fastmcp.server.middleware.rate_limiting.time",
+            SimpleNamespace(time=lambda: wall_time, monotonic=lambda: monotonic_time),
+        )
+
+        limiter = SlidingWindowRateLimiter(max_requests=1, window_seconds=60)
+        assert await limiter.is_allowed() is True
+        assert await limiter.is_allowed() is False
+
+        wall_time -= 3600
+        monotonic_time += 61
         assert await limiter.is_allowed() is True
 
 
@@ -281,8 +315,8 @@ class TestRateLimitingMiddleware:
     ):
         current_time = 0.0
         monkeypatch.setattr(
-            "fastmcp.server.middleware.rate_limiting.time.time",
-            lambda: current_time,
+            "fastmcp.server.middleware.rate_limiting.time",
+            SimpleNamespace(monotonic=lambda: current_time),
         )
         middleware = RateLimitingMiddleware(
             max_requests_per_second=0.4, global_limit=global_limit
@@ -327,6 +361,67 @@ class TestRateLimitingMiddleware:
             RateLimitError, match="Rate limit exceeded for client: async_client"
         ):
             await middleware.on_request(mock_context, mock_call_next)
+
+    @pytest.mark.parametrize("use_sliding_window", [False, True])
+    async def test_per_client_limiter_state_expires_after_idle_horizon(
+        self, mock_call_next, monkeypatch, use_sliding_window
+    ):
+        current_time = 0.0
+        monkeypatch.setattr(
+            "fastmcp.server.middleware.rate_limiting.time",
+            SimpleNamespace(monotonic=lambda: current_time),
+        )
+
+        def get_client_id(context):
+            return context.client_id
+
+        if use_sliding_window:
+            middleware = SlidingWindowRateLimitingMiddleware(
+                max_requests=1, window_minutes=1, get_client_id=get_client_id
+            )
+        else:
+            middleware = RateLimitingMiddleware(
+                max_requests_per_second=1,
+                burst_capacity=1,
+                get_client_id=get_client_id,
+            )
+
+        for index in range(2000):
+            context = MagicMock()
+            context.client_id = f"client-{index}"
+            await middleware.on_request(context, mock_call_next)
+
+        assert len(middleware.limiters) == 2000
+
+        # A single pass is bounded; subsequent requests continue pruning old
+        # identities without scanning the full map on every request.
+        current_time += 61
+        for index in range(32):
+            context = MagicMock()
+            context.client_id = f"sweep-{index}"
+            await middleware.on_request(context, mock_call_next)
+
+        assert set(middleware.limiters) == {f"sweep-{index}" for index in range(32)}
+
+    async def test_active_limiter_is_not_pruned_during_an_inflight_request(
+        self, monkeypatch
+    ):
+        current_time = 0.0
+        monkeypatch.setattr(
+            "fastmcp.server.middleware.rate_limiting.time",
+            SimpleNamespace(monotonic=lambda: current_time),
+        )
+        cache = _PerClientLimiterCache(object, idle_timeout=1)
+        limiter = await cache.acquire("active")
+        current_time += 2
+        await cache.acquire("other")
+        assert cache.limiters["active"] is limiter
+
+        await cache.release("other")
+        await cache.release("active")
+        current_time += 1.1
+        await cache.acquire("next")
+        assert "active" not in cache.limiters
 
 
 class TestSlidingWindowRateLimitingMiddleware:

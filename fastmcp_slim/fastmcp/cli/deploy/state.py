@@ -7,7 +7,7 @@ import json
 import os
 import subprocess
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, TypeVar
@@ -94,7 +94,7 @@ def _prepare_directory(path: Path) -> None:
 
 
 @contextmanager
-def state_lock(directory: Path) -> Iterator[None]:
+def state_lock(directory: Path) -> Generator[None, None, None]:
     """Lock related CLI state changes across processes."""
     _prepare_directory(directory)
     lock_path = directory / ".state.lock"

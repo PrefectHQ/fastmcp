@@ -7,7 +7,7 @@ import os
 import sys
 import tempfile
 import time
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -179,7 +179,7 @@ def _make_protocol_era_server(name: str, starts: list[str] | None = None) -> Fas
     else:
 
         @asynccontextmanager
-        async def lifespan(_server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+        async def lifespan(_server: FastMCP) -> AsyncGenerator[dict[str, Any], None]:
             starts.append(name)
             yield {}
 
@@ -288,7 +288,7 @@ async def test_failed_known_legacy_backend_does_not_downgrade_healthy_backends()
     @asynccontextmanager
     async def unavailable_lifespan(
         server: FastMCP,
-    ) -> AsyncIterator[dict[str, Any]]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         if server.name == "unavailable":
             raise RuntimeError("backend unavailable")
         yield {}
@@ -578,6 +578,39 @@ def test_parse_single_remote_config():
     transport = mcp_config.mcpServers["test_server"].to_transport()
     assert isinstance(transport, StreamableHttpTransport)
     assert transport.url == "http://localhost:8000"
+
+
+def test_parse_single_remote_config_default_sse_event_size():
+    config = {
+        "mcpServers": {
+            "test_server": {
+                "url": "http://localhost:8000",
+            }
+        }
+    }
+    mcp_config = MCPConfig.from_dict(config)
+    server = mcp_config.mcpServers["test_server"]
+    assert isinstance(server, RemoteMCPServer)
+    assert server.max_sse_event_size == 1024 * 1024
+    transport = server.to_transport()
+    assert isinstance(transport, StreamableHttpTransport)
+    assert transport.max_sse_event_size == 1024 * 1024
+
+
+def test_remote_config_max_sse_event_size_passthrough():
+    """max_sse_event_size is forwarded from RemoteMCPServer to StreamableHttpTransport."""
+    server = RemoteMCPServer(url="http://localhost:8000", max_sse_event_size=None)
+    assert server.max_sse_event_size is None
+    transport = server.to_transport()
+    assert isinstance(transport, StreamableHttpTransport)
+    assert transport.max_sse_event_size is None
+
+    server = RemoteMCPServer(
+        url="http://localhost:8000", max_sse_event_size=4 * 1024 * 1024
+    )
+    transport = server.to_transport()
+    assert isinstance(transport, StreamableHttpTransport)
+    assert transport.max_sse_event_size == 4 * 1024 * 1024
 
 
 def test_parse_remote_config_with_transport():
@@ -1500,3 +1533,90 @@ async def test_script(tmp_path: Path) -> AsyncGenerator[Path, Any]:
         yield Path(f.name)
 
     pass
+
+
+@requires_subprocess
+@pytest.mark.flaky(retries=3)
+async def test_single_server_config_transform_added_tags_filtering(tmp_path: Path):
+    """Tags added by a `tools` transform are visible to include_tags/exclude_tags
+    on a single-server config, matching the multi-server behavior (#6196)."""
+    server_script = inspect.cleandoc("""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        @mcp.tool
+        def subtract(a: int, b: int) -> int:
+            return a - b
+
+        if __name__ == '__main__':
+            mcp.run()
+        """)
+
+    script_path = tmp_path / "test.py"
+    script_path.write_text(server_script)
+
+    async def list_tool_names(server_options: dict) -> set[str]:
+        config = {
+            "mcpServers": {
+                "test": {"command": "python", "args": [str(script_path)]}
+                | server_options
+            }
+        }
+        client = Client(config)
+        async with client:
+            return {tool.name for tool in await client.list_tools()}
+
+    included = await list_tool_names(
+        {"tools": {"add": {"tags": ["keep"]}}, "include_tags": ["keep"]}
+    )
+    assert included == {"add"}
+
+    excluded = await list_tool_names(
+        {"tools": {"add": {"tags": ["drop"]}}, "exclude_tags": ["drop"]}
+    )
+    assert excluded == {"subtract"}
+
+
+async def test_single_server_transform_added_tags_filtering_in_memory():
+    """Same as the subprocess test above, but in-memory so it runs everywhere.
+
+    The transforming single-server path must apply the `tools` transform
+    before the include_tags/exclude_tags filters — tags the transform adds
+    are invisible to filters registered first.
+    """
+    from fastmcp.client.transports import FastMCPTransport
+
+    backend = FastMCP()
+
+    @backend.tool
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    @backend.tool
+    def subtract(a: int, b: int) -> int:
+        return a - b
+
+    config = TransformingStdioMCPServer(
+        command="unused",
+        args=[],
+        tools={"add": {"tags": ["keep"]}},
+        include_tags=["keep"],
+    )
+
+    with patch.object(
+        StdioMCPServer,
+        "to_transport",
+        lambda self: FastMCPTransport(mcp=backend),
+    ):
+        wrapped, _ = config._to_server_and_underlying_transport()
+
+    client = Client(FastMCPTransport(mcp=wrapped))
+    async with client:
+        tool_names = {tool.name for tool in await client.list_tools()}
+
+    assert tool_names == {"add"}
