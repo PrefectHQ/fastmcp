@@ -8,7 +8,7 @@ import fnmatch
 import ipaddress
 from urllib.parse import unquote, urlencode, urlparse, urlunparse
 
-from pydantic import AnyUrl
+from pydantic import AnyUrl, ValidationError
 
 UNSAFE_REDIRECT_URI_SCHEMES = frozenset(
     {
@@ -348,6 +348,29 @@ def _is_unsafe_redirect_uri(uri: str) -> bool:
     return parsed.scheme.lower() in UNSAFE_REDIRECT_URI_SCHEMES
 
 
+def _normalize_redirect_uri(uri: str | AnyUrl) -> str:
+    """Return the canonical string form shared by both input types.
+
+    A plain string never goes through a URL parser, so attacker-controlled
+    spellings read differently through `urlparse` than through the WHATWG
+    rules browsers apply to a 302 Location: `https://evil.com\\.example.com/cb`
+    keeps its backslash, `..` segments survive, `127.1` is not expanded, and
+    trailing C0 characters are not stripped. pydantic's `AnyUrl` performs the
+    WHATWG-style normalization, so re-parsing raw strings through it gives
+    the string form the same parsed value as the `AnyUrl` form.
+
+    Strings that `AnyUrl` cannot express (rare schemes without an authority
+    that pydantic rejects outright) are passed through unchanged; they were
+    already handled by the scheme and pattern checks below.
+    """
+    if isinstance(uri, AnyUrl):
+        return str(uri)
+    try:
+        return str(AnyUrl(uri))
+    except ValidationError:
+        return uri
+
+
 def matches_allowed_pattern(uri: str, pattern: str) -> bool:
     """Securely check if a URI matches an allowed pattern with wildcard support.
 
@@ -370,6 +393,16 @@ def matches_allowed_pattern(uri: str, pattern: str) -> bool:
     Returns:
         True if the URI matches the pattern
     """
+    # Capture the raw authority and path before normalization: resolving
+    # dot-segments away (which AnyUrl normalization does) must not turn a
+    # rejected traversal spelling into a matching ordinary path.
+    try:
+        raw_parsed = urlparse(uri)
+    except ValueError:
+        return False
+    raw_path = raw_parsed.path
+
+    uri = _normalize_redirect_uri(uri)
     try:
         uri_parsed = urlparse(uri)
         pattern_parsed = urlparse(pattern)
@@ -385,13 +418,29 @@ def matches_allowed_pattern(uri: str, pattern: str) -> bool:
     if uri_parsed.username is not None or uri_parsed.password is not None:
         return False
 
+    # SECURITY: Reject URIs whose raw authority contains a backslash.
+    # WHATWG URL parsing (which pydantic's AnyUrl applies above) ends the
+    # authority at `\`, so `https://trusted.example\@attacker.example/cb`
+    # normalizes to host `trusted.example` with `@attacker.example/cb` as
+    # the path -- the userinfo check no longer sees an `@`. But the raw
+    # string round-trips through callers that do not apply WHATWG rules:
+    # `RedirectResponse` percent-encodes the backslash, and a browser then
+    # reads `trusted.example%5C` as userinfo with host `attacker.example`,
+    # leaving the allowlisted origin entirely. `\` is a forbidden host code
+    # point, so no legitimate redirect URI carries one in its authority.
+    if "\\" in raw_parsed.netloc:
+        return False
+
     # SECURITY: Reject URIs with dot-segments in the path.
     # fnmatch's `*` matches across `/`, so a pattern like `/oauth/callback/*`
     # would accept `/oauth/callback/../../steal`; a browser receiving that in
     # a 302 Location resolves the dot-segments and lands at `/steal`, outside
     # the intended allowlist prefix. Reject at validation time so the stored
-    # redirect_uri cannot later be emitted verbatim in a redirect.
-    if _has_dot_segments(uri_parsed.path):
+    # redirect_uri cannot later be emitted verbatim in a redirect. Checked on
+    # both the raw and the normalized path: normalization resolves the
+    # segments away, so a normalized-only check would miss the raw spelling,
+    # and a raw-only check would miss encoded variants AnyUrl decodes.
+    if _has_dot_segments(uri_parsed.path) or _has_dot_segments(raw_path):
         return False
 
     # Scheme must match exactly
@@ -452,7 +501,18 @@ def is_redirect_uri_allowed_for_application_type(
     registered-client record carries when the field was never set — is treated
     the same way.
     """
-    uri_str = str(redirect_uri)
+    # SECURITY: Reject URIs whose raw authority contains a backslash (same
+    # WHATWG-raw divergence as matches_allowed_pattern):
+    # `http://localhost\@attacker.example/cb` normalizes to a loopback host
+    # and passes the native-client check, but `RedirectResponse` percent-
+    # encodes the backslash and a browser then reads host `attacker.example`.
+    try:
+        if "\\" in urlparse(str(redirect_uri)).netloc:
+            return False
+    except ValueError:
+        return False
+
+    uri_str = _normalize_redirect_uri(redirect_uri)
 
     if _is_unsafe_redirect_uri(uri_str):
         return False
@@ -492,6 +552,9 @@ def validate_redirect_uri(
     if redirect_uri is None:
         return True  # None is allowed (will use client's default)
 
+    # Keep the raw string form: pattern matching below re-parses it through
+    # AnyUrl normalization itself, and the dot-segment rejection there must
+    # see the caller's original spelling.
     uri_str = str(redirect_uri)
 
     if _is_unsafe_redirect_uri(uri_str):
