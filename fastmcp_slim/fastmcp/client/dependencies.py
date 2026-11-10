@@ -1,5 +1,23 @@
 """Client-side dependency helpers."""
 
+from collections.abc import Mapping
+
+
+def _merge_forwardable_http_headers(configured: Mapping[str, str]) -> dict[str, str]:
+    """Combine forwardable ambient headers with a transport's configured headers.
+
+    Configured headers take precedence. Header names are case-insensitive, so a
+    configured `Authorization` replaces the forwarded `authorization` instead of
+    being sent alongside it.
+    """
+    configured_names = {name.lower() for name in configured}
+    forwarded = {
+        name: value
+        for name, value in _get_forwardable_http_headers().items()
+        if name.lower() not in configured_names
+    }
+    return forwarded | dict(configured)
+
 
 def _get_forwardable_http_headers() -> dict[str, str]:
     """Return ambient headers safe to copy onto a new MCP connection.
