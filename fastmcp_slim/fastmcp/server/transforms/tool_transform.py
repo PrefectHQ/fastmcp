@@ -78,15 +78,27 @@ class ToolTransform(Transform):
         """Get tool by transformed name."""
         # Check if this name is a transformed name
         original_name = self._name_reverse.get(name, name)
+        config = self._transforms.get(original_name)
 
         # Get the original tool
         tool = await call_next(original_name, version=version)
+
+        # A config that sets a version replaces the source version, so the
+        # requested version is checked against the transformed version. A
+        # source that also matches the request keeps priority; otherwise the
+        # source is resolved the same way as an unversioned request.
+        if config is not None and "version" in config.model_fields_set:
+            if version is not None and not version.matches(config.version):
+                return None
+            if tool is None and version is not None:
+                tool = await call_next(original_name, version=None)
+
         if tool is None:
             return None
 
         # Apply transform if applicable
-        if original_name in self._transforms:
-            transformed = self._transforms[original_name].apply(tool)
+        if config is not None:
+            transformed = config.apply(tool)
             # Only return if requested name matches transformed name
             if transformed.name == name:
                 return transformed
