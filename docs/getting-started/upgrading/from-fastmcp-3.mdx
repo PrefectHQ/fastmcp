@@ -113,7 +113,7 @@ The SDK v2 raises FastMCP's dependency floors, which matters before any of your 
 
 ### camelCase Field Access
 
-Objects that FastMCP hands back to you — the results of `client.list_tools()`, `client.call_tool_mcp()`, `client.read_resource()`, and the parameter objects passed to your sampling and elicitation handlers — are SDK v2 objects with snake_case fields. FastMCP installs a compatibility bridge at import time that routes the old camelCase names to their new snake_case fields, so code written against FastMCP 2.x still reads correctly:
+Objects that FastMCP hands back to you — the results of `client.list_tools()`, `client.call_tool_mcp()`, `client.read_resource()`, and the parameter objects passed to your sampling and elicitation handlers — are SDK v2 objects with snake_case fields. FastMCP installs a compatibility bridge at import time that routes the old camelCase names to their new snake_case fields, so code written against FastMCP 3.x still reads correctly:
 
 ```python
 from pathlib import Path
@@ -126,7 +126,7 @@ async def read_schema():
         return tools[0].inputSchema  # still works, warns once
 ```
 
-Each bridged read emits a `FastMCPDeprecationWarning` pointing you at the snake_case name (`tools[0].input_schema` here). The bridge covers the fields users actually read: `inputSchema`/`outputSchema` on tools; `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` on tool annotations; `mimeType` on resources and content; `isError`/`structuredContent` on tool results; `nextCursor` on paginated results; `serverInfo`/`protocolVersion` on the initialize result; the sampling parameter fields (`systemPrompt`, `maxTokens`, `stopSequences`, `modelPreferences`, `toolChoice`); `requestedSchema` on elicitation parameters; `hasMore` and `resourceTemplates` on list results; and `uriTemplate` on resource templates.
+Each bridged read emits a `FastMCPDeprecationWarning` pointing you at the snake_case name (`tools[0].input_schema` here). The bridge covers the fields users actually read: `inputSchema`/`outputSchema` on tools; `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` on tool annotations; `mimeType` on resources and content; `isError`/`structuredContent` on tool results; `nextCursor` on paginated results; `serverInfo`/`protocolVersion` on the initialize result; the sampling parameter fields (`systemPrompt`, `maxTokens`, `stopSequences`, `modelPreferences`, `toolChoice`); `requestedSchema` on elicitation parameters; `resourceTemplates` on the resource-template list result; `hasMore` on completions; and `uriTemplate` on resource templates.
 
 The bridge is controlled by the `mcp_camelcase_compat` setting, which defaults to on. Set it to `False` (or the environment variable `FASTMCP_MCP_CAMELCASE_COMPAT=false`) to turn the shims off, in which case only the snake_case names resolve:
 
