@@ -31,9 +31,9 @@ The dev server does three things:
 
 The **picker page** connects to your MCP server, finds all tools with UI metadata, and renders a form for each one. The forms are auto-generated from the tool's input schema — text fields, dropdowns, checkboxes, all wired up.
 
-When you submit a form, the dev server **calls your tool** via the MCP protocol and opens the result in a new tab. Each result page comes from a picker launch and stays available, including on reload, until the dev server stops. The result page loads the tool's UI resource (the Prefab renderer or your custom HTML) inside an AppBridge — the same protocol that real MCP hosts use. The resource runs in a sandboxed iframe, so it can't use `localStorage`, open popups, or show `alert` and `confirm` dialogs.
+When you submit a form, the dev UI opens a new tab that **calls your tool** via the MCP protocol and renders the result. Each result page comes from a picker launch and stays available, including on reload, until the dev server stops. The result page loads the tool's UI resource (the Prefab renderer or your custom HTML) inside an AppBridge — the same protocol that real MCP hosts use. The resource runs in a sandboxed iframe, so it can't use `localStorage`, open popups, or show `alert` and `confirm` dialogs.
 
-A **reverse proxy** on `/mcp` forwards requests from the browser to your MCP server, avoiding CORS issues that would otherwise block the iframe-based renderer from talking to a different port.
+A **reverse proxy** on `/mcp` forwards requests from the browser to your MCP server, so the dev UI's MCP client stays same-origin instead of making cross-origin requests to a different port.
 
 ## MCP inspector
 

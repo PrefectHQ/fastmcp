@@ -20,6 +20,7 @@ from fastmcp.cli.client import (
     _format_call_result_text,
     _is_http_target,
     _sanitize_untrusted_text,
+    _terminal_elicitation_handler,
     call_command,
     coerce_value,
     format_tool_signature,
@@ -29,6 +30,7 @@ from fastmcp.cli.client import (
 )
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.client import CallToolResult
+from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.sse import SSETransport
 from fastmcp.client.transports.stdio import StdioTransport
 from fastmcp.mcp_config import RemoteMCPServer
@@ -93,6 +95,38 @@ class TestCoerceValue:
     def test_string_preserves_numeric_looking_values(self):
         assert coerce_value("42", {"type": "string"}) == "42"
 
+    @pytest.mark.parametrize(
+        ("raw", "schema", "expected"),
+        [
+            ("[1, 2]", {"anyOf": [{"type": "array"}, {"type": "null"}]}, [1, 2]),
+            ('{"a": 1}', {"anyOf": [{"type": "null"}, {"type": "object"}]}, {"a": 1}),
+            ("42", {"anyOf": [{"type": "integer"}, {"type": "null"}]}, 42),
+            ("true", {"anyOf": [{"type": "boolean"}, {"type": "null"}]}, True),
+            ("[1, 2]", {"type": ["array", "null"]}, [1, 2]),
+            ("42", {"anyOf": [{"type": "string"}, {"type": "null"}]}, "42"),
+        ],
+    )
+    def test_optional_uses_non_null_type(self, raw, schema, expected):
+        """``X | None`` is coerced like ``X``."""
+        result = coerce_value(raw, schema)
+        assert result == expected
+        assert type(result) is type(expected)
+
+    def test_optional_invalid_value(self):
+        with pytest.raises(ValueError, match="Expected JSON array"):
+            coerce_value("not-json", {"anyOf": [{"type": "array"}, {"type": "null"}]})
+
+    @pytest.mark.parametrize(
+        "schema",
+        [
+            {"anyOf": [{"type": "integer"}, {"type": "string"}]},
+            {"anyOf": [{"type": "integer"}, {"type": "string"}, {"type": "null"}]},
+            {"type": ["integer", "string"]},
+        ],
+    )
+    def test_ambiguous_union_stays_string(self, schema):
+        assert coerce_value("42", schema) == "42"
+
 
 # ---------------------------------------------------------------------------
 # parse_tool_arguments
@@ -127,6 +161,22 @@ class TestParseToolArguments:
     def test_value_containing_equals(self):
         result = parse_tool_arguments(("query=a=b=c",), None, self.SCHEMA)
         assert result == {"query": "a=b=c"}
+
+    def test_optional_array_parsed_as_json(self):
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "tags": {
+                    "anyOf": [
+                        {"type": "array", "items": {"type": "string"}},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                },
+            },
+        }
+        result = parse_tool_arguments(('tags=["a", "b"]',), None, schema)
+        assert result == {"tags": ["a", "b"]}
 
     def test_invalid_arg_format_exits(self):
         with pytest.raises(SystemExit):
@@ -306,19 +356,45 @@ class TestResolveServerSpec:
 
     def test_transport_sse_rewrites_url(self):
         result = resolve_server_spec("http://localhost:8000/mcp", transport="sse")
-        assert result == "http://localhost:8000/mcp/sse"
+        assert isinstance(result, SSETransport)
+        assert result.url == "http://localhost:8000/mcp/sse"
 
     def test_transport_sse_no_duplicate_suffix(self):
         result = resolve_server_spec("http://localhost:8000/sse", transport="sse")
-        assert result == "http://localhost:8000/sse"
+        assert isinstance(result, SSETransport)
+        assert result.url == "http://localhost:8000/sse"
 
     def test_transport_sse_trailing_slash(self):
         result = resolve_server_spec("http://localhost:8000/mcp/", transport="sse")
-        assert result == "http://localhost:8000/mcp/sse"
+        assert isinstance(result, SSETransport)
+        assert result.url == "http://localhost:8000/mcp/sse"
 
     def test_transport_http_leaves_url_unchanged(self):
         result = resolve_server_spec("http://localhost:8000/mcp", transport="http")
-        assert result == "http://localhost:8000/mcp"
+        assert isinstance(result, StreamableHttpTransport)
+        assert result.url == "http://localhost:8000/mcp"
+
+    @pytest.mark.parametrize("transport", ["http", "sse"])
+    def test_explicit_transport_preserves_query_and_fragment(self, transport):
+        result = resolve_server_spec(
+            "https://example.test/mcp?token=abc#section", transport=transport
+        )
+        if transport == "sse":
+            assert isinstance(result, SSETransport)
+            assert result.url == "https://example.test/mcp/sse?token=abc#section"
+        else:
+            assert isinstance(result, StreamableHttpTransport)
+            assert result.url == "https://example.test/mcp?token=abc#section"
+
+    def test_explicit_http_overrides_sse_path(self):
+        result = resolve_server_spec("https://example.test/sse", transport="http")
+        assert isinstance(result, StreamableHttpTransport)
+        assert result.url == "https://example.test/sse"
+
+    def test_no_explicit_transport_preserves_inference(self):
+        assert resolve_server_spec("https://example.test/sse?token=abc") == (
+            "https://example.test/sse?token=abc"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +483,12 @@ class TestBuildClient:
         with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
             with warnings.catch_warnings(record=True) as emitted:
                 warnings.simplefilter("always")
+                # py-key-value-aio checks a non-runtime-checkable protocol on Python 3.15.
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"<class 'key_value\.aio\.protocols\.key_value\.AsyncKeyValue'> isn't explicitly decorated",
+                    category=DeprecationWarning,
+                )
                 first = _build_client(resolved, auth=auth).transport.auth
                 assert isinstance(first, OAuth)
                 await first.token_storage_adapter.set_tokens(tokens)
@@ -585,6 +667,11 @@ def _build_test_server() -> FastMCP:
         """Add two numbers."""
         return a + b
 
+    @server.tool
+    def total(values: list[int] | None = None) -> int:
+        """Sum an optional list of numbers."""
+        return sum(values or [])
+
     @server.resource("test://greeting")
     def greeting_resource() -> str:
         """A static greeting resource."""
@@ -660,6 +747,15 @@ class TestCallCommandCLI:
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["is_error"] is False
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_call_tool_optional_array(self, capsys: pytest.CaptureFixture[str]):
+        await call_command(
+            "fake://server", "total", "values=[1, 2, 3]", json_output=True
+        )
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == {"result": 6}
 
     @pytest.mark.usefixtures("_patch_client")
     async def test_call_tool_not_found(self):
@@ -756,3 +852,47 @@ class TestSanitizeUntrustedText:
         value = "[bold]hello[/bold]\x07"
         sanitized = _sanitize_untrusted_text(value)
         assert sanitized == "\\[bold]hello\\[/bold]\\x07"
+
+
+class TestTerminalElicitationHandler:
+    @pytest.fixture(autouse=True)
+    def _press_enter(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr("builtins.input", lambda *args: "")
+
+    @staticmethod
+    def _params(message: str, field: dict[str, Any], name: str = "answer"):
+        return mcp_types.ElicitRequestFormParams(
+            message=message,
+            requested_schema={"type": "object", "properties": {name: field}},
+        )
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Deploy to production? [y/N]",
+            "Branch to deploy [main]",
+            "Tag format is v[/]MAJOR",
+        ],
+    )
+    async def test_message_is_printed_verbatim(
+        self, message: str, capsys: pytest.CaptureFixture[str]
+    ):
+        result = await _terminal_elicitation_handler(
+            message, None, self._params(message, {"type": "string"}), None
+        )
+
+        assert result.action == "accept"
+        assert f"Server asks: {message}" in capsys.readouterr().out
+
+    @pytest.mark.parametrize(
+        ("field_name", "field_type"),
+        [("name[bold]", "string"), ("tag", "string[/]")],
+    )
+    async def test_field_prompt_is_printed_verbatim(
+        self, field_name: str, field_type: str, capsys: pytest.CaptureFixture[str]
+    ):
+        params = self._params("Pick one", {"type": field_type}, name=field_name)
+
+        await _terminal_elicitation_handler("Pick one", None, params, None)
+
+        assert f"  {field_name} ({field_type}): " in capsys.readouterr().out
