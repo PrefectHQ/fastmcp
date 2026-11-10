@@ -425,6 +425,56 @@ async def test_explicit_list_tools_refreshes_past_client_response_cache():
         assert result.data == "added"
 
 
+async def test_overlapping_refreshes_do_not_commit_out_of_order():
+    server = FastMCP("refresh-order")
+
+    @server.tool
+    def original() -> str:
+        return "original"
+
+    client = Client(FastMCPTransport(server))
+    group = ClientGroup({"server": client})
+    first_fetched = asyncio.Event()
+    release_first = asyncio.Event()
+    original_list_tools = client.list_tools
+    calls = 0
+
+    async def gated_list_tools(*, cache_mode="use"):
+        nonlocal calls
+        calls += 1
+        tools = await original_list_tools(cache_mode=cache_mode)
+        if calls == 1:
+            first_fetched.set()
+            await release_first.wait()
+        return tools
+
+    async with group:
+        with patch.object(client, "list_tools", side_effect=gated_list_tools):
+            first_refresh = asyncio.create_task(group.list_tools())
+            await asyncio.wait_for(first_fetched.wait(), timeout=1)
+
+            @server.tool
+            def added() -> str:
+                return "added"
+
+            # Give the newer refresh a chance to commit before the older one.
+            second_refresh = asyncio.create_task(group.list_tools())
+            await asyncio.wait({second_refresh}, timeout=0.5)
+            release_first.set()
+
+            first_tools, second_tools = await asyncio.gather(
+                first_refresh, second_refresh
+            )
+
+        assert [tool.name for tool in first_tools] == ["server_original"]
+        assert {tool.name for tool in second_tools} == {
+            "server_original",
+            "server_added",
+        }
+        route = await group.resolve_tool("server_added")
+        assert route.upstream_name == "added"
+
+
 async def test_group_context_is_reentrant():
     client = Client(make_server("server"))
     group = ClientGroup({"server": client})
@@ -529,6 +579,40 @@ async def test_failed_entry_leaves_group_reenterable():
     async with group:
         result = await group.call_tool("good_echo", {"value": "recovered"})
         assert result.data == "good: recovered"
+
+
+async def test_cancelled_entry_disconnects_connected_members():
+    """Cancelling group entry while one member is still connecting must
+    disconnect the members that already connected."""
+    a = Client(make_server("a"))
+    b = Client(make_server("b"))
+    group = ClientGroup({"a": a, "b": b})
+    b_entering = anyio.Event()
+
+    async def held_entry() -> Client[Any]:
+        b_entering.set()
+        await anyio.sleep_forever()
+        raise AssertionError("unreachable")
+
+    with patch.object(b, "__aenter__", held_entry):
+        entry = asyncio.create_task(group.__aenter__())
+        with anyio.fail_after(3):
+            await b_entering.wait()
+            while not a.is_connected():
+                await anyio.sleep(0.01)
+        entry.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await entry
+
+    assert not a.is_connected()
+    assert group._exit_stack is None
+    assert group._nesting_counter == 0
+
+    async with group:
+        result = await group.call_tool("b_echo", {"value": "recovered"})
+        assert result.data == "b: recovered"
+    assert not a.is_connected()
+    assert not b.is_connected()
 
 
 async def test_exit_under_cancelled_scope_disconnects_members():

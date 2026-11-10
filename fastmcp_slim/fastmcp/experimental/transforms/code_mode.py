@@ -633,11 +633,13 @@ class CodeMode(CatalogTransform):
         execute_tool_name: str = "execute",
         execute_description: str | None = None,
         max_tool_calls: int | None = 50,
+        wall_clock_timeout_secs: float | None = None,
     ) -> None:
         super().__init__()
         self.execute_tool_name = execute_tool_name
         self.execute_description = execute_description
         self.max_tool_calls = max_tool_calls
+        self.wall_clock_timeout_secs = wall_clock_timeout_secs
         self.sandbox_provider = sandbox_provider or MontySandboxProvider()
 
         self._discovery_factories = (
@@ -748,10 +750,21 @@ class CodeMode(CatalogTransform):
                     )
                 return _unwrap_tool_result(result)
 
-            return await transform.sandbox_provider.run(
+            # Sandbox duration limits exclude time spent awaiting host
+            # callbacks, so bound the whole execution on the wall clock.
+            timeout = transform.wall_clock_timeout_secs
+            run = transform.sandbox_provider.run(
                 code,
                 external_functions={"call_tool": call_tool},
             )
+            if timeout is None:
+                return await run
+            try:
+                return await asyncio.wait_for(run, timeout)
+            except TimeoutError as exc:
+                raise ToolError(
+                    f"Execution exceeded the wall-clock limit of {timeout} seconds."
+                ) from exc
 
         return Tool.from_function(
             fn=execute,
