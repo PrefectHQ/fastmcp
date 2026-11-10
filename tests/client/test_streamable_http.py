@@ -287,7 +287,8 @@ async def test_factory_owned_timeout_is_preserved(
     streamable_http_server: ASGIServer, mode: str, client_timeout: float | None
 ):
     """A factory's own timeout stands when the client sets none, and an
-    explicit client timeout is still forwarded to the factory."""
+    explicit client timeout is still forwarded to the factory, extending
+    but never shortening MCP's 300s read default."""
     created: list[httpx2.AsyncClient] = []
 
     def factory(**kwargs: Any) -> httpx2.AsyncClient:
@@ -306,7 +307,7 @@ async def test_factory_owned_timeout_is_preserved(
     expected = (
         httpx2.Timeout(0.15)
         if client_timeout is None
-        else httpx2.Timeout(30.0, read=client_timeout)
+        else httpx2.Timeout(30.0, read=max(300.0, client_timeout))
     )
     assert created
     assert all(client.timeout == expected for client in created)
