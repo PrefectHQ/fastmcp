@@ -137,6 +137,8 @@ def list_contacts() -> list[dict]:
 
 Backend tools support `name`, `description`, `auth`, and `timeout`.
 
+App tool names matching `__<12 lowercase hex>_<name>` (for example, `__abcdef012345_save`) are reserved for generated tool addresses. `@app.tool()`, `@app.ui()`, and `app.add_tool()` reject that pattern with a `ValueError` at registration. Other names containing double underscores, such as `__save` or `save__contact`, are allowed.
+
 ## `CallTool` — UI → backend
 
 `CallTool` is how the UI invokes a backend tool. Pass the tool's name (or a direct function reference):
