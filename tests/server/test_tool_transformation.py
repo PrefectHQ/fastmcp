@@ -283,3 +283,72 @@ async def test_openapi_path_params_not_duplicated_in_description():
                 tool.input_schema["properties"]["user_id"]["description"]
                 == "The user ID"
             )
+
+
+async def test_reversioned_tool_callable_by_new_version():
+    """Test that a tool re-versioned with ToolTransformConfig(version=...) can be called by its new version.
+
+    Ref: https://github.com/PrefectHQ/fastmcp/issues/6357
+    """
+    import pytest
+
+    from fastmcp.exceptions import ToolError
+
+    mcp = FastMCP("Version Test")
+
+    @mcp.tool(version="1.0")
+    def calc(x: int) -> int:
+        return x * 2
+
+    mcp.add_transform(ToolTransform({"calc": ToolTransformConfig(version="2.0")}))
+
+    async with Client(mcp) as client:
+        tools = await client.list_tools()
+        assert len(tools) == 1
+        assert tools[0].meta["fastmcp"]["version"] == "2.0"
+
+        # Calling with new version succeeds
+        res_new = await client.call_tool("calc", {"x": 3}, version="2.0")
+        assert res_new.data == 6
+
+        # Calling with default (None) version succeeds
+        res_default = await client.call_tool("calc", {"x": 3})
+        assert res_default.data == 6
+
+        # Calling with old version fails
+        with pytest.raises(ToolError, match="Unknown tool: 'calc'"):
+            await client.call_tool("calc", {"x": 3}, version="1.0")
+
+
+async def test_reversioned_and_renamed_tool_callable_by_new_name_and_version():
+    """Test that a tool with both name and version transformed can be called correctly."""
+    import pytest
+
+    from fastmcp.exceptions import ToolError
+
+    mcp = FastMCP("Rename and Version Test")
+
+    @mcp.tool(version="1.0")
+    def compute(a: int) -> int:
+        return a + 10
+
+    mcp.add_transform(
+        ToolTransform(
+            {"compute": ToolTransformConfig(name="compute_v2", version="2.0")}
+        )
+    )
+
+    async with Client(mcp) as client:
+        tools = await client.list_tools()
+        assert len(tools) == 1
+        assert tools[0].name == "compute_v2"
+        assert tools[0].meta["fastmcp"]["version"] == "2.0"
+
+        res = await client.call_tool("compute_v2", {"a": 5}, version="2.0")
+        assert res.data == 15
+
+        res_none = await client.call_tool("compute_v2", {"a": 5})
+        assert res_none.data == 15
+
+        with pytest.raises(ToolError, match="Unknown tool: 'compute_v2'"):
+            await client.call_tool("compute_v2", {"a": 5}, version="1.0")

@@ -79,16 +79,26 @@ class ToolTransform(Transform):
         # Check if this name is a transformed name
         original_name = self._name_reverse.get(name, name)
 
+        config = self._transforms.get(original_name)
+        if config is not None and config.version is not None:
+            if version is not None and not version.matches(config.version):
+                return None
+            next_version = None
+        else:
+            next_version = version
+
         # Get the original tool
-        tool = await call_next(original_name, version=version)
+        tool = await call_next(original_name, version=next_version)
         if tool is None:
             return None
 
         # Apply transform if applicable
         if original_name in self._transforms:
             transformed = self._transforms[original_name].apply(tool)
-            # Only return if requested name matches transformed name
-            if transformed.name == name:
+            # Only return if requested name matches transformed name and version matches
+            if transformed.name == name and (
+                version is None or version.matches(transformed.version)
+            ):
                 return transformed
             return None
 
