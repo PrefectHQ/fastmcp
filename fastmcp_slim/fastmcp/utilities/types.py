@@ -207,12 +207,14 @@ def create_function_without_params(
         name = actual_func.__name__  # ty: ignore[unresolved-attribute]
         defaults = actual_func.__defaults__  # ty: ignore[unresolved-attribute]
         closure = actual_func.__closure__  # ty: ignore[unresolved-attribute]
+        kwdefaults = getattr(actual_func, "__kwdefaults__", None)
     else:
         code = fn.__code__  # ty: ignore[unresolved-attribute]
         globals_dict = fn.__globals__  # ty: ignore[unresolved-attribute]
         name = fn.__name__  # ty: ignore[unresolved-attribute]
         defaults = fn.__defaults__  # ty: ignore[unresolved-attribute]
         closure = fn.__closure__  # ty: ignore[unresolved-attribute]
+        kwdefaults = getattr(fn, "__kwdefaults__", None)
 
     # Create a copy of annotations without the excluded parameters
     original_annotations = getattr(fn, "__annotations__", {})
@@ -234,6 +236,8 @@ def create_function_without_params(
         defaults,
         closure,
     )
+    if kwdefaults is not None:
+        new_func.__kwdefaults__ = dict(kwdefaults)
     new_func.__dict__.update(fn.__dict__)
     new_func.__module__ = fn.__module__
     new_func.__qualname__ = getattr(fn, "__qualname__", fn.__name__)  # ty: ignore[unresolved-attribute]

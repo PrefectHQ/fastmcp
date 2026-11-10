@@ -748,6 +748,52 @@ class TestCreateFunctionWithoutParams:
         assert "query" in sig.parameters
         assert "limit" in sig.parameters
 
+    def test_preserves_keyword_only_defaults(self):
+        """Test that keyword-only parameter defaults are preserved on the cloned function (#6400)."""
+
+        def original_func(
+            ctx: object, *, limit: int = 10, offset: int = 0
+        ) -> tuple[int, int]:
+            return limit, offset
+
+        new_func = create_function_without_params(original_func, ["ctx"])
+
+        assert new_func.__kwdefaults__ == {"limit": 10, "offset": 0}
+        assert new_func("ctx") == (10, 0)
+        assert new_func("ctx", limit=20) == (20, 0)
+
+    def test_prunes_excluded_keyword_only_parameters_from_signature(self):
+        """Test that excluded keyword-only parameters are removed from signature and annotations while defaults work."""
+        import inspect
+
+        def original_func(
+            ctx: object, *, session: str = "default", limit: int = 10
+        ) -> int:
+            return limit
+
+        new_func = create_function_without_params(original_func, ["ctx", "session"])
+
+        sig = inspect.signature(new_func)
+        assert "ctx" not in sig.parameters
+        assert "session" not in sig.parameters
+        assert "ctx" not in new_func.__annotations__
+        assert "session" not in new_func.__annotations__
+        assert sig.parameters["limit"].default == 10
+        assert new_func("ctx") == 10
+
+    def test_preserves_keyword_only_defaults_bound_method(self):
+        """Test that bound methods retain keyword-only defaults when cloned."""
+
+        class Service:
+            def handler(self, ctx: object, *, limit: int = 42) -> int:
+                return limit
+
+        service = Service()
+        new_method = create_function_without_params(service.handler, ["ctx"])
+
+        assert new_method.__kwdefaults__ == {"limit": 42}
+        assert new_method("ctx") == 42
+
 
 class TestAnnotationStringDescriptions:
     """Test the new functionality for string descriptions in Annotated types."""
