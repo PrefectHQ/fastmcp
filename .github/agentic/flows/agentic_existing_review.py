@@ -53,10 +53,20 @@ def verification_result(run_id: UUID, runtime: Runtime, spec: VerificationSpec) 
 
 def summary(result: dict) -> dict:
     stages = {}
-    for name in ("base", "head", "adjacent"):
+    for name in ("base", "head", "adjacent", "probe_base", "probe_head"):
         stage = result.get(name, {})
         stages[name] = {
             "status": stage.get("status", "not_run"),
+            "reason": stage.get("reason"),
+            "input_sha256": stage.get("input_sha256"),
+            "input_changes": stage.get("input_changes", []),
+            "input_changes_truncated": stage.get("input_changes_truncated", False),
+            "test_status": stage.get("test_status"),
+            "command": stage.get("command"),
+            "returncode": stage.get("returncode"),
+            "output_tail": stage.get("output_tail", "")[-6000:],
+            "output_truncated": stage.get("output_truncated", False)
+            or len(stage.get("output_tail", "")) > 6000,
             "counts": dict(Counter(case["state"] for case in stage.get("cases", []))),
             "failures": [
                 case
@@ -70,6 +80,7 @@ def summary(result: dict) -> dict:
         "head_sha": result["spec"]["head_sha"],
         "baseline_sha": result.get("baseline_sha"),
         "status": result["status"],
+        "reason": result.get("reason"),
         "tests": stages,
         "comparison": result.get("comparison", {}),
         "independent_probes": sorted(result["spec"]["probes"]),
@@ -78,13 +89,22 @@ def summary(result: dict) -> dict:
     }
 
 
+def unadmitted_selection(item: dict) -> list[int]:
+    """Selected contributions that the deterministic route did not admit."""
+    admitted = {pr["number"] for pr in item["route"].get("pull_requests", [])}
+    return sorted(set(item["assessment"]["verification_prs"]) - admitted)
+
+
 def verification_specs(
     group: Group, item: dict, probes: dict[str, str]
 ) -> list[VerificationSpec]:
     evidence = item["evidence"]
-    selected = {pr["number"] for pr in item["route"].get("pull_requests", [])}
+    # Only admitted contributions are executed; verify_existing records the rest.
+    selected = set(item["assessment"]["verification_prs"]) - set(
+        unadmitted_selection(item)
+    )
     contributions = [pr for pr in evidence["prs"] if pr["number"] in selected]
-    if not selected or {pr["number"] for pr in contributions} != selected:
+    if {pr["number"] for pr in contributions} != selected:
         raise ValueError("Selected contribution evidence is missing")
     prs = [pr for pr in contributions if not pr["merged"]]
     if len(prs) > 3:
@@ -210,6 +230,26 @@ def verify_existing(
         if results
         else "Review the assessment of merged contributions and subsequent history; no unmerged contribution was sent to verification"
     )
+    if any(result["status"] == "evidence_needed" for result in results):
+        status = "evidence_needed"
+        next_step = (
+            "Repair the retained verification inputs. For baseline collection failures, "
+            "supply a standalone baseline-compatible behavior probe in verification_probes. "
+            "For input_mutation, fix the tests that modified the listed inputs. "
+            "Keep author tests on head; collection errors never establish a fix. "
+            "Do not retry unchanged inputs as an environment failure."
+        )
+    if not results and any(not pr["merged"] for pr in evidence["prs"]):
+        status = "verification_selection_required"
+        next_step = "Review why assessment selected no contribution for execution; no tests were run"
+    if outside := unadmitted_selection(item):
+        listed = ", ".join(f"#{number}" for number in outside)
+        status = "verification_selection_outside_route"
+        next_step = (
+            f"Assessment selected {listed}, which the route did not admit because "
+            "it does not close this issue; no tests were run for it. Link it to this "
+            "issue or review it through the issue it closes"
+        )
     if change != "unchanged":
         status, next_step = change, "Refresh changed evidence"
     review = {

@@ -14,12 +14,11 @@ from collections.abc import Sequence
 from copy import deepcopy
 from threading import Lock
 from time import monotonic
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, BaseModel, model_validator
-from typing_extensions import Self
 
 from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.identity_assertion import IdentityAssertion

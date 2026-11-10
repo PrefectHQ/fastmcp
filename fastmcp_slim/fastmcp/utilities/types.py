@@ -4,11 +4,10 @@ import base64
 import inspect
 import mimetypes
 import os
-import sys
 from collections.abc import Callable
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
-from types import EllipsisType, SimpleNamespace, UnionType
+from types import EllipsisType, UnionType
 from typing import (
     Annotated,
     Any,
@@ -18,6 +17,7 @@ from typing import (
     get_args,
     get_origin,
     get_type_hints,
+    overload,
 )
 from urllib.parse import quote
 
@@ -25,6 +25,8 @@ import mcp_types
 from mcp_types import Annotations, ContentBlock, ModelPreferences, SamplingMessage
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field, TypeAdapter, UrlConstraints
 from typing_extensions import TypeVar
+
+from fastmcp.utilities._callable_cache import cache_on_callable
 
 T = TypeVar("T", default=Any)
 
@@ -49,36 +51,41 @@ class FastMCPBaseModel(BaseModel):
 
 
 def get_function_type_hints(fn: Callable[..., Any]) -> dict[str, Any]:
-    """Resolve a function's type hints, keeping `Annotated` metadata.
-
-    Before Python 3.11, `typing.get_type_hints` wraps the hint of every
-    parameter that defaults to `None` in `Optional[...]`. For
-    `Annotated[int | None, Field(title="Limit")] = None` that produces
-    `Optional[Annotated[...]]`, which buries the `Field` metadata in a nested
-    union branch of the JSON schema. Hints are resolved here without that
-    wrapping, so every supported Python version yields the same schema.
-    """
-    if sys.version_info >= (3, 11) or getattr(fn, "__annotations__", None) is None:
-        return get_type_hints(fn, include_extras=True)
-
-    # get_type_hints only adds the Optional wrapper for defaults it reads from
-    # `__code__`, so resolve the annotations through a proxy that has none.
-    namespace_fn = inspect.unwrap(fn)
-    proxy = SimpleNamespace(
-        __annotations__=fn.__annotations__,
-        __globals__=getattr(namespace_fn, "__globals__", {}),
-    )
-    return get_type_hints(proxy, include_extras=True)
+    """Resolve a function's type hints, keeping `Annotated` metadata."""
+    return get_type_hints(fn, include_extras=True)
 
 
-@lru_cache(maxsize=5000)
-def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
+@overload
+def get_cached_typeadapter(cls: type[T]) -> TypeAdapter[T]: ...
+
+
+@overload
+def get_cached_typeadapter(cls: Any) -> TypeAdapter[Any]: ...
+
+
+def get_cached_typeadapter(cls: Any) -> TypeAdapter[Any]:
     """
     TypeAdapters are heavy objects, and in an application context we'd typically
     create them once in a global scope and reuse them as often as possible.
     However, this isn't feasible for user-generated functions. Instead, we use a
     cache to minimize the cost of creating them as much as possible.
     """
+    if inspect.isfunction(cls) or inspect.ismethod(cls) or isinstance(cls, partial):
+        return _get_callable_typeadapter(cls)
+    return _get_type_typeadapter(cls)
+
+
+@cache_on_callable
+def _get_callable_typeadapter(cls: T) -> TypeAdapter[T]:
+    return _create_typeadapter(cls)
+
+
+@lru_cache(maxsize=5000)
+def _get_type_typeadapter(cls: T) -> TypeAdapter[T]:
+    return _create_typeadapter(cls)
+
+
+def _create_typeadapter(cls: T) -> TypeAdapter[T]:
     # For functions, process annotations to handle forward references and convert
     # Annotated[Type, "string"] to Annotated[Type, Field(description="string")]
     if inspect.isfunction(cls) or inspect.ismethod(cls):

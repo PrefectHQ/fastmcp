@@ -22,10 +22,13 @@ because core still declares them.
 
 from __future__ import annotations
 
+import functools
 import inspect
 import logging
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+import mcp_types
 from pydantic import ValidationError as PydanticValidationError
 
 from fastmcp.exceptions import ValidationError
@@ -34,7 +37,7 @@ from fastmcp.prompts.function_prompt import FunctionPrompt
 from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
-from fastmcp.tools.base import Tool
+from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
 from fastmcp.tools.function_tool import (
     FunctionTool,
     _resolve_param_hints,
@@ -42,13 +45,68 @@ from fastmcp.tools.function_tool import (
 )
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.types import get_cached_typeadapter
-from fastmcp_tasks.input_loop import reentrant_task_fn
+from fastmcp_tasks.input_loop import _error_result, reentrant_task_fn
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from docket import Docket
     from docket.execution import Execution
+
+logger = logging.getLogger(__name__)
+
+TASK_RESULT_ENVELOPE_KEY = "__fastmcp_task_result__"
+
+
+def task_result_to_wire(tool: Tool, raw_value: Any) -> dict[str, Any]:
+    """Convert a task's return value into an inlined `CallToolResult` dict.
+
+    A raised tool error arrives as the `is_error` `ToolResult` the reentrant
+    wrapper built, so it is used directly and `isError` round-trips. A normal
+    return goes through the tool's own result coercion.
+    """
+    if isinstance(raw_value, ToolResult):
+        mcp_result = raw_value.to_mcp_result()
+    else:
+        mcp_result = tool.convert_result(raw_value).to_mcp_result()
+    if isinstance(mcp_result, mcp_types.CallToolResult):
+        call_result = mcp_result
+    elif isinstance(mcp_result, tuple):
+        content, structured_content = mcp_result
+        call_result = mcp_types.CallToolResult(
+            content=content, structured_content=structured_content
+        )
+    else:
+        call_result = mcp_types.CallToolResult(content=mcp_result)
+    return call_result.model_dump(by_alias=True, mode="json", exclude_none=True)
+
+
+def _store_task_result_with_component(
+    tool: Tool, fn: Callable[..., Awaitable[Any]]
+) -> Callable[..., Awaitable[Any]]:
+    """Persist the protocol result so later polling does not need the live Tool.
+
+    The conversion runs in the worker, under the same masking policy as a
+    raised tool error: a return value that fails to serialize becomes a masked
+    `is_error` result rather than a failed task carrying the exception text.
+    """
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        result = await fn(*args, **kwargs)
+        if isinstance(result, mcp_types.InputRequiredResult | InputRequiredToolResult):
+            # Preserve the existing defensive failure in tasks_get for a guard
+            # result that escaped the end-and-reenter loop.
+            return result
+        try:
+            wire = task_result_to_wire(tool, result)
+        except Exception as exc:
+            logger.exception(
+                "background task tool %r result conversion failed", tool.name
+            )
+            wire = task_result_to_wire(tool, _error_result(tool.name, exc))
+        return {TASK_RESULT_ENVELOPE_KEY: wire}
+
+    wrapper.__signature__ = inspect.signature(fn)  # ty: ignore[unresolved-attribute]
+    return wrapper
 
 
 def register_component_with_docket(component: FastMCPComponent, docket: Docket) -> None:
@@ -66,16 +124,20 @@ def register_component_with_docket(component: FastMCPComponent, docket: Docket) 
         # InputRequiredResult drives the reentrant in-task input cycle. The
         # wrapper is signature-preserving, so Docket's dependency injection is
         # unchanged for a body that never asks for input.
+        task_fn = reentrant_task_fn(component.fn, component.name)
         docket.register(
-            reentrant_task_fn(component.fn, component.name), names=[component.key]
+            _store_task_result_with_component(component, task_fn),
+            names=[component.key],
         )
     elif isinstance(component, Tool):
         # Custom Tool subclasses route through the same wrapper so a raised
         # error becomes a masked, completed `is_error` result — matching the
         # synchronous `tools/call` path — rather than a Docket `FAILED` task
         # that leaks the raw exception text past the server's masking policy.
+        task_fn = reentrant_task_fn(component.run, component.name)
         docket.register(
-            reentrant_task_fn(component.run, component.name), names=[component.key]
+            _store_task_result_with_component(component, task_fn),
+            names=[component.key],
         )
     elif isinstance(component, FunctionResource):
         docket.register(component.fn, names=[component.key])

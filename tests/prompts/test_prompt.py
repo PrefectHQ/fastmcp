@@ -2,10 +2,12 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
-from mcp_types import EmbeddedResource, TextResourceContents
+from mcp import MCPError
+from mcp_types import INVALID_PARAMS, EmbeddedResource, TextResourceContents
 from pydantic import Field
 
 from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ValidationError
 from fastmcp.prompts.base import (
     Message,
     Prompt,
@@ -14,6 +16,23 @@ from fastmcp.prompts.base import (
 
 
 class TestRenderPrompt:
+    async def test_fn_with_postponed_annotations(self):
+        namespace = {}
+        exec(
+            "from __future__ import annotations\n"
+            "from pydantic import BaseModel\n"
+            "class Config(BaseModel):\n"
+            "    key: str\n"
+            "def show_config(cfg: Config) -> str:\n"
+            "    return f'config={cfg.key}'\n",
+            namespace,
+        )
+
+        prompt = Prompt.from_function(namespace["show_config"])
+        result = await prompt.render({"cfg": '{"key": "v"}'})
+
+        assert result.messages == [Message("config=v")]
+
     async def test_basic_fn(self):
         def fn() -> str:
             return "Hello, world!"
@@ -61,7 +80,9 @@ class TestRenderPrompt:
             return f"Hello, {name}! You're {age} years old."
 
         prompt = Prompt.from_function(fn)
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValidationError, match="Missing required arguments: {'name'}"
+        ):
             await prompt.render(arguments=dict(age=40))
 
     async def test_fn_with_positional_only_parameters_not_allowed(self):
@@ -668,6 +689,24 @@ class TestPromptArgumentDescriptions:
         assert mcp_prompt.meta is not None
         assert meta_data.items() <= mcp_prompt.meta.items()
 
+    def test_argument_titles_from_field(self):
+        """An explicit Field(title=...) becomes the argument's MCP title."""
+        from pydantic import Field
+
+        def test_prompt(
+            name: Annotated[str, Field(title="Your name")],
+            tone: str = Field(default="playful", title="Tone of voice"),
+            topic: str = "dogs",
+        ) -> str:
+            return f"Hello, {name}!"
+
+        arguments = Prompt.from_function(test_prompt).to_mcp_prompt().arguments or []
+        assert {arg.name: arg.title for arg in arguments} == {
+            "name": "Your name",
+            "tone": "Tone of voice",
+            "topic": None,
+        }
+
 
 class TestMessage:
     def test_message_string_content(self):
@@ -826,6 +865,27 @@ class TestInternalMetaNotLeaked:
         assert result.meta["fastmcp"] == {"owner": "docs"}
 
 
+class TestMissingRequiredArguments:
+    """Omitting a required argument is a client error, not a server fault."""
+
+    @pytest.mark.parametrize("mask_error_details", [False, True])
+    async def test_get_prompt_missing_required_argument_is_invalid_params(
+        self, mask_error_details: bool
+    ):
+        mcp = FastMCP(mask_error_details=mask_error_details)
+
+        @mcp.prompt
+        def summarize(topic: str) -> str:
+            return f"Summarize {topic}"
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError) as exc_info:
+                await client.get_prompt("summarize", {})
+
+        assert exc_info.value.error.code == INVALID_PARAMS
+        assert exc_info.value.error.message == "Missing required arguments: {'topic'}"
+
+
 class TestPromptFieldDefaults:
     """Test prompts with Field() defaults."""
 
@@ -960,3 +1020,100 @@ class TestPromptCallableAndConcurrency:
             prompt.render(),
         )
         assert all(r.messages == [Message("done")] for r in results)
+
+
+class TestPromptArgumentAliases:
+    """Pydantic aliases on prompt parameters must work like tool aliases."""
+
+    async def test_alias_is_advertised_and_renderable(self):
+        def greet(name: Annotated[int, Field(alias="Name")]) -> str:
+            return f"Hello, {name}!"
+
+        prompt = Prompt.from_function(greet)
+
+        assert prompt.arguments is not None
+        assert [arg.name for arg in prompt.arguments] == ["Name"]
+        assert prompt.arguments[0].required is True
+
+        result = await prompt.render({"Name": "5"})
+        assert result.messages == [Message("Hello, 5!")]
+
+    async def test_alias_on_field_default_is_advertised_and_renderable(self):
+        def greet(name: str = Field(alias="Name")) -> str:
+            return f"Hello, {name}!"
+
+        prompt = Prompt.from_function(greet)
+
+        assert prompt.arguments is not None
+        assert [arg.name for arg in prompt.arguments] == ["Name"]
+        assert prompt.arguments[0].required is True
+
+        result = await prompt.render({"Name": "Ada"})
+        assert result.messages == [Message("Hello, Ada!")]
+
+    async def test_alias_on_field_default_with_default_value(self):
+        def greet(name: int = Field(default=7, alias="Name")) -> str:
+            return f"Hello, {name}!"
+
+        prompt = Prompt.from_function(greet)
+
+        assert prompt.arguments is not None
+        assert [arg.name for arg in prompt.arguments] == ["Name"]
+        assert prompt.arguments[0].required is False
+
+        result = await prompt.render({"Name": "9"})
+        assert result.messages == [Message("Hello, 9!")]
+
+        default_result = await prompt.render({})
+        assert default_result.messages == [Message("Hello, 7!")]
+
+    async def test_validation_alias_on_field_default_is_advertised_and_renderable(self):
+        def greet(name: int = Field(default=7, validation_alias="Name")) -> str:
+            return f"Hello, {name}!"
+
+        prompt = Prompt.from_function(greet)
+
+        assert prompt.arguments is not None
+        assert [arg.name for arg in prompt.arguments] == ["Name"]
+
+        result = await prompt.render({"Name": "9"})
+        assert result.messages == [Message("Hello, 9!")]
+
+    async def test_aliased_non_string_argument_accepts_json_string(self):
+        def total(numbers: Annotated[list[int], Field(alias="Numbers")]) -> str:
+            return f"sum={sum(numbers)}"
+
+        prompt = Prompt.from_function(total)
+
+        result = await prompt.render({"Numbers": "[1, 2, 3]"})
+        assert result.messages == [Message("sum=6")]
+
+    async def test_alias_with_injected_parameter(self):
+        from fastmcp.dependencies import Depends
+
+        def greet(
+            name: Annotated[int, Field(alias="Name")],
+            dependency: str = Depends(lambda: "injected"),
+        ) -> str:
+            return f"Hello, {name}! {dependency}"
+
+        prompt = Prompt.from_function(greet)
+
+        assert prompt.arguments is not None
+        assert [arg.name for arg in prompt.arguments] == ["Name"]
+
+        # Injected parameters remain unaddressable from the outside.
+        result = await prompt.render({"Name": "5", "dependency": "override"})
+        assert result.messages == [Message("Hello, 5! injected")]
+
+    async def test_ordinary_argument_names_unchanged(self):
+        def greet(name: int, greeting: str = "Hello") -> str:
+            return f"{greeting}, {name}!"
+
+        prompt = Prompt.from_function(greet)
+
+        assert prompt.arguments is not None
+        assert [arg.name for arg in prompt.arguments] == ["name", "greeting"]
+
+        result = await prompt.render({"name": "5"})
+        assert result.messages == [Message("Hello, 5!")]

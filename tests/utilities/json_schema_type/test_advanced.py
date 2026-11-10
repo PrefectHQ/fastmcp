@@ -1,11 +1,13 @@
 """Advanced JSON schema type conversion features."""
 
 from dataclasses import Field
-from typing import Any, Union
+from typing import Any, Union, cast
 
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
+from fastmcp import Client, FastMCP
+from fastmcp.tools import ToolResult
 from fastmcp.utilities.json_schema_type import (
     _hash_schema,
     _merge_defaults,
@@ -17,8 +19,150 @@ def get_dataclass_field(type: type, field_name: str) -> Field:
     return type.__dataclass_fields__[field_name]  # ty: ignore[unresolved-attribute]
 
 
+def unwrap_optional(field: Field) -> Any:
+    """Return a field's bare type, unwrapping an Optional[T] annotation to T."""
+    field_type = cast(Any, field.type)
+    return field_type.__args__[0] if hasattr(field_type, "__args__") else field_type
+
+
 class TestDefaultValues:
     """Test suite for default value handling."""
+
+    @pytest.mark.parametrize("additional_properties", [None, True, False])
+    def test_invalid_defaults_only_apply_to_omitted_fields(
+        self, additional_properties: bool | None
+    ) -> None:
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "default": None},
+                "count": {"type": "integer", "minimum": 1, "default": 0},
+            },
+        }
+        if additional_properties is not None:
+            schema["additionalProperties"] = additional_properties
+        validator: TypeAdapter[Any] = TypeAdapter(json_schema_to_type(schema))
+
+        result = validator.validate_python({})
+        assert result.name is None
+        assert result.count == 0
+        assert validator.validate_python({"name": "Alice", "count": 2}).name == "Alice"
+        with pytest.raises(ValidationError):
+            validator.validate_python({"name": None})
+        with pytest.raises(ValidationError):
+            validator.validate_python({"count": 0})
+
+    def test_nested_omitted_field_preserves_invalid_default(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string", "default": None}},
+                }
+            },
+        }
+        validator: TypeAdapter[Any] = TypeAdapter(json_schema_to_type(schema))
+
+        assert validator.validate_python({"user": {}}).user.name is None
+        with pytest.raises(ValidationError):
+            validator.validate_python({"user": {"name": None}})
+
+    @pytest.mark.parametrize("many", [False, True])
+    def test_recursive_defaults_are_hydrated(self, many: bool) -> None:
+        child = {"name": "child", "child": [] if many else None}
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "child": {
+                    **(
+                        {"type": "array", "items": {"$ref": "#"}}
+                        if many
+                        else {"anyOf": [{"$ref": "#"}, {"type": "null"}]}
+                    ),
+                    "default": [child] if many else child,
+                },
+            },
+        }
+        node_type = json_schema_to_type(schema)
+        validator: TypeAdapter[Any] = TypeAdapter(node_type)
+
+        result = validator.validate_python({})
+        default_child = result.child[0] if many else result.child
+        assert isinstance(default_child, node_type)
+        assert default_child.name == "child"
+        assert default_child.child == ([] if many else None)
+        other = validator.validate_python({})
+        assert default_child is not (other.child[0] if many else other.child)
+
+        override = {"name": "override", "child": [] if many else None}
+        result = validator.validate_python({"child": [override] if many else override})
+        explicit_child = result.child[0] if many else result.child
+        assert isinstance(explicit_child, node_type)
+        assert explicit_child.name == "override"
+        invalid = {"name": 1, "child": [] if many else None}
+        with pytest.raises(ValidationError):
+            validator.validate_python({"child": [invalid] if many else invalid})
+
+    @pytest.mark.parametrize("default", ["invalid", {"name": 1, "child": None}])
+    def test_invalid_recursive_defaults_are_preserved(self, default: Any) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "child": {
+                    "anyOf": [{"$ref": "#"}, {"type": "null"}],
+                    "default": default,
+                },
+            },
+        }
+        validator: TypeAdapter[Any] = TypeAdapter(json_schema_to_type(schema))
+
+        assert validator.validate_python({}).child == default
+        with pytest.raises(ValidationError):
+            validator.validate_python({"child": default})
+
+    def test_constrained_invalid_default_in_recursive_model_is_preserved(
+        self,
+    ) -> None:
+        node = {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {"child": {"$ref": "#/$defs/Node"}},
+        }
+        schema = {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "count": {"type": "integer", "minimum": 1, "default": 0},
+                "child": {"$ref": "#/$defs/Node"},
+            },
+            "$defs": {"Node": node},
+        }
+        validator: TypeAdapter[Any] = TypeAdapter(json_schema_to_type(schema))
+
+        assert validator.validate_python({}).count == 0
+        with pytest.raises(ValidationError):
+            validator.validate_python({"count": 0})
+
+    async def test_tool_result_preserves_invalid_schema_default(self) -> None:
+        server = FastMCP("Defaults")
+
+        @server.tool(
+            output_schema={
+                "type": "object",
+                "properties": {"name": {"type": "string", "default": None}},
+            }
+        )
+        def lookup() -> ToolResult:
+            return ToolResult(structured_content={})
+
+        async with Client(server) as client:
+            result = await client.call_tool("lookup", {})
+
+        assert result.data is not None
+        assert result.data.name is None
 
     @pytest.fixture
     def simple_defaults(self):
@@ -83,7 +227,16 @@ class TestDefaultValues:
 
 @pytest.mark.parametrize(
     "definition, token",
-    [("plain", "plain"), ("a/b", "a~1b"), ("a~b", "a~0b"), ("a~1b", "a~01b")],
+    [
+        ("plain", "plain"),
+        ("a/b", "a~1b"),
+        ("a~b", "a~0b"),
+        ("a~1b", "a~01b"),
+        ("a b", "a%20b"),
+        ("a%20b", "a%2520b"),
+        ("café", "caf%C3%A9"),
+        ("a/b", "a%7E1b"),
+    ],
 )
 def test_escaped_reference_tokens(definition: str, token: str):
     schema = {
@@ -180,6 +333,381 @@ class TestCircularReferences:
         assert result.person.name == "Alice"
         assert result.person.friend.name == "Spot"
         assert result.person.friend.owner.name == "Bob"
+
+    def test_titled_root_self_reference_in_union(self):
+        node_type = json_schema_to_type(
+            {
+                "type": "object",
+                "title": "Node",
+                "properties": {
+                    "name": {"type": "string"},
+                    "next": {"anyOf": [{"$ref": "#"}, {"type": "null"}]},
+                },
+            }
+        )
+        assert node_type.__name__ == "Node"
+
+        validator: TypeAdapter[Any] = TypeAdapter(node_type)
+        node = validator.validate_python({"name": "a", "next": {"name": "b"}})
+        assert node.next.name == "b"
+        assert node.next.next is None
+
+    def test_titled_root_self_reference_in_items(self):
+        node_type = json_schema_to_type(
+            {
+                "type": "object",
+                "title": "Node",
+                "properties": {
+                    "name": {"type": "string"},
+                    "children": {"type": "array", "items": {"$ref": "#"}},
+                },
+            }
+        )
+        assert node_type.__name__ == "Node"
+
+        validator: TypeAdapter[Any] = TypeAdapter(node_type)
+        node = validator.validate_python({"name": "a", "children": [{"name": "b"}]})
+        assert node.children[0].name == "b"
+        assert node.children[0].children is None
+
+    def test_titled_root_self_reference_in_property_with_extras(self):
+        # additionalProperties: True builds a Pydantic model, whose fields
+        # all go through the generic reference handling.
+        node_type = json_schema_to_type(
+            {
+                "type": "object",
+                "title": "Node",
+                "additionalProperties": True,
+                "properties": {
+                    "name": {"type": "string"},
+                    "next": {"$ref": "#"},
+                },
+            }
+        )
+        assert node_type.__name__ == "Node"
+
+        validator: TypeAdapter[Any] = TypeAdapter(node_type)
+        node = validator.validate_python({"name": "a", "next": {"name": "b"}})
+        assert node.next.name == "b"
+        assert node.next.next is None
+
+    def test_explicit_name_root_self_reference(self):
+        # An explicit name overrides the title for the generated class, so
+        # the self-reference must target the override, not the title.
+        node_type = json_schema_to_type(
+            {
+                "type": "object",
+                "title": "Node",
+                "properties": {
+                    "name": {"type": "string"},
+                    "next": {"anyOf": [{"$ref": "#"}, {"type": "null"}]},
+                },
+            },
+            name="CustomNode",
+        )
+        assert node_type.__name__ == "CustomNode"
+
+        validator: TypeAdapter[Any] = TypeAdapter(node_type)
+        node = validator.validate_python({"name": "a", "next": {"name": "b"}})
+        assert node.next.name == "b"
+        assert node.next.next is None
+
+    def test_nested_class_named_like_root_does_not_shadow_root(self):
+        # A nested object titled like the root must not capture the root's
+        # `"$ref": "#"` references: pydantic binds a class's own name to that
+        # class before the conversion root, so the nested class is renamed.
+        node_type = json_schema_to_type(
+            {
+                "type": "object",
+                "title": "Node",
+                "required": ["name", "count"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "count": {"type": "integer"},
+                    "child": {
+                        "type": "object",
+                        "title": "Node",
+                        "required": ["name", "tag"],
+                        "properties": {
+                            "name": {"type": "string"},
+                            "tag": {"type": "string"},
+                            "next": {"anyOf": [{"$ref": "#"}, {"type": "null"}]},
+                        },
+                    },
+                },
+            }
+        )
+        assert node_type.__name__ == "Node"
+
+        child_cls = unwrap_optional(get_dataclass_field(node_type, "child"))
+        assert child_cls.__name__ == "Node_2"
+
+        validator: TypeAdapter[Any] = TypeAdapter(node_type)
+        # `next` is the ROOT schema, so a root-shaped instance validates...
+        node = validator.validate_python(
+            {
+                "name": "r",
+                "count": 1,
+                "child": {"name": "c", "tag": "t", "next": {"name": "n", "count": 1}},
+            }
+        )
+        assert node.child.next.count == 1
+        # ...and shapes that violate the root schema are rejected, whether
+        # or not they satisfy the nested class's fields.
+        with pytest.raises(ValidationError):
+            validator.validate_python(
+                {
+                    "name": "r",
+                    "count": 1,
+                    "child": {"name": "c", "tag": "t", "next": {"name": "n"}},
+                }
+            )
+        with pytest.raises(ValidationError):
+            validator.validate_python(
+                {
+                    "name": "r",
+                    "count": 1,
+                    "child": {
+                        "name": "c",
+                        "tag": "t",
+                        "next": {"name": "n", "tag": "t"},
+                    },
+                }
+            )
+
+    def test_name_override_does_not_reuse_stale_nested_class(self):
+        # A nested class bakes the root's name into its forward references,
+        # so conversions of the same schema under different `name=` overrides
+        # must not share nested-class cache entries.
+        schema = {
+            "type": "object",
+            "title": "Doc",
+            "properties": {
+                "value": {"type": "string"},
+                "nested": {
+                    "type": "object",
+                    "title": "Nested",
+                    "properties": {
+                        "root_ref": {"anyOf": [{"$ref": "#"}, {"type": "null"}]}
+                    },
+                },
+            },
+        }
+        first_type = json_schema_to_type(schema, name="First")
+        second_type = json_schema_to_type(schema, name="Second")
+
+        first_nested = unwrap_optional(get_dataclass_field(first_type, "nested"))
+        second_nested = unwrap_optional(get_dataclass_field(second_type, "nested"))
+        assert second_nested is not first_nested
+
+        validator: TypeAdapter[Any] = TypeAdapter(second_type)
+        node = validator.validate_python(
+            {"value": "v", "nested": {"root_ref": {"value": "x", "nested": None}}}
+        )
+        assert isinstance(node.nested.root_ref, second_type)
+
+    def test_untitled_nullable_object_root_self_reference(self):
+        # A type-list root narrows through a copy of the schema; the object
+        # member must still build the root class that "#" references.
+        root_type = json_schema_to_type(
+            {
+                "type": ["object", "null"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "next": {"anyOf": [{"$ref": "#"}, {"type": "null"}]},
+                },
+            }
+        )
+        validator: TypeAdapter[Any] = TypeAdapter(root_type)
+        assert validator.validate_python(None) is None
+        node = validator.validate_python(
+            {"name": "a", "next": {"name": "b", "next": None}}
+        )
+        assert type(node).__name__ == "Root"
+        assert node.next.name == "b"
+
+    def test_titled_nullable_object_root_self_reference(self):
+        root_type = json_schema_to_type(
+            {
+                "type": ["object", "null"],
+                "title": "Node",
+                "properties": {
+                    "name": {"type": "string"},
+                    "next": {"anyOf": [{"$ref": "#"}, {"type": "null"}]},
+                },
+            }
+        )
+        validator: TypeAdapter[Any] = TypeAdapter(root_type)
+        node = validator.validate_python({"name": "a", "next": {"name": "b"}})
+        assert type(node).__name__ == "Node"
+        assert node.next.name == "b"
+
+    @pytest.mark.parametrize(
+        "schema,valid_value",
+        [
+            ({"type": "string", "title": None}, "x"),
+            ({"type": "string", "title": 5}, "x"),
+            ({"type": "object", "title": 5}, {}),
+        ],
+    )
+    def test_non_string_title_does_not_crash(self, schema, valid_value):
+        # `title` may hold any JSON value in a malformed schema; the
+        # conversion must handle the schemas it otherwise would.
+        root_type = json_schema_to_type(schema)
+        assert TypeAdapter(root_type).validate_python(valid_value) == valid_value
+
+    @pytest.mark.parametrize(
+        "additional_properties",
+        [{}, {"additionalProperties": True}, {"additionalProperties": {}}],
+        ids=["dataclass", "extras-allowed", "typed-extras"],
+    )
+    def test_non_string_title_names_generated_classes_root(self, additional_properties):
+        # Generated classes fall back to "Root" for a non-string title, the
+        # same name `"$ref": "#"` resolves to.
+        root_type = json_schema_to_type(
+            {
+                "type": "object",
+                "title": 5,
+                "properties": {
+                    "name": {"type": "string"},
+                    "next": {"anyOf": [{"$ref": "#"}, {"type": "null"}]},
+                    "child": {
+                        "type": "object",
+                        "title": ["not", "a", "name"],
+                        "properties": {"tag": {"type": "string"}},
+                    },
+                },
+                **additional_properties,
+            }
+        )
+        assert root_type.__name__ == "Root"
+
+        validator: TypeAdapter[Any] = TypeAdapter(root_type)
+        node = validator.validate_python(
+            {"name": "a", "next": {"name": "b"}, "child": {"tag": "t"}}
+        )
+        assert isinstance(node.next, root_type)
+        assert node.next.name == "b"
+        assert node.child.tag == "t"
+
+    @pytest.mark.parametrize(
+        "root",
+        [
+            pytest.param(
+                {"anyOf": [{"$ref": "#/$defs/Node"}, {"type": "null"}]},
+                id="nullable-union",
+            ),
+            pytest.param(
+                {"title": "Wrapper", "anyOf": [{"$ref": "#/$defs/Node"}]},
+                id="titled-union",
+            ),
+            pytest.param({"$ref": "#/$defs/Node"}, id="ref"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "next_schema",
+        [
+            pytest.param({"anyOf": [{"$ref": "#"}, {"type": "null"}]}, id="union"),
+            pytest.param({"$ref": "#"}, id="direct"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "extras",
+        [{}, {"additionalProperties": {"type": "integer"}}],
+        ids=["dataclass", "typed-extras"],
+    )
+    @pytest.mark.parametrize("title", [None, "Node"])
+    def test_wrapper_root_self_reference_resolves(
+        self, root, next_schema, extras, title
+    ):
+        # A root that is not itself an object generates no root class, so
+        # "#" binds to the object it wraps rather than to a missing class.
+        node = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "child": {
+                    "type": "object",
+                    "title": "Child",
+                    "properties": {"tag": {"type": "string"}},
+                },
+                "next": next_schema,
+            },
+            "required": ["name"],
+            **extras,
+        }
+        if title is not None:
+            node["title"] = title
+        root_type = json_schema_to_type({**root, "$defs": {"Node": node}})
+
+        validator: TypeAdapter[Any] = TypeAdapter(root_type)
+        result = validator.validate_python({"name": "a", "next": {"name": "b"}})
+        assert result.next.name == "b"
+        assert type(result.next) is type(result)
+        assert type(result).__name__ == (title or "Root")
+        assert result.next.next is None
+        with pytest.raises(ValidationError):
+            validator.validate_python({"name": "a", "next": {"name": []}})
+
+    @pytest.mark.parametrize("wrapper", ["ref", "union"])
+    def test_titled_wrapper_root_recursive_extras(self, wrapper):
+        root = {"$ref": "#/$defs/Node"}
+        if wrapper == "union":
+            root = {"anyOf": [root, {"type": "null"}]}
+        root_type = json_schema_to_type(
+            {
+                **root,
+                "$defs": {
+                    "Node": {
+                        "type": "object",
+                        "title": "Node",
+                        "properties": {"name": {"type": "string"}},
+                        "required": ["name"],
+                        "additionalProperties": {"$ref": "#"},
+                    }
+                },
+            }
+        )
+        validator: TypeAdapter[Any] = TypeAdapter(root_type)
+        result = validator.validate_python({"name": "a", "extra": {"name": "b"}})
+        assert type(result).__name__ == "Node"
+        assert type(result.extra) is type(result)
+        assert result.extra.name == "b"
+        with pytest.raises(ValidationError):
+            validator.validate_python({"name": "a", "extra": {"name": []}})
+
+    def test_nested_direct_root_reference_points_at_root(self):
+        # A direct `"root": {"$ref": "#"}` property on a nested class must
+        # reference the conversion root, not the nested class itself.
+        root_type = json_schema_to_type(
+            {
+                "type": "object",
+                "title": "Doc",
+                "required": ["value"],
+                "properties": {
+                    "value": {"type": "string"},
+                    "child": {
+                        "type": "object",
+                        "title": "Child",
+                        "required": ["tag"],
+                        "properties": {
+                            "tag": {"type": "string"},
+                            "root": {"$ref": "#"},
+                        },
+                    },
+                },
+            }
+        )
+        validator: TypeAdapter[Any] = TypeAdapter(root_type)
+        doc = validator.validate_python(
+            {"value": "v", "child": {"tag": "t", "root": {"value": "r"}}}
+        )
+        assert doc.child.root.value == "r"
+        with pytest.raises(ValidationError):
+            # A Child-shaped object is not a valid root value.
+            validator.validate_python(
+                {"value": "v", "child": {"tag": "t", "root": {"tag": "x"}}}
+            )
 
 
 class TestIdentifierNormalization:
@@ -721,6 +1249,22 @@ class TestAdditionalProperties:
         result = validator.validate_python(data)
         assert result == data
         assert isinstance(result, dict)
+
+    def test_untyped_object_with_additional_keeps_extra_fields(self):
+        """A properties-only object without "type" still honours additionalProperties"""
+        schema_type = json_schema_to_type(
+            {"properties": {"name": {"type": "string"}}, "additionalProperties": True}
+        )
+        result = TypeAdapter(schema_type).validate_python({"name": "x", "extra": 1})
+        assert result.name == "x"  # type: ignore[attr-defined]
+        assert result.extra == 1  # type: ignore[attr-defined]
+
+    def test_untyped_empty_properties_with_additional_returns_dict(self):
+        """An empty properties map with additionalProperties=True keeps unknown keys"""
+        schema_type = json_schema_to_type(
+            {"properties": {}, "additionalProperties": True}
+        )
+        assert schema_type == dict[str, Any]
 
     def test_properties_with_additional_returns_basemodel(
         self, properties_with_additional

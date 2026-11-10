@@ -136,7 +136,10 @@ def rewrite_payload_tool_names(
 
     rebound: dict[str, str] = {}
     for current_name, address in addresses.items():
-        parsed = parse_hashed_backend_name(address)
+        # Backends on fastmcp 4.0-4.1 emit addresses without the `__` prefix.
+        parsed = parse_hashed_backend_name(address) or parse_hashed_backend_name(
+            f"__{address}"
+        )
         new_name = resolve(parsed[0]) if parsed is not None else None
         if new_name is None:
             new_name = address
