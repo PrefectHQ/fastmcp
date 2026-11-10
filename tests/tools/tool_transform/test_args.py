@@ -579,7 +579,7 @@ class TestRenamedArgValidationErrors:
         self, find_tool: Tool, arguments: dict[str, Any], location: str
     ):
         error = await call_tool_error(find_tool, arguments)
-        assert error.splitlines()[1] == location
+        assert error.splitlines()[1].startswith(f"- {location}: ")
 
     async def test_error_uses_outermost_name_when_chained(self, find_tool: Tool):
         lookup_tool = Tool.from_tool(
@@ -588,12 +588,13 @@ class TestRenamedArgValidationErrors:
             transform_args={"max_results": ArgTransform(name="limit")},
         )
         error = await call_tool_error(lookup_tool, {"query": "x", "limit": 50})
-        assert error.splitlines()[1] == "limit"
+        assert error.splitlines()[1].startswith("- limit: ")
 
     async def test_error_unchanged_without_renames(self):
         search_tool = Tool.from_function(search)
         find_tool = Tool.from_tool(search_tool, name="find")
         arguments = {"q": "x", "n": 50}
-        assert await call_tool_error(find_tool, arguments) == await call_tool_error(
-            search_tool, arguments
-        )
+        find_error = await call_tool_error(find_tool, arguments)
+        search_error = await call_tool_error(search_tool, arguments)
+        # The header names the called tool; the error details are identical.
+        assert find_error.splitlines()[1:] == search_error.splitlines()[1:]
