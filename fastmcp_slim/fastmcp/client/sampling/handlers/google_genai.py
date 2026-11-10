@@ -1,7 +1,7 @@
 """Google GenAI sampling handler with tool support for FastMCP 3.0."""
 
 import base64
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, cast
 from uuid import uuid4
 
@@ -11,6 +11,7 @@ try:
         Blob,
         Candidate,
         Content,
+        FinishReason,
         FunctionCall,
         FunctionCallingConfig,
         FunctionCallingConfigMode,
@@ -202,6 +203,7 @@ def _sampling_content_to_google_genai_part(
     | AudioContent
     | ToolUseContent
     | ToolResultContent,
+    tool_names_by_id: Mapping[str, str] | None = None,
 ) -> Part:
     """Convert MCP content to Google GenAI Part."""
     if isinstance(content, TextContent):
@@ -249,18 +251,13 @@ def _sampling_content_to_google_genai_part(
                     raise ValueError(msg)
         result_text = "".join(result_parts)
 
-        # Extract function name from toolUseId
-        # Our IDs are formatted as "{function_name}_{uuid8}", so extract the name.
-        # Note: This is a limitation of MCP's ToolResultContent which only carries
-        # toolUseId, while Google's FunctionResponse requires the function name.
-        tool_use_id = content.tool_use_id
-        if "_" in tool_use_id:
-            # Split and rejoin all but the last part (the UUID suffix)
-            parts = tool_use_id.rsplit("_", 1)
-            function_name = parts[0]
-        else:
-            # Fallback: use the full ID as the name
-            function_name = tool_use_id
+        function_name = (tool_names_by_id or {}).get(content.tool_use_id)
+        if function_name is None:
+            msg = (
+                "No matching ToolUseContent found for tool_use_id "
+                f"{content.tool_use_id!r}"
+            )
+            raise ValueError(msg)
 
         return Part(
             function_response=FunctionResponse(
@@ -278,6 +275,20 @@ def _convert_messages_to_google_genai_content(
 ) -> list[Content]:
     """Convert MCP messages to Google GenAI content."""
     google_messages: list[Content] = []
+    tool_names_by_id: dict[str, str] = {}
+
+    for message in messages:
+        content = message.content
+        blocks = content if isinstance(content, list) else [content]
+        for item in blocks:
+            if isinstance(item, ToolUseContent):
+                if (
+                    item.id in tool_names_by_id
+                    and tool_names_by_id[item.id] != item.name
+                ):
+                    msg = f"Conflicting function names for tool-use ID {item.id!r}"
+                    raise ValueError(msg)
+                tool_names_by_id[item.id] = item.name
 
     for message in messages:
         content = message.content
@@ -285,7 +296,8 @@ def _convert_messages_to_google_genai_content(
         # Handle list content (tool calls + results)
         if isinstance(content, list):
             parts: list[Part] = [
-                _sampling_content_to_google_genai_part(item) for item in content
+                _sampling_content_to_google_genai_part(item, tool_names_by_id)
+                for item in content
             ]
 
             if message.role == "user":
@@ -298,7 +310,7 @@ def _convert_messages_to_google_genai_content(
             continue
 
         # Handle single content item
-        part = _sampling_content_to_google_genai_part(content)
+        part = _sampling_content_to_google_genai_part(content, tool_names_by_id)
 
         if message.role == "user":
             google_messages.append(UserContent(parts=[part]))
@@ -309,6 +321,14 @@ def _convert_messages_to_google_genai_content(
             raise ValueError(msg)
 
     return google_messages
+
+
+def _stop_reason(finish_reason: FinishReason | None) -> StopReason:
+    """Map Gemini's finish reason to MCP's stop reason, so a caller can tell a
+    reply cut off at max_tokens from a finished one."""
+    if finish_reason == "MAX_TOKENS":
+        return "maxTokens"
+    return "endTurn"
 
 
 def _get_candidate_from_response(response: GenerateContentResponse) -> Candidate:
@@ -340,10 +360,12 @@ def _response_to_create_message_result(
             msg = f"No content in response (finish_reason={candidate.finish_reason})"
         raise ValueError(msg)
 
+    candidates = response.candidates
     return CreateMessageResult(
         content=TextContent(type="text", text=text),
         role="assistant",
         model=model,
+        stop_reason=_stop_reason(candidates[0].finish_reason if candidates else None),
     )
 
 
@@ -365,14 +387,7 @@ def _response_to_result_with_tools(
                 has_function_calls = True
                 break
 
-    if has_function_calls:
-        stop_reason = "toolUse"
-    elif finish_reason == "STOP":
-        stop_reason = "endTurn"
-    elif finish_reason == "MAX_TOKENS":
-        stop_reason = "maxTokens"
-    else:
-        stop_reason = "endTurn"
+    stop_reason = "toolUse" if has_function_calls else _stop_reason(finish_reason)
 
     # Build content list
     content: list[SamplingMessageContentBlock] = []

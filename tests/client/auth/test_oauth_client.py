@@ -230,6 +230,31 @@ async def test_oauth_callback_handler_propagates_iss_to_authorization_code_resul
         assert result.iss == "https://issuer.example.com"
 
 
+async def test_oauth_callback_port_in_use_fails_the_connection(
+    streamable_http_server: str,
+):
+    """A callback port that cannot be bound fails the connection with a clear
+    error instead of leaking uvicorn's SystemExit out of the client."""
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        oauth = OAuth(
+            mcp_url=streamable_http_server,
+            callback_host="127.0.0.1",
+            callback_port=busy.getsockname()[1],
+        )
+        client = Client(
+            transport=StreamableHttpTransport(streamable_http_server), auth=oauth
+        )
+
+        with (
+            patch.object(oauth_module.webbrowser, "open"),
+            pytest.raises(RuntimeError, match="callback server could not start"),
+        ):
+            async with client:
+                pass
+
+
 class TestOAuthClientUrlHandling:
     """Tests for OAuth client URL handling (issue #2573)."""
 

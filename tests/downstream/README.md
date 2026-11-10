@@ -11,7 +11,12 @@ against servers started from the checkout.
 | langchain test suite | `langchain.mcp`'s own unit and integration tests at a pinned tag | wheels overlaid on langchain's locked test environment |
 | pydantic-ai smoke | `smoke_pydantic_ai.py` | client-only `fastmcp-slim[client]`, as `pydantic-ai-slim[mcp]` installs it |
 | langchain.mcp smoke | `smoke_langchain_mcp.py`, including a `ClientGroup` of a legacy HTTP server and a modern stdio server | `fastmcp`, as `langchain[mcp]` installs it |
+| agno test suite | agno's own `MCPTools` and AgentOS MCP tests at a pinned tag | wheels installed with agno the way agno's CI installs it |
+| agno smoke | `smoke_agno.py`, in both protocol eras over stdio | `fastmcp`, as `agno[mcp]` installs it |
+| Microsoft Agent Framework smoke | `smoke_agent_framework.py` (no SSE: Agent Framework has no SSE client) | none: it connects with the `mcp` SDK's client, so it reaches FastMCP over the wire |
+| OpenAI Agents SDK smoke | `smoke_openai_agents.py` | none: it connects with the `mcp` SDK's client, so it reaches FastMCP over the wire |
 | langchain-mcp-adapters smoke | `smoke_langchain_mcp_adapters.py` | none: the adapters pin `mcp<2`, so they reach FastMCP over the wire |
+| redis credential providers smoke | `smoke_redis_credentials.py`: `TasksExtension` tasks through rotating credentials from AWS's ElastiCache IAM provider (botocore) and redis-entraid's streaming Entra ID provider, against a local `redis-server` | `fastmcp`, `fastmcp-slim`, and `fastmcp-tasks` wheels |
 
 Each smoke runs its checks over stdio, streamable HTTP, SSE, and a FastMCP proxy
 in front of a stdio server, all with bearer auth where the transport allows it.
@@ -33,9 +38,10 @@ manual run with `latest`, tests each consumer's latest release.
 
 ```bash
 uv sync
-uv build --wheel --out-dir dist . fastmcp_slim
+uv build --wheel --out-dir dist . fastmcp_slim fastmcp_tasks
 slim="fastmcp-slim @ file://$PWD/$(ls dist/fastmcp_slim-*.whl)"
 full="fastmcp @ file://$PWD/$(ls dist/fastmcp-4*.whl)"
+tasks="fastmcp-tasks @ file://$PWD/$(ls dist/fastmcp_tasks-*.whl)"
 
 uv run --isolated --no-project --no-config \
     --with 'pydantic-ai-slim[mcp]' --with "${slim/fastmcp-slim/fastmcp-slim[client]}" \
@@ -48,4 +54,21 @@ uv run --isolated --no-project --no-config \
 uv run --isolated --no-project --no-config \
     --with langchain-mcp-adapters --with langchain \
     python tests/downstream/smoke_langchain_mcp_adapters.py
+
+uv run --isolated --no-project --no-config \
+    --with 'agno[mcp]' --with "$full" --with "$slim" \
+    python tests/downstream/smoke_agno.py
+
+uv run --isolated --no-project --no-config \
+    --with agent-framework-core --with 'mcp>=2.2,<3' --with tenacity \
+    python tests/downstream/smoke_agent_framework.py
+
+uv run --isolated --no-project --no-config --with openai-agents \
+    python tests/downstream/smoke_openai_agents.py
+
+# needs redis-server on PATH
+uv run --isolated --no-project --no-config \
+    --with "$full" --with "$slim" --with "$tasks" \
+    --with botocore --with cachetools --with redis-entraid \
+    python tests/downstream/smoke_redis_credentials.py
 ```
