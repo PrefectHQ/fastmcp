@@ -235,7 +235,9 @@ def create_oauth_callback_server(
             port=port,
             lifespan="off",
             log_level="warning",
-            ws="websockets-sansio",
+            # The callback is a plain HTTP route, and `websockets` is not a
+            # dependency of a client-only install.
+            ws="none",
         )
     )
 

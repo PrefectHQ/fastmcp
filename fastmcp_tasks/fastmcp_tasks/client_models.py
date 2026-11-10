@@ -110,6 +110,7 @@ class GetTaskRequest(mcp_types.Request[GetTaskRequestParams, Literal["tasks/get"
 
     method: Literal["tasks/get"] = "tasks/get"
     params: GetTaskRequestParams
+    name_param = "taskId"
 
 
 class UpdateTaskRequest(
@@ -119,6 +120,7 @@ class UpdateTaskRequest(
 
     method: Literal["tasks/update"] = "tasks/update"
     params: UpdateTaskRequestParams
+    name_param = "taskId"
 
 
 class CancelTaskRequest(
@@ -128,3 +130,4 @@ class CancelTaskRequest(
 
     method: Literal["tasks/cancel"] = "tasks/cancel"
     params: CancelTaskRequestParams
+    name_param = "taskId"
