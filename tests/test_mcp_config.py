@@ -1633,6 +1633,27 @@ async def test_unconnected_original_close_does_not_close_live_single_server_clon
         assert result.data == 3
 
 
+async def test_source_close_releases_backend_used_only_by_clones():
+    """With no live users left, closing the source releases the shared backend.
+
+    Proxy factories connect only through `Client.new()` clones, so a
+    keep-alive backend (e.g. a stdio subprocess) must still shut down when the
+    never-connected source client is closed.
+    """
+    closed: list[FastMCPTransport] = []
+    original = _scripted_single_server_client(closed=closed)
+    clone = original.new()
+
+    async with clone:
+        result = await clone.call_tool("add", {"a": 1, "b": 2})
+        assert result.data == 3
+
+    await original.close()
+
+    assert isinstance(original.transport, MCPConfigTransport)
+    assert closed == [original.transport.transport]
+
+
 async def test_clone_close_after_disconnect_does_not_close_live_original():
     """A clone that connected before must not close a still-live original."""
     closed: list[FastMCPTransport] = []
