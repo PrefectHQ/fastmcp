@@ -1,0 +1,141 @@
+---
+title: OpenStack Keystone 🤝 FastMCP
+sidebarTitle: Keystone
+description: Secure your FastMCP server with OpenStack Keystone tokens
+icon: shield-check
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="4.2.0" />
+
+If your users already authenticate to an OpenStack cloud, your FastMCP server can accept the tokens they already have. `KeystoneTokenVerifier` validates each incoming token with Keystone, then exposes the caller's user, project, and roles to your tools.
+
+Keystone tokens are opaque and Keystone has no RFC 7662 introspection endpoint, so the [generic introspection verifier](/servers/auth/token-verification#token-introspection-protocol) won't work. This verifier uses Keystone's own equivalent, the Identity v3 [token validation API](https://docs.openstack.org/api-ref/identity/v3/#validate-and-show-information-for-token), through a [keystoneauth1](https://docs.openstack.org/keystoneauth/latest/) session.
+
+This is token verification only. FastMCP doesn't issue tokens or run a login flow, so clients must obtain a Keystone token themselves, and OAuth-based MCP clients can't sign in interactively.
+
+## Configuration
+
+### Prerequisites
+
+Install the `keystone` extra:
+
+```bash
+pip install "fastmcp[keystone]"
+```
+
+You also need:
+
+1. Your Keystone URL, such as `https://keystone.example.com:5000/v3`. The `/v3` suffix is optional.
+2. A service account that's allowed to validate other users' tokens. Keystone's default policy grants this to the `service` role, so a user with that role on your `service` project is the usual choice. A username and password must come with `project_name`, because an unscoped token has no service catalog and can't validate tokens.
+
+### FastMCP Configuration
+
+Authenticate the verifier with the service account, then pass it to your server:
+
+```python server.py
+import os
+
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.keystone import KeystoneTokenVerifier
+from fastmcp.server.dependencies import get_access_token
+
+auth = KeystoneTokenVerifier(
+    auth_url=os.environ["KEYSTONE_AUTH_URL"],
+    username="mcp-service",
+    password=os.environ["KEYSTONE_SERVICE_PASSWORD"],
+    project_name="service",
+    allowed_project_ids=[os.environ["KEYSTONE_PROJECT_ID"]],
+)
+
+mcp = FastMCP("Keystone Example Server", auth=auth)
+
+
+@mcp.tool
+def whoami() -> dict:
+    """Show the authenticated Keystone identity."""
+    token = get_access_token()
+    return {
+        "user_id": token.client_id,
+        "project": token.claims["project_name"],
+        "roles": token.scopes,
+    }
+```
+
+To authenticate with an application credential instead of a password, replace `username`, `password`, and `project_name` with `application_credential_id` and `application_credential_secret`. Each verifier uses exactly one of these two credential types.
+
+<Warning>
+**Set `allowed_project_ids` on shared clouds.** Keystone authenticates every user in the cloud, so without this restriction any valid token is accepted, whichever project it belongs to. Role checks don't close this gap, because users commonly hold the `member` role in their own project. When the option is set, domain-scoped, system-scoped, and unscoped tokens are rejected too.
+</Warning>
+
+### Reaching Keystone
+
+The verifier finds the validation endpoint through the service catalog. It uses the `public` interface by default. Servers running inside the cloud may need `interface="internal"` and `region_name`. For a private certificate authority, set `verify` to the path of your CA bundle.
+
+## Testing
+
+Run your server, then get a token from the OpenStack CLI:
+
+```bash
+fastmcp run server.py --transport http --port 8000
+openstack token issue -f value -c id
+```
+
+Clients send the token as a standard bearer token, not in the `X-Auth-Token` header that OpenStack APIs use:
+
+```python client.py
+import asyncio
+import os
+
+from fastmcp import Client
+
+
+async def main():
+    token = os.environ["OS_TOKEN"]
+    async with Client("http://localhost:8000/mcp", auth=token) as client:
+        print(await client.call_tool("whoami"))
+
+
+asyncio.run(main())
+```
+
+## Authorization
+
+Each token's Keystone role names become its FastMCP scopes, so you can use [`require_scopes`](/servers/authorization) to protect individual components. To require a role for the whole server, pass it to the verifier as `required_scopes`.
+
+```python
+from fastmcp.server.auth import require_scopes
+
+
+@mcp.tool(auth=require_scopes("admin"))
+def delete_everything() -> str:
+    return "done"
+```
+
+Tools can read these values from `get_access_token().claims`:
+
+| Claim | Description |
+| ----- | ----------- |
+| `sub` | Keystone user ID, also available as `client_id` |
+| `username`, `user_domain_id`, `user_domain_name` | User name and domain |
+| `project_id`, `project_name`, `project_domain_id`, `project_domain_name` | Project, for project-scoped tokens |
+| `domain_id`, `domain_name` | Domain, for domain-scoped tokens |
+| `system_scoped` | Whether the token is system-scoped |
+| `roles` | Keystone role names |
+| `application_credential_id` | Application credential that produced the token, if any |
+| `audit_id` | Keystone audit ID |
+
+## Application Credential Access Rules
+
+Tokens from application credentials with [access rules](https://docs.openstack.org/keystone/latest/user/application_credentials.html#access-rules) are always rejected. Those rules list the OpenStack services and API paths a token may reach, and an MCP server isn't one of them. Application credentials without access rules work normally.
+
+## Caching
+
+Every request is validated with Keystone by default, so a revoked token stops working immediately. Busy servers can set `cache_ttl_seconds` to reduce that load, and a revoked token then keeps working until its cache entry expires. Only successful validations are cached, and entries never outlive the token.
+
+## Troubleshooting
+
+When Keystone can't validate a token, for example during an outage or because of bad service credentials, the verifier fails closed. Callers receive a `401` that looks the same as an invalid token, and the server logs a warning with the cause.
+
+If every token is rejected, look for these warnings. HTTP `401` means Keystone refused the service credentials, and HTTP `403` means the service account lacks permission to validate tokens.

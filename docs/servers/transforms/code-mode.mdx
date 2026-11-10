@@ -337,7 +337,7 @@ Time, memory, and GC limits are optional; omit a key to disable that limit. Recu
 | `max_recursion_depth` | `int` | Maximum recursion depth |
 | `gc_interval` | `int` | Garbage collection frequency |
 
-Duration limits exclude time spent waiting for host tools. The feed limit covers the entire code block; the turn limit resets after each host round trip.
+Duration limits exclude time spent waiting for host tools. The feed limit covers the entire code block; the turn limit resets after each host round trip. To bound the total time an `execute` call takes, including tool calls, use a [wall-clock limit](#wall-clock-limit).
 
 Unsupported keys raise `ValueError` rather than being silently ignored. Replace `max_duration_secs` with `max_feed_duration_secs` in existing configurations. Monty no longer supports `max_allocations`; use `max_memory` to cap memory usage.
 
@@ -351,6 +351,16 @@ from fastmcp.experimental.transforms.code_mode import CodeMode
 CodeMode()                      # default: 50 call_tool() calls per execute()
 CodeMode(max_tool_calls=200)    # raise the cap
 CodeMode(max_tool_calls=None)   # no cap
+```
+
+### Wall-Clock Limit
+
+Sandbox duration limits stop counting while the code waits on `call_tool()`, so a slow or hanging backend tool can keep an `execute` call open indefinitely. Set `wall_clock_timeout_secs` to cap the total elapsed time of each `execute` call, sandbox and tool calls together. When the limit is reached, the sandbox and any in-flight tool calls are cancelled and `execute` raises a `ToolError`. It applies to any sandbox provider and defaults to `None` (no limit):
+
+```python
+from fastmcp.experimental.transforms.code_mode import CodeMode
+
+CodeMode(wall_clock_timeout_secs=60)
 ```
 
 ### Custom Sandbox Providers
