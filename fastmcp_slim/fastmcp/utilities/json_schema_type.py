@@ -79,6 +79,7 @@ from typing import (
     Union,
     cast,
     get_type_hints,
+    overload,
 )
 from uuid import UUID
 
@@ -243,8 +244,11 @@ class _Conversion:
     root_hash: str
     root_size: int
     # Sanitized name of the class generated for the root schema; `"$ref": "#"`
-    # resolves to that class.
-    root_class_name: str
+    # resolves to that class. None when the root converts to something other
+    # than a class (a union, a `$ref`, a dict), where "#" binds to the enclosing
+    # class being built instead.
+    root_class_name: str | None
+    enclosing_class_name: str | None = None
     resolved_refs: dict[str, Any] = field(default_factory=dict)
     building: set[tuple[str, str]] = field(default_factory=set)
     classes: dict[tuple[str, str], type] = field(default_factory=dict)
@@ -379,14 +383,10 @@ def json_schema_to_type(
 
 def _convert_normalized(schema: dict[str, Any], name: str | None) -> type:
     root_hash, root_size = _schema_digest(schema)
-    # `title` can carry any JSON value in a malformed schema; only a string
-    # (including the empty string) is a valid class-name source.
-    title = schema.get("title")
-    root_title = title if isinstance(title, str) else "Root"
     conversion = _Conversion(
         root_hash=root_hash,
         root_size=root_size,
-        root_class_name=_sanitize_name(name or root_title),
+        root_class_name=_root_class_name(schema, name),
     )
     token = _conversion.set(conversion)
     try:
@@ -407,6 +407,21 @@ def _convert_normalized(schema: dict[str, Any], name: str | None) -> type:
         _conversion.reset(token)
 
 
+def _root_class_name(schema: Mapping[str, Any], name: str | None) -> str | None:
+    """Name of the class the root schema converts to, or None if it has none.
+
+    Only an object root with properties becomes a class (including the
+    object member of a type list such as `["object", "null"]`).
+    """
+    schema_type = schema.get("type")
+    is_object = schema_type == "object" or (
+        isinstance(schema_type, list) and "object" in schema_type
+    )
+    if not is_object or not schema.get("properties"):
+        return None
+    return _sanitize_name(name or _schema_title(schema, "Root"))
+
+
 def _resolve_recursive_types(conversion: _Conversion) -> None:
     """Bind recursive fields after every class in the conversion has been built."""
     if not conversion.recursive_refs and not conversion.unchecked_defaults:
@@ -416,9 +431,11 @@ def _resolve_recursive_types(conversion: _Conversion) -> None:
     }
     # Root references use the root's public name, including when a nested
     # mutually recursive class also points back to the conversion root.
-    for cls in conversion.classes.values():
-        if cls.__name__ == conversion.root_class_name:
-            namespace[conversion.root_class_name] = cls
+    root_class_name = conversion.root_class_name
+    if root_class_name is not None:
+        for cls in conversion.classes.values():
+            if cls.__name__ == root_class_name:
+                namespace[root_class_name] = cls
     for cls in conversion.classes.values():
         if conversion.recursive_refs and is_dataclass(cls):
             hints = get_type_hints(
@@ -984,8 +1001,8 @@ def _object_schema_to_type(
     1. No ``properties`` with ``additionalProperties`` truthy — ``dict[str, T]``
        (``T = Any`` when ``additionalProperties is True``, else the value schema's type)
     2. No ``properties`` and no ``additionalProperties`` — ``dict[str, Any]``
-    3. Has ``properties`` and ``additionalProperties is True`` — Pydantic model
-       (so ``extra="allow"`` can preserve unknown keys)
+    3. Has ``properties`` and ``additionalProperties`` is true or a schema —
+       Pydantic model (so extra keys can be preserved and hydrated)
     4. Has ``properties`` otherwise — dataclass
 
     ``name`` is used as the generated class name for cases 3 and 4; it falls
@@ -993,7 +1010,7 @@ def _object_schema_to_type(
     """
     has_properties = bool(schema.get("properties"))
     additional_props = schema.get("additionalProperties")
-    class_name = name if name is not None else schema.get("title")
+    class_name = name if name is not None else _schema_title(schema)
 
     if not has_properties and additional_props:
         if additional_props is True:
@@ -1004,7 +1021,9 @@ def _object_schema_to_type(
     if not has_properties and not additional_props:
         return dict[str, Any]
 
-    if has_properties and additional_props is True:
+    if has_properties and (
+        additional_props is True or isinstance(additional_props, Mapping)
+    ):
         return _create_pydantic_model(schema, class_name, schemas, resolving_refs)
 
     return _create_dataclass(schema, class_name, schemas, resolving_refs)
@@ -1074,14 +1093,19 @@ def _convert_schema(
             return _object_schema_to_type(
                 schema, schemas, resolving_refs=resolving_refs
             )
-        return _create_dataclass(schema, schema.get("title", "<unknown>"), schemas)
+        return _create_dataclass(schema, _schema_title(schema, "<unknown>"), schemas)
 
     # Handle references first
     if "$ref" in schema:
         ref = schema["$ref"]
         # Handle self-reference
         if ref == "#":
-            return ForwardRef(_conversion.get().root_class_name)
+            conversion = _conversion.get()
+            return ForwardRef(
+                conversion.root_class_name
+                or conversion.enclosing_class_name
+                or _sanitize_name(_schema_title(schema, "Root"))
+            )
         if ref in resolving_refs:
             resolved = _resolve_ref(ref, schemas)
             if isinstance(resolved, Mapping) and (
@@ -1219,6 +1243,20 @@ def _convert_schema(
     return _get_from_type_handler(schema, schemas, resolving_refs)(schema)
 
 
+@overload
+def _schema_title(schema: Mapping[str, Any], default: str) -> str: ...
+@overload
+def _schema_title(schema: Mapping[str, Any], default: None = None) -> str | None: ...
+def _schema_title(schema: Mapping[str, Any], default: str | None = None) -> str | None:
+    """Return the schema's `title` when it can name a class, else `default`.
+
+    `title` can carry any JSON value in a malformed schema; only a string
+    (including the empty string) is a valid class-name source.
+    """
+    title = schema.get("title")
+    return title if isinstance(title, str) else default
+
+
 def _sanitize_name(name: str) -> str:
     """Convert string to valid Python identifier."""
     original_name = name
@@ -1260,6 +1298,7 @@ def safe_create_model(
     field_definitions: Mapping[str, tuple[Any, Any]],
     *,
     config: ConfigDict | None = None,
+    extra_value_type: Any = None,
 ) -> type[BaseModel]:
     """Create a Pydantic model whose field names come from untrusted input.
 
@@ -1272,6 +1311,7 @@ def safe_create_model(
         field_definitions: Maps each property name to `(annotation, default)`,
             where `default` may be a `FieldInfo` or `...` for required fields.
         config: Optional model configuration.
+        extra_value_type: Optional annotation for values of additional properties.
     """
     fields: dict[str, Any] = {}
     for prop_name, (annotation, default) in field_definitions.items():
@@ -1289,6 +1329,8 @@ def safe_create_model(
             else:
                 default = Field(default=default, alias=prop_name)
         fields[field_name] = (annotation, default)
+    if extra_value_type is not None:
+        fields["__pydantic_extra__"] = (dict[str, extra_value_type], Field(init=False))
     return create_model(name, __config__=config, **fields)
 
 
@@ -1346,7 +1388,7 @@ def _create_pydantic_model(
     resolving_refs: frozenset[str] = frozenset(),
 ) -> type:
     """Create Pydantic BaseModel from object schema with additionalProperties."""
-    name = name or schema.get("title", "Root")
+    name = name or _schema_title(schema, "Root")
     if name is None:
         raise ValueError("Name is required")
     sanitized_name = _sanitize_name(name)
@@ -1357,7 +1399,7 @@ def _create_pydantic_model(
     # so conversions that differ only in the root's name must not share
     # cache entries.
     cache_key = (
-        schema_hash + conversion.root_hash + conversion.root_class_name,
+        schema_hash + conversion.root_hash + (conversion.root_class_name or ""),
         sanitized_name,
     )
 
@@ -1370,11 +1412,14 @@ def _create_pydantic_model(
         return conversion.reference(cache_key)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
 
     conversion.building.add(cache_key)
+    enclosing_class_name = conversion.enclosing_class_name
+    conversion.enclosing_class_name = sanitized_name
     try:
         cls = _build_pydantic_model(
             schema, sanitized_name, schemas or {}, resolving_refs
         )
     finally:
+        conversion.enclosing_class_name = enclosing_class_name
         conversion.building.discard(cache_key)
     conversion.classes[cache_key] = cls
     return cls
@@ -1397,6 +1442,8 @@ def _build_pydantic_model(
         if isinstance(prop_schema, bool):
             field_type = _schema_to_type(prop_schema, schemas, resolving_refs)
             prop_schema = {}
+        elif prop_schema.get("$ref") == "#":
+            field_type = ForwardRef(_conversion.get().root_class_name or name)
         else:
             field_type = _schema_to_type(prop_schema, schemas, resolving_refs)
 
@@ -1420,7 +1467,16 @@ def _build_pydantic_model(
         else:
             field_definitions[prop_name] = (Union[field_type, type(None)], None)  # type: ignore[misc]  # noqa: UP007  # ty:ignore[invalid-type-form]
 
-    model = safe_create_model(name, field_definitions, config=ConfigDict(extra="allow"))
+    additional_props = schema.get("additionalProperties")
+    extra_value_type = None
+    if isinstance(additional_props, Mapping):
+        extra_value_type = _schema_to_type(additional_props, schemas, resolving_refs)
+    model = safe_create_model(
+        name,
+        field_definitions,
+        config=ConfigDict(extra="allow", validate_default=extra_value_type is not None),
+        extra_value_type=extra_value_type,
+    )
     conversion = _conversion.get()
     conversion.unchecked_defaults.extend((model, prop) for prop in unchecked)
     return model
@@ -1433,7 +1489,7 @@ def _create_dataclass(
     resolving_refs: frozenset[str] = frozenset(),
 ) -> type:
     """Create dataclass from object schema."""
-    name = name or schema.get("title", "Root")
+    name = name or _schema_title(schema, "Root")
     # Sanitize name for class creation
     if name is None:
         raise ValueError("Name is required")
@@ -1445,7 +1501,7 @@ def _create_dataclass(
     # so conversions that differ only in the root's name must not share
     # cache entries.
     cache_key = (
-        schema_hash + conversion.root_hash + conversion.root_class_name,
+        schema_hash + conversion.root_hash + (conversion.root_class_name or ""),
         sanitized_name,
     )
 
@@ -1458,9 +1514,12 @@ def _create_dataclass(
         return conversion.reference(cache_key)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
 
     conversion.building.add(cache_key)
+    enclosing_class_name = conversion.enclosing_class_name
+    conversion.enclosing_class_name = sanitized_name
     try:
         cls = _build_dataclass(schema, sanitized_name, schemas or {}, resolving_refs)
     finally:
+        conversion.enclosing_class_name = enclosing_class_name
         conversion.building.discard(cache_key)
     if isinstance(cls, type):
         conversion.classes[cache_key] = cls
@@ -1479,7 +1538,7 @@ def _build_dataclass(
         ref = schema["$ref"]
         if ref == "#":
             # "#" resolves to the conversion root, not to this class.
-            return ForwardRef(_conversion.get().root_class_name)
+            return ForwardRef(_conversion.get().root_class_name or sanitized_name)
         if ref in resolving_refs:
             return Any
         schema = _resolve_ref(ref, schemas)
@@ -1510,7 +1569,7 @@ def _build_dataclass(
         elif prop_schema.get("$ref") == "#":
             # A direct "#" reference points at the conversion root, which
             # may be a different class than the one being built here.
-            field_type = ForwardRef(_conversion.get().root_class_name)
+            field_type = ForwardRef(_conversion.get().root_class_name or sanitized_name)
         else:
             field_type = _schema_to_type(prop_schema, schemas, resolving_refs)
 

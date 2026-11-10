@@ -547,6 +547,126 @@ class TestCircularReferences:
         root_type = json_schema_to_type(schema)
         assert TypeAdapter(root_type).validate_python(valid_value) == valid_value
 
+    @pytest.mark.parametrize(
+        "additional_properties",
+        [{}, {"additionalProperties": True}, {"additionalProperties": {}}],
+        ids=["dataclass", "extras-allowed", "typed-extras"],
+    )
+    def test_non_string_title_names_generated_classes_root(self, additional_properties):
+        # Generated classes fall back to "Root" for a non-string title, the
+        # same name `"$ref": "#"` resolves to.
+        root_type = json_schema_to_type(
+            {
+                "type": "object",
+                "title": 5,
+                "properties": {
+                    "name": {"type": "string"},
+                    "next": {"anyOf": [{"$ref": "#"}, {"type": "null"}]},
+                    "child": {
+                        "type": "object",
+                        "title": ["not", "a", "name"],
+                        "properties": {"tag": {"type": "string"}},
+                    },
+                },
+                **additional_properties,
+            }
+        )
+        assert root_type.__name__ == "Root"
+
+        validator: TypeAdapter[Any] = TypeAdapter(root_type)
+        node = validator.validate_python(
+            {"name": "a", "next": {"name": "b"}, "child": {"tag": "t"}}
+        )
+        assert isinstance(node.next, root_type)
+        assert node.next.name == "b"
+        assert node.child.tag == "t"
+
+    @pytest.mark.parametrize(
+        "root",
+        [
+            pytest.param(
+                {"anyOf": [{"$ref": "#/$defs/Node"}, {"type": "null"}]},
+                id="nullable-union",
+            ),
+            pytest.param(
+                {"title": "Wrapper", "anyOf": [{"$ref": "#/$defs/Node"}]},
+                id="titled-union",
+            ),
+            pytest.param({"$ref": "#/$defs/Node"}, id="ref"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "next_schema",
+        [
+            pytest.param({"anyOf": [{"$ref": "#"}, {"type": "null"}]}, id="union"),
+            pytest.param({"$ref": "#"}, id="direct"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "extras",
+        [{}, {"additionalProperties": {"type": "integer"}}],
+        ids=["dataclass", "typed-extras"],
+    )
+    @pytest.mark.parametrize("title", [None, "Node"])
+    def test_wrapper_root_self_reference_resolves(
+        self, root, next_schema, extras, title
+    ):
+        # A root that is not itself an object generates no root class, so
+        # "#" binds to the object it wraps rather than to a missing class.
+        node = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "child": {
+                    "type": "object",
+                    "title": "Child",
+                    "properties": {"tag": {"type": "string"}},
+                },
+                "next": next_schema,
+            },
+            "required": ["name"],
+            **extras,
+        }
+        if title is not None:
+            node["title"] = title
+        root_type = json_schema_to_type({**root, "$defs": {"Node": node}})
+
+        validator: TypeAdapter[Any] = TypeAdapter(root_type)
+        result = validator.validate_python({"name": "a", "next": {"name": "b"}})
+        assert result.next.name == "b"
+        assert type(result.next) is type(result)
+        assert type(result).__name__ == (title or "Root")
+        assert result.next.next is None
+        with pytest.raises(ValidationError):
+            validator.validate_python({"name": "a", "next": {"name": []}})
+
+    @pytest.mark.parametrize("wrapper", ["ref", "union"])
+    def test_titled_wrapper_root_recursive_extras(self, wrapper):
+        root = {"$ref": "#/$defs/Node"}
+        if wrapper == "union":
+            root = {"anyOf": [root, {"type": "null"}]}
+        root_type = json_schema_to_type(
+            {
+                **root,
+                "$defs": {
+                    "Node": {
+                        "type": "object",
+                        "title": "Node",
+                        "properties": {"name": {"type": "string"}},
+                        "required": ["name"],
+                        "additionalProperties": {"$ref": "#"},
+                    }
+                },
+            }
+        )
+        validator: TypeAdapter[Any] = TypeAdapter(root_type)
+        result = validator.validate_python({"name": "a", "extra": {"name": "b"}})
+        assert type(result).__name__ == "Node"
+        assert type(result.extra) is type(result)
+        assert result.extra.name == "b"
+        with pytest.raises(ValidationError):
+            validator.validate_python({"name": "a", "extra": {"name": []}})
+
     def test_nested_direct_root_reference_points_at_root(self):
         # A direct `"root": {"$ref": "#"}` property on a nested class must
         # reference the conversion root, not the nested class itself.
