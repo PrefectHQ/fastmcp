@@ -405,13 +405,13 @@ class ToolTask:
         create_result: ClientCreateTaskResult,
         *,
         raise_on_error: bool = True,
-        version_pinned: bool = False,
+        pinned_version: str | None = None,
     ) -> None:
         self._client = client
         self._tool_name = tool_name
         self._create_result = create_result
         self._raise_on_error = raise_on_error
-        self._version_pinned = version_pinned
+        self._pinned_version = pinned_version
         self._cached_result: FastMCPCallToolResult | None = None
 
     @property
@@ -509,7 +509,7 @@ class ToolTask:
             self._tool_name,
             mcp_result,
             raise_on_error=self._raise_on_error,
-            version_pinned=self._version_pinned,
+            pinned_version=self._pinned_version,
         )
         self._cached_result = parsed
         return parsed
@@ -569,7 +569,7 @@ async def call_tool_task(
             name,
             raw,
             raise_on_error=raise_on_error,
-            version_pinned=version is not None,
+            pinned_version=version,
         )
     raise ToolError(
         f"Tool {name!r} did not run as a task: the server returned a "

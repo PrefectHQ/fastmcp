@@ -10,6 +10,8 @@ version that actually ran.
 from __future__ import annotations
 
 import asyncio
+import datetime
+from dataclasses import dataclass
 
 import pytest
 
@@ -76,6 +78,48 @@ async def test_pinned_call_with_matching_schemas_is_unchanged(
 
     assert pinned.data == 7
     assert highest.data == 8
+
+
+@dataclass
+class Point:
+    x: int
+    y: int
+
+
+async def test_pinned_call_to_the_listed_version_still_hydrates() -> None:
+    """Pinning the version the cached schema describes keeps type coercion."""
+    server = FastMCP("single")
+
+    @server.tool(name="when", version="1.0")
+    def when() -> datetime.datetime:
+        return datetime.datetime(2024, 1, 2, 3, 4, 5)
+
+    @server.tool(name="point", version="1.0")
+    def point() -> Point:
+        return Point(x=1, y=2)
+
+    async with Client(server) as client:
+        pinned_when = await client.call_tool("when", version="1.0")
+        pinned_point = await client.call_tool("point", version="1.0")
+
+    assert pinned_when.data == datetime.datetime(2024, 1, 2, 3, 4, 5)
+    assert pinned_point.data.x == 1
+    assert pinned_point.data.y == 2
+    assert not isinstance(pinned_point.data, dict)
+
+
+async def test_pinned_call_to_the_listed_version_still_validates() -> None:
+    """Pinning the listed version keeps the SDK's result revalidation."""
+    server = FastMCP("liar")
+
+    @server.tool(name="liar", version="1.0")
+    def liar() -> int:
+        """Declares int, returns a string."""
+        return "oops"  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+
+    async with Client(server) as client:
+        with pytest.raises(RuntimeError, match="Invalid structured content"):
+            await client.call_tool("liar", version="1.0")
 
 
 async def test_unpinned_call_still_validates_a_non_conforming_result() -> None:

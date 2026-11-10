@@ -17,7 +17,7 @@ from mcp.client.session import (
 )
 from typing_extensions import TypedDict, Unpack
 
-from fastmcp.client._version_pin import version_pinned
+from fastmcp.client._version_pin import pinned_call
 
 # TypeVar for preserving specific ClientTransport subclass types
 ClientTransportT = TypeVar("ClientTransportT", bound="ClientTransport")
@@ -41,25 +41,49 @@ class ClientSessionKwargs(TypedDict, total=False):
 
 
 class VersionAwareClientSession(ClientSession):
-    """A session that skips output-schema revalidation for pinned tool calls.
+    """A session that skips output-schema revalidation for mismatched pinned calls.
 
     ``ClientSession.call_tool`` revalidates a tool's structured content against
     the output schema the server advertised, looked up by tool *name*. That
-    cache holds only the highest version's schema, so a version-pinned call --
-    which the server executes as the requested version -- would be checked
-    against a schema that does not describe its result.
+    cache holds only the listed (highest) version's schema, so a call pinned to
+    a different version -- which the server executes as the requested version
+    -- would be checked against a schema that does not describe its result.
 
-    The pinned version's schema is not obtainable over the wire today (a
-    ``tools/list`` carrying ``_meta.fastmcp.version`` still answers with the
-    highest version), so the check is skipped for exactly those calls. Every
-    other call validates as before.
+    The session records the version each listed tool advertises in
+    ``_meta.fastmcp.version``. A pinned call to that version validates as
+    usual; a pinned call to any other version skips the check, since its schema
+    is not obtainable over the wire. Every unpinned call validates as before.
     """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._tool_listed_versions: dict[str, str | None] = {}
+
+    def _absorb_tool_listing(
+        self, result: mcp_types.ListToolsResult, *, complete: bool
+    ) -> mcp_types.ListToolsResult:
+        result = super()._absorb_tool_listing(result, complete=complete)
+        if complete:
+            self._tool_listed_versions = {}
+        for tool in result.tools:
+            fastmcp_meta = (tool.meta or {}).get("fastmcp")
+            version = (
+                fastmcp_meta.get("version") if isinstance(fastmcp_meta, dict) else None
+            )
+            self._tool_listed_versions[tool.name] = (
+                str(version) if version is not None else None
+            )
+        return result
 
     async def validate_tool_result(
         self, name: str, result: mcp_types.CallToolResult
     ) -> None:
-        if version_pinned.get() is self:
-            return
+        pin = pinned_call.get()
+        if pin is not None and pin.session is self:
+            if name not in self._tool_output_schemas:
+                await self.list_tools()
+            if self._tool_listed_versions.get(name) != pin.version:
+                return
         await super().validate_tool_result(name, result)
 
 
@@ -74,8 +98,9 @@ class TransportOptions:
 
     Attributes:
         session_class: The ClientSession class to instantiate. The default
-            skips output-schema validation for a version-pinned tool call,
-            whose result no advertised schema describes; proxies additionally
+            skips output-schema validation for a tool call pinned to a version
+            other than the listed one, whose result no advertised schema
+            describes; proxies additionally
             supply a session that skips it for every result, since they relay
             rather than consume them.
         forward_incoming_headers: Whether to forward eligible inbound HTTP
