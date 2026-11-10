@@ -29,10 +29,10 @@ from mcp.shared.exceptions import MCPError
 from mcp_types import INVALID_PARAMS
 
 from fastmcp.exceptions import NotFoundError
-from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
+from fastmcp.tools.base import InputRequiredToolResult, Tool
 from fastmcp.utilities.tasks import DEFAULT_POLL_INTERVAL_MS
 from fastmcp.utilities.versions import VersionSpec
-from fastmcp_tasks.components import TASK_RESULT_ENVELOPE_KEY
+from fastmcp_tasks.components import TASK_RESULT_ENVELOPE_KEY, task_result_to_wire
 from fastmcp_tasks.context import get_task_scope, refresh_snapshot_ttl
 from fastmcp_tasks.creation import (
     TASK_MAPPING_TTL_BUFFER_SECONDS,
@@ -229,23 +229,7 @@ def _inline_result(tool: Tool, raw_value: Any) -> dict[str, Any]:
                 "Guard-pattern tasks are supported for function tools."
             ),
         )
-    # A raised tool error arrives as an is_error ToolResult the wrapper built
-    # (end-and-reenter G2); use it directly so isError round-trips. A normal
-    # return is converted through the tool's own result coercion.
-    if isinstance(raw_value, ToolResult):
-        mcp_result = raw_value.to_mcp_result()
-    else:
-        mcp_result = tool.convert_result(raw_value).to_mcp_result()
-    if isinstance(mcp_result, mcp_types.CallToolResult):
-        call_tool_result = mcp_result
-    elif isinstance(mcp_result, tuple):
-        content, structured_content = mcp_result
-        call_tool_result = mcp_types.CallToolResult(
-            content=content, structured_content=structured_content
-        )
-    else:
-        call_tool_result = mcp_types.CallToolResult(content=mcp_result)
-    return call_tool_result.model_dump(by_alias=True, mode="json", exclude_none=True)
+    return task_result_to_wire(tool, raw_value)
 
 
 async def tasks_get(server: FastMCP, task_id: str) -> GetTaskResult:

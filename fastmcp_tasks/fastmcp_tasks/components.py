@@ -37,7 +37,7 @@ from fastmcp.prompts.function_prompt import FunctionPrompt
 from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
-from fastmcp.tools.base import InputRequiredToolResult, Tool
+from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
 from fastmcp.tools.function_tool import (
     FunctionTool,
     _resolve_param_hints,
@@ -45,20 +45,28 @@ from fastmcp.tools.function_tool import (
 )
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.types import get_cached_typeadapter
-from fastmcp_tasks.input_loop import reentrant_task_fn
+from fastmcp_tasks.input_loop import _error_result, reentrant_task_fn
 
 if TYPE_CHECKING:
     from docket import Docket
     from docket.execution import Execution
 
+logger = logging.getLogger(__name__)
 
 TASK_RESULT_ENVELOPE_KEY = "__fastmcp_task_result__"
 
 
-def _task_result_to_wire(tool: Tool, raw_value: Any) -> dict[str, Any]:
-    """Convert a task's return value while its originating Tool is available."""
-    tool_result = tool.convert_result(raw_value)
-    mcp_result = tool_result.to_mcp_result()
+def task_result_to_wire(tool: Tool, raw_value: Any) -> dict[str, Any]:
+    """Convert a task's return value into an inlined `CallToolResult` dict.
+
+    A raised tool error arrives as the `is_error` `ToolResult` the reentrant
+    wrapper built, so it is used directly and `isError` round-trips. A normal
+    return goes through the tool's own result coercion.
+    """
+    if isinstance(raw_value, ToolResult):
+        mcp_result = raw_value.to_mcp_result()
+    else:
+        mcp_result = tool.convert_result(raw_value).to_mcp_result()
     if isinstance(mcp_result, mcp_types.CallToolResult):
         call_result = mcp_result
     elif isinstance(mcp_result, tuple):
@@ -74,7 +82,12 @@ def _task_result_to_wire(tool: Tool, raw_value: Any) -> dict[str, Any]:
 def _store_task_result_with_component(
     tool: Tool, fn: Callable[..., Awaitable[Any]]
 ) -> Callable[..., Awaitable[Any]]:
-    """Persist the protocol result so later polling does not need the live Tool."""
+    """Persist the protocol result so later polling does not need the live Tool.
+
+    The conversion runs in the worker, under the same masking policy as a
+    raised tool error: a return value that fails to serialize becomes a masked
+    `is_error` result rather than a failed task carrying the exception text.
+    """
 
     @functools.wraps(fn)
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -83,9 +96,16 @@ def _store_task_result_with_component(
             # Preserve the existing defensive failure in tasks_get for a guard
             # result that escaped the end-and-reenter loop.
             return result
-        return {TASK_RESULT_ENVELOPE_KEY: _task_result_to_wire(tool, result)}
+        try:
+            wire = task_result_to_wire(tool, result)
+        except Exception as exc:
+            logger.exception(
+                "background task tool %r result conversion failed", tool.name
+            )
+            wire = task_result_to_wire(tool, _error_result(tool.name, exc))
+        return {TASK_RESULT_ENVELOPE_KEY: wire}
 
-    wrapper.__signature__ = inspect.signature(fn)  # type: ignore[attr-defined]
+    wrapper.__signature__ = inspect.signature(fn)  # ty: ignore[unresolved-attribute]
     return wrapper
 
 
