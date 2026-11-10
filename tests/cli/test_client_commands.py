@@ -20,6 +20,7 @@ from fastmcp.cli.client import (
     _format_call_result_text,
     _is_http_target,
     _sanitize_untrusted_text,
+    _terminal_elicitation_handler,
     call_command,
     coerce_value,
     format_tool_signature,
@@ -851,3 +852,47 @@ class TestSanitizeUntrustedText:
         value = "[bold]hello[/bold]\x07"
         sanitized = _sanitize_untrusted_text(value)
         assert sanitized == "\\[bold]hello\\[/bold]\\x07"
+
+
+class TestTerminalElicitationHandler:
+    @pytest.fixture(autouse=True)
+    def _press_enter(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr("builtins.input", lambda *args: "")
+
+    @staticmethod
+    def _params(message: str, field: dict[str, Any], name: str = "answer"):
+        return mcp_types.ElicitRequestFormParams(
+            message=message,
+            requested_schema={"type": "object", "properties": {name: field}},
+        )
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Deploy to production? [y/N]",
+            "Branch to deploy [main]",
+            "Tag format is v[/]MAJOR",
+        ],
+    )
+    async def test_message_is_printed_verbatim(
+        self, message: str, capsys: pytest.CaptureFixture[str]
+    ):
+        result = await _terminal_elicitation_handler(
+            message, None, self._params(message, {"type": "string"}), None
+        )
+
+        assert result.action == "accept"
+        assert f"Server asks: {message}" in capsys.readouterr().out
+
+    @pytest.mark.parametrize(
+        ("field_name", "field_type"),
+        [("name[bold]", "string"), ("tag", "string[/]")],
+    )
+    async def test_field_prompt_is_printed_verbatim(
+        self, field_name: str, field_type: str, capsys: pytest.CaptureFixture[str]
+    ):
+        params = self._params("Pick one", {"type": field_type}, name=field_name)
+
+        await _terminal_elicitation_handler("Pick one", None, params, None)
+
+        assert f"  {field_name} ({field_type}): " in capsys.readouterr().out

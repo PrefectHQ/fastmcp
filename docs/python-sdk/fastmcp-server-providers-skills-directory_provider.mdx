@@ -10,7 +10,7 @@ Directory scanning provider for discovering multiple skills.
 
 ## Classes
 
-### `SkillsDirectoryProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/directory_provider.py#L21" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SkillsDirectoryProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/directory_provider.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Provider that scans directories and creates a SkillProvider per skill folder.
@@ -23,9 +23,19 @@ the first one found wins.
 **Args:**
 - `roots`: Root directory(ies) containing skill folders. Can be a single path
 or a sequence of paths.
+- `experimental_skills`: Opt into experimental SEP-2640 discovery, strict
+manifests, nested skills, and live byte-preserving reads. Defaults to False.
 - `reload`: If True, re-discover skills on each request. Defaults to False.
 - `main_file_name`: Name of the main skill file. Defaults to "SKILL.md".
 - `supporting_files`: How supporting files are exposed in child SkillProviders\:
 - "template"\: Accessed via ResourceTemplate, hidden from list_resources().
 - "resources"\: Each file exposed as individual Resource in list_resources().
 
+
+**Methods:**
+
+#### `required_extensions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/skills/directory_provider.py#L442" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+required_extensions(self) -> Sequence[ServerExtension]
+```

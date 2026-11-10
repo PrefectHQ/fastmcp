@@ -33,6 +33,7 @@ from starlette.requests import Request
 from uncalled_for import (
     CycleError,
     Dependency,
+    Provider,
     frame_scope,
     get_dependency_parameters,
 )
@@ -372,6 +373,13 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
     except Exception:
         type_hints = getattr(fn, "__annotations__", {})
 
+    # A parameter that already names its dependency, as a default or as
+    # `Annotated` provider metadata, keeps it.
+    try:
+        declared = set(get_dependency_parameters(fn))
+    except TypeError:
+        declared = set()
+
     # First pass: identify which params need transformation
     params_to_transform: set[str] = set()
     optional_context_params: set[str] = set()
@@ -379,7 +387,7 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
     optional_session_params: set[str] = set()
     for name, param in sig.parameters.items():
         annotation = type_hints.get(name, param.annotation)
-        if isinstance(param.default, Dependency):
+        if name in declared or isinstance(param.default, Dependency):
             continue
         if is_class_member_of_type(annotation, Context):
             params_to_transform.add(name)
@@ -940,7 +948,7 @@ async def resolve_dependencies(
 # so that get_dependency_parameters can detect them.
 
 
-class _CurrentContext(Dependency["Context"]):
+class _CurrentContext(Provider["Context"]):
     """Async context manager for Context dependency.
 
     Returns the active context from _current_context (normal MCP request).
@@ -988,7 +996,7 @@ class _CurrentContext(Dependency["Context"]):
             await ctx.__aexit__(exc_type, exc_value, traceback)
 
 
-class _OptionalCurrentContext(Dependency["Context | None"]):
+class _OptionalCurrentContext(Provider["Context | None"]):
     """Context dependency that returns None instead of raising when no context
     is active. Used for ``ctx: Context = None`` parameter patterns.
 
@@ -1048,7 +1056,7 @@ def OptionalCurrentContext() -> Context | None:
     return cast("Context | None", _OptionalCurrentContext())
 
 
-class _CurrentFastMCP(Dependency["FastMCP"]):
+class _CurrentFastMCP(Provider["FastMCP"]):
     """Async context manager for FastMCP server dependency."""
 
     async def __aenter__(self) -> FastMCP:
@@ -1088,7 +1096,7 @@ def CurrentFastMCP() -> FastMCP:
     return cast(FastMCP, _CurrentFastMCP())
 
 
-class _CurrentRequest(Dependency[Request]):
+class _CurrentRequest(Provider[Request]):
     """Async context manager for HTTP Request dependency."""
 
     async def __aenter__(self) -> Request:
@@ -1129,7 +1137,7 @@ def CurrentRequest() -> Request:
     return cast(Request, _CurrentRequest())
 
 
-class _CurrentHeaders(Dependency[dict[str, str]]):
+class _CurrentHeaders(Provider[dict[str, str]]):
     """Async context manager for HTTP Headers dependency."""
 
     async def __aenter__(self) -> dict[str, str]:
@@ -1266,7 +1274,7 @@ class InMemoryProgress:
         self._message = message
 
 
-class Progress(Dependency["Progress"]):
+class Progress(Provider["Progress"]):
     """Progress dependency that works in both server and worker contexts.
 
     In a Docket worker, delegates to the execution's Redis-backed progress
@@ -1343,7 +1351,7 @@ class Progress(Dependency["Progress"]):
 # --- Access Token dependency ---
 
 
-class _CurrentAccessToken(Dependency[AccessToken]):
+class _CurrentAccessToken(Provider[AccessToken]):
     """Async context manager for AccessToken dependency."""
 
     async def __aenter__(self) -> AccessToken:
@@ -1393,7 +1401,7 @@ def CurrentAccessToken() -> AccessToken:
 # --- Token Claim dependency ---
 
 
-class _TokenClaim(Dependency[str]):
+class _TokenClaim(Provider[str]):
     """Dependency that extracts a specific claim from the access token."""
 
     def __init__(self, claim_name: str):
