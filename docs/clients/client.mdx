@@ -11,46 +11,56 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 The `fastmcp.Client` class provides a programmatic interface for interacting with any MCP server. It handles protocol details and connection management automatically, letting you focus on the operations you want to perform.
 
-The FastMCP Client is designed for deterministic, controlled interactions rather than autonomous behavior, making it ideal for testing MCP servers during development, building deterministic applications that need reliable MCP interactions, and creating the foundation for agentic or LLM-based clients with structured, type-safe operations.
-
-<Note>
-This is a programmatic client that requires explicit function calls and provides direct control over all MCP operations. Use it as a building block for higher-level systems.
-</Note>
+Use it to add MCP tools to a Python script, web application, or AI agent. Your application chooses which operations to call; the client discovers and executes them on the server.
 
 ## Creating a Client
 
-You provide a server source and the client automatically infers the appropriate transport mechanism.
+You provide a server source and the client automatically infers the appropriate transport mechanism. This example calls an inventory tool from ordinary Python code and uses its result in the application:
 
 ```python
-from pathlib import Path
 import asyncio
+
 from fastmcp import Client, FastMCP
 
-# In-memory server (ideal for testing)
-server = FastMCP("TestServer")
-client = Client(server)
+server = FastMCP("Inventory")
 
-# HTTP server
-client = Client("https://example.com/mcp")
 
-# Local Python script
-client = Client(Path("my_mcp_server.py"))
+@server.tool
+def stock_count(sku: str) -> int:
+    """Return the available stock for a product."""
+    return {"WIDGET": 12}.get(sku, 0)
+
 
 async def main():
-    async with client:
-        # List available operations
-        tools = await client.list_tools()
-        resources = await client.list_resources()
-        prompts = await client.list_prompts()
+    async with Client(server) as client:
+        result = await client.call_tool("stock_count", {"sku": "WIDGET"})
+        print(f"Available stock: {result.data}")  # Available stock: 12
 
-        # Execute operations
-        result = await client.call_tool("example_tool", {"param": "value"})
-        print(result)
 
 asyncio.run(main())
 ```
 
 All client operations require using the `async with` context manager for proper connection lifecycle management.
+
+## Use Cases
+
+### Applications and Scripts
+
+Call a known tool with `call_tool()` when your application already knows what work to do, such as checking inventory before preparing an order. Use `result.data` for Python values, or `result.content` when you need the MCP content blocks, including text, images, and other media. The same client API works with an in-memory server, a local subprocess, or a remote HTTP server; choose the connection in [Transports](/clients/transports).
+
+### AI Agents and Chat Applications
+
+Use `list_tools()` to discover each tool's name, description, and `input_schema`, then adapt those definitions to your model SDK's tool format. When the model requests a tool call, pass its name and parsed arguments to `call_tool()` and return the result to the model in the SDK's expected format. Your application owns the conversation loop and decides which tools it permits the model to call.
+
+See [Calling Tools](/clients/tools) for discovery, result formats, and error handling. [Client Groups](/clients/client-groups) let an agent use tools from several independently configured servers through one catalog.
+
+### Testing Servers
+
+Pass your server instance to `Client(server)` in a test to exercise tool discovery and execution without starting a network listener. Assert the returned values just as your application would. The [server testing guide](/servers/testing) shows how to share a client through pytest fixtures.
+
+### Discovering and Downloading Skills
+
+An agent can also use the client to retrieve a server's skills. `list_skills()` discovers them, `read_skill()` fetches and verifies every file of one, and `skill.to_directory()` [installs it into a local agent](/servers/skills#install-skills-into-a-local-agent).
 
 ## Choosing a Transport
 
@@ -100,6 +110,8 @@ See [Transports](/clients/transports) for detailed configuration options includi
 Create clients from MCP configuration dictionaries, which can include multiple servers. While there is no official standard for MCP configuration format, FastMCP follows established conventions used by tools like Claude Desktop.
 
 ```python
+from fastmcp import Client
+
 config = {
     "mcpServers": {
         "weather": {
@@ -171,6 +183,16 @@ async with client:
     tools = await client.list_tools()
 ```
 
+Every connection also tells the server who is calling. By default a FastMCP client identifies itself as `fastmcp` at the installed FastMCP version. Servers see this in their logs and middleware, so an application that wants to be recognized on its own should pass `client_info`:
+
+```python
+from mcp.types import Implementation
+from fastmcp import Client
+
+client_info = Implementation(name="my-agent", version="1.0.0")
+client = Client("https://example.com/mcp", client_info=client_info)
+```
+
 ## Protocol negotiation
 
 <VersionBadge version="4.0.0" />
@@ -189,6 +211,8 @@ client = Client("https://example.com/mcp", mode="auto")
 Set `mode="legacy"` to force the initialize handshake. This behaves identically to earlier FastMCP versions and is the opt-out if a server misbehaves under discovery or you need the legacy `initialize` result object.
 
 ```python
+from fastmcp import Client
+
 client = Client("https://example.com/mcp", mode="legacy")
 ```
 
@@ -201,6 +225,8 @@ A FastMCP server serves both eras, so a default client negotiates the modern one
 You can also pin a specific modern protocol version to adopt it directly, without a discovery probe:
 
 ```python
+from fastmcp import Client
+
 client = Client("https://example.com/mcp", mode="2026-07-28")
 ```
 
@@ -240,7 +266,7 @@ async with client:
     tools = await client.list_tools()   # served from the cache
 ```
 
-The default (`cache=None`) and `cache=False` both disable caching. For control over the store, TTL, or partitioning, pass a `CacheConfig`. A custom config requires a `target_id`, since in-memory FastMCP transports expose no server URL to derive a shared-store identity from.
+The default (`cache=None`) and `cache=False` both disable caching. For control over the store, TTL, or partitioning, pass a `CacheConfig`. A config with a custom `store` also requires a `target_id`, since FastMCP transports expose no server URL to derive a shared-store identity from.
 
 ```python
 from fastmcp import Client
@@ -261,7 +287,7 @@ async with client:
 
 The default cache lives in each client's process. To share cached responses across a fleet — a set of proxy replicas backed by one Redis, for example — pass a `KeyValueResponseCacheStore`, FastMCP's adapter over the same `AsyncKeyValue` key-value abstraction the event store and OAuth proxy use. It accepts any compatible backend (memory, Redis, and more).
 
-A shared store mingles responses from different principals, so it requires an explicit `partition` that isolates them. Derive the partition from a verified credential — never from request data or the server URL — and construct a new client when the principal changes. Only responses the server marks `"public"` are ever served across partitions.
+A shared store mingles responses from different principals, so it requires an explicit `partition` that isolates them. Derive the partition from a verified credential — never from request data or the server URL — and construct a new client when the principal changes. By default no response is served across partitions; set `share_public=True` on the `CacheConfig` to serve responses the server marks `"public"` to every partition.
 
 ```python
 from fastmcp import Client
@@ -276,7 +302,7 @@ config = CacheConfig(store=store, partition="tenant-a", target_id="weather-api")
 client = Client("https://example.com/mcp", mode="auto", cache=config)
 ```
 
-The adapter serializes each result through a type-tagged envelope validated against an allowlist of cacheable result models, so a value naming an unknown type is treated as a cache miss rather than deserialized blindly. Each store instance owns its own collection namespace; `clear()` affects only that namespace, never another tenant's entries.
+The adapter serializes each result through a type-tagged envelope validated against an allowlist of cacheable result models, so a value naming an unknown type is treated as a cache miss rather than deserialized blindly. Each store reads and writes one collection, set with `collection=`, and `clear()` removes only that collection's entries. Stores created without `collection=` share the default collection, so give each tenant its own collection when one tenant's `clear()` must not drop another's entries.
 
 ## Client extensions
 
@@ -291,7 +317,7 @@ from myproject.extensions import AppsExtension
 client = Client("https://example.com/mcp", extensions=[AppsExtension()])
 ```
 
-Each extension's contributions are threaded into the underlying session. FastMCP folds in its own internal extension for [background tasks](/clients/tasks) automatically, and your own extensions *compose* with it rather than replacing it — pass your own tasks extension with the same identifier if you need to override it. When a tool returns a shape an extension claims, `client.call_tool()` resolves it transparently through the owning claim's resolver and hands you back an ordinary result. Result claims and their advertisements are honored only on modern-era connections, so they are inert on a legacy handshake.
+Each extension's contributions are threaded into the underlying session. When `fastmcp_tasks` is imported, FastMCP folds in its internal extension for [background tasks](/clients/tasks) automatically, and your own extensions *compose* with it rather than replacing it — pass your own tasks extension with the same identifier if you need to override it. When a tool returns a shape an extension claims, `client.call_tool()` resolves it transparently through the owning claim's resolver and hands you back an ordinary result. Result claims and their advertisements are honored only on modern-era connections, so they are inert on a legacy handshake.
 
 For the rare case where you need to register additional result claims against an extension that is already advertised, pass them through `result_claims=`, keyed by the extension's identifier. Prefer declaring claims on the extension itself; this parameter merges extra claims with an extension's own.
 
@@ -302,6 +328,36 @@ client = Client(
     result_claims={"example.com/apps": [extra_claim]},
 )
 ```
+
+### Skills extension
+
+To discover skills from a server that implements the MCP Skills extension
+(SEP-2640), opt in with `SkillsClientExtension`. The client then exposes
+`list_skills_mcp()` for one protocol page, `list_skills()` for automatic
+pagination, and `get_skill_mcp()` or `get_skill()` for authoritative lookup by
+the URI of a skill's `SKILL.md`.
+
+```python
+from fastmcp import Client
+from fastmcp.skills import SkillsClientExtension
+
+client = Client(
+    "https://example.com/mcp",
+    extensions=[SkillsClientExtension()],
+)
+
+async with client:
+    skills = await client.list_skills()
+    skill = await client.get_skill("skill://code-review/SKILL.md")
+```
+
+The Skills extension is available only on modern MCP connections. These methods
+raise before sending a request when the client did not opt in or the negotiated
+server did not advertise `io.modelcontextprotocol/skills`.
+
+Both protocol results carry the server's response-cache hints. A client created
+with `cache=True` honors those hints; pass `cache_mode="refresh"` or
+`cache_mode="bypass"` to a Skills method to override the cache for one call.
 
 ## Operations
 
