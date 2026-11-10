@@ -94,6 +94,8 @@ Session state lives in the server's [storage backend](/servers/storage-backends)
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.ttl_clamp import TTLClampWrapper
 
+from fastmcp import FastMCP
+
 store = RedisStore(url="redis://localhost:6379")
 store = TTLClampWrapper(store, min_ttl=0, max_ttl=86400, missing_ttl=3600)
 

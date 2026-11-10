@@ -69,7 +69,7 @@ You don't always need a full OAuth server. If your server only needs to accept t
 ```python
 from fastmcp import FastMCP
 from fastmcp.server.auth import MultiAuth
-from fastmcp.server.auth.providers.jwt import JWTVerifier, StaticTokenVerifier
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 auth = MultiAuth(
     verifiers=[
@@ -125,7 +125,8 @@ This changes `get_access_token().client_id` and ownership for existing `MultiAut
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `server` | `AuthProvider \| None` | Optional auth provider that owns routes and OAuth metadata. Also tried first for token verification. |
-| `verifiers` | `Mapping[str, TokenVerifier] \| list[TokenVerifier] \| TokenVerifier` | Named or distinctly configured token verifiers tried after the server. |
-| `server_source_id` | `str \| None` | Stable name for the delegated server source. Defaults to its derived identity. |
-| `base_url` | `str \| None` | Override the base URL. Defaults to the server's `base_url`. |
+| `verifiers` | `Mapping[str, TokenVerifier] \| Sequence[TokenVerifier] \| TokenVerifier \| None` | Named or distinctly configured token verifiers tried after the server. At least one is required when `server` is omitted. |
+| `server_source_id` | `str \| None` | Stable name for the delegated server source. Defaults to its derived identity. Requires `server`. |
+| `base_url` | `AnyHttpUrl \| str \| None` | Override the base URL. Defaults to the server's `base_url`. |
+| `resource_base_url` | `AnyHttpUrl \| str \| None` | Override the public base URL advertised for the protected resource. Defaults to the server's `resource_base_url`, and an explicit value is also applied to the server. |
 | `required_scopes` | `list[str] \| None` | Override required scopes. Defaults to the server's scopes. |

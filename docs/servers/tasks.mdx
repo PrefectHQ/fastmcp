@@ -141,10 +141,14 @@ Shorter intervals give clients faster feedback but increase server load. The int
 
 ### Server-Wide Default
 
-To enable background task support for all tools by default, pass `tasks=True` to the constructor. Individual decorators can still override this with `task=False`.
+To enable background task support for all tools by default, pass `tasks=True` to the constructor. Individual decorators can still override this with `task=False`. The server still needs the tasks extension registered.
 
 ```python
+from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
+
 mcp = FastMCP("MyServer", tasks=True)
+mcp.add_extension(TasksExtension())
 ```
 
 <Warning>
@@ -231,7 +235,7 @@ async def double(value: int) -> int:
     return value * 2
 ```
 
-You can also supply a provider that implements `get_credentials_async()`, or a provider from your cloud authentication library. FastMCP does not generate or refresh cloud tokens itself. Docket manages connection authentication, including refresh notifications from streaming providers; see [Docket credential providers](https://docket.lol/en/latest/production/#credential-providers) for details about long-lived connections and provider ownership.
+You can also supply a provider that implements `get_credentials_async()`. FastMCP does not generate or refresh cloud tokens itself, and `TasksExtension` rejects streaming providers (such as redis-entraid's) for now, because a token refresh can hand one Redis connection to two commands at once. See [Docket credential providers](https://docket.lol/en/latest/production/#credential-providers) for details about long-lived connections and provider ownership.
 
 Configure the provider in your server module. [Additional workers](#workers) load that same module and use its registered extension, so no separate worker flag is needed. Provider objects are runtime configuration, not `FASTMCP_DOCKET_*` environment settings. The default `memory://` backend ignores them.
 
@@ -261,7 +265,7 @@ The key protects the snapshot only. Tool arguments and any answers a task gather
 
 ## Workers
 
-Every FastMCP server with task-enabled tools automatically starts an **embedded worker**. You do not need to start a separate worker process for tasks to execute.
+A server with the tasks extension registered and at least one task-enabled tool automatically starts an **embedded worker**. You do not need to start a separate worker process for tasks to execute.
 
 To scale horizontally, add more workers:
 
@@ -374,19 +378,24 @@ from fastmcp_tasks.dependencies import CurrentDocket, CurrentWorker
 mcp = FastMCP("MyServer")
 mcp.add_extension(TasksExtension())
 
+
+async def send_report(user_id: str) -> None:
+    ...
+
+
 @mcp.tool(task=True)
 async def my_task(
+    user_id: str,
     progress: Progress = Progress(),
     docket: Docket = CurrentDocket(),
     worker: Worker = CurrentWorker(),
 ) -> str:
     # Schedule additional background work
-    await docket.add(another_task, arg1, arg2)
+    await docket.add(send_report)(user_id)
 
-    # Access worker metadata
-    worker_name = worker.name
-
-    return "Done"
+    return f"Report scheduled by {worker.name}"
 ```
+
+`docket.add()` takes the function and returns a scheduler; call that with the function's arguments to enqueue it.
 
 With `CurrentDocket()`, you can schedule additional background tasks, chain work together, and coordinate complex workflows. See the [Docket documentation](https://docket.lol/) for the complete API, including retry policies, timeouts, and custom dependencies.

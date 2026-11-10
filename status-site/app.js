@@ -3,6 +3,10 @@ const DATA_URL =
   window.location.origin === "https://prefecthq.github.io"
     ? "https://raw.githubusercontent.com/PrefectHQ/fastmcp/status/backlog.json"
     : new URL("backlog.json", window.location.href).href;
+const TRIAGE_URL =
+  window.location.origin === "https://prefecthq.github.io"
+    ? "https://raw.githubusercontent.com/PrefectHQ/fastmcp/status/triage.json"
+    : new URL("triage.json", window.location.href).href;
 const TZ = "America/Chicago";
 const DAY = 86400000;
 const labels = {
@@ -225,8 +229,15 @@ function backlog() {
     cursor.setAttribute("x1", x(row));
     cursor.setAttribute("x2", x(row));
     cursor.setAttribute("visibility", "visible");
-    $("backlog-readout").textContent =
-      `${dateLabel(row.at, { year: "numeric", hour: "numeric", minute: "2-digit" })} Central: ${number(row.issues.open)} issues · ${number(row.prs.open)} PRs${row.prs.draft != null ? ` (${row.prs.draft} draft)` : ""} · ${row.source === "live" ? "recorded" : "reconstructed"}`;
+    $("backlog-readout").textContent = `${dateLabel(row.at, {
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    })} Central: ${number(row.issues.open)} issues · ${number(
+      row.prs.open,
+    )} PRs${row.prs.draft != null ? ` (${row.prs.draft} draft)` : ""} · ${
+      row.source === "live" ? "recorded" : "reconstructed"
+    }`;
   };
   interactions(
     graph,
@@ -290,7 +301,9 @@ function recent() {
     box.append(
       node(
         "small",
-        `${row.completed} completed · ${row.not_planned} not planned${row.other_closed ? ` · ${row.other_closed} unspecified` : ""}`,
+        `${row.completed} completed · ${row.not_planned} not planned${
+          row.other_closed ? ` · ${row.other_closed} unspecified` : ""
+        }`,
       ),
     );
     $("recent").append(box);
@@ -313,14 +326,18 @@ function activity() {
       chip,
       node(
         "span",
-        `${labels[key]} ${number(rows.reduce((sum, row) => sum + row[key], 0))}`,
+        `${labels[key]} ${number(
+          rows.reduce((sum, row) => sum + row[key], 0),
+        )}`,
       ),
     );
     $("activity-legend").append(item);
   }
   const { graph, left, right, top, bottom, width } = chartFrame(
     "activity-chart",
-    `Daily ${category === "issues" ? "issue" : "pull request"} openings and closure outcomes. Use arrow keys then Enter to inspect a day.`,
+    `Daily ${
+      category === "issues" ? "issue" : "pull request"
+    } openings and closure outcomes. Use arrow keys then Enter to inspect a day.`,
     270,
   );
   const max = Math.max(
@@ -388,8 +405,9 @@ function activity() {
     const row = rows[index];
     cursor.setAttribute("x", left + index * step);
     cursor.setAttribute("visibility", "visible");
-    $("activity-readout").textContent =
-      `${dayLabel(row.day)}: ${keys.map((key) => `${row[key]} ${labels[key].toLowerCase()}`).join(" · ")}`;
+    $("activity-readout").textContent = `${dayLabel(row.day)}: ${keys
+      .map((key) => `${row[key]} ${labels[key].toLowerCase()}`)
+      .join(" · ")}`;
   };
   interactions(
     graph,
@@ -403,8 +421,9 @@ function activity() {
 }
 function detail(day, open) {
   selectedDay = day;
-  $("detail-title").textContent =
-    `${dayLabel(day)} · ${category === "issues" ? "issues" : "pull requests"}`;
+  $("detail-title").textContent = `${dayLabel(day)} · ${
+    category === "issues" ? "issues" : "pull requests"
+  }`;
   if (open) $("activity-detail").open = true;
   const rows = data.events.filter(
     (item) => item.day === day && item.kind === category,
@@ -425,7 +444,9 @@ function detail(day, open) {
   for (const item of rows) {
     const row = node("div", null, "work-row"),
       link = node("a", `#${item.number}`);
-    link.href = `https://github.com/PrefectHQ/fastmcp/${item.kind === "prs" ? "pull" : "issues"}/${item.number}`;
+    link.href = `https://github.com/PrefectHQ/fastmcp/${
+      item.kind === "prs" ? "pull" : "issues"
+    }/${item.number}`;
     row.append(
       link,
       node("span", item.title),
@@ -446,18 +467,136 @@ function render() {
   recent();
   activity();
   const stale = Date.now() - Date.parse(data.as_of) > 2 * 60 * 60 * 1000;
-  $("freshness").textContent =
-    `Updated ${dateLabel(data.as_of, { year: "numeric", hour: "numeric", minute: "2-digit" })} Central${stale ? " · update overdue" : ""}`;
+  $("freshness").textContent = `Updated ${dateLabel(data.as_of, {
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })} Central${stale ? " · update overdue" : ""}`;
   $("notice").hidden = !stale;
   $("notice").textContent =
     "The latest snapshot is over two hours old. Counts may have changed; follow GitHub for the current queue.";
 }
-async function refresh() {
-  $("refresh").disabled = true;
+let refreshGeneration = 0;
+async function refreshTriage(generation) {
+  $("triage-data").href = TRIAGE_URL;
+  try {
+    const response = await fetch(TRIAGE_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error("Triage unavailable");
+    const report = await response.json();
+    if (generation !== refreshGeneration) return;
+    if (
+      report.schema !== "fastmcp-public-triage/1" ||
+      !Array.isArray(report.review_leads) ||
+      !Number.isFinite(Date.parse(report.collection_started_at))
+    )
+      throw new Error("Invalid triage data");
+    const stale =
+      Date.now() - Date.parse(report.collection_started_at) >
+      2 * 60 * 60 * 1000;
+    $("triage-freshness").textContent =
+      `Collection began ${dateLabel(report.collection_started_at, {
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })} Central${
+        stale ? " · update overdue; refresh GitHub before acting" : ""
+      }. ` +
+      `${report.selection.returned} lead${
+        report.selection.returned === 1 ? "" : "s"
+      } shown from ${
+        report.selection.eligible_in_inventory
+      } eligible PRs. Detail collection: ${
+        report.lead_collection_status || "unknown"
+      }. Reads are not atomic.`;
+    const ages = node("table"),
+      header = node("tr");
+    for (const label of [
+      "Open inventory",
+      "Under 7 days",
+      "7–29 days",
+      "30–89 days",
+      "90+ days",
+    ])
+      header.append(node("th", label));
+    ages.append(header);
+    for (const [kind, label] of [
+      ["issues", "Issues"],
+      ["prs", "PRs (including drafts)"],
+    ]) {
+      const row = node("tr");
+      row.append(node("th", label));
+      for (const key of ["lt_7d", "7_30d", "30_90d", "gte_90d"])
+        row.append(node("td", number(report.open_age_buckets[kind][key])));
+      ages.append(row);
+    }
+    $("triage-ages").replaceChildren(ages);
+    $("triage-leads").replaceChildren();
+    for (const lead of report.review_leads) {
+      const row = node("article", null, "work-row");
+      const link = node("a", `#${lead.number}`);
+      link.href = `https://github.com/PrefectHQ/fastmcp/pull/${lead.number}`;
+      const description = node("div");
+      description.append(node("p", lead.title));
+      let status =
+        "Discussion unavailable; inspect GitHub. No response conclusion.";
+      if (lead.activity.status === "collected") {
+        const last = lead.activity.last_maintainer_account_activity_at;
+        status = last
+          ? `Last maintainer account activity: ${dateLabel(last)}.`
+          : "No maintainer account response in collected conversation comments or reviews.";
+        if (lead.activity.triage_app_review_seen)
+          status += lead.activity.triage_app_review_on_snapshot_revision
+            ? " Triage-app marker matches snapshot head and target baseline; verification still needs checking."
+            : lead.activity.triage_app_review_on_snapshot_revision === null
+              ? " Triage-app review seen; target baseline unavailable."
+              : " Historical or unbound triage-app review; no matching revision marker.";
+      }
+      description.append(node("small", status));
+      for (const gap of lead.collection_diagnostics || [])
+        description.append(
+          node(
+            "small",
+            ` ${gap.stage}: ${gap.kind}${
+              gap.http_status ? ` (HTTP ${gap.http_status})` : ""
+            }; ${gap.attempts} attempt(s).`,
+          ),
+        );
+      if (lead.head_sha)
+        description.append(
+          node(
+            "small",
+            ` Snapshot head ${lead.head_sha.slice(0, 8)} · ${lead.target}${
+              lead.baseline_sha
+                ? ` at ${lead.baseline_sha.slice(0, 8)}`
+                : " (baseline unavailable)"
+            }.`,
+          ),
+        );
+      row.append(
+        link,
+        description,
+        node("span", `${lead.age_days} days`, "state"),
+      );
+      $("triage-leads").append(row);
+    }
+    if (!report.review_leads.length)
+      $("triage-leads").append(
+        node("p", "No leads in this bounded selection. Other work may remain."),
+      );
+  } catch {
+    if (generation !== refreshGeneration) return;
+    $("triage-freshness").textContent =
+      "Triage collection unavailable. Use GitHub for the current queue.";
+    $("triage-ages").replaceChildren();
+    $("triage-leads").replaceChildren();
+  }
+}
+async function refreshBacklog(generation) {
   try {
     const response = await fetch(DATA_URL, { cache: "no-store" });
     if (!response.ok) throw new Error("Data unavailable");
     const next = await response.json();
+    if (generation !== refreshGeneration) return;
     if (
       next.schema !== "fastmcp-backlog/1" ||
       !next.samples?.length ||
@@ -469,12 +608,20 @@ async function refresh() {
     data = next;
     render();
   } catch {
+    if (generation !== refreshGeneration) return;
     $("notice").hidden = false;
     $("notice").textContent = data
       ? "Refresh failed. Showing the last loaded data; check its timestamp above."
       : "Backlog data is unavailable. Refresh to try again, or open the GitHub source below.";
+  }
+}
+async function refresh() {
+  const generation = ++refreshGeneration;
+  $("refresh").disabled = true;
+  try {
+    await Promise.all([refreshTriage(generation), refreshBacklog(generation)]);
   } finally {
-    $("refresh").disabled = false;
+    if (generation === refreshGeneration) $("refresh").disabled = false;
   }
 }
 document.querySelectorAll("[data-days]").forEach((button) =>

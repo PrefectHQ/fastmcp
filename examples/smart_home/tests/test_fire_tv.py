@@ -65,6 +65,7 @@ async def test_status_and_commands_share_one_connection(configured_fire_tv):
             "read_status",
             "press_home",
             "launch_app",
+            "restart_app",
             "play_media",
             "play_youtube_video",
         }
@@ -194,6 +195,7 @@ async def test_concurrent_calls_reconnect_once(monkeypatch: pytest.MonkeyPatch) 
     ("tool", "arguments", "message"),
     [
         ("launch_app", {"package_id": "not.installed"}, "not installed"),
+        ("restart_app", {"package_id": "not.installed; reboot"}, "not installed"),
         (
             "play_youtube_video",
             {"video_id": "invalid; reboot"},
