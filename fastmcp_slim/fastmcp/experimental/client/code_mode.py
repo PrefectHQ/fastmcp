@@ -35,6 +35,9 @@ from fastmcp.experimental.transforms.code_mode import (
 from fastmcp.server.context import Context
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.components import get_fastmcp_metadata
+from fastmcp.utilities.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def _tool_from_mcp(tool: mcp_types.Tool) -> Tool:
@@ -49,6 +52,7 @@ def _tool_from_mcp(tool: mcp_types.Tool) -> Tool:
         icons=tool.icons,
         meta=tool.meta,
         tags=set(get_fastmcp_metadata(tool.meta).get("tags", [])),
+        execution=tool.execution,
     )
 
 
@@ -96,6 +100,7 @@ class CodeModeClient:
         self._client = client
         self.sandbox_provider = sandbox_provider or MontySandboxProvider()
         self.max_tool_calls = max_tool_calls
+        self._catalog: dict[str, Tool] = {}
 
         factories = (
             discovery_tools
@@ -179,11 +184,27 @@ class CodeModeClient:
         )
 
     async def _get_catalog(self, ctx: Context | None = None) -> Sequence[Tool]:
-        return [_tool_from_mcp(tool) for tool in await self._client.list_tools()]
+        tools = [_tool_from_mcp(tool) for tool in await self._client.list_tools()]
+        self._catalog = {tool.name: tool for tool in tools}
+        return tools
 
     async def _call_error(self, tool_name: str, result: ToolResult) -> str:
-        catalog = {tool.name: tool for tool in await self._get_catalog()}
-        tool = catalog.get(tool_name) or Tool(name=tool_name, parameters={})
+        tool = self._catalog.get(tool_name)
+        if tool is None:
+            # The schema only enriches the message. A failed refresh, such as a
+            # `ClientGroup` with an unrelated member down, must not replace the
+            # tool's own error.
+            try:
+                await self._get_catalog()
+            except Exception:
+                logger.debug(
+                    "Could not refresh the tool catalog for %r",
+                    tool_name,
+                    exc_info=True,
+                )
+            tool = self._catalog.get(tool_name)
+        if tool is None:
+            tool = Tool(name=tool_name, parameters={})
         return _legible_call_error(tool_name, tool, _error_detail(result))
 
     def _make_execute_tool(self, name: str, description: str) -> Tool:

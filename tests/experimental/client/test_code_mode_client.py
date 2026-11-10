@@ -1,10 +1,11 @@
 import importlib.util
 
+import mcp_types
 import pytest
 
 from fastmcp import Client, ClientGroup, FastMCP
 from fastmcp.exceptions import ToolError
-from fastmcp.experimental.client.code_mode import CodeModeClient
+from fastmcp.experimental.client.code_mode import CodeModeClient, _tool_from_mcp
 from fastmcp.experimental.transforms.code_mode import GetTags, ListTools, Search
 
 requires_monty = pytest.mark.skipif(
@@ -160,6 +161,46 @@ async def test_validation_errors_list_valid_parameters(math_server: FastMCP) -> 
     message = str(exc_info.value)
     assert "call_tool('add') failed" in message
     assert "Valid parameters for add (* = required): x*, y*" in message
+
+
+@requires_monty
+async def test_tool_errors_survive_an_unrelated_group_member_disconnecting(
+    math_server: FastMCP, text_server: FastMCP
+) -> None:
+    math = Client(math_server)
+    group = ClientGroup({"math": math, "text": Client(text_server)})
+    code_mode = CodeModeClient(group)
+    async with group:
+        await code_mode.call_tool("search", {"query": "add"})
+
+    bad_args = "return await call_tool('math_add', {'x': 1, 'z': 2})"
+    failing = "return await call_tool('math_boom', {})"
+    async with math:
+        with pytest.raises(ToolError) as validation_exc:
+            await code_mode.call_tool("execute", {"code": bad_args})
+        with pytest.raises(ToolError) as tool_exc:
+            await code_mode.call_tool("execute", {"code": failing})
+
+    assert "call_tool('math_add') failed" in str(validation_exc.value)
+    assert "Valid parameters for math_add (* = required): x*, y*" in str(
+        validation_exc.value
+    )
+    assert "call_tool('math_boom') failed: deliberate tool failure" in str(
+        tool_exc.value
+    )
+
+
+def test_remote_tool_execution_metadata_is_preserved() -> None:
+    remote = mcp_types.Tool(
+        name="slow",
+        input_schema={"type": "object"},
+        execution=mcp_types.ToolExecution(task_support="required"),
+    )
+
+    tool = _tool_from_mcp(remote)
+
+    assert tool.execution == remote.execution
+    assert tool.to_mcp_tool().execution == remote.execution
 
 
 @requires_monty
