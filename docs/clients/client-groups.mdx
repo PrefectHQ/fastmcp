@@ -50,7 +50,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Tool names are prefixed with the configured client name by default. For example, a `get_weather` tool exposed by the `modern` client becomes `modern_get_weather`.
+Tool names are prefixed with the configured client name. For example, a `get_weather` tool exposed by the `modern` client becomes `modern_get_weather`.
 
 A group with a single client is a supported way to get namespacing alone: the one server's tools are presented under its configured name, with no other behavior change.
 
@@ -116,7 +116,7 @@ config = {
 group = ClientGroup.from_config(config)
 ```
 
-Entries without a `mode` use `"auto"` by default.
+Entries without a `mode` use the `default_mode` argument to `from_config`, which is `"auto"`.
 
 ## Manage connections explicitly
 
