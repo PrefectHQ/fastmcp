@@ -9,7 +9,7 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="2.0.0" />
 
-FastMCP can automatically generate an MCP server from any OpenAPI specification, allowing AI models to interact with existing APIs through the MCP protocol. Instead of manually creating tools and resources, you provide an OpenAPI spec and FastMCP intelligently converts API endpoints into the appropriate MCP components.
+FastMCP can automatically generate an MCP server from any OpenAPI specification, allowing AI models to interact with existing APIs through the MCP protocol. Instead of manually creating tools and resources, you provide an OpenAPI spec and FastMCP converts API endpoints into the appropriate MCP components.
 
 <Note>
 Under the hood, OpenAPI integration uses OpenAPIProvider (v3.0.0+) to source tools from the specification. See [Providers](/servers/providers/overview) to understand how FastMCP sources components.
@@ -32,12 +32,12 @@ from fastmcp import FastMCP
 # Create an HTTP client for your API
 client = httpx2.AsyncClient(base_url="https://api.example.com")
 
-# Load your OpenAPI spec 
-openapi_spec = httpx2.get("https://api.example.com/openapi.json").json()
+# Load your OpenAPI spec
+spec = httpx2.get("https://api.example.com/openapi.json").json()
 
 # Create the MCP server
 mcp = FastMCP.from_openapi(
-    openapi_spec=openapi_spec,
+    openapi_spec=spec,
     client=client,
     name="My API Server"
 )
@@ -45,6 +45,8 @@ mcp = FastMCP.from_openapi(
 if __name__ == "__main__":
     mcp.run()
 ```
+
+Later examples that call `FastMCP.from_openapi()` reuse `spec` and `client` from this example.
 
 ### Authentication
 
@@ -90,17 +92,23 @@ Use `timeout=None` on the HTTP client to disable timeouts, or an `httpx2.Timeout
 
 If you omit the `client` argument, FastMCP creates an HTTP client with a 30-second timeout using the first server URL in your OpenAPI specification.
 
+## Upstream HTTP errors
+
+When an OpenAPI request receives a non-success status, FastMCP reports the status and reason to the MCP caller. HTTP 429 retains the rate-limit message, "Rate limited by upstream API, please retry later". If your HTTP client returns a redirect response, the error includes its `Location` header. Redirect following is controlled by the HTTP client configuration.
+
+JSON error bodies are rendered as JSON; HTML pages are omitted, and other response text is limited to 1,000 characters with a truncation marker. These details are shared by generated tools, resources, and resource templates. Configure `mask_error_details=True` on `FastMCP.from_openapi()` when callers should not see upstream error details.
+
 ## Route Mapping
 
 By default, FastMCP converts **every endpoint** in your OpenAPI specification into an MCP **Tool**. This provides a simple, predictable starting point that ensures all your API's functionality is immediately available to the vast majority of LLM clients which only support MCP tools.
 
 While this is a pragmatic default for maximum compatibility, you can easily customize this behavior. Internally, FastMCP uses an ordered list of `RouteMap` objects to determine how to map OpenAPI routes to various MCP component types.
 
-Each `RouteMap` specifies a combination of methods, patterns, and tags, as well as a corresponding MCP component type. Each OpenAPI route is checked against each `RouteMap` in order, and the first one that matches every criteria is used to determine its converted MCP type. A special type, `EXCLUDE`, can be used to exclude routes from the MCP server entirely.
+Each `RouteMap` specifies a combination of methods, patterns, and tags, as well as a corresponding MCP component type. Each OpenAPI route is checked against each `RouteMap` in order, and the first one that matches every criterion is used to determine its converted MCP type. A special type, `EXCLUDE`, can be used to exclude routes from the MCP server entirely.
 
 - **Methods**: HTTP methods to match (e.g. `["GET", "POST"]` or `"*"` for all)
 - **Pattern**: Regex pattern to match the route path (e.g. `r"^/users/.*"` or `r".*"` for all)
-- **Tags**: A set of OpenAPI tags that must all be present. An empty set (`{}`) means no tag filtering, so the route matches regardless of its tags.
+- **Tags**: A set of OpenAPI tags that must all be present. An empty set (`set()`, the default) means no tag filtering, so the route matches regardless of its tags.
 - **MCP type**: What MCP component type to create (`TOOL`, `RESOURCE`, `RESOURCE_TEMPLATE`, or `EXCLUDE`)
 - **MCP tags**: A set of custom tags to add to components created from matching routes
 
@@ -266,7 +274,7 @@ mcp = FastMCP.from_openapi(
 
 <VersionBadge version="2.5.0" />
 
-FastMCP automatically generates names for MCP components based on the OpenAPI specification. By default, it uses the `operationId` from your OpenAPI spec, up to the first double underscore (`__`).
+FastMCP automatically generates names for MCP components based on the OpenAPI specification. By default, it uses the `operationId` from your OpenAPI spec, up to the first double underscore (`__`). Routes without an `operationId` use their summary, or the HTTP method and path when there is no summary.
 
 All component names are automatically:
 - **Slugified**: Spaces and special characters are converted to underscores or removed
@@ -276,6 +284,8 @@ All component names are automatically:
 For more control over component names, you can provide an `mcp_names` dictionary that maps `operationId` values to your desired names. The `operationId` must be exactly as it appears in the OpenAPI spec. The provided name will always be slugified and truncated.
 
 ```python
+from fastmcp import FastMCP
+
 mcp = FastMCP.from_openapi(
     openapi_spec=spec,
     client=client,
@@ -300,6 +310,7 @@ FastMCP provides several ways to add tags to your MCP components, allowing you t
 You can add custom tags to components created from specific routes using the `mcp_tags` parameter in `RouteMap`. These tags will be applied to all components created from routes that match that particular route map.
 
 ```python
+from fastmcp import FastMCP
 from fastmcp.server.providers.openapi import RouteMap, MCPType
 
 mcp = FastMCP.from_openapi(
@@ -338,6 +349,8 @@ mcp = FastMCP.from_openapi(
 You can add tags to **all** components by providing a `tags` parameter when creating your MCP server. These global tags will be applied to every component created from your OpenAPI specification.
 
 ```python
+from fastmcp import FastMCP
+
 mcp = FastMCP.from_openapi(
     openapi_spec=spec,
     client=client,
@@ -391,6 +404,7 @@ Your `mcp_component_fn` is expected to modify the component in-place, not to ret
 </Tip>
 
 ```python
+from fastmcp import FastMCP
 from fastmcp.server.providers.openapi import (
     OpenAPITool,
     OpenAPIResource,
@@ -422,11 +436,11 @@ mcp = FastMCP.from_openapi(
 
 ## Request Parameter Handling
 
-Tool arguments map to the parameters and request body that the operation declares. FastMCP ignores any other arguments.
+Tool arguments map to the parameters and request body that the operation declares. By default, FastMCP logs a warning and drops any other arguments. With [strict input validation](/servers/tools#validation-modes) enabled, the call fails instead, with an error naming the unknown arguments and the accepted ones, and no request is sent.
 
 A header parameter that the operation declares takes the value the tool call supplies. Otherwise, headers you configure on the HTTP client are sent with each request, except `Host`, which FastMCP takes from the request URL. When the MCP server runs over HTTP, FastMCP also forwards headers from the incoming MCP request, except credential and connection headers such as `Authorization`, `Cookie`, and `Host`. Forwarded headers only fill in headers that the outgoing request does not already set. This applies to tools, resources, and resource templates.
 
-FastMCP intelligently handles different types of parameters in OpenAPI requests:
+FastMCP handles each parameter location as follows.
 
 ### Query Parameters
 
@@ -489,7 +503,9 @@ For `multipart/form-data`, non-empty string arrays use one form field per elemen
 
 This applies when the property's `encoding` is omitted or explicitly uses the defaults: `style: form`, `explode: true`, `contentType: text/plain`, `allowReserved: false`, and no custom headers. Existing scalar fields and binary file parts keep their serialization.
 
-Empty arrays still send one field containing `[]`, and non-string arrays still use their Python string representation. Custom encodings, including `explode: false`, JSON parts, and charset overrides, are not implemented by this fix and retain their existing serialization. If a backend depended on Python list strings for non-empty string arrays, adapt it to read repeated fields.
+Other arrays are sent as a single field holding the list's Python string representation. That covers empty arrays (sent as `[]`), non-string arrays, and string arrays whose property declares a custom encoding such as `explode: false`, a JSON part, or a charset override.
+
+If a backend depended on Python list strings for non-empty string arrays, adapt it to read repeated fields.
 
 ### JSON Request Bodies
 
