@@ -359,6 +359,12 @@ class _SchemaCacheLocalProvider(LocalProvider):
         if isinstance(schema, dict):
             self._schema_cache[name] = schema
 
+    def add_transform(self, transform: Transform) -> None:
+        super().add_transform(transform)
+        # Entries seeded before this transform are pre-transform schemas.
+        if not isinstance(transform, Visibility):
+            self._schema_cache.clear()
+
     def add_tool(self, tool: Tool | Callable[..., Any]) -> Tool:
         added = super().add_tool(tool)
         # Seed from the version dispatch serves, not necessarily the one just
@@ -917,6 +923,11 @@ class FastMCP(
             ```
         """
         self._transforms.append(transform)
+        # Schemas seeded before this transform existed are pre-transform and
+        # would fail closed on Mcp-Param validation; drop them so the next
+        # `tools/list` (which applies the transform) repopulates the cache.
+        if not isinstance(transform, Visibility):
+            self._wire_input_schemas.clear()
 
     async def list_tools(self, *, run_middleware: bool = True) -> Sequence[Tool]:
         """List all enabled tools from providers.
@@ -1950,6 +1961,14 @@ class FastMCP(
         run inside this sync hook, so a cache miss returns None — which the SDK
         treats as fail-open, skipping header validation for that call exactly
         as it does when a `tools/list` listing fails.
+
+        A stale hit fails closed: listings merge into the cache without pruning,
+        and a mounted or proxied server's own registrations do not reach this
+        server's cache, so an entry for a mounted or proxied tool that was
+        removed or changed upstream keeps validating against the old schema
+        until the next `tools/list` on this server. The cache is keyed by name
+        and holds the highest version's schema, so version-pinned calls are
+        validated against that schema too.
         """
         return self._wire_input_schemas.get(name)
 

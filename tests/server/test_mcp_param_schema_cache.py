@@ -9,11 +9,8 @@ covers proxied and mounted tools).
 """
 
 import json
-from importlib.metadata import version
 from typing import Annotated
 
-import pytest
-from packaging.version import Version
 from pydantic import Field
 from starlette.testclient import TestClient
 
@@ -31,21 +28,12 @@ from fastmcp.tools.tool_transform import (
 # validate_mcp_param_headers reads it out of the wire input schema.
 HDR = Annotated[str, Field(json_schema_extra={"x-mcp-header": "Region"})]
 
-# Version-parse through packaging so pre-release mcp builds (e.g. "2.3rc1")
-# do not blow up int().
-MCP_SUPPORTS_PARAM_HOOK = Version(version("mcp")) >= Version("2.3")
-
-pytestmark = pytest.mark.skipif(
-    not MCP_SUPPORTS_PARAM_HOOK,
-    reason="the get_tool_input_schema hook requires mcp>=2.3",
-)
-
 
 def _hook(server: FastMCP):
     return server._mcp_server.get_tool_input_schema
 
 
-def test_hook_installed_when_sdk_supports_it():
+def test_hook_installed():
     server = FastMCP("t")
 
     assert callable(_hook(server))
@@ -332,3 +320,56 @@ async def test_seed_skipped_when_server_transform_rewrites_schema():
     schema = _hook(server)("t")
     assert schema is not None
     assert set(schema["properties"]) == {"area"}
+
+
+async def test_add_transform_drops_schemas_seeded_before_it():
+    """A decorator tool seeds its pre-transform schema; a transform added
+    afterwards renames the annotated argument. The seeded entry must be
+    dropped so calls carrying the header are not rejected against a schema
+    the tool no longer has."""
+    server = FastMCP("t")
+
+    @server.tool
+    def t(region: HDR) -> str:
+        return f"region:{region}"
+
+    assert _hook(server)("t") is not None
+
+    server.add_transform(
+        ToolTransform(
+            {
+                "t": ToolTransformConfig(
+                    arguments={"region": ArgTransformConfig(name="area")}
+                )
+            }
+        )
+    )
+
+    assert _hook(server)("t") is None
+
+    async with Client(server) as client:
+        await client.list_tools()
+
+    schema = _hook(server)("t")
+    assert schema is not None
+    assert set(schema["properties"]) == {"area"}
+
+
+async def test_provider_add_transform_drops_seeded_schemas():
+    server = FastMCP("t")
+
+    @server.tool
+    def t(region: HDR) -> str:
+        return f"region:{region}"
+
+    server._local_provider.add_transform(
+        ToolTransform(
+            {
+                "t": ToolTransformConfig(
+                    arguments={"region": ArgTransformConfig(name="area")}
+                )
+            }
+        )
+    )
+
+    assert _hook(server)("t") is None
