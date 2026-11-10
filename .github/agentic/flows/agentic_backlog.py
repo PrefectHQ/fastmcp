@@ -18,6 +18,8 @@ class Intake(BaseModel):
     pull_requests: list[PositiveInt] = Field(default_factory=list, max_length=10)
     queue: str | None = Field(default=None, pattern=r"^[a-z0-9-]{1,32}$")
     retry_failed: bool = False
+    # GitHub login whose event started this intake; maintainers' own events are skipped.
+    sender: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$")
 
     def scoped(self) -> bool:
         return bool(self.issues or self.pull_requests)
@@ -35,8 +37,9 @@ class Intake(BaseModel):
         return "fastmcp-intake-" + digest(identity)[:24]
 
 
+# `&` excludes HTML character references such as Renovate's `&#8203;`.
 REFERENCE = re.compile(
-    r"(?:(?<![\w/])#|github\.com/PrefectHQ/fastmcp/issues/)([1-9][0-9]*)\b"
+    r"(?:(?<![\w/&])#|github\.com/PrefectHQ/fastmcp/issues/)([1-9][0-9]*)\b"
 )
 
 
@@ -135,9 +138,6 @@ def settle(
         if name == "operational":
             continue
         for item in items:
-            if name == "stacks" and item.get("status") == "published":
-                seen.update(item.get("issue_numbers", []))
-                continue
             number = item.get("issue_number")
             if item.get("status") in {"stale", "baseline_changed"} or any(
                 check["status"] == "environment_failure"

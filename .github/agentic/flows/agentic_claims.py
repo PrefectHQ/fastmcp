@@ -68,7 +68,6 @@ def owned_child(run: FlowRun, owner: UUID, batch_id: str, runtime: dict) -> bool
         nested.get("ref") if isinstance(nested, dict) else None
     )
     context = parameters.get("context")
-    spec = parameters.get("spec")
     ref_matches = isinstance(ref, dict) and ref.get("owner") == str(owner)
     source_matches = run.deployment_version == runtime["source_sha"]
     native = runtime.get("triage_plan") or {}
@@ -86,11 +85,6 @@ def owned_child(run: FlowRun, owner: UUID, batch_id: str, runtime: dict) -> bool
         or str(run.flow_id) in role_flows
         and isinstance(context, dict)
         and context.get("controller_owner") == str(owner)
-        or str(run.deployment_id) == runtime["validator_id"]
-        and source_matches
-        and isinstance(spec, dict)
-        and spec.get("batch_id") == batch_id
-        and (run.idempotency_key or "").startswith(f"fastmcp-validation-{owner}-")
     )
 
 
@@ -109,7 +103,6 @@ def drain_predecessor(owner: UUID, batch_id: str, deadline: datetime) -> None:
         if runtime.get("triage_plan"):
             flow_ids.add(UUID(runtime["triage_plan"]["flow_id"]))
         for name in (
-            "validator_id",
             "verification_id",
             "triage_verify_id",
             "triage_finalize_id",

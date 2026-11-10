@@ -453,7 +453,7 @@ The following sections explain each concept in detail.
 FastMCP automatically converts tool return values into appropriate MCP content blocks:
 
 - **`str`**: Sent as `TextContent`
-- **`bytes`**: Base64 encoded and sent as `BlobResourceContents` (within an `EmbeddedResource`)
+- **`bytes`**: Sent as `TextContent`, decoded as UTF-8 when possible and base64-encoded otherwise. To send binary data as an embedded resource with a MIME type, return a `File` instead
 - **`fastmcp.utilities.types.Image`**: Sent as `ImageContent`
 - **`fastmcp.utilities.types.Audio`**: Sent as `AudioContent`
 - **`fastmcp.utilities.types.File`**: Sent as base64-encoded `EmbeddedResource`
