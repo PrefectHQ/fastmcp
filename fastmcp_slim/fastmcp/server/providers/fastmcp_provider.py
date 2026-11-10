@@ -311,6 +311,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         # compiled pattern instead of rebuilding it per wrapper.
         template._compiled_pattern()
         wrapped._pattern = template._pattern
+        wrapped._list_query_params = template._list_query_params
         return wrapped
 
     async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
@@ -414,6 +415,11 @@ class FastMCPProvider(Provider):
         super().__init__()
         self.server = server
 
+    @property
+    def may_serve_apps(self) -> bool:
+        """Whether transforms or the wrapped server may serve MCP App UI."""
+        return bool(self._transforms) or self.server.may_serve_apps
+
     def required_extensions(self) -> Sequence[ServerExtension]:
         """Expose the mounted server's bundled and auto-registerable extensions."""
         return self.server.required_extensions()
@@ -487,7 +493,7 @@ class FastMCPProvider(Provider):
         if raw_tool is None:
             return None
         wrapped = FastMCPProviderTool.wrap(self.server, raw_tool)
-        wrapped._original_name = f"{tool_hash}_{tool_name}"
+        wrapped._original_name = f"__{tool_hash}_{tool_name}"
         return wrapped
 
     # -------------------------------------------------------------------------

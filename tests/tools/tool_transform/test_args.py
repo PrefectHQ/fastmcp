@@ -59,6 +59,62 @@ async def test_tool_transform_chaining(add_tool):
     assert result.content[0].text == "custom 8"
 
 
+@pytest.mark.parametrize("rename", [False, True])
+@pytest.mark.parametrize("override_default", [False, True])
+async def test_mutable_schema_default_is_isolated_between_calls(
+    rename: bool, override_default: bool
+) -> None:
+    def append_event(
+        config: dict[str, Any] = Field(default={"events": []}),
+    ) -> int:
+        config["events"].append("call")
+        return len(config["events"])
+
+    parent = Tool.from_function(append_event)
+    arg_name = "settings" if rename else "config"
+    transform = (
+        ArgTransform(name=arg_name, default={"events": []})
+        if override_default
+        else ArgTransform(name=arg_name)
+    )
+    transformed = Tool.from_tool(parent, transform_args={"config": transform})
+    server = FastMCP()
+    server.add_tool(transformed)
+
+    async with Client(server) as client:
+        for _ in range(2):
+            result = await client.call_tool("append_event", {})
+            assert result.data == 1
+            tools = await client.list_tools()
+            assert tools[0].input_schema["properties"][arg_name]["default"] == {
+                "events": []
+            }
+            assert get_property(parent, "config")["default"] == {"events": []}
+
+
+async def test_custom_transform_does_not_mutate_schema_default() -> None:
+    def append_event(config: dict[str, Any]) -> int:
+        config["events"].append("call")
+        return len(config["events"])
+
+    transformed = Tool.from_tool(
+        Tool.from_function(append_event),
+        transform_fn=append_event,
+        transform_args={"config": ArgTransform(default={"events": []})},
+    )
+
+    for _ in range(2):
+        result = await transformed.run({})
+        assert result.structured_content == {"result": 1}
+        assert get_property(transformed, "config")["default"] == {"events": []}
+
+    supplied = {"events": ["existing"]}
+    result = await transformed.run({"config": supplied})
+    assert result.structured_content == {"result": 2}
+    assert supplied == {"events": ["existing", "call"]}
+    assert get_property(transformed, "config")["default"] == {"events": []}
+
+
 class MyModel(BaseModel):
     x: int
     y: str
@@ -213,6 +269,27 @@ async def test_arg_transform_type_precedence_runtime():
     assert isinstance(result.content[0], TextContent)
     assert "String input '5'" in result.content[0].text
     assert "result: 8" in result.content[0].text
+
+
+async def test_hidden_rename_does_not_leak_factory_into_visible_sibling():
+    """A hidden parameter renamed to a visible sibling's name must not
+    override that sibling's schema default with its factory value."""
+
+    @Tool.from_function
+    def base_tool(x: str = "x-default", y: str = "y-default") -> str:
+        return f"{x}|{y}"
+
+    new_tool = Tool.from_tool(
+        base_tool,
+        transform_args={
+            "x": ArgTransform(name="y", hide=True, default_factory=lambda: "factory")
+        },
+    )
+
+    result = await new_tool.run(arguments={})
+    assert isinstance(result.content[0], TextContent)
+    # x is forwarded its factory value; y must keep its schema default
+    assert result.content[0].text == "factory|y-default"
 
 
 async def test_arg_transform_default_factory():
@@ -454,3 +531,70 @@ class TestEnableDisable:
 
             with pytest.raises(ToolError):
                 await client.call_tool("new_add", {"x": 1, "y": 2})
+
+
+class SearchFilters(BaseModel):
+    limit: Annotated[int, Field(le=100)]
+
+
+def search(
+    q: str, n: Annotated[int, Field(le=10)] = 5, f: SearchFilters | None = None
+) -> str:
+    return q
+
+
+async def call_tool_error(tool: Tool, arguments: dict[str, Any]) -> str:
+    mcp = FastMCP()
+    mcp.add_tool(tool)
+    async with Client(mcp) as client:
+        result = await client.call_tool(tool.name, arguments, raise_on_error=False)
+    assert result.is_error
+    assert isinstance(result.content[0], TextContent)
+    return result.content[0].text
+
+
+class TestRenamedArgValidationErrors:
+    """Validation errors name the arguments the transformed tool exposes."""
+
+    @pytest.fixture
+    def find_tool(self) -> Tool:
+        return Tool.from_tool(
+            Tool.from_function(search),
+            name="find",
+            transform_args={
+                "q": ArgTransform(name="query"),
+                "n": ArgTransform(name="max_results"),
+                "f": ArgTransform(name="filters"),
+            },
+        )
+
+    @pytest.mark.parametrize(
+        ("arguments", "location"),
+        [
+            ({"query": "x", "max_results": 50}, "max_results"),
+            ({"query": "x", "filters": {"limit": 500}}, "filters.limit"),
+        ],
+    )
+    async def test_error_uses_renamed_arg(
+        self, find_tool: Tool, arguments: dict[str, Any], location: str
+    ):
+        error = await call_tool_error(find_tool, arguments)
+        assert error.splitlines()[1].startswith(f"- {location}: ")
+
+    async def test_error_uses_outermost_name_when_chained(self, find_tool: Tool):
+        lookup_tool = Tool.from_tool(
+            find_tool,
+            name="lookup",
+            transform_args={"max_results": ArgTransform(name="limit")},
+        )
+        error = await call_tool_error(lookup_tool, {"query": "x", "limit": 50})
+        assert error.splitlines()[1].startswith("- limit: ")
+
+    async def test_error_unchanged_without_renames(self):
+        search_tool = Tool.from_function(search)
+        find_tool = Tool.from_tool(search_tool, name="find")
+        arguments = {"q": "x", "n": 50}
+        find_error = await call_tool_error(find_tool, arguments)
+        search_error = await call_tool_error(search_tool, arguments)
+        # The header names the called tool; the error details are identical.
+        assert find_error.splitlines()[1:] == search_error.splitlines()[1:]

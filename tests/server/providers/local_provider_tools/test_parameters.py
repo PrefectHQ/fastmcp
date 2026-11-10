@@ -187,7 +187,7 @@ class TestToolParameters:
         def analyze(x: int = Field()) -> None:
             pass
 
-        with pytest.raises(ValidationError, match="missing"):
+        with pytest.raises(ValidationError, match="x: Missing required argument"):
             await mcp.call_tool("analyze", {})
 
     async def test_literal_type_validation_error(self):

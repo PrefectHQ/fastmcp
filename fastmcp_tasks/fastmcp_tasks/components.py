@@ -22,10 +22,13 @@ because core still declares them.
 
 from __future__ import annotations
 
+import functools
 import inspect
 import logging
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+import mcp_types
 from pydantic import ValidationError as PydanticValidationError
 
 from fastmcp.exceptions import ValidationError
@@ -34,21 +37,77 @@ from fastmcp.prompts.function_prompt import FunctionPrompt
 from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
-from fastmcp.tools.base import Tool
+from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
 from fastmcp.tools.function_tool import (
     FunctionTool,
     _resolve_param_hints,
     _validate_input,
 )
+from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.types import get_cached_typeadapter
-from fastmcp_tasks.input_loop import reentrant_task_fn
+from fastmcp_tasks.input_loop import _error_result, reentrant_task_fn
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from docket import Docket
     from docket.execution import Execution
+
+logger = logging.getLogger(__name__)
+
+TASK_RESULT_ENVELOPE_KEY = "__fastmcp_task_result__"
+
+
+def task_result_to_wire(tool: Tool, raw_value: Any) -> dict[str, Any]:
+    """Convert a task's return value into an inlined `CallToolResult` dict.
+
+    A raised tool error arrives as the `is_error` `ToolResult` the reentrant
+    wrapper built, so it is used directly and `isError` round-trips. A normal
+    return goes through the tool's own result coercion.
+    """
+    if isinstance(raw_value, ToolResult):
+        mcp_result = raw_value.to_mcp_result()
+    else:
+        mcp_result = tool.convert_result(raw_value).to_mcp_result()
+    if isinstance(mcp_result, mcp_types.CallToolResult):
+        call_result = mcp_result
+    elif isinstance(mcp_result, tuple):
+        content, structured_content = mcp_result
+        call_result = mcp_types.CallToolResult(
+            content=content, structured_content=structured_content
+        )
+    else:
+        call_result = mcp_types.CallToolResult(content=mcp_result)
+    return call_result.model_dump(by_alias=True, mode="json", exclude_none=True)
+
+
+def _store_task_result_with_component(
+    tool: Tool, fn: Callable[..., Awaitable[Any]]
+) -> Callable[..., Awaitable[Any]]:
+    """Persist the protocol result so later polling does not need the live Tool.
+
+    The conversion runs in the worker, under the same masking policy as a
+    raised tool error: a return value that fails to serialize becomes a masked
+    `is_error` result rather than a failed task carrying the exception text.
+    """
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        result = await fn(*args, **kwargs)
+        if isinstance(result, mcp_types.InputRequiredResult | InputRequiredToolResult):
+            # Preserve the existing defensive failure in tasks_get for a guard
+            # result that escaped the end-and-reenter loop.
+            return result
+        try:
+            wire = task_result_to_wire(tool, result)
+        except Exception as exc:
+            logger.exception(
+                "background task tool %r result conversion failed", tool.name
+            )
+            wire = task_result_to_wire(tool, _error_result(tool.name, exc))
+        return {TASK_RESULT_ENVELOPE_KEY: wire}
+
+    wrapper.__signature__ = inspect.signature(fn)  # ty: ignore[unresolved-attribute]
+    return wrapper
 
 
 def register_component_with_docket(component: FastMCPComponent, docket: Docket) -> None:
@@ -66,16 +125,20 @@ def register_component_with_docket(component: FastMCPComponent, docket: Docket) 
         # InputRequiredResult drives the reentrant in-task input cycle. The
         # wrapper is signature-preserving, so Docket's dependency injection is
         # unchanged for a body that never asks for input.
+        task_fn = reentrant_task_fn(component.fn, component.name)
         docket.register(
-            reentrant_task_fn(component.fn, component.name), names=[component.key]
+            _store_task_result_with_component(component, task_fn),
+            names=[component.key],
         )
     elif isinstance(component, Tool):
         # Custom Tool subclasses route through the same wrapper so a raised
         # error becomes a masked, completed `is_error` result — matching the
         # synchronous `tools/call` path — rather than a Docket `FAILED` task
         # that leaks the raw exception text past the server's masking policy.
+        task_fn = reentrant_task_fn(component.run, component.name)
         docket.register(
-            reentrant_task_fn(component.run, component.name), names=[component.key]
+            _store_task_result_with_component(component, task_fn),
+            names=[component.key],
         )
     elif isinstance(component, FunctionResource):
         docket.register(component.fn, names=[component.key])
@@ -159,13 +222,18 @@ def coerce_task_arguments(
     task's Redis metadata and initial status notification exist — otherwise a
     coercion failure during queueing would orphan a task the client has already
     observed. Only ``FunctionTool`` splats arguments into a typed Python callable
-    and therefore mirrors the synchronous validation path; every other component
-    type is a no-op passthrough.
+    and therefore mirrors the synchronous validation path; ``TransformedTool`` is
+    checked against its own advertised schema (see
+    ``_validate_transformed_arguments``); every other component type is a no-op
+    passthrough.
 
     When ``strict`` is set (server-level ``strict_input_validation``), arguments
     are validated in strict mode so the task path rejects lax coercions (e.g. the
     string ``"1"`` into an ``int``) exactly as the synchronous call path does.
     """
+    if isinstance(component, TransformedTool):
+        return _validate_transformed_arguments(component, arguments)
+
     if not isinstance(component, FunctionTool):
         return arguments
 
@@ -190,6 +258,55 @@ def coerce_task_arguments(
     # function directly, so a parameter whose default only Pydantic knows about
     # (``Annotated[int, Field(default=5)]``) must arrive with its value filled in.
     return validated
+
+
+def _validate_transformed_arguments(
+    tool: TransformedTool,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Reject a transformed-tool submission its own advertised schema forbids.
+
+    A transformed tool is registered with Docket as a base ``Tool``, so the
+    worker invokes ``TransformedTool.run`` — the only place its argument
+    contract is enforced. Submission happens before that, so without this check
+    a call the synchronous path rejects is instead persisted as a task and only
+    surfaces as an ``is_error`` result once a worker picks it up.
+
+    The checks mirror what the forwarding function performs before it runs the
+    parent: unknown arguments and, after schema defaults are applied, missing
+    required ones. Both are read off ``parameters``, which is the same schema
+    advertised to clients, so "required" and "unknown" mean here what they mean
+    on the wire.
+
+    Type and constraint violations are deliberately left to the worker. The
+    forwarding function rewrites arguments back onto the parent tool (renames,
+    hidden constants, injected defaults), and the parent validates them against
+    its own call schema; reproducing that rewrite here would duplicate the
+    transform's argument rules rather than reuse them.
+    """
+    parameters = tool.parameters or {}
+    properties = parameters.get("properties", {})
+
+    supplied = set(arguments) | {
+        name
+        for name, schema in properties.items()
+        if isinstance(schema, dict) and "default" in schema
+    }
+    unknown = sorted(set(arguments) - set(properties))
+    missing = sorted(set(parameters.get("required", [])) - supplied)
+
+    if not (unknown or missing):
+        return arguments
+
+    details = []
+    if unknown:
+        details.append(f"unexpected argument(s): {', '.join(unknown)}")
+    if missing:
+        details.append(f"missing required argument(s): {', '.join(missing)}")
+    raise ValidationError(
+        f"Invalid arguments for tool {tool.name!r}: {'; '.join(details)}",
+        log_level=logging.WARNING,
+    )
 
 
 def _call_shape_probe(fn: Callable[..., Any]) -> Callable[..., dict[str, Any]]:
