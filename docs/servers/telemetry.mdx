@@ -433,7 +433,7 @@ def risky_operation() -> str:
     raise ValueError("Something went wrong")
 ```
 
-The `tools/call risky_operation` server span gets status `ERROR` with the error message as its description, an exception event carrying the stack trace, and an `error.type` attribute. FastMCP wraps exceptions raised by a tool in a `ToolError`, so tool failures report `error.type` as `tool_error`; other failures report the exception class name.
+The `tools/call risky_operation` server span gets status `ERROR` with the error message as its description, an exception event carrying the stack trace, and an `error.type` attribute. FastMCP wraps exceptions raised by a tool in a `ToolError`, so tool failures report `error.type` as `tool_error`. A request rejected with a JSON-RPC error, such as a read of an unknown resource, reports the error code (for example `-32602`) as both `error.type` and `rpc.response.status_code`. Other failures report the exception class name.
 
 ## Attributes Reference
 
@@ -450,10 +450,12 @@ FastMCP implements the [OpenTelemetry MCP semantic conventions](https://opentele
 | `mcp.method.name` | The MCP method being called (`tools/call`, `resources/read`, `prompts/get`, `tasks/get`, etc.) |
 | `mcp.protocol.version` | The negotiated MCP protocol version for the request |
 | `mcp.session.id` | Session identifier for the MCP connection |
+| `jsonrpc.request.id` | JSON-RPC request ID (on server spans for inbound requests) |
 | `mcp.resource.uri` | The resource URI (for resource operations) |
 | `gen_ai.tool.name` | Tool name (on `tools/call` spans) |
 | `gen_ai.prompt.name` | Prompt name (on `prompts/get` spans) |
-| `error.type` | Error classification (`tool_error` for ToolError, otherwise exception class name) |
+| `error.type` | Error classification (the JSON-RPC error code for protocol errors, `tool_error` for ToolError, otherwise exception class name) |
+| `rpc.response.status_code` | JSON-RPC error code (on spans that failed with a protocol error) |
 
 ### Auth Attributes
 
