@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import bisect
 import hashlib
 import json
 from typing import TYPE_CHECKING, cast
@@ -206,6 +207,64 @@ class ClientSkillsMixin:
                 cache_mode=cache_mode,
                 send=_send,
             )
+
+    async def list_skill_resources(self: Client) -> list[mcp_types.Resource]:
+        """List the skills a server publishes as `skill://.../SKILL.md` resources.
+
+        Use this for servers that serve skills as resources but not through the
+        Skills extension, such as FastMCP 4.1 and earlier. Pass a returned
+        resource's `uri` to `read_skill()` to fetch the whole skill.
+
+        When skill paths overlap, advertised manifests distinguish supporting
+        `SKILL.md` files from independent skills. Entries are kept if their
+        containing skill's manifest is unavailable or invalid.
+
+        Returns:
+            The `SKILL.md` resource of each skill, in the server's order.
+        """
+        resources = await self.list_resources()
+        skills = [
+            resource
+            for resource in resources
+            if str(resource.uri).startswith("skill://")
+            and str(resource.uri).endswith("/SKILL.md")
+        ]
+        resource_uris = {str(resource.uri) for resource in resources}
+        skill_uris = {str(resource.uri) for resource in skills}
+        # URIs sharing a prefix sort next to each other, so a skill has a
+        # nested candidate exactly when the URI after its prefix's insertion
+        # point also starts with that prefix.
+        ordered_uris = sorted(skill_uris)
+
+        def has_nested_candidate(prefix: str) -> bool:
+            start = bisect.bisect_left(ordered_uris, prefix)
+            matches = ordered_uris[start : start + 2]
+            return sum(uri.startswith(prefix) for uri in matches) > 1
+
+        supporting_uris: set[str] = set()
+        # Process parents first, so a supporting file's own name or contents
+        # cannot make it an authority over another skill's discovery.
+        for uri in sorted(skill_uris, key=lambda uri: (len(uri), uri)):
+            if uri in supporting_uris:
+                continue
+            prefix = uri.removesuffix("SKILL.md")
+            if f"{prefix}_manifest" not in resource_uris or not has_nested_candidate(
+                prefix
+            ):
+                continue
+            try:
+                manifest = await self._resource_mode_manifest(uri)
+            except (MCPError, ValueError):
+                # Manually registered resources need not have readable manifests.
+                continue
+            supporting_uris.update(
+                record.uri
+                for path, record in manifest.items()
+                if path != "SKILL.md" and record.uri.startswith(prefix)
+            )
+        return [
+            resource for resource in skills if str(resource.uri) not in supporting_uris
+        ]
 
     async def get_skill(
         self: Client,

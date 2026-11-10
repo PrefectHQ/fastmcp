@@ -396,7 +396,7 @@ class MCPConfigTransport(ClientTransport):
                 ToolTransform(_coerce_tool_transform_configs(tool_transforms))
             )
         # Then add enabled filters - they filter based on tags
-        if include_tags:
+        if include_tags is not None:
             proxy.enable(tags=set(include_tags), only=True)
         if exclude_tags:
             proxy.disable(tags=set(exclude_tags))
