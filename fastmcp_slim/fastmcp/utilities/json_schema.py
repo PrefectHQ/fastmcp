@@ -80,7 +80,7 @@ def _resolve_local_ref(
     """
     hops = _hops if _hops is not None else [0]
     fragment = ref[1:]
-    parts = unquote(fragment).lstrip("/").split("/") if fragment else []
+    parts = unquote(fragment.lstrip("/")).split("/") if fragment else []
     node: Any = schema
     for part in parts:
         while node is not schema and isinstance(node, dict) and "$ref" in node:
@@ -120,7 +120,7 @@ def ref_target_name(
     called ``Alias One`` as ``Alias%20One``, and neither decoded name appears
     in the raw text.
     """
-    parts = unquote(ref[1:]).lstrip("/").split("/")
+    parts = unquote(ref[1:].lstrip("/")).split("/")
     for root in roots:
         depth = len(root)
         if parts[:depth] == list(root) and len(parts) > depth and parts[depth]:
@@ -783,9 +783,8 @@ def _single_pass_optimize(
             # still pins the referenced $def as "used".
             if prune_defs:
                 ref = node.get("$ref")
-                if isinstance(ref, str) and ref.startswith("#"):
-                    # Decode the pointer before matching it: escaped,
-                    # percent-encoded (including `%24defs` and `%2F`), and
+                if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                    # Decode the pointer: escaped, percent-encoded, and
                     # sub-pointer references resolve to a definition whose
                     # name is not the raw text of the segment.
                     referenced_def = ref_target_name(ref)
