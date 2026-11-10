@@ -21,18 +21,20 @@ runs:
 
     - name: Run pytest
       shell: bash
+      env:
+        TEST_TYPE: ${{ inputs.test-type }}
       run: |
-        if [ "${{ inputs.test-type }}" == "integration" ]; then
+        if [ "$TEST_TYPE" == "integration" ]; then
           MARKER="integration"
           TIMEOUT="30"
           MAX_PROCS="2"
           EXTRA_FLAGS=""
-        elif [ "${{ inputs.test-type }}" == "client_process" ]; then
+        elif [ "$TEST_TYPE" == "client_process" ]; then
           MARKER="client_process or subprocess_heavy"
           TIMEOUT="5"
           MAX_PROCS="0"
           EXTRA_FLAGS="-x"
-        elif [ "${{ inputs.test-type }}" == "conformance" ]; then
+        elif [ "$TEST_TYPE" == "conformance" ]; then
           MARKER="conformance"
           TIMEOUT="120"
           MAX_PROCS="0"

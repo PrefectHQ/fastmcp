@@ -226,7 +226,7 @@ async def _answer_input_requests(
             answer = await (
                 asyncio.wait_for(call, budget) if budget is not None else call
             )
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             # Normalize to the builtin: on Python 3.10 `asyncio.wait_for` raises
             # `asyncio.TimeoutError`, a distinct type from the builtin the rest of
             # the drive raises (they were unified in 3.11).
