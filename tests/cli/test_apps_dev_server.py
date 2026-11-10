@@ -1,6 +1,7 @@
 """Sessions, launches, and app frames in the `fastmcp dev apps` server."""
 
 import html
+from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -10,6 +11,8 @@ from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import fastmcp.cli.apps_dev as apps_dev
+from fastmcp import FastMCP
+from fastmcp.utilities.tests import find_available_port, run_server_async
 
 TOKEN = "test-process-session-token"
 COOKIE = "fastmcp_dev_session_8080"
@@ -720,3 +723,45 @@ class TestSpawnedServer:
 
         env = spawn.call_args.kwargs["env"]
         assert env["FASTMCP_HTTP_HOST_ORIGIN_PROTECTION"] == "true"
+
+
+class TestServerHelpers:
+    """The picker talks to the local MCP server directly, like the readiness check."""
+
+    @pytest.fixture
+    def unreachable_proxy(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        proxy = f"http://127.0.0.1:{find_available_port()}"
+        for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+            monkeypatch.setenv(name, proxy)
+            monkeypatch.setenv(name.lower(), proxy)
+        monkeypatch.delenv("NO_PROXY", raising=False)
+        monkeypatch.delenv("no_proxy", raising=False)
+
+    @pytest.fixture
+    async def mcp_url(self) -> AsyncIterator[str]:
+        server = FastMCP("helpers")
+
+        @server.tool
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        @server.resource("ui://helpers/view.html")
+        def view() -> str:
+            return "<html>view</html>"
+
+        async with run_server_async(server) as url:
+            yield url
+
+    async def test_list_tools_ignores_proxy_environment(
+        self, unreachable_proxy: None, mcp_url: str
+    ):
+        tools = await apps_dev._list_tools(mcp_url)
+
+        assert [tool["name"] for tool in tools] == ["greet"]
+
+    async def test_read_resource_ignores_proxy_environment(
+        self, unreachable_proxy: None, mcp_url: str
+    ):
+        text = await apps_dev._read_mcp_resource(mcp_url, "ui://helpers/view.html")
+
+        assert text == "<html>view</html>"
