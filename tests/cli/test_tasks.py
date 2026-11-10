@@ -1,12 +1,19 @@
 """Tests for the fastmcp tasks CLI."""
 
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import fastmcp_tasks.worker_cli as worker_cli
 import pytest
 from fastmcp_tasks.settings import DocketSettings
 from fastmcp_tasks.worker_cli import (
     check_distributed_backend,
+    redact_backend_url,
     resolve_docket_settings,
     tasks_app,
 )
+from rich.console import Console
 
 from fastmcp import FastMCP
 from fastmcp_tasks import TasksExtension
@@ -59,6 +66,91 @@ class TestWorkerCommand:
         assert bound.arguments["server_spec"] == "server.py"
 
 
+class TestRedactPassword:
+    """The worker prints the backend URL without exposing its password."""
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            (
+                "redis://default:S3cretPass@localhost:6390/0",
+                "redis://default:***@localhost:6390/0",
+            ),
+            (
+                "redis://user:p@ss@localhost:6379/1",
+                "redis://user:***@localhost:6379/1",
+            ),
+            (
+                "redis://:secret@localhost:6379/0",
+                "redis://:***@localhost:6379/0",
+            ),
+            (
+                "redis://localhost:6379/0?password=secret",
+                "redis://localhost:6379/0?password=***",
+            ),
+            (
+                "redis://localhost:6379/0?db=1&sentinel_password=secret",
+                "redis://localhost:6379/0?db=1&sentinel_password=***",
+            ),
+            (
+                "redis://localhost:6379/0?Password=secret",
+                "redis://localhost:6379/0?Password=***",
+            ),
+        ],
+    )
+    def test_masks_the_password(self, url: str, expected: str):
+        assert redact_backend_url(url) == expected
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            ("redis://host?pass%77ord=secret", "redis://host?pass%77ord=***"),
+            (
+                "redis://host?sentinel_%70assword=secret&db=1",
+                "redis://host?sentinel_%70assword=***&db=1",
+            ),
+            (
+                "rediss://u:p%40ss@[::1]:6379/0?password=one&password=two",
+                "rediss://u:***@[::1]:6379/0?password=***&password=***",
+            ),
+            ("redis://host?password=&timeout=5", "redis://host?password=***&timeout=5"),
+            ("redis://host?password=a%26b%3Dc", "redis://host?password=***"),
+            (
+                "rediss://host?ssl_password=privatekeysecret",
+                "rediss://host?ssl_password=***",
+            ),
+            (
+                "rediss://host?ssl_%70assword=privatekeysecret",
+                "rediss://host?ssl_%70assword=***",
+            ),
+            (
+                "rediss+sentinel://host:26379/master?ssl_password=privatekeysecret",
+                "rediss+sentinel://host:26379/master?ssl_password=***",
+            ),
+            (
+                "rediss+sentinel://host:26379/master?ssl_%70assword=privatekeysecret",
+                "rediss+sentinel://host:26379/master?ssl_%70assword=***",
+            ),
+            ("redis://u:secret@[invalid", "***"),
+            ("redis://u:secret@host／name", "***"),
+        ],
+    )
+    def test_encoded_and_malformed_credentials(self, url: str, expected: str):
+        assert redact_backend_url(url) == expected
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "redis://localhost:6379/0",
+            "redis://user@localhost:6379/0",
+            "redis://localhost:6379/0?timeout=5",
+            "memory://",
+        ],
+    )
+    def test_leaves_urls_without_a_password_alone(self, url: str):
+        assert redact_backend_url(url) == url
+
+
 class TestTasksAppIntegration:
     """Test the tasks app integration."""
 
@@ -73,3 +165,71 @@ class TestTasksAppIntegration:
         # Detailed command testing is done in individual test classes
         assert "tasks" in tasks_app.name
         assert tasks_app.help
+
+
+def test_worker_banner_redacts_credentials(monkeypatch, capsys):
+    settings = DocketSettings(url="redis://u:secret@host?pass%77ord=querysecret")
+
+    @asynccontextmanager
+    async def lifespan():
+        yield
+
+    server = SimpleNamespace(name="demo", _lifespan_manager=lifespan)
+    config = SimpleNamespace(
+        source=SimpleNamespace(load_server=AsyncMock(return_value=server))
+    )
+    monkeypatch.setattr(worker_cli, "load_and_merge_config", lambda _: (config, None))
+    monkeypatch.setattr(worker_cli, "resolve_docket_settings", lambda _: settings)
+    monkeypatch.setattr(worker_cli, "console", Console(width=200, color_system=None))
+    monkeypatch.setattr(
+        worker_cli.asyncio, "sleep", AsyncMock(side_effect=KeyboardInterrupt)
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        worker_cli.worker("server.py")
+    assert exc.value.code == 0
+    output = capsys.readouterr().out
+    assert "Backend: redis://u:***@host?pass%77ord=***" in output
+    assert "secret" not in output
+
+
+class TestRedactBackendUrl:
+    """The worker prints the backend URL without its passwords."""
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            (
+                "redis://tasks:S3cret@redis.example.com:6379/0",
+                "redis://tasks:***@redis.example.com:6379/0",
+            ),
+            (
+                "rediss://:S3cret@redis.example.com/0",
+                "rediss://:***@redis.example.com/0",
+            ),
+            (
+                "redis://redis.example.com/0?password=S3cret&socket_timeout=5",
+                "redis://redis.example.com/0?password=***&socket_timeout=5",
+            ),
+            (
+                "redis+sentinel://u:S3cret@h1:26379,h2:26379/mymaster/0"
+                "?sentinel_password=S3cret2",
+                "redis+sentinel://u:***@h1:26379,h2:26379/mymaster/0"
+                "?sentinel_password=***",
+            ),
+        ],
+    )
+    def test_hides_passwords(self, url: str, expected: str):
+        assert redact_backend_url(url) == expected
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "redis://localhost:6379/0",
+            "redis://tasks@localhost:6379/0",
+            "redis://localhost/0?ssl_ca_certs=/etc/ca.pem",
+            "memory://test-123",
+        ],
+    )
+    def test_leaves_urls_without_passwords_unchanged(self, url: str):
+        assert redact_backend_url(url) == url
