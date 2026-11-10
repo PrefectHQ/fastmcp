@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from fastmcp.utilities.cli import load_and_merge_config
 from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
 
@@ -193,3 +194,13 @@ class TestEnvironmentNeedsUV:
         """Test that needs_uv returns False with empty lists."""
         env = UVEnvironment(dependencies=None, editable=None)
         assert env._must_run_with_uv() is False
+
+
+class TestLoadAndMergeConfig:
+    def test_port_zero_override_is_kept(self, tmp_path: Path):
+        server_file = tmp_path / "server.py"
+        server_file.write_text("from fastmcp import FastMCP\nmcp = FastMCP('test')\n")
+
+        config, _ = load_and_merge_config(str(server_file), port=0)
+
+        assert config.deployment.port == 0

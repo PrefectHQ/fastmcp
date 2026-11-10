@@ -78,6 +78,7 @@ client = [
 ]
 code-mode = ["pydantic-monty>=1.1,<2"]
 jev = ["typesafe-sdk>=0.5.7"]
+keystone = ["keystoneauth1>=5.0.0"]
 gemini = ["certifi>=2026.10.19", "google-genai>=1.18.0", "jsonref>=1.1.0"]
 mcp = [
     "exceptiongroup>=1.2.2",

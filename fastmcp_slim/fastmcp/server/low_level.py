@@ -458,6 +458,25 @@ class LowLevelServer(_Server[LifespanResultT]):
         # Store a weak reference to FastMCP to avoid circular references
         self._fastmcp_ref: weakref.ref[FastMCP] = weakref.ref(fastmcp)
 
+        # The SDK validates Mcp-Param-* headers on `tools/call` against the
+        # called tool's input schema. Without this sync hook the SDK falls back
+        # to a full `tools/list` per call — running every FastMCP list
+        # middleware and provider enumeration on each tool invocation (#5652).
+        # FastMCP tool resolution is async, so the hook serves FastMCP's
+        # wire-schema cache (seeded at registration, refreshed on every
+        # `tools/list`) instead of resolving through providers here.
+        def _get_tool_input_schema(name: str) -> dict[str, Any] | None:
+            # A bound method would hold a strong reference back to the
+            # FastMCP instance and recreate the cycle the weakref above
+            # exists to avoid; resolve through the weakref instead and
+            # fail open (no validation) if the server is gone.
+            resolved = self._fastmcp_ref()
+            if resolved is None:
+                return None
+            return resolved._get_tool_input_schema(name)
+
+        self.get_tool_input_schema = _get_tool_input_schema
+
         # FastMCP servers support notifications for all components. v2 derives
         # capabilities from registered handlers + protocol_version, but legacy
         # clients still read NotificationOptions at create_initialization_options
@@ -536,6 +555,9 @@ class LowLevelServer(_Server[LifespanResultT]):
     ) -> mcp_types.ServerCapabilities:
         """Override to advertise registered extensions and the MCP Apps UI extension.
 
+        The UI extension is advertised when the server may serve an app,
+        including through transforms or dynamic providers (`FastMCP.may_serve_apps`).
+
         ``ServerCapabilities.extensions`` is a real declared field in v2, so we
         update it directly. The
         `FastMCP(experimental_capabilities=...)` merge also lives here rather
@@ -559,19 +581,22 @@ class LowLevelServer(_Server[LifespanResultT]):
         # Advertise every registered extension's settings under
         # capabilities.extensions[identifier]. The hand-rolled UI splice stays
         # for now (MCP Apps migrates onto the extension API in a later phase);
-        # the two coexist. Advertisement is unconditional — the SDK's pre-2026
-        # version sieve strips capabilities.extensions on legacy eras, a known
+        # the two coexist. It is advertised only when the server may serve an
+        # app, including through transforms or dynamic providers.
+        # The SDK's pre-2026 version
+        # sieve strips capabilities.extensions on legacy eras, a known
         # limitation (sdk-feedback #2).
         existing_extensions = capabilities.extensions or {}
         registered_extensions = {
             extension.identifier: extension.settings()
             for extension in self.fastmcp._extensions.values()
         }
+        app_extensions = {UI_EXTENSION_ID: {}} if self.fastmcp.may_serve_apps else {}
         return capabilities.model_copy(
             update={
                 "extensions": {
                     **existing_extensions,
-                    UI_EXTENSION_ID: {},
+                    **app_extensions,
                     **registered_extensions,
                 },
             }

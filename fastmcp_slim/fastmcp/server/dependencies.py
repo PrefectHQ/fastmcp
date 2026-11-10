@@ -15,7 +15,6 @@ from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Mapp
 from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from functools import lru_cache
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Protocol, cast, get_type_hints, runtime_checkable
 
@@ -42,6 +41,7 @@ from uncalled_for.resolution import _Depends
 from fastmcp.exceptions import FastMCPError
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.http import _current_http_request
+from fastmcp.utilities._callable_cache import cache_on_callable
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -728,15 +728,15 @@ def get_access_token() -> AccessToken | None:
 # --- Schema generation helper ---
 
 
-@lru_cache(maxsize=5000)
+@cache_on_callable
 def without_injected_parameters(
     fn: Callable[..., Any], *, run_in_thread: bool = True
 ) -> Callable[..., Any]:
     """Create a wrapper function without injected parameters.
 
-    Returns a wrapper that excludes Context and Docket dependency parameters,
-    making it safe to use with Pydantic TypeAdapter for schema generation and
-    validation. The wrapper internally handles all dependency resolution and
+    Returns a wrapper that excludes Context, UserSession, and Docket dependency
+    parameters, making it safe to use with Pydantic TypeAdapter for schema
+    generation and validation. The wrapper internally handles all dependency resolution and
     Context injection when called.
 
     Handles:
@@ -754,14 +754,18 @@ def without_injected_parameters(
         Async wrapper function without injected parameters
     """
     from fastmcp.server.context import Context
+    from fastmcp.server.sessions import UserSession
 
     # Identify parameters to exclude
     context_kwarg = find_kwarg_by_type(fn, Context)
+    session_kwarg = find_kwarg_by_type(fn, UserSession)
     dependency_params = get_dependency_parameters(fn)
 
     exclude = set()
     if context_kwarg:
         exclude.add(context_kwarg)
+    if session_kwarg:
+        exclude.add(session_kwarg)
     if dependency_params:
         exclude.update(dependency_params.keys())
 
