@@ -35,6 +35,12 @@ By default, only tools are shown. Add `--resources` or `--prompts` to include th
 fastmcp list server.py --resources --prompts
 ```
 
+`--skills` lists the server's [Skills extension](/servers/skills) entries with each skill's files. A server that doesn't advertise the extension shows no skills and says why.
+
+```bash
+fastmcp list server.py --skills
+```
+
 ### Machine-Readable Output
 
 The `--json` flag switches to structured JSON with full schemas included. This is the format to use when feeding tool definitions to an LLM or building automation:
@@ -51,6 +57,7 @@ fastmcp list server.py --json
 | Transport | `--transport`, `-t` | Force `http` or `sse` for URL targets |
 | Resources | `--resources` | Include resources in output |
 | Prompts | `--prompts` | Include prompts in output |
+| Skills | `--skills` | Include Skills extension entries in output |
 | Input Schema | `--input-schema` | Show full input schemas |
 | Output Schema | `--output-schema` | Show full output schemas |
 | JSON | `--json` | Structured JSON output |
@@ -128,14 +135,14 @@ fastmcp call server.py summarize --prompt --input-json '{"topic": "weather"}'
 
 ## Discovering Configured Servers
 
-`fastmcp discover` scans your machine for MCP servers configured in editors and tools. It checks:
+`fastmcp discover` scans your machine for MCP servers configured in editors and tools. It checks these sources, listed with the source name you use in `--source` and `source:name`:
 
-- **Claude Desktop** — `claude_desktop_config.json`
-- **Claude Code** — `~/.claude.json`
-- **Cursor** — `.cursor/mcp.json` (walks up from current directory)
-- **Gemini CLI** — `~/.gemini/settings.json`
-- **Goose** — `~/.config/goose/config.yaml`
-- **Project** — `./mcp.json` in the current directory
+- **Claude Desktop** (`claude-desktop`) — `claude_desktop_config.json`
+- **Claude Code** (`claude-code`) — `~/.claude.json`
+- **Cursor** (`cursor`) — `.cursor/mcp.json` (walks up from current directory)
+- **Gemini CLI** (`gemini`) — `~/.gemini/settings.json` and `.gemini/settings.json` in the current directory
+- **Goose** (`goose`) — `~/.config/goose/config.yaml`
+- **Project** (`project`) — `./mcp.json` in the current directory
 
 Goose discovery includes enabled `stdio` and `streamable_http` extensions, as well as legacy `sse` entries. Streamable HTTP extensions retain their configured `headers` when resolved by name.
 
