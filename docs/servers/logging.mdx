@@ -68,6 +68,18 @@ async def process_transaction(transaction_id: str, amount: float, ctx: Context):
     )
 ```
 
+## Minimum Level
+
+Messages below the minimum level are dropped before they reach the client. Set a server-wide default with `FastMCP(client_log_level=...)` or the `FASTMCP_CLIENT_LOG_LEVEL` [setting](/more/settings). On handshake-era connections a client can override it for its session with the MCP `logging/setLevel` request; the modern protocol has no session to hold that level, so a modern client filters in its own log handler instead. With no minimum set, every level is sent.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("LoggingDemo", client_log_level="warning")
+```
+
+With this server, `ctx.debug()` and `ctx.info()` send nothing, while `ctx.warning()` and `ctx.error()` reach the client.
+
 ## Server-Side Logs
 
 Messages sent to clients via `ctx.log()` and its convenience methods are also logged to the server's log at `DEBUG` level. Enable debug logging on the `fastmcp.server.context.to_client` logger to see these messages:

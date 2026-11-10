@@ -21,7 +21,7 @@ Example usage with SDK:
     ```
 """
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -74,7 +74,7 @@ class _DisabledTracer(NoOpTracer):
         record_exception: bool = True,
         set_status_on_exception: bool = True,
         end_on_exit: bool = True,
-    ) -> Iterator[Span]:
+    ) -> Generator[Span, None, None]:
         yield INVALID_SPAN
 
 
@@ -106,7 +106,7 @@ def native_spans_enabled() -> bool:
 
 
 @contextmanager
-def suppress_fastmcp_telemetry() -> Iterator[None]:
+def suppress_fastmcp_telemetry() -> Generator[None, None, None]:
     """Suppress FastMCP's own spans without disabling trace propagation.
 
     Scoped equivalent of `telemetry_mode="propagation_only"`, for callers that

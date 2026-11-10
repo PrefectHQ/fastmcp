@@ -136,6 +136,18 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 <ParamField body="run_in_thread" type="bool" default="True">
   Applies to sync tool functions only. When `True` (default), sync functions are dispatched to a thread pool so they don't block the event loop. Set to `False` to run the function inline on the event loop thread — useful for libraries with thread affinity like Windows COM (`pywin32`, `uiautomation`, `comtypes`), `tkinter`, or certain GPU/driver bindings. Ignored for async functions, which always run on the event loop. See [Thread affinity](#thread-affinity) for details.
 </ParamField>
+
+<ParamField body="task" type="bool | TaskConfig | None">
+  Marks the tool as able to run as a background task. Requires an async function and the tasks extension. See [Background Tasks](/servers/tasks) for details.
+</ParamField>
+
+<ParamField body="auth" type="AuthCheck | list[AuthCheck] | None">
+  Authorization checks the caller must pass to see and call the tool. See [Authorization](/servers/authorization) for details.
+</ParamField>
+
+<ParamField body="app" type="AppConfig | dict | bool | None">
+  Renders the tool's result as an interactive UI in clients that support MCP Apps. See [Apps](/apps/overview) for details.
+</ParamField>
 </Card>
 
 ### Using with Methods
@@ -279,7 +291,7 @@ In this example, the LLM must provide a `query` parameter, while `max_results`, 
 
 By default, FastMCP uses Pydantic's flexible validation that coerces compatible inputs to match your type annotations. This improves compatibility with LLM clients that may send string representations of values (like `"10"` for an integer parameter).
 
-If you need stricter validation that rejects any type mismatches, you can enable strict input validation. Strict mode uses the MCP SDK's built-in JSON Schema validation to validate inputs against the exact schema before passing them to your function:
+If you need stricter validation that rejects any type mismatches, you can enable strict input validation. Strict mode validates arguments with Pydantic's strict mode, which rejects coercions such as the string `"10"` for an `int` while still accepting the JSON forms your input schema describes (ISO date strings, enum values, UUID strings):
 
 ```python
 # Enable strict validation for this server
@@ -304,6 +316,7 @@ def add_numbers(a: int, b: int) -> int:
 | Lists with string elements (`["1", "2"]` for `list[int]`) | ✅ Elements coerced | ❌ Validation error |
 | Pydantic model fields with type mismatches | ✅ Fields coerced | ❌ Validation error |
 | Invalid values (`"abc"` for `int`) | ❌ Validation error | ❌ Validation error |
+| Undeclared arguments to OpenAPI tools | ⚠️ Dropped with a warning | ❌ Validation error |
 
 <Note>
 **Note on Pydantic Models:** Even with `strict_input_validation=False`, Pydantic model parameters must be provided as JSON objects (dicts), not as stringified JSON. For example, `{"user": {"name": "Alice"}}` works, but `{"user": '{"name": "Alice"}'}` does not.
@@ -319,7 +332,7 @@ You can provide additional metadata about parameters in several ways:
 
 <VersionBadge version="3.2.4" />
 
-FastMCP parses your function's docstring to extract both the tool description and per-parameter descriptions. Google, NumPy, and Sphinx docstring styles are all supported — the parser tries each and uses whichever finds parameter descriptions:
+FastMCP parses your function's docstring to extract both the tool description and per-parameter descriptions. Google, NumPy, and Sphinx docstring styles are all supported — the parser tries each and uses the first one that recognizes a structured section such as `Args`, `Returns`, or `Raises`:
 
 ```python
 @mcp.tool
@@ -338,7 +351,7 @@ def process_image(
     # Implementation...
 ```
 
-The free-form text above the `Args` section — whether a single line or multiple paragraphs — becomes the tool description, and each parameter's docstring entry becomes the description for that parameter in the generated schema. Sections like `Returns`, `Raises`, and `Example` are excluded from the description but otherwise ignored.
+The free-form text above the `Args` section — whether a single line or multiple paragraphs — becomes the tool description, and each parameter's docstring entry becomes the description for that parameter in the generated schema. Sections like `Returns`, `Raises`, and `Example` are excluded from the description but otherwise ignored. This applies to functions without parameters as well: a docstring with only a `Returns` section yields just the free-form text above it.
 
 If a parameter already has an explicit description — via `Annotated[x, "..."]` or `Field(description=...)` — that description takes precedence over the docstring. This makes it safe to adopt docstring-based descriptions incrementally: existing annotations keep working, and docstrings fill in the gaps.
 
@@ -373,7 +386,7 @@ This shorthand syntax is only applied to `Annotated` types with a single string 
 For validation constraints and advanced metadata, use Pydantic's `Field` class with `Annotated`:
 
 ```python
-from typing import Annotated
+from typing import Annotated, Literal
 from pydantic import Field
 
 @mcp.tool
@@ -394,6 +407,8 @@ def process_image(
 You can also use the Field as a default value, though the Annotated approach is preferred:
 
 ```python
+from pydantic import Field
+
 @mcp.tool
 def search_database(
     query: str = Field(description="Search query string"),
@@ -452,7 +467,7 @@ The following sections explain each concept in detail.
 FastMCP automatically converts tool return values into appropriate MCP content blocks:
 
 - **`str`**: Sent as `TextContent`
-- **`bytes`**: Base64 encoded and sent as `BlobResourceContents` (within an `EmbeddedResource`)
+- **`bytes`**: Sent as `TextContent`, decoded as UTF-8 when possible and base64-encoded otherwise. To send binary data as an embedded resource with a MIME type, return a `File` instead
 - **`fastmcp.utilities.types.Image`**: Sent as `ImageContent`
 - **`fastmcp.utilities.types.Audio`**: Sent as `AudioContent`
 - **`fastmcp.utilities.types.File`**: Sent as base64-encoded `EmbeddedResource`
@@ -505,7 +520,7 @@ Each helper class accepts either `path=` or `data=` (mutually exclusive):
 
 <VersionBadge version="2.10.0" />
 
-The 6/18/2025 MCP spec update [introduced](https://modelcontextprotocol.io/specification/2025-06-18/server/tools#structured-content) structured content, which is a new way to return data from tools. Structured content is a JSON object that is sent alongside traditional content. FastMCP automatically creates structured outputs alongside traditional content when your tool returns data that has a JSON object representation. This provides machine-readable JSON data that clients can deserialize back to Python objects.
+The 6/18/2025 MCP spec update [introduced](https://modelcontextprotocol.io/specification/2025-06-18/server/tools#structured-content) structured content: a JSON object sent alongside traditional content. FastMCP automatically creates structured outputs alongside traditional content when your tool returns data that has a JSON object representation. This provides machine-readable JSON data that clients can deserialize back to Python objects.
 
 **Automatic Structured Content Rules:**
 - **Object-like results** (`dict`, Pydantic models, dataclasses) → Always become structured content (even without output schema)  
@@ -736,11 +751,13 @@ def advanced_tool() -> ToolResult:
     )
 ```
 
-`ToolResult` accepts three fields:
+`ToolResult` accepts four fields:
 
 **`content`** - The traditional MCP content blocks that clients display to users. Can be a string (automatically converted to `TextContent`), a list of MCP content blocks, or any serializable value (converted to JSON string). At least one of `content` or `structured_content` must be provided.
 
 ```python
+from mcp.types import ImageContent, TextContent
+
 # Simple string
 ToolResult(content="Hello, world!")
 
@@ -774,6 +791,12 @@ ToolResult(
         "confidence": 0.95
     }
 )
+```
+
+**`is_error`** - Marks the result as a tool execution error. Defaults to `False`. When `True`, the client receives the content as an error result (`isError: true`) instead of a success, without your tool raising an exception.
+
+```python
+ToolResult(content="Upstream service unavailable", is_error=True)
 ```
 
 <Note>
@@ -899,7 +922,7 @@ async def long_running_task(
 See the [Docket documentation](https://docket.lol/en/latest/task-behaviors/#task-timeouts) for more on task timeouts and retries.
 </Warning>
 
-When a tool times out, FastMCP logs a warning suggesting task mode. For operations you know will be long-running, use `task=True` instead—background tasks offload work to distributed workers and let clients poll for progress.
+When a tool times out, FastMCP logs a warning suggesting task mode. For operations you know will be long-running, use `task=True` instead—[background tasks](/servers/tasks) offload work to distributed workers and let clients poll for progress.
 
 ## Component Visibility
 
@@ -1033,7 +1056,6 @@ Client-specific behavior:
 FastMCP automatically sends `notifications/tools/list_changed` notifications to connected clients when tools are added, removed, enabled, or disabled. This allows clients to stay up-to-date with the current tool set without manually polling for changes.
 
 ```python
-@mcp.tool
 def example_tool() -> str:
     return "Hello!"
 

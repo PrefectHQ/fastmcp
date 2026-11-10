@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import ssl
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Any, Literal, cast
 
 import httpx2
@@ -20,11 +20,12 @@ from fastmcp.client.auth.client_credentials import (
     PrivateKeyJWTOAuthProvider,
 )
 from fastmcp.client.auth.oauth import OAuth
-from fastmcp.client.dependencies import _get_forwardable_http_headers
+from fastmcp.client.dependencies import _merge_forwardable_http_headers
 from fastmcp.client.transports.base import (
     ClientTransport,
     SessionKwargs,
     TransportOptions,
+    _mark_verify_factory,
 )
 
 
@@ -38,6 +39,8 @@ class StreamableHttpTransport(ClientTransport):
         auth: httpx2.Auth | Literal["oauth"] | str | None = None,
         httpx_client_factory: McpHttpClientFactory | None = None,
         verify: ssl.SSLContext | bool | str | None = None,
+        *,
+        max_sse_event_size: int | None = 1024 * 1024,
     ):
         """Initialize a Streamable HTTP transport.
 
@@ -49,11 +52,18 @@ class StreamableHttpTransport(ClientTransport):
             httpx_client_factory: Optional factory for creating httpx2.AsyncClient.
                 If provided, must accept keyword arguments: headers, auth,
                 follow_redirects, and optionally timeout. Using **kwargs is
-                recommended to ensure forward compatibility.
+                recommended to ensure forward compatibility. `timeout` is passed
+                only when the client has one (e.g. `Client(transport, timeout=30)`);
+                otherwise the factory owns the timeout. An `httpx2.AsyncClient`
+                built without one uses httpx's 5 second default, so set a default
+                in the factory, e.g.
+                `kwargs.setdefault("timeout", httpx2.Timeout(30.0, read=300.0))`.
             verify: SSL certificate verification. Accepts False to disable
                 verification, a path to a CA bundle, or an ssl.SSLContext
                 for full control. None (default) uses httpx defaults (verification
                 enabled). Ignored when httpx_client_factory is provided.
+            max_sse_event_size: Maximum size in bytes of an incoming SSE event.
+                Defaults to 1 MiB. None disables the limit.
         """
         if isinstance(url, AnyUrl):
             url = str(url)
@@ -67,6 +77,7 @@ class StreamableHttpTransport(ClientTransport):
         self.headers = headers or {}
         self.httpx_client_factory = httpx_client_factory
         self.verify: ssl.SSLContext | bool | str | None = verify
+        self.max_sse_event_size = max_sse_event_size
 
         if httpx_client_factory is not None and verify is not None:
             import warnings
@@ -150,7 +161,7 @@ class StreamableHttpTransport(ClientTransport):
                 kwargs["auth"] = auth
             return httpx2.AsyncClient(**kwargs)
 
-        return cast(McpHttpClientFactory, factory)
+        return _mark_verify_factory(cast(McpHttpClientFactory, factory))
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -158,7 +169,7 @@ class StreamableHttpTransport(ClientTransport):
         *,
         transport_options: TransportOptions | None = None,
         **session_kwargs: Unpack[SessionKwargs],
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         options = transport_options or TransportOptions()
 
         # Proxies preserve eligible inbound headers while starting a distinct
@@ -166,16 +177,19 @@ class StreamableHttpTransport(ClientTransport):
         # This is off by default so a plain Client used inside a server tool
         # handler cannot leak caller headers to an unrelated remote server.
         if options.forward_incoming_headers:
-            headers = _get_forwardable_http_headers() | self.headers
+            headers = _merge_forwardable_http_headers(self.headers)
         else:
             headers = dict(self.headers)
 
         # Configure timeout if provided, preserving MCP's 30s connect default.
         # SDK v2 session read timeouts are float seconds (see SessionKwargs).
+        # The session enforces request timeouts itself, and a call may carry its
+        # own, longer timeout, so the HTTP read timeout may only extend MCP's
+        # 300s default; a shorter client timeout must not cut such a call short.
         timeout: httpx2.Timeout | None = None
         read_timeout_seconds = session_kwargs.get("read_timeout_seconds")
         if read_timeout_seconds is not None:
-            timeout = httpx2.Timeout(30.0, read=read_timeout_seconds)
+            timeout = httpx2.Timeout(30.0, read=max(300.0, read_timeout_seconds))
 
         # Create httpx client from factory or use default with MCP-appropriate
         # timeouts. Note: create_mcp_http_client enables follow_redirects, but
@@ -214,7 +228,11 @@ class StreamableHttpTransport(ClientTransport):
         # yields a 2-tuple (read, write); get_session_id is gone from the transport.
         async with (
             http_client,
-            streamable_http_client(self.url, http_client=http_client) as (
+            streamable_http_client(
+                self.url,
+                http_client=http_client,
+                max_sse_event_size=self.max_sse_event_size,
+            ) as (
                 read_stream,
                 write_stream,
             ),
