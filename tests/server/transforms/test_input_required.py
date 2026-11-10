@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
@@ -95,7 +95,7 @@ def _expected(tool: str, text: str) -> str | dict[str, Any]:
 @asynccontextmanager
 async def _client(
     server: FastMCP, stateless: bool | None, **kwargs: Any
-) -> AsyncIterator[Client]:
+) -> AsyncGenerator[Client, None]:
     if stateless is None:
         async with Client(server, **kwargs) as client:
             yield client

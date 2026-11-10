@@ -219,3 +219,47 @@ def test_root_object_literal_revalidation_preserves_wire_representation(
     result = adapter.validate_python(value)
     assert result.at.isoformat() == value["at"]
     assert adapter.validate_python(result) is result
+
+
+NODE_DEFS: dict[str, Any] = {
+    "Node": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "child": {"$ref": "#/$defs/Node"},
+        },
+    }
+}
+
+
+def test_literal_model_hydrates_recursive_default() -> None:
+    generated = json_schema_to_type(
+        {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {"node": {"$ref": "#/$defs/Node", "default": {"name": "x"}}},
+            "enum": [{}, {"node": {"name": "y"}}],
+            "$defs": NODE_DEFS,
+        }
+    )
+    result = TypeAdapter[Any](generated).validate_python({})
+    assert not isinstance(result.node, dict)
+    assert result.node.name == "x"
+
+
+def test_literal_root_without_properties_resolves_recursive_values() -> None:
+    value = {"a": {"name": "x", "child": {"name": "y"}}}
+    adapter = TypeAdapter[Any](
+        json_schema_to_type(
+            {
+                "type": "object",
+                "additionalProperties": {"$ref": "#/$defs/Node"},
+                "const": value,
+                "$defs": NODE_DEFS,
+            }
+        )
+    )
+    result = adapter.validate_python(value)
+    assert result["a"].child.name == "y"
+    with pytest.raises(ValidationError):
+        adapter.validate_python({"a": {"name": "x"}})

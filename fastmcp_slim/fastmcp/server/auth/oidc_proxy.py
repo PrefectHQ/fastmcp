@@ -14,12 +14,11 @@ from collections.abc import Sequence
 from copy import deepcopy
 from threading import Lock
 from time import monotonic
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, BaseModel, model_validator
-from typing_extensions import Self
 
 from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.identity_assertion import IdentityAssertion
@@ -360,7 +359,8 @@ class OIDCProxy(OAuthProxy):
                 provided, the upstream client secret will be used to derive a 32-byte key using PBKDF2.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
-                Defaults to "client_secret_basic".
+                Defaults to "client_secret_basic" when a client secret is configured
+                and to "none" (public client, no secret sent) otherwise.
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to the upstream IdP.
                 When False, authorization proceeds directly without user confirmation.
