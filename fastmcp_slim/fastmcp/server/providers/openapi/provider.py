@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections import Counter
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Literal, cast
 
@@ -201,7 +201,7 @@ class OpenAPIProvider(Provider):
         return httpx2.AsyncClient(base_url=base_url, timeout=DEFAULT_TIMEOUT)
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         """Manage the lifecycle of the auto-created httpx client."""
         if self._owns_client:
             async with self._client:
@@ -224,6 +224,9 @@ class OpenAPIProvider(Provider):
             name = route.summary or f"{route.method}_{route.path}"
 
         name = _slugify(name)
+        if not name:
+            # Nothing usable survived slugging, e.g. a summary with no ASCII letters
+            name = _slugify(f"{route.method}_{route.path}")
 
         if len(name) > 56:
             name = name[:56]

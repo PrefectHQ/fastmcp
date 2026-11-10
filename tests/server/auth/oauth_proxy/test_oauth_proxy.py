@@ -341,6 +341,7 @@ class TestOptionalClientSecret:
         client = proxy._create_upstream_oauth_client()
         assert isinstance(client, AsyncOAuth2Client)
         assert client.client_id == "client-123"
+        assert client.token_endpoint_auth_method == "none"
 
     def test_factory_method_with_secret(self, jwt_verifier):
         """_create_upstream_oauth_client includes the secret when configured."""
@@ -357,6 +358,7 @@ class TestOptionalClientSecret:
         client = proxy._create_upstream_oauth_client()
         assert isinstance(client, AsyncOAuth2Client)
         assert client.client_secret == "secret-456"
+        assert client.token_endpoint_auth_method == "client_secret_basic"
 
     def test_consent_cookies_work_without_secret(self, jwt_verifier):
         """Cookie signing/verification works using JWT key when no secret is configured."""

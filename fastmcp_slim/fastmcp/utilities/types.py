@@ -4,11 +4,10 @@ import base64
 import inspect
 import mimetypes
 import os
-import sys
 from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
-from types import EllipsisType, SimpleNamespace, UnionType
+from types import EllipsisType, UnionType
 from typing import (
     Annotated,
     Any,
@@ -49,26 +48,8 @@ class FastMCPBaseModel(BaseModel):
 
 
 def get_function_type_hints(fn: Callable[..., Any]) -> dict[str, Any]:
-    """Resolve a function's type hints, keeping `Annotated` metadata.
-
-    Before Python 3.11, `typing.get_type_hints` wraps the hint of every
-    parameter that defaults to `None` in `Optional[...]`. For
-    `Annotated[int | None, Field(title="Limit")] = None` that produces
-    `Optional[Annotated[...]]`, which buries the `Field` metadata in a nested
-    union branch of the JSON schema. Hints are resolved here without that
-    wrapping, so every supported Python version yields the same schema.
-    """
-    if sys.version_info >= (3, 11) or getattr(fn, "__annotations__", None) is None:
-        return get_type_hints(fn, include_extras=True)
-
-    # get_type_hints only adds the Optional wrapper for defaults it reads from
-    # `__code__`, so resolve the annotations through a proxy that has none.
-    namespace_fn = inspect.unwrap(fn)
-    proxy = SimpleNamespace(
-        __annotations__=fn.__annotations__,
-        __globals__=getattr(namespace_fn, "__globals__", {}),
-    )
-    return get_type_hints(proxy, include_extras=True)
+    """Resolve a function's type hints, keeping `Annotated` metadata."""
+    return get_type_hints(fn, include_extras=True)
 
 
 @lru_cache(maxsize=5000)
@@ -143,9 +124,9 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
 
                 if inspect.ismethod(cls):
                     new_method = types.MethodType(new_func, cls.__self__)
-                    return TypeAdapter(new_method)
+                    return TypeAdapter(new_method)  # ty:ignore[invalid-type-form]
                 else:
-                    return TypeAdapter(new_func)
+                    return TypeAdapter(new_func)  # ty:ignore[invalid-type-form]
 
     return TypeAdapter(cls)
 
@@ -372,6 +353,11 @@ class Audio:
             "ogg": "audio/ogg",
             "m4a": "audio/mp4",
             "flac": "audio/flac",
+            "opus": "audio/ogg",
+            "aac": "audio/aac",
+            "webm": "audio/webm",
+            "aiff": "audio/aiff",
+            "aif": "audio/aiff",
         }
 
         if self._format:
@@ -463,15 +449,20 @@ class File:
                 uri_str = self.path.resolve().as_uri()
         elif self.data is not None:
             raw_data = self.data
+            # The URI extension follows the requested format, not the MIME
+            # subtype (format="txt" is text/plain but should stay .txt).
+            extension = (
+                f".{self._format.lower()}"
+                if self._format
+                else f".{self._mime_type.split('/')[1]}"
+            )
             if self._name:
-                extension = (
-                    ""
-                    if Path(self._name).suffix
-                    else f".{self._mime_type.split('/')[1]}"
-                )
-                uri_str = f"file:///{quote(self._name + extension)}"
+                if Path(self._name).suffix:
+                    uri_str = f"file:///{quote(self._name)}"
+                else:
+                    uri_str = f"file:///{quote(self._name + extension)}"
             else:
-                uri_str = f"file:///resource.{self._mime_type.split('/')[1]}"
+                uri_str = f"file:///resource{extension}"
         else:
             raise ValueError("No resource data available")
 
