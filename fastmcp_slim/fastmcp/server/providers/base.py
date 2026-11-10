@@ -33,9 +33,7 @@ from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import partial
-from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
-
-from typing_extensions import Self
+from typing import TYPE_CHECKING, Any, Literal, Self, TypeVar, cast
 
 from fastmcp.server.providers.addressing import (
     is_app_tool_with_identity,
@@ -281,7 +279,7 @@ class Provider:
         Server (FastMCP) performs enabled filtering after all transforms.
 
         Args:
-            tool_hash: The identity hash from a `<hash>_<local_name>` name.
+            tool_hash: The identity hash from a `__<hash>_<local_name>` name.
             tool_name: The local tool name from the same name.
 
         Returns:
