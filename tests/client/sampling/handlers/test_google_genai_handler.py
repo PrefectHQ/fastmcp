@@ -7,6 +7,7 @@ try:
     from google.genai import Client as GoogleGenaiClient
     from google.genai.types import (
         Candidate,
+        FinishReason,
         FunctionCall,
         FunctionCallingConfigMode,
         GenerateContentResponse,
@@ -190,6 +191,7 @@ async def test_response_to_create_message_result():
     # Create a mock response
     mock_response = MagicMock(spec=GenerateContentResponse)
     mock_response.text = "HELPFUL CONTENT FROM GEMINI"
+    mock_response.candidates = [Candidate(finish_reason=FinishReason.STOP)]
 
     result: CreateMessageResult = _response_to_create_message_result(
         response=mock_response, model="gemini-2.0-flash-exp"
@@ -198,7 +200,21 @@ async def test_response_to_create_message_result():
         content=TextContent(type="text", text="HELPFUL CONTENT FROM GEMINI"),
         role="assistant",
         model="gemini-2.0-flash-exp",
+        stop_reason="endTurn",
     )
+
+
+async def test_response_to_create_message_result_reports_max_tokens():
+    """Without tools, a reply cut off at max_tokens must say so too."""
+    mock_response = MagicMock(spec=GenerateContentResponse)
+    mock_response.text = "partial"
+    mock_response.candidates = [Candidate(finish_reason=FinishReason.MAX_TOKENS)]
+
+    result = _response_to_create_message_result(
+        response=mock_response, model="gemini-2.0-flash-exp"
+    )
+
+    assert result.stop_reason == "maxTokens"
 
 
 def test_convert_tool_choice_to_google_genai():

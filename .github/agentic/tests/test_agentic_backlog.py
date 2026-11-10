@@ -474,6 +474,9 @@ def test_finish_commits_policy_decisions_saved_by_an_older_controller(
         )
         assert state["completed"] == [1]
         assert state["review"]["bins"]["decisions"] == [policy_outcome(1, legacy)]
+        assert state["issues"] == [
+            {"issue_number": 1, "title": "Report 1", "author": "reporter"}
+        ]
         assert checkpoint(config.scope()) == (owner, state)
 
 
