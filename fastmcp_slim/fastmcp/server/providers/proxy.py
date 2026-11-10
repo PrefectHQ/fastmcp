@@ -69,8 +69,8 @@ from fastmcp.tools.base import (
     Tool,
     ToolResult,
 )
-from fastmcp.tools.function_parsing import _is_object_schema
 from fastmcp.utilities.components import FastMCPComponent, get_fastmcp_metadata
+from fastmcp.utilities.json_schema import is_object_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.tasks import TaskConfig
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
@@ -472,7 +472,7 @@ class ProxyTool(Tool):
                 not isinstance(structured_content, dict)
                 or (
                     self.output_schema is not None
-                    and not _is_object_schema(self.output_schema)
+                    and not is_object_schema(self.output_schema)
                 )
             ):
                 return RawStructuredToolResult(

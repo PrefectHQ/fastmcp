@@ -741,6 +741,7 @@ class TestCacheableToolResult:
 
         wire = edited.to_mcp_result()
         assert isinstance(wire, mcp_types.CallToolResult)
+        assert isinstance(wire.content[0], mcp_types.TextContent)
         assert wire.content[0].text == "redacted"
         assert wire.structured_content == {"secret": "redacted"}
         assert wire.meta == {"source": "middleware"}
