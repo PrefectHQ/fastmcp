@@ -557,6 +557,23 @@ class TestListComponentsOutsideRequest:
         assert [str(r.uri) for r in resources] == ["docs://readme"]
         assert [p.name for p in prompts] == ["summarize"]
 
+    async def test_session_middleware_sees_no_request_context(self, server: FastMCP):
+        """The stand-in request context has no session, so PingMiddleware must
+        not start a keepalive task for it."""
+        from fastmcp.server.middleware.ping import PingMiddleware
+
+        ping = PingMiddleware(interval_ms=50)
+        server.add_middleware(ping)
+
+        @server.tool
+        async def catalog(ctx: Context) -> list[str]:
+            return [str(r.uri) for r in await ctx.list_resources()]
+
+        result = await server.call_tool("catalog", {})
+
+        assert result.structured_content == {"result": ["docs://readme"]}
+        assert ping._active_sessions == set()
+
 
 class TestContextLogExtra:
     async def test_log_extra_with_log_record_attribute_names(self):

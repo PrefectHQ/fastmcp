@@ -339,7 +339,13 @@ class Context:
             return await call_next(context)
         ```
         """
-        return fastmcp_request_ctx.get()
+        request_ctx = fastmcp_request_ctx.get()
+        # Outside a live request, _paginate_list binds a stand-in request
+        # context with no session. That is not an MCP session, so report it
+        # as no request context to session consumers.
+        if request_ctx is None or request_ctx.session is None:
+            return None
+        return request_ctx
 
     def client_extension_settings(self, identifier: str) -> dict[str, Any] | None:
         """This request's per-request opt-in settings for an MCP extension.
@@ -733,8 +739,7 @@ class Context:
 
         # Get session from request context or _session (for on_initialize)
         request_ctx = self.request_context
-        # _detached_request_context binds a request context with no session
-        if request_ctx is not None and request_ctx.session is not None:
+        if request_ctx is not None:
             session = request_ctx.session
         elif self._session is not None:
             session = self._session
