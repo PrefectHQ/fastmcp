@@ -11,7 +11,7 @@ shields.io `badge.json` into the output directory. Automation health comes
 from each workflow's own GitHub Actions runs, so every claim links to public
 evidence. Only facts are published: the contributor queue appears as how many
 PRs wait and for how long. Judgments about individual PRs, even as counts,
-stay private (`uv run scripts/gate_digest.py`).
+stay private.
 
 Entries published by other systems are merged in from OPERATOR_STATUS_URL
 when it is set, each keeping its own `as_of`.
@@ -25,10 +25,10 @@ import shutil
 import subprocess
 import sys
 import urllib.request
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-UTC = timezone.utc
+UTC = UTC
 
 REPO = "PrefectHQ/fastmcp"
 SCHEMA = "fastmcp-maintenance/1"
@@ -66,13 +66,6 @@ AUTOMATIONS = [
         "what": "closes issues marked as duplicates, and issues still missing a reproducible example after 7 days of author inactivity",
         "cadence": "daily",
         "workflows": ["auto-close-duplicates.yml", "auto-close-needs-mre.yml"],
-    },
-    {
-        "id": "bug-investigation",
-        "name": "bug investigation",
-        "what": "investigates new bug reports filed by maintainers and posts findings",
-        "cadence": "on each qualifying new issue",
-        "workflows": ["marvin-triage-issue.yml"],
     },
     {
         "id": "ci-failure-analysis",

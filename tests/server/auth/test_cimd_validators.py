@@ -821,3 +821,36 @@ class TestCIMDRedirectUriEnforcement:
         # Evil.com should fail (in CIMD but doesn't match proxy patterns)
         with pytest.raises(InvalidRedirectUriError):
             client.validate_redirect_uri(AnyUrl("https://evil.com/callback"))
+
+    async def test_private_use_scheme_redirect_uris(self, httpx_mock, mock_dns):
+        """A native client's private-use scheme redirect resolves and is enforced.
+
+        RFC 8252 section 7.1 schemes have no host, and unsafe schemes in the
+        document are never usable.
+        """
+        from mcp.shared.auth import InvalidRedirectUriError
+        from pydantic import AnyUrl
+
+        url = "https://example.com/client.json"
+        httpx_mock.add_response(
+            json={
+                "client_id": url,
+                "client_name": "Native App",
+                "redirect_uris": [
+                    "com.example.app:/oauth",
+                    "javascript:alert(1)",
+                ],
+                "token_endpoint_auth_method": "none",
+            },
+            headers={"content-length": "200"},
+        )
+
+        client = await CIMDClientManager(enable_cimd=True).get_client(url)
+        assert client is not None
+
+        validated = client.validate_redirect_uri(AnyUrl("com.example.app:/oauth"))
+        assert str(validated) == "com.example.app:/oauth"
+
+        for rejected in ("com.evil.app:/oauth", "javascript:alert(1)"):
+            with pytest.raises(InvalidRedirectUriError):
+                client.validate_redirect_uri(AnyUrl(rejected))

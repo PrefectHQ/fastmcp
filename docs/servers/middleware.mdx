@@ -71,10 +71,12 @@ When using [mounted servers](/servers/composition), middleware behavior follows 
 
 ```python
 from fastmcp import FastMCP
+from fastmcp.server.auth import require_scopes
+from fastmcp.server.middleware import AuthMiddleware
 from fastmcp.server.middleware.logging import LoggingMiddleware
 
 parent = FastMCP("Parent")
-parent.add_middleware(AuthMiddleware())  # Runs for ALL requests
+parent.add_middleware(AuthMiddleware(auth=require_scopes("api")))  # Runs for ALL requests
 
 child = FastMCP("Child")
 child.add_middleware(LoggingMiddleware())  # Only runs for child's tools
@@ -84,7 +86,7 @@ parent.mount(child, namespace="child")
 
 Requests to `child_tool` flow through the parent's `AuthMiddleware` first, then through the child's `LoggingMiddleware`.
 
-Middleware-stored state does not automatically cross mount boundaries. If `AuthMiddleware` on the parent calls `ctx.set_state("user_id", ...)`, a tool on the child server calling `ctx.get_state("user_id")` will get `None` — each `FastMCP` instance owns its own session state store. To share state across the mount, either pass the same `session_state_store` to both servers or use `serializable=False` for request-scoped values. See [Session State](/servers/sessions) for details.
+Middleware-stored state does not automatically cross mount boundaries. If middleware on the parent calls `ctx.set_state("user_id", ...)`, a tool on the child server calling `ctx.get_state("user_id")` will get `None` — each `FastMCP` instance owns its own state store. To share state across the mount, either pass the same `session_state_store` to both servers or use `serializable=False` for request-scoped values. See [Request State](/servers/context#request-state) for details.
 
 ## Hooks
 
@@ -278,7 +280,7 @@ async def on_list_prompts(self, context: MiddlewareContext, call_next):
 
 <VersionBadge version="2.13.0" />
 
-Called when a client connects and initializes the session. Middleware can reject the client before `call_next()` raises an error response, or inspect and modify the `InitializeResult` after `call_next()` returns.
+Called when a handshake-era (legacy) client connects and initializes the session; modern clients negotiate through `server/discover` instead, which `on_discover` handles. Middleware can reject the client before `call_next()` raises an error response, or inspect and modify the `InitializeResult` after `call_next()` returns.
 
 The request params carry the identity the client declared for itself on `client_info`, which makes this the natural place to gate access by client. Note that these fields are snake_case: the MCP wire format spells it `clientInfo`, but the Python model exposes `client_info` and treats the camelCase form as a serialization alias only.
 
@@ -472,6 +474,7 @@ from key_value.aio.stores.filetree import (
 )
 
 cache_dir = Path("cache")
+cache_dir.mkdir(parents=True, exist_ok=True)
 mcp.add_middleware(ResponseCachingMiddleware(
     cache_storage=FileTreeStore(
         data_directory=cache_dir,
@@ -536,7 +539,13 @@ from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware, Re
 
 ```python
 from fastmcp import FastMCP
+from fastmcp.server.middleware import MiddlewareContext
 from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
+
+
+def my_error_callback(error: Exception, context: MiddlewareContext) -> None:
+    print(f"{context.method} failed: {error!r}")
+
 
 mcp = FastMCP("MyServer")
 mcp.add_middleware(ErrorHandlingMiddleware(
@@ -691,7 +700,7 @@ Raise the appropriate error type to stop processing and return an error to the c
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.exceptions import ToolError
 
-class AuthMiddleware(Middleware):
+class AdminToolGuard(Middleware):
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         tool_name = context.message.name
 
@@ -818,7 +827,7 @@ class PrivateToolFilter(Middleware):
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         if context.fastmcp_context:
             tool = await context.fastmcp_context.fastmcp.get_tool(context.message.name)
-            if "private" in tool.tags:
+            if tool is not None and "private" in tool.tags:
                 raise ToolError("Tool not found")
 
         return await call_next(context)
@@ -826,24 +835,19 @@ class PrivateToolFilter(Middleware):
 
 ### Accessing Component Metadata
 
-During execution hooks, component metadata (like tags) isn't directly available. Look up the component through the server:
+During execution hooks, component metadata (like tags) isn't directly available. Look up the component through the server. The lookup returns `None` for a tool that doesn't exist or isn't visible to the caller, so leave that case to the normal call path:
 
 ```python
 from fastmcp.server.middleware import Middleware, MiddlewareContext
-from fastmcp.exceptions import ToolError
 
 class TagBasedAuth(Middleware):
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         if context.fastmcp_context:
-            try:
-                tool = await context.fastmcp_context.fastmcp.get_tool(context.message.name)
+            tool = await context.fastmcp_context.fastmcp.get_tool(context.message.name)
 
-                if "requires-auth" in tool.tags:
-                    # Check authentication here
-                    pass
-
-            except Exception:
-                pass  # Let execution handle missing tools
+            if tool is not None and "requires-auth" in tool.tags:
+                # Check authentication here
+                pass
 
         return await call_next(context)
 ```
@@ -873,7 +877,7 @@ class UserMiddleware(Middleware):
 
         # Store for tools to access
         if context.fastmcp_context:
-            context.fastmcp_context.set_state("user_id", user_id)
+            await context.fastmcp_context.set_state("user_id", user_id)
 
         return await call_next(context)
 ```
@@ -886,8 +890,8 @@ from fastmcp import FastMCP, Context
 mcp = FastMCP("MyServer")
 
 @mcp.tool
-def get_user_data(ctx: Context) -> str:
-    user_id = ctx.get_state("user_id")
+async def get_user_data(ctx: Context) -> str:
+    user_id = await ctx.get_state("user_id")
     return f"Data for user: {user_id}"
 ```
 
