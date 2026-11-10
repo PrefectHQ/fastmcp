@@ -394,6 +394,13 @@ def _convert_normalized(schema: dict[str, Any], name: str | None) -> type:
         # Always use the top-level schema for references
         if schema.get("type") == "object":
             result = _object_schema_to_type(schema, schemas=schema, name=name)
+            if not schema.get("properties") and ("const" in schema or "enum" in schema):
+                result = Annotated[
+                    result,  # ty:ignore[invalid-type-form]
+                    BeforeValidator(
+                        lambda value: _validate_object_literals(value, schema)
+                    ),
+                ]
         elif name:
             raise ValueError(f"Can not apply name to non-object schema: {name}")
         else:
@@ -769,6 +776,18 @@ def _json_values_equal(left: Any, right: Any) -> bool:
         )
 
     return left == right
+
+
+def _validate_object_literals(value: Any, schema: Mapping[str, Any]) -> Any:
+    """Validate raw object literals before hydration changes their representation."""
+    if isinstance(value, Mapping):
+        if "const" in schema and not _json_values_equal(value, schema["const"]):
+            raise ValueError("Object does not match const")
+        if "enum" in schema and not any(
+            _json_values_equal(value, allowed) for allowed in schema["enum"]
+        ):
+            raise ValueError("Object does not match any enum value")
+    return value
 
 
 def _json_value_key(value: Any) -> tuple[Any, ...]:
@@ -1479,6 +1498,21 @@ def _build_pydantic_model(
         config=ConfigDict(extra="allow", validate_default=extra_value_type is not None),
         extra_value_type=extra_value_type,
     )
+    if "const" in schema or "enum" in schema:
+
+        def validate_literals(value: Any) -> Any:
+            return _validate_object_literals(value, schema)
+
+        model = create_model(
+            name,
+            __base__=model,
+            __validators__={
+                "_validate_object_literals": cast(
+                    Callable[..., Any],
+                    model_validator(mode="before")(validate_literals),
+                )
+            },
+        )
     conversion = _conversion.get()
     conversion.unchecked_defaults.extend((model, prop) for prop in unchecked)
     return model
@@ -1611,6 +1645,7 @@ def _build_dataclass(
     @classmethod
     def _apply_defaults(cls, data: Mapping[str, Any]):
         if isinstance(data, dict):
+            _validate_object_literals(data, original_schema)
             # Omitted fields fall back to the field defaults, which validate
             # only when valid; object defaults are still merged here.
             return _merge_defaults(data, original_schema, apply_property_defaults=False)
