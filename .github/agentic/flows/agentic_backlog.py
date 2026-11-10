@@ -18,6 +18,8 @@ class Intake(BaseModel):
     pull_requests: list[PositiveInt] = Field(default_factory=list, max_length=10)
     queue: str | None = Field(default=None, pattern=r"^[a-z0-9-]{1,32}$")
     retry_failed: bool = False
+    # GitHub login whose event started this intake; maintainers' own events are skipped.
+    sender: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$")
 
     def scoped(self) -> bool:
         return bool(self.issues or self.pull_requests)

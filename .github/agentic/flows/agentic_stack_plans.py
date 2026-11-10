@@ -46,7 +46,31 @@ class Reproduction(BaseModel):
     source_paths: list[str] = Field(max_length=20)
 
 
-class PublicReview(BaseModel):
+class ReviewFinding(BaseModel):
+    """Semantic identity, reused across revisions only for the same actionable defect."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,119}$")
+    severity: Literal["blocking", "non_blocking"]
+
+
+class ReviewFeedback(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Older pinned plans remain publishable but cannot suppress feedback.
+    outcome: Literal["no_findings", "findings", "inconclusive"] = "inconclusive"
+    finding_ids: list[ReviewFinding] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def consistent_findings(self) -> ReviewFeedback:
+        ids = [finding.id for finding in self.finding_ids]
+        if len(set(ids)) != len(ids):
+            raise ValueError("Finding identities must be distinct")
+        if (self.outcome == "findings") != bool(ids):
+            raise ValueError("Only a findings outcome has finding identities")
+        return self
+
+
+class PublicReview(ReviewFeedback):
     """Contributor-facing feedback, separate from retained execution evidence."""
 
     model_config = ConfigDict(extra="forbid")
@@ -57,6 +81,8 @@ class PublicReview(BaseModel):
 
     @model_validator(mode="after")
     def concise_feedback(self) -> PublicReview:
+        if self.outcome == "no_findings" and self.requested_change.strip():
+            raise ValueError("No-findings feedback cannot request a change")
         text = "\n".join([self.summary, self.requested_change, self.evidence])
         if len(text.split()) > 120:
             raise ValueError("Public review exceeds 120 words")
@@ -130,7 +156,15 @@ review_existing disposition for close_pr proposals; propose_closure is for issue
 next_action must identify the target and concrete next step, with any blocking finding; it must
 not be a generic request to investigate or review.
 For review_existing, supply public_reviews with exactly one entry per verified PR, bound by
-pr_number. Write a concise contributor-facing summary of the actual finding and impact,
+pr_number. Set outcome to no_findings only for a completed review with no actionable findings,
+findings for actionable defects, or inconclusive for uncertain/incomplete conclusions. Supply
+finding_ids only for findings: each entry has a stable lowercase slug id and blocking or
+non_blocking severity. Reuse the id from prior bot feedback metadata for the same defect even
+when wording, line numbers, head or baseline changes. Use a new id when the impact or required
+correction materially changes; retain ids for remaining defects and omit resolved defects.
+Never use no_findings when requested_change is nonempty. These identities control duplicate
+public feedback only; each revision still requires fresh verification and independent review.
+Write a concise contributor-facing summary of the actual finding and impact,
 the requested localized change (empty if none), and a short statement of checks/results.
 Use at most 120 words total per entry. Explain each finding once. Never copy internal reason
 or next_action into public_reviews. Do not include command transcripts, setup history,
