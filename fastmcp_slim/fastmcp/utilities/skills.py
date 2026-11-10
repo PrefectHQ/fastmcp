@@ -12,6 +12,7 @@ import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 import mcp_types
 
@@ -88,23 +89,20 @@ async def list_skills(client: Client) -> list[SkillSummary]:
 
 
 async def _list_skills(client: Client) -> list[SkillSummary]:
-    resources = await client.list_resources()
+    resources = await client.list_skill_resources()
     skills = []
 
     for resource in resources:
         uri = str(resource.uri)
-        # Match skill://{name}/SKILL.md pattern
-        if uri.startswith("skill://") and uri.endswith("/SKILL.md"):
-            # Extract skill name from URI
-            path_part = uri[len("skill://") :]
-            name = path_part.rsplit("/", 1)[0]
-            skills.append(
-                SkillSummary(
-                    name=name,
-                    description=resource.description or "",
-                    uri=uri,
-                )
+        path_part = uri[len("skill://") :]
+        name = path_part.rsplit("/", 1)[0]
+        skills.append(
+            SkillSummary(
+                name=name,
+                description=resource.description or "",
+                uri=uri,
             )
+        )
 
     return skills
 
@@ -239,7 +237,7 @@ async def _download_skill(
         if not file_path.is_relative_to(skill_dir):
             continue
 
-        file_uri = f"skill://{skill_name}/{file_info.path}"
+        file_uri = f"skill://{skill_name}/{quote(file_info.path, safe='/')}"
         result = await client.read_resource(file_uri)
 
         if not result:

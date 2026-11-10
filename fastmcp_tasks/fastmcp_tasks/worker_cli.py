@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from typing import TYPE_CHECKING, Annotated
+from urllib.parse import unquote_plus, urlsplit, urlunsplit
 
 import cyclopts
 from rich.console import Console
@@ -49,6 +50,44 @@ def resolve_docket_settings(server: FastMCP) -> DocketSettings:
 
     assert isinstance(extension, TasksExtension)
     return extension.docket_settings
+
+
+def redact_backend_url(url: str) -> str:
+    """Mask the password in a backend URL so it can be printed or logged.
+
+    Redis URLs carry the password in the userinfo component
+    (`redis://user:secret@host`) or in a query parameter
+    (`?password=secret`, `?sentinel_password=secret`, `?ssl_password=secret`).
+    Query keys ending in `password` are decoded before matching. All forms are
+    masked. URLs that cannot be parsed are hidden entirely.
+    """
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return "***"
+
+    netloc = parts.netloc
+    redacted = False
+    if "@" in netloc:
+        userinfo, _, host = netloc.rpartition("@")
+        if ":" in userinfo:
+            username = userinfo.partition(":")[0]
+            netloc = f"{username}:***@{host}"
+            redacted = True
+
+    query_parts: list[str] = []
+    for param in parts.query.split("&"):
+        key, sep, _ = param.partition("=")
+        if sep and unquote_plus(key).lower().endswith("password"):
+            param = f"{key}=***"
+            redacted = True
+        query_parts.append(param)
+
+    if not redacted:
+        return url
+
+    query = "&".join(query_parts)
+    return urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment))
 
 
 def check_distributed_backend(settings: DocketSettings) -> None:
@@ -126,7 +165,7 @@ def worker(
                 f"[bold green]✓[/bold green] Starting worker for [cyan]{server.name}[/cyan]"
             )
             console.print(f"  Docket: {settings.name}")
-            console.print(f"  Backend: {settings.url}")
+            console.print(f"  Backend: {redact_backend_url(settings.url)}")
             console.print(f"  Concurrency: {settings.concurrency}")
 
             # Server's lifespan has started its worker - just camp here forever

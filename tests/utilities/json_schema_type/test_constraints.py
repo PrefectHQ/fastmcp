@@ -1,7 +1,7 @@
 """Tests for type constraints in JSON schema conversion."""
 
 from dataclasses import Field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import AnyUrl, TypeAdapter, ValidationError
@@ -268,7 +268,7 @@ class TestStringFormatConstraints:
         parsed = TypeAdapter(json_schema_to_type(schema)).validate_python(
             "2026-09-22T00:00:00Z"
         )
-        assert parsed == datetime(2026, 9, 22, tzinfo=timezone.utc)
+        assert parsed == datetime(2026, 9, 22, tzinfo=UTC)
 
     def test_format_without_constraints_is_unchanged(self):
         assert (

@@ -1,5 +1,6 @@
 """Tests for OAuth proxy authorization flow."""
 
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -7,6 +8,8 @@ from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
+from starlette.applications import Starlette
+from starlette.testclient import TestClient
 
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 
@@ -261,3 +264,72 @@ class TestParameterForwarding:
         # Should succeed (no resource check needed)
         redirect_url = await proxy.authorize(client, params)
         assert "/consent" in redirect_url
+
+
+class TestCIMDPrivateUseSchemeAuthorize:
+    """/authorize for a CIMD client whose redirect_uris use private-use schemes."""
+
+    CLIENT_ID = "https://example.com/client.json"
+
+    @pytest.fixture(autouse=True)
+    def mock_dns(self):
+        with patch(
+            "fastmcp.server.auth.ssrf.resolve_hostname",
+            return_value=["93.184.216.34"],
+        ):
+            yield
+
+    @pytest.fixture
+    def declare_client(self, httpx_mock):
+        httpx_mock.add_response(
+            json={
+                "client_id": self.CLIENT_ID,
+                "client_name": "Native App",
+                "redirect_uris": ["com.example.app:/oauth", "myapp://callback"],
+                "token_endpoint_auth_method": "none",
+            },
+            headers={"content-length": "200"},
+        )
+
+    def _authorize(self, oauth_proxy: OAuthProxy, redirect_uri: str):
+        app = Starlette(routes=oauth_proxy.get_routes(mcp_path="/mcp"))
+        with TestClient(
+            app, base_url="https://myserver.com", follow_redirects=False
+        ) as client:
+            return client.get(
+                "/authorize",
+                params={
+                    "response_type": "code",
+                    "client_id": self.CLIENT_ID,
+                    "redirect_uri": redirect_uri,
+                    "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+                    "code_challenge_method": "S256",
+                    "state": "client-state",
+                },
+            )
+
+    @pytest.mark.parametrize(
+        "redirect_uri", ["com.example.app:/oauth", "myapp://callback"]
+    )
+    def test_declared_private_use_redirect_reaches_consent(
+        self, oauth_proxy, declare_client, redirect_uri
+    ):
+        response = self._authorize(oauth_proxy, redirect_uri)
+
+        assert response.status_code == 302
+        assert urlparse(response.headers["location"]).path == "/consent"
+
+    @pytest.mark.parametrize(
+        "redirect_uri",
+        ["com.evil.app:/oauth", "com.example.app://evil.example/oauth"],
+    )
+    def test_undeclared_private_use_redirect_is_rejected(
+        self, oauth_proxy, declare_client, redirect_uri
+    ):
+        response = self._authorize(oauth_proxy, redirect_uri)
+
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_request"
+        assert (
+            "does not match CIMD redirect_uris" in response.json()["error_description"]
+        )

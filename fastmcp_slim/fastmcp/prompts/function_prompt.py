@@ -23,7 +23,7 @@ import pydantic_core
 from mcp_types import Icon
 from pydantic.json_schema import SkipJsonSchema
 
-from fastmcp.exceptions import FastMCPError, PromptError, ValidationError
+from fastmcp.exceptions import PromptError, ValidationError
 from fastmcp.prompts.base import Prompt, PromptArgument, PromptResult
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
@@ -335,44 +335,38 @@ class FunctionPrompt(Prompt):
                     log_level=logging.WARNING,
                 )
 
-        try:
-            # Prepare arguments
-            kwargs = arguments.copy() if arguments else {}
+        # Prepare arguments
+        kwargs = arguments.copy() if arguments else {}
 
-            # Convert string arguments to expected types BEFORE validation
-            kwargs = self._convert_string_arguments(kwargs)
+        # Convert string arguments to expected types BEFORE validation
+        kwargs = self._convert_string_arguments(kwargs)
 
-            # Filter out arguments that aren't in the function signature
-            # This is important for security: dependencies should not be overridable
-            # from external callers. self.fn is wrapped by without_injected_parameters,
-            # so we only accept arguments that are in the wrapped function's signature.
-            sig = inspect.signature(self.fn)
-            valid_params = set(sig.parameters.keys())
-            kwargs = {k: v for k, v in kwargs.items() if k in valid_params}
+        # Filter out arguments that aren't in the function signature
+        # This is important for security: dependencies should not be overridable
+        # from external callers. self.fn is wrapped by without_injected_parameters,
+        # so we only accept arguments that are in the wrapped function's signature.
+        sig = inspect.signature(self.fn)
+        valid_params = set(sig.parameters.keys())
+        kwargs = {k: v for k, v in kwargs.items() if k in valid_params}
 
-            # Use type adapter to validate arguments and handle Field() defaults
-            # This matches the behavior of tools in function_tool
-            type_adapter = get_cached_typeadapter(self.fn)
+        # Use type adapter to validate arguments and handle Field() defaults
+        # This matches the behavior of tools in function_tool
+        type_adapter = get_cached_typeadapter(self.fn)
 
-            # self.fn is wrapped by without_injected_parameters which handles
-            # dependency resolution internally
-            if is_coroutine_function(self.fn):
-                result = await type_adapter.validate_python(kwargs)
-            else:
-                # Run sync functions in threadpool to avoid blocking the event loop
-                result = await call_sync_fn_in_threadpool(
-                    type_adapter.validate_python, kwargs
-                )
-                # Handle sync wrappers that return awaitables (e.g., partial(async_fn))
-                if inspect.isawaitable(result):
-                    result = await result
+        # self.fn is wrapped by without_injected_parameters which handles
+        # dependency resolution internally
+        if is_coroutine_function(self.fn):
+            result = await type_adapter.validate_python(kwargs)
+        else:
+            # Run sync functions in threadpool to avoid blocking the event loop
+            result = await call_sync_fn_in_threadpool(
+                type_adapter.validate_python, kwargs
+            )
+            # Handle sync wrappers that return awaitables (e.g., partial(async_fn))
+            if inspect.isawaitable(result):
+                result = await result
 
-            return self.convert_result(result)
-        except FastMCPError:
-            raise
-        except Exception as e:
-            logger.exception(f"Error rendering prompt {self.name}")
-            raise PromptError(f"Error rendering prompt {self.name!r}: {e}") from e
+        return self.convert_result(result)
 
 
 @overload

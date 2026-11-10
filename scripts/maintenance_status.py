@@ -25,10 +25,10 @@ import shutil
 import subprocess
 import sys
 import urllib.request
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-UTC = timezone.utc
+UTC = UTC
 
 REPO = "PrefectHQ/fastmcp"
 SCHEMA = "fastmcp-maintenance/1"
