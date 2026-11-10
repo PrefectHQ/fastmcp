@@ -12,6 +12,7 @@ from fastmcp.contrib.component_manager import set_up_component_manager
 from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 from fastmcp.server.http import create_sse_app, create_streamable_http_app
+from fastmcp.utilities.versions import VersionSpec
 
 
 class TestComponentManagementRoutes:
@@ -86,6 +87,57 @@ class TestComponentManagementRoutes:
         # Verify the tool is disabled
         tools = await mcp.list_tools()
         assert not any(t.name == "test_tool" for t in tools)
+
+    async def test_disable_tool_route_with_version(self, client, mcp):
+        """Test disabling a specific tool version via the HTTP route."""
+
+        @mcp.tool(version="1.0")
+        def versioned_tool() -> str:
+            """Version 1.0 of the tool."""
+            return "versioned_tool_v1"
+
+        @mcp.tool(version="2.0")
+        def versioned_tool() -> str:  # noqa: F811
+            """Version 2.0 of the tool."""
+            return "versioned_tool_v2"
+
+        # Disable only version 1.0 via the HTTP route
+        response = client.post("/tools/versioned_tool/disable?version=1.0")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"message": "Disabled tool: versioned_tool"}
+
+        # Listing must not raise, and only the matching version is disabled
+        tools = await mcp.list_tools()
+        versions = {t.version for t in tools if t.name == "versioned_tool"}
+        assert versions == {"2.0"}
+
+    async def test_enable_tool_route_with_version(self, client, mcp):
+        """Test enabling a specific tool version via the HTTP route."""
+
+        @mcp.tool(version="1.0")
+        def versioned_tool() -> str:
+            """Version 1.0 of the tool."""
+            return "versioned_tool_v1"
+
+        @mcp.tool(version="2.0")
+        def versioned_tool() -> str:  # noqa: F811
+            """Version 2.0 of the tool."""
+            return "versioned_tool_v2"
+
+        # Disable only version 1.0, then re-enable it via the HTTP route
+        mcp.disable(
+            names={"versioned_tool"}, version=VersionSpec(eq="1.0"), components={"tool"}
+        )
+        response = client.post("/tools/versioned_tool/enable?version=1.0")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"message": "Enabled tool: versioned_tool"}
+
+        # Listing must not raise, and both versions are enabled
+        tools = await mcp.list_tools()
+        versions = {t.version for t in tools if t.name == "versioned_tool"}
+        assert versions == {"1.0", "2.0"}
 
     async def test_enable_resource_route(self, client, mcp):
         """Test enabling a resource via the HTTP route."""

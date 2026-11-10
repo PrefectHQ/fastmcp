@@ -275,12 +275,12 @@ def added() -> str:
         # First load - should warn
         captured = capsys.readouterr()
         # Check for warning indicator (rich may truncate long paths)
-        assert "WARNING" in captured.err and "Failed to import" in captured.err
+        assert "WARNING" in captured.err and "Failed to load" in captured.err
 
         # Second load (same file, unchanged) - should NOT warn again
         await provider._list_tools()
         captured = capsys.readouterr()
-        assert "Failed to import" not in captured.err
+        assert "Failed to load" not in captured.err
 
     async def test_warning_on_file_change(self, tmp_path: Path, capsys):
         """Warnings should reappear when a broken file changes."""
@@ -292,7 +292,7 @@ def added() -> str:
         # First load - should warn
         captured = capsys.readouterr()
         # Check for warning indicator (rich may truncate long paths)
-        assert "WARNING" in captured.err and "Failed to import" in captured.err
+        assert "WARNING" in captured.err and "Failed to load" in captured.err
 
         # Modify the file (different error) - need to ensure mtime changes
         time.sleep(0.01)  # Ensure mtime differs
@@ -302,7 +302,7 @@ def added() -> str:
         await provider._list_tools()
         captured = capsys.readouterr()
         # Check for warning indicator (rich may truncate long paths)
-        assert "WARNING" in captured.err and "Failed to import" in captured.err
+        assert "WARNING" in captured.err and "Failed to load" in captured.err
 
     async def test_warning_cleared_when_fixed(self, tmp_path: Path, capsys):
         """Warnings should clear when a file is fixed, and reappear if broken again."""
@@ -314,7 +314,7 @@ def added() -> str:
         # First load - should warn
         captured = capsys.readouterr()
         # Check for warning indicator (rich may truncate long paths)
-        assert "WARNING" in captured.err and "Failed to import" in captured.err
+        assert "WARNING" in captured.err and "Failed to load" in captured.err
 
         # Fix the file
         time.sleep(0.01)
@@ -331,7 +331,7 @@ def my_tool() -> str:
         # Load again - should NOT warn, file is fixed
         await provider._list_tools()
         captured = capsys.readouterr()
-        assert "Failed to import" not in captured.err
+        assert "Failed to load" not in captured.err
         assert len(provider._components) == 1
 
         # Break it again
@@ -342,7 +342,7 @@ def my_tool() -> str:
         await provider._list_tools()
         captured = capsys.readouterr()
         # Check for warning indicator (rich may truncate long paths)
-        assert "WARNING" in captured.err and "Failed to import" in captured.err
+        assert "WARNING" in captured.err and "Failed to load" in captured.err
 
 
 class TestFileSystemProviderReloadRace:
@@ -511,6 +511,31 @@ def get_profile(user_id: str) -> str:
             # Read with parameter
             result = await client.read_resource("users://123/profile")
             assert "123" in str(result)
+
+    async def test_resource_template_security_via_provider(self, tmp_path: Path):
+        """FileSystemProvider should honor the security policy of @resource templates."""
+        (tmp_path / "secure_templates.py").write_text(
+            """\
+from fastmcp.resources import ResourceSecurity, resource
+
+@resource("git://diff/{ref}", security=ResourceSecurity(exempt_params={"ref"}))
+def exempt(ref: str) -> str:
+    return f"exempt:{ref}"
+
+@resource("git://log/{ref}")
+def screened(ref: str) -> str:
+    return f"screened:{ref}"
+"""
+        )
+
+        mcp = FastMCP("TestServer", providers=[FileSystemProvider(tmp_path)])
+
+        async with Client(mcp) as client:
+            result = await client.read_resource("git://diff/..%2Fx")
+            assert result[0].text == "exempt:../x"
+
+            with pytest.raises(Exception, match="Resource not found"):
+                await client.read_resource("git://log/..%2Fx")
 
     async def test_provider_with_prompts(self, tmp_path: Path):
         """FileSystemProvider should work with prompts."""

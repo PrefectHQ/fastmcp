@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from fastmcp.apps.app import FastMCPApp as FastMCPApp
     from fastmcp.server.context import Context as Context
     from fastmcp.server.server import FastMCP as FastMCP
+    from fastmcp.skills import Skill as Skill
 
 settings = Settings()
 if settings.log_enabled:
@@ -82,6 +83,10 @@ def __getattr__(name: str) -> object:
             raise ImportError(_install_hints.APP_SUPPORT) from exc
 
         return FastMCPApp
+    if name == "Skill":
+        from fastmcp.skills import Skill
+
+        return Skill
     if name == "client":
         try:
             return importlib.import_module("fastmcp.client")
@@ -102,5 +107,6 @@ __all__ = [
     "FastMCP",
     "FastMCPApp",
     "FastMCPDeprecationWarning",
+    "Skill",
     "settings",
 ]

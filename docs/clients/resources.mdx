@@ -31,7 +31,7 @@ async with client:
         print(f"Binary data: {len(content[0].blob)} bytes")
 ```
 
-Resource templates generate content based on URI parameters. The template defines a pattern like `weather://{{city}}/current`, and you fill in the parameters when reading:
+Resource templates generate content based on URI parameters. The template defines a pattern like `weather://{city}/current`, and you fill in the parameters when reading:
 
 ```python
 async with client:
@@ -56,9 +56,7 @@ async with client:
             print(f"MIME type: {item.mime_type}")
 ```
 
-Binary resources include images, PDFs, and other non-text data:
-
-Binary resources arrive as `BlobResourceContents`, whose `blob` field is a base64 **string**, so decode it before writing bytes to disk:
+Binary resources include images, PDFs, and other non-text data. They arrive as `BlobResourceContents`, whose `blob` field is a base64 **string**, so decode it before writing bytes to disk:
 
 ```python
 import base64
@@ -81,7 +79,7 @@ async with client:
 
 ## Multi-Server Clients
 
-When using multi-server clients, resource URIs are prefixed with the server name:
+When using multi-server clients, the server name is inserted after the URI scheme, so `weather://icons/sunny` on the `weather` server becomes `weather://weather/icons/sunny`:
 
 ```python
 async with client:  # Multi-server client
@@ -104,7 +102,7 @@ async with client:
     content_v1 = await client.read_resource("data://config", version="1.0")
 ```
 
-See [Metadata](/servers/versioning#version-discovery) for how to discover available versions.
+See [Version Discovery](/servers/versioning#version-discovery) for how to discover available versions.
 
 ## Raw Protocol Access
 

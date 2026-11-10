@@ -29,6 +29,17 @@ You can change which `.env` file is loaded by setting the `FASTMCP_ENV_FILE` env
 | `FASTMCP_DEPRECATION_WARNINGS` | `bool` | `true` | Show deprecation warnings. |
 | `FASTMCP_MCP_CAMELCASE_COMPAT` | `bool` | `true` | Bridge legacy camelCase reads on MCP SDK objects (e.g. `tool.inputSchema`, `result.isError`) to their snake_case fields after the SDK v2 rename. Each bridged read emits a `FastMCPDeprecationWarning`. Set to `false` to disable the shims, in which case only the snake_case names resolve. |
 
+To turn on debug logging from your own entry point, for example behind a `--debug` flag, pass `log_level` to `run()` instead of reconfiguring logging yourself. It applies to every transport for as long as the server runs:
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("my-server")
+
+if __name__ == "__main__":
+    mcp.run(log_level="DEBUG")
+```
+
 ## Transport & HTTP
 
 These control how the server listens when running with an HTTP transport.
@@ -43,11 +54,11 @@ These control how the server listens when running with an HTTP transport.
 | `FASTMCP_STREAMABLE_HTTP_PATH` | `str` | `/mcp` | Path for Streamable HTTP endpoint. |
 | `FASTMCP_STATELESS_HTTP` | `bool` | `false` | Enable stateless HTTP mode (new transport per request). Useful for multi-worker deployments. |
 | `FASTMCP_JSON_RESPONSE` | `bool` | `false` | Use JSON responses instead of SSE for Streamable HTTP. |
-| `FASTMCP_HTTP_HOST_ORIGIN_PROTECTION` | `bool \| "auto"` | `false` | Validate `Host` and browser `Origin` headers for Streamable HTTP and SSE requests. `auto` protects localhost-bound servers and explicit host/origin allowlists. `false` disables this guard and FastMCP's DNS-rebinding protection for the endpoint. |
+| `FASTMCP_HTTP_HOST_ORIGIN_PROTECTION` | `bool \| "auto"` | `false` | Validate `Host` and browser `Origin` headers for Streamable HTTP and SSE requests. `true` validates every request; `auto` protects localhost-bound servers and explicit host/origin allowlists. `false` disables this guard and FastMCP's DNS-rebinding protection for the endpoint. |
 | `FASTMCP_HTTP_ALLOWED_HOSTS` | `list[str] \| null` | `null` | Additional trusted hostnames when Host and Origin protection is enabled. Use a JSON array, such as `["mcp.example.com"]`. |
 | `FASTMCP_HTTP_ALLOWED_ORIGINS` | `list[str] \| null` | `null` | Browser origins trusted when Host and Origin protection is enabled. Configure CORS separately for cross-origin browser reads. Use a JSON array, such as `["https://app.example.com"]`. |
 | `FASTMCP_HTTP_SESSION_IDLE_TIMEOUT` | `float \| "auto" \| "none"` | `"auto"` | Seconds a stateful Streamable HTTP session may remain idle before it is terminated. `"auto"` uses the MCP SDK's default: 1800 seconds (30 minutes) in SDK 2.2, no timeout in earlier versions. Set a positive number to override it, or `none` to disable it. |
-| `FASTMCP_DEBUG` | `bool` | `false` | Enable debug mode. |
+| `FASTMCP_DEBUG` | `bool` | `false` | Pass `debug=True` to the Starlette app behind the Streamable HTTP and SSE transports, so unhandled errors in the HTTP layer return tracebacks in the response. It has no effect on stdio and does not change FastMCP's log level; use `FASTMCP_LOG_LEVEL=DEBUG` for debug logs. Don't enable it in production, since tracebacks can expose internals. |
 
 MCP SDK 2.2 also limits concurrent stateful HTTP sessions to 10,000. Keeping
 the default idle timeout lets abandoned sessions expire and frees capacity for
@@ -68,7 +79,7 @@ to release that capacity. Stateless HTTP does not use the session pool.
 |---|---|---|---|
 | `FASTMCP_CLIENT_INIT_TIMEOUT` | `float \| None` | None | Timeout in seconds for the client initialization handshake. Set to `0` or leave unset to disable. |
 | `FASTMCP_CLIENT_DISCONNECT_TIMEOUT` | `float` | `5` | Maximum time in seconds to wait for a clean disconnect before giving up. |
-| `FASTMCP_TASKS_CLIENT_POLL_INTERVAL` | `float` | `0.5` | Ceiling in seconds for the fallback poll backoff while waiting on a [background task](/servers/tasks). Requires the `fastmcp-tasks` package. Applies **only** when the server does not advertise its own `pollInterval`: in that case `Task.wait()` starts polling fast (~20ms) and doubles up to this ceiling rather than polling at a fixed cadence. When the server advertises a `pollInterval`, that interval is honored exactly and this setting is ignored. |
+| `FASTMCP_TASKS_CLIENT_POLL_INTERVAL` | `float` | `0.5` | Ceiling in seconds for the fallback poll backoff while waiting on a [background task](/servers/tasks). Requires the `fastmcp-tasks` package. Applies **only** when the server does not advertise its own `pollIntervalMs`: in that case `Task.wait()` starts polling fast (~20ms) and doubles up to this ceiling rather than polling at a fixed cadence. When the server advertises a `pollIntervalMs`, that interval is honored exactly and this setting is ignored. |
 | `FASTMCP_CLIENT_RAISE_FIRST_EXCEPTIONGROUP_ERROR` | `bool` | `true` | When an `ExceptionGroup` is raised, re-raise the first error directly instead of the group. Simplifies debugging but may mask secondary errors. |
 
 ## CLI & Display
@@ -76,7 +87,7 @@ to release that capacity. Stateless HTTP does not use the session pool.
 | Environment Variable | Type | Default | Description |
 |---|---|---|---|
 | `FASTMCP_SHOW_SERVER_BANNER` | `bool` | `true` | Show the server banner on startup. Also controllable via `--no-banner` or `server.run(show_banner=False)`. |
-| `FASTMCP_CHECK_FOR_UPDATES` | `Literal["stable", "prerelease", "off"]` | `stable` | Update checking on CLI startup. `stable` checks stable releases only, `prerelease` includes pre-releases, `off` disables checking. |
+| `FASTMCP_CHECK_FOR_UPDATES` | `Literal["stable", "prerelease", "off"]` | `stable` | Update checking when the server banner is shown and when `fastmcp version` runs. `stable` checks stable releases only, `prerelease` includes pre-releases, `off` disables checking. |
 | `FASTMCP_OAUTH_ENCRYPTION_KEY` | `str \| None` | None | Fernet key for [encrypted CLI OAuth storage](/cli/overview#mcp-server-authentication). An unset or empty value uses memory only. |
 
 ## Telemetry
@@ -99,16 +110,14 @@ These control FastMCP's SSRF protection for the outbound fetches it makes during
 
 By default, FastMCP protects its OAuth and JWKS fetches against [SSRF](https://owasp.org/www-community/attacks/Server_Side_Request_Forgery) by resolving the target hostname, rejecting any address that maps to a private, loopback, link-local, or reserved IP, and then pinning the connection to that validated IP.
 
-Setting `FASTMCP_SSRF_TRUST_PROXY=true` disables FastMCP's local DNS/IP checks and connection pinning. This reduces SSRF protection unless the configured proxy enforces equivalent destination restrictions. FastMCP verifies that a proxy is configured, but does not verify its security policy.
-
 This breaks when a corporate `CONNECT` proxy is the only egress path: the container often cannot resolve external DNS at all (only the proxy can), and even when it can, pinning to the IP makes TLS verification fail because public certificates list hostnames, not IP addresses.
 
-Set `FASTMCP_SSRF_TRUST_PROXY=true` when a trusted proxy is your mandated egress. FastMCP then skips DNS resolution and the IP blocklist entirely and makes a single request to the hostname URL, explicitly routed through the proxy named by the standard `HTTPS_PROXY` / `ALL_PROXY` environment variables (checked in that order). The HTTPS-only and hostname checks still apply.
+Set `FASTMCP_SSRF_TRUST_PROXY=true` when a trusted proxy is your mandated egress. FastMCP then skips DNS resolution, the IP blocklist, and connection pinning, and makes a single request to the hostname URL through the proxy named by the standard `HTTPS_PROXY` / `ALL_PROXY` environment variables (checked in that order). The HTTPS-only and hostname checks still apply.
 
 <Warning>
-This is a deliberate trust shift: the IP blocklist cannot be enforced through a proxy (the proxy does its own DNS, so an address FastMCP resolved is not the one the proxy dials). Only enable it when the proxy itself is trusted to mediate egress.
+This setting shifts SSRF protection to the proxy. The IP blocklist cannot be enforced through a proxy, because the proxy does its own DNS, and FastMCP verifies that a proxy is configured but not what its policy allows. Enable it only when the proxy enforces equivalent destination restrictions.
 
-FastMCP reads the proxy URL from the environment and passes it to the HTTP client explicitly, with the client's own environment-based proxy routing turned off — so the request either goes through that exact proxy or fails outright, with no routing decision left for the client to make on its own. One consequence: `NO_PROXY` is **not honored** in this mode. A host that `NO_PROXY` would otherwise exclude is still routed through the configured proxy rather than fetched direct with the IP blocklist disabled — the safer of the two options, since the blocklist cannot apply to a direct fetch here anyway. If you set `FASTMCP_SSRF_TRUST_PROXY=true` but neither `HTTPS_PROXY` nor `ALL_PROXY` is present in the server process's environment (an `HTTP_PROXY` alone never routes these HTTPS-only fetches), the request would otherwise go out **direct with the IP blocklist disabled** — no SSRF protection at all. Rather than send it, FastMCP refuses the fetch and raises `SSRFError` with an actionable message. The contract is crisp: proxy-trust mode delegates SSRF protection to the proxy, and with no proxy configured the fetch cannot proceed. Enable this setting only together with an active proxy that routes your auth endpoints.
+FastMCP passes the proxy URL to the HTTP client explicitly, so the request goes through that proxy or fails. `NO_PROXY` is **not honored** in this mode: a host it would exclude still goes through the proxy instead of direct with no blocklist. If neither `HTTPS_PROXY` nor `ALL_PROXY` is set in the server process's environment (`HTTP_PROXY` alone never routes these HTTPS-only fetches), FastMCP refuses the fetch and raises `SSRFError`.
 </Warning>
 
 ## Advanced
@@ -117,5 +126,4 @@ FastMCP reads the proxy URL from the environment and passes it to the HTTP clien
 |---|---|---|---|
 | `FASTMCP_HOME` | `Path` | Platform default | Data directory for FastMCP. Defaults to the platform-specific user data directory. |
 | `FASTMCP_ENV_FILE` | `str` | `.env` | Path to the `.env` file to load settings from. Must be set as an environment variable (see above). |
-| `FASTMCP_SERVER_DEPENDENCIES` | `list[str]` | `[]` | Additional dependencies to install in the server environment. |
-| `FASTMCP_TEST_MODE` | `bool` | `false` | Enable test mode. |
+| `FASTMCP_TEST_MODE` | `bool` | `false` | Lower the key-derivation cost FastMCP uses for JWT signing keys built from low-entropy secrets, so test suites run faster. Never enable it in production. |

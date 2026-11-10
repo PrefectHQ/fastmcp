@@ -55,8 +55,8 @@ class AsyncOAuth2Client:
     ) -> None:
         self.client_id = client_id
         self.client_secret = client_secret
-        self.token_endpoint_auth_method = (
-            token_endpoint_auth_method or "client_secret_basic"
+        self.token_endpoint_auth_method = token_endpoint_auth_method or (
+            "client_secret_basic" if client_secret else "none"
         )
         self._client = httpx2.AsyncClient(timeout=timeout)
 
