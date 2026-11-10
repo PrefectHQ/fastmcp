@@ -42,7 +42,7 @@ from fastmcp.utilities.async_utils import (
     is_coroutine_function,
 )
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.pagination import paginate_sequence
+from fastmcp.utilities.pagination import CursorState, paginate_sequence
 from fastmcp.utilities.versions import VersionSpec, dedupe_with_versions
 
 if TYPE_CHECKING:
@@ -60,11 +60,13 @@ def _apply_pagination(
 ) -> tuple[list[PaginateT], str | None]:
     """Apply pagination to items, raising MCPError for invalid cursors.
 
-    If page_size is None, returns all items without pagination.
+    If page_size is None, validates the cursor and returns all items without pagination.
     """
-    if page_size is None:
-        return list(items), None
     try:
+        if page_size is None:
+            if cursor:
+                CursorState.decode(cursor)
+            return list(items), None
         return paginate_sequence(items, cursor, page_size)
     except ValueError as e:
         raise MCPError(code=INVALID_PARAMS, message=str(e)) from e
@@ -423,18 +425,30 @@ class MCPOperationsMixin:
     ) -> mcp_types.EmptyResult:
         """Handle MCP 'logging/setLevel' requests.
 
-        Stores the requested minimum log level keyed by session id so that
-        subsequent log messages below this level are suppressed. v2 sessions are
-        per-request, so this state lives on the FastMCP server.
+        Stores the requested minimum log level so that subsequent log messages
+        below this level are suppressed. v2 sessions are per-request, so the
+        level lives on the FastMCP server keyed by session id, or on the
+        connection itself when it has no session id (stdio, in-memory,
+        stateless HTTP).
         """
-        from fastmcp.server.context import _log_level_session_key
+        from fastmcp.server.context import _CONNECTION_LOG_LEVEL_KEY
 
         with bind_request_context(ctx) as rc:
             logger.debug(
                 f"[{self.name}] Handler called: set_logging_level %s", params.level
             )
-            session_id = _log_level_session_key(rc.session)
+            connection = rc.session._connection
+            session_id = connection.session_id
+            if session_id is None:
+                connection.state[_CONNECTION_LOG_LEVEL_KEY] = params.level
+                return EmptyResult()
             self._client_log_levels[session_id] = params.level
+            cleanup_key = "_fastmcp_log_level_cleanup_registered"
+            if not connection.state.get(cleanup_key):
+                connection.exit_stack.callback(
+                    self._client_log_levels.pop, session_id, None
+                )
+                connection.state[cleanup_key] = True
             return EmptyResult()
 
     async def _on_complete(

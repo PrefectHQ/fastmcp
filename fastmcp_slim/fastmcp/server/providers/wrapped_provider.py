@@ -6,7 +6,7 @@ with an additional transform. Created by `Provider.wrap_transform()`.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncGenerator, Generator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING
 
@@ -55,7 +55,7 @@ class _WrappedProvider(Provider):
     @contextmanager
     def _extension_runtime(
         self, available: frozenset[str], *, root: FastMCP | None
-    ) -> Iterator[None]:
+    ) -> Generator[None, None, None]:
         with self._inner._extension_runtime(available, root=root):
             yield
 
@@ -130,7 +130,7 @@ class _WrappedProvider(Provider):
     # -------------------------------------------------------------------------
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         """Combine lifespan with inner provider."""
         async with self._inner.lifespan():
             yield
