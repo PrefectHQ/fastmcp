@@ -7,7 +7,7 @@ import pytest
 from docket import Docket
 from docket.worker import Worker
 from fastmcp_tasks.dependencies import CurrentDocket, CurrentWorker
-from redis.credentials import CredentialProvider
+from redis.credentials import CredentialProvider, StreamingCredentialProvider
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -190,6 +190,22 @@ async def test_memory_backend_does_not_request_credentials():
 
     assert result.data == 42
     assert type(result.data) is int
+
+
+def test_streaming_credential_providers_are_rejected():
+    class RefreshingCredentials(StreamingCredentialProvider):
+        def get_credentials(self) -> tuple[str, str]:
+            return "tasks", "secret"
+
+        def on_next(self, callback): ...
+
+        def on_error(self, callback): ...
+
+        def is_streaming(self) -> bool:
+            return True
+
+    with pytest.raises(ValueError, match="Streaming credential providers"):
+        TasksExtension(credential_provider=RefreshingCredentials())
 
 
 async def test_provider_and_url_credentials_are_rejected():

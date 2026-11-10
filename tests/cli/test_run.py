@@ -356,7 +356,8 @@ async def async_echo(text: str) -> str:
             SDKServer, "run_streamable_http_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file), transport="http")
-            run_mock.assert_called_once()
+            # No path/stateless flags: defaults must be left to the SDK.
+            run_mock.assert_called_once_with()
 
     async def test_run_v1_server_streamable_http(self, tmp_path):
         """Test that v1 server uses async streamable-http method."""
@@ -389,7 +390,7 @@ async def async_echo(text: str) -> str:
             SDKServer, "run_streamable_http_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file), transport="streamable-http")
-            run_mock.assert_called_once()
+            run_mock.assert_called_once_with()
 
     async def test_run_v1_server_sse(self, tmp_path):
         """Test that v1 server uses async sse method."""
@@ -422,7 +423,7 @@ async def async_echo(text: str) -> str:
             SDKServer, "run_sse_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file), transport="sse")
-            run_mock.assert_called_once()
+            run_mock.assert_called_once_with()
 
     async def test_run_v1_server_default_transport(self, tmp_path):
         """Test that v1 server uses streamable-http by default."""
@@ -455,7 +456,7 @@ async def async_echo(text: str) -> str:
             SDKServer, "run_streamable_http_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file))
-            run_mock.assert_called_once()
+            run_mock.assert_called_once_with()
 
     async def test_run_v1_server_with_host_port(self, tmp_path):
         """Test that v1 server receives host/port settings."""
@@ -490,7 +491,217 @@ async def async_echo(text: str) -> str:
             await run_command(
                 str(test_file), transport="http", host="0.0.0.0", port=9000
             )
-            run_mock.assert_called_once()
+            # Only host/port are forwarded; path/stateless stay at SDK defaults.
+            run_mock.assert_called_once_with(host="0.0.0.0", port=9000)
+
+    async def test_run_v1_server_transport_is_fourth_positional(self):
+        """The documented positional call must keep binding ``transport`` fourth.
+
+        ``run_v1_server_async(server, host, port, "sse")`` previously bound
+        ``"sse"`` to ``path`` and started Streamable HTTP instead of SSE.
+        """
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.mcpserver import MCPServer as SDKServer
+
+        from fastmcp.cli.run import run_v1_server_async
+
+        server = SDKServer("V1Server")
+        with (
+            patch.object(
+                SDKServer, "run_stdio_async", new_callable=AsyncMock
+            ) as stdio_mock,
+            patch.object(
+                SDKServer, "run_streamable_http_async", new_callable=AsyncMock
+            ) as http_mock,
+            patch.object(
+                SDKServer, "run_sse_async", new_callable=AsyncMock
+            ) as sse_mock,
+        ):
+            await run_v1_server_async(server, "0.0.0.0", 9000, "sse")
+
+        sse_mock.assert_awaited_once_with(host="0.0.0.0", port=9000)
+        http_mock.assert_not_awaited()
+        stdio_mock.assert_not_awaited()
+
+    async def test_run_v1_server_http_with_path_and_stateless(self, tmp_path):
+        """Test that v1 Streamable HTTP receives --path and --stateless."""
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.mcpserver import MCPServer as SDKServer
+
+        from fastmcp.cli.run import run_command
+
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.mcpserver import MCPServer as FastMCP
+
+mcp = FastMCP("V1Server")
+""")
+
+        with patch.object(
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
+        ) as run_mock:
+            await run_command(
+                str(test_file), transport="http", path="/custom", stateless=True
+            )
+            run_mock.assert_called_once_with(
+                streamable_http_path="/custom", stateless_http=True
+            )
+
+    async def test_run_v1_server_streamable_http_with_path(self, tmp_path):
+        """Test that v1 Streamable HTTP receives --path."""
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.mcpserver import MCPServer as SDKServer
+
+        from fastmcp.cli.run import run_command
+
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.mcpserver import MCPServer as FastMCP
+
+mcp = FastMCP("V1Server")
+""")
+
+        with patch.object(
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
+        ) as run_mock:
+            await run_command(
+                str(test_file), transport="streamable-http", path="/custom"
+            )
+            run_mock.assert_called_once_with(streamable_http_path="/custom")
+
+    async def test_run_v1_server_stateless_without_path(self, tmp_path):
+        """Test that --stateless alone leaves the SDK path default untouched."""
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.mcpserver import MCPServer as SDKServer
+
+        from fastmcp.cli.run import run_command
+
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.mcpserver import MCPServer as FastMCP
+
+mcp = FastMCP("V1Server")
+""")
+
+        with patch.object(
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
+        ) as run_mock:
+            await run_command(str(test_file), transport="http", stateless=True)
+            run_mock.assert_called_once_with(stateless_http=True)
+
+    async def test_run_v1_server_sse_with_path(self, tmp_path):
+        """Test that v1 SSE receives --path (and no unsupported stateless kwarg)."""
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.mcpserver import MCPServer as SDKServer
+
+        from fastmcp.cli.run import run_command
+
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.mcpserver import MCPServer as FastMCP
+
+mcp = FastMCP("V1Server")
+""")
+
+        with patch.object(
+            SDKServer, "run_sse_async", new_callable=AsyncMock
+        ) as run_mock:
+            # The SDK has no stateless SSE mode; only sse_path may be forwarded.
+            await run_command(
+                str(test_file), transport="sse", path="/custom", stateless=True
+            )
+            run_mock.assert_called_once_with(sse_path="/custom")
+
+    async def test_run_v1_server_forwards_cli_options(self, tmp_path):
+        """Test that run_command threads every parsed option into the v1 runner."""
+        from unittest.mock import ANY, AsyncMock, patch
+
+        from fastmcp.cli.run import run_command
+
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.mcpserver import MCPServer as FastMCP
+
+mcp = FastMCP("V1Server")
+""")
+
+        with patch(
+            "fastmcp.cli.run.run_v1_server_async", new_callable=AsyncMock
+        ) as run_mock:
+            await run_command(
+                str(test_file),
+                transport="http",
+                host="0.0.0.0",
+                port=9000,
+                path="/custom",
+                stateless=True,
+                log_level="DEBUG",
+            )
+
+            run_mock.assert_awaited_once_with(
+                ANY,
+                host="0.0.0.0",
+                port=9000,
+                path="/custom",
+                stateless=True,
+                log_level="DEBUG",
+                transport="http",
+            )
+
+    async def test_run_v1_server_applies_log_level(self, tmp_path):
+        """Test that --log-level is applied to the SDK server settings."""
+        from unittest.mock import patch
+
+        from mcp.server.mcpserver import MCPServer as SDKServer
+
+        from fastmcp.cli.run import run_command
+
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.mcpserver import MCPServer as FastMCP
+
+mcp = FastMCP("V1Server")
+""")
+
+        captured: dict[str, str] = {}
+
+        async def capture_log_level(server_self, **_kwargs):
+            captured["log_level"] = server_self.settings.log_level
+
+        with patch.object(SDKServer, "run_streamable_http_async", capture_log_level):
+            await run_command(str(test_file), transport="http", log_level="DEBUG")
+
+        assert captured["log_level"] == "DEBUG"
+
+    async def test_run_v1_server_keeps_default_log_level(self, tmp_path):
+        """Test that the SDK log level is untouched when --log-level is absent."""
+        from unittest.mock import patch
+
+        from mcp.server.mcpserver import MCPServer as SDKServer
+
+        from fastmcp.cli.run import run_command
+
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.mcpserver import MCPServer as FastMCP
+
+mcp = FastMCP("V1Server")
+""")
+
+        captured: dict[str, str] = {}
+
+        async def capture_log_level(server_self, **_kwargs):
+            captured["log_level"] = server_self.settings.log_level
+
+        with patch.object(SDKServer, "run_streamable_http_async", capture_log_level):
+            await run_command(str(test_file), transport="http")
+
+        assert captured["log_level"] == "INFO"
 
 
 class TestSkipSource:
@@ -1069,6 +1280,102 @@ class TestInspectorModuleMode:
         # --module should be in the subprocess command
         cmd = mock_subprocess.call_args[0][0]
         assert "--module" in cmd
+        # `fastmcp run --module` ignores --transport and warns about it
+        assert "--transport" not in cmd
+
+
+class TestInspectorServerLoading:
+    """The inspector leaves loading the server to the configured environment."""
+
+    async def test_server_is_not_imported_in_the_invoking_environment(
+        self, tmp_path: Path
+    ):
+        """A dependency supplied only via --with must not be imported up front."""
+        server_file = tmp_path / "server.py"
+        server_file.write_text(
+            "import fastmcp_missing_dependency_for_test\n"
+            "from fastmcp import FastMCP\n\n"
+            "mcp = FastMCP('test')\n"
+        )
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+
+        with (
+            patch("fastmcp.cli.cli._get_npx_command", return_value="npx"),
+            patch(
+                "fastmcp.cli.cli.subprocess.run", return_value=mock_process
+            ) as mock_subprocess,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            await inspector(
+                str(server_file),
+                with_packages=["fastmcp_missing_dependency_for_test"],
+            )
+
+        assert exc_info.value.code == 0
+        cmd = mock_subprocess.call_args.args[0]
+        assert cmd[:2] == ["npx", "@modelcontextprotocol/inspector"]
+        assert "fastmcp_missing_dependency_for_test" in cmd
+
+
+class TestInspectorHttpDeployment:
+    """Test the inspector command with an HTTP deployment in fastmcp.json."""
+
+    @pytest.fixture
+    def http_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        monkeypatch.delenv("SERVER_PORT", raising=False)
+        server_file = tmp_path / "server.py"
+        server_file.write_text("from fastmcp import FastMCP\n\nmcp = FastMCP('test')\n")
+        config_file = tmp_path / "fastmcp.json"
+        config_file.write_text(
+            json.dumps(
+                {
+                    "source": {"path": str(server_file), "entrypoint": "mcp"},
+                    "deployment": {"transport": "http", "port": 8000},
+                }
+            )
+        )
+        return config_file
+
+    async def _run_inspector(self, config_file: Path, **kwargs) -> MagicMock:
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+        with (
+            patch("fastmcp.cli.cli._get_npx_command", return_value="npx"),
+            patch(
+                "fastmcp.cli.cli.subprocess.run", return_value=mock_process
+            ) as mock_subprocess,
+            pytest.raises(SystemExit),
+        ):
+            await inspector(str(config_file), **kwargs)
+        return mock_subprocess
+
+    async def test_server_runs_over_stdio(self, http_config: Path):
+        """The Inspector connects over stdio, so the child must not serve HTTP."""
+        mock_subprocess = await self._run_inspector(http_config)
+
+        assert mock_subprocess.call_args.args[0] == [
+            "npx",
+            "@modelcontextprotocol/inspector",
+            "fastmcp",
+            "run",
+            str(http_config),
+            "--no-banner",
+            "--transport",
+            "stdio",
+            "--reload",
+        ]
+
+    async def test_deployment_port_is_not_the_proxy_port(self, http_config: Path):
+        """The MCP server's HTTP port is unrelated to the Inspector proxy port."""
+        mock_subprocess = await self._run_inspector(http_config)
+
+        assert "SERVER_PORT" not in mock_subprocess.call_args.kwargs["env"]
+
+    async def test_server_port_option_sets_the_proxy_port(self, http_config: Path):
+        mock_subprocess = await self._run_inspector(http_config, server_port=6277)
+
+        assert mock_subprocess.call_args.kwargs["env"]["SERVER_PORT"] == "6277"
 
 
 class TestRunDevApps:

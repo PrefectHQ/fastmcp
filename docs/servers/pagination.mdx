@@ -39,6 +39,8 @@ When `list_page_size` is configured, the `tools/list`, `resources/list`, `resour
 
 Cursors are opaque base64-encoded strings per the MCP specification. Clients should treat them as black boxes, passing them unchanged between requests. The cursor encodes the offset into the result set, but this is an implementation detail that may change.
 
+A malformed, non-empty cursor returns the MCP `-32602` (Invalid params) error, whether or not `list_page_size` is configured. Omitting the cursor still returns the complete list when pagination is disabled.
+
 ## Client Behavior
 
 The FastMCP Client handles pagination transparently. Convenience methods like `list_tools()`, `list_resources()`, `list_resource_templates()`, and `list_prompts()` automatically fetch all pages and return the complete list. Existing code continues to work without modification.
