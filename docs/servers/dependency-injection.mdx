@@ -352,6 +352,33 @@ async def fetch_data(
     return f"User {user_id} fetching '{query}' from {config['api_url']}"
 ```
 
+### Annotated Dependencies
+
+A dependency can also go in the parameter's annotation instead of its default. The parameter keeps its declared type, so a type checker sees `config` as a `dict` rather than a `Depends` object, and a direct call that forgets it fails with a `TypeError` instead of running with the marker. An alias carries the type and the dependency together, so every tool that needs the config reads the same declaration.
+
+```python
+from typing import Annotated
+
+from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
+
+mcp = FastMCP("Annotated Deps Demo")
+
+
+def get_config() -> dict:
+    return {"api_url": "https://api.example.com", "timeout": 30}
+
+
+Config = Annotated[dict, Depends(get_config)]
+
+
+@mcp.tool
+async def fetch_data(query: str, config: Config) -> str:
+    return f"Fetching '{query}' from {config['api_url']}"
+```
+
+As with a default, the parameter stays out of the tool's schema. Use one form per parameter: combining an annotated dependency with a `Depends()` default raises `TypeError`.
+
 ### Caching
 
 Dependencies are cached per-request. If multiple parameters use the same dependency, or if nested dependencies share a common dependency, it's resolved once and the same instance is reused.

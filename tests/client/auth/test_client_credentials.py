@@ -9,6 +9,7 @@ endpoint, exactly as httpx would while running the auth flow.
 """
 
 import base64
+import time
 import warnings
 from collections.abc import Callable
 from contextlib import aclosing
@@ -18,7 +19,7 @@ import httpx2
 import jwt
 import pytest
 from key_value.aio.stores.memory import MemoryStore
-from mcp.client.auth import OAuthTokenError
+from mcp.client.auth import OAuthFlowError, OAuthTokenError
 from mcp.shared.auth import OAuthToken
 
 from fastmcp.client import Client
@@ -300,6 +301,48 @@ class TestClientCredentialsFlow:
 
 class TestTokenCacheIsolation:
     """Cached tokens are namespaced by client identity, not just server URL."""
+
+    @pytest.mark.parametrize("provider_type", ["secret", "jwt"])
+    @pytest.mark.parametrize("previous_issuer", [None, "https://previous.example.com"])
+    async def test_changed_issuer_does_not_reuse_cached_token(
+        self, provider_type, previous_issuer
+    ):
+        store = MemoryStore()
+
+        def make_provider(issuer):
+            if provider_type == "jwt":
+                return PrivateKeyJWTOAuthProvider(
+                    SERVER_URL,
+                    client_id="cid",
+                    assertion_provider=static_assertion_provider("assertion"),
+                    issuer=issuer,
+                    token_storage=store,
+                )
+            return ClientCredentialsOAuthProvider(
+                SERVER_URL,
+                client_id="cid",
+                client_secret="secret",
+                issuer=issuer,
+                token_storage=store,
+            )
+
+        previous = make_provider(previous_issuer)
+        await previous.context.storage.set_tokens(
+            OAuthToken(access_token="previous", token_type="Bearer", expires_in=3600)
+        )
+        responder, captured = make_m2m_responder(
+            token_response={"access_token": "current", "token_type": "Bearer"}
+        )
+        async with httpx2.AsyncClient(
+            auth=make_provider(AUTH_SERVER_URL),
+            transport=httpx2.MockTransport(responder),
+        ) as client:
+            assert (await client.post(SERVER_URL)).status_code == 200
+
+        assert captured["final_request"].headers["Authorization"] == "Bearer current"
+        assert str(captured["token_request"].url) == f"{AUTH_SERVER_URL}/token"
+        previous_token = await previous.context.storage.get_tokens()
+        assert previous_token is not None and previous_token.access_token == "previous"
 
     async def test_distinct_client_ids_do_not_share_cached_tokens(self):
         """Two providers with different client_ids sharing one store against the
@@ -685,3 +728,294 @@ def test_assertion_provider_signs_expected_audience():
     # The assertion is a JWT whose audience is exactly the requested issuer.
     claims = jwt.decode(assertion, options={"verify_signature": False})
     assert claims["aud"] == "https://issuer.example.com"
+
+
+class TestIssuerBinding:
+    """With `issuer` set, credentials only go to that authorization server."""
+
+    TOKEN_RESPONSE = {"access_token": "T", "token_type": "Bearer"}
+
+    async def test_client_secret_not_sent_to_other_issuer(self):
+        provider = ClientCredentialsOAuthProvider(
+            SERVER_URL,
+            client_id="cid",
+            client_secret="secret",
+            issuer=AUTH_SERVER_URL,
+        )
+        responder, captured = make_m2m_responder(
+            token_response=self.TOKEN_RESPONSE,
+            auth_server_url="https://attacker.example.com",
+        )
+
+        with pytest.raises(OAuthFlowError, match="issuer"):
+            await drive_auth_flow(provider, responder)
+        assert "token_request" not in captured
+
+    async def test_client_secret_sent_to_configured_issuer(self):
+        provider = ClientCredentialsOAuthProvider(
+            SERVER_URL,
+            client_id="cid",
+            client_secret="secret",
+            issuer=AUTH_SERVER_URL,
+        )
+        responder, captured = make_m2m_responder(token_response=self.TOKEN_RESPONSE)
+
+        requests = await drive_auth_flow(provider, responder)
+
+        assert str(captured["token_request"].url) == f"{AUTH_SERVER_URL}/token"
+        assert requests[-1].headers["Authorization"] == "Bearer T"
+
+    async def test_assertion_not_minted_for_other_issuer(self):
+        audiences: list[str] = []
+
+        async def assertion_provider(audience: str) -> str:
+            audiences.append(audience)
+            return "assertion"
+
+        provider = PrivateKeyJWTOAuthProvider(
+            SERVER_URL,
+            client_id="cid",
+            assertion_provider=assertion_provider,
+            issuer=AUTH_SERVER_URL,
+        )
+        responder, captured = make_m2m_responder(
+            token_response=self.TOKEN_RESPONSE,
+            auth_server_url="https://attacker.example.com",
+        )
+
+        with pytest.raises(OAuthFlowError, match="issuer"):
+            await drive_auth_flow(provider, responder)
+        assert "token_request" not in captured
+        assert audiences == []
+
+    async def test_assertion_sent_to_configured_issuer(self):
+        audiences: list[str] = []
+
+        async def assertion_provider(audience: str) -> str:
+            audiences.append(audience)
+            return "assertion"
+
+        provider = PrivateKeyJWTOAuthProvider(
+            SERVER_URL,
+            client_id="cid",
+            assertion_provider=assertion_provider,
+            issuer=AUTH_SERVER_URL,
+        )
+        responder, captured = make_m2m_responder(token_response=self.TOKEN_RESPONSE)
+
+        requests = await drive_auth_flow(provider, responder)
+
+        assert audiences == [AUTH_SERVER_URL]
+        assert str(captured["token_request"].url) == f"{AUTH_SERVER_URL}/token"
+        assert requests[-1].headers["Authorization"] == "Bearer T"
+
+    @pytest.mark.parametrize("provider_type", ["secret_basic", "secret_post", "jwt"])
+    @pytest.mark.parametrize("metadata_case", ["matching", "mismatch", "forged"])
+    async def test_expired_cached_token_rediscovers_issuer(
+        self, provider_type, metadata_case
+    ):
+        store = MemoryStore()
+        audiences: list[str] = []
+        requests: list[httpx2.Request] = []
+
+        async def assertion_provider(audience: str) -> str:
+            audiences.append(audience)
+            return "assertion"
+
+        def make_provider():
+            if provider_type == "jwt":
+                return PrivateKeyJWTOAuthProvider(
+                    SERVER_URL,
+                    client_id="cid",
+                    assertion_provider=assertion_provider,
+                    issuer=AUTH_SERVER_URL,
+                    token_storage=store,
+                )
+            return ClientCredentialsOAuthProvider(
+                SERVER_URL,
+                client_id="cid",
+                client_secret="secret",
+                token_endpoint_auth_method=(
+                    "client_secret_basic"
+                    if provider_type == "secret_basic"
+                    else "client_secret_post"
+                ),
+                issuer=AUTH_SERVER_URL,
+                token_storage=store,
+            )
+
+        seed = make_provider()
+        await seed.context.storage.set_tokens(
+            OAuthToken(
+                access_token="expired",
+                token_type="Bearer",
+                expires_in=-1,
+                refresh_token="refresh-credential",
+            )
+        )
+        auth_server = (
+            AUTH_SERVER_URL
+            if metadata_case == "matching"
+            else "https://attacker.example.com"
+        )
+        respond, captured = make_m2m_responder(
+            token_response=self.TOKEN_RESPONSE, auth_server_url=auth_server
+        )
+
+        def responder(request: httpx2.Request) -> httpx2.Response:
+            requests.append(request)
+            if str(request.url) == "https://mcp.example.com/token":
+                return httpx2.Response(400, json={"error": "invalid_grant"})
+            response = respond(request)
+            if metadata_case == "forged" and request.url.path.startswith(
+                "/.well-known/oauth-authorization-server"
+            ):
+                metadata = response.json()
+                metadata["issuer"] = AUTH_SERVER_URL
+                return httpx2.Response(200, json=metadata)
+            return response
+
+        provider = make_provider()
+        async with httpx2.AsyncClient(
+            auth=provider, transport=httpx2.MockTransport(responder)
+        ) as client:
+            if metadata_case == "matching":
+                assert (await client.post(SERVER_URL)).status_code == 200
+            else:
+                with pytest.raises(OAuthFlowError, match="issuer"):
+                    await client.post(SERVER_URL)
+
+        assert str(requests[0].url) == SERVER_URL
+        assert all(b"refresh-credential" not in request.content for request in requests)
+        if metadata_case == "matching":
+            token_request = captured["token_request"]
+            assert str(token_request.url) == f"{AUTH_SERVER_URL}/token"
+            assert form_body(token_request)["grant_type"] == "client_credentials"
+            assert audiences == ([AUTH_SERVER_URL] if provider_type == "jwt" else [])
+        else:
+            assert "token_request" not in captured
+            assert audiences == []
+            assert all("Authorization" not in request.headers for request in requests)
+
+    @pytest.mark.parametrize("provider_type", ["secret", "jwt"])
+    @pytest.mark.parametrize("metadata_case", ["forged", "missing"])
+    async def test_untrusted_metadata_cannot_supply_token_endpoint(
+        self, provider_type, metadata_case
+    ):
+        audiences: list[str] = []
+        requests: list[httpx2.Request] = []
+
+        async def assertion_provider(audience: str) -> str:
+            audiences.append(audience)
+            return "assertion"
+
+        if provider_type == "secret":
+            provider = ClientCredentialsOAuthProvider(
+                SERVER_URL,
+                client_id="cid",
+                client_secret="secret",
+                issuer=AUTH_SERVER_URL,
+            )
+        else:
+            provider = PrivateKeyJWTOAuthProvider(
+                SERVER_URL,
+                client_id="cid",
+                assertion_provider=assertion_provider,
+                issuer=AUTH_SERVER_URL,
+            )
+        respond, captured = make_m2m_responder(
+            token_response=self.TOKEN_RESPONSE,
+            auth_server_url="https://attacker.example.com",
+        )
+
+        def responder(request: httpx2.Request) -> httpx2.Response:
+            requests.append(request)
+            response = respond(request)
+            if request.url.path.startswith(
+                (
+                    "/.well-known/oauth-authorization-server",
+                    "/.well-known/openid-configuration",
+                )
+            ):
+                if metadata_case == "missing":
+                    return httpx2.Response(404)
+                metadata = response.json()
+                metadata["issuer"] = AUTH_SERVER_URL
+                return httpx2.Response(200, json=metadata)
+            return response
+
+        async with httpx2.AsyncClient(
+            auth=provider, transport=httpx2.MockTransport(responder)
+        ) as client:
+            with pytest.raises(OAuthFlowError, match="issuer"):
+                await client.post(SERVER_URL)
+
+        assert "token_request" not in captured
+        assert audiences == []
+        assert all("Authorization" not in request.headers for request in requests)
+
+    @pytest.mark.parametrize("provider_type", ["secret", "jwt"])
+    @pytest.mark.parametrize("expires_in", [None, 3600])
+    async def test_valid_cached_token_is_preserved(
+        self, provider_type, expires_in, monkeypatch
+    ):
+        store = MemoryStore()
+
+        def make_provider():
+            if provider_type == "jwt":
+                return PrivateKeyJWTOAuthProvider(
+                    SERVER_URL,
+                    client_id="cid",
+                    assertion_provider=static_assertion_provider("assertion"),
+                    issuer=AUTH_SERVER_URL,
+                    token_storage=store,
+                )
+            return ClientCredentialsOAuthProvider(
+                SERVER_URL,
+                client_id="cid",
+                client_secret="secret",
+                issuer=AUTH_SERVER_URL,
+                token_storage=store,
+            )
+
+        await make_provider().context.storage.set_tokens(
+            OAuthToken(
+                access_token="cached",
+                token_type="Bearer",
+                expires_in=expires_in,
+                refresh_token="refresh-credential",
+            )
+        )
+        responder, captured = make_m2m_responder(token_response=self.TOKEN_RESPONSE)
+        requests: list[httpx2.Request] = []
+
+        def recording_responder(request: httpx2.Request) -> httpx2.Response:
+            requests.append(request)
+            if str(request.url) == "https://mcp.example.com/token":
+                return httpx2.Response(400, json={"error": "invalid_grant"})
+            return responder(request)
+
+        provider = make_provider()
+        async with httpx2.AsyncClient(
+            auth=provider, transport=httpx2.MockTransport(recording_responder)
+        ) as client:
+            assert (await client.post(SERVER_URL)).status_code == 200
+        assert captured["final_request"].headers["Authorization"] == "Bearer cached"
+        assert "token_request" not in captured
+
+        if expires_in is not None:
+            later = time.time() + expires_in + 1
+            monkeypatch.setattr(time, "time", lambda: later)
+            requests.clear()
+            async with httpx2.AsyncClient(
+                auth=provider, transport=httpx2.MockTransport(recording_responder)
+            ) as client:
+                assert (await client.post(SERVER_URL)).status_code == 200
+            assert str(requests[0].url) == SERVER_URL
+            assert all(
+                b"refresh-credential" not in request.content for request in requests
+            )
+            assert (
+                form_body(captured["token_request"])["grant_type"]
+                == "client_credentials"
+            )
