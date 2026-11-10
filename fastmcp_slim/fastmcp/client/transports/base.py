@@ -19,6 +19,7 @@ from mcp.shared._httpx_utils import McpHttpClientFactory
 from typing_extensions import TypedDict, Unpack
 
 from fastmcp.client._version_pin import pinned_call
+from fastmcp.utilities.versions import parse_version_key
 
 # TypeVar for preserving specific ClientTransport subclass types
 ClientTransportT = TypeVar("ClientTransportT", bound="ClientTransport")
@@ -109,7 +110,9 @@ class VersionAwareClientSession(ClientSession):
         if pin is not None and pin.session is self:
             if name not in self._tool_output_schemas:
                 await self.list_tools()
-            if self._tool_listed_versions.get(name) != pin.version:
+            if parse_version_key(
+                self._tool_listed_versions.get(name)
+            ) != parse_version_key(pin.version):
                 return
         await super().validate_tool_result(name, result)
 
