@@ -341,6 +341,24 @@ class LocalProvider(
             self._remove_component(key)
 
     # =========================================================================
+    # Capability queries
+    # =========================================================================
+
+    @property
+    def may_serve_apps(self) -> bool:
+        """Whether transforms or registered components may serve MCP App UI.
+
+        Without transforms, the local registry can be inspected synchronously.
+        Transforms may introduce apps, so retain the conservative declaration
+        without running their asynchronous methods.
+        """
+        from fastmcp.apps.config import component_serves_app
+
+        return bool(self._transforms) or any(
+            component_serves_app(c) for c in self._components.values()
+        )
+
+    # =========================================================================
     # Provider interface implementation
     # =========================================================================
 

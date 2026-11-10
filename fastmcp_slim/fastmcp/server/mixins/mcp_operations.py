@@ -36,11 +36,16 @@ from fastmcp.server.dependencies import (
     bind_request_context,
     extract_version_spec,
 )
-from fastmcp.tools.base import InputRequiredToolResult, ToolResult
+from fastmcp.tools.base import (
+    InputRequiredToolResult,
+    RawStructuredToolResult,
+    ToolResult,
+)
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
+from fastmcp.utilities.json_schema import is_object_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.pagination import CursorState, paginate_sequence
 from fastmcp.utilities.versions import VersionSpec, dedupe_with_versions
@@ -147,7 +152,62 @@ class MCPOperationsMixin:
             tools = dedupe_with_versions(
                 list(await self.list_tools()), lambda t: t.name
             )
-            sdk_tools = [tool.to_mcp_tool(name=tool.name) for tool in tools]
+            sdk_tools = []
+            for tool in tools:
+                output_schema = tool.output_schema
+                if (
+                    ctx.protocol_version not in MODERN_PROTOCOL_VERSIONS
+                    and output_schema is not None
+                ):
+                    if (
+                        is_object_schema(output_schema)
+                        and output_schema.get("type") != "object"
+                    ):
+                        # Implicit and nullable object schemas are valid JSON
+                        # Schema, but legacy MCP requires a literal object type
+                        # at the root. A null result is sent without structured
+                        # content, which legacy clients already accept.
+                        output_schema = {**output_schema, "type": "object"}
+                    elif not is_object_schema(output_schema):
+                        output_schema = {
+                            "type": "object",
+                            "properties": {"result": output_schema},
+                            "required": ["result"],
+                            "x-fastmcp-wrap-result": True,
+                            # Local references inside the original schema still
+                            # resolve from the document root after wrapping.
+                            **(
+                                {"$defs": output_schema["$defs"]}
+                                if "$defs" in output_schema
+                                else {}
+                            ),
+                            **(
+                                {"definitions": output_schema["definitions"]}
+                                if "definitions" in output_schema
+                                else {}
+                            ),
+                        }
+                sdk_tools.append(
+                    tool.to_mcp_tool(name=tool.name, outputSchema=output_schema)
+                )
+            # Refresh the Mcp-Param schema cache (served to the SDK's
+            # `get_tool_input_schema` hook, mcp>=2.3) from the full visible
+            # set, pre-pagination: these are the authoritative wire schemas,
+            # including proxied and mounted tools. Merged in place with
+            # `update` (never `clear`) — the dict is shared with
+            # _SchemaCacheLocalProvider and single server-wide, so an
+            # auth-scoped listing of one client must not evict the schemas
+            # another (differently authorized) client validated against. The
+            # cache may therefore hold a superset of any one client's listing;
+            # a stale entry can only appear for tools removed remotely between
+            # listings, and a miss stays fail-open.
+            self._wire_input_schemas.update(
+                {
+                    sdk_tool.name: sdk_tool.input_schema
+                    for sdk_tool in sdk_tools
+                    if sdk_tool.input_schema is not None
+                }
+            )
             cursor = params.cursor if params else None
             page, next_cursor = _apply_pagination(
                 sdk_tools, cursor, self._list_page_size
@@ -298,6 +358,33 @@ class MCPOperationsMixin:
                         ),
                     )
                 return result.input_required
+            # Tool._run marks results declared by a non-object output schema
+            # as raw; legacy clients receive them under the advertised
+            # `result` wrapper.
+            if ctx.protocol_version not in MODERN_PROTOCOL_VERSIONS and (
+                isinstance(result, RawStructuredToolResult)
+                or (
+                    result.structured_content is not None
+                    and not isinstance(result.structured_content, dict)
+                )
+            ):
+                fastmcp_meta = result.meta.get("fastmcp") if result.meta else None
+                already_wrapped = (
+                    isinstance(fastmcp_meta, dict)
+                    and fastmcp_meta.get("wrap_result") is True
+                )
+                if not already_wrapped:
+                    meta = dict(result.meta or {})
+                    meta["fastmcp"] = {
+                        **(fastmcp_meta if isinstance(fastmcp_meta, dict) else {}),
+                        "wrap_result": True,
+                    }
+                    result = ToolResult(
+                        content=result.content,
+                        structured_content={"result": result.structured_content},
+                        meta=meta,
+                        is_error=result.is_error,
+                    )
             return _normalize_call_tool_result(result.to_mcp_result())
 
     async def _on_read_resource(

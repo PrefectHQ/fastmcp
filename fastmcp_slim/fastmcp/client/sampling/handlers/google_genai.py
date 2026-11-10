@@ -7,6 +7,7 @@ from uuid import uuid4
 
 try:
     from google.genai import Client as GoogleGenaiClient
+    from google.genai import types as google_genai_types
     from google.genai.types import (
         Blob,
         Candidate,
@@ -52,6 +53,38 @@ from mcp_types import CreateMessageRequestParams as SamplingParams
 from mcp_types import Tool as MCPTool
 
 from fastmcp.client._sdk_context_shim import LifespanContextT, RequestContext
+
+_GEMINI_FUNCTION_RESPONSE_IMAGE_MIME_TYPES = frozenset(
+    {"image/jpeg", "image/png", "image/webp"}
+)
+
+
+def _google_function_response_image_part(content: ImageContent) -> Any:
+    """Build a Gemini function-response image part when supported by the SDK."""
+    if content.mime_type not in _GEMINI_FUNCTION_RESPONSE_IMAGE_MIME_TYPES:
+        msg = (
+            "Unsupported image MIME type for Gemini function responses: "
+            f"{content.mime_type!r}"
+        )
+        raise ValueError(msg)
+
+    if "parts" not in getattr(FunctionResponse, "model_fields", {}):
+        msg = "The installed google-genai SDK does not support image function responses"
+        raise ValueError(msg)
+
+    blob_type = getattr(google_genai_types, "FunctionResponseBlob", None)
+    part_type = getattr(google_genai_types, "FunctionResponsePart", None)
+    if blob_type is None or part_type is None:
+        msg = "The installed google-genai SDK does not support image function responses"
+        raise ValueError(msg)
+
+    return part_type(
+        inline_data=blob_type(
+            data=base64.b64decode(content.data),
+            mime_type=content.mime_type,
+        )
+    )
+
 
 __all__ = ["GoogleGenaiSamplingHandler"]
 
@@ -240,12 +273,16 @@ def _sampling_content_to_google_genai_part(
         )
 
     if isinstance(content, ToolResultContent):
-        # Extract text from tool result content
+        # Google represents text in FunctionResponse.response and media in
+        # FunctionResponse.parts.
         result_parts: list[str] = []
+        image_parts: list[Any] = []
         if content.content:
             for item in content.content:
                 if isinstance(item, TextContent):
                     result_parts.append(item.text)
+                elif isinstance(item, ImageContent):
+                    image_parts.append(_google_function_response_image_part(item))
                 else:
                     msg = f"Unsupported tool result content type: {type(item).__name__}"
                     raise ValueError(msg)
@@ -259,12 +296,13 @@ def _sampling_content_to_google_genai_part(
             )
             raise ValueError(msg)
 
-        return Part(
-            function_response=FunctionResponse(
-                name=function_name,
-                response={"result": result_text},
-            )
-        )
+        response_kwargs: dict[str, Any] = {
+            "name": function_name,
+            "response": {"result": result_text},
+        }
+        if image_parts:
+            response_kwargs["parts"] = image_parts
+        return Part(function_response=FunctionResponse(**response_kwargs))
 
     msg = f"Unsupported content type: {type(content)}"
     raise ValueError(msg)

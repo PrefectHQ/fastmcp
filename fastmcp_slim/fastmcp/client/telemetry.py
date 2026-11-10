@@ -40,7 +40,11 @@ def client_span(
 
     tracer = get_tracer()
     with tracer.start_as_current_span(
-        name, kind=SpanKind.CLIENT, attributes=attrs
+        name,
+        kind=SpanKind.CLIENT,
+        attributes=attrs,
+        record_exception=False,
+        set_status_on_exception=False,
     ) as span:
         # Restore: `attributes=attrs` above lets on_start hooks and the
         # sampler see these values at creation time. But OTel's

@@ -18,7 +18,7 @@ from typing_extensions import TypeVar as TypeVarExt
 
 from fastmcp.tools.base import ToolResult
 from fastmcp.utilities.docstring_parsing import ParsedDocstring, parse_docstring
-from fastmcp.utilities.json_schema import compress_schema
+from fastmcp.utilities.json_schema import compress_schema, is_object_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.prefab import is_prefab_type
 from fastmcp.utilities.types import (
@@ -214,54 +214,6 @@ class _WrappedResult(Generic[T]):
 
 class _UnserializableType:
     pass
-
-
-def _is_object_schema(
-    schema: dict[str, Any],
-    *,
-    _root_schema: dict[str, Any] | None = None,
-    _seen_refs: set[str] | None = None,
-) -> bool:
-    """Check if a JSON schema represents an object type."""
-    root_schema = _root_schema or schema
-    seen_refs = _seen_refs or set()
-
-    # Direct object type
-    if schema.get("type") == "object":
-        return True
-
-    # Schema with properties but no explicit type is treated as object
-    if "properties" in schema:
-        return True
-
-    # Resolve local $ref definitions and recurse into the target schema.
-    ref = schema.get("$ref")
-    if not isinstance(ref, str) or not ref.startswith("#/"):
-        return False
-
-    if ref in seen_refs:
-        return False
-
-    # Walk the JSON Pointer path from the root schema, unescaping each
-    # token per RFC 6901 (~1 → /, ~0 → ~).
-    pointer = ref.removeprefix("#/")
-    segments = pointer.split("/")
-    target: Any = root_schema
-    for segment in segments:
-        unescaped = segment.replace("~1", "/").replace("~0", "~")
-        if not isinstance(target, dict) or unescaped not in target:
-            return False
-        target = target[unescaped]
-
-    target_schema = target
-    if not isinstance(target_schema, dict):
-        return False
-
-    return _is_object_schema(
-        target_schema,
-        _root_schema=root_schema,
-        _seen_refs=seen_refs | {ref},
-    )
 
 
 @dataclass
@@ -522,7 +474,7 @@ class ParsedFunction:
                 # because MCP requires that output schemas are objects
                 # Check if schema is an object type, resolving $ref references
                 # (self-referencing types use $ref at root level)
-                if wrap_non_object_output_schema and not _is_object_schema(base_schema):
+                if wrap_non_object_output_schema and not is_object_schema(base_schema):
                     # Use the wrapped result schema directly
                     wrapped_type = _WrappedResult[clean_output_type]
                     wrapped_adapter = get_cached_typeadapter(wrapped_type)

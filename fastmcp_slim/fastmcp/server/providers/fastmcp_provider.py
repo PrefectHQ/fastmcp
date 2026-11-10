@@ -415,6 +415,11 @@ class FastMCPProvider(Provider):
         super().__init__()
         self.server = server
 
+    @property
+    def may_serve_apps(self) -> bool:
+        """Whether transforms or the wrapped server may serve MCP App UI."""
+        return bool(self._transforms) or self.server.may_serve_apps
+
     def required_extensions(self) -> Sequence[ServerExtension]:
         """Expose the mounted server's bundled and auto-registerable extensions."""
         return self.server.required_extensions()
