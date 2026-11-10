@@ -5,6 +5,57 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.1.8" description="2026-11-10">
+
+**[v4.1.8: Backporch Light](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.8)**
+
+FastMCP 4.1.8 backports 28 fixes from the 4.2 line, led by OAuth proxy token revocation, which now works for the client that owns the token. It also fixes recursive and untyped schema hydration, GitHub sessions across transient verification failures, proxied sampling and prompt arguments, and a set of OpenAPI, client timeout, task and CLI edge cases. Thanks to our 21 contributors, including 9 first-time contributors.
+
+### Fixes 🐞
+* fix: keep additionalProperties on object schemas without a type by [@bfs2021](https://github.com/bfs2021) and [@alpaylan](https://github.com/alpaylan) in [#6127](https://github.com/PrefectHQ/fastmcp/pull/6127)
+* Fix hydration of mutually recursive schema types by [@zzstoatzz](https://github.com/zzstoatzz), [@wozhenbang2004](https://github.com/wozhenbang2004), and [@alpaylan](https://github.com/alpaylan) in [#6394](https://github.com/PrefectHQ/fastmcp/pull/6394)
+* Isolate filesystem component construction failures by [@PennEwan](https://github.com/PennEwan) in [#6210](https://github.com/PrefectHQ/fastmcp/pull/6210)
+* fix(config): apply tool transforms before tag filters on single servers by [@AP24110011695](https://github.com/AP24110011695) and [@arjunprabhulal](https://github.com/arjunprabhulal) in [#6214](https://github.com/PrefectHQ/fastmcp/pull/6214)
+* fix(tools): isolate mutable defaults in transformed tool calls by [@priy-anshugupta](https://github.com/priy-anshugupta) in [#6184](https://github.com/PrefectHQ/fastmcp/pull/6184)
+* fix(openapi): make resource templates for non-identifier path parameters readable by [@AP24110011695](https://github.com/AP24110011695) and [@alpaylan](https://github.com/alpaylan) in [#6187](https://github.com/PrefectHQ/fastmcp/pull/6187)
+* Document that a custom httpx_client_factory owns its timeout by [@asasemahmed](https://github.com/asasemahmed) and [@himanshuchawla0807-gif](https://github.com/himanshuchawla0807-gif) in [#5923](https://github.com/PrefectHQ/fastmcp/pull/5923)
+* Stop PingMiddleware erroring when the client has no back-channel by [@asasemahmed](https://github.com/asasemahmed) in [#5901](https://github.com/PrefectHQ/fastmcp/pull/5901)
+* Store sessionless client log levels on the connection by [@asasemahmed](https://github.com/asasemahmed) in [#5899](https://github.com/PrefectHQ/fastmcp/pull/5899)
+* Register templated MCPMixin resources as resource templates by [@asasemahmed](https://github.com/asasemahmed) in [#5895](https://github.com/PrefectHQ/fastmcp/pull/5895)
+* Send the whole body when a body $ref with siblings cannot be flattened by [@asasemahmed](https://github.com/asasemahmed) in [#5893](https://github.com/PrefectHQ/fastmcp/pull/5893)
+* Pass the transport to the fastmcp-remote proxy so it forwards server-initiated requests by [@asasemahmed](https://github.com/asasemahmed) in [#5885](https://github.com/PrefectHQ/fastmcp/pull/5885)
+* fix(cli): forward path, stateless and log-level to SDK MCPServer servers by [@BlueX888](https://github.com/BlueX888) in [#5870](https://github.com/PrefectHQ/fastmcp/pull/5870)
+* fix(client): preserve a caller-provided OAuth httpx client factory when verify is set by [@BlueX888](https://github.com/BlueX888) in [#5849](https://github.com/PrefectHQ/fastmcp/pull/5849)
+* fix(prompts): resolve postponed annotations when rendering by [@67-luck](https://github.com/67-luck) and [@BlueX888](https://github.com/BlueX888) in [#5803](https://github.com/PrefectHQ/fastmcp/pull/5803)
+* fix(openapi): hydrate data for wrapped non-object responses with validate_output=False by [@nosmile99](https://github.com/nosmile99) and [@BlueX888](https://github.com/BlueX888) in [#5784](https://github.com/PrefectHQ/fastmcp/pull/5784)
+* Carry prompt argument titles through PromptArgument and proxies by [@AarnavNoble](https://github.com/AarnavNoble) in [#5749](https://github.com/PrefectHQ/fastmcp/pull/5749)
+* Relay the client's sampling result unchanged through proxies by [@AarnavNoble](https://github.com/AarnavNoble) in [#5747](https://github.com/PrefectHQ/fastmcp/pull/5747)
+* fix(tasks): let async-generator tools run as background tasks by [@gdut4140](https://github.com/gdut4140) in [#5730](https://github.com/PrefectHQ/fastmcp/pull/5730)
+* Honor Code Mode search limits after BM25 ranking by [@Winoren](https://github.com/Winoren) and [@BlueX888](https://github.com/BlueX888) in [#5715](https://github.com/PrefectHQ/fastmcp/pull/5715)
+* Keep the client timeout from capping the HTTP read timeout by [@asasemahmed](https://github.com/asasemahmed) in [#5690](https://github.com/PrefectHQ/fastmcp/pull/5690)
+* fix(auth): avoid rereading failed authorization forms by [@pei711](https://github.com/pei711) and [@JordanAfolabiLaw](https://github.com/JordanAfolabiLaw) in [#5570](https://github.com/PrefectHQ/fastmcp/pull/5570)
+* Fix unbounded Apps dev log retention by [@mikamikasuki](https://github.com/mikamikasuki) in [#5549](https://github.com/PrefectHQ/fastmcp/pull/5549)
+* Bound error-stat cardinality in ErrorHandlingMiddleware by [@mikamikasuki](https://github.com/mikamikasuki) in [#5537](https://github.com/PrefectHQ/fastmcp/pull/5537)
+* fix(auth): preserve GitHub sessions across transient verification failures by [@sui-ni2](https://github.com/sui-ni2) and [@benjohngf](https://github.com/benjohngf) in [#4881](https://github.com/PrefectHQ/fastmcp/pull/4881)
+* Expect the extended read timeout in the factory timeout test by [@zzstoatzz](https://github.com/zzstoatzz) in [#6395](https://github.com/PrefectHQ/fastmcp/pull/6395)
+* fix(auth): keep revocation ownership separate from user identity by [@zzstoatzz](https://github.com/zzstoatzz), [@BlueX888](https://github.com/BlueX888), and [@67-luck](https://github.com/67-luck) in [#6404](https://github.com/PrefectHQ/fastmcp/pull/6404)
+* Authenticate and pin the schema download in the OpenAPI performance test by [@zzstoatzz](https://github.com/zzstoatzz) in [#6177](https://github.com/PrefectHQ/fastmcp/pull/6177)
+
+## New Contributors
+* @AP24110011695 made their first contribution in [#6214](https://github.com/PrefectHQ/fastmcp/pull/6214)
+* @JordanAfolabiLaw made their first contribution in [#5570](https://github.com/PrefectHQ/fastmcp/pull/5570)
+* @Winoren made their first contribution in [#5715](https://github.com/PrefectHQ/fastmcp/pull/5715)
+* @arjunprabhulal made their first contribution in [#6214](https://github.com/PrefectHQ/fastmcp/pull/6214)
+* @benjohngf made their first contribution in [#4881](https://github.com/PrefectHQ/fastmcp/pull/4881)
+* @bfs2021 made their first contribution in [#6127](https://github.com/PrefectHQ/fastmcp/pull/6127)
+* @pei711 made their first contribution in [#5570](https://github.com/PrefectHQ/fastmcp/pull/5570)
+* @priy-anshugupta made their first contribution in [#6184](https://github.com/PrefectHQ/fastmcp/pull/6184)
+* @wozhenbang2004 made their first contribution in [#6394](https://github.com/PrefectHQ/fastmcp/pull/6394)
+
+**Full Changelog**: [v4.1.7...v4.1.8](https://github.com/PrefectHQ/fastmcp/compare/v4.1.7...v4.1.8)
+
+</Update>
+
 <Update label="v4.1.7" description="2026-11-09">
 
 **[v4.1.7: Dumpster Dive](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.7)**
