@@ -1689,12 +1689,28 @@ def _restore_request_context(
         _current_server.set(weakref.ref(fastmcp))
 
 
-def _make_restoring_handler(handler: Callable, rc_ref: list[Any]) -> Callable:
-    """Wrap a proxy handler to restore request_ctx before delegating."""
+def _make_restoring_handler(
+    handler: Callable,
+    rc_ref: list[Any],
+    pending: set[anyio.Event] | None = None,
+) -> Callable:
+    """Wrap a proxy handler to restore request_ctx before delegating.
+
+    When ``pending`` is given, each in-flight call is tracked in it so the
+    proxy client can let started forwards finish before it disconnects.
+    """
 
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         _restore_request_context(rc_ref)
-        return await handler(*args, **kwargs)
+        if pending is None:
+            return await handler(*args, **kwargs)
+        done = anyio.Event()
+        pending.add(done)
+        try:
+            return await handler(*args, **kwargs)
+        finally:
+            pending.discard(done)
+            done.set()
 
     return wrapper
 
@@ -1726,6 +1742,7 @@ class ProxyClient(Client[ClientTransportT]):
     # tuple — never a Context instance — because Context properties are
     # ContextVar-dependent and would resolve stale values in the receive loop.
     _proxy_rc_ref: list[Any]
+    _pending_proxy_logs: set[anyio.Event]
     _proxy_restoring_handler_keys: set[str]
 
     # A proxy forwards calls; it must not advertise task support to its backend.
@@ -1770,6 +1787,7 @@ class ProxyClient(Client[ClientTransportT]):
         # Install context-restoring handler wrappers BEFORE super().__init__
         # registers them with the Client's session kwargs.
         self._proxy_rc_ref = [None]
+        self._pending_proxy_logs = set()
         self._proxy_restoring_handler_keys = set()
         for key, default_fn in (
             ("roots", default_proxy_roots_handler),
@@ -1779,7 +1797,11 @@ class ProxyClient(Client[ClientTransportT]):
             ("progress_handler", default_proxy_progress_handler),
         ):
             if key not in kwargs:
-                kwargs[key] = _make_restoring_handler(default_fn, self._proxy_rc_ref)
+                kwargs[key] = _make_restoring_handler(
+                    default_fn,
+                    self._proxy_rc_ref,
+                    self._pending_proxy_logs if key == "log_handler" else None,
+                )
                 self._proxy_restoring_handler_keys.add(key)
         super().__init__(transport=transport, **kwargs)  # ty: ignore[no-matching-overload]
 
@@ -1807,16 +1829,38 @@ class ProxyClient(Client[ClientTransportT]):
             )
         if "log_handler" in self._proxy_restoring_handler_keys:
             self._session_kwargs["logging_callback"] = create_log_callback(
-                _make_restoring_handler(default_proxy_log_handler, self._proxy_rc_ref)
+                _make_restoring_handler(
+                    default_proxy_log_handler,
+                    self._proxy_rc_ref,
+                    self._pending_proxy_logs,
+                )
             )
         if "progress_handler" in self._proxy_restoring_handler_keys:
             self._progress_handler = _make_restoring_handler(
                 default_proxy_progress_handler, self._proxy_rc_ref
             )
 
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        # The SDK runs notification callbacks concurrently with the response,
+        # so a backend's logs can still be forwarding when its result arrives.
+        # Let them finish before disconnecting cancels them.
+        try:
+            if exc_type is None and self._pending_proxy_logs:
+                with anyio.move_on_after(self._disconnect_timeout):
+                    while self._pending_proxy_logs:
+                        await next(iter(self._pending_proxy_logs)).wait()
+        finally:
+            await super().__aexit__(exc_type, exc_val, exc_tb)
+
     def new(self) -> ProxyClient[ClientTransportT]:
         new_client = cast(ProxyClient[ClientTransportT], super().new())
+        if getattr(self.transport, "keep_alive", False):
+            # A keep-alive transport hands every copy the session the first
+            # copy opened, whose callbacks read the first copy's state. Share
+            # that state so the forwards follow the current request.
+            return new_client
         new_client._proxy_rc_ref = [None]
+        new_client._pending_proxy_logs = set()
         new_client._proxy_restoring_handler_keys = set(
             self._proxy_restoring_handler_keys
         )
