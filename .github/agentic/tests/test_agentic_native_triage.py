@@ -41,9 +41,8 @@ def admission():
     runtime = Runtime(
         plans={
             role: AgentPlan(flow_id=uuid4(), version_id=uuid4())
-            for role in ("assess", "reproduce", "prepare", "review")
+            for role in ("assess", "reproduce", "triage_review")
         },
-        validator_id=uuid4(),
         verification_id=uuid4(),
         source_sha="b" * 40,
         triage_plan=AgentPlan(flow_id=uuid4(), version_id=uuid4()),
@@ -131,7 +130,7 @@ def test_native_records_reject_changed_admission_and_unrelated_assessment_runs()
         with pytest.raises(ValueError, match="missing or changed"):
             worker_admission(ref.model_copy(update={"binding": "d" * 64}), "verify")
         changed = deepcopy(raw)
-        changed["requested"]["mode"] = "fix"
+        changed["requested"]["mode"] = "review"
         with pytest.raises(ValueError, match="Conflicting durable"):
             record.fn(owner.id, ref.key, changed)
         with pytest.raises(ValueError, match="managed child"):

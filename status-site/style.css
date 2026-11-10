@@ -385,3 +385,22 @@ footer button {
   text-decoration-color: var(--line);
   text-underline-offset: 3px;
 }
+
+#triage-ages {
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+#triage-ages table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+#triage-ages th,
+#triage-ages td {
+  padding: 0.5rem 0.7rem;
+  text-align: right;
+  white-space: nowrap;
+}
+#triage-ages th:first-child {
+  text-align: left;
+}
