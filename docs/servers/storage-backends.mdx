@@ -141,6 +141,8 @@ The py-key-value-aio library includes additional implementations for various sto
 - **RocksDB** - Embedded high-performance key-value store
 - **Valkey** - Redis-compatible server
 
+If you use `KeyringStore` for OS keyring storage, install `py-key-value-aio[keyring]` explicitly. FastMCP does not install the keyring dependency or its CLI by default.
+
 For configuration details on these backends, consult the [py-key-value-aio documentation](https://github.com/strawgate/py-key-value).
 
 <Warning>
