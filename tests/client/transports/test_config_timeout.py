@@ -1,7 +1,7 @@
 """Per-server MCP config timeouts reach the sessions that send requests."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -31,7 +31,9 @@ def backend_sessions(monkeypatch: pytest.MonkeyPatch) -> list[ClientSession]:
     sessions: list[ClientSession] = []
 
     @asynccontextmanager
-    async def connect_session(self: Any, **kwargs: Any) -> AsyncIterator[ClientSession]:
+    async def connect_session(
+        self: Any, **kwargs: Any
+    ) -> AsyncGenerator[ClientSession, None]:
         async with FastMCPTransport(server).connect_session(**kwargs) as session:
             sessions.append(session)
             yield session

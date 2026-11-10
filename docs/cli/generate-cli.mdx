@@ -83,6 +83,8 @@ python cli.py call-tool create_user \
   --metadata '{"role": "admin", "dept": "engineering"}'
 ```
 
+For JSON-encoded parameters whose schema permits `null`, pass `--parameter null` to send an explicit null value. Omitting an optional flag remains distinct and allows its default to apply.
+
 ## Agent Skill
 
 Alongside the CLI script, `generate-cli` writes a `SKILL.md` file — a [Claude Code agent skill](https://code.claude.com/docs/en/skills) that documents every tool's exact invocation syntax, parameter flags, types, and descriptions. An agent can pick up the CLI immediately without running `--help` or experimenting with flag names.

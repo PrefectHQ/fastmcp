@@ -1,5 +1,7 @@
 """End-to-end tests for OpenAPIProvider implementation."""
 
+import json
+
 import httpx2
 import pytest
 
@@ -163,59 +165,64 @@ class TestEndToEndFunctionality:
                 assert properties["name"]["type"] == "string"
 
     async def test_tool_execution_parameter_mapping(self, collision_spec):
-        """Test that tool execution with collisions works correctly."""
-        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
+        """Colliding path and body parameters reach the right parts of the request."""
+        requests: list[httpx2.Request] = []
+
+        def capture(request: httpx2.Request) -> httpx2.Response:
+            requests.append(request)
+            return httpx2.Response(200, json={"ok": True})
+
+        async with httpx2.AsyncClient(
+            base_url="https://api.example.com", transport=httpx2.MockTransport(capture)
+        ) as client:
             server = create_openapi_server(
                 openapi_spec=collision_spec,
                 client=client,
                 name="Test Server",
             )
 
-            # Test arguments that should work with collision resolution
-            test_args = {
-                "id__path": 123,  # Path parameter (suffixed)
-                "id": 456,  # Body parameter (not suffixed)
-                "name": "John Doe",  # Body parameter
-            }
-
             async with Client(server) as mcp_client:
                 tools = await mcp_client.list_tools()
-                tool_name = tools[0].name
+                await mcp_client.call_tool(
+                    tools[0].name,
+                    {"id__path": 123, "id": 456, "name": "John Doe"},
+                )
 
-                # Should fail at HTTP level (not argument validation)
-                # since we don't have an actual server
-                with pytest.raises(Exception) as exc_info:
-                    await mcp_client.call_tool(tool_name, test_args)
+        assert len(requests) == 1
+        assert requests[0].method == "PUT"
+        assert requests[0].url.path == "/users/123"
+        assert json.loads(requests[0].content) == {"id": 456, "name": "John Doe"}
 
-                # Should fail at HTTP level, not schema validation
-                error_msg = str(exc_info.value).lower()
-                assert "schema" not in error_msg
-                assert "validation" not in error_msg
+    @pytest.mark.parametrize(
+        "args,expected_params",
+        [
+            ({"id": 123}, []),
+            ({"id": 123, "include_details": True}, [("include_details", "true")]),
+        ],
+    )
+    async def test_optional_parameter_handling(
+        self, simple_spec, args, expected_params
+    ):
+        """Optional query parameters are sent only when provided."""
+        requests: list[httpx2.Request] = []
 
-    async def test_optional_parameter_handling(self, simple_spec):
-        """Test that optional parameters are handled correctly."""
-        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
+        def capture(request: httpx2.Request) -> httpx2.Response:
+            requests.append(request)
+            return httpx2.Response(200, json={"ok": True})
+
+        async with httpx2.AsyncClient(
+            base_url="https://api.example.com", transport=httpx2.MockTransport(capture)
+        ) as client:
             server = create_openapi_server(
                 openapi_spec=simple_spec,
                 client=client,
                 name="Test Server",
             )
 
-            # Test with optional parameter omitted
-            test_args_minimal = {"id": 123}
-
-            # Test with optional parameter included
-            test_args_full = {"id": 123, "include_details": True}
-
             async with Client(server) as mcp_client:
                 tools = await mcp_client.list_tools()
-                tool_name = tools[0].name
+                await mcp_client.call_tool(tools[0].name, args)
 
-                # Both should fail at HTTP level (not argument validation)
-                for test_args in [test_args_minimal, test_args_full]:
-                    with pytest.raises(Exception) as exc_info:
-                        await mcp_client.call_tool(tool_name, test_args)
-
-                    error_msg = str(exc_info.value).lower()
-                    assert "schema" not in error_msg
-                    assert "validation" not in error_msg
+        assert len(requests) == 1
+        assert requests[0].url.path == "/users/123"
+        assert requests[0].url.params.multi_items() == expected_params

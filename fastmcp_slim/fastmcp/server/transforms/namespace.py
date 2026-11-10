@@ -88,7 +88,9 @@ class Namespace(Transform):
             if path.startswith(prefix):
                 return f"{protocol}{path[len(prefix) :]}"
             return None
-        return None
+        # No protocol://path to namespace, so _transform_uri left this URI
+        # alone and it is listed unprefixed. Reverse it to itself to match.
+        return uri
 
     # -------------------------------------------------------------------------
     # Tools
