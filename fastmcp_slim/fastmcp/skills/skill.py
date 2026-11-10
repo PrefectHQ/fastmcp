@@ -5,19 +5,38 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import tempfile
+import warnings
 from collections.abc import Mapping
 from pathlib import Path, PureWindowsPath
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Self, TypeGuard, cast
 from urllib.parse import quote
 
-from pydantic import JsonValue
+from pydantic import GetCoreSchemaHandler, JsonValue
+from pydantic_core import CoreSchema, core_schema
 
+from fastmcp._warnings import FastMCPDeprecationWarning
+from fastmcp.skills._constants import MAX_SKILL_BYTES, MAX_SKILL_FILES
 from fastmcp.skills.models import MCPSkill, SkillFrontmatter, SkillResource
 
-# SEP-2640 per-skill limits; servers should not serve skills that exceed them.
-MAX_SKILL_FILES = 512
-MAX_SKILL_BYTES = 16 * 1024 * 1024
+
+def _warn_wire_model(call: str) -> None:
+    warnings.warn(
+        f"`{call}` builds the 4.1 wire model, which is now `MCPSkill`; "
+        "`fastmcp.skills.Skill` is the skill authoring class. Replace it with "
+        f"`{call.replace('Skill', 'MCPSkill', 1)}` and "
+        "`from fastmcp.skills import MCPSkill`. This alias is removed in FastMCP 4.3.",
+        FastMCPDeprecationWarning,
+        stacklevel=3,
+    )
+
+
+def _validate_limits(file_count: int, total_bytes: int) -> None:
+    if file_count > MAX_SKILL_FILES:
+        raise ValueError(f"A skill may contain at most {MAX_SKILL_FILES} files")
+    if total_bytes > MAX_SKILL_BYTES:
+        raise ValueError(f"A skill may contain at most {MAX_SKILL_BYTES} bytes")
 
 
 def _validate_relative_path(path: str) -> str:
@@ -43,7 +62,27 @@ def _render_skill_md(frontmatter: Mapping[str, JsonValue], instructions: str) ->
     return f"---\n{header}---\n{instructions}".encode()
 
 
-class Skill:
+class _SkillMeta(type):
+    def __instancecheck__(cls, instance: object) -> bool:
+        # The public 4.1 spelling also identified wire entries. Do not extend
+        # this compatibility behavior to subclasses of the authoring class.
+        return super().__instancecheck__(instance) or (
+            cls is Skill and isinstance(instance, MCPSkill)
+        )
+
+
+def _is_authored_skill(value: object) -> TypeGuard[Skill]:
+    """Check real inheritance, excluding the public wire-model compatibility alias."""
+    return issubclass(type(value), Skill)
+
+
+def _require_authored_skill(value: object) -> Skill:
+    if not _is_authored_skill(value):
+        raise ValueError("Expected an authored Skill with file contents")
+    return value
+
+
+class Skill(metaclass=_SkillMeta):
     """An agent skill: a `SKILL.md` plus supporting files, independent of storage.
 
     A `Skill` holds exact file bytes. It doesn't know where it came from or which
@@ -68,6 +107,40 @@ class Skill:
 
     _files: Mapping[str, bytes]
     _frontmatter: SkillFrontmatter
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        # Existing authoring values stay intact; dictionaries and JSON retain
+        # the 4.1 wire-model validation and serialization contract.
+        if cls is not Skill:
+            return core_schema.is_instance_schema(cls)
+        wire_schema = handler.generate_schema(MCPSkill)
+        return core_schema.union_schema(
+            [core_schema.is_instance_schema(cls), wire_schema]
+        )
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        # In 4.1 `fastmcp.skills.Skill` was the wire model now named `MCPSkill`.
+        # Its keywords (`uri`, `resources`) never mean an authored skill.
+        if cls is Skill and ("uri" in kwargs or "resources" in kwargs):
+            _warn_wire_model("Skill(uri=..., frontmatter=..., resources=...)")
+            # Statically a `Skill`, so authoring code keeps its types.
+            return cast(Any, MCPSkill(*args, **kwargs))
+        return super().__new__(cls)
+
+    @classmethod
+    def model_validate(cls, obj: Any, **kwargs: Any) -> MCPSkill:
+        """Deprecated 4.1 alias for `MCPSkill.model_validate`."""
+        _warn_wire_model("Skill.model_validate(...)")
+        return MCPSkill.model_validate(obj, **kwargs)
+
+    @classmethod
+    def model_validate_json(cls, json_data: str | bytes, **kwargs: Any) -> MCPSkill:
+        """Deprecated 4.1 alias for `MCPSkill.model_validate_json`."""
+        _warn_wire_model("Skill.model_validate_json(...)")
+        return MCPSkill.model_validate_json(json_data, **kwargs)
 
     def __init__(
         self,
@@ -105,10 +178,7 @@ class Skill:
             )
         if "SKILL.md" not in normalized:
             raise ValueError("A skill must contain SKILL.md")
-        if len(normalized) > MAX_SKILL_FILES:
-            raise ValueError(f"A skill may contain at most {MAX_SKILL_FILES} files")
-        if sum(map(len, normalized.values())) > MAX_SKILL_BYTES:
-            raise ValueError(f"A skill may contain at most {MAX_SKILL_BYTES} bytes")
+        _validate_limits(len(normalized), sum(map(len, normalized.values())))
         for path in normalized:
             parts = path.split("/")
             for index in range(1, len(parts)):
@@ -146,10 +216,9 @@ class Skill:
         from fastmcp.skills._snapshot import scan_files
 
         root = Path(path).absolute()
-        files = {
-            file.relative_to(root).as_posix(): file.read_bytes()
-            for file in scan_files(root)
-        }
+        paths = scan_files(root)
+        _validate_limits(len(paths), sum(file.stat().st_size for file in paths))
+        files = {file.relative_to(root).as_posix(): file.read_bytes() for file in paths}
         skill = cls.from_files(files)
         if skill.name != root.name:
             raise ValueError(
@@ -192,7 +261,9 @@ class Skill:
         The folder name must match the skill's `name`, so `from_directory` can
         read it back. An existing folder raises `FileExistsError` unless
         `overwrite` is set, in which case it is replaced: files that aren't
-        part of the skill are removed.
+        part of the skill are removed. Files are staged before replacing an
+        existing folder. If replacement and restoration both fail, the error
+        identifies where the previous folder has been retained.
         """
         root = Path(path)
         if root.name != self.name:
@@ -209,11 +280,33 @@ class Skill:
                 )
             if not root.is_dir():
                 raise ValueError(f"Skill folder is not a directory: {root}")
-            shutil.rmtree(root)
-        for relative, content in self._files.items():
-            target = root / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(content)
+        root.parent.mkdir(parents=True, exist_ok=True)
+        staging = Path(tempfile.mkdtemp(prefix=f".{root.name}-", dir=root.parent))
+        previous = staging / "previous"
+        try:
+            replacement = staging / "new"
+            for relative, content in self._files.items():
+                target = replacement / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+            if root.exists():
+                root.rename(previous)
+            try:
+                replacement.rename(root)
+            except OSError:
+                if previous.exists():
+                    try:
+                        previous.rename(root)
+                    except OSError as exc:
+                        raise OSError(
+                            f"Could not restore {root}; previous skill remains at {previous}"
+                        ) from exc
+                raise
+            if previous.exists():
+                shutil.rmtree(previous)
+        finally:
+            if not previous.exists():
+                shutil.rmtree(staging)
         return root
 
     @property
@@ -250,7 +343,7 @@ class Skill:
         )
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, Skill) and self._files == other._files
+        return _is_authored_skill(other) and self._files == other._files
 
     def __hash__(self) -> int:
         return hash(tuple(self._files.items()))

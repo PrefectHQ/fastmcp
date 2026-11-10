@@ -133,6 +133,8 @@ async with Client(Path("backend_server.py")) as connected_client:
 Shared sessions may cause context mixing in concurrent scenarios. Use only in single-threaded situations or with explicit synchronization.
 </Warning>
 
+A reused session keeps the settings it connected with, so backend tool results are validated against their declared output schema instead of [relayed as-is](#tool-results-are-relayed-not-inspected). A connected `ProxyClient` is the exception: the proxy builds a fresh session from it for each request.
+
 ## HTTP Header Forwarding
 
 Proxies forward eligible incoming HTTP headers, including `Authorization` and custom headers, to HTTP and SSE backends by default. Headers configured on the backend transport take precedence. Cookies and connection-specific headers are excluded.
@@ -178,6 +180,8 @@ proxy = create_proxy(Path("advanced_backend.py"))
 # - Logs messages → appear in your client
 # - Reports progress → shown in your client
 ```
+
+Protocol extensions are not forwarded automatically, because the proxy doesn't know which ones its backend supports. To forward a backend's Skills discovery, pass `skills=True` to `create_proxy` or `ProxyProvider`; see [Proxied servers](/servers/skills#proxied-servers).
 
 ### Disabling Features
 
@@ -334,29 +338,16 @@ Proxied components follow standard prefixing rules:
 
 <VersionBadge version="2.10.5" />
 
-Components from a proxy server are "mirrored" - they reflect the remote server's state and cannot be modified directly.
-
-To modify a proxied component (like disabling it), create a local copy:
+Components from a proxy server are "mirrored": they reflect the remote server's state, and every call goes to the backend. To hide or rename a proxied component, apply [visibility](/servers/visibility) or [transforms](/servers/transforms/transforms) on the proxy or on the server that mounts it:
 
 ```python
 from pathlib import Path
-from fastmcp import FastMCP
 from fastmcp.server import create_proxy
 
 proxy = create_proxy(Path("backend_server.py"))
 
-# Get mirrored tool
-mirrored_tool = await proxy.get_tool("useful_tool")
-
-# Create modifiable local copy
-local_tool = mirrored_tool.copy()
-
-# Add to your own server
-my_server = FastMCP("MyServer")
-my_server.add_tool(local_tool)
-
-# Now you can control enabled state
-my_server.disable(keys={local_tool.key})
+# Hide one backend tool from clients of this proxy
+proxy.disable(names={"useful_tool"})
 ```
 
 ## Performance Considerations
@@ -400,7 +391,7 @@ You can reuse a single backend session by providing a client factory that return
 ```python
 from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
 
-base_client = ProxyClient("http://backend:8000/mcp")
+base_client = ProxyClient("http://backend:8000/mcp", forward_incoming_headers=False)
 shared_client = base_client.new()
 
 proxy = FastMCPProxy(
@@ -409,7 +400,9 @@ proxy = FastMCPProxy(
 )
 ```
 
-This eliminates the MCP initialization handshake on every call, which can dramatically reduce latency under load. The `Client` uses reference counting for its session lifecycle, so concurrent callers sharing the same instance is safe.
+This eliminates the MCP initialization handshake on every call, which can reduce latency under load. The `Client` uses reference counting for its session lifecycle, so concurrent callers can share the same instance.
+
+Forwarded headers are attached when a session connects, so a shared session carries the headers of whichever request opened it to every request that reuses it. Set `forward_incoming_headers=False` on a shared client, as above, and give it the backend credentials directly.
 
 <Warning>
 Only reuse sessions when you know the backend is stateless (e.g. stateless HTTP). For stateful backends (stdio processes, servers that track session state), use the default fresh-session behavior to avoid context mixing.

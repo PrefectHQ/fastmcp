@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import bisect
 import hashlib
 import json
 from typing import TYPE_CHECKING, cast
@@ -27,7 +28,7 @@ from fastmcp.skills.models import (
     SkillResource,
     _parse_resource_uri,
 )
-from fastmcp.skills.skill import Skill, _validate_relative_path
+from fastmcp.skills.skill import Skill, _validate_limits, _validate_relative_path
 from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.logging import get_logger
 
@@ -207,6 +208,64 @@ class ClientSkillsMixin:
                 send=_send,
             )
 
+    async def list_skill_resources(self: Client) -> list[mcp_types.Resource]:
+        """List the skills a server publishes as `skill://.../SKILL.md` resources.
+
+        Use this for servers that serve skills as resources but not through the
+        Skills extension, such as FastMCP 4.1 and earlier. Pass a returned
+        resource's `uri` to `read_skill()` to fetch the whole skill.
+
+        When skill paths overlap, advertised manifests distinguish supporting
+        `SKILL.md` files from independent skills. Entries are kept if their
+        containing skill's manifest is unavailable or invalid.
+
+        Returns:
+            The `SKILL.md` resource of each skill, in the server's order.
+        """
+        resources = await self.list_resources()
+        skills = [
+            resource
+            for resource in resources
+            if str(resource.uri).startswith("skill://")
+            and str(resource.uri).endswith("/SKILL.md")
+        ]
+        resource_uris = {str(resource.uri) for resource in resources}
+        skill_uris = {str(resource.uri) for resource in skills}
+        # URIs sharing a prefix sort next to each other, so a skill has a
+        # nested candidate exactly when the URI after its prefix's insertion
+        # point also starts with that prefix.
+        ordered_uris = sorted(skill_uris)
+
+        def has_nested_candidate(prefix: str) -> bool:
+            start = bisect.bisect_left(ordered_uris, prefix)
+            matches = ordered_uris[start : start + 2]
+            return sum(uri.startswith(prefix) for uri in matches) > 1
+
+        supporting_uris: set[str] = set()
+        # Process parents first, so a supporting file's own name or contents
+        # cannot make it an authority over another skill's discovery.
+        for uri in sorted(skill_uris, key=lambda uri: (len(uri), uri)):
+            if uri in supporting_uris:
+                continue
+            prefix = uri.removesuffix("SKILL.md")
+            if f"{prefix}_manifest" not in resource_uris or not has_nested_candidate(
+                prefix
+            ):
+                continue
+            try:
+                manifest = await self._resource_mode_manifest(uri)
+            except (MCPError, ValueError):
+                # Manually registered resources need not have readable manifests.
+                continue
+            supporting_uris.update(
+                record.uri
+                for path, record in manifest.items()
+                if path != "SKILL.md" and record.uri.startswith(prefix)
+            )
+        return [
+            resource for resource in skills if str(resource.uri) not in supporting_uris
+        ]
+
     async def get_skill(
         self: Client,
         uri: str,
@@ -240,7 +299,8 @@ class ClientSkillsMixin:
         The manifest comes from `skills/get` when the Skills extension was
         negotiated, and otherwise from the `_manifest` resource that FastMCP
         skill providers serve next to the files. Every file must match the
-        size and SHA-256 digest the manifest promised.
+        size and SHA-256 digest the manifest promised. When an extension entry
+        is available, the parsed frontmatter must also match that entry.
 
         Args:
             uri: URI of the skill's `SKILL.md` resource.
@@ -258,7 +318,10 @@ class ClientSkillsMixin:
         _, authority, segments = _parse_resource_uri(uri)
         if not segments or segments[-1] != "SKILL.md":
             raise ValueError(f"read_skill takes a skill's SKILL.md URI, got {uri!r}")
-        manifest = await self._skill_manifest(uri, cache_mode)
+        manifest, entry = await self._skill_manifest(uri, cache_mode)
+        _validate_limits(
+            len(manifest), sum(record.size for record in manifest.values())
+        )
         for path in manifest:
             _validate_relative_path(path)
         files: dict[str, bytes] = {}
@@ -276,6 +339,10 @@ class ClientSkillsMixin:
                 )
             files[path] = content
         skill = Skill.from_files(files)
+        if entry is not None and json.dumps(
+            skill.frontmatter.root, sort_keys=True
+        ) != json.dumps(entry.frontmatter.root, sort_keys=True):
+            raise ValueError(f"Skill at {uri!r} does not match its entry's frontmatter")
         expected = segments[-2] if len(segments) > 1 else unquote(authority)
         if skill.name != expected:
             raise ValueError(
@@ -285,8 +352,8 @@ class ClientSkillsMixin:
 
     async def _skill_manifest(
         self: Client, uri: str, cache_mode: CacheMode
-    ) -> dict[str, SkillResource]:
-        """Relative path -> manifest record for every file in the skill.
+    ) -> tuple[dict[str, SkillResource], MCPSkill | None]:
+        """File records and the entry whose frontmatter must match the content.
 
         A skill the server serves as resources but does not advertise through
         the extension, such as one behind a proxy, still has a `_manifest`.
@@ -308,8 +375,8 @@ class ClientSkillsMixin:
                     if path in manifest:
                         raise ValueError(f"Duplicate skill file path: {path!r}")
                     manifest[path] = resource
-                return manifest
-        return await self._resource_mode_manifest(uri)
+                return manifest, entry
+        return await self._resource_mode_manifest(uri), None
 
     async def _resource_mode_manifest(
         self: Client, uri: str

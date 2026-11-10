@@ -19,6 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from flows.agentic_stack import digest
 from flows.agentic_validate_patch import install_tools
+from flows.agentic_verification_inputs import VerificationInputs, reject_mutations
+from flows.agentic_verification_process import isolated_verification
 
 
 class VerificationSpec(BaseModel):
@@ -65,6 +67,8 @@ def environment(home: Path) -> dict[str, str]:
         "GIT_COMMITTER_NAME": "Verification",
         "GIT_COMMITTER_EMAIL": "verification@example.invalid",
         "PYTEST_XDIST_AUTO_NUM_WORKERS": "4",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONNOUSERSITE": "1",
     }
 
 
@@ -127,8 +131,17 @@ def merge_base(directory: Path, env: dict[str, str], head: str, trunk: str) -> s
 
 
 def pytest_result(command: dict, report: Path) -> dict:
-    result = {**command, "status": "environment_failure", "cases": []}
-    if command["timed_out"] or command["returncode"] not in {0, 1}:
+    result = {
+        **command,
+        "status": "environment_failure",
+        "cases": [],
+        "reason": "Pytest did not produce a valid completed test report",
+    }
+    if command["timed_out"]:
+        result["reason"] = "Pytest timed out"
+        return result
+    if command["returncode"] not in {0, 1, 2}:
+        result["reason"] = f"Pytest exited with code {command['returncode']}"
         return result
     if not report.is_file() or report.stat().st_size > 5_000_000:
         return result
@@ -154,6 +167,14 @@ def pytest_result(command: dict, report: Path) -> dict:
                 "detail": detail,
             }
         )
+    if command["returncode"] == 2:
+        errors = [
+            case["detail"] for case in result["cases"] if case["state"] == "error"
+        ]
+        if errors:
+            result["status"] = "collection_failure"
+            result["reason"] = "Pytest collection failed: " + "\n".join(errors)[-6000:]
+        return result
     states = [case["state"] for case in result["cases"]]
     ids = [case["id"] for case in result["cases"]]
     if (
@@ -167,25 +188,85 @@ def pytest_result(command: dict, report: Path) -> dict:
         result["status"] = "test_failure"
     elif command["returncode"] == 0 and "failure" not in states and "passed" in states:
         result["status"] = "passed"
+    if result["status"] != "environment_failure":
+        result["reason"] = None
     return result
 
 
-def run_tests(repo: Path, paths: list[str], env: dict[str, str], report: Path) -> dict:
-    setup = execute(["uv", "sync", "--frozen"], repo, env, timeout=300)
+def run_tests(
+    repo: Path,
+    paths: list[str],
+    env: dict[str, str],
+    report: Path,
+    *,
+    setup: dict,
+    inputs: VerificationInputs,
+    timeout: int = 600,
+) -> dict:
     if setup["returncode"]:
-        return {"status": "environment_failure", "setup": setup, "cases": []}
+        return {
+            "status": "environment_failure",
+            "reason": "Dependency setup failed",
+            "setup": setup,
+            "cases": [],
+        }
+    if changes := inputs.changes():
+        return reject_mutations(
+            {"status": "not_run", "cases": [], "setup": setup}, changes
+        )
     lock = repo / "uv.lock"
     lock_sha = hashlib.sha256(lock.read_bytes()).hexdigest() if lock.exists() else None
+    stage_home = tempfile.mkdtemp(prefix=report.stem + "-home-", dir=report.parent)
+    stage_tmp = tempfile.mkdtemp(prefix=report.stem + "-tmp-", dir=report.parent)
+    stage_cache = tempfile.mkdtemp(prefix=report.stem + "-cache-", dir=report.parent)
+    stage_env = {**env, "HOME": stage_home, "TMPDIR": stage_tmp}
     result = execute(
-        ["uv", "run", "--no-sync", "pytest", "-n", "0", f"--junitxml={report}", *paths],
+        [
+            "uv",
+            "run",
+            "--no-sync",
+            "--no-config",
+            "--no-env-file",
+            "pytest",
+            "-n",
+            "0",
+            "-o",
+            f"cache_dir={stage_cache}",
+            f"--junitxml={report}",
+            *paths,
+        ],
         repo,
-        env,
-        timeout=600,
+        stage_env,
+        timeout=timeout,
     )
-    return {**pytest_result(result, report), "setup": setup, "lock_sha256": lock_sha}
+    return reject_mutations(
+        {
+            **pytest_result(result, report),
+            "setup": setup,
+            "lock_sha256": lock_sha,
+            "input_sha256": digest(
+                {
+                    "source": inputs.source,
+                    "installed": inputs.installed,
+                    "metadata": inputs.metadata,
+                }
+            ),
+        },
+        inputs.changes(),
+    )
 
 
 def outcomes(base: dict, head: dict) -> dict:
+    if base["status"] not in {"passed", "test_failure"} or head["status"] not in {
+        "passed",
+        "test_failure",
+    }:
+        return {
+            "fixed_tests": [],
+            "regressed_tests": [],
+            "unmatched_tests": [],
+            "interpretation": "Incomplete test runs cannot establish behavior transitions.",
+        }
     before = {case["id"]: case for case in base["cases"]}
     after = {case["id"]: case for case in head["cases"]}
     return {
@@ -269,36 +350,137 @@ def verify(
                 raise ValueError("Independent probes must not replace existing files")
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(source)
-    selected = [*paths, *spec.probes]
-    baseline = run_tests(base, selected, env, directory / "base.xml")
-    candidate = run_tests(head, selected, env, directory / "head.xml")
     parents = sorted({str(PurePosixPath(p).parent) for p in paths})
+    tracked = git(
+        head, env, "ls-tree", "-r", "--name-only", "HEAD", "--", "tests"
+    ).splitlines()
     neighbors = [
         path
-        for path in parents
-        if not any(path.startswith(other + "/") for other in parents if other != path)
+        for path in tracked
+        if str(PurePosixPath(path).parent) in parents
+        and PurePosixPath(path).name.startswith("test_")
+        and path.endswith(".py")
+        and path not in paths
     ]
-    adjacent = (
-        run_tests(head, neighbors, env, directory / "adjacent.xml")
-        if neighbors
-        else candidate
+    base_inputs = VerificationInputs(base)
+    head_inputs = VerificationInputs(head)
+    setups = {}
+    for repo, inputs in ((base, base_inputs), (head, head_inputs)):
+        setups[repo] = execute(["uv", "sync", "--frozen"], repo, env, timeout=300)
+        inputs.installed_inputs()
+    head_inputs.seal_metadata()
+    selected = [*paths, *spec.probes]
+    baseline = run_tests(
+        base,
+        selected,
+        env,
+        directory / "base.xml",
+        setup=setups[base],
+        inputs=base_inputs,
     )
+    candidate = run_tests(
+        head,
+        selected,
+        env,
+        directory / "head.xml",
+        setup=setups[head],
+        inputs=head_inputs,
+    )
+    probe_results = {}
+    comparison = outcomes(baseline, candidate)
+    if baseline["status"] == "collection_failure" and candidate["status"] in {
+        "passed",
+        "test_failure",
+    }:
+        baseline["status"] = "baseline_collection_incompatible"
+        baseline["reason"] += (
+            "\nAuthor tests cannot collect on baseline. Supply a standalone baseline-compatible behavior probe; do not copy implementation helpers onto baseline."
+        )
+        if spec.probes:
+            probe_base = run_tests(
+                base,
+                list(spec.probes),
+                env,
+                directory / "probe-base.xml",
+                setup=baseline["setup"],
+                inputs=base_inputs,
+                timeout=60,
+            )
+            probe_head = run_tests(
+                head,
+                list(spec.probes),
+                env,
+                directory / "probe-head.xml",
+                setup=candidate["setup"],
+                inputs=head_inputs,
+                timeout=60,
+            )
+            probe_results = {"probe_base": probe_base, "probe_head": probe_head}
+            comparison = outcomes(probe_base, probe_head)
+    limitations = [
+        "Current target-branch composition and full-suite/static validation remain separate checks.",
+        "Author tests are not independent contract verification; supplied probes are identified separately.",
+    ]
+    if len(neighbors) > 20:
+        limitations.append(
+            f"Adjacent verification omitted: {len(neighbors)} sibling modules exceeds the twenty-module budget."
+        )
+        neighbors = []
+    adjacent = (
+        run_tests(
+            head,
+            neighbors,
+            env,
+            directory / "adjacent.xml",
+            setup=setups[head],
+            inputs=head_inputs,
+        )
+        if neighbors
+        else {
+            "status": "not_run",
+            "cases": [],
+            "reason": "No sibling modules within the verification budget",
+        }
+    )
+    base_changes = base_inputs.changes()
+    head_changes = head_inputs.changes()
+    baseline = reject_mutations(baseline, base_changes)
+    candidate = reject_mutations(candidate, head_changes)
+    if "probe_base" in probe_results:
+        probe_results["probe_base"] = reject_mutations(
+            probe_results["probe_base"], base_changes
+        )
+        probe_results["probe_head"] = reject_mutations(
+            probe_results["probe_head"], head_changes
+        )
+    adjacent = reject_mutations(adjacent, head_changes)
     status = "verification_recorded"
-    if any(
-        r["status"] == "environment_failure" for r in (baseline, candidate, adjacent)
-    ):
+    reason = None
+    if baseline["status"] == "baseline_collection_incompatible" and not probe_results:
+        status = "evidence_needed"
+        reason = baseline["reason"]
+    stages = (baseline, candidate, adjacent, *probe_results.values())
+    if any(r["status"] == "collection_failure" for r in stages):
+        status = "evidence_needed"
+        reason = "Test collection failed; repair the test inputs before requesting verification again."
+    if any(r["status"] == "environment_failure" for r in stages):
         status = "environment_failure"
+        reason = "Verification could not complete; inspect stage diagnostics before retrying."
+    if any(r["status"] == "input_mutation" for r in stages):
+        status = "evidence_needed"
+        reason = "Verification inputs were modified; retained test output cannot establish behavior transitions."
+        comparison = outcomes({"status": "input_mutation"}, candidate)
     return {
         **result,
         "status": status,
+        "reason": reason,
+        **probe_results,
         "base": baseline,
         "head": candidate,
         "adjacent": adjacent,
-        "comparison": outcomes(baseline, candidate),
-        "limitations": [
-            "Current target-branch composition and full-suite/static validation remain separate checks.",
-            "Author tests are not independent contract verification; supplied probes are identified separately.",
-        ],
+        "adjacent_tests": neighbors,
+        "comparison": comparison,
+        "limitations": limitations,
     }
 
 
@@ -307,7 +489,7 @@ def verify_contribution(spec: VerificationSpec) -> dict:
     with tempfile.TemporaryDirectory(prefix="fastmcp-contribution-") as temporary:
         directory = Path(temporary)
         install_tools(directory / "tools")
-        result = verify(spec, directory)
+        result = isolated_verification(spec, directory)
     with get_client(sync_client=True) as client:
         client.create_artifact(
             ArtifactCreate(
@@ -322,12 +504,25 @@ def verify_contribution(spec: VerificationSpec) -> dict:
 
 if __name__ == "__main__":
     import argparse
+    import resource
+
+    if sys.platform == "linux":
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        resource.setrlimit(resource.RLIMIT_CPU, (2400, 2400))
+        resource.setrlimit(resource.RLIMIT_AS, (4 * 1024**3, 4 * 1024**3))
+        resource.setrlimit(resource.RLIMIT_NPROC, (256, 256))
+        resource.setrlimit(resource.RLIMIT_NOFILE, (512, 512))
+        resource.setrlimit(resource.RLIMIT_FSIZE, (128 * 1024**2, 128 * 1024**2))
 
     parser = argparse.ArgumentParser()
     parser.add_argument("spec", type=Path)
-    parser.add_argument("output", type=Path)
+    parser.add_argument("output", nargs="?", type=Path)
     args = parser.parse_args()
     spec = VerificationSpec.model_validate_json(args.spec.read_text())
     with tempfile.TemporaryDirectory(prefix="fastmcp-contribution-") as temporary:
         result = verify(spec, Path(temporary))
-    args.output.write_text(json.dumps(result, indent=2) + "\n")
+    rendered = json.dumps(result, indent=2) + "\n"
+    if args.output is None:
+        sys.stdout.write(rendered)
+    else:
+        args.output.write_text(rendered)

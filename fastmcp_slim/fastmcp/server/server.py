@@ -21,6 +21,7 @@ from typing import (
     Any,
     Generic,
     Literal,
+    Self,
     TypeVar,
     cast,
     get_args,
@@ -42,7 +43,6 @@ from pydantic import AnyUrl
 from pydantic import ValidationError as PydanticValidationError
 from pydantic_core import ErrorType
 from starlette.routing import BaseRoute
-from typing_extensions import Self
 
 import fastmcp
 import fastmcp.server
@@ -483,10 +483,10 @@ class FastMCP(
             else fastmcp.settings.client_log_level
         )
 
-        # Per-session minimum log level requested by clients via logging/setLevel.
-        # Keyed by session id (a sentinel for stdio where session_id is None).
-        # v2 sessions are per-request so this state lives on the server, not the
-        # session object.
+        # Per-session minimum log level requested by clients via logging/setLevel,
+        # keyed by session id. Connections without one (stdio, in-memory,
+        # stateless HTTP) keep theirs in `Connection.state`. v2 sessions are
+        # per-request so this state lives on the server, not the session object.
         self._client_log_levels: dict[str, mcp_types.LoggingLevel] = {}
 
         self.experimental_capabilities: dict[str, dict[str, Any]] = (
@@ -976,7 +976,10 @@ class FastMCP(
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext(
-                    message={},
+                    # Synthesized with only `method`: params stays None, so
+                    # pagination state (e.g. the client's nextCursor) is not
+                    # visible to list middleware hooks.
+                    message=mcp_types.ListResourcesRequest(method="resources/list"),
                     source="client",
                     type="request",
                     method="resources/list",
@@ -1127,7 +1130,12 @@ class FastMCP(
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext(
-                    message={},
+                    # Synthesized with only `method`: params stays None, so
+                    # pagination state (e.g. the client's nextCursor) is not
+                    # visible to list middleware hooks.
+                    message=mcp_types.ListResourceTemplatesRequest(
+                        method="resources/templates/list"
+                    ),
                     source="client",
                     type="request",
                     method="resources/templates/list",
@@ -1267,7 +1275,10 @@ class FastMCP(
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext(
-                    message={},
+                    # Synthesized with only `method`: params stays None, so
+                    # pagination state (e.g. the client's nextCursor) is not
+                    # visible to list middleware hooks.
+                    message=mcp_types.ListPromptsRequest(method="prompts/list"),
                     source="client",
                     type="request",
                     method="prompts/list",
@@ -1425,7 +1436,7 @@ class FastMCP(
         #   1. Display-name path — the name this server lists the tool
         #      under, resolved through `get_tool`.
         #   2. Hashed-name path — backend tools that opted into
-        #      app-callable visibility, addressed as `<hash>_<local_name>`
+        #      app-callable visibility, addressed as `__<hash>_<local_name>`
         #      and resolved through `get_tool_by_hash`. It applies the same
         #      transforms, visibility, and auth as the display-name path.
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:

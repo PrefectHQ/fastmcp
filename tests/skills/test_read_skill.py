@@ -14,11 +14,11 @@ from mcp.shared.exceptions import MCPError
 from mcp_types import INTERNAL_ERROR
 
 from fastmcp import Client, ClientGroup, FastMCP
-from fastmcp.server.providers.skills import SkillProvider, SkillsDirectoryProvider
 from fastmcp.skills import Skill, SkillsClientExtension
+from fastmcp.skills._constants import MAX_SKILL_BYTES, MAX_SKILL_FILES
 from fastmcp.skills.extension import SkillsExtension
-from fastmcp.skills.models import MCPSkill
-from fastmcp.skills.provider import SkillCatalogProvider
+from fastmcp.skills.models import MCPSkill, SkillFrontmatter, SkillResource
+from fastmcp.skills.provider import SkillCatalogProvider, SkillsDirectoryProvider
 
 REVIEW = Skill(
     name="review",
@@ -38,6 +38,45 @@ async def test_read_skill_returns_an_equal_skill_through_the_extension():
         skill = await client.read_skill("skill://review/SKILL.md")
     assert skill == REVIEW
     assert skill.files["refs/logo.bin"] == b"\x00\xff\r\n"
+
+
+@pytest.mark.parametrize(
+    "advertised",
+    [
+        {"description": "Different instructions"},
+        {"custom": {"enabled": 1}},
+        {"custom": {"enabled": True, "extra": "claim"}},
+    ],
+)
+async def test_read_skill_reconciles_all_advertised_frontmatter(
+    advertised: dict[str, Any],
+):
+    original = Skill(
+        name="review",
+        description="Review changes",
+        instructions="# Review\n",
+        frontmatter={"custom": {"enabled": True}},
+    )
+    requests = 0
+
+    class Inconsistent(SkillCatalogProvider):
+        async def _get_skill_entry(
+            self, uri: str, context: ServerRequestContext[Any, Any]
+        ) -> MCPSkill | None:
+            nonlocal requests
+            requests += 1
+            entry = await super()._get_skill_entry(uri, context)
+            assert entry is not None
+            frontmatter = SkillFrontmatter.model_validate(
+                {**entry.frontmatter.root, **advertised}
+            )
+            return entry.model_copy(update={"frontmatter": frontmatter})
+
+    server = FastMCP("Skills", providers=[Inconsistent([original])])
+    async with skills_client(server) as client:
+        with pytest.raises(ValueError, match="frontmatter"):
+            await client.read_skill("skill://review/SKILL.md")
+    assert requests == 1
 
 
 async def test_read_skill_falls_back_to_the_manifest_resource():
@@ -63,7 +102,7 @@ async def test_read_skill_handles_nested_paths_and_encoded_names():
         assert skill == quoted
 
 
-async def test_read_skill_reads_from_a_legacy_folder_provider(tmp_path: Path):
+async def test_read_skill_reads_from_a_folder_provider(tmp_path: Path):
     folder = tmp_path / "review"
     folder.mkdir()
     (folder / "SKILL.md").write_bytes(REVIEW.files["SKILL.md"])
@@ -71,16 +110,11 @@ async def test_read_skill_reads_from_a_legacy_folder_provider(tmp_path: Path):
     (folder / "refs").mkdir()
     (folder / "refs" / "logo.bin").write_bytes(b"\x00\xff\r\n")
 
-    for provider in (
-        SkillProvider(folder),
-        SkillProvider(folder, supporting_files="resources"),
-        SkillsDirectoryProvider(tmp_path),
-        SkillsDirectoryProvider(tmp_path, experimental_skills=True),
-    ):
-        server = FastMCP("Skills", providers=[provider])
-        async with Client(server) as client:
+    server = FastMCP("Skills", providers=[SkillsDirectoryProvider(tmp_path)])
+    for client in (skills_client(server), Client(server)):
+        async with client:
             skill = await client.read_skill("skill://review/SKILL.md")
-        assert skill == REVIEW, provider
+        assert skill == REVIEW
 
 
 async def test_read_skill_rejects_a_file_that_does_not_match_its_digest():
@@ -259,6 +293,45 @@ async def test_read_skill_requires_a_connection():
         await client.read_skill("skill://review/SKILL.md")
 
 
+@pytest.mark.parametrize("limit", ["count", "size"])
+async def test_read_skill_rejects_oversized_entries_before_reading_files(limit: str):
+    original = Skill(name="review", description="Review", instructions="# Review\n")
+    reads = 0
+
+    class Oversized(SkillCatalogProvider):
+        async def _get_skill_entry(
+            self, uri: str, context: ServerRequestContext[Any, Any]
+        ) -> MCPSkill | None:
+            entry = original.to_mcp_skill()
+            assert isinstance(entry.resources, list)
+            records = entry.resources
+            if limit == "count":
+                records.extend(
+                    SkillResource(
+                        uri=f"skill://review/{index}.txt",
+                        digest=f"sha256:{hashlib.sha256(b'').hexdigest()}",
+                        size=0,
+                    )
+                    for index in range(MAX_SKILL_FILES)
+                )
+            else:
+                records[0] = records[0].model_copy(update={"size": MAX_SKILL_BYTES + 1})
+            return entry.model_copy(update={"resources": records})
+
+    server = FastMCP("Skills", providers=[Oversized([original])])
+
+    @server.resource("skill://review/SKILL.md")
+    def observed_file() -> bytes:
+        nonlocal reads
+        reads += 1
+        return original.files["SKILL.md"]
+
+    async with skills_client(server) as client:
+        with pytest.raises(ValueError, match="at most"):
+            await client.read_skill("skill://review/SKILL.md")
+    assert reads == 0
+
+
 async def test_a_read_skill_can_be_served_again():
     origin = FastMCP(
         "Origin", providers=[SkillCatalogProvider({"team/review": REVIEW})]
@@ -298,6 +371,7 @@ async def test_read_skill_preserves_extension_errors():
             raise MCPError(code=INTERNAL_ERROR, message="Catalog unavailable")
 
     server = FastMCP("Skills", providers=[Broken([REVIEW])])
+    server.provider_error_strategy = "raise"
     async with skills_client(server) as client:
         with pytest.raises(MCPError) as exc:
             await client.read_skill("skill://review/SKILL.md")
