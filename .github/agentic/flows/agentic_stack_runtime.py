@@ -23,6 +23,7 @@ from prefect.utilities.asyncutils import run_coro_as_sync
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from flows.agentic_assessment_cache import assessment_candidates, assessment_key
+from flows.agentic_review_app import ReviewApp
 from flows.agentic_stack import digest
 from flows.agentic_stack_context import assessment_context as project_assessment
 from flows.agentic_stack_plans import OUTPUTS
@@ -119,22 +120,34 @@ class AgentPlan(BaseModel):
 class Runtime(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     plans: dict[str, AgentPlan]
-    validator_id: UUID
     verification_id: UUID | None = None
     triage_plan: AgentPlan | None = None
     triage_verify_id: UUID | None = None
     triage_finalize_id: UUID | None = None
     source_sha: str = Field(pattern=r"^[a-f0-9]{40}$")
+    publish_reviews: bool = False
+    reviewer_app: ReviewApp | None = None
 
     @model_validator(mode="after")
     def check_roles(self) -> Runtime:
-        if set(self.plans) != set(OUTPUTS):
+        required = set(OUTPUTS) - {"triage_review"}
+        if not required <= set(self.plans) <= set(OUTPUTS):
             raise ValueError("Expected every stack agent role")
+        if self.publish_reviews and "triage_review" not in self.plans:
+            raise ValueError("Automatic publication requires independent triage review")
+        if self.publish_reviews and self.reviewer_app is None:
+            raise ValueError("Review publication requires a separate GitHub App")
         native = (self.triage_plan, self.triage_verify_id, self.triage_finalize_id)
         if any(value is not None for value in native) and any(
             value is None for value in native
         ):
             raise ValueError("Native triage requires its plan and both deployments")
+        if (
+            self.triage_plan is not None
+            and self.publish_reviews
+            and "triage_review" not in self.plans
+        ):
+            raise ValueError("Native triage requires adversarial triage review")
         return self
 
 
@@ -371,7 +384,17 @@ def judge(
         observation = api("GET", f"/flow_runs/{run_id}/execution-plan")
         if observation["snapshot"]["execution_plan_version_id"] != str(plan.version_id):
             raise ValueError("Agent run selected a different plan version")
-        if observation["status"] in {"completed", "failed", "cancelled", "blocked"}:
+        terminal = observation["status"] in {
+            "completed",
+            "failed",
+            "cancelled",
+            "blocked",
+        }
+        waiting_for_result = observation["status"] == "completed" and any(
+            output["output"] == "result" and output["status"] == "waiting"
+            for output in observation.get("outputs", [])
+        )
+        if terminal and not waiting_for_result:
             break
         time.sleep(5)
     if observation["status"] != "completed":

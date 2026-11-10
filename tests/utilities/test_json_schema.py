@@ -382,6 +382,62 @@ class TestDereferenceRefs:
         assert "$defs" not in result
         assert "discriminator" in result["properties"]["item"]["properties"]
 
+    def test_falls_back_for_root_ref_to_boolean_schema(self):
+        """A root $ref resolving to a boolean schema must not crash.
+
+        `true` is a valid JSON Schema, so ``$defs: {"Any": true}`` with a
+        root $ref is legal. jsonref replaces the whole schema with the
+        boolean, which previously hit the dict assertion and failed
+        tools/list for the entire server (#6125). The schema now falls
+        back to partial resolution and keeps its own keywords.
+        """
+        schema = {
+            "type": "object",
+            "$ref": "#/$defs/Any",
+            "$defs": {"Any": True},
+        }
+        result = dereference_refs(schema)
+
+        assert result == schema
+
+    def test_falls_back_for_root_ref_to_false_schema_without_siblings(self):
+        """A root $ref resolving to `false` (no siblings) stays intact."""
+        schema = {"$ref": "#/$defs/Any", "$defs": {"Any": False}}
+        result = dereference_refs(schema)
+
+        assert result == schema
+
+    def test_falls_back_for_root_ref_to_non_schema_json_value(self):
+        """A root $ref resolving to any non-dict value must not crash.
+
+        $defs entries are arbitrary JSON, so a pointer can also reach a
+        list or scalar; the same fallback applies.
+        """
+        schema = {
+            "type": "object",
+            "$ref": "#/$defs/List",
+            "$defs": {"List": [1, 2, 3]},
+        }
+        result = dereference_refs(schema)
+
+        assert result == schema
+
+    def test_nested_ref_to_boolean_schema_is_inlined_as_is(self):
+        """A nested $ref resolving to a boolean schema is kept in place.
+
+        jsonref replaces the property node with the boolean itself, which
+        is a valid sub-schema; this has always worked and must keep working.
+        """
+        schema = {
+            "type": "object",
+            "properties": {"x": {"$ref": "#/$defs/B"}},
+            "$defs": {"B": True},
+        }
+        result = dereference_refs(schema)
+
+        assert "$defs" not in result
+        assert result["properties"]["x"] is True
+
     @pytest.mark.parametrize("name", ["default", "const", "enum", "examples"])
     def test_strips_discriminator_under_property_named_like_a_keyword(self, name: str):
         """A property named like a data keyword still holds a sub-schema."""

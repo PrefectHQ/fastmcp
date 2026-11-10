@@ -60,7 +60,7 @@
               "pages": [
                 "v2/deployment/running-server",
                 "v2/deployment/http",
-                "deployment/prefect-horizon",
+                "deployment/fastmcp-gateway",
                 "v2/deployment/server-configuration"
               ]
             }

@@ -1,13 +1,16 @@
 """Tests for ping middleware."""
 
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import anyio
 import pytest
+from mcp.shared.exceptions import NoBackChannelError
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.middleware.ping import PingMiddleware
+from fastmcp.utilities.tests import asgi_server
 
 
 class TestPingMiddlewareInit:
@@ -177,6 +180,21 @@ class TestPingLoop:
         # Session should be cleaned up after cancellation
         assert session_id not in middleware._active_sessions
 
+    async def test_ping_loop_stops_without_back_channel(self):
+        """Test that a connection with no back-channel ends the loop quietly."""
+        middleware = PingMiddleware(interval_ms=10)
+
+        mock_session = MagicMock()
+        mock_session.send_ping = AsyncMock(side_effect=NoBackChannelError("ping"))
+
+        session_id = id(mock_session)
+        middleware._active_sessions.add(session_id)
+
+        await middleware._ping_loop(mock_session, session_id)
+
+        mock_session.send_ping.assert_awaited_once()
+        assert session_id not in middleware._active_sessions
+
 
 class TestPingMiddlewareIntegration:
     """Integration tests for PingMiddleware with real FastMCP server."""
@@ -234,3 +252,67 @@ class TestPingMiddlewareIntegration:
 
         # Session should be cleaned up
         assert len(middleware._active_sessions) == 0
+
+
+class TestPingMiddlewareWithoutBackChannel:
+    """Connections that cannot send requests to the client must not log errors.
+
+    Requests on the 2026-07-28 protocol, and every request to a stateless HTTP
+    server, run on a connection with no back-channel, so the ping loop's first
+    `send_ping()` raises `NoBackChannelError`.
+    """
+
+    @pytest.fixture
+    def server(self) -> tuple[FastMCP, PingMiddleware]:
+        mcp = FastMCP("PingTestServer")
+        middleware = PingMiddleware(interval_ms=10)
+        mcp.add_middleware(middleware)
+
+        @mcp.tool
+        async def slow() -> str:
+            # Outlive the ping interval so the loop attempts a ping.
+            await anyio.sleep(0.1)
+            return "done"
+
+        return mcp, middleware
+
+    @staticmethod
+    def _runner_errors(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+        return [r for r in caplog.records if r.name == "mcp.server.runner"]
+
+    async def test_in_memory_modern_client(
+        self,
+        server: tuple[FastMCP, PingMiddleware],
+        caplog: pytest.LogCaptureFixture,
+    ):
+        mcp, middleware = server
+
+        with caplog.at_level(logging.ERROR, logger="mcp.server.runner"):
+            async with Client(mcp) as client:
+                result = await client.call_tool("slow")
+
+        assert result.content[0].text == "done"
+        assert self._runner_errors(caplog) == []
+        assert middleware._active_sessions == set()
+
+    @pytest.mark.parametrize(
+        ("stateless_http", "mode"),
+        [(False, "auto"), (True, "legacy"), (True, "auto")],
+    )
+    async def test_http_without_back_channel(
+        self,
+        server: tuple[FastMCP, PingMiddleware],
+        caplog: pytest.LogCaptureFixture,
+        stateless_http: bool,
+        mode: str,
+    ):
+        mcp, middleware = server
+
+        with caplog.at_level(logging.ERROR, logger="mcp.server.runner"):
+            async with asgi_server(mcp, stateless_http=stateless_http) as srv:
+                async with srv.client(mode=mode) as client:
+                    result = await client.call_tool("slow")
+
+        assert result.content[0].text == "done"
+        assert self._runner_errors(caplog) == []
+        assert middleware._active_sessions == set()
