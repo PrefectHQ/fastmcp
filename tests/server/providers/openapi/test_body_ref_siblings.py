@@ -277,12 +277,12 @@ async def test_ref_to_one_of_target_keeps_the_ref():
         ],
     }
     spec = build_spec(SIBLING_BODY, {"Base": base})
-    schema, _ = await call_make_thing(
-        spec, {"body": {"name": "n", "local": "l", "a": "x"}}
-    )
+    payload = {"name": "n", "local": "l", "a": "x"}
+    schema, sent = await call_make_thing(spec, {"body": payload})
     dumped = json.dumps(schema)
     assert '"a"' in dumped
     assert '"name"' in dumped
+    assert sent == payload
 
 
 async def test_ref_to_any_of_target_keeps_the_ref():
@@ -291,19 +291,34 @@ async def test_ref_to_any_of_target_keeps_the_ref():
         "anyOf": [{"required": ["a"]}, {"required": ["b"]}],
     }
     spec = build_spec(SIBLING_BODY, {"Base": base})
-    schema, _ = await call_make_thing(spec, {"body": {"name": "n", "local": "l"}})
+    schema, sent = await call_make_thing(spec, {"body": {"name": "n", "local": "l"}})
     assert "anyOf" in json.dumps(schema)
+    assert sent == {"name": "n", "local": "l"}
 
 
 async def test_ref_to_pattern_properties_target_keeps_the_ref():
     base = {**BASE, "patternProperties": {"^x-": {"type": "string"}}}
     spec = build_spec(SIBLING_BODY, {"Base": base})
-    schema, _ = await call_make_thing(spec, {"body": {"name": "n", "local": "l"}})
+    schema, sent = await call_make_thing(spec, {"body": {"name": "n", "local": "l"}})
     assert "patternProperties" in json.dumps(schema)
+    assert sent == {"name": "n", "local": "l"}
 
 
 async def test_ref_to_additional_properties_target_keeps_the_ref():
     base = {**BASE, "additionalProperties": False}
     spec = build_spec(SIBLING_BODY, {"Base": base})
-    schema, _ = await call_make_thing(spec, {"body": {"name": "n", "local": "l"}})
+    schema, sent = await call_make_thing(spec, {"body": {"name": "n", "local": "l"}})
     assert "additionalProperties" in json.dumps(schema)
+    assert sent == {"name": "n", "local": "l"}
+
+
+async def test_ref_with_all_of_to_additional_properties_target_keeps_the_ref():
+    body = {
+        "$ref": "#/components/schemas/Base",
+        "allOf": [{"properties": {"local": {"type": "string"}}}],
+    }
+    base = {**BASE, "additionalProperties": False}
+    spec = build_spec(body, {"Base": base})
+    schema, sent = await call_make_thing(spec, {"body": {"name": "n", "local": "l"}})
+    assert "additionalProperties" in json.dumps(schema)
+    assert sent == {"name": "n", "local": "l"}
