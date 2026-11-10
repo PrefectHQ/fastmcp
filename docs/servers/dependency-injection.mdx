@@ -81,7 +81,7 @@ async def process_data(data: str, ctx: Context) -> str:
 from fastmcp.dependencies import CurrentContext
 
 @mcp.tool
-async def process_data(data: str, ctx: Context = CurrentContext()) -> str:
+async def process_data_explicit(data: str, ctx: Context = CurrentContext()) -> str:
     ...
 ```
 
@@ -232,7 +232,11 @@ async def get_user_id(token: AccessToken = CurrentAccessToken()) -> str:
 **Function:** Use `get_access_token()` (returns `None` if not authenticated):
 
 ```python
+from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_access_token
+
+mcp = FastMCP("Demo")
+
 
 @mcp.tool
 async def get_user_info() -> dict:
@@ -265,8 +269,7 @@ async def add_expense(
     amount: float,
     user_id: str = TokenClaim("oid"),  # Azure object ID
 ) -> dict:
-    await db.insert({"user_id": user_id, "amount": amount})
-    return {"status": "created", "user_id": user_id}
+    return {"status": "created", "user_id": user_id, "amount": amount}
 ```
 
 `TokenClaim()` raises a `RuntimeError` if the claim doesn't exist, listing available claims to help with debugging.
@@ -289,9 +292,11 @@ For background task execution, FastMCP provides dependencies that integrate with
 ```python
 from fastmcp import FastMCP
 from fastmcp.dependencies import Progress
+from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.dependencies import CurrentDocket, CurrentWorker
 
 mcp = FastMCP("Task Demo")
+mcp.add_extension(TasksExtension())
 
 
 @mcp.tool(task=True)
@@ -316,7 +321,7 @@ async def long_running_task(
 - **`Progress()`**: Track task progress with atomic updates
 
 <Note>
-`CurrentDocket()` and `CurrentWorker()` require `pip install 'fastmcp[tasks]'`. They resolve once the server lifespan has initialized Docket, which happens as soon as any component on the server is task-enabled — so regular foreground tools, resources, and prompts can inject them too, not only task-enabled components. `Progress()` can be injected anywhere regardless, though cross-process task progress requires Docket. For comprehensive task patterns, see the [Docket documentation](https://docket.lol/en/latest/task-patterns/).
+`CurrentDocket()` and `CurrentWorker()` require `pip install 'fastmcp[tasks]'`. They resolve once the server lifespan has initialized Docket, which happens when the server has `TasksExtension` registered and at least one task-enabled component — so regular foreground tools, resources, and prompts can inject them too, not only task-enabled components. `Progress()` can be injected anywhere regardless, though cross-process task progress requires Docket. For comprehensive task patterns, see the [Docket documentation](https://docket.lol/en/latest/task-patterns/).
 </Note>
 
 ## Custom Dependencies

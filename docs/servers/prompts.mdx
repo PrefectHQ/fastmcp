@@ -64,6 +64,8 @@ Functions with `*args` or `**kwargs` are not supported as prompts. This restrict
 While FastMCP infers the name and description from your function, you can override these and add additional metadata using arguments to the `@mcp.prompt` decorator:
 
 ```python
+from pydantic import Field
+
 @mcp.prompt(
     name="analyze_data_request",          # Custom prompt name
     description="Creates a request to analyze data with specific parameters",  # Custom description
@@ -113,6 +115,10 @@ def data_analysis_prompt(
 
   Optional version identifier for this prompt. See [Versioning](/servers/versioning) for details.
 </ParamField>
+
+<ParamField body="auth" type="AuthCheck | list[AuthCheck] | None">
+  Authorization checks the caller must pass to see and render the prompt. See [Authorization](/servers/authorization) for details.
+</ParamField>
 </Card>
 
 #### Using with Methods
@@ -152,17 +158,17 @@ def analyze_data(
   "arguments": [
     {
       "name": "numbers",
-      "description": "Provide as a JSON string matching the following schema: {\"items\":{\"type\":\"integer\"},\"type\":\"array\"}",
+      "description": "Provide a value matching the following JSON schema: {\"items\":{\"type\":\"integer\"},\"type\":\"array\"}. Encode non-string values as JSON.",
       "required": true
     },
     {
       "name": "metadata", 
-      "description": "Provide as a JSON string matching the following schema: {\"additionalProperties\":{\"type\":\"string\"},\"type\":\"object\"}",
+      "description": "Provide a value matching the following JSON schema: {\"additionalProperties\":{\"type\":\"string\"},\"type\":\"object\"}. Encode non-string values as JSON.",
       "required": true
     },
     {
       "name": "threshold",
-      "description": "Provide as a JSON string matching the following schema: {\"type\":\"number\"}",
+      "description": "Provide a value matching the following JSON schema: {\"type\":\"number\"}. Encode non-string values as JSON.",
       "required": true
     }
   ]
@@ -183,6 +189,7 @@ def analyze_data(
 **But you can still call it directly with proper types:**
 ```python
 # This also works for direct calls
+prompt = await mcp.get_prompt("analyze_data")
 result = await prompt.render({
     "numbers": [1, 2, 3, 4, 5],
     "metadata": {"source": "api", "version": "1.0"}, 
@@ -399,6 +406,8 @@ See [Visibility](/servers/visibility) for the complete visibility control API in
 FastMCP supports both standard (`def`) and asynchronous (`async def`) functions as prompts. Synchronous functions automatically run in a threadpool to avoid blocking the event loop.
 
 ```python
+import aiohttp
+
 # Synchronous prompt (runs in threadpool)
 @mcp.prompt
 def simple_question(question: str) -> str:
@@ -444,7 +453,9 @@ For full documentation on the Context object and all its capabilities, see the [
 FastMCP automatically sends `notifications/prompts/list_changed` notifications to connected clients when prompts are added, enabled, or disabled. This allows clients to stay up-to-date with the current prompt set without manually polling for changes.
 
 ```python
-@mcp.prompt
+from fastmcp.prompts import prompt
+
+@prompt
 def example_prompt() -> str:
     return "Hello!"
 
