@@ -726,9 +726,9 @@ def without_injected_parameters(
 ) -> Callable[..., Any]:
     """Create a wrapper function without injected parameters.
 
-    Returns a wrapper that excludes Context and Docket dependency parameters,
-    making it safe to use with Pydantic TypeAdapter for schema generation and
-    validation. The wrapper internally handles all dependency resolution and
+    Returns a wrapper that excludes Context, UserSession, and Docket dependency
+    parameters, making it safe to use with Pydantic TypeAdapter for schema
+    generation and validation. The wrapper internally handles all dependency resolution and
     Context injection when called.
 
     Handles:
@@ -746,14 +746,18 @@ def without_injected_parameters(
         Async wrapper function without injected parameters
     """
     from fastmcp.server.context import Context
+    from fastmcp.server.sessions import UserSession
 
     # Identify parameters to exclude
     context_kwarg = find_kwarg_by_type(fn, Context)
+    session_kwarg = find_kwarg_by_type(fn, UserSession)
     dependency_params = get_dependency_parameters(fn)
 
     exclude = set()
     if context_kwarg:
         exclude.add(context_kwarg)
+    if session_kwarg:
+        exclude.add(session_kwarg)
     if dependency_params:
         exclude.update(dependency_params.keys())
 
