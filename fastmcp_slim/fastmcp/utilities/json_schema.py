@@ -712,8 +712,13 @@ def _single_pass_optimize(
             # still pins the referenced $def as "used".
             if prune_defs:
                 ref = node.get("$ref")
-                if isinstance(ref, str) and ref.startswith("#/"):
-                    parts = unquote(ref[2:]).split("/")
+                fragment = (
+                    unquote(ref[1:])
+                    if isinstance(ref, str) and ref.startswith("#")
+                    else ""
+                )
+                if fragment.startswith("/"):
+                    parts = fragment[1:].split("/")
                     if len(parts) >= 2 and parts[0] == "$defs":
                         # Keep the owning definition even when the pointer
                         # targets a nested schema within it.

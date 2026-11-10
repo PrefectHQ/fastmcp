@@ -14,6 +14,7 @@ class TestDefinitionReferences:
             ("Name part", "#/$defs/Name%20part"),
             ("Name%2Fpart", "#/$defs/Name%252Fpart"),
             ("Name", "#/%24defs/Name"),
+            ("Name", "#%2F$defs%2FName"),
         ],
     )
     def test_keeps_encoded_definition_references(self, definition_name: str, ref: str):
