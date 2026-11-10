@@ -81,7 +81,7 @@ def add(a: float, b: float) -> float:
     return a + b
 ```
 
-The decorator supports all standard tool options: `name`, `title`, `description`, `icons`, `tags`, `output_schema`, `annotations`, and `meta`.
+The decorator supports the standard tool options: `name`, `title`, `description`, `icons`, `tags`, `output_schema`, `annotations`, `meta`, `version`, `timeout`, `auth`, `task`, and `run_in_thread`.
 
 ### @resource
 
@@ -107,7 +107,7 @@ def get_user_profile(user_id: str) -> str:
     return f'{{"id": "{user_id}", "name": "User"}}'
 ```
 
-The decorator supports: `uri` (required), `name`, `title`, `description`, `icons`, `mime_type`, `tags`, `annotations`, and `meta`.
+The decorator supports: `uri` (required), `name`, `title`, `description`, `icons`, `mime_type`, `tags`, `annotations`, `meta`, `version`, `auth`, and `security`.
 
 ### @prompt
 
@@ -131,13 +131,13 @@ def explain(topic: str) -> str:
     return f"Explain {topic} using clear examples and analogies."
 ```
 
-The decorator supports: `name`, `title`, `description`, `icons`, `tags`, and `meta`.
+The decorator supports: `name`, `title`, `description`, `icons`, `tags`, `meta`, `version`, and `auth`.
 
 ## Directory Structure
 
 The directory structure is purely organizational. The provider recursively scans all `.py` files regardless of which subdirectory they're in. Subdirectories like `tools/`, `resources/`, and `prompts/` are optional conventions that help you organize code.
 
-```
+```text
 components/
 ├── tools/
 │   ├── greeting.py      # @tool functions
@@ -150,7 +150,7 @@ components/
 
 You can also put all components in a single file or organize by feature rather than type.
 
-```
+```text
 components/
 ├── user_management.py   # @tool, @resource, @prompt for users
 ├── billing.py           # @tool, @resource for billing
@@ -166,7 +166,7 @@ The provider follows these rules when scanning:
 | File extensions | Only `.py` files are scanned |
 | `__init__.py` | Skipped (used for package structure, not components) |
 | `__pycache__` | Skipped |
-| Private functions | Functions starting with `_` are ignored, even if decorated |
+| Private names | Module attributes starting with `_` are ignored, even if decorated |
 | No decorators | Files without `@tool`, `@resource`, or `@prompt` are silently skipped |
 | Multiple components | A single file can contain any number of decorated functions |
 
@@ -178,7 +178,10 @@ If your directory contains an `__init__.py` file, the provider imports files as 
 # components/__init__.py exists
 
 # components/tools/greeting.py
+from fastmcp.tools import tool
+
 from ..helpers import format_name  # Relative imports work
+
 
 @tool
 def greet(name: str) -> str:
@@ -202,7 +205,7 @@ provider = FileSystemProvider(Path(__file__).parent / "components", reload=True)
 With `reload=True`, the provider:
 
 1. Re-discovers all Python files on each request
-2. Re-imports modules that have changed
+2. Re-imports every discovered module
 3. Updates the component registry with any new, modified, or removed components
 
 <Warning>
@@ -213,7 +216,7 @@ Reload mode adds overhead to every request. Use it only during development, not 
 
 When a file fails to import or construct its components (syntax error, missing dependency, unsupported tool signature, etc.), the provider logs a warning, skips that file, and continues scanning other files. Components from other files remain available at startup and during reloads.
 
-```
+```text
 WARNING - Failed to load /path/to/broken.py: No module named 'missing_dep'
 ```
 
@@ -225,7 +228,7 @@ Inspect `provider.failed_files` for a snapshot of failures from the most recent 
 
 A complete example is available in the repository at `examples/filesystem-provider/`. The structure demonstrates the recommended organization.
 
-```
+```text
 examples/filesystem-provider/
 ├── server.py                    # Server entry point
 └── components/
