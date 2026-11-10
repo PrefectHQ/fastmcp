@@ -98,6 +98,32 @@ async def test_poll_refreshes_routing_key_ttl():
             assert await redis.ttl(key) > 60
 
 
+async def test_poll_refreshes_args_ttl():
+    """A poll extends the stored arguments' TTL alongside the routing keys.
+
+    A re-entered leg re-reads the original arguments, and a missing args key
+    loads as an empty argument dict rather than failing, so an actively polled
+    task must never outlive them.
+    """
+    from fastmcp_tasks.input_store import _args_key
+
+    mcp = _ttl_server()
+    async with running_task_server(mcp):
+        created = await submit_task(mcp, "slow_task", {})
+        docket = mcp._docket
+        assert docket is not None
+        key = _args_key(docket, None, created.task_id)
+
+        async with docket.redis() as redis:
+            await redis.expire(key, 5)
+            assert await redis.ttl(key) <= 5
+
+        await get_task(mcp, created.task_id)
+
+        async with docket.redis() as redis:
+            assert await redis.ttl(key) > 60
+
+
 async def test_poll_refreshes_snapshot_ttl():
     """A poll extends the context snapshot's TTL alongside the routing keys.
 

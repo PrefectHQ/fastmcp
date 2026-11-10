@@ -4,7 +4,7 @@ import pytest
 from inline_snapshot import snapshot
 from mcp_types import TextContent
 
-from fastmcp import FastMCP
+from fastmcp import Client, FastMCP
 from fastmcp.contrib.bulk_tool_caller.bulk_tool_caller import (
     BulkToolCaller,
     CallToolRequest,
@@ -347,3 +347,61 @@ async def test_call_tool_bulk_blocks_self_invocation(bulk_caller_live: BulkToolC
             )
         ]
     )
+
+
+async def test_register_tools_applies_prefix_and_separator():
+    server = FastMCP()
+    caller = BulkToolCaller()
+
+    caller.register_tools(server, prefix="one", separator="-")
+
+    async with Client(server) as client:
+        tool_names = {tool.name for tool in await client.list_tools()}
+
+    assert tool_names == {"one-call_tools_bulk", "one-call_tool_bulk"}
+
+
+async def test_register_all_applies_tool_prefix_and_separator():
+    server = FastMCP()
+    caller = BulkToolCaller()
+
+    caller.register_all(server, prefix="all", tool_separator="-")
+
+    async with Client(server) as client:
+        tool_names = {tool.name for tool in await client.list_tools()}
+
+    assert tool_names == {"all-call_tools_bulk", "all-call_tool_bulk"}
+
+
+async def test_multiple_bulk_callers_register_independent_prefixes():
+    server = FastMCP()
+    first = BulkToolCaller()
+    second = BulkToolCaller()
+
+    first.register_tools(server, prefix="first", separator="-")
+    second.register_tools(server, prefix="second", separator="-")
+
+    async with Client(server) as client:
+        tool_names = {tool.name for tool in await client.list_tools()}
+
+    assert tool_names == {
+        "first-call_tools_bulk",
+        "first-call_tool_bulk",
+        "second-call_tools_bulk",
+        "second-call_tool_bulk",
+    }
+
+
+async def test_prefixed_bulk_tools_and_legacy_names_cannot_call_self():
+    caller = BulkToolCaller()
+    caller.register_tools(FastMCP(), prefix="prefixed", separator="-")
+
+    for name in (
+        "call_tools_bulk",
+        "call_tool_bulk",
+        "prefixed-call_tools_bulk",
+        "prefixed-call_tool_bulk",
+    ):
+        result = await caller._call_tool(name, {})
+        assert result.is_error
+        assert result.tool == name

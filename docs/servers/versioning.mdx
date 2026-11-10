@@ -273,10 +273,11 @@ The `v` prefix is stripped before comparison, so `"v1.0"` and `"1.0"` are treate
 
 Server-side code can retrieve specific versions rather than just the highest. This is useful during migrations when you need to compare behavior between versions or access legacy implementations.
 
-The `get_tool`, `get_resource`, and `get_prompt` methods accept an optional `version` parameter. Without it, they return the highest version. With it, they return exactly that version.
+The `get_tool`, `get_resource`, and `get_prompt` methods accept an optional `version` parameter. It takes a `VersionSpec` from `fastmcp.utilities.versions`. Without it, they return the highest version. With `VersionSpec(eq="1.0")`, they return exactly that version.
 
 ```python
 from fastmcp import FastMCP
+from fastmcp.utilities.versions import VersionSpec
 
 mcp = FastMCP()
 
@@ -294,11 +295,11 @@ async def main():
     print(tool.version)  # "2.0"
 
     # Get specific version
-    tool_v1 = await mcp.get_tool("add", version="1.0")
+    tool_v1 = await mcp.get_tool("add", version=VersionSpec(eq="1.0"))
     print(tool_v1.version)  # "1.0"
 ```
 
-If the requested version doesn't exist, a `NotFoundError` is raised.
+If the requested version doesn't exist, these methods return `None` instead of raising an error.
 
 ## Removing Versions
 
@@ -336,7 +337,7 @@ def process_data(input: str, options: dict | None = None) -> str:
     return modern_process(input, options or {})
 ```
 
-Clients automatically see version 2.0 (the highest). During the transition, your server code can still access the original implementation via `get_tool("process_data", version="1.0")`.
+Clients automatically see version 2.0 (the highest). During the transition, your server code can still access the original implementation via `get_tool("process_data", version=VersionSpec(eq="1.0"))`.
 
 Once the migration is complete, remove the old version.
 

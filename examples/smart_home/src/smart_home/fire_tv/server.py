@@ -76,6 +76,25 @@ async def launch_app(
 
 
 @fire_tv_mcp.tool(annotations=WRITE)
+async def restart_app(
+    package_id: str,
+    fire_tv: FireTVClient = Depends(get_fire_tv),
+) -> CommandReceipt:
+    """Force-stop and relaunch an installed app without clearing data or sign-in.
+
+    This interrupts playback. Read status afterward; acceptance does not prove
+    the picture recovered.
+    """
+    if package_id not in (fire_tv.installed_apps or []):
+        raise ToolError(f"Package {package_id!r} is not installed")
+    result = await fire_tv.stop_app(package_id)
+    if result is None or result.strip():
+        raise ToolError("Could not confirm app stop; relaunch was not attempted")
+    await fire_tv.launch_app(package_id)
+    return CommandReceipt(command=f"restart_app:{package_id}")
+
+
+@fire_tv_mcp.tool(annotations=WRITE)
 async def play_youtube_video(
     video_id: str,
     fire_tv: FireTVClient = Depends(get_fire_tv),
