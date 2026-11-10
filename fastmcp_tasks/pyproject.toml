@@ -4,7 +4,7 @@ dynamic = ["version", "dependencies"]
 description = "Background task execution for FastMCP servers via the io.modelcontextprotocol/tasks extension (SEP-2663)."
 authors = [{ name = "Jeremiah Lowin" }, { name = "Nate Nowack" }]
 
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 readme = "README.md"
 license = "Apache-2.0"
 
@@ -19,7 +19,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",

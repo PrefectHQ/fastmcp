@@ -1,5 +1,5 @@
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import Mock
@@ -111,7 +111,7 @@ def test_session_snapshot_reads_host_and_credential_under_one_lock(
     credential_load = CredentialStore.load
 
     @contextmanager
-    def lock(directory: Path) -> Iterator[None]:
+    def lock(directory: Path) -> Generator[None, None, None]:
         events.append("lock")
         yield
         events.append("unlock")

@@ -18,4 +18,9 @@ For a bug fix, run the regression against unchanged code and confirm it fails fo
 - Use existing `inline_snapshot` conventions for complex schema assertions. Inspect generated snapshots rather than accepting them blindly.
 - The default timeout is five seconds. Use the repository's integration conventions for tests that legitimately need more time.
 
-Run focused tests during development, then the full commands required by AGENTS.md before committing. If a failure appears unrelated, reproduce it on the unchanged base; do not call it pre-existing from the test name alone.
+Run relevant tests and applicable static checks before committing. Broaden local
+testing when a concrete dependency or failure warrants it; leave routine full-suite
+and platform-matrix runs to CI. Do not repeat the full suite for each layer in a
+stack. Follow AGENTS.md for the local verification policy. If a failure appears
+unrelated, reproduce it on the unchanged base; do not call it pre-existing from
+the test name alone.
