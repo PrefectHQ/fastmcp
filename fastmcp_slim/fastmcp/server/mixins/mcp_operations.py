@@ -42,7 +42,7 @@ from fastmcp.utilities.async_utils import (
     is_coroutine_function,
 )
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.pagination import paginate_sequence
+from fastmcp.utilities.pagination import CursorState, paginate_sequence
 from fastmcp.utilities.versions import VersionSpec, dedupe_with_versions
 
 if TYPE_CHECKING:
@@ -60,11 +60,13 @@ def _apply_pagination(
 ) -> tuple[list[PaginateT], str | None]:
     """Apply pagination to items, raising MCPError for invalid cursors.
 
-    If page_size is None, returns all items without pagination.
+    If page_size is None, validates the cursor and returns all items without pagination.
     """
-    if page_size is None:
-        return list(items), None
     try:
+        if page_size is None:
+            if cursor:
+                CursorState.decode(cursor)
+            return list(items), None
         return paginate_sequence(items, cursor, page_size)
     except ValueError as e:
         raise MCPError(code=INVALID_PARAMS, message=str(e)) from e
