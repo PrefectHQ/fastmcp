@@ -646,7 +646,9 @@ class Context:
             if task_session_id is None:
                 raise
             session = None
-            session_min = self.fastmcp._client_log_levels.get(_log_level_session_key(None))
+            session_min = self.fastmcp._client_log_levels.get(
+                _log_level_session_key(None)
+            )
         else:
             session_min = self.fastmcp._client_log_levels.get(
                 _log_level_session_key(session)
@@ -1352,7 +1354,7 @@ def _detached_request_context(context: Context) -> ServerRequestContext:
     )
 
 
-def _log_level_session_key(session: ServerSession) -> str:
+def _log_level_session_key(session: ServerSession | None) -> str:
     """Derive the per-session key used for logging/setLevel gating.
 
     v2 constructs sessions per-request, so the stable identity is the
