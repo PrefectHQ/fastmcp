@@ -1,11 +1,12 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import patch
 
 import anyio
 import pytest
+from mcp import MCPError
 from pydantic import ConfigDict
 
 from fastmcp import Client, ClientGroup, Context, FastMCP
@@ -216,7 +217,7 @@ async def test_group_keeps_one_connection_per_server():
     lifecycles = {"entered": 0, "exited": 0}
 
     @asynccontextmanager
-    async def lifespan(_server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+    async def lifespan(_server: FastMCP) -> AsyncGenerator[dict[str, Any], None]:
         lifecycles["entered"] += 1
         try:
             yield {}
@@ -320,6 +321,67 @@ async def test_known_route_survives_an_unrelated_dead_client():
             await group.call_tool("doomed_echo", {"value": "hi"})
 
 
+async def test_known_route_survives_the_group_context():
+    """An adapter that resolved a route inside the group can call it later
+    with only the owning client connected."""
+    calc = Client(make_server("calc"))
+    greet = Client(make_server("greet"))
+    group = ClientGroup({"calc": calc, "greet": greet})
+
+    async with group:
+        await group.list_tools()
+        route = await group.resolve_tool("calc_echo")
+    assert not calc.is_connected()
+
+    with (
+        patch.object(calc, "list_tools", wraps=calc.list_tools) as calc_list,
+        patch.object(greet, "list_tools", wraps=greet.list_tools) as greet_list,
+    ):
+        async with route.client:
+            assert await group.resolve_tool("calc_echo") is route
+            result = await group.call_tool("calc_echo", {"value": "hi"})
+            assert result.data == "calc: hi"
+
+            with pytest.raises(RuntimeError, match="'greet' is not connected"):
+                await group.call_tool("greet_echo", {"value": "hi"})
+
+    assert calc_list.call_count == 0
+    assert greet_list.call_count == 0
+
+
+async def test_unknown_tool_after_reconnect_rediscovers_lazily():
+    server = make_server("server")
+    client = Client(server)
+    group = ClientGroup({"server": client})
+
+    async with group:
+        await group.list_tools()
+
+    @server.tool
+    def added() -> str:
+        return "new"
+
+    async with group:
+        result = await group.call_tool("server_added")
+        assert result.data == "new"
+        assert (await group.call_tool("server_echo", {"value": "x"})).data == (
+            "server: x"
+        )
+
+
+async def test_unknown_tool_after_exit_needs_every_client_for_discovery():
+    calc = Client(make_server("calc"))
+    greet = Client(make_server("greet"))
+    group = ClientGroup({"calc": calc, "greet": greet})
+
+    async with group:
+        await group.list_tools()
+
+    async with calc:
+        with pytest.raises(RuntimeError, match="not connected: 'greet'"):
+            await group.call_tool("calc_missing")
+
+
 async def test_partial_connect_failure_unwinds_connected_clients():
     ok = Client(FastMCPTransport(make_server("ok")))
     bad = Client(FastMCPTransport(make_server("bad")))
@@ -417,6 +479,41 @@ async def test_group_reconnects_after_last_exit():
     assert not client.is_connected()
 
 
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+async def test_stale_group_context_does_not_disconnect_reconnected_session(
+    fastmcp_server, mode
+):
+    client = Client(fastmcp_server, mode=mode)
+    group = ClientGroup({"server": client})
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    exited = asyncio.Event()
+
+    async def old_group_context() -> None:
+        async with group:
+            entered.set()
+            await release.wait()
+        exited.set()
+
+    old_task = asyncio.create_task(old_group_context())
+    await entered.wait()
+    await client.close()
+
+    try:
+        async with client:
+            first = await client.call_tool("greet", {"name": "World"})
+            assert first.data == "Hello, World!"
+
+            release.set()
+            await exited.wait()
+
+            second = await client.call_tool("greet", {"name": "World"})
+            assert second.data == "Hello, World!"
+    finally:
+        release.set()
+        await old_task
+
+
 async def test_failed_entry_leaves_group_reenterable():
     good = Client(make_server("good"))
     bad = Client(FastMCPTransport(make_server("bad")))
@@ -449,3 +546,28 @@ async def test_exit_under_cancelled_scope_disconnects_members():
             await anyio.sleep(0.01)
     assert group._nesting_counter == 0
     assert group._exit_stack is None
+
+
+@pytest.mark.parametrize("mode", ["legacy", "auto"])
+@pytest.mark.parametrize("timeout", [None, 0, 500])
+async def test_from_config_applies_entry_timeout(
+    mode: str, timeout: int | None
+) -> None:
+    server = FastMCP("Timeout")
+
+    @server.tool
+    async def slow() -> str:
+        await asyncio.sleep(0.7)
+        return "completed"
+
+    group = ClientGroup.from_config(
+        MCPConfig(mcpServers={"backend": InMemoryServer(mcp=server, timeout=timeout)}),
+        default_mode=mode,
+    )
+    async with group:
+        await group.list_tools()
+        if timeout:
+            with pytest.raises(MCPError, match="timed out"):
+                await group.call_tool("backend_slow")
+        else:
+            assert (await group.call_tool("backend_slow")).data == "completed"

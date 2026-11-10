@@ -396,8 +396,10 @@ def create_visibility_transforms(rules: list[dict[str, Any]]) -> list[Visibility
         transforms.append(
             Visibility(
                 params["enabled"],
-                names=set(params["names"]) if params.get("names") else None,
-                keys=set(params["keys"]) if params.get("keys") else None,
+                names=(
+                    set(params["names"]) if params.get("names") is not None else None
+                ),
+                keys=(set(params["keys"]) if params.get("keys") is not None else None),
                 version=version,
                 tags=set(params["tags"]) if params.get("tags") else None,
                 components=(
@@ -452,8 +454,8 @@ async def enable_components(
     # Create new rule dict
     rule: dict[str, Any] = {
         "enabled": True,
-        "names": list(names) if names else None,
-        "keys": list(keys) if keys else None,
+        "names": list(names) if names is not None else None,
+        "keys": list(keys) if keys is not None else None,
         "version": (
             {"gte": version.gte, "lt": version.lt, "eq": version.eq}
             if version
@@ -506,8 +508,8 @@ async def disable_components(
     # Create new rule dict
     rule: dict[str, Any] = {
         "enabled": False,
-        "names": list(names) if names else None,
-        "keys": list(keys) if keys else None,
+        "names": list(names) if names is not None else None,
+        "keys": list(keys) if keys is not None else None,
         "version": (
             {"gte": version.gte, "lt": version.lt, "eq": version.eq}
             if version

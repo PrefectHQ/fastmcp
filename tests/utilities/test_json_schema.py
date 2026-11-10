@@ -640,7 +640,7 @@ class TestCompressSchema:
             """A greeting function."""
             return f"Hello {title} {name}"
 
-        adapter = TypeAdapter(greet)
+        adapter = TypeAdapter(greet)  # ty:ignore[invalid-type-form]
         schema = adapter.json_schema()
 
         # Compress with title pruning

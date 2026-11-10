@@ -1,6 +1,8 @@
 import httpx2
 import pytest
 from pydantic import AnyHttpUrl
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from fastmcp import FastMCP
 from fastmcp.server.auth import RemoteAuthProvider
@@ -608,3 +610,41 @@ class TestRemoteAuthProviderIntegration:
             assert response.status_code == 200
             data = response.json()
             assert data["scopes_supported"] == ["read"]
+
+    async def test_overridden_get_routes_receives_mcp_path(self):
+        """A subclass that forwards mcp_path keeps path-aware metadata."""
+
+        class CompanyAuthProvider(RemoteAuthProvider):
+            def get_routes(self, mcp_path: str | None = None) -> list[Route]:
+                routes = super().get_routes(mcp_path)
+
+                async def authorization_server_metadata(request):
+                    return JSONResponse({"issuer": "https://auth.example.com"})
+
+                routes.append(
+                    Route(
+                        "/.well-known/oauth-authorization-server",
+                        authorization_server_metadata,
+                    )
+                )
+                return routes
+
+        provider = CompanyAuthProvider(
+            token_verifier=StaticTokenVerifier(
+                tokens={"test": {"client_id": "c", "scopes": ["read"]}}
+            ),
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com",
+        )
+        app = FastMCP("Company API", auth=provider).http_app()
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
+            base_url="https://api.example.com",
+        ) as client:
+            metadata = await client.get("/.well-known/oauth-protected-resource/mcp")
+            custom = await client.get("/.well-known/oauth-authorization-server")
+
+        assert metadata.status_code == 200
+        assert custom.status_code == 200
+        assert custom.json()["issuer"] == "https://auth.example.com"
