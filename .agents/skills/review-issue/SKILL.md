@@ -21,7 +21,7 @@ Assignment commits us to reviewing the PR, not to merging it. A gate closure is 
 - A linked PR stays open with a failing check until its author is assigned to that issue. Issues labeled `prs welcome` waive assignment but still need the link.
 - Assigning the author (`gh issue edit N --add-assignee <login>`) re-runs the check and reopens a gate-closed PR. If that run fails, the gate misbehaved: investigate the run rather than re-assigning.
 - Maintainer PRs are exempt, and so are authors with the `trusted-contributor` label. Reopening a PR by hand or removing `missing-issue-link` applies a sticky `bypass-issue-check`, so prefer assignment.
-- `marvin-triage-issue`, `marvin-dedupe-issues`, `auto-close-duplicates`, and `auto-close-needs-mre` have usually commented already. Read them as leads.
+- `marvin-dedupe-issues`, `auto-close-duplicates`, and `auto-close-needs-mre` have usually commented already. Read them as leads.
 
 ## Procedure
 
@@ -38,11 +38,13 @@ Assignment commits us to reviewing the PR, not to merging it. A gate closure is 
 
 2. **Decide whether the issue describes a bug.** Reproduce the MRE, then ask whether the behavior violates a contract FastMCP intends to hold. Behavior that only appears by mutating construction-time state or relying on internals is a property of the code, not a defect. The code shows what FastMCP does, not what it promises, so investigate the promised contract before escalating. Ask the maintainer only when a specific supported scenario requires a material policy choice that the protocol, docs, history, and prior decisions do not settle. Check `main`, duplicates, and prior maintainer decisions in related issues and closed PRs. If the issue is not a bug, assess its contribution category rather than treating surprising behavior alone as a defect.
 
-3. **Check the category against [the contribution policy](../../../docs/development/contributing.mdx#choose-a-contribution).** Simple bug fixes, docs, and auth providers are assignable. Enhancements need a maintainer-approved design in the issue first; bring the precise decision and a recommendation to the maintainer, record the accepted approach, then assign. Maintainers own design opinions: do not require the contributor to obtain or settle the maintainer's preference. Once a direction is accepted, maintainers should make small corrections that align a nearly ready fix with established behavior under [review-pr](../review-pr/SKILL.md), rather than formally requesting changes for those finishing touches. Leave substantive rework to the contributor. Third-party integrations and sweeping changes without discussion are declined.
+3. **Decide whether we want the change.** A real bug with a sound PR can still be one we decline. Apply [review-pr](../review-pr/SKILL.md)'s want check, covering who hits the bug, what merging commits us to, and whether docs or closing is the better answer, before recommending assignment, since assignment commits us to review.
 
-4. **Investigate the PR in context.** Read the full diff, then open each touched file. Trace the values and functions it changes to where they are produced and consumed. From the MRE, state in one line what was broken, where, and whether this change fixes it there. Compare with how adjacent code handles the same case, and check that the tests fail without the fix. Treat style issues as review comments; a wrong layer, a broken adjacent path, or an unfixed MRE changes the verdict. Apply [review-pr](../review-pr/SKILL.md)'s behavior classification, protocol check, and competing-proposal comparison before recommending a proposal. Keep scope and design acceptance separate from implementation quality and pending validation.
+4. **Check the category against [the contribution policy](../../../docs/development/contributing.mdx#choose-a-contribution).** Simple bug fixes, docs, and auth providers are assignable. Enhancements need a maintainer-approved design in the issue first; bring the precise decision and a recommendation to the maintainer, record the accepted approach, then assign. Maintainers own design opinions: do not require the contributor to obtain or settle the maintainer's preference. Once a direction is accepted, maintainers should make small corrections that align a nearly ready fix with established behavior under [review-pr](../review-pr/SKILL.md), rather than formally requesting changes for those finishing touches. Leave substantive rework to the contributor. Third-party integrations and sweeping changes without discussion are declined.
 
-5. **Check the contributor.** For an unfamiliar account, look at its public history:
+5. **Investigate the PR in context.** Read the full diff, then open each touched file. Trace the values and functions it changes to where they are produced and consumed. From the MRE, state in one line what was broken, where, and whether this change fixes it there. Compare with how adjacent code handles the same case, and check that the tests fail without the fix. Treat style issues as review comments; a wrong layer, a broken adjacent path, or an unfixed MRE changes the verdict. Apply [review-pr](../review-pr/SKILL.md)'s behavior classification, protocol check, and competing-proposal comparison before recommending a proposal. Keep scope and design acceptance separate from implementation quality and pending validation.
+
+6. **Check the contributor.** For an unfamiliar account, look at its public history:
 
    ```bash
    gh api users/<login>
@@ -50,9 +52,9 @@ Assignment commits us to reviewing the PR, not to merging it. A gate closure is 
      --json repository,title,state,createdAt,url
    ```
 
-   Merged fixes elsewhere and substantive replies to reviewers show follow-through. Decline obvious spam or unattended automation: mass unrelated boilerplate, repeated nonresponsive replies. A new account, a sparse profile, or disclosed AI assistance is not a reason to decline. When evidence is thin, lean toward goodwill for a sound, scoped contribution and mention the uncertainty.
+   Where `users/` and search are blocked (cloud sessions), fall back to the account's history in this repo; merged history here outweighs account age. Merged fixes elsewhere and substantive replies to reviewers show follow-through. Decline obvious spam or unattended automation: mass unrelated boilerplate, repeated nonresponsive replies. A new account, a sparse profile, or disclosed AI assistance is not a reason to decline. When evidence is thin, lean toward goodwill for a sound, scoped contribution and mention the uncertainty.
 
-6. **Recommend.** Give the maintainer the verdict, one or two sentences of reasoning, and the exact command. Act within existing authorization and bring borderline calls back.
+7. **Recommend.** Give the maintainer the verdict, one or two sentences of reasoning, and the exact command. Act within existing authorization and bring borderline calls back.
 
 ## Acting on the verdict
 

@@ -2,7 +2,7 @@ import importlib.util
 import json
 import sys
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -20,7 +20,7 @@ def ranking_module():
 
 
 def issue(module, number=1):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return module.Issue(
         number=number,
         title="Tool execution fails",
@@ -85,7 +85,7 @@ def test_public_scoring_is_independent_of_author_reputation(ranking_module):
         author_created_at=original.created_at - timedelta(days=3650),
     )
     config = m.Config(repo="PrefectHQ/fastmcp", judge="none", public=True)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     a = m.score_issue(original, None, None, [], config, now)
     b = m.score_issue(famous, None, None, [], config, now)
     assert a.score == b.score
@@ -93,20 +93,83 @@ def test_public_scoring_is_independent_of_author_reputation(ranking_module):
     assert "author_trust" not in a.components
 
 
-def test_assignment_reduces_attention_and_triage_label_removes_neglect(ranking_module):
+def test_assignment_reduces_attention(ranking_module):
     m = ranking_module
     config = m.Config(repo="PrefectHQ/fastmcp", judge="none", public=True)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     original = issue(m)
     unanswered = m.score_issue(original, None, None, [], config, now)
     assigned = m.score_issue(
         replace(original, assignees=["maintainer"]), None, None, [], config, now
     )
-    waiting = m.score_issue(
-        replace(original, labels=["needs MRE"]), None, None, [], config, now
+    assert unanswered.score > assigned.score
+
+
+@pytest.mark.parametrize("label", ["too-long", "potential-duplicate"])
+@pytest.mark.parametrize("public", [False, True])
+def test_format_and_unconfirmed_duplicates_do_not_dismiss_assigned_work(
+    ranking_module, label, public
+):
+    m = ranking_module
+    config = m.Config(repo="PrefectHQ/fastmcp", judge="none", public=public)
+    now = datetime.now(UTC)
+    assigned = replace(issue(m), assignees=["reporter"], linked_prs=[2])
+    baseline = m.score_issue(assigned, None, None, [], config, now)
+    labeled = m.score_issue(
+        replace(assigned, labels=[label]), None, None, [], config, now
     )
-    assert unanswered.score > assigned.score > waiting.score
-    assert waiting.components["neglect"] == 0
+    assert labeled.score == baseline.score
+    assert labeled.components["dismissed"] == 0
+
+
+@pytest.mark.parametrize("label", ["needs MRE", "needs more info", "invalid"])
+def test_label_is_not_a_human_response(ranking_module, label):
+    m = ranking_module
+    config = m.Config(repo="PrefectHQ/fastmcp", judge="none", public=True)
+    now = datetime.now(UTC)
+    original = replace(issue(m), labels=[label])
+    unanswered = m.score_issue(original, None, None, [], config, now)
+    answered = m.score_issue(
+        replace(original, maintainer_replied_at=now), None, None, [], config, now
+    )
+    assert unanswered.components["neglect"] == 1
+    assert answered.components["neglect"] == 0
+    assert unanswered.score - answered.score == config.weights["neglect"]
+    doc = m.public_snapshot(m.RankedPage([unanswered], None), config)
+    assert doc["items"][0]["maintainer_replied"] is False
+    assert any(r["signal"] == "neglect" for r in doc["items"][0]["reasons"])
+
+
+@pytest.mark.parametrize("label", ["invalid", "duplicate", "wontfix", "spam"])
+def test_disposition_labels_still_reduce_attention(ranking_module, label):
+    m = ranking_module
+    config = m.Config(repo="PrefectHQ/fastmcp", judge="none", public=True)
+    now = datetime.now(UTC)
+    original = issue(m)
+    baseline = m.score_issue(original, None, None, [], config, now)
+    labeled = m.score_issue(
+        replace(original, labels=[label]), None, None, [], config, now
+    )
+    assert labeled.score - baseline.score == config.weights["dismissed"]
+
+
+def test_explicit_label_signal_override_is_preserved(ranking_module):
+    m = ranking_module
+    config = m.Config(
+        repo="PrefectHQ/fastmcp",
+        judge="none",
+        label_signals={"dismissed": frozenset({"too-long"})},
+    )
+    ranked = m.score_issue(
+        replace(issue(m), labels=["too-long"]),
+        None,
+        None,
+        [],
+        config,
+        datetime.now(UTC),
+    )
+    assert ranked.components["dismissed"] == 1
+    assert ranked.components["neglect"] == 1
 
 
 def test_partial_comment_history_does_not_imply_unanswered(ranking_module):
@@ -118,7 +181,7 @@ def test_partial_comment_history_does_not_imply_unanswered(ranking_module):
         None,
         [],
         m.Config(repo="PrefectHQ/fastmcp", public=True),
-        datetime.now(timezone.utc),
+        datetime.now(UTC),
     )
     assert ranked.components["neglect"] == 0
     assert ranked.facts["maintainer_replied"] is None
@@ -212,9 +275,7 @@ def test_previous_public_assessment_reused_without_credentials(
         downstream=0,
         low_effort=0.99,
     )
-    ranked = m.score_issue(
-        original, None, judgment, [], config, datetime.now(timezone.utc)
-    )
+    ranked = m.score_issue(original, None, judgment, [], config, datetime.now(UTC))
     snapshot = m.public_snapshot(m.RankedPage([ranked], None), config)
     assert "low_effort" not in snapshot["items"][0]["assessment"]
     config.previous.write_text(json.dumps({"attention": snapshot}))
