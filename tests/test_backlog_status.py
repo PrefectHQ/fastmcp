@@ -3,7 +3,7 @@
 import importlib.util
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -43,7 +43,7 @@ def item(
 
 
 def test_closure_outcomes_and_local_midnight(backlog):
-    now = datetime(2026, 10, 20, 14, tzinfo=timezone.utc)
+    now = datetime(2026, 10, 20, 14, tzinfo=UTC)
     items = [
         item(1, closed="2026-10-20T04:59:59Z", reason="completed"),
         item(2, closed="2026-10-20T05:00:00Z", reason="not_planned"),
@@ -74,7 +74,7 @@ def test_preserves_observed_counts_when_reopened_history_is_incomplete(backlog):
     doc = backlog.build(
         [reopened],
         {"samples": [previous_sample]},
-        datetime(2026, 10, 20, 14, tzinfo=timezone.utc),
+        datetime(2026, 10, 20, 14, tzinfo=UTC),
     )
     assert doc["samples"][0] == previous_sample
     assert doc["samples"][-1]["issues"]["open"] == 1
@@ -87,9 +87,7 @@ def test_reconstructed_counts_do_not_invent_historical_drafts(backlog):
         item(1, pr=True, created="2026-10-18T00:00:00Z", draft=True),
         item(2, created="2026-10-20T00:00:00Z"),
     ]
-    sample = backlog.sample(
-        items, datetime(2026, 10, 19, tzinfo=timezone.utc), "backfill"
-    )
+    sample = backlog.sample(items, datetime(2026, 10, 19, tzinfo=UTC), "backfill")
     assert sample["issues"] == {"open": 0}
     assert sample["prs"] == {"open": 1}
 

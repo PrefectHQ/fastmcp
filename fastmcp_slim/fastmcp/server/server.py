@@ -21,6 +21,7 @@ from typing import (
     Any,
     Generic,
     Literal,
+    Self,
     TypeVar,
     cast,
     get_args,
@@ -42,7 +43,6 @@ from pydantic import AnyUrl
 from pydantic import ValidationError as PydanticValidationError
 from pydantic_core import ErrorType
 from starlette.routing import BaseRoute
-from typing_extensions import Self
 
 import fastmcp
 import fastmcp.server
