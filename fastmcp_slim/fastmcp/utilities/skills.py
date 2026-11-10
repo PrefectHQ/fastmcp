@@ -89,23 +89,20 @@ async def list_skills(client: Client) -> list[SkillSummary]:
 
 
 async def _list_skills(client: Client) -> list[SkillSummary]:
-    resources = await client.list_resources()
+    resources = await client.list_skill_resources()
     skills = []
 
     for resource in resources:
         uri = str(resource.uri)
-        # Match skill://{name}/SKILL.md pattern
-        if uri.startswith("skill://") and uri.endswith("/SKILL.md"):
-            # Extract skill name from URI
-            path_part = uri[len("skill://") :]
-            name = path_part.rsplit("/", 1)[0]
-            skills.append(
-                SkillSummary(
-                    name=name,
-                    description=resource.description or "",
-                    uri=uri,
-                )
+        path_part = uri[len("skill://") :]
+        name = path_part.rsplit("/", 1)[0]
+        skills.append(
+            SkillSummary(
+                name=name,
+                description=resource.description or "",
+                uri=uri,
             )
+        )
 
     return skills
 
