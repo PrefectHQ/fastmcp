@@ -1,6 +1,6 @@
 import contextlib
 import ssl
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from ssl import VerifyMode
 from typing import Any, cast
 
@@ -19,7 +19,7 @@ from fastmcp.client.transports import (
 
 class BasicTransport(ClientTransport):
     @contextlib.asynccontextmanager
-    async def connect_session(self, **session_kwargs: Any) -> AsyncIterator[Any]:
+    async def connect_session(self, **session_kwargs: Any) -> AsyncGenerator[Any, None]:
         raise AssertionError("BasicTransport does not create sessions")
         yield
 
