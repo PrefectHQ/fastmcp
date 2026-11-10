@@ -72,7 +72,10 @@ async def docket_lifespan(
         return
 
     async with Docket(
-        name=settings.name, url=settings.url, credential_provider=credential_provider
+        name=settings.name,
+        url=settings.url,
+        execution_ttl=settings.execution_ttl,
+        credential_provider=credential_provider,
     ) as docket:
         server._docket = docket
         for component in task_components:
