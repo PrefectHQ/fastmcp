@@ -349,10 +349,23 @@ class FunctionPrompt(Prompt):
                         # not retain JSON quote characters.
                         try:
                             python_value = adapter.validate_python(param_value)
-                        except (ValueError, TypeError, pydantic_core.ValidationError):
-                            converted_kwargs[param_name] = adapter.validate_json(
-                                param_value
-                            )
+                        except (
+                            ValueError,
+                            TypeError,
+                            pydantic_core.ValidationError,
+                        ) as python_error:
+                            try:
+                                converted_kwargs[param_name] = adapter.validate_json(
+                                    param_value
+                                )
+                            except pydantic_core.ValidationError:
+                                # A raw error from a validator is a server fault;
+                                # don't let the JSON retry's rejection mask it
+                                if not isinstance(
+                                    python_error, pydantic_core.ValidationError
+                                ):
+                                    raise python_error from None
+                                raise
                         else:
                             if isinstance(python_value, str):
                                 converted_kwargs[param_name] = python_value
@@ -367,8 +380,17 @@ class FunctionPrompt(Prompt):
                                     pydantic_core.ValidationError,
                                 ):
                                     converted_kwargs[param_name] = python_value
-                    except (ValueError, TypeError, pydantic_core.ValidationError) as e:
-                        # If conversion fails, provide informative error
+                    except pydantic_core.ValidationError as e:
+                        # An unconvertible argument is a client error. Not chained,
+                        # because ErrorHandlingMiddleware classifies by __cause__.
+                        raise ValidationError(
+                            f"Could not convert argument '{param_name}' with value '{param_value}' "
+                            f"to expected type {param.annotation}. Error: {e}",
+                            log_level=logging.WARNING,
+                        ) from None
+                    except (ValueError, TypeError) as e:
+                        # Pydantic doesn't wrap these, so they signal a server-side
+                        # fault such as a broken validator, not bad input
                         raise PromptError(
                             f"Could not convert argument '{param_name}' with value '{param_value}' "
                             f"to expected type {annotation}. Error: {e}"
