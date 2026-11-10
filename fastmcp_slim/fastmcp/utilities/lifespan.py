@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from typing import Any, TypeVar
 
@@ -44,7 +44,7 @@ def combine_lifespans(
     """
 
     @asynccontextmanager
-    async def combined(app: AppT) -> AsyncIterator[dict[str, Any]]:
+    async def combined(app: AppT) -> AsyncGenerator[dict[str, Any], None]:
         merged: dict[str, Any] = {}
         async with AsyncExitStack() as stack:
             for ls in lifespans:
