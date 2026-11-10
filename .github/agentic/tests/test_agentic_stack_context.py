@@ -8,7 +8,12 @@ from urllib.request import urlopen
 
 import pytest
 
-from flows.agentic_stack_context import assessment_context, checks, comparison
+from flows.agentic_stack_context import (
+    assessment_context,
+    checks,
+    comparison,
+    contributions,
+)
 
 BASE, REVIEW, HEAD = (letter * 40 for letter in "abc")
 
@@ -175,3 +180,18 @@ def test_comparison_metadata_cannot_overrun_the_model_context(source):
     assert result["total_commits"] == 100
     assert result["returned_file_count"] == 1
     assert not result["tests_executed"]
+
+
+def test_title_search_matches_do_not_block_an_issue_with_few_linked_prs():
+    def pr(number, linked, updated):
+        row = {"number": number, "updated_at": f"2026-11-0{updated}T00:00:00Z"}
+        return row if linked else {**row, "discussion_collected": False}
+
+    prs = [pr(3, True, 1)] + [pr(n, False, n - 10) for n in range(11, 18)]
+    evidence = {}
+    kept = contributions(prs, evidence)
+    assert [row["number"] for row in kept] == [3, 13, 14, 15, 16, 17]
+    assert evidence["omitted_search_matches"] == [11, 12]
+
+    with pytest.raises(ValueError, match="7 PRs link this issue"):
+        contributions([pr(n, True, 1) for n in range(7)], {})

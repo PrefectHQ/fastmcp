@@ -27,12 +27,13 @@ def test_completed_agent_waits_for_declared_output_without_restarting(monkeypatc
         starts=0, observations=0, output_reads=0, status="completed"
     )
     decision = {
-        "decision": "prepared",
+        "decision": "not_reproduced",
         "base_sha": "a" * 40,
-        "patch": "retained patch",
-        "title": "Fix a scoped bug",
-        "body": "Restore the supported behavior.",
+        "regression_patch": "",
+        "command": "uv run pytest tests/test_fixture.py",
         "observed": "Fixture output returned after delayed materialization.",
+        "contract": "",
+        "source_paths": [],
     }
 
     class Handler(BaseHTTPRequestHandler):
@@ -98,7 +99,7 @@ def test_completed_agent_waits_for_declared_output_without_restarting(monkeypatc
                 owner = client.create_flow_run(output_owner, state=Running())
                 deadline = datetime.now(UTC) + timedelta(minutes=1)
                 result, run_id = judge(
-                    "prepare", plan, {}, {}, owner.id, deadline, "readiness"
+                    "reproduce", plan, {}, {}, owner.id, deadline, "readiness"
                 )
                 assert result == decision
                 assert run_id
@@ -106,13 +107,13 @@ def test_completed_agent_waits_for_declared_output_without_restarting(monkeypatc
                 assert protocol.starts == 1
                 assert protocol.output_reads == 1
                 assert judge(
-                    "prepare", plan, {}, {}, owner.id, deadline, "readiness"
+                    "reproduce", plan, {}, {}, owner.id, deadline, "readiness"
                 ) == (result, run_id)
                 assert protocol.starts == 1
 
                 protocol.status = "failed"
                 with pytest.raises(RuntimeError, match="ended failed"):
-                    judge("prepare", plan, {}, {}, owner.id, deadline, "failed-agent")
+                    judge("reproduce", plan, {}, {}, owner.id, deadline, "failed-agent")
                 assert protocol.output_reads == 1
     finally:
         server.shutdown()

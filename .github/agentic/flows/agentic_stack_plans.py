@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import re
 from pathlib import Path
@@ -45,19 +46,31 @@ class Reproduction(BaseModel):
     source_paths: list[str] = Field(max_length=20)
 
 
-class Preparation(BaseModel):
+class ReviewFinding(BaseModel):
+    """Semantic identity, reused across revisions only for the same actionable defect."""
+
     model_config = ConfigDict(extra="forbid")
-    decision: Literal[
-        "prepared", "evidence_needed", "maintainer", "environment_failure"
-    ]
-    base_sha: str = Field(pattern=r"^[a-f0-9]{40}$")
-    patch: str = Field(max_length=200_000)
-    title: str = Field(max_length=200)
-    body: str = Field(max_length=10_000)
-    observed: str = Field(min_length=1, max_length=8000)
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,119}$")
+    severity: Literal["blocking", "non_blocking"]
 
 
-class PublicReview(BaseModel):
+class ReviewFeedback(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Older pinned plans remain publishable but cannot suppress feedback.
+    outcome: Literal["no_findings", "findings", "inconclusive"] = "inconclusive"
+    finding_ids: list[ReviewFinding] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def consistent_findings(self) -> ReviewFeedback:
+        ids = [finding.id for finding in self.finding_ids]
+        if len(set(ids)) != len(ids):
+            raise ValueError("Finding identities must be distinct")
+        if (self.outcome == "findings") != bool(ids):
+            raise ValueError("Only a findings outcome has finding identities")
+        return self
+
+
+class PublicReview(ReviewFeedback):
     """Contributor-facing feedback, separate from retained execution evidence."""
 
     model_config = ConfigDict(extra="forbid")
@@ -68,6 +81,8 @@ class PublicReview(BaseModel):
 
     @model_validator(mode="after")
     def concise_feedback(self) -> PublicReview:
+        if self.outcome == "no_findings" and self.requested_change.strip():
+            raise ValueError("No-findings feedback cannot request a change")
         text = "\n".join([self.summary, self.requested_change, self.evidence])
         if len(text.split()) > 120:
             raise ValueError("Public review exceeds 120 words")
@@ -80,15 +95,6 @@ class PublicReview(BaseModel):
         ):
             raise ValueError("Public review contains internal execution material")
         return self
-
-
-class Review(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    decision: Literal[
-        "approved", "changes_requested", "maintainer", "environment_failure"
-    ]
-    reason: str = Field(min_length=1, max_length=6000)
-    findings: list[str] = Field(max_length=20)
 
 
 class TriageReview(BaseModel):
@@ -114,8 +120,6 @@ class TriageReview(BaseModel):
 OUTPUTS = {
     "assess": Assessment,
     "reproduce": Reproduction,
-    "prepare": Preparation,
-    "review": Review,
     "triage_review": TriageReview,
 }
 COMMON = """Use the complete pinned repository skills in instructions.files. They guide this role;
@@ -152,7 +156,15 @@ review_existing disposition for close_pr proposals; propose_closure is for issue
 next_action must identify the target and concrete next step, with any blocking finding; it must
 not be a generic request to investigate or review.
 For review_existing, supply public_reviews with exactly one entry per verified PR, bound by
-pr_number. Write a concise contributor-facing summary of the actual finding and impact,
+pr_number. Set outcome to no_findings only for a completed review with no actionable findings,
+findings for actionable defects, or inconclusive for uncertain/incomplete conclusions. Supply
+finding_ids only for findings: each entry has a stable lowercase slug id and blocking or
+non_blocking severity. Reuse the id from prior bot feedback metadata for the same defect even
+when wording, line numbers, head or baseline changes. Use a new id when the impact or required
+correction materially changes; retain ids for remaining defects and omit resolved defects.
+Never use no_findings when requested_change is nonempty. These identities control duplicate
+public feedback only; each revision still requires fresh verification and independent review.
+Write a concise contributor-facing summary of the actual finding and impact,
 the requested localized change (empty if none), and a short statement of checks/results.
 Use at most 120 words total per entry. Explain each finding once. Never copy internal reason
 or next_action into public_reviews. Do not include command transcripts, setup history,
@@ -225,41 +237,33 @@ setup and include its complete probe in observed; an empty regression_patch is t
 Do not fix source yet. Installation/import/tool failures are environment_failure. If not
 reproduced, make at most one focused version/config/history check before returning evidence.
 Bound each probe subprocess to 30 seconds. An MRE may be the final useful result.""",
-    "prepare": """Prepare one atomic fix with its regression tests and necessary docs using
-context.reproduction, assessment, evidence and any repair findings. Fetch instructions.base_sha.
-Require reproduction.base_sha to match. Apply its regression patch with git apply --recount,
-confirm the reported failure, fix the causal code, then observe the probe and adjacent tests
-pass. Fix all affected MCP object kinds and assess downstream compatibility; avoid speculative
-edge-case expansion. For docs, execute the changed example. Reuse investigation rather than
-repeating broad searches. If context.previous is present, repair its patch against the same
-base using the review's concrete findings, still returning the entire replacement diff.
-Return prepared only with a justified nonempty complete git diff --binary (including new
-files), concise PR title, and repository-conformant body. Read the patch from the actual
-Git diff and return it verbatim: do not reconstruct or rewrite diff headers or file paths.
-Apply the exact diff to a second clean checkout and execute the focused regression there
-before returning prepared; checks in the editing checkout do not validate serialized bytes. Touch only maintained library code,
-tests or docs. Do not alter skills, dependencies, hooks, generated docs/schemas or CI.
-Contributor credit is added deterministically. observed retains actual commands/results.
-If blocked, preserve useful patch/evidence with the precise unresolved decision.""",
-    "review": """Independently review the complete stack in context.spec and context.layers,
-with each issue's evidence, assessment, reproduction and focused outcomes in context.items.
-The specified validator run completed every layer on its actual parent and the combined tip.
-Read every diff and relevant surrounding source/history at the pinned trunk. Trace public
-contracts, reachable callers, shared abstractions and downstream compatibility. Honor release
-line policy and prior maintainer/author discussion. Validate the regression fails for the
-reported reason, rather than trusting an agent's diagnosis. Assess stack cohesion and ordering;
-two unrelated fixes are not a coherent stack merely because they fit. Each layer must stand
-on its parent and include meaningful tests/docs. Collect all substantiated consequential
-findings in one pass; omit speculative hypotheticals and previously rebutted claims without
-new evidence. Return approved only with no unresolved consequential findings. Use
-changes_requested for actionable code problems and maintainer for policy/cohesion decisions.
-Do not rewrite patches or publication metadata. Deterministic code binds this decision to
-the exact supplied artifact and evidence; you do not copy hashes or approve changed bytes.""",
 }
 
 
-def build_plans(directory: Path) -> dict[str, dict]:
-    models = json.loads((directory / "stack-models.json").read_text())
+def tier_models(models: dict, tier: str | None) -> dict:
+    """Resolve a named model tier from stack-models.json.
+
+    A tier replaces the connection and any roles it names; unnamed roles keep
+    the default model. Each tier is registered as its own plan flows, and a
+    batch picks a tier by passing those plans in its runtime.
+    """
+    if tier is None:
+        return models
+    override = models["tiers"][tier]
+    return {
+        "connection_id": override.get("connection_id", models["connection_id"]),
+        "roles": {**models["roles"], **override.get("roles", {})},
+    }
+
+
+def plan_suffix(tier: str | None) -> str:
+    return "" if tier is None else f".{tier}"
+
+
+def build_plans(directory: Path, tier: str | None = None) -> dict[str, dict]:
+    models = tier_models(
+        json.loads((directory / "stack-models.json").read_text()), tier
+    )
     result = {}
     for role, output in OUTPUTS.items():
         model_role = "triage" if role == "assess" else role
@@ -322,8 +326,10 @@ def build_plans(directory: Path) -> dict[str, dict]:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--tier", help="named tier from stack-models.json")
+    arguments = parser.parse_args()
     directory = Path(__file__).resolve().parents[1] / "workflows"
-    for role, plan in build_plans(directory).items():
-        (directory / f"fastmcp-stack-{role}.plan.json").write_text(
-            json.dumps(plan, indent=2) + "\n"
-        )
+    for role, plan in build_plans(directory, arguments.tier).items():
+        name = f"fastmcp-stack-{role}{plan_suffix(arguments.tier)}.plan.json"
+        (directory / name).write_text(json.dumps(plan, indent=2) + "\n")

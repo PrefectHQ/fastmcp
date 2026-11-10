@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-
-from flows.agentic_mutation_batch import qualify_recommendations
-
 
 def requires_review(destination: str) -> bool:
     return destination != "operational"
@@ -14,8 +10,6 @@ def apply_disposition(
     outcome: dict,
     review: dict,
     run_id: str,
-    evidence: dict | None = None,
-    read: Callable[[str], dict | None] | None = None,
 ) -> tuple[str, dict]:
     decision = review["decision"]
     if decision == "prepare_fix" and outcome.get("decision") != "reproduced":
@@ -49,10 +43,6 @@ def apply_disposition(
         "triage_review_run_id": run_id,
         "next_step": review["next_action"],
     }
-    if review.get("recommendations"):
-        result["mutation_recommendations"] = qualify_recommendations(
-            outcome, review, run_id, evidence, read
-        )
     destination = destinations[decision]
     if decision == "repair_evidence":
         result["decision"] = "evidence_needed"
