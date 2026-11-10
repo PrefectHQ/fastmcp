@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from fastmcp.skills.models import (
     GetSkillResult,
     ListSkillsResult,
-    Skill,
+    MCPSkill,
     SkillFrontmatter,
     SkillResource,
 )
@@ -16,7 +16,7 @@ from fastmcp.skills.models import (
 DIGEST = f"sha256:{'a' * 64}"
 
 
-def make_skill(**overrides: object) -> Skill:
+def make_skill(**overrides: object) -> MCPSkill:
     values: dict[str, object] = {
         "uri": "skill://acme/review/SKILL.md",
         "frontmatter": {
@@ -34,7 +34,7 @@ def make_skill(**overrides: object) -> Skill:
         ],
     }
     values.update(overrides)
-    return Skill.model_validate(values)
+    return MCPSkill.model_validate(values)
 
 
 def test_frontmatter_preserves_unknown_json_fields() -> None:
@@ -90,9 +90,10 @@ def test_frontmatter_rejects_non_finite_extra_values() -> None:
     [
         ("license", None, "license must be a string"),
         ("compatibility", None, "compatibility must be a string"),
-        ("metadata", None, "metadata must map"),
-        ("metadata", {"version": 1}, "metadata must map"),
-        ("allowed-tools", None, "allowed-tools must be a string"),
+        ("metadata", None, "metadata must be a mapping"),
+        ("metadata", ["author"], "metadata must be a mapping"),
+        ("allowed-tools", None, "allowed-tools must be a string or a list"),
+        ("allowed-tools", ["Read", 1], "allowed-tools must be a string or a list"),
     ],
 )
 def test_frontmatter_rejects_invalid_known_optional_fields(

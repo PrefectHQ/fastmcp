@@ -42,6 +42,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Minimize resolved review comments
-        uses: strawgate/minimize-resolved-pr-reviews@v0
+        uses: strawgate/minimize-resolved-pr-reviews@429a7d298492171b7ef8852e7475ff13eb39cc68 # v0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
