@@ -73,7 +73,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python-version: ["3.10"]
+        python-version: ["3.11"]
         include:
           - os: ubuntu-latest
             python-version: "3.11"
@@ -93,7 +93,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup uv
-        if: needs.changes.outputs.run-tests != 'false' || (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10')
+        if: needs.changes.outputs.run-tests != 'false' || (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11')
         uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ matrix.python-version }}
@@ -110,7 +110,7 @@ jobs:
           test-type: client_process
 
       - name: Run documentation tests
-        if: needs.changes.outputs.run-tests == 'false' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
+        if: needs.changes.outputs.run-tests == 'false' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         run: uv run pytest tests/docs -n 0
 
   run_windows_tests:
@@ -121,7 +121,7 @@ jobs:
     name: "Tests: Python ${{ matrix.python-version }} on windows-latest"
     strategy:
       matrix:
-        python-version: ["3.10", "3.14"]
+        python-version: ["3.11", "3.14"]
       fail-fast: false
     runs-on: windows-latest
     timeout-minutes: 10
@@ -185,7 +185,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: "24"
+          node-version: "26"
 
       - name: Run conformance tests
         uses: ./.github/actions/run-pytest

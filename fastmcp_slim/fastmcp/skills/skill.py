@@ -10,12 +10,11 @@ import warnings
 from collections.abc import Mapping
 from pathlib import Path, PureWindowsPath
 from types import MappingProxyType
-from typing import Any, TypeGuard, cast
+from typing import Any, Self, TypeGuard, cast
 from urllib.parse import quote
 
 from pydantic import GetCoreSchemaHandler, JsonValue
 from pydantic_core import CoreSchema, core_schema
-from typing_extensions import Self
 
 from fastmcp._warnings import FastMCPDeprecationWarning
 from fastmcp.skills._constants import MAX_SKILL_BYTES, MAX_SKILL_FILES

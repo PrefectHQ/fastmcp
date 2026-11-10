@@ -424,6 +424,11 @@ class TransformedTool(Tool):
                 if self.transform_args:
                     # Find the original parameter name that maps to this param_name
                     for orig_name, transform in self.transform_args.items():
+                        if transform.hide:
+                            # Hidden parameters are not part of the schema and
+                            # their factory defaults are applied when forwarding
+                            # to the parent, so they must not fill visible ones.
+                            continue
                         transform_name = (
                             transform.name
                             if transform.name is not NotSet
@@ -440,7 +445,7 @@ class TransformedTool(Tool):
                                 break
 
                 if not has_factory_default:
-                    arguments[param_name] = param_schema["default"]
+                    arguments[param_name] = deepcopy(param_schema["default"])
 
         token = _current_tool.set(self)
         try:
