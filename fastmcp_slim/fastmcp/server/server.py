@@ -7,6 +7,7 @@ import logging
 import secrets
 from collections.abc import (
     AsyncGenerator,
+    Awaitable,
     Callable,
     Sequence,
 )
@@ -187,6 +188,31 @@ logging.getLogger("mcp.server.lowlevel.server").addFilter(
 )
 
 F = TypeVar("F", bound=Callable[..., Any])
+ComponentT = TypeVar("ComponentT", bound=FastMCPComponent)
+
+
+async def _highest_available_version(
+    candidates: Sequence[FastMCPComponent],
+    lookup: Callable[[VersionSpec], Awaitable[ComponentT | None]],
+) -> ComponentT | None:
+    """Look up each candidate version, highest first, until one is returned.
+
+    Each version goes through `lookup`, the same path an explicit version
+    request takes, so transforms, `get_*` overrides, and auth decide the
+    fallback exactly as they would decide a direct request for that version.
+    Unversioned candidates are skipped: they have no lower version to fall
+    back to.
+    """
+    tried: set[str] = set()
+    for candidate in sorted(candidates, key=version_sort_key, reverse=True):
+        if candidate.version is None or candidate.version in tried:
+            continue
+        tried.add(candidate.version)
+        found = await lookup(VersionSpec(eq=candidate.version))
+        if found is not None:
+            return found
+    return None
+
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
@@ -952,21 +978,16 @@ class FastMCP(
         if version is not None:
             return None
 
-        all_tools = [t for t in await super().list_tools() if t.name == name]
+        candidates = [t for t in await super().list_tools() if t.name == name]
         # During a hashed lookup, only versions of the identity being looked
         # up qualify; another tool listed under the same name does not.
         found = hashed_lookup_target(self)
         if found is not None:
             identity = tool_identity(found)
-            all_tools = [t for t in all_tools if tool_identity(t) == identity]
-        all_tools = list(await apply_session_transforms(all_tools))
-        enabled = [t for t in all_tools if is_enabled(t)]
-
-        authorized = [t for t in enabled if await _component_auth_allows(t)]
-
-        if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+            candidates = [t for t in candidates if tool_identity(t) == identity]
+        return await _highest_available_version(
+            candidates, lambda spec: self.get_tool(name, spec)
+        )
 
     async def list_resources(
         self, *, run_middleware: bool = True
@@ -1105,25 +1126,11 @@ class FastMCP(
         if version is not None:
             return None, True
 
-        all_resources = [r for r in await super().list_resources() if str(r.uri) == uri]
-        all_resources = list(await apply_session_transforms(all_resources))
-        enabled = [r for r in all_resources if is_enabled(r)]
-
-        skip_auth, token = _get_auth_context()
-        authorized: list[Resource] = []
-        for r in enabled:
-            if not skip_auth and r.auth is not None:
-                ctx = AuthContext(token=token, component=r)
-                try:
-                    if not await run_auth_checks(r.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(r)
-
-        if not authorized:
-            return None, True
-        return max(authorized, key=version_sort_key), True
+        candidates = [r for r in await super().list_resources() if str(r.uri) == uri]
+        resource = await _highest_available_version(
+            candidates, lambda spec: self.get_resource(uri, spec)
+        )
+        return resource, True
 
     async def list_resource_templates(
         self, *, run_middleware: bool = True
@@ -1250,29 +1257,14 @@ class FastMCP(
         if version is not None:
             return None
 
-        all_templates = [
+        candidates = [
             t
             for t in await super().list_resource_templates()
             if t.matches(uri) is not None
         ]
-        all_templates = list(await apply_session_transforms(all_templates))
-        enabled = [t for t in all_templates if is_enabled(t)]
-
-        skip_auth, token = _get_auth_context()
-        authorized: list[ResourceTemplate] = []
-        for t in enabled:
-            if not skip_auth and t.auth is not None:
-                ctx = AuthContext(token=token, component=t)
-                try:
-                    if not await run_auth_checks(t.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(t)
-
-        if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+        return await _highest_available_version(
+            candidates, lambda spec: self.get_resource_template(uri, spec)
+        )
 
     async def list_prompts(self, *, run_middleware: bool = True) -> Sequence[Prompt]:
         """List all enabled prompts from providers.
@@ -1387,25 +1379,10 @@ class FastMCP(
         if version is not None:
             return None
 
-        all_prompts = [p for p in await super().list_prompts() if p.name == name]
-        all_prompts = list(await apply_session_transforms(all_prompts))
-        enabled = [p for p in all_prompts if is_enabled(p)]
-
-        skip_auth, token = _get_auth_context()
-        authorized: list[Prompt] = []
-        for p in enabled:
-            if not skip_auth and p.auth is not None:
-                ctx = AuthContext(token=token, component=p)
-                try:
-                    if not await run_auth_checks(p.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(p)
-
-        if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+        candidates = [p for p in await super().list_prompts() if p.name == name]
+        return await _highest_available_version(
+            candidates, lambda spec: self.get_prompt(name, spec)
+        )
 
     async def call_tool(
         self,
