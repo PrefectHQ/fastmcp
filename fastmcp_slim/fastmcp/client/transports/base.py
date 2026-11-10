@@ -18,6 +18,8 @@ from mcp.client.session import (
 from mcp.shared._httpx_utils import McpHttpClientFactory
 from typing_extensions import TypedDict, Unpack
 
+from fastmcp.client._version_pin import pinned_call
+
 # TypeVar for preserving specific ClientTransport subclass types
 ClientTransportT = TypeVar("ClientTransportT", bound="ClientTransport")
 
@@ -65,6 +67,53 @@ class ClientSessionKwargs(TypedDict, total=False):
     result_claims: Mapping[str, Sequence[ResultClaim[Any]]] | None
 
 
+class VersionAwareClientSession(ClientSession):
+    """A session that skips output-schema revalidation for mismatched pinned calls.
+
+    ``ClientSession.call_tool`` revalidates a tool's structured content against
+    the output schema the server advertised, looked up by tool *name*. That
+    cache holds only the listed (highest) version's schema, so a call pinned to
+    a different version -- which the server executes as the requested version
+    -- would be checked against a schema that does not describe its result.
+
+    The session records the version each listed tool advertises in
+    ``_meta.fastmcp.version``. A pinned call to that version validates as
+    usual; a pinned call to any other version skips the check, since its schema
+    is not obtainable over the wire. Every unpinned call validates as before.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._tool_listed_versions: dict[str, str | None] = {}
+
+    def _absorb_tool_listing(
+        self, result: mcp_types.ListToolsResult, *, complete: bool
+    ) -> mcp_types.ListToolsResult:
+        result = super()._absorb_tool_listing(result, complete=complete)
+        if complete:
+            self._tool_listed_versions = {}
+        for tool in result.tools:
+            fastmcp_meta = (tool.meta or {}).get("fastmcp")
+            version = (
+                fastmcp_meta.get("version") if isinstance(fastmcp_meta, dict) else None
+            )
+            self._tool_listed_versions[tool.name] = (
+                str(version) if version is not None else None
+            )
+        return result
+
+    async def validate_tool_result(
+        self, name: str, result: mcp_types.CallToolResult
+    ) -> None:
+        pin = pinned_call.get()
+        if pin is not None and pin.session is self:
+            if name not in self._tool_output_schemas:
+                await self.list_tools()
+            if self._tool_listed_versions.get(name) != pin.version:
+                return
+        await super().validate_tool_result(name, result)
+
+
 @dataclass(frozen=True)
 class TransportOptions:
     """How one client wants its connection built.
@@ -75,9 +124,12 @@ class TransportOptions:
     settings must preserve the existing options rather than replace the bundle.
 
     Attributes:
-        session_class: The ClientSession class to instantiate. Proxies supply a
-            session that skips output-schema validation, since they relay
-            results rather than consume them.
+        session_class: The ClientSession class to instantiate. The default
+            skips output-schema validation for a tool call pinned to a version
+            other than the listed one, whose result no advertised schema
+            describes; proxies additionally
+            supply a session that skips it for every result, since they relay
+            rather than consume them.
         forward_incoming_headers: Whether to forward eligible inbound HTTP
             headers upstream, including authorization. Hop-specific HTTP headers
             and MCP transport, routing, and event-stream state are excluded
@@ -94,7 +146,7 @@ class TransportOptions:
             client's own session and era.
     """
 
-    session_class: type[ClientSession] = ClientSession
+    session_class: type[ClientSession] = VersionAwareClientSession
     forward_incoming_headers: bool = False
     backend_mode: str | None = None
 
