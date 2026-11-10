@@ -339,7 +339,7 @@ class JWTVerifier(TokenVerifier):
         self._cache_ttl = 3600  # 1 hour
         self._jwks_refresh_interval = jwks_refresh_interval
         self._jwks_last_refresh_attempt: float | None = None
-        self._jwks_refresh_lock = anyio.Lock()
+        self._shared_jwks_refresh_lock = anyio.Lock()
 
     async def _get_verification_key(self, token: str) -> str | bytes:
         """Get the verification key for the token."""
@@ -370,7 +370,7 @@ class JWTVerifier(TokenVerifier):
                 # If no kid but only one key cached, use it
                 return next(iter(self._jwks_cache.values()))
 
-        async with self._jwks_refresh_lock:
+        async with self._shared_jwks_refresh_lock:
             current_time = time.monotonic()
             fresh = current_time - self._jwks_cache_time < self._cache_ttl
             if fresh:

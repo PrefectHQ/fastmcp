@@ -27,7 +27,7 @@ except ImportError as _exc:
     ) from _exc
 
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -194,7 +194,7 @@ class GenerativeUI(Provider):
         return None
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         self._ensure_setup()
         async with self._local.lifespan():
             yield

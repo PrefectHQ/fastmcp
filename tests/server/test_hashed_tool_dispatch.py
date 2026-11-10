@@ -1,7 +1,7 @@
 """Hashed tool names follow the same lookup rules as listed names.
 
 A FastMCPApp backend tool is also callable by its identity-addressed name,
-`<hash>_<local_name>`. Calling a tool that way resolves the same tool, with
+`__<hash>_<local_name>`. Calling a tool that way resolves the same tool, with
 the same transforms, enabled state, auth, and version fallback, as calling it
 by the name the server lists it under.
 """
@@ -482,7 +482,7 @@ def scoped_tool_with_auth_removed_in_mounted_server(calls: list[str]) -> FastMCP
     "build, listed_name, allowed",
     [
         (admin_tag_removed_by_server_transform, "save", False),
-        (admin_tag_added_by_server_transform, "save", True),
+        (admin_tag_added_by_server_transform, "save", False),
         (admin_tag_removed_by_provider_transform, "save", True),
         (admin_tag_added_by_provider_transform, "save", False),
         (admin_tag_removed_in_mounted_server, "child_save", False),

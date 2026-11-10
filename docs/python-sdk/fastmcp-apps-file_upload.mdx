@@ -40,7 +40,7 @@ For custom persistence, override the storage methods::
 
 ## Classes
 
-### `FileUpload` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/file_upload.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FileUpload` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/file_upload.py#L106" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A Provider that adds file upload capabilities to a server.
@@ -58,12 +58,15 @@ persistence (filesystem, S3, database, etc.). Each method receives
 the current ``Context``, giving access to session ID, auth tokens,
 and request metadata for partitioning and authorization.
 
-**Session scoping:** The default storage uses ``ctx.session_id`` to
-isolate files by session. This works with stdio, SSE, and stateful
-HTTP transports. In **stateless HTTP** mode, each request creates a
-new session, so files won't persist across requests. For stateless
-deployments, override the storage methods to partition by a stable
-identifier from the auth context::
+**Session scoping:** The default storage isolates files by MCP session
+on handshake-era connections. MCP 2026-07-28 connections have no
+session, so files are scoped to the authenticated user instead, or
+shared by the server process on stdio. Unauthenticated 2026-07-28 HTTP
+requests carry no client identity, so the default storage rejects them.
+In **stateless HTTP** mode, each request creates a new session, so
+files won't persist across requests. For stateless deployments,
+override the storage methods to partition by a stable identifier from
+the auth context::
 
     class UserScopedUpload(FileUpload):
         def on_store(self, files, ctx):
@@ -81,7 +84,7 @@ Example::
 
 **Methods:**
 
-#### `on_store` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/file_upload.py#L212" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_store` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/file_upload.py#L228" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_store(self, files: list[dict[str, Any]], ctx: Context) -> list[dict[str, Any]]
@@ -106,7 +109,7 @@ when its final contents would exceed the limit, including replacements.
 - ``size_display``, ``uploaded_at``).
 
 
-#### `on_list` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/file_upload.py#L278" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_list` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/file_upload.py#L294" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_list(self, ctx: Context) -> list[dict[str, Any]]
@@ -124,7 +127,7 @@ implementation returns files from the current scope.
 - List of file summary dicts.
 
 
-#### `on_read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/file_upload.py#L296" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/file_upload.py#L312" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_read(self, name: str, ctx: Context) -> dict[str, Any]
