@@ -20,7 +20,7 @@ which avoids leaking task existence across callers.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
 import mcp_types
@@ -98,7 +98,7 @@ def _normalize_iso_timestamp(stored: str | None) -> str:
             return datetime.fromisoformat(stored.replace("Z", "+00:00")).isoformat()
         except (ValueError, AttributeError):
             pass
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _parse_key_version(key_suffix: str) -> tuple[str, str | None]:
@@ -264,7 +264,7 @@ async def tasks_get(server: FastMCP, task_id: str) -> GetTaskResult:
     await execution.sync()
 
     created_at_iso = _normalize_iso_timestamp(created_at)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
     ttl_ms = _ttl_ms(docket)
 
     def build(

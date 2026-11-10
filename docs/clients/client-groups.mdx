@@ -1,6 +1,7 @@
 ---
 title: Client Groups
 sidebarTitle: Client Groups
+description: "Use ClientGroup to coordinate several FastMCP clients, each on its own connection, and route namespaced tool calls back to the server that owns them."
 icon: layer-group
 tag: NEW
 ---
@@ -70,9 +71,30 @@ async with group:
 
 The group aggregates names and detects collisions; it never stands between the adapter and the client, so everything a single `Client` supports keeps working per tool.
 
+Discovered routes outlive the group's context. After the last exit, `resolve_tool()` and `call_tool()` for a known tool need only that tool's own client to be connected, so an adapter that bound its tools inside the group can keep calling them under the owning client's context. The next unknown name after the last exit reloads the catalog, which requires every client. Call `list_tools()` to drop routes for tools a server has since removed.
+
+## List skills across servers
+
+`list_skills()` collects [Skills extension](/servers/skills) entries from every client that opted into it, keyed by server name, since two servers can publish the same skill URI. Clients created without `SkillsClientExtension()`, including those from `from_config`, and servers that don't advertise the extension are left out.
+
+```python
+from fastmcp import Client, ClientGroup
+from fastmcp.skills import SkillsClientExtension
+
+docs = Client("https://docs.example.com/mcp", extensions=[SkillsClientExtension()])
+ops = Client("https://ops.example.com/mcp", extensions=[SkillsClientExtension()])
+group = ClientGroup({"docs": docs, "ops": ops})
+
+async with group:
+    for server_name, entries in (await group.list_skills()).items():
+        for entry in entries:
+            print(server_name, entry.uri)
+    deploy = await group.get_skill("ops", "skill://deploy/SKILL.md")
+```
+
 ## Create a group from configuration
 
-`ClientGroup.from_config` creates one client per server rather than passing the entire configuration through a proxy. A FastMCP-specific `mode` field can select the protocol behavior for each server:
+`ClientGroup.from_config` creates one client per server rather than passing the entire configuration through a proxy. Each entry’s `timeout` applies to that client in milliseconds; `0` disables the request timeout. A FastMCP-specific `mode` field can select the protocol behavior for each server:
 
 ```python
 from fastmcp import ClientGroup

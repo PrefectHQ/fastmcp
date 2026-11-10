@@ -28,10 +28,10 @@ jobs:
       pull-requests: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
 
       - name: Read previous assessments
         run: |
@@ -57,7 +57,7 @@ jobs:
         run: cat "$RUNNER_TEMP/status/STATUS.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the snapshot
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: status
           path: ${{ runner.temp }}/status
@@ -75,9 +75,10 @@ jobs:
     concurrency:
       group: maintenance-status-publish
       cancel-in-progress: false
+      queue: max
     steps:
       - name: Fetch the snapshot
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: status
           path: snapshot
@@ -96,8 +97,8 @@ jobs:
             git checkout -q --orphan status
           fi
           cp ../snapshot/status.json ../snapshot/STATUS.md ../snapshot/badge.json .
-          cp ../snapshot/index.html ../snapshot/style.css ../snapshot/app.js .
-          git add status.json STATUS.md badge.json index.html style.css app.js
+          cp ../snapshot/*.html ../snapshot/*.css ../snapshot/*.js .
+          git add status.json STATUS.md badge.json *.html *.css *.js
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               commit -q -m "status: $(jq -r .as_of status.json)"
