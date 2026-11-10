@@ -59,6 +59,16 @@ fastmcp dev apps server.py:mcp --mcp-port 9000 --dev-port 9090 --no-reload
 
 With `--host 0.0.0.0`, open the dev UI through `localhost` or an IP address. To reach it by hostname, pass that hostname to `--host`.
 
+### npm registry
+
+On first run, the dev server downloads the `@modelcontextprotocol/ext-apps` package from the public npm registry and caches it. If your network only allows an internal npm mirror, set `npm_config_registry` (or `NPM_CONFIG_REGISTRY`) to the mirror's URL, the same variable npm reads. When neither is set, or the value is empty, the dev server uses `https://registry.npmjs.org`. The mirror must serve the standard npm tarball layout.
+
+```bash
+npm_config_registry=https://npm.internal.example.com fastmcp dev apps server.py
+```
+
+This setting covers only the npm download. The dev UI also loads modules from `esm.sh`, and that host is not configurable.
+
 ## Multiple tools
 
 If your server has multiple app tools, the picker shows a dropdown. Each tool gets its own form and launch button. The tool's `title` is displayed when available, falling back to the tool name.
