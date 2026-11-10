@@ -12,7 +12,7 @@ from rich import print
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
-from .shared import process_common_args, validate_server_name
+from .shared import process_common_args, run_cli_command, validate_server_name
 
 logger = get_logger(__name__)
 
@@ -137,7 +137,7 @@ def install_gemini_cli(
 
     try:
         # Run the gemini mcp add command
-        subprocess.run(cmd_parts, check=True, capture_output=True, text=True)
+        run_cli_command(cmd_parts)
         return True
     except subprocess.CalledProcessError as e:
         print(
@@ -190,7 +190,7 @@ async def gemini_cli_command(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_requirements: Annotated[

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock
 import httpx2
 import pytest
 from httpx2 import Response
+from mcp_types import TextResourceContents
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -1091,6 +1092,55 @@ class TestResourceMimeType:
                 assert len(resources) == 1
                 assert resources[0].mime_type == "text/plain"
 
+    async def test_resource_plus_json_response_is_text(self):
+        """A +json response is read as JSON text, not a binary blob."""
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Status API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/status": {
+                    "get": {
+                        "operationId": "get_status",
+                        "responses": {
+                            "200": {
+                                "description": "Status",
+                                "content": {
+                                    "application/hal+json": {
+                                        "schema": {"type": "object"}
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        def handler(request: httpx2.Request) -> httpx2.Response:
+            return httpx2.Response(
+                200,
+                content=b'{"ok": true}',
+                headers={"content-type": "application/hal+json; charset=utf-8"},
+            )
+
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE)]
+        async with httpx2.AsyncClient(
+            base_url="https://api.example.com",
+            transport=httpx2.MockTransport(handler),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=spec, client=client, route_maps=route_maps
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+            async with Client(mcp) as mcp_client:
+                [content] = await mcp_client.read_resource("resource://get_status")
+
+        assert isinstance(content, TextResourceContents)
+        assert json.loads(content.text) == {"ok": True}
+        assert content.mime_type == "application/hal+json"
+
 
 class TestValidateOutput:
     """Tests for the validate_output option on OpenAPIProvider."""
@@ -1212,6 +1262,47 @@ class TestValidateOutput:
             assert tool.output_schema is not None
             assert tool.output_schema.get("x-fastmcp-wrap-result") is True
             assert tool.output_schema.get("additionalProperties") is True
+            # The permissive schema must keep the wrapper shape: the client
+            # unwraps `result` and validates it against properties.result.
+            assert tool.output_schema.get("properties") == {"result": {}}
+
+    async def test_validate_output_false_wrapped_array_hydrates_data(
+        self, spec_with_output_schema
+    ):
+        """validate_output=False still hydrates result.data for wrapped non-object responses.
+
+        Regression test for https://github.com/PrefectHQ/fastmcp/issues/5781:
+        the permissive schema kept the wrap-result flag but dropped the
+        properties.result wrapper shape, so the client failed to validate the
+        unwrapped value and returned data=None.
+        """
+        mock_client = Mock(spec=httpx2.AsyncClient)
+        mock_client.base_url = "https://api.example.com"
+        mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
+
+        # Backend returns an array conforming to the spec
+        mock_response = Mock(spec=Response)
+        mock_response.status_code = 200
+        mock_response.json.return_value = [1, 2, 3]
+        mock_response.raise_for_status = Mock()
+        mock_client.send = AsyncMock(return_value=mock_response)
+
+        provider = OpenAPIProvider(
+            openapi_spec=spec_with_output_schema,
+            client=mock_client,
+            validate_output=False,
+        )
+        mcp = FastMCP("Test")
+        mcp.add_provider(provider)
+
+        async with Client(mcp) as mcp_client:
+            result = await mcp_client.call_tool("list_items", {})
+            assert result is not None
+            assert result.structured_content is not None
+            assert result.structured_content["result"] == [1, 2, 3]
+            # The unwrapped value must survive client-side parsing
+            assert result.data == [1, 2, 3]
 
     async def test_validate_output_false_allows_nonconforming_response(
         self, spec_with_output_schema
@@ -1527,3 +1618,71 @@ class TestAllOfReferenceRequestBodies:
             "petType": "cat",
             "meowVolume": 11,
         }
+
+
+class TestNonIdentifierPathParameterNames:
+    """Resource templates for path parameters whose names are not Python
+    identifiers stay readable (#6150). OpenAPI allows names like `{$top}`,
+    `x.y`, or `1id` in path templates."""
+
+    @pytest.fixture
+    def non_identifier_spec(self):
+        def get_op(op_id, param):
+            return {
+                "get": {
+                    "operationId": op_id,
+                    "summary": op_id,
+                    "parameters": [
+                        {
+                            "name": param,
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+
+        return {
+            "openapi": "3.0.3",
+            "info": {"title": "t", "version": "1"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/a/{top}": get_op("plain", "top"),
+                "/b/{$top}": get_op("dollar", "$top"),
+                "/c/{x.y}": get_op("dot", "x.y"),
+                "/d/{1id}": get_op("digit", "1id"),
+            },
+        }
+
+    async def test_non_identifier_path_params_listed_and_readable(
+        self, non_identifier_spec
+    ):
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+
+        def respond(request: httpx2.Request) -> httpx2.Response:
+            return httpx2.Response(200, json={"path": request.url.path})
+
+        async with httpx2.AsyncClient(
+            base_url="https://api.example.com",
+            transport=httpx2.MockTransport(respond),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=non_identifier_spec, client=client, route_maps=route_maps
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+            async with Client(mcp) as mcp_client:
+                templates = await mcp_client.list_resource_templates()
+                assert len(templates) == 4
+
+                expected_paths = {
+                    "resource://plain/x": "/a/x",
+                    "resource://dollar/x": "/b/x",
+                    "resource://dot/x": "/c/x",
+                    "resource://digit/x": "/d/x",
+                }
+                for uri, path in expected_paths.items():
+                    result = (await mcp_client.read_resource(uri))[0]
+                    assert json.loads(result.text) == {"path": path}

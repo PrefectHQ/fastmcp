@@ -13,6 +13,12 @@ env:
   PYDANTIC_AI_VERSION: "2.47.0"
   LANGCHAIN_MCP_ADAPTERS_VERSION: "0.3.2"
   LANGCHAIN_VERSION: "1.4.2"
+  BOTOCORE_VERSION: "1.43.118"
+  CACHETOOLS_VERSION: "7.2.4"
+  REDIS_ENTRAID_VERSION: "1.2.2"
+  AGNO_VERSION: "3.1.12"
+  AGENT_FRAMEWORK_VERSION: "1.24.0"
+  OPENAI_AGENTS_VERSION: "0.24.0"
 
 on:
   push:
@@ -61,13 +67,19 @@ jobs:
       pydantic-ai: ${{ steps.versions.outputs.pydantic-ai }}
       langchain-mcp-adapters: ${{ steps.versions.outputs.langchain-mcp-adapters }}
       langchain: ${{ steps.versions.outputs.langchain }}
+      botocore: ${{ steps.versions.outputs.botocore }}
+      cachetools: ${{ steps.versions.outputs.cachetools }}
+      redis-entraid: ${{ steps.versions.outputs.redis-entraid }}
+      agno: ${{ steps.versions.outputs.agno }}
+      agent-framework: ${{ steps.versions.outputs.agent-framework }}
+      openai-agents: ${{ steps.versions.outputs.openai-agents }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.1.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
 
       - name: Build wheels
         id: build
@@ -79,7 +91,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           ls dist
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: fastmcp-wheels
           path: dist/*.whl
@@ -89,17 +101,37 @@ jobs:
         env:
           LATEST: ${{ github.event_name == 'schedule' || inputs.latest == true }}
         run: |
+          set -euo pipefail
           pick() {
+            local version="$2"
             if [ "$LATEST" = true ]; then
-              curl -fsS "https://pypi.org/pypi/$1/json" | jq -r .info.version
-            else
-              echo "$2"
+              version=$(curl -fsS --retry 5 --retry-all-errors "https://pypi.org/pypi/$1/json" | jq -r .info.version)
             fi
+            if [ -z "$version" ] || [ "$version" = null ]; then
+              echo "::error::could not resolve a version for $1" >&2
+              exit 1
+            fi
+            echo "$version"
           }
+          pydantic_ai=$(pick pydantic-ai-slim "$PYDANTIC_AI_VERSION")
+          adapters=$(pick langchain-mcp-adapters "$LANGCHAIN_MCP_ADAPTERS_VERSION")
+          langchain=$(pick langchain "$LANGCHAIN_VERSION")
+          botocore=$(pick botocore "$BOTOCORE_VERSION")
+          cachetools=$(pick cachetools "$CACHETOOLS_VERSION")
+          redis_entraid=$(pick redis-entraid "$REDIS_ENTRAID_VERSION")
+          agno=$(pick agno "$AGNO_VERSION")
+          agent_framework=$(pick agent-framework-core "$AGENT_FRAMEWORK_VERSION")
+          openai_agents=$(pick openai-agents "$OPENAI_AGENTS_VERSION")
           {
-            echo "pydantic-ai=$(pick pydantic-ai-slim "$PYDANTIC_AI_VERSION")"
-            echo "langchain-mcp-adapters=$(pick langchain-mcp-adapters "$LANGCHAIN_MCP_ADAPTERS_VERSION")"
-            echo "langchain=$(pick langchain "$LANGCHAIN_VERSION")"
+            echo "pydantic-ai=$pydantic_ai"
+            echo "langchain-mcp-adapters=$adapters"
+            echo "langchain=$langchain"
+            echo "botocore=$botocore"
+            echo "cachetools=$cachetools"
+            echo "redis-entraid=$redis_entraid"
+            echo "agno=$agno"
+            echo "agent-framework=$agent_framework"
+            echo "openai-agents=$openai_agents"
           } | tee -a "$GITHUB_OUTPUT" > versions.txt
           {
             echo "### Downstream smoke plan"
@@ -117,24 +149,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           path: fastmcp
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: pydantic/pydantic-ai
           ref: v${{ needs.plan.outputs.pydantic-ai }}
           path: pydantic-ai
           persist-credentials: false
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: fastmcp-wheels
           path: dist
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.1.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           python-version: "3.13"
           enable-cache: true
@@ -146,6 +178,10 @@ jobs:
         working-directory: pydantic-ai
         run: |
           echo "UV_RUN=uv run --all-extras --no-extra mcp-tasks --all-packages \
+            --exclude-newer-package authlib=false \
+            --exclude-newer-package certifi=false \
+            --exclude-newer-package pydocket=2026-10-06T00:00:00Z \
+            --exclude-newer-package uncalled-for=false \
             --with fastmcp@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp-4*.whl) \
             --with fastmcp-slim@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_slim-*.whl) \
             --with fastmcp-tasks@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_tasks-*.whl)" >> "$GITHUB_ENV"
@@ -174,24 +210,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           path: fastmcp
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: langchain-ai/langchain
           ref: langchain==${{ needs.plan.outputs.langchain }}
           path: langchain
           persist-credentials: false
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: fastmcp-wheels
           path: dist
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.1.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           python-version: "3.13"
           enable-cache: true
@@ -227,6 +263,70 @@ jobs:
         if: always() && hashFiles('junit.xml') != ''
         run: python3 fastmcp/tests/downstream/_harness.py junit.xml "langchain ${{ needs.plan.outputs.langchain }} MCP test suite"
 
+  agno-suite:
+    name: agno test suite
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: fastmcp
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: agno-agi/agno
+          ref: v${{ needs.plan.outputs.agno }}
+          path: agno
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: fastmcp-wheels
+          path: dist
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: "3.12"
+
+      # agno's MCPTools builds its connections on fastmcp.Client and AgentOS serves
+      # MCP through FastMCP. Install it the way agno's own CI does, with FastMCP
+      # from the wheels under test.
+      - name: Install agno
+        run: |
+          uv venv --quiet venv
+          VIRTUAL_ENV=$PWD/venv uv pip install --quiet \
+            -e agno/libs/agnoctl -e "agno/libs/agno[os,mcp,pages,openai]" \
+            pytest pytest-asyncio pytest-mock aiosqlite \
+            "fastmcp @ file://$(ls $GITHUB_WORKSPACE/dist/fastmcp-4*.whl)" \
+            "fastmcp-slim @ file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_slim-*.whl)"
+          echo "$PWD/venv/bin" >> "$GITHUB_PATH"
+
+      - name: Check the build under test is installed
+        run: >-
+          python -c "import fastmcp, mcp, importlib.metadata as m;
+          assert fastmcp.__version__ == '${{ needs.plan.outputs.fastmcp }}', fastmcp.__version__;
+          print('fastmcp', fastmcp.__version__, '· mcp', m.version('mcp'), '· agno', m.version('agno'))"
+
+      - name: Run agno's MCP tests
+        working-directory: agno/libs/agno
+        run: >-
+          python -m pytest -p no:cacheprovider -q
+          --junitxml=$GITHUB_WORKSPACE/junit.xml
+          tests/unit/tools/test_mcp.py
+          tests/unit/tools/test_mcp_pagination.py
+          tests/unit/tools/test_mcp_toolbox_lifecycle.py
+          tests/unit/os/test_mcp_*.py
+          tests/unit/os/test_public_mcp_config.py
+          tests/unit/os/test_registry_mcp_tools.py
+          tests/integration/os/test_mcp_protocol_versions.py
+          tests/integration/os/test_register_mcp_tools.py
+
+      - name: Summarize
+        if: always() && hashFiles('junit.xml') != ''
+        run: python3 fastmcp/tests/downstream/_harness.py junit.xml "agno ${{ needs.plan.outputs.agno }} MCP test suite"
+
   smoke:
     name: ${{ matrix.consumer }} smoke
     needs: plan
@@ -249,16 +349,48 @@ jobs:
               --with "langchain[mcp]==${{ needs.plan.outputs.langchain }}"
               --with "fastmcp @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp-4*.whl)"
               --with "fastmcp-slim @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp_slim-*.whl)"
+          # agno[mcp] depends on fastmcp and connects through fastmcp.Client.
+          - consumer: agno
+            script: smoke_agno.py
+            with: >-
+              --with "agno[mcp]==${{ needs.plan.outputs.agno }}"
+              --with "fastmcp @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp-4*.whl)"
+              --with "fastmcp-slim @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp_slim-*.whl)"
+          # Agent Framework and the OpenAI Agents SDK connect with the mcp SDK's own
+          # client, so they reach FastMCP over the wire. Agent Framework's MCP
+          # dependencies (mcp, tenacity) come from its `all` extra; they are named
+          # here so the job does not resolve every model provider.
+          - consumer: agent-framework
+            script: smoke_agent_framework.py
+            with: >-
+              --with "agent-framework-core==${{ needs.plan.outputs.agent-framework }}"
+              --with "mcp>=2.2,<3" --with "tenacity>=9.1.4,<9.2"
+          - consumer: openai-agents
+            script: smoke_openai_agents.py
+            with: >-
+              --with "openai-agents==${{ needs.plan.outputs.openai-agents }}"
           # The adapters pin mcp<2, so they reach FastMCP over the wire.
           - consumer: langchain-mcp-adapters
             script: smoke_langchain_mcp_adapters.py
             with: >-
               --with "langchain-mcp-adapters==${{ needs.plan.outputs.langchain-mcp-adapters }}"
               --with "langchain==${{ needs.plan.outputs.langchain }}"
+          # fastmcp-tasks on the Redis credential providers deployments use:
+          # AWS's ElastiCache IAM provider and redis-entraid's Entra ID one.
+          - consumer: redis credential providers
+            script: smoke_redis_credentials.py
+            redis: true
+            with: >-
+              --with "fastmcp @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp-4*.whl)"
+              --with "fastmcp-slim @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp_slim-*.whl)"
+              --with "fastmcp-tasks @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp_tasks-*.whl)"
+              --with "botocore==${{ needs.plan.outputs.botocore }}"
+              --with "cachetools==${{ needs.plan.outputs.cachetools }}"
+              --with "redis-entraid==${{ needs.plan.outputs.redis-entraid }}"
     env:
       FASTMCP_EXPECTED_VERSION: ${{ needs.plan.outputs.fastmcp }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # The servers every smoke connects to run from this environment.
       - name: Setup uv
@@ -266,10 +398,18 @@ jobs:
         with:
           python-version: "3.12"
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: fastmcp-wheels
           path: dist
+
+      - name: Install redis-server
+        if: matrix.redis
+        run: |
+          if ! command -v redis-server >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y redis-server
+          fi
 
       # Resolved outside the project and without its config, as a user's install is.
       - name: Resolve ${{ matrix.consumer }} environment

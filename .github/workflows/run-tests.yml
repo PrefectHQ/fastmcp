@@ -30,7 +30,7 @@ jobs:
     outputs:
       run-tests: ${{ steps.classify.outputs.result }}
     steps:
-      - uses: actions/github-script@v9
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         id: classify
         with:
           script: |
@@ -73,19 +73,27 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python-version: ["3.10"]
+        python-version: ["3.11"]
         include:
           - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
             python-version: "3.13"
+          - os: ubuntu-latest
+            python-version: "3.14"
+          - os: ubuntu-latest
+            python-version: "3.15"
       fail-fast: false
     timeout-minutes: 10
 
     steps:
       # Keep local composite action definitions available to the runner.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup uv
-        if: needs.changes.outputs.run-tests != 'false' || (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10')
+        if: needs.changes.outputs.run-tests != 'false' || (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11')
         uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ matrix.python-version }}
@@ -102,24 +110,34 @@ jobs:
           test-type: client_process
 
       - name: Run documentation tests
-        if: needs.changes.outputs.run-tests == 'false' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
+        if: needs.changes.outputs.run-tests == 'false' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         run: uv run pytest tests/docs -n 0
 
   run_windows_tests:
-    if: github.event_name != 'pull_request'
-    name: "Tests: Python 3.10 on windows-latest"
+    needs: changes
+    # Run Windows tests for code changes, preserving required check names
+    # when editorial-only PRs skip the expensive steps.
+    if: ${{ !cancelled() }}
+    name: "Tests: Python ${{ matrix.python-version }} on windows-latest"
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.14"]
+      fail-fast: false
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Setup uv
+        if: needs.changes.outputs.run-tests != 'false'
         uses: ./.github/actions/setup-uv
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python-version }}
           resolution: locked
       - name: Run unit tests
+        if: needs.changes.outputs.run-tests != 'false'
         uses: ./.github/actions/run-pytest
       - name: Run serial subprocess tests
+        if: needs.changes.outputs.run-tests != 'false'
         uses: ./.github/actions/run-pytest
         with:
           test-type: client_process
@@ -133,7 +151,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup uv (lowest-direct)
         uses: ./.github/actions/setup-uv
@@ -157,7 +175,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup uv
         uses: ./.github/actions/setup-uv
@@ -165,9 +183,9 @@ jobs:
           resolution: locked
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: "24"
+          node-version: "26"
 
       - name: Run conformance tests
         uses: ./.github/actions/run-pytest
@@ -183,7 +201,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup uv
         uses: ./.github/actions/setup-uv
@@ -208,7 +226,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup uv
         uses: ./.github/actions/setup-uv

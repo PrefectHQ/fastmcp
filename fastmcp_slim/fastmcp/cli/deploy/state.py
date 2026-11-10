@@ -7,7 +7,7 @@ import json
 import os
 import subprocess
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, TypeVar
@@ -25,7 +25,8 @@ _WINDOWS_ACL_SCRIPT = r"""
 $ErrorActionPreference = "Stop"
 $path = $env:FASTMCP_STATE_PATH
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-$acl = Get-Acl -LiteralPath $path
+$item = Get-Item -LiteralPath $path -Force
+$acl = $item.GetAccessControl("Access")
 $acl.SetAccessRuleProtection($true, $false)
 foreach ($existingRule in @($acl.Access)) {
     $acl.RemoveAccessRuleSpecific($existingRule)
@@ -50,7 +51,7 @@ if ([System.IO.Directory]::Exists($path)) {
 }
 
 $acl.AddAccessRule($rule)
-Set-Acl -LiteralPath $path -AclObject $acl
+$item.SetAccessControl($acl)
 """
 
 
@@ -93,7 +94,7 @@ def _prepare_directory(path: Path) -> None:
 
 
 @contextmanager
-def state_lock(directory: Path) -> Iterator[None]:
+def state_lock(directory: Path) -> Generator[None, None, None]:
     """Lock related CLI state changes across processes."""
     _prepare_directory(directory)
     lock_path = directory / ".state.lock"

@@ -319,7 +319,37 @@ async def test_chat_completion_to_create_message_result():
         content=TextContent(type="text", text="HELPFUL CONTENT FROM A VERY SMART LLM"),
         role="assistant",
         model="gpt-4o-mini",
+        stop_reason="endTurn",
     )
+
+
+@pytest.mark.parametrize(
+    ("finish_reason", "expected"),
+    [("stop", "endTurn"), ("length", "maxTokens")],
+)
+def test_chat_completion_to_create_message_result_maps_stop_reason(
+    finish_reason: Any, expected: str
+):
+    """Without tools, a reply cut off at max_tokens must say so too."""
+    chat_completion = ChatCompletion(
+        id="123",
+        created=123,
+        model="gpt-4o-mini",
+        object="chat.completion",
+        choices=[
+            Choice(
+                message=ChatCompletionMessage(content="partial", role="assistant"),
+                finish_reason=finish_reason,
+                index=0,
+            )
+        ],
+    )
+
+    result = OpenAISamplingHandler._chat_completion_to_create_message_result(
+        chat_completion
+    )
+
+    assert result.stop_reason == expected
 
 
 def test_convert_messages_raises_on_unsupported_content_type():

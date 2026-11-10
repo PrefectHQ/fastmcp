@@ -10,7 +10,7 @@ Transport-related methods for FastMCP Server.
 
 ## Classes
 
-### `TransportMixin` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/transport.py#L68" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `TransportMixin` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/transport.py#L67" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Mixin providing transport-related methods for FastMCP.
@@ -20,7 +20,7 @@ Includes HTTP/stdio/SSE transport handling and custom HTTP routes.
 
 **Methods:**
 
-#### `run_async` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/transport.py#L74" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run_async` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/transport.py#L73" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run_async(self: FastMCP, transport: Transport | None = None, show_banner: bool | None = None, **transport_kwargs: Any) -> None
@@ -34,7 +34,7 @@ Run the FastMCP server asynchronously.
 FASTMCP_SHOW_SERVER_BANNER setting (default\: True).
 
 
-#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/transport.py#L108" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/transport.py#L107" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self: FastMCP, transport: Transport | None = None, show_banner: bool | None = None, **transport_kwargs: Any) -> None
@@ -48,7 +48,7 @@ Run the FastMCP server. Note this is a synchronous function.
 FASTMCP_SHOW_SERVER_BANNER setting (default\: True).
 
 
-#### `custom_route` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/transport.py#L131" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `custom_route` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/transport.py#L130" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 custom_route(self: FastMCP, path: str, methods: list[str], name: str | None = None, include_in_schema: bool = True) -> Callable[[Callable[[Request], Awaitable[Response]]], Callable[[Request], Awaitable[Response]]]
@@ -69,7 +69,7 @@ Starlette's reverse URL lookup feature)
 - `include_in_schema`: Whether to include in OpenAPI schema, defaults to True
 
 
-#### `run_stdio_async` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/transport.py#L215" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run_stdio_async` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/transport.py#L214" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run_stdio_async(self: FastMCP, show_banner: bool = True, log_level: str | None = None, stateless: bool = False) -> None
@@ -83,7 +83,7 @@ Run the server using stdio transport.
 - `stateless`: Whether to run in stateless mode (no session initialization)
 
 
-#### `run_http_async` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/transport.py#L258" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run_http_async` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/transport.py#L253" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run_http_async(self: FastMCP, show_banner: bool = True, transport: Literal['http', 'streamable-http', 'sse'] = 'http', host: str | None = None, port: int | None = None, log_level: str | None = None, path: str | None = None, uvicorn_config: dict[str, Any] | None = None, middleware: list[ASGIMiddleware] | None = None, json_response: bool | None = None, stateless_http: bool | None = None, stateless: bool | None = None, host_origin_protection: HostOriginProtection | None = None, allowed_hosts: list[str] | None = None, allowed_origins: list[str] | None = None, sockets: list[socket.socket] | None = None) -> None
@@ -113,10 +113,10 @@ cross-origin responses.
 - `sockets`: Pre-bound sockets to pass to Uvicorn
 
 
-#### `http_app` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/transport.py#L372" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `http_app` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/transport.py#L367" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-http_app(self: FastMCP, path: str | None = None, middleware: list[ASGIMiddleware] | None = None, json_response: bool | None = None, stateless_http: bool | None = None, transport: Literal['http', 'streamable-http', 'sse'] = 'http', event_store: EventStore | None = None, retry_interval: int | None = None, host_origin_protection: HostOriginProtection | None = None, allowed_hosts: list[str] | None = None, allowed_origins: list[str] | None = None, session_idle_timeout: float | None = None) -> StarletteWithLifespan
+http_app(self: FastMCP, path: str | None = None, middleware: list[ASGIMiddleware] | None = None, json_response: bool | None = None, stateless_http: bool | None = None, transport: Literal['http', 'streamable-http', 'sse'] = 'http', event_store: EventStore | None = None, retry_interval: int | None = None, host_origin_protection: HostOriginProtection | None = None, allowed_hosts: list[str] | None = None, allowed_origins: list[str] | None = None, session_idle_timeout: float | Literal['auto'] | None = None) -> StarletteWithLifespan
 ```
 
 Create a Starlette app using the specified HTTP transport.
@@ -144,7 +144,9 @@ Configure CORS separately when browser JavaScript must read
 cross-origin responses.
 - `session_idle_timeout`: Maximum time in seconds a streamable-HTTP
 session may remain idle before it is terminated. When None,
-falls back to the ``http_session_idle_timeout`` setting.
+falls back to the `http_session_idle_timeout` setting.
+"auto" uses the MCP SDK's default. To disable the timeout,
+set `FASTMCP_HTTP_SESSION_IDLE_TIMEOUT=none`.
 
 **Returns:**
 - A Starlette application configured with the specified transport

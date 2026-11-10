@@ -99,6 +99,31 @@ class TestListPromptsTool:
             lang_arg = next(a for a in args if a["name"] == "language")
             assert lang_arg["required"] is False
 
+    async def test_lists_highest_version_only(self):
+        """list_prompts shows one entry per name, like prompts/list does."""
+        mcp = FastMCP("Test")
+
+        @mcp.prompt(name="greet", version="1.0")
+        def greet_v1(name: str) -> str:
+            """Greet v1."""
+            return f"Hi {name}"
+
+        @mcp.prompt(name="greet", version="2.0")
+        def greet_v2(name: str, formal: str = "no") -> str:
+            """Greet v2."""
+            return f"Hello {name}"
+
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("list_prompts", {})
+            prompts = json.loads(result.data)
+
+            assert len(prompts) == 1
+            assert prompts[0]["name"] == "greet"
+            assert prompts[0]["description"] == "Greet v2."
+            assert [a["name"] for a in prompts[0]["arguments"]] == ["name", "formal"]
+
     async def test_empty_when_no_prompts(self):
         """list_prompts returns empty list when no prompts exist."""
         mcp = FastMCP("Test")

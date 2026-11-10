@@ -20,9 +20,9 @@ When you add a search transform, `list_tools()` returns just two synthetic tools
 
 The original tools are still callable. They're hidden from the listing but remain fully functional — the search transform controls *discovery*, not *access*.
 
-Both synthetic tools search across tool names, descriptions, parameter names, and parameter descriptions. A search for `"email"` would match a tool named `send_email`, a tool with "email" in its description, or a tool with an `email_address` parameter.
+`search_tools` searches across tool names, descriptions, parameter names, and parameter descriptions. A search for `"email"` would match a tool named `send_email`, a tool with "email" in its description, or a tool with an `email_address` parameter.
 
-Search results are returned in the same JSON format as `list_tools`, including the full input schema, so the LLM can construct valid calls immediately without a second round-trip.
+By default, search results are returned in the same JSON format as `list_tools`, including the full input schema, so the LLM can construct valid calls immediately without a second round-trip. See [Result Format](#result-format) to change this.
 
 ## Search Strategies
 
@@ -30,7 +30,7 @@ FastMCP provides two search transforms, plus an experimental third. They share t
 
 ### Regex Search
 
-`RegexSearchTransform` matches tools against a regex pattern using case-insensitive `re.search`. It has zero overhead and no index to build, making it a good default when the LLM knows roughly what it's looking for.
+`RegexSearchTransform` matches tools against a regex pattern using case-insensitive search. It uses Pydantic's Rust regex engine and needs no index, making it a good default when the LLM knows roughly what it's looking for.
 
 ```python
 from fastmcp import FastMCP
@@ -66,7 +66,11 @@ result = await client.call_tool("search_tools", {"pattern": "send.*email|notify"
 # Returns: send_email
 ```
 
-Results are returned in catalog order. If the pattern is invalid regex, the search returns an empty list rather than raising an error.
+Results are returned in catalog order. Patterns follow [Rust regex syntax](https://docs.rs/regex/latest/regex/#syntax), with support for groups, alternation, repetition, character classes, anchors, and inline flags. Lookahead, lookbehind, and backreferences are unsupported. Invalid or unsupported patterns, and patterns longer than 1,000 characters, return an empty list rather than raising an error.
+
+A search stops after about a second and returns the matches it found up to that point, so a costly pattern can't hold the server. Ordinary patterns finish far sooner, even across catalogs with thousands of tools. When a search stops early, the server logs a warning.
+
+If you previously used Python-specific syntax, rewrite those patterns using the supported syntax. For example, use `send.*email` instead of `send(?=.*email)` and `\z` instead of `\Z` for the end-of-text anchor. Python's `(?a)` ASCII-mode flag is unsupported.
 
 ### BM25 Search
 
@@ -133,7 +137,7 @@ A catalog no larger than `3 * shortlist` skips the wide pass.
 | --- | --- | --- |
 | `model` | `jev-latest` | TypeSafe model. Pin a versioned id once `fit_threshold` is tuned. |
 | `api_key` | `TYPESAFE_API_KEY` | TypeSafe API key. |
-| `client` | none | A ready `AsyncTypeSafeClient` to use instead of building one. |
+| `client` | none | A ready `AsyncTypeSafeClient` to use instead of building one. When set, `api_key` is not required. |
 | `shortlist` | 8 | Candidates each wide-pass request carries forward; with `close_read=True`, it must be at most half of `chunk_size` so repeated passes remain bounded. The close read sees at most three times this or 255 tools, whichever is smaller. |
 | `fit_threshold` | 0.3 | Minimum "does this tool do it" probability for a tool to be returned. |
 | `chunk_size` | 150 | Tools per wide-pass request, at most 255. |
@@ -192,11 +196,30 @@ mcp.add_transform(RegexSearchTransform(
 ))
 ```
 
+### Result Format
+
+`search_result_serializer` controls what `search_tools` returns. The default, `serialize_tools_for_output_json`, returns the same JSON as `list_tools`. `serialize_tools_for_output_markdown` renders each match as compact Markdown, which uses roughly a third of the tokens:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.transforms.search import (
+    BM25SearchTransform,
+    serialize_tools_for_output_markdown,
+)
+
+search = BM25SearchTransform(
+    search_result_serializer=serialize_tools_for_output_markdown,
+)
+mcp = FastMCP("My Server", transforms=[search])
+```
+
+A custom serializer is any function, sync or async, that takes the sequence of matching `Tool` objects and returns the tool result.
+
 ## The `call_tool` Proxy
 
 The `call_tool` proxy forwards calls to the real tool. When a client calls `call_tool(name="search_database", arguments={...})`, the proxy resolves `search_database` through the server's normal tool pipeline — including transforms and middleware — and executes it.
 
-The proxy rejects attempts to call the synthetic tools themselves. `call_tool(name="call_tool")` raises an error rather than recursing.
+The proxy rejects attempts to call the synthetic tools themselves. `call_tool(name="call_tool")` raises an error rather than recursing. It also refuses any name outside the catalog the client is allowed to see, such as an app-only or disabled tool, with an "Unknown tool" error.
 
 <Note>
 Tools discovered through search can also be called directly via `client.call_tool("search_database", {...})` without going through the proxy. The proxy exists for LLMs that only know about the tools returned by `list_tools` and need a way to invoke discovered tools through a tool they can see.
@@ -206,11 +229,12 @@ Tools discovered through search can also be called directly via `client.call_too
 
 Search results respect the full authorization pipeline. Tools filtered by middleware, visibility transforms, or component-level auth checks won't appear in search results.
 
-App-only tools are excluded too. A [MCP app](/apps/overview) can declare backend tools that only its UI may call, and normally the host keeps those from the model. A search result is tool output rather than an advertised listing, so no host filtering applies to it — the exclusion happens here instead. The `call_tool` proxy enforces the same boundary, since it executes a name the model supplies.
+App-only tools are excluded too. A [MCP app](/apps/overview) can declare backend tools intended for its UI, and hosts use that declaration to omit them from the model's tool list. A search result is tool output rather than an advertised listing, so the search transform applies that filtering itself. Its `call_tool` proxy also excludes app-only tools. [App visibility is not a security boundary](/apps/low-level#tool-visibility): clients can still call these tools directly through MCP, subject to the server's authentication and authorization checks.
 
 The search tool queries `list_tools()` through the complete pipeline at search time, so the same filtering that controls what a client sees in the listing also controls what they can discover through search.
 
 ```python
+from fastmcp import FastMCP
 from fastmcp.server.transforms import Visibility
 from fastmcp.server.transforms.search import RegexSearchTransform
 

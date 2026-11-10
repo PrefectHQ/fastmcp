@@ -11,9 +11,9 @@ import { VersionBadge } from "/snippets/version-badge.mdx";
 
 The OAuth proxy enables FastMCP servers to authenticate with OAuth providers that **don't support Dynamic Client Registration (DCR)**. This includes virtually all traditional OAuth providers: GitHub, Google, Azure, AWS, Discord, Facebook, and most enterprise identity systems. For providers that do support DCR (like Descope and WorkOS AuthKit), use [`RemoteAuthProvider`](/servers/auth/remote-oauth) instead.
 
-MCP clients expect to register automatically and obtain credentials on the fly, but traditional providers require manual app registration through their developer consoles. The OAuth proxy bridges this gap by presenting a DCR-compliant interface to MCP clients while using your pre-registered credentials with the upstream provider. When a client attempts to register, the proxy returns your fixed credentials. When a client initiates authorization, the proxy handles the complexity of callback forwarding—storing the client's dynamic callback URL, using its own fixed callback with the provider, then forwarding back to the client after token exchange.
+MCP clients expect to register automatically and obtain credentials on the fly, but traditional providers require manual app registration through their developer consoles. The OAuth proxy bridges this gap by presenting a DCR-compliant interface to MCP clients while using your pre-registered credentials with the upstream provider. When a client registers, the proxy records it locally as a public client; your upstream credentials never leave the server. When a client initiates authorization, the proxy handles the complexity of callback forwarding—storing the client's dynamic callback URL, using its own fixed callback with the provider, then forwarding back to the client after token exchange.
 
-This approach enables any MCP client (whether using random localhost ports or fixed URLs like Claude.ai) to authenticate with any traditional OAuth provider, all while maintaining full OAuth 2.1 and PKCE security.
+This approach enables any MCP client (whether using random localhost ports or fixed URLs like Claude.ai) to authenticate with traditional OAuth providers. By default, the proxy applies consent and browser-binding protections and forwards PKCE upstream. Options that disable these checks reduce the corresponding security protections, as described below.
 
 <Note>
   For providers that support OIDC discovery (Auth0, Google with OIDC
@@ -187,9 +187,10 @@ mcp = FastMCP(name="My Server", auth=auth)
   tokens with the upstream provider. - `"client_secret_basic"`: Send credentials
   in Authorization header (most common) - `"client_secret_post"`: Send
   credentials in request body (required by some providers) - `"none"`: No
-  authentication (for public clients) - `None` (default): Uses authlib's default
-  (typically `"client_secret_basic"`) Set this if your provider requires a
-  specific authentication method and the default doesn't work.
+  authentication (for public clients) - `None` (default):
+  `"client_secret_basic"` when a client secret is configured, `"none"`
+  otherwise. Set this if your provider requires a specific authentication method
+  and the default doesn't work.
 </ParamField>
 
 <ParamField body="allowed_client_redirect_uris" type="list[str] | None">
@@ -321,7 +322,7 @@ auth = OAuthProxy(..., client_storage=MemoryStore())
   Ordinary upstream OAuth consent is generally not equivalent. It typically authorizes FastMCP's shared upstream application without identifying the downstream MCP client or binding approval to that client's transaction. Use `"external"` only when your surrounding authorization system supplies those protections.
 
   **`False` — disable entirely:**
-  Authorization proceeds directly to the upstream provider without any consent UI. Logs a security warning. Only for local development or testing.
+  Authorization proceeds directly to the upstream provider without FastMCP's consent UI or browser-binding checks. This removes the proxy's protections against confused deputy and AS-in-the-middle attacks. Logs a security warning. Only for local development or testing.
 
   ```python
   # Development/testing only - skip consent screen
@@ -338,12 +339,38 @@ auth = OAuthProxy(..., client_storage=MemoryStore())
   ```
 
   <Warning>
-    Both `False` and `"external"` disable FastMCP's consent and browser-binding protections. `False` warns about this configuration; `"external"` suppresses the warning because it is an operator acknowledgment that equivalent protections exist elsewhere. Prefer the default `True` unless you own that external authorization flow.
+    Both `False` and `"external"` disable FastMCP's consent and browser-binding protections and reduce security unless equivalent checks are enforced elsewhere. `"external"` changes logging, not the authorization path: it does not make the flow safe, and FastMCP does not verify the external protections. Without equivalent enforcement, these modes leave the flow exposed to confused deputy and AS-in-the-middle attacks. Prefer the default `True`.
   </Warning>
+</ParamField>
+
+<ParamField body="fallback_access_token_expiry_seconds" type="int | None">
+  Access token lifetime to assume when the upstream token response omits
+  `expires_in`. Defaults to 1 hour when the upstream issues a refresh token, and
+  1 year when it does not (for API-key-style tokens such as GitHub OAuth Apps).
+</ParamField>
+
+<ParamField body="fallback_refresh_token_expiry_seconds" type="int | None">
+  Lifetime of the FastMCP-issued refresh token when the upstream response omits
+  `refresh_expires_in`. Defaults to 1 year. The upstream refresh remains
+  authoritative: if the provider rejects it, the client receives `invalid_grant`
+  and re-authenticates.
+</ParamField>
+
+<ParamField body="fastmcp_access_token_expiry_seconds" type="int | None">
+  Lifetime of the FastMCP-issued access token, decoupled from the upstream
+  `expires_in`. Defaults to the upstream lifetime. See [Token
+  Architecture](#token-architecture).
+</ParamField>
+
+<ParamField body="token_expiry_threshold_seconds" type="int" default="0">
+  Treat upstream tokens as expired this many seconds before their actual expiry,
+  so a token that is about to expire is refreshed before use.
 </ParamField>
 
 <ParamField body="consent_csp_policy" type="str | None" default="None">
   Content Security Policy for the consent page.
+
+  Setting `""` removes FastMCP's consent-page CSP, and a custom policy replaces the built-in policy. Disabling or weakening it reduces browser protections against content injection unless your deployment supplies an equivalent CSP header; FastMCP does not verify that header.
 
   - `None` (default): Uses the built-in CSP policy with appropriate directives for form submission
   - Empty string `""`: Disables CSP entirely (no meta tag rendered)
@@ -366,6 +393,7 @@ auth = OAuthProxy(..., client_storage=MemoryStore())
 FastMCP includes pre-configured providers for common services:
 
 ```python
+from fastmcp import FastMCP
 from fastmcp.server.auth.providers.github import GitHubProvider
 
 auth = GitHubProvider(
@@ -401,7 +429,40 @@ OAuth scopes control what permissions your application requests from users. They
 JWTVerifier(..., required_scopes = ["read:user", "write:data"])
 ```
 
-Dynamic clients created by the proxy will automatically include these scopes in their authorization requests. See the [Token Verification](#token-verification) section below for detailed setup.
+Dynamic clients created by the proxy will automatically include these scopes in their authorization requests. See the [Token Verification](#token-verification) section above for detailed setup.
+
+`required_scopes` and `valid_scopes` play different roles. `required_scopes` is what every token must carry, and it is the set the `WWW-Authenticate` challenge tells clients to request. `valid_scopes` is the catalog of scopes clients may request, advertised as `scopes_supported` in protected resource metadata. MCP clients that follow the challenge request only the required scopes, so a scope that appears only in `valid_scopes` stays optional.
+
+When your tools depend on scopes that clients won't know to ask for, you have two options. Adding them to `required_scopes` makes them mandatory, so token validation rejects any token without them. Overriding `get_challenge_scopes` asks clients to request them up front while validation stays on the narrower set. FastMCP calls the method with no argument for the server-wide challenge:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.google import GoogleProvider
+
+GMAIL_READONLY = "https://www.googleapis.com/auth/gmail.readonly"
+
+
+class GmailProvider(GoogleProvider):
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        if required_scopes is None:
+            return self.scopes_supported
+        return required_scopes
+
+
+auth = GmailProvider(
+    client_id="123456789.apps.googleusercontent.com",
+    client_secret="GOCSPX-abc123...",
+    base_url="http://localhost:8000",
+    required_scopes=["openid"],
+    valid_scopes=["openid", GMAIL_READONLY],
+)
+
+mcp = FastMCP("Gmail Server", auth=auth)
+```
+
+The override also sets the default challenge when the provider is wrapped in `MultiAuth`. Passing `required_scopes` to `MultiAuth` replaces it with exactly the scopes you pass.
 
 ### Custom Parameters
 
@@ -440,7 +501,7 @@ sequenceDiagram
 
     Note over Client, Proxy: Dynamic Registration (Local)
     Client->>Proxy: 1. POST /register<br/>redirect_uri: localhost:54321/callback
-    Proxy-->>Client: 2. Returns fixed upstream credentials
+    Proxy-->>Client: 2. Returns local client registration<br/>(public client, no secret)
 
     Note over Client, User: Authorization with User Consent
     Client->>Proxy: 3. GET /authorize<br/>redirect_uri=localhost:54321/callback<br/>code_challenge=CLIENT_CHALLENGE
@@ -468,7 +529,7 @@ The flow diagram above illustrates the complete OAuth proxy pattern. Let's under
 
 ### Registration Phase
 
-When an MCP client calls `/register` with its dynamic callback URL, the proxy responds with your pre-configured upstream credentials. The client stores these credentials believing it has registered a new app. Meanwhile, the proxy records the client's callback URL for later use.
+When an MCP client calls `/register` with its dynamic callback URL, the proxy validates the redirect URIs and stores the registration in its own client storage. The client receives a standard DCR response for a public client (`token_endpoint_auth_method` of `none`, no client secret). Your upstream client ID and secret are never sent to the client; the proxy uses them itself when it talks to the provider.
 
 ### Authorization Phase
 
@@ -479,7 +540,7 @@ The client initiates OAuth by redirecting to the proxy's `/authorize` endpoint. 
 3. Shows the user a consent page with the client's details, redirect URI, and requested scopes
 4. If the user approves (or the client was previously approved), sets a consent binding cookie and redirects to the upstream provider using the fixed callback URL
 
-This dual-PKCE approach maintains end-to-end security at both the client-to-proxy and proxy-to-provider layers. The consent step protects against confused deputy attacks by ensuring you explicitly approve each client before it can complete authorization, and the consent binding cookie ensures that only the browser that approved consent can complete the callback.
+With the default configuration, this dual-PKCE approach protects both the client-to-proxy and proxy-to-provider layers. The consent step protects against confused deputy attacks by requiring explicit client approval, and the consent binding cookie ensures that only the browser that approved consent can complete the callback. `require_authorization_consent=False` and `"external"` skip both consent and cookie verification; `"remember"` can silently approve return visits and provides weaker protection than `True`.
 
 ### Callback Phase
 
@@ -506,10 +567,10 @@ The OAuth proxy implements a **token factory pattern**: instead of directly forw
 When an MCP client completes authorization, the proxy:
 
 1. **Receives upstream tokens** from the OAuth provider (GitHub, Google, etc.)
-2. **Encrypts and stores** these tokens using Fernet encryption (AES-128-CBC + HMAC-SHA256)
+2. **Stores** these tokens in `client_storage`. The default store encrypts them with Fernet (AES-128-CBC + HMAC-SHA256); wrap a custom store in `FernetEncryptionWrapper` for the same protection
 3. **Issues FastMCP JWT tokens** to the client, signed with HS256
 
-The FastMCP JWT contains minimal claims: issuer, audience, client ID, scopes, expiration, and a unique token identifier (JTI). The JTI acts as a reference linking to the encrypted upstream token.
+The FastMCP JWT contains minimal claims: issuer, audience, client ID, scopes, issued-at and expiration times, and a unique token identifier (JTI). Providers that extract claims from the upstream token embed them under an `upstream_claims` claim. The JTI acts as a reference linking to the encrypted upstream token.
 
 **Token validation:**
 
@@ -559,6 +620,8 @@ The proxy issues its own refresh tokens that map to upstream refresh tokens. Whe
 
 The OAuth proxy automatically handles PKCE (Proof Key for Code Exchange) when working with providers that support or require it. The proxy generates its own PKCE parameters to send upstream while separately validating the client's PKCE, ensuring end-to-end security at both layers.
 
+Setting `forward_pkce=False` removes PKCE from the proxy-to-provider exchange, reducing protection against upstream authorization-code interception. Client-to-proxy PKCE remains enforced. Use this override only for an upstream provider that cannot support PKCE.
+
 This is enabled by default via the `forward_pkce` parameter and works seamlessly with providers like Google, Azure AD, and GitHub. Only disable it for legacy providers that don't support PKCE:
 
 ```python
@@ -594,7 +657,7 @@ auth = OAuthProxy(
 )
 ```
 
-Check your server logs for "Client registered with redirect_uri" messages to identify what URLs your clients use.
+With debug logging enabled, the proxy logs a "Client registered with redirect_uri" message for each registration, which shows the URLs your clients use.
 
 ### Application Type (Web vs. Native)
 
@@ -665,13 +728,15 @@ To use `private_key_jwt`, the CIMD document must include either a `jwks_uri` (UR
 
 The OAuth proxy validates JWT assertions according to RFC 7523, checking the signature, issuer, audience, subject claims, and preventing replay attacks via JTI tracking.
 
+Assertions may be signed with an RSA or EC key using `RS256`, `RS384`, `RS512`, `PS256`, `PS384`, `PS512`, `ES256`, `ES384`, or `ES512`. Other algorithms, including symmetric ones such as `HS256`, are rejected.
+
 ### Security Considerations
 
 CIMD provides several security advantages over DCR:
 
 - **Verified identity**: The domain in the `client_id` URL is verified by HTTPS, so users know which organization is requesting access
 - **No registration required**: Clients don't need to store or manage dynamically-issued credentials
-- **Redirect URI enforcement**: CIMD documents must declare `redirect_uris`, which are enforced by the proxy (wildcard patterns supported)
+- **Redirect URI enforcement**: CIMD documents must declare `redirect_uris`, which are enforced by the proxy (wildcard patterns supported). `http` and `https` redirects must name a host; native apps may also declare private-use schemes such as `com.example.app:/callback`
 - **SSRF protection**: The OAuth proxy blocks fetches to localhost, private IPs, and reserved addresses
 - **Replay prevention**: For `private_key_jwt` clients, JTI claims are tracked to prevent assertion replay
 - **Cache-aware fetching**: CIMD documents are cached according to HTTP cache headers and revalidated when required
@@ -700,12 +765,17 @@ To enable it, pass an `IdentityAssertion` configuration listing the issuers you 
 ```python
 from fastmcp import FastMCP
 from fastmcp.server.auth import OAuthProxy, IdentityAssertion
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 auth = OAuthProxy(
     upstream_authorization_endpoint="https://accounts.example.com/authorize",
     upstream_token_endpoint="https://accounts.example.com/token",
     upstream_client_id="your-client-id",
     upstream_client_secret="your-client-secret",
+    token_verifier=JWTVerifier(
+        jwks_uri="https://accounts.example.com/.well-known/jwks.json",
+        issuer="https://accounts.example.com",
+    ),
     base_url="https://your-server.com",
     identity_assertion=IdentityAssertion(
         trusted_issuers=["https://login.acme-corp.com"],
@@ -731,7 +801,7 @@ For each ID-JAG presented at the token endpoint, the proxy checks that:
 - the JOSE header `typ` is `oauth-id-jag+jwt`;
 - the `iss` claim is one of the configured `trusted_issuers`;
 - the signature verifies against the issuer's published keys;
-- the `aud` claim identifies this authorization server — configure your identity provider to mint assertions whose `aud` is the `issuer` value published at `/.well-known/oauth-authorization-server`, which is your `issuer_url` when you set one and your `base_url` otherwise;
+- the `aud` claim identifies this authorization server — configure your identity provider to mint assertions whose `aud` is the `issuer` value published at `/.well-known/oauth-authorization-server`, which is your `issuer_url` when you set one and your `base_url` otherwise (set `audience` on `IdentityAssertion` only if your IdP binds assertions to a different identifier);
 - the signed `client_id` claim matches the client presenting the assertion — an assertion the IdP minted for one client cannot be redeemed by another;
 - the signed `resource` claim names this server — an assertion minted for a different MCP server behind the same IdP is rejected;
 - `exp` (and `iat`/`nbf`, when present) place the assertion within a short lifetime and its validity window; and
@@ -773,13 +843,19 @@ The OAuth proxy requires cryptographic keys for JWT signing and storage encrypti
 On every platform, FastMCP deterministically derives `jwt_signing_key` from `upstream_client_secret` using HKDF, and storage defaults to an encrypted disk store in your platform's data directory (derived from `platformdirs`). Tokens survive server restarts as long as `upstream_client_secret` doesn't change. This is **only** suitable for development and local testing.
 
 **For production:**
-Configure the following parameters together: provide a unique `jwt_signing_key` (for signing FastMCP JWTs), and a shared `client_storage` backend (for storing tokens). Both are required for production deployments. Use a network-accessible storage backend like Redis or DynamoDB rather than local disk storage. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** (see the `client_storage` parameter documentation above for examples). The keys accept any secret string and derive proper cryptographic keys using HKDF. See [OAuth Token Security](/deployment/http#oauth-token-security) and [Storage Backends](/servers/storage-backends) for complete production setup.
+Configure the following parameters together: provide a unique `jwt_signing_key` (for signing FastMCP JWTs), and a shared `client_storage` backend (for storing tokens). Both are required for production deployments. Use a network-accessible storage backend like Redis or DynamoDB rather than local disk storage. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** (see the `client_storage` parameter documentation above for examples). A string `jwt_signing_key` is stretched into a 32-byte key with PBKDF2, as described under the `jwt_signing_key` parameter. See [OAuth Token Security](/deployment/http#oauth-token-security) and [Storage Backends](/servers/storage-backends) for complete production setup.
+
+#### Expired state cleanup
+
+The default file store accumulates expired entries on disk (authorization transaction state, auth codes, upstream tokens, and JTI mappings). FastMCP reaps them in the background as the proxy handles OAuth traffic, at most once an hour, and the first flow after a restart clears whatever previous runs left behind. Entries without a TTL (e.g. DCR client registrations) are left untouched, and a custom `client_storage` is never culled: expiry there is the backend's job.
 
 ### Confused Deputy Attacks
 
 <VersionBadge version="2.13.0" />
 
 A confused deputy attack allows a malicious client to steal your authorization by tricking you into granting it access under your identity.
+
+The consent and browser-session protections described here apply when `require_authorization_consent` is `True` or `"remember"`. Setting it to `False` or `"external"` disables both protections. Ordinary upstream OAuth consent generally approves FastMCP's shared upstream application, not the downstream MCP client's transaction, so it does not replace these checks.
 
 The OAuth proxy works by bridging DCR clients to traditional auth providers, which means that multiple MCP clients connect through a single upstream OAuth application. An attacker can exploit this shared application by registering a malicious client with their own redirect URI, then sending you an authorization link. When you click it, your browser goes through the OAuth flow—but since you may have already authorized this OAuth app before, the provider might auto-approve the request. The authorization code then gets sent to the attacker's redirect URI instead of a legitimate client, giving them access under your credentials.
 

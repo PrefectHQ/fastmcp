@@ -2,14 +2,17 @@
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator
+import datetime
+import gc
+import weakref
+from collections.abc import AsyncGenerator
 from typing import Any, cast
 
 import anyio
 import pytest
 from mcp import ClientSession, MCPError
 from mcp_types import TextContent
-from pydantic import AnyUrl
+from pydantic import AnyUrl, BaseModel
 
 import fastmcp
 from fastmcp.client import Client
@@ -18,6 +21,8 @@ from fastmcp.client.transports import (
     FastMCPTransport,
 )
 from fastmcp.server.server import FastMCP
+from fastmcp.tools import ToolResult
+from fastmcp.tools.base import Tool
 from tests.conftest import user_meta
 
 
@@ -438,7 +443,7 @@ class _DelayedConnectTransport(ClientTransport):
     @contextlib.asynccontextmanager
     async def connect_session(
         self, **session_kwargs: Any
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         self._connect_started.set()
         await self._allow_connect.wait()
         async with self._inner.connect_session(**session_kwargs) as session:
@@ -462,7 +467,7 @@ class _DelayedDisconnectTransport(ClientTransport):
     @contextlib.asynccontextmanager
     async def connect_session(
         self, **session_kwargs: Any
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         async with self._inner.connect_session(**session_kwargs) as session:
             try:
                 yield session
@@ -502,6 +507,59 @@ async def test_client_nested_context_manager(fastmcp_server):
     # After connection
     assert not client.is_connected()
     assert client._session_state.session is None
+
+
+async def test_client_context_does_not_keep_entering_task_alive(fastmcp_server):
+    """A context entered in a task and released with close() leaves nothing behind."""
+    client = Client(fastmcp_server)
+    refs = []
+    for _ in range(3):
+        task = asyncio.create_task(client.__aenter__())
+        await task
+        refs.append(weakref.ref(task))
+        del task
+        await client.close()
+
+    async with client:
+        result = await client.call_tool("greet", {"name": "World"})
+    assert result.data == "Hello, World!"
+
+    gc.collect()
+    assert [ref() for ref in refs] == [None, None, None]
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+async def test_stale_client_context_does_not_disconnect_reconnected_session(
+    fastmcp_server, mode
+):
+    client = Client(fastmcp_server, mode=mode)
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    exited = asyncio.Event()
+
+    async def old_context() -> None:
+        async with client:
+            entered.set()
+            await release.wait()
+        exited.set()
+
+    old_task = asyncio.create_task(old_context())
+    await entered.wait()
+    await client.close()
+
+    try:
+        async with client:
+            first = await client.call_tool("greet", {"name": "World"})
+            assert first.data == "Hello, World!"
+
+            release.set()
+            await exited.wait()
+
+            second = await client.call_tool("greet", {"name": "World"})
+            assert second.data == "Hello, World!"
+    finally:
+        release.set()
+        await old_task
 
 
 async def test_client_context_entry_cancelled_starter_cleans_up(fastmcp_server):
@@ -868,6 +926,73 @@ async def test_client_does_not_unwrap_dict_result():
         assert user_meta(result.meta) is None
 
 
+async def test_client_decodes_empty_structured_content():
+    """An empty object is a valid structured result, not a missing one (issue #5287)."""
+    server = FastMCP()
+
+    class Empty(BaseModel):
+        pass
+
+    @server.tool
+    def empty_dict() -> dict[str, str]:
+        return {}
+
+    @server.tool
+    def empty_model() -> Empty:
+        return Empty()
+
+    client = Client(transport=FastMCPTransport(server))
+    async with client:
+        dict_result = await client.call_tool("empty_dict", {})
+        assert dict_result.structured_content == {}
+        assert dict_result.data == {}
+        assert type(dict_result.data) is dict
+
+        model_result = await client.call_tool("empty_model", {})
+        assert model_result.structured_content == {}
+        assert model_result.data == {}
+        assert type(model_result.data) is dict
+
+
+@pytest.mark.parametrize("structured_content", [{}, {"value": "present"}, None])
+async def test_client_structured_content_without_output_schema(structured_content):
+    server = FastMCP()
+
+    @server.tool(output_schema=None)
+    def raw_result() -> ToolResult:
+        return ToolResult(content=[], structured_content=structured_content)
+
+    async with Client(server) as client:
+        result = await client.call_tool("raw_result")
+
+    assert result.structured_content == structured_content
+    assert result.data == structured_content
+    assert type(result.data) is type(structured_content)
+
+
+@pytest.mark.parametrize("list_first", [False, True])
+async def test_client_hydrates_data_for_tool_beyond_first_list_page(list_first: bool):
+    """A tool's output schema is found even when it is not on the first page."""
+    server = FastMCP(list_page_size=1)
+
+    @server.tool
+    def first() -> int:
+        return 1
+
+    @server.tool
+    def when() -> datetime.datetime:
+        return datetime.datetime(2026, 1, 1, 12, 0)
+
+    async with Client(server) as client:
+        if list_first:
+            await client.list_tools()
+        result = await client.call_tool("when")
+
+    assert result.structured_content == {"result": "2026-01-01T12:00:00"}
+    assert result.data == datetime.datetime(2026, 1, 1, 12, 0)
+    assert type(result.data) is datetime.datetime
+
+
 async def test_client_list_dict_return_type():
     """list[dict] return type should produce list of dicts, not Root() objects (issue #3867)."""
     server = FastMCP()
@@ -884,6 +1009,40 @@ async def test_client_list_dict_return_type():
     async with client:
         result = await client.call_tool("get_temperatures", {})
         assert result.data == [{"city": "NYC", "temp": 72}, {"city": "LA", "temp": 85}]
+
+
+async def test_client_decodes_unique_object_array():
+    """Object arrays with uniqueItems should populate CallToolResult.data."""
+    server = FastMCP()
+
+    async def list_users() -> dict:
+        return {"users": [{"id": 1, "admin": True}, {"id": 2, "admin": False}]}
+
+    server.add_tool(
+        Tool.from_function(
+            list_users,
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "users": {
+                        "type": "array",
+                        "uniqueItems": True,
+                        "items": {"type": "object"},
+                    }
+                },
+                "required": ["users"],
+            },
+        )
+    )
+
+    async with Client(server) as client:
+        result = await client.call_tool("list_users", {})
+
+    assert result.data is not None
+    assert result.data.users == [
+        {"id": 1, "admin": True},
+        {"id": 2, "admin": False},
+    ]
 
 
 def test_client_new_preserves_internal_task_extension(fastmcp_server):
@@ -916,7 +1075,7 @@ class _ReconnectGateTransport(ClientTransport):
     @contextlib.asynccontextmanager
     async def connect_session(
         self, **session_kwargs: Any
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         self.connects += 1
         if self.connects > 1:
             self.reconnect_started.set()

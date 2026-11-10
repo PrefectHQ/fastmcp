@@ -193,7 +193,8 @@ def create_consent_html(
 
     # Determine CSP policy to use
     # If csp_policy is None, build the default CSP policy
-    # If csp_policy is empty string, CSP will be disabled entirely in create_page
+    # An empty policy removes this page's CSP protection against content injection.
+    # A deployment-supplied CSP header may replace it, but is not verified here.
     # If csp_policy is a non-empty string, use it as-is
     if csp_policy is None:
         # The consent form posts to itself (action="") and all subsequent redirects

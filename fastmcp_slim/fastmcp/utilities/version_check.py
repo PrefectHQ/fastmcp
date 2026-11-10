@@ -38,8 +38,16 @@ def _read_cache(include_prereleases: bool = False) -> tuple[str | None, float]:
 
     try:
         data = json.loads(cache_path.read_text())
-        return data.get("latest_version"), data.get("timestamp", 0)
-    except (json.JSONDecodeError, OSError):
+        version = data.get("latest_version")
+        timestamp = data.get("timestamp", 0)
+        if (
+            not isinstance(version, str)
+            or isinstance(timestamp, bool)
+            or not isinstance(timestamp, int | float)
+        ):
+            return None, 0
+        return version, timestamp
+    except (json.JSONDecodeError, OSError, AttributeError):
         return None, 0
 
 
@@ -91,7 +99,7 @@ def _fetch_latest_version(include_prereleases: bool = False) -> str | None:
 
         return str(max(versions))
 
-    except (httpx2.HTTPError, json.JSONDecodeError, KeyError):
+    except (httpx2.HTTPError, httpx2.InvalidURL, json.JSONDecodeError, KeyError):
         return None
 
 

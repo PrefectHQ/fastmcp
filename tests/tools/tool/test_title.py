@@ -1,6 +1,10 @@
+from typing import Annotated
+
 import pytest
 from mcp_types import ToolAnnotations
+from pydantic import Field
 
+from fastmcp import Client, Context, FastMCP
 from fastmcp.tools.base import Tool
 
 
@@ -127,3 +131,88 @@ class TestToolTitle:
         # Should fall back to annotations.title
         mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.title == "Annotation Title"
+
+
+class TestParameterTitles:
+    """Explicit Field(title=...) on a parameter reaches the input schema."""
+
+    def test_explicit_title_is_kept(self):
+        def get_bill(
+            account: Annotated[
+                str, Field(title="Account Number", description="The account.")
+            ],
+        ) -> str:
+            return "ok"
+
+        tool = Tool.from_function(get_bill)
+
+        assert tool.parameters["properties"]["account"] == {
+            "description": "The account.",
+            "title": "Account Number",
+            "type": "string",
+        }
+
+    def test_title_from_field_default_is_kept(self):
+        def search(limit: int = Field(10, title="Max Results")) -> str:
+            return "ok"
+
+        tool = Tool.from_function(search)
+
+        assert tool.parameters["properties"]["limit"]["title"] == "Max Results"
+
+    def test_title_on_optional_parameter_is_kept(self):
+        def search(
+            limit: Annotated[int | None, Field(title="Max Results")] = None,
+        ) -> str:
+            return "ok"
+
+        tool = Tool.from_function(search)
+
+        assert tool.parameters["properties"]["limit"] == {
+            "anyOf": [{"type": "integer"}, {"type": "null"}],
+            "default": None,
+            "title": "Max Results",
+        }
+
+    def test_title_on_optional_parameter_is_kept_with_context(self):
+        def search(
+            ctx: Context,
+            limit: Annotated[int | None, Field(title="Max Results")] = None,
+        ) -> str:
+            return "ok"
+
+        tool = Tool.from_function(search)
+
+        assert tool.parameters["properties"]["limit"] == {
+            "anyOf": [{"type": "integer"}, {"type": "null"}],
+            "default": None,
+            "title": "Max Results",
+        }
+
+    def test_derived_titles_are_still_pruned(self):
+        def get_bill(
+            account: str,
+            account_id: Annotated[int, Field(description="The id.")],
+            title: str = "untitled",
+        ) -> str:
+            return "ok"
+
+        tool = Tool.from_function(get_bill)
+
+        for schema in tool.parameters["properties"].values():
+            assert "title" not in schema
+        assert "title" not in tool.parameters
+
+    async def test_explicit_title_reaches_client(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def get_bill(
+            account: Annotated[str, Field(title="Account Number")],
+        ) -> str:
+            return "ok"
+
+        async with Client(mcp) as client:
+            [tool] = await client.list_tools()
+
+        assert tool.input_schema["properties"]["account"]["title"] == "Account Number"

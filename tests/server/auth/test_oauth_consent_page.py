@@ -3,6 +3,7 @@
 import re
 import secrets
 import time
+from http.cookies import SimpleCookie
 from unittest.mock import Mock
 from urllib.parse import parse_qs, urlparse
 
@@ -13,6 +14,8 @@ from mcp.shared.auth import OAuthClientInformationFull
 from mcp_types import Icon
 from pydantic import AnyUrl
 from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import RedirectResponse
 from starlette.testclient import TestClient
 
 from fastmcp import FastMCP
@@ -98,6 +101,155 @@ def _extract_csrf(html: str) -> str | None:
     """Extract CSRF token from HTML form."""
     m = re.search(r"name=\"csrf_token\"\s+value=\"([^\"]+)\"", html)
     return m.group(1) if m else None
+
+
+def _request_with_cookies(cookies: dict[str, str]) -> Request:
+    cookie_header = "; ".join(f"{name}={value}" for name, value in cookies.items())
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(b"cookie", cookie_header.encode())] if cookie_header else [],
+        }
+    )
+
+
+def _apply_set_cookies(cookies: dict[str, str], response) -> None:
+    for header in response.headers.getlist("set-cookie"):
+        parsed = SimpleCookie()
+        parsed.load(header)
+        for name, morsel in parsed.items():
+            if morsel["max-age"] == "0":
+                cookies.pop(name, None)
+            else:
+                cookies[name] = morsel.value
+
+
+def _set_cookie_value(response, name: str) -> str:
+    for header in response.headers.getlist("set-cookie"):
+        parsed = SimpleCookie()
+        parsed.load(header)
+        if name in parsed:
+            return parsed[name].value
+    raise AssertionError(f"Set-Cookie header for {name!r} was not found")
+
+
+def _cookie_max_age(response, name: str) -> str | None:
+    for header in response.headers.getlist("set-cookie"):
+        parsed = SimpleCookie()
+        parsed.load(header)
+        if name in parsed:
+            return parsed[name]["max-age"]
+    return None
+
+
+class TestConsentBindingCookies:
+    def test_concurrent_bindings_are_independent_and_order_independent(
+        self, oauth_proxy_https
+    ):
+        """Two responses from one cookie snapshot preserve both browser bindings."""
+        first = RedirectResponse("https://idp.example/authorize")
+        second = RedirectResponse("https://idp.example/authorize")
+        oauth_proxy_https._set_consent_binding_cookie(
+            first, "transaction-one", "token-one"
+        )
+        oauth_proxy_https._set_consent_binding_cookie(
+            second, "transaction-two", "token-two"
+        )
+
+        first_name = oauth_proxy_https._consent_binding_cookie_name("transaction-one")
+        second_name = oauth_proxy_https._consent_binding_cookie_name("transaction-two")
+        first_value = _set_cookie_value(first, first_name)
+        assert first_name != second_name
+
+        for responses in ((first, second), (second, first)):
+            browser_cookies: dict[str, str] = {}
+            for response in responses:
+                _apply_set_cookies(browser_cookies, response)
+
+            request = _request_with_cookies(browser_cookies)
+            assert oauth_proxy_https._verify_consent_binding_cookie(
+                request, "transaction-one", "token-one"
+            )
+            assert oauth_proxy_https._verify_consent_binding_cookie(
+                request, "transaction-two", "token-two"
+            )
+            assert not oauth_proxy_https._verify_consent_binding_cookie(
+                _request_with_cookies({}), "transaction-one", "token-one"
+            )
+
+            tampered = dict(browser_cookies)
+            tampered[first_name] = (
+                "A" if first_value[0] != "A" else "B"
+            ) + first_value[1:]
+            assert not oauth_proxy_https._verify_consent_binding_cookie(
+                _request_with_cookies(tampered), "transaction-one", "token-one"
+            )
+
+            cleared = RedirectResponse("https://client.example/callback")
+            oauth_proxy_https._clear_consent_binding_cookie(cleared, "transaction-one")
+            assert _cookie_max_age(cleared, first_name) == "0"
+            assert _cookie_max_age(cleared, second_name) is None
+
+    def test_concurrent_bindings_from_one_snapshot_fit_cookie_header(
+        self, oauth_proxy_https
+    ):
+        """Concurrent Set-Cookie responses keep every compact binding."""
+        bindings = {
+            f"{index:032x}-0000-0000-0000-000000000000": secrets.token_urlsafe(32)
+            for index in range(20)
+        }
+        responses = []
+        for txn_id, token in bindings.items():
+            response = RedirectResponse("https://idp.example/authorize")
+            oauth_proxy_https._set_consent_binding_cookie(
+                response,
+                txn_id,
+                token,
+            )
+            responses.append(response)
+
+        browser_cookies: dict[str, str] = {}
+        for response in responses:
+            _apply_set_cookies(browser_cookies, response)
+
+        assert len(browser_cookies) == len(bindings)
+        cookie_header = "; ".join(
+            f"{name}={value}" for name, value in browser_cookies.items()
+        )
+        assert len(cookie_header.encode()) < 4096
+
+        request = _request_with_cookies(browser_cookies)
+        for txn_id, token in bindings.items():
+            assert oauth_proxy_https._verify_consent_binding_cookie(
+                request, txn_id, token
+            )
+
+    def test_legacy_binding_cookie_remains_valid_during_upgrade(
+        self, oauth_proxy_https
+    ):
+        """An in-flight flow using the old shared cookie can still finish."""
+        import base64
+        import json
+
+        bindings = {"legacy-one": "token-one", "legacy-two": "token-two"}
+        encoded = base64.b64encode(
+            json.dumps(bindings, separators=(",", ":")).encode()
+        ).decode()
+        legacy_value = oauth_proxy_https._sign_cookie(encoded)
+        request = _request_with_cookies({"__Host-MCP_CONSENT_BINDING": legacy_value})
+
+        assert oauth_proxy_https._verify_consent_binding_cookie(
+            request, "legacy-one", "token-one"
+        )
+        assert oauth_proxy_https._verify_consent_binding_cookie(
+            request, "legacy-two", "token-two"
+        )
+
+        cleared = RedirectResponse("https://client.example/callback")
+        oauth_proxy_https._clear_consent_binding_cookie(cleared, "legacy-one")
+        assert _cookie_max_age(cleared, "__Host-MCP_CONSENT_BINDING") is None
 
 
 class TestConsentPageServerIcon:

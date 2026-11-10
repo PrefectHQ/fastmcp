@@ -1,5 +1,7 @@
 import asyncio
+import contextlib
 import gc
+import importlib
 import inspect
 import os
 import time
@@ -12,7 +14,11 @@ import pytest
 from mcp.shared.exceptions import MCPError
 
 from fastmcp import Client
-from fastmcp.client.transports import PythonStdioTransport, StdioTransport
+from fastmcp.client.transports import (
+    FastMCPStdioTransport,
+    PythonStdioTransport,
+    StdioTransport,
+)
 from fastmcp.exceptions import FastMCPError
 
 # A pure-stdlib MCP server used by the process-lifecycle tests below. It starts
@@ -47,7 +53,9 @@ async def wait_for_log_content(
 
     async def _poll() -> str:
         while True:
-            content = log_file_path.read_text()
+            # The transports keep captured logs valid UTF-8 (GH-5641);
+            # decode explicitly rather than trusting the locale default.
+            content = log_file_path.read_text(encoding="utf-8")
             if expected in content:
                 return content
             await asyncio.sleep(0.01)
@@ -126,6 +134,42 @@ async def recover_proxy_pid(proxy, old_pid: int, **kwargs) -> int:
     return await _recover_new_pid(call, old_pid, **kwargs)
 
 
+class TestPartialConstruction:
+    """A transport whose construction raised must still be collectable.
+
+    Subclasses validate the command before calling `super().__init__`, so an
+    object whose construction raised never got a `_stop_event`. `__del__` used to
+    dereference it anyway, and CPython reported an unraisable AttributeError that
+    buried the error the caller was meant to see.
+    """
+
+    def test_del_tolerates_a_transport_that_never_finished_init(self):
+        """The exact shape a failed subclass __init__ leaves behind."""
+        transport = object.__new__(PythonStdioTransport)
+        assert not hasattr(transport, "_stop_event")
+
+        transport.__del__()  # must not raise
+
+    def test_failed_subclass_construction_is_collectable(self, tmp_path):
+        not_python = tmp_path / "server.txt"
+        not_python.write_text("not a python script", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="Not a Python script"):
+            PythonStdioTransport(script_path=not_python)
+
+        gc_collect_harder()
+
+    def test_failed_subclass_construction_does_not_fabricate_an_event(self, tmp_path):
+        """The guard must skip the event, not invent one to set."""
+        missing = tmp_path / "nope.py"
+        with pytest.raises(FileNotFoundError, match="Script not found"):
+            PythonStdioTransport(script_path=missing)
+
+        transport = object.__new__(PythonStdioTransport)
+        transport.__del__()
+        assert not hasattr(transport, "_stop_event")
+
+
 class TestDisconnect:
     async def test_cancelled_connection_task_is_cleaned_up(self):
         transport = StdioTransport(command="python", args=[])
@@ -195,6 +239,31 @@ class TestParallelCalls:
 
 
 @pytest.mark.timeout(15)
+class TestAdvertisedCapabilities:
+    async def test_stdio_advertises_list_changed_for_all_components(self, tmp_path):
+        """stdio advertises the same list_changed capabilities as other transports."""
+        script = tmp_path / "server.py"
+        script.write_text(
+            "from fastmcp import FastMCP\n"
+            "mcp = FastMCP()\n"
+            "mcp.run(show_banner=False)\n",
+            encoding="utf-8",
+        )
+
+        client = Client(PythonStdioTransport(script_path=script), mode="legacy")
+        async with client:
+            assert client.initialize_result is not None
+            capabilities = client.initialize_result.capabilities
+
+        assert capabilities.tools is not None
+        assert capabilities.tools.list_changed is True
+        assert capabilities.resources is not None
+        assert capabilities.resources.list_changed is True
+        assert capabilities.prompts is not None
+        assert capabilities.prompts.list_changed is True
+
+
+@pytest.mark.timeout(15)
 class TestKeepAlive:
     # https://github.com/PrefectHQ/fastmcp/issues/581
 
@@ -206,6 +275,56 @@ class TestKeepAlive:
         client = Client(transport=StdioTransport(command="python", args=[""]))
 
         assert client.transport.keep_alive is True
+
+    async def test_cancelled_initial_connect_can_reuse_starting_session(
+        self, stdio_script, monkeypatch
+    ):
+        stdio_module = importlib.import_module("fastmcp.client.transports.stdio")
+        original_stdio_client = stdio_module.stdio_client
+        stdio_entered = asyncio.Event()
+        release_stdio = asyncio.Event()
+
+        @contextlib.asynccontextmanager
+        async def gated_stdio_client(*args, **kwargs):
+            async with original_stdio_client(*args, **kwargs) as streams:
+                stdio_entered.set()
+                await release_stdio.wait()
+                yield streams
+
+        monkeypatch.setattr(stdio_module, "stdio_client", gated_stdio_client)
+        transport = PythonStdioTransport(script_path=stdio_script)
+        first_enter = asyncio.create_task(transport.connect_session().__aenter__())
+        retry_context = None
+        retry_enter = None
+
+        try:
+            await asyncio.wait_for(stdio_entered.wait(), timeout=5)
+            first_enter.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await first_enter
+
+            retry_context = transport.connect_session()
+            retry_enter = asyncio.create_task(retry_context.__aenter__())
+            await asyncio.sleep(0)
+            retry_waited_for_startup = not retry_enter.done()
+
+            release_stdio.set()
+            session = await asyncio.wait_for(retry_enter, timeout=5)
+            assert retry_waited_for_startup
+            assert session is not None
+            assert (await session.list_tools()).tools
+        finally:
+            release_stdio.set()
+            if not first_enter.done():
+                first_enter.cancel()
+            await asyncio.gather(first_enter, return_exceptions=True)
+            if retry_enter is not None:
+                if not retry_enter.done():
+                    await asyncio.gather(retry_enter, return_exceptions=True)
+                if not retry_enter.cancelled() and retry_enter.exception() is None:
+                    assert retry_context is not None
+                    await retry_context.__aexit__(None, None, None)
+            await transport.disconnect()
 
     async def test_keep_alive_set_false(self):
         client = Client(
@@ -301,11 +420,14 @@ class TestKeepAlive:
         leave the transport unusable for the next Client, and must stop its
         subprocess rather than leak its session."""
         transport = PythonStdioTransport(stdio_script, keep_alive=False)
+        abandoned = Client(transport)
+        pid = None
 
         with anyio.move_on_after(0.5):
-            async with Client(transport) as abandoned:
+            async with abandoned:
                 pid = (await abandoned.call_tool("pid")).data
                 await anyio.sleep(10)
+        assert pid is not None
         with anyio.fail_after(3):
             while abandoned.is_connected():
                 await anyio.sleep(0.01)
@@ -772,3 +894,124 @@ class TestLogFile:
                 "write_error", {"message": "Default stderr"}
             )
             assert result.data == "Default stderr"
+
+    async def test_log_file_from_a_python_server_is_valid_utf8(self, tmp_path):
+        """Regression test for GH-5641: the captured stderr log decodes as
+        UTF-8 even where the platform code page is not UTF-8."""
+        script = tmp_path / "utf8_script.py"
+        script.write_text(
+            inspect.cleandoc("""
+                import sys
+                from fastmcp import FastMCP
+
+                mcp = FastMCP()
+
+                @mcp.tool
+                def write_encoding() -> str:
+                    print(f"utf8_mode={sys.flags.utf8_mode}", file=sys.stderr, flush=True)
+                    return "ok"
+
+                if __name__ == "__main__":
+                    mcp.run()
+            """),
+            encoding="utf-8",
+        )
+        log_file_path = tmp_path / "errors.log"
+
+        transport = PythonStdioTransport(script_path=script, log_file=log_file_path)
+        client = Client(transport=transport)
+
+        async with client:
+            await client.call_tool("write_encoding", {})
+
+        await wait_for_log_content(log_file_path, "utf8_mode=")
+        content = log_file_path.read_text(encoding="utf-8")
+        assert "utf8_mode=1" in content
+
+
+class TestPythonTransportEnvironment:
+    """The Python transports default the child to UTF-8 mode (GH-5641)."""
+
+    def test_python_transports_default_the_child_to_utf8(self, tmp_path):
+        script = tmp_path / "server.py"
+        script.write_text("", encoding="utf-8")
+
+        for transport in (
+            PythonStdioTransport(script_path=script),
+            FastMCPStdioTransport(script_path=script),
+        ):
+            assert transport.env == {"PYTHONUTF8": "1"}
+
+        custom = PythonStdioTransport(
+            script_path=script, env={"PYTHONUTF8": "0", "EXTRA": "kept"}
+        )
+        assert custom.env == {"PYTHONUTF8": "0", "EXTRA": "kept"}
+
+
+class TestFastMCPTransportArguments:
+    @pytest.mark.parametrize(
+        ("args", "expected_tail"),
+        [(None, []), ([], []), (["hello"], ["--", "hello"]), ([""], ["--", ""])],
+    )
+    def test_builds_script_arguments(
+        self, tmp_path: Path, args: list[str] | None, expected_tail: list[str]
+    ) -> None:
+        script = tmp_path / "server.py"
+        script.write_text("", encoding="utf-8")
+        original_args = args.copy() if args is not None else None
+
+        transport = FastMCPStdioTransport(script, args=args)
+
+        assert transport.command == "fastmcp"
+        assert transport.args == ["run", str(script), *expected_tail]
+        assert args == original_args
+
+    def test_omitted_arguments_keep_existing_command(self, tmp_path: Path) -> None:
+        script = tmp_path / "server.py"
+        script.write_text("", encoding="utf-8")
+
+        transport = FastMCPStdioTransport(str(script))
+
+        assert transport.args == ["run", str(script)]
+
+    @pytest.mark.client_process
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["hello"],
+            [""],
+            ["--transport", "http", "two words", "", "雪", "--", "--literal"],
+        ],
+    )
+    async def test_script_receives_arguments(
+        self, tmp_path: Path, args: list[str]
+    ) -> None:
+        script = tmp_path / "server with spaces.py"
+        script.write_text(
+            inspect.cleandoc("""
+                import sys
+                from fastmcp import FastMCP
+
+                arguments = sys.argv[1:]
+                mcp = FastMCP()
+
+                @mcp.tool
+                def get_arguments() -> list[str]:
+                    return arguments
+            """),
+            encoding="utf-8",
+        )
+        transport = FastMCPStdioTransport(
+            script,
+            args=args,
+            env={
+                "FASTMCP_SHOW_SERVER_BANNER": "false",
+                "FASTMCP_CHECK_FOR_UPDATES": "off",
+            },
+            keep_alive=False,
+        )
+
+        async with Client(transport) as client:
+            result = await client.call_tool("get_arguments")
+
+        assert result.data == args

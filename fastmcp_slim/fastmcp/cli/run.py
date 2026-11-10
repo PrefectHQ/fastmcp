@@ -114,7 +114,7 @@ def create_client_server(url: str) -> Any:
 
 def create_mcp_config_server(mcp_config_path: Path) -> FastMCP[None]:
     """Create a FastMCP server from a MCPConfig."""
-    with mcp_config_path.open() as src:
+    with mcp_config_path.open(encoding="utf-8") as src:
         mcp_config = json.load(src)
 
     server = create_proxy(mcp_config)
@@ -175,7 +175,7 @@ async def run_command(
     elif server_spec.endswith(".json"):
         # Load JSON and check which type of config it is
         config_path = Path(server_spec)
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             data = json.load(f)
 
         # Check if it's an MCPConfig first (has canonical mcpServers key)
@@ -240,7 +240,15 @@ async def run_command(
 
     # handle the SDK's own high-level MCPServer (not a fastmcp.FastMCP)
     if isinstance(server, SDKServer):
-        await run_v1_server_async(server, host=host, port=port, transport=transport)
+        await run_v1_server_async(
+            server,
+            host=host,
+            port=port,
+            path=path,
+            stateless=stateless,
+            log_level=log_level,
+            transport=transport,
+        )
         return
 
     kwargs: dict[str, Any] = {}
@@ -318,6 +326,9 @@ async def run_v1_server_async(
     host: str | None = None,
     port: int | None = None,
     transport: TransportType | None = None,
+    path: str | None = None,
+    stateless: bool = False,
+    log_level: LogLevelType | None = None,
 ) -> None:
     """Run a FastMCP 1.x server using async methods.
 
@@ -326,6 +337,13 @@ async def run_v1_server_async(
         host: Host to bind to
         port: Port to bind to
         transport: Transport protocol to use
+        path: Route path for the HTTP endpoint (Streamable HTTP or SSE)
+        stateless: Whether to run Streamable HTTP without sessions. The SDK's
+            SSE transport has no stateless mode, so it is ignored for SSE.
+        log_level: Log level to apply to the server settings. ``MCPServer`` only
+            accepts ``log_level`` at construction time, but its HTTP runners read
+            ``settings.log_level`` (for uvicorn), so the setting is updated before
+            starting. The stdio runner does not consult it.
     """
     # In v1 (MCPServer), host/port are no longer stored on `settings`; they are
     # passed directly to the transport runners as keyword arguments.
@@ -334,13 +352,23 @@ async def run_v1_server_async(
         bind_kwargs["host"] = host
     if port is not None:
         bind_kwargs["port"] = port
+    if log_level is not None:
+        # MCPServer has no run-time `log_level` kwarg. Its HTTP runners pass
+        # `settings.log_level` to uvicorn, so update the setting the SDK reads.
+        server.settings.log_level = log_level
 
     match transport:
         case "stdio":
             await server.run_stdio_async()
         case "http" | "streamable-http" | None:
+            if path is not None:
+                bind_kwargs["streamable_http_path"] = path
+            if stateless:
+                bind_kwargs["stateless_http"] = True
             await server.run_streamable_http_async(**bind_kwargs)
         case "sse":
+            if path is not None:
+                bind_kwargs["sse_path"] = path
             await server.run_sse_async(**bind_kwargs)
 
 
@@ -369,7 +397,7 @@ async def _terminate_process(process: asyncio.subprocess.Process) -> None:
         try:
             await asyncio.wait_for(process.wait(), timeout=3.0)
             return
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
 
         # Force kill the entire process group

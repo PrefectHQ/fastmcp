@@ -14,12 +14,11 @@ from collections.abc import Sequence
 from copy import deepcopy
 from threading import Lock
 from time import monotonic
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, BaseModel, model_validator
-from typing_extensions import Self
 
 from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.identity_assertion import IdentityAssertion
@@ -360,18 +359,24 @@ class OIDCProxy(OAuthProxy):
                 provided, the upstream client secret will be used to derive a 32-byte key using PBKDF2.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
-                Defaults to "client_secret_basic".
+                Defaults to "client_secret_basic" when a client secret is configured
+                and to "none" (public client, no secret sent) otherwise.
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to the upstream IdP.
                 When False, authorization proceeds directly without user confirmation.
                 When "external", authorization follows the same direct path as False,
                 but the warning is suppressed as an operator acknowledgment that
                 equivalent protections are enforced externally.
+                False and "external" disable FastMCP's consent and browser-binding
+                protections, reducing security unless equivalent checks exist elsewhere.
+                FastMCP does not provide or verify those external checks.
                 SECURITY WARNING: Only set to False for local development or testing environments.
             consent_csp_policy: Content Security Policy for the consent page.
                 If None (default), uses the built-in CSP policy with appropriate directives.
                 If empty string "", disables CSP entirely (no meta tag is rendered).
                 If a non-empty string, uses that as the CSP policy value.
+                Disabling or weakening CSP reduces browser content-injection protections
+                unless the deployment supplies an equivalent CSP header.
             extra_authorize_params: Additional parameters to forward to the upstream authorization endpoint.
                 Useful for provider-specific parameters like prompt=consent or access_type=offline.
                 Example: {"prompt": "consent", "access_type": "offline"}
