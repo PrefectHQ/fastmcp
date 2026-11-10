@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import json
+import sys
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 
@@ -375,7 +376,8 @@ class Search:
         if search_fn is None:
             from fastmcp.server.transforms.search.bm25 import BM25SearchTransform
 
-            _bm25 = BM25SearchTransform(max_results=default_limit or 50)
+            # Search applies the per-call limit after ranking all matches.
+            _bm25 = BM25SearchTransform(max_results=sys.maxsize)
             search_fn = _bm25._search
         self._search_fn = search_fn
         self._name = name
@@ -421,7 +423,9 @@ class Search:
                 ]
             results = await search_fn(tools, query)
             if limit is not None:
-                results = results[:limit]
+                # A limit is a maximum count, not a slice offset: clamp negatives
+                # so ``limit=-1`` does not mean "all but the last match".
+                results = results[: max(limit, 0)]
             rendered = _render_tools(results, detail)
             if len(results) < catalog_size and detail != "full":
                 n = len(results)
