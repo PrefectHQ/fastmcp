@@ -302,7 +302,7 @@ config = CacheConfig(store=store, partition="tenant-a", target_id="weather-api")
 client = Client("https://example.com/mcp", mode="auto", cache=config)
 ```
 
-The adapter serializes each result through a type-tagged envelope validated against an allowlist of cacheable result models, so a value naming an unknown type is treated as a cache miss rather than deserialized blindly. Each store reads and writes one collection, set with `collection=`, and `clear()` removes only that collection's entries. Stores created without `collection=` share the default collection, so give each tenant its own collection when one tenant's `clear()` must not drop another's entries.
+The adapter serializes each result through a type-tagged envelope validated against an allowlist of cacheable result models, so a value naming an unknown type is treated as a cache miss rather than deserialized blindly. Each store reads and writes one collection, set with `collection=`, and `clear()` removes only that collection's entries. Stores created without `collection=` share the default collection, so give each tenant its own collection when one tenant's `clear()` must not drop another's entries. `clear()` is only as complete as the backend's key listing: on Redis it can leave some entries in place, and those expire with their TTL.
 
 ## Client extensions
 

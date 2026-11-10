@@ -25,6 +25,7 @@ from mcp_types import ListToolsResult, Tool
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.caching import (
+    _MAX_CLEAR_PAGES,
     CACHEABLE_RESULT_MODELS,
     KeyValueResponseCacheStore,
     _CacheEnvelope,
@@ -216,6 +217,25 @@ class TestClear:
         await store.clear()
 
         assert await backend.keys(collection="cache") == ["stuck"]
+
+    async def test_clear_stops_when_writers_keep_adding_keys(self):
+        """Entries that keep arriving during clear() can't keep it running."""
+
+        class BusyStore(MemoryStore):
+            listings = 0
+
+            async def keys(self, collection=None, *, limit=None) -> list[str]:
+                # Another client writes a new entry before every listing.
+                self.listings += 1
+                await self.put(f"new-{self.listings}", {"v": 1}, collection=collection)
+                return await super().keys(collection=collection, limit=limit)
+
+        backend = BusyStore()
+        store = KeyValueResponseCacheStore(backend, collection="cache")
+
+        await store.clear()
+
+        assert backend.listings == _MAX_CLEAR_PAGES
 
 
 class TestAllowlist:
