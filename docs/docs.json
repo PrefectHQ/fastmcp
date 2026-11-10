@@ -558,7 +558,7 @@
     }
   ],
   "search": {
-    "prompt": "Search the docs..."
+    "prompt": "Search..."
   },
   "seo": {
     "metatags": {
