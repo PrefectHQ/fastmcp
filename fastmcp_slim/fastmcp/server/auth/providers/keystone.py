@@ -25,7 +25,7 @@ Example:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import anyio.to_thread
@@ -258,7 +258,7 @@ class KeystoneTokenVerifier(TokenVerifier):
         auth_ref = access.create(body=data, auth_token=token)
 
         expires = auth_ref.expires
-        if expires is None or expires <= datetime.now(timezone.utc):
+        if expires is None or expires <= datetime.now(UTC):
             logger.debug("Keystone token has expired")
             return None
 

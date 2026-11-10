@@ -6,7 +6,7 @@ import json
 import logging
 import threading
 from collections.abc import Iterator
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
@@ -29,7 +29,7 @@ PROJECT_ID = "project-1"
 
 
 def _timestamp(delta: timedelta) -> str:
-    moment = datetime.now(timezone.utc) + delta
+    moment = datetime.now(UTC) + delta
     return moment.strftime("%Y-%m-%dT%H:%M:%S.000000Z")
 
 
