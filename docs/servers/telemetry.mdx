@@ -452,6 +452,7 @@ FastMCP implements the [OpenTelemetry MCP semantic conventions](https://opentele
 | `mcp.session.id` | Session identifier for the MCP connection |
 | `mcp.resource.uri` | The resource URI (for resource operations) |
 | `gen_ai.tool.name` | Tool name (on `tools/call` spans) |
+| `gen_ai.operation.name` | `execute_tool` (on `tools/call` spans) |
 | `gen_ai.prompt.name` | Prompt name (on `prompts/get` spans) |
 | `error.type` | Error classification (`tool_error` for ToolError, otherwise exception class name) |
 

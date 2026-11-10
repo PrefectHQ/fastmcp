@@ -66,6 +66,7 @@ class TestClientToolTracing:
         assert client_span.attributes["mcp.method.name"] == "tools/call"
         # gen_ai semantic conventions
         assert client_span.attributes["gen_ai.tool.name"] == "add"
+        assert client_span.attributes["gen_ai.operation.name"] == "execute_tool"
         # RPC attributes must NOT be present
         assert "rpc.system" not in client_span.attributes
         assert "rpc.method" not in client_span.attributes
@@ -227,6 +228,7 @@ class TestClientPromptTracing:
         assert client_span.attributes["mcp.method.name"] == "prompts/get"
         # gen_ai semantic conventions
         assert client_span.attributes["gen_ai.prompt.name"] == "welcome"
+        assert "gen_ai.operation.name" not in client_span.attributes
         # RPC attributes must NOT be present
         assert "rpc.system" not in client_span.attributes
         assert "rpc.method" not in client_span.attributes

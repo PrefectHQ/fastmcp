@@ -35,6 +35,7 @@ def client_span(
         attrs["mcp.resource.uri"] = resource_uri
     if tool_name is not None:
         attrs["gen_ai.tool.name"] = tool_name
+        attrs["gen_ai.operation.name"] = "execute_tool"
     if prompt_name is not None:
         attrs["gen_ai.prompt.name"] = prompt_name
 
