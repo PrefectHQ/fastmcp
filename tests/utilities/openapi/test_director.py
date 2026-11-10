@@ -1459,6 +1459,39 @@ class TestContentTypeDispatch:
         body = json.loads(request.content.decode("utf-8"))
         assert body == {"name": "widget"}
 
+    def test_form_urlencoded_allof_additional_properties_json_encoded(self, director):
+        """allOf-wrapped additionalProperties schemas drive JSON encoding."""
+        route = HTTPRoute(
+            path="/submit",
+            method="POST",
+            operation_id="submit",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "application/x-www-form-urlencoded": {
+                        "allOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": {
+                                    "type": "object",
+                                    "properties": {"name": {"type": "string"}},
+                                },
+                            }
+                        ]
+                    }
+                },
+            ),
+            parameter_map={
+                "body": {"location": "body", "openapi_name": "body"},
+            },
+        )
+
+        request = director.build(route, {"body": {"team": {"name": "infra"}}})
+
+        body = request.content.decode("utf-8")
+        assert "team=%7B%22name%22%3A+%22infra%22%7D" in body
+        assert "%27name%27" not in body
+
 
 class TestCookieParameters:
     """Test that cookie parameters are properly routed."""

@@ -1,0 +1,41 @@
+name: Conformance pin check
+
+# tests/conformance pins @modelcontextprotocol/conformance so upstream releases
+# can't turn unrelated PRs red. This job fails when a newer version (prereleases
+# included) is published, so the pin gets bumped deliberately instead of going
+# stale. When the newest version is a stable 0.2.0 or later, drop the pin.
+
+on:
+  schedule:
+    # Run weekly on Monday at 3 AM UTC
+    - cron: "0 3 * * 1"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check_pin:
+    name: Check conformance pin
+    timeout-minutes: 2
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Compare pin with newest published version
+        run: |
+          pinned=$(sed -n 's/^CONFORMANCE_VERSION = "\(.*\)"$/\1/p' tests/conformance/test_conformance.py)
+          # npm lists versions in semver order, prereleases included.
+          newest=$(npm view @modelcontextprotocol/conformance versions --json | jq -r '.[-1]')
+          echo "Pinned: $pinned"
+          echo "Newest: $newest"
+          if [ -z "$pinned" ] || [ -z "$newest" ]; then
+            echo "::error::Could not resolve the pinned or newest conformance version"
+            exit 1
+          fi
+          if [ "$pinned" != "$newest" ]; then
+            echo "::error::@modelcontextprotocol/conformance $newest is published; tests/conformance pins $pinned. Bump CONFORMANCE_VERSION (or unpin if $newest is stable)."
+            exit 1
+          fi

@@ -7,6 +7,7 @@ import logging
 import secrets
 from collections.abc import (
     AsyncGenerator,
+    Awaitable,
     Callable,
     Sequence,
 )
@@ -30,6 +31,7 @@ from typing import (
 
 import httpx2
 import mcp_types
+import pydantic_core
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.request_state import RequestStateSecurity
 from mcp.shared.exceptions import MCPError
@@ -101,7 +103,11 @@ from fastmcp.server.transforms import (
     ToolTransform,
     Transform,
 )
-from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
+from fastmcp.server.transforms.visibility import (
+    Visibility,
+    apply_session_transforms,
+    is_enabled,
+)
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.function_tool import FunctionTool
@@ -187,6 +193,31 @@ logging.getLogger("mcp.server.lowlevel.server").addFilter(
 )
 
 F = TypeVar("F", bound=Callable[..., Any])
+ComponentT = TypeVar("ComponentT", bound=FastMCPComponent)
+
+
+async def _highest_available_version(
+    candidates: Sequence[FastMCPComponent],
+    lookup: Callable[[VersionSpec], Awaitable[ComponentT | None]],
+) -> ComponentT | None:
+    """Look up each candidate version, highest first, until one is returned.
+
+    Each version goes through `lookup`, the same path an explicit version
+    request takes, so transforms, `get_*` overrides, and auth decide the
+    fallback exactly as they would decide a direct request for that version.
+    Unversioned candidates are skipped: they have no lower version to fall
+    back to.
+    """
+    tried: set[str] = set()
+    for candidate in sorted(candidates, key=version_sort_key, reverse=True):
+        if candidate.version is None or candidate.version in tried:
+            continue
+        tried.add(candidate.version)
+        found = await lookup(VersionSpec(eq=candidate.version))
+        if found is not None:
+            return found
+    return None
+
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
@@ -307,6 +338,93 @@ def _lifespan_proxy(
     return wrap
 
 
+class _SchemaCacheLocalProvider(LocalProvider):
+    """LocalProvider that mirrors registered tools into FastMCP's wire-schema
+    cache, so the SDK's `get_tool_input_schema` hook (Mcp-Param header
+    validation, mcp>=2.3) can resolve locally-registered tools before the first
+    `tools/list`. The cache dict is owned by the FastMCP server and shared by
+    reference; listings merge into it by value (`update`, never `clear`), so an
+    auth-scoped listing cannot drop another principal's cached schemas."""
+
+    def __init__(
+        self,
+        schema_cache: dict[str, dict[str, Any]],
+        server_transforms: list[Transform] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._schema_cache = schema_cache
+        # The owning FastMCP's server-level transform list, shared by
+        # reference so transforms added after construction are visible.
+        self._server_transforms = (
+            server_transforms if server_transforms is not None else []
+        )
+
+    def _seed_schema(self, name: str, candidates: list[Tool]) -> None:
+        """Seed the wire-schema cache for `name` from the tool dispatch and
+        `tools/list` would actually serve: the highest version by the same
+        PEP 440-aware `version_sort_key` used by `_get_tool` and
+        `dedupe_with_versions`. When a transform is installed, the wire schema
+        is only computed on the listing path, so seeding is skipped entirely
+        (and any entry dropped): a miss fails open, a wrong entry (e.g. a
+        pre-transform schema) fails closed (#5666 review)."""
+        transforms = [
+            t
+            for t in (*self._server_transforms, *self._transforms)
+            if not isinstance(t, Visibility)
+        ]
+        if transforms:
+            self._schema_cache.pop(name, None)
+            return
+        latest = max(candidates, key=version_sort_key)
+        try:
+            schema = latest.to_mcp_tool(name=latest.name).input_schema
+        except Exception:
+            # Seeding must never break registration; a missing entry only
+            # means the tool is not header-validated until the next listing.
+            return
+        if isinstance(schema, dict):
+            self._schema_cache[name] = schema
+
+    def add_transform(self, transform: Transform) -> None:
+        super().add_transform(transform)
+        # Entries seeded before this transform are pre-transform schemas.
+        if not isinstance(transform, Visibility):
+            self._schema_cache.clear()
+
+    def add_tool(self, tool: Tool | Callable[..., Any]) -> Tool:
+        added = super().add_tool(tool)
+        # Seed from the version dispatch serves, not necessarily the one just
+        # added: registering an older version after a newer one must not
+        # replace the newer version's schema in the cache.
+        same_name = [
+            component
+            for component in self._components.values()
+            if isinstance(component, Tool) and component.name == added.name
+        ]
+        self._seed_schema(added.name, same_name or [added])
+        return added
+
+    def remove_tool(self, name: str, version: str | None = None) -> None:
+        super().remove_tool(name, version=version)
+        # Evict only when no version of the tool remains: a version-scoped
+        # removal can leave other versions live under the same logical name,
+        # in which case re-seed from the surviving tool instead. A stale schema
+        # would let Mcp-Param header validation reject calls for a tool that
+        # no longer exists (or no longer has this schema) until the next
+        # listing; a miss is fail-open, so dropping the entry is always the
+        # safe direction.
+        surviving = [
+            component
+            for component in self._components.values()
+            if isinstance(component, Tool) and component.name == name
+        ]
+        if not surviving:
+            self._schema_cache.pop(name, None)
+            return
+        self._seed_schema(name, surviving)
+
+
 class StateValue(FastMCPBaseModel):
     """Wrapper for stored context state values."""
 
@@ -370,9 +488,19 @@ class FastMCP(
         self._state_storage: AsyncKeyValue | None = session_state_store
         self.__state_store: PydanticAdapter[StateValue] | None = None
 
+        # Wire-format input schemas, keyed by tool name. Shared by reference
+        # with _SchemaCacheLocalProvider (seeded on local tool registration)
+        # and served to the SDK's `get_tool_input_schema` hook (mcp>=2.3, see
+        # LowLevelServer) so Mcp-Param header validation on `tools/call` does
+        # not fall back to a full `tools/list` per call (#5652). Refreshed in
+        # place from every `tools/list` response.
+        self._wire_input_schemas: dict[str, dict[str, Any]] = {}
+
         # Create LocalProvider for local components
-        self._local_provider: LocalProvider = LocalProvider(
-            on_duplicate=self._on_duplicate
+        self._local_provider: LocalProvider = _SchemaCacheLocalProvider(
+            schema_cache=self._wire_input_schemas,
+            server_transforms=self._transforms,
+            on_duplicate=self._on_duplicate,
         )
 
         for t in transforms or []:
@@ -482,12 +610,6 @@ class FastMCP(
             if client_log_level is not None
             else fastmcp.settings.client_log_level
         )
-
-        # Per-session minimum log level requested by clients via logging/setLevel,
-        # keyed by session id. Connections without one (stdio, in-memory,
-        # stateless HTTP) keep theirs in `Connection.state`. v2 sessions are
-        # per-request so this state lives on the server, not the session object.
-        self._client_log_levels: dict[str, mcp_types.LoggingLevel] = {}
 
         self.experimental_capabilities: dict[str, dict[str, Any]] = (
             experimental_capabilities or {}
@@ -822,6 +944,11 @@ class FastMCP(
             ```
         """
         self._transforms.append(transform)
+        # Schemas seeded before this transform existed are pre-transform and
+        # would fail closed on Mcp-Param validation; drop them so the next
+        # `tools/list` (which applies the transform) repopulates the cache.
+        if not isinstance(transform, Visibility):
+            self._wire_input_schemas.clear()
 
     async def list_tools(self, *, run_middleware: bool = True) -> Sequence[Tool]:
         """List all enabled tools from providers.
@@ -907,8 +1034,9 @@ class FastMCP(
         transforms (including session-level) have been applied. This ensures
         session transforms can override provider-level disables.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled or unauthorized and no explicit
+        version was requested, falls back to the highest version that is
+        both enabled and authorized, matching what the list methods expose.
 
         A tool from `ToolInjectionMiddleware` takes precedence over a provider
         tool with the same name. It is matched by name alone, so a requested
@@ -932,37 +1060,35 @@ class FastMCP(
             return injected if await _component_auth_allows(injected) else None
 
         tool = await super().get_tool(name, version)
-        if tool is None:
-            return None
+        if tool is not None:
+            # Apply session transforms to single item
+            tools = await apply_session_transforms([tool])
+            # Transforms can change what `auth` sees (a tag, for one), so the
+            # check made on the pre-transform component is not enough.
+            if (
+                tools
+                and is_enabled(tools[0])
+                and await _component_auth_allows(tools[0])
+            ):
+                return tools[0]
 
-        # Apply session transforms to single item
-        tools = await apply_session_transforms([tool])
-        # Transforms can change what `auth` sees (a tag, for one), so the check made
-        # on the pre-transform component is not enough.
-        if tools and is_enabled(tools[0]) and await _component_auth_allows(tools[0]):
-            return tools[0]
-
-        # The highest version is disabled. If an explicit version was
-        # requested, respect that. Otherwise fall back to the next-highest
-        # enabled version.
+        # The highest version is disabled or unauthorized (provider lookups
+        # return None for an unauthorized tool). If an explicit version was
+        # requested, respect that. Otherwise fall back to the highest version
+        # that is both enabled and authorized, consistent with list_tools.
         if version is not None:
             return None
 
-        all_tools = [t for t in await super().list_tools() if t.name == name]
+        candidates = [t for t in await super().list_tools() if t.name == name]
         # During a hashed lookup, only versions of the identity being looked
         # up qualify; another tool listed under the same name does not.
         found = hashed_lookup_target(self)
         if found is not None:
             identity = tool_identity(found)
-            all_tools = [t for t in all_tools if tool_identity(t) == identity]
-        all_tools = list(await apply_session_transforms(all_tools))
-        enabled = [t for t in all_tools if is_enabled(t)]
-
-        authorized = [t for t in enabled if await _component_auth_allows(t)]
-
-        if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+            candidates = [t for t in candidates if tool_identity(t) == identity]
+        return await _highest_available_version(
+            candidates, lambda spec: self.get_tool(name, spec)
+        )
 
     async def list_resources(
         self, *, run_middleware: bool = True
@@ -1058,8 +1184,9 @@ class FastMCP(
         Overrides Provider.get_resource() to add visibility filtering after all
         transforms (including session-level) have been applied.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled or unauthorized and no explicit
+        version was requested, falls back to the highest version that is
+        both enabled and authorized, matching what the list methods expose.
 
         Args:
             uri: The resource URI.
@@ -1082,41 +1209,29 @@ class FastMCP(
         try:
             resource = await super().get_resource(uri, version)
         except AuthorizationError:
-            return None, True
-        if resource is None:
-            return None, False
+            # The highest version exists but is unauthorized; fall back below.
+            pass
+        else:
+            if resource is None:
+                return None, False
 
-        # Apply session transforms to single item
-        resources = await apply_session_transforms([resource])
-        if (
-            resources
-            and is_enabled(resources[0])
-            and await _component_auth_allows(resources[0])
-        ):
-            return resources[0], True
+            # Apply session transforms to single item
+            resources = await apply_session_transforms([resource])
+            if (
+                resources
+                and is_enabled(resources[0])
+                and await _component_auth_allows(resources[0])
+            ):
+                return resources[0], True
 
         if version is not None:
             return None, True
 
-        all_resources = [r for r in await super().list_resources() if str(r.uri) == uri]
-        all_resources = list(await apply_session_transforms(all_resources))
-        enabled = [r for r in all_resources if is_enabled(r)]
-
-        skip_auth, token = _get_auth_context()
-        authorized: list[Resource] = []
-        for r in enabled:
-            if not skip_auth and r.auth is not None:
-                ctx = AuthContext(token=token, component=r)
-                try:
-                    if not await run_auth_checks(r.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(r)
-
-        if not authorized:
-            return None, True
-        return max(authorized, key=version_sort_key), True
+        candidates = [r for r in await super().list_resources() if str(r.uri) == uri]
+        resource = await _highest_available_version(
+            candidates, lambda spec: self.get_resource(uri, spec)
+        )
+        return resource, True
 
     async def list_resource_templates(
         self, *, run_middleware: bool = True
@@ -1213,8 +1328,9 @@ class FastMCP(
         Overrides Provider.get_resource_template() to add visibility filtering after
         all transforms (including session-level) have been applied.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled or unauthorized and no explicit
+        version was requested, falls back to the highest version that is
+        both enabled and authorized, matching what the list methods expose.
 
         Args:
             uri: The template URI.
@@ -1224,46 +1340,32 @@ class FastMCP(
             The template if found and enabled, None otherwise.
         """
         template = await super().get_resource_template(uri, version)
-        if template is None:
-            return None
+        if template is not None:
+            # Apply session transforms to single item
+            templates = await apply_session_transforms([template])
+            # Transforms can change what `auth` sees (a tag, for one), so the
+            # check made on the pre-transform component is not enough.
+            if (
+                templates
+                and is_enabled(templates[0])
+                and await _component_auth_allows(templates[0])
+            ):
+                return templates[0]
 
-        # Apply session transforms to single item
-        templates = await apply_session_transforms([template])
-        # Transforms can change what `auth` sees (a tag, for one), so the check made
-        # on the pre-transform component is not enough.
-        if (
-            templates
-            and is_enabled(templates[0])
-            and await _component_auth_allows(templates[0])
-        ):
-            return templates[0]
+        # The highest version is disabled or unauthorized (provider lookups
+        # return None for an unauthorized template).
 
         if version is not None:
             return None
 
-        all_templates = [
+        candidates = [
             t
             for t in await super().list_resource_templates()
             if t.matches(uri) is not None
         ]
-        all_templates = list(await apply_session_transforms(all_templates))
-        enabled = [t for t in all_templates if is_enabled(t)]
-
-        skip_auth, token = _get_auth_context()
-        authorized: list[ResourceTemplate] = []
-        for t in enabled:
-            if not skip_auth and t.auth is not None:
-                ctx = AuthContext(token=token, component=t)
-                try:
-                    if not await run_auth_checks(t.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(t)
-
-        if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+        return await _highest_available_version(
+            candidates, lambda spec: self.get_resource_template(uri, spec)
+        )
 
     async def list_prompts(self, *, run_middleware: bool = True) -> Sequence[Prompt]:
         """List all enabled prompts from providers.
@@ -1348,8 +1450,9 @@ class FastMCP(
         Overrides Provider.get_prompt() to add visibility filtering after all
         transforms (including session-level) have been applied.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled or unauthorized and no explicit
+        version was requested, falls back to the highest version that is
+        both enabled and authorized, matching what the list methods expose.
 
         Args:
             name: The prompt name.
@@ -1359,42 +1462,28 @@ class FastMCP(
             The prompt if found and enabled, None otherwise.
         """
         prompt = await super().get_prompt(name, version)
-        if prompt is None:
-            return None
+        if prompt is not None:
+            # Apply session transforms to single item
+            prompts = await apply_session_transforms([prompt])
+            # Transforms can change what `auth` sees (a tag, for one), so the
+            # check made on the pre-transform component is not enough.
+            if (
+                prompts
+                and is_enabled(prompts[0])
+                and await _component_auth_allows(prompts[0])
+            ):
+                return prompts[0]
 
-        # Apply session transforms to single item
-        prompts = await apply_session_transforms([prompt])
-        # Transforms can change what `auth` sees (a tag, for one), so the check made
-        # on the pre-transform component is not enough.
-        if (
-            prompts
-            and is_enabled(prompts[0])
-            and await _component_auth_allows(prompts[0])
-        ):
-            return prompts[0]
+        # The highest version is disabled or unauthorized (provider lookups
+        # return None for an unauthorized prompt).
 
         if version is not None:
             return None
 
-        all_prompts = [p for p in await super().list_prompts() if p.name == name]
-        all_prompts = list(await apply_session_transforms(all_prompts))
-        enabled = [p for p in all_prompts if is_enabled(p)]
-
-        skip_auth, token = _get_auth_context()
-        authorized: list[Prompt] = []
-        for p in enabled:
-            if not skip_auth and p.auth is not None:
-                ctx = AuthContext(token=token, component=p)
-                try:
-                    if not await run_auth_checks(p.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(p)
-
-        if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+        candidates = [p for p in await super().list_prompts() if p.name == name]
+        return await _highest_available_version(
+            candidates, lambda spec: self.get_prompt(name, spec)
+        )
 
     async def call_tool(
         self,
@@ -1780,10 +1869,19 @@ class FastMCP(
         """
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
+                serialized_arguments: dict[str, str] | None = None
+                if arguments:
+                    serialized_arguments = {}
+                    for key, value in arguments.items():
+                        serialized_arguments[key] = (
+                            value
+                            if isinstance(value, str)
+                            else pydantic_core.to_json(value).decode("utf-8")
+                        )
                 mw_context = MiddlewareContext(
                     message=mcp_types.GetPromptRequestParams(
                         name=name,
-                        arguments=arguments,
+                        arguments=serialized_arguments,
                         _meta=_version_request_meta(version),
                     ),
                     source="client",
@@ -1844,6 +1942,27 @@ class FastMCP(
             The tool instance that was added to the server.
         """
         return self._local_provider.add_tool(tool)
+
+    def _get_tool_input_schema(self, name: str) -> dict[str, Any] | None:
+        """Synchronous lookup served to the SDK's `get_tool_input_schema` hook
+        (Mcp-Param header validation on `tools/call`, mcp>=2.3).
+
+        Returns the tool's wire input schema from the cache seeded by local
+        tool registration and refreshed by every `tools/list` response. FastMCP
+        tool resolution is async (providers, middleware, proxies) and cannot
+        run inside this sync hook, so a cache miss returns None — which the SDK
+        treats as fail-open, skipping header validation for that call exactly
+        as it does when a `tools/list` listing fails.
+
+        A stale hit fails closed: listings merge into the cache without pruning,
+        and a mounted or proxied server's own registrations do not reach this
+        server's cache, so an entry for a mounted or proxied tool that was
+        removed or changed upstream keeps validating against the old schema
+        until the next `tools/list` on this server. The cache is keyed by name
+        and holds the highest version's schema, so version-pinned calls are
+        validated against that schema too.
+        """
+        return self._wire_input_schemas.get(name)
 
     @overload
     def tool(

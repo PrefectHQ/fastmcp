@@ -5,8 +5,11 @@ from contextlib import contextmanager
 
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
-from fastmcp.exceptions import ToolError as _ToolError
-from fastmcp.telemetry import get_tracer, restore_dropped_attributes
+from fastmcp.telemetry import (
+    error_span_attributes,
+    get_tracer,
+    restore_dropped_attributes,
+)
 
 
 @contextmanager
@@ -41,7 +44,11 @@ def client_span(
 
     tracer = get_tracer()
     with tracer.start_as_current_span(
-        name, kind=SpanKind.CLIENT, attributes=attrs
+        name,
+        kind=SpanKind.CLIENT,
+        attributes=attrs,
+        record_exception=False,
+        set_status_on_exception=False,
     ) as span:
         # Restore: `attributes=attrs` above lets on_start hooks and the
         # sampler see these values at creation time. But OTel's
@@ -59,10 +66,7 @@ def client_span(
             yield span
         except Exception as e:
             if span.is_recording():
-                error_type = (
-                    "tool_error" if isinstance(e, _ToolError) else type(e).__qualname__
-                )
-                span.set_attribute("error.type", error_type)
+                span.set_attributes(error_span_attributes(e))
                 span.record_exception(e)
                 span.set_status(Status(StatusCode.ERROR, str(e)))
             raise

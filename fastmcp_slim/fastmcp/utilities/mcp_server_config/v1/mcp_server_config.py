@@ -223,6 +223,9 @@ class MCPServerConfig(BaseModel):
     def from_file(cls, file_path: Path) -> MCPServerConfig:
         """Load configuration from a JSON file.
 
+        Relative `source.path` and `environment.requirements` values are
+        anchored to the configuration file's directory (see `anchor_paths`).
+
         Args:
             file_path: Path to the configuration file
 
@@ -240,7 +243,34 @@ class MCPServerConfig(BaseModel):
         with file_path.open("r", encoding="utf-8") as f:
             data = json.load(f)
 
-        return cls.model_validate(data)
+        config = cls.model_validate(data)
+        config.anchor_paths(file_path.parent)
+        return config
+
+    def anchor_paths(self, config_dir: Path) -> None:
+        """Make relative file paths absolute against the config file's directory.
+
+        Anchors `source.path` and `environment.requirements`, so a config
+        loaded from another working directory still finds its files. Paths are
+        made absolute without following symlinks, so a symlinked `fastmcp.json`
+        resolves paths beside the link. Other paths, such as `deployment.cwd`,
+        keep their own resolution rules.
+
+        Args:
+            config_dir: Directory containing the configuration file
+        """
+        config_dir = Path(os.path.abspath(config_dir.expanduser()))
+
+        source_path = Path(self.source.path).expanduser()
+        if not source_path.is_absolute():
+            self.source.path = os.path.abspath(config_dir / source_path)
+
+        requirements = self.environment.requirements
+        if requirements is not None:
+            requirements = requirements.expanduser()
+            if not requirements.is_absolute():
+                requirements = Path(os.path.abspath(config_dir / requirements))
+            self.environment.requirements = requirements
 
     @classmethod
     def from_cli_args(
@@ -298,7 +328,7 @@ class MCPServerConfig(BaseModel):
 
         # Build deployment config if any deployment args provided
         deployment = None
-        if any([transport, host, port, path, log_level, env, cwd, args]):
+        if any([transport, host, path, log_level, env, cwd, args]) or port is not None:
             # Convert streamable-http to http for backward compatibility
             if transport == "streamable-http":
                 transport = "http"
@@ -399,7 +429,7 @@ class MCPServerConfig(BaseModel):
                 run_args["transport"] = self.deployment.transport
             if self.deployment.host:
                 run_args["host"] = self.deployment.host
-            if self.deployment.port:
+            if self.deployment.port is not None:
                 run_args["port"] = self.deployment.port
             if self.deployment.path:
                 run_args["path"] = self.deployment.path

@@ -288,13 +288,13 @@ Message(["item1", "item2"])
 
 `Message` accepts two fields:
 
-**`content`** - The message content. Strings pass through directly. Other types (dict, list, BaseModel) are automatically JSON-serialized to text.
+**`content`** - The message content. Strings pass through directly. MCP content blocks (`TextContent`, `ImageContent`, `AudioContent`, `ResourceLink`, and `EmbeddedResource`) pass through unchanged. Other types (dict, list, BaseModel) are automatically JSON-serialized to text.
 
 **`role`** - The message role, either `"user"` (default) or `"assistant"`.
 
 <Card title="Message">
 <ParamField body="content" type="Any" required>
-  The content data. Strings pass through directly. Other types (dict, list, BaseModel) are automatically JSON-serialized.
+  The content data. Strings and MCP content blocks (`TextContent`, `ImageContent`, `AudioContent`, `ResourceLink`, `EmbeddedResource`) pass through unchanged. Other types (dict, list, BaseModel) are automatically JSON-serialized.
 </ParamField>
 <ParamField body="role" type="Literal['user', 'assistant']" default="user">
   The message role.
@@ -450,22 +450,28 @@ For full documentation on the Context object and all its capabilities, see the [
 
 <VersionBadge version="2.9.1" />
 
-FastMCP automatically sends `notifications/prompts/list_changed` notifications to connected clients when prompts are added, enabled, or disabled. This allows clients to stay up-to-date with the current prompt set without manually polling for changes.
+Adding, removing, enabling, or disabling prompts at the server or provider level does not notify connected clients. Clients see the change the next time they list prompts.
+
+When a request changes the prompt set, the tool handling it can tell the calling session by sending `notifications/prompts/list_changed` itself. The notification reaches only that session.
 
 ```python
-from fastmcp.prompts import prompt
+from fastmcp import FastMCP
+from fastmcp.server.context import Context
+from mcp_types import PromptListChangedNotification
 
-@prompt
-def example_prompt() -> str:
-    return "Hello!"
+mcp = FastMCP("Server")
 
-# These operations trigger notifications:
-mcp.add_prompt(example_prompt)               # Sends prompts/list_changed notification
-mcp.disable(names={"example_prompt"})  # Sends prompts/list_changed notification
-mcp.enable(names={"example_prompt"})   # Sends prompts/list_changed notification
+@mcp.tool
+async def unlock_extras(ctx: Context) -> str:
+    def summarize(text: str) -> str:
+        return f"Summarize: {text}"
+
+    mcp.prompt(summarize)
+    await ctx.send_notification(PromptListChangedNotification())
+    return "Extras unlocked"
 ```
 
-Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.
+Session visibility changes made with `ctx.enable_components()` and `ctx.disable_components()` send these notifications automatically. See [Client Notifications](/servers/visibility#client-notifications).
 
 Clients can handle these notifications using a [message handler](/clients/notifications) to automatically refresh their prompt lists or update their interfaces.
 

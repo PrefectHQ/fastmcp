@@ -70,7 +70,7 @@ async def data_analysis_request(dataset: str, ctx: Context = CurrentContext()) -
 - Dependency parameters are automatically excluded from the MCP schema—clients never see them.
 - Context methods are async, so your function usually needs to be async as well.
 - **Each MCP request receives a new context object.** State set with `ctx.set_state()` is scoped to that request and is not available in subsequent ones. To persist state across requests, use [Session State](/servers/sessions).
-- Context is only available during a request; attempting to use context methods outside a request will raise errors.
+- Context is only available during a request; most context methods raise errors outside a request. `ctx.list_resources()` and `ctx.list_prompts()` are the exceptions: they also work from a bare `Context(fastmcp=server)` or a direct `server.call_tool()` call, where they list every component visible without a session.
 
 ### Legacy Type-Hint Injection
 
@@ -284,7 +284,7 @@ Tools can customize which components are visible to their current session using 
 
 <VersionBadge version="3.0.0" />
 
-FastMCP automatically sends list change notifications when components (such as tools, resources, or prompts) are added, removed, enabled, or disabled. In rare cases where you need to manually trigger these notifications, you can use the context's notification methods:
+Session visibility changes made with `ctx.enable_components()`, `ctx.disable_components()`, and `ctx.reset_visibility()` notify the calling session automatically. Server-level and provider-level changes (adding, removing, enabling, or disabling components) send no notifications. To tell the calling session about such a change, send the notifications yourself:
 
 ```python
 from mcp.types import (
@@ -302,7 +302,7 @@ async def custom_tool_management(ctx: Context) -> str:
     return "Notifications sent"
 ```
 
-These methods are primarily used internally by FastMCP's automatic notification system and most users will not need to invoke them directly.
+These notifications reach only the session that made the request. See [Client Notifications](/servers/visibility#client-notifications).
 
 ### FastMCP Server
 

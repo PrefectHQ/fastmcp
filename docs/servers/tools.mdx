@@ -834,39 +834,45 @@ For reusable serialization across multiple tools, create a wrapper decorator tha
 
 <VersionBadge version="2.4.1" />
 
-If your tool encounters an error, you can raise a standard Python exception (`ValueError`, `TypeError`, `FileNotFoundError`, custom exceptions, etc.) or a FastMCP `ToolError`.
+Use `ToolError` to give the LLM a message it can act on, including for expected business errors such as an invalid date range or an entity ID that does not exist. It is not reserved for server bugs.
 
-By default, exceptions are converted into an MCP error response to be sent back to the client LLM. This helps the LLM understand failures and react appropriately. Validation warnings identify the tool and, for Pydantic errors, include the error count and built-in error types (such as `int_parsing`). Custom error codes are reported as `custom_error`. Argument values, validation locations, and validator messages are omitted because they may contain private client data. This does not change the validation details returned to the caller or redact explicit debug logging or custom middleware logs.
+The exceptions in `fastmcp.exceptions` describe different contexts:
 
-If you want to mask internal error details for security reasons, you can:
+| Exception | When to use it |
+|-----------|----------------|
+| `ToolError` | A tool cannot complete its operation. Give the caller a safe, actionable message so it can correct its arguments or choose another action. |
+| `ValidationError` | Parameter or return-value validation fails. FastMCP also raises this for function-tool argument validation. This is distinct from `pydantic.ValidationError`. The protocol response for either depends on where the error is handled, as described below. |
+| `AuthorizationError` | An [authorization check](/servers/authorization) or custom middleware denies access. Component-level authorization can hide components from lookup and listing, so the result depends on where the check runs. |
+| `NotFoundError` | FastMCP component lookup fails, such as a missing tool, resource, or prompt. For a missing business entity inside a tool, use `ToolError` with a message about that entity. |
 
-1. Use the `mask_error_details=True` parameter when creating your `FastMCP` instance:
+With default error handling, `ToolError`, FastMCP's `ValidationError`, and `AuthorizationError` reaching the `tools/call` handler become a tool result with `isError: true`. This is a JSON-RPC **result** describing a failed tool call, distinct from a JSON-RPC **error** with a numeric code. Other operations and [error-handling middleware](/servers/middleware#error-handling) have their own mappings; changing the exception class alone does not select a wire error code.
+
+Set `mask_error_details=True` to mask ordinary exceptions raised during tool execution. Explicit FastMCP errors such as `ToolError` and `ValidationError` keep their messages, so those messages must be safe to send to the caller. For example, this tool exposes an actionable date-range error while masking unexpected internal failures:
+
 ```python
-mcp = FastMCP(name="SecureServer", mask_error_details=True)
-```
+import logging
+from datetime import date
 
-2. Or use `ToolError` to explicitly control what error information is sent to clients:
-```python
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-@mcp.tool
-def divide(a: float, b: float) -> float:
-    """Divide a by b."""
+mcp = FastMCP("DateTools", mask_error_details=True)
 
-    if b == 0:
-        # Error messages from ToolError are always sent to clients,
-        # regardless of mask_error_details setting
-        raise ToolError("Division by zero is not allowed.")
-    
-    # If mask_error_details=True, this message would be masked
-    if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
-        raise TypeError("Both arguments must be numbers.")
-        
-    return a / b
+
+@mcp.tool
+def count_days(start_date: date, end_date: date) -> int:
+    """Count the days in a date range."""
+    if start_date >= end_date:
+        raise ToolError(
+            "start_date must be before end_date. Please correct the date range.",
+            log_level=logging.WARNING,
+        )
+    return (end_date - start_date).days
 ```
 
-When `mask_error_details=True`, only error messages from `ToolError` will include details, other exceptions will be converted to a generic message.
+The `log_level` argument controls the tool-execution log entry for `ToolError` (default: `logging.ERROR`). FastMCP's `ValidationError` is logged at `WARNING` during tool execution. Validation warnings identify the tool and, for Pydantic errors, include the error count and built-in error types (such as `int_parsing`). Custom error codes are reported as `custom_error`. Argument values, validation locations, and validator messages are omitted because they may contain private client data. This does not change the validation details returned to the caller or redact explicit debug logging or custom middleware logs.
+
+Log severity, MCP responses, and trace status are separate. Exceptions propagating through a recorded FastMCP server span mark it `ERROR`, as described in [Telemetry error handling](/servers/telemetry#error-handling). Lowering `log_level` changes logging, not this span handling. External dashboards may apply their own classification.
 
 ## Timeouts
 
@@ -1053,20 +1059,28 @@ Client-specific behavior:
 
 <VersionBadge version="2.9.1" />
 
-FastMCP automatically sends `notifications/tools/list_changed` notifications to connected clients when tools are added, removed, enabled, or disabled. This allows clients to stay up-to-date with the current tool set without manually polling for changes.
+Adding, removing, enabling, or disabling tools at the server or provider level does not notify connected clients. Clients see the change the next time they list tools.
+
+When a request changes the tool set, the tool handling it can tell the calling session by sending `notifications/tools/list_changed` itself. The notification reaches only that session.
 
 ```python
-def example_tool() -> str:
-    return "Hello!"
+from fastmcp import FastMCP
+from fastmcp.server.context import Context
+from mcp_types import ToolListChangedNotification
 
-# These operations trigger notifications:
-mcp.add_tool(example_tool)              # Sends tools/list_changed notification
-mcp.disable(names={"example_tool"})  # Sends tools/list_changed notification
-mcp.enable(names={"example_tool"})   # Sends tools/list_changed notification
-mcp.local_provider.remove_tool("example_tool")  # Sends tools/list_changed notification
+mcp = FastMCP("Server")
+
+@mcp.tool
+async def unlock_extras(ctx: Context) -> str:
+    def report() -> str:
+        return "Monthly report"
+
+    mcp.tool(report)
+    await ctx.send_notification(ToolListChangedNotification())
+    return "Extras unlocked"
 ```
 
-Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.
+Session visibility changes made with `ctx.enable_components()` and `ctx.disable_components()` send these notifications automatically. See [Client Notifications](/servers/visibility#client-notifications).
 
 Clients can handle these notifications using a [message handler](/clients/notifications) to automatically refresh their tool lists or update their interfaces.
 

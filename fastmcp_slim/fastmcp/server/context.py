@@ -339,7 +339,13 @@ class Context:
             return await call_next(context)
         ```
         """
-        return fastmcp_request_ctx.get()
+        request_ctx = fastmcp_request_ctx.get()
+        # Outside a live request, _paginate_list binds a stand-in request
+        # context with no session. That is not an MCP session, so report it
+        # as no request context to session consumers.
+        if request_ctx is None or request_ctx.session is None:
+            return None
+        return request_ctx
 
     def client_extension_settings(self, identifier: str) -> dict[str, Any] | None:
         """This request's per-request opt-in settings for an MCP extension.
@@ -638,7 +644,7 @@ class Context:
         # falling back to the server's configured default.
         min_level = self.fastmcp.client_log_level
         session = self.session
-        session_min = _get_client_log_level(self.fastmcp, session)
+        session_min = _get_client_log_level(session)
         if session_min is not None:
             min_level = session_min
 
@@ -1340,28 +1346,23 @@ def _detached_request_context(context: Context) -> ServerRequestContext:
     )
 
 
-# `Connection.state` key holding the level a client set with logging/setLevel
-# on a connection that has no session id.
+# `Connection.state` key holding the level a client set with logging/setLevel.
 _CONNECTION_LOG_LEVEL_KEY = "_fastmcp_client_log_level"
 
 
-def _get_client_log_level(
-    server: FastMCP, session: ServerSession
-) -> LoggingLevel | None:
+def _get_client_log_level(session: ServerSession) -> LoggingLevel | None:
     """Return the minimum log level the client set with logging/setLevel, if any.
 
     v2 constructs sessions per-request, so the stable identity is the
-    connection. A handshake-era HTTP session is keyed by its session id on the
-    server. Any other connection (stdio, in-memory, stateless HTTP, 2026-07-28)
-    has no session id, so its level lives in the connection's own state, where
-    no other client can see it and which ends with the connection.
+    connection. The level lives in the connection's own state, where no other
+    client can see it and which ends with the connection. Every server that
+    handles the connection's requests, mounted servers included, reads the same
+    value.
     """
     connection = getattr(session, "_connection", None)
     if connection is None:
         return None
-    if connection.session_id is None:
-        return connection.state.get(_CONNECTION_LOG_LEVEL_KEY)
-    return server._client_log_levels.get(connection.session_id)
+    return connection.state.get(_CONNECTION_LOG_LEVEL_KEY)
 
 
 async def _log_to_server_and_client(
