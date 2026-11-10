@@ -580,3 +580,71 @@ async def test_form_urlencoded_additional_properties_objects_are_json_encoded(
     payload = _form_fields(request)["team"][0]
     assert "'name'" not in payload
     assert json.loads(payload) == {"name": "infra"}
+
+
+@pytest.mark.parametrize("openapi_version", ["3.0.3", "3.1.0"])
+@pytest.mark.parametrize(
+    ("required", "arguments", "expected"),
+    [
+        (True, {}, {}),
+        (True, {"limit": 5}, {"limit": 5}),
+        (False, {}, None),
+        (False, {"limit": 5}, {"limit": 5}),
+    ],
+)
+async def test_required_json_object_with_omitted_properties_sends_empty_object(
+    openapi_version: str,
+    required: bool,
+    arguments: dict[str, Any],
+    expected: dict[str, Any] | None,
+) -> None:
+    """A required object body is {} when every property is left out.
+
+    Optional bodies stay absent. Supplying a property still sends that object.
+    """
+    spec = {
+        "openapi": openapi_version,
+        "info": {"title": "Search", "version": "1.0"},
+        "paths": {
+            "/search": {
+                "post": {
+                    "operationId": "search",
+                    "requestBody": {
+                        "required": required,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"limit": {"type": "integer"}},
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+    }
+    requests: list[httpx2.Request] = []
+
+    def capture(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(200, json={"ok": True})
+
+    async with httpx2.AsyncClient(
+        base_url="https://offline.example.test",
+        transport=httpx2.MockTransport(capture),
+    ) as http_client:
+        server = FastMCP.from_openapi(openapi_spec=spec, client=http_client)
+        async with Client(server) as client:
+            await client.call_tool("search", arguments)
+
+    assert len(requests) == 1
+    if expected is None:
+        assert requests[0].content == b""
+        assert "content-type" not in requests[0].headers
+        return
+    assert requests[0].headers["content-type"] == "application/json"
+    assert json.loads(requests[0].content) == expected
+    if expected == {}:
+        assert requests[0].content == b"{}"

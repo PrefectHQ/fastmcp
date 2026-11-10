@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import weakref
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
@@ -52,7 +52,7 @@ class LifespanMixin:
         return self._docket
 
     @asynccontextmanager
-    async def _shared_context_lifespan(self: FastMCP) -> AsyncIterator[None]:
+    async def _shared_context_lifespan(self: FastMCP) -> AsyncGenerator[None, None]:
         """Set up the process-level ``SharedContext`` and server ContextVar.
 
         ``SharedContext`` backs app-scoped ``Shared()`` dependencies and is
@@ -84,7 +84,7 @@ class LifespanMixin:
             _current_server.reset(server_token)
 
     @asynccontextmanager
-    async def _extensions_lifespan(self: FastMCP) -> AsyncIterator[None]:
+    async def _extensions_lifespan(self: FastMCP) -> AsyncGenerator[None, None]:
         """Enter each registered extension's lifespan, exit them on shutdown.
 
         Extension lifespans are entered once per runtime tree, at the root. A
@@ -177,7 +177,7 @@ class LifespanMixin:
             self._shared_context_snapshot = None
 
     @asynccontextmanager
-    async def _lifespan_manager(self: FastMCP) -> AsyncIterator[None]:
+    async def _lifespan_manager(self: FastMCP) -> AsyncGenerator[None, None]:
         async with self._lifespan_lock:
             if self._lifespan_result_set:
                 self._lifespan_ref_count += 1
