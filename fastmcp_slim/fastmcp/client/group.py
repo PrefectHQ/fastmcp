@@ -17,6 +17,8 @@ from mcp.client.caching import CacheMode
 from fastmcp.client.client import CallToolResult, Client, ConnectMode
 from fastmcp.client.progress import ProgressHandler
 from fastmcp.mcp_config import MCPConfig
+from fastmcp.skills.models import MCPSkill
+from fastmcp.skills.skill import Skill
 from fastmcp.utilities.async_utils import gather
 
 
@@ -29,11 +31,26 @@ class ToolRoute:
     upstream_name: str
 
 
+@dataclass(frozen=True)
+class _EnteredClient:
+    task: asyncio.Task[Any]
+    session_task: asyncio.Task[Any] | None
+
+
+async def _enter_client_context(client: Client[Any]) -> _EnteredClient:
+    await client.__aenter__()
+    task = asyncio.current_task()
+    if task is None:
+        raise RuntimeError("Client group entered outside an asyncio task")
+    return _EnteredClient(task, client._session_state.session_task)
+
+
 class ClientGroup:
     """Coordinate independent clients without introducing a proxy server.
 
     Each client retains its own transport, session, capabilities, and protocol
-    version. The group only combines tool discovery and routes tool calls.
+    version. The group only combines tool and skill discovery and routes tool
+    calls.
 
     Callers may manage the clients' connections themselves or use the group as
     a convenience context manager. The group's context is reentrant in the
@@ -54,6 +71,10 @@ class ClientGroup:
         self._tool_routes: dict[str, ToolRoute] = {}
         self._catalog_loaded = False
         self._route_lock = anyio.Lock()
+        # Keep explicit refresh fetches and commits in the same order; this is
+        # separate from _route_lock because lazy discovery calls list_tools()
+        # while holding that lock.
+        self._refresh_lock = anyio.Lock()
         # Member closes handed off by exiting contexts; referenced until done.
         self._closers: set[asyncio.Task[bool | None]] = set()
 
@@ -88,7 +109,10 @@ class ClientGroup:
             configured_mode = (server.model_extra or {}).get("mode", default_mode)
             if not isinstance(configured_mode, str):
                 raise TypeError(f"Protocol mode for server {name!r} must be a string")
-            clients[name] = Client(server.to_transport(), mode=configured_mode)
+            timeout = server.timeout / 1000 if server.timeout is not None else None
+            clients[name] = Client(
+                server.to_transport(), mode=configured_mode, timeout=timeout
+            )
 
         return cls(clients)
 
@@ -108,25 +132,47 @@ class ClientGroup:
         await stack.__aenter__()
 
         # Connect concurrently: entry latency stays one handshake deep instead
-        # of growing linearly with the number of servers. With
-        # return_exceptions=True every connection attempt runs to completion,
-        # so on partial failure the successes are known and can be unwound.
-        clients = list(self._clients.values())
-        results = await gather(
-            (client.__aenter__() for client in clients), return_exceptions=True
-        )
+        # of growing linearly with the number of servers. Each member's exit is
+        # registered the moment its entry succeeds, so a failed or cancelled
+        # entry can unwind exactly the members that connected.
+        async def enter_member(client: Client[Any]) -> None:
+            entered = await _enter_client_context(client)
+
+            async def exit_client(
+                exc_type: type[BaseException] | None,
+                exc_value: BaseException | None,
+                traceback: TracebackType | None,
+            ) -> bool | None:
+                return await client._exit_context(
+                    entered.session_task,
+                    entered.task,
+                    exc_type,
+                    exc_value,
+                    traceback,
+                )
+
+            stack.push_async_exit(exit_client)
+
+        try:
+            results = await gather(
+                (enter_member(client) for client in self._clients.values()),
+                return_exceptions=True,
+            )
+        except BaseException:
+            await self._unwind_partial_entry(stack)
+            raise
+
         errors = [result for result in results if isinstance(result, BaseException)]
         if errors:
-            for client, result in zip(clients, results, strict=True):
-                if not isinstance(result, BaseException):
-                    with contextlib.suppress(Exception):
-                        await client.__aexit__(None, None, None)
-            await stack.aclose()
+            await self._unwind_partial_entry(stack)
             raise errors[0]
-
-        for client in clients:
-            stack.push_async_exit(client)
         return stack
+
+    @staticmethod
+    async def _unwind_partial_entry(stack: contextlib.AsyncExitStack) -> None:
+        """Disconnect the members a failed or cancelled entry already connected."""
+        with anyio.CancelScope(shield=True), contextlib.suppress(Exception):
+            await stack.aclose()
 
     async def __aexit__(
         self,
@@ -162,7 +208,9 @@ class ClientGroup:
                 # Closed already, or another context entered while we waited.
                 return None
             self._exit_stack = None
-            self._tool_routes.clear()
+            # Keep the known routes: a route needs only its own client, which a
+            # caller may connect without the group. Mark the catalog for lazy
+            # rediscovery, so the next unknown name re-reads every server.
             self._catalog_loaded = False
             return await held.__aexit__(exc_type, exc_value, traceback)
 
@@ -173,6 +221,17 @@ class ClientGroup:
         if disconnected:
             names = ", ".join(repr(name) for name in disconnected)
             raise RuntimeError(f"ClientGroup clients are not connected: {names}")
+
+    def _get_connected_client(self, server_name: str) -> Client[Any]:
+        try:
+            client = self._clients[server_name]
+        except KeyError as exc:
+            raise KeyError(f"Unknown ClientGroup server: {server_name!r}") from exc
+        if not client.is_connected():
+            raise RuntimeError(
+                f"ClientGroup client for server {server_name!r} is not connected"
+            )
+        return client
 
     def _require_route_connected(self, route: ToolRoute) -> None:
         if not route.client.is_connected():
@@ -192,30 +251,69 @@ class ClientGroup:
         cache hits when staleness within the server's hint is acceptable.
         """
         self._require_connected()
-        tools: list[mcp_types.Tool] = []
-        routes: dict[str, ToolRoute] = {}
-        clients = list(self._clients.items())
-        tool_lists = await gather(
-            client.list_tools(cache_mode=cache_mode) for _, client in clients
+        async with self._refresh_lock:
+            self._require_connected()
+            tools: list[mcp_types.Tool] = []
+            routes: dict[str, ToolRoute] = {}
+            clients = list(self._clients.items())
+            tool_lists = await gather(
+                client.list_tools(cache_mode=cache_mode) for _, client in clients
+            )
+
+            for (server_name, client), server_tools in zip(
+                clients, tool_lists, strict=True
+            ):
+                for tool in server_tools:
+                    public_name = f"{server_name}_{tool.name}"
+                    if public_name in routes:
+                        raise ValueError(f"Tool name collision: {public_name!r}")
+                    routes[public_name] = ToolRoute(
+                        server_name=server_name,
+                        client=client,
+                        upstream_name=tool.name,
+                    )
+                    tools.append(tool.model_copy(update={"name": public_name}))
+
+            self._tool_routes = routes
+            self._catalog_loaded = True
+            return tools
+
+    async def list_skills(
+        self, *, cache_mode: CacheMode = "use"
+    ) -> dict[str, list[MCPSkill]]:
+        """List skills from every client that negotiated the Skills extension.
+
+        Results are keyed by server name, since skill URIs are only unique
+        within one server. Clients without the extension, because they didn't
+        pass `SkillsClientExtension()` or their server doesn't advertise it,
+        are left out.
+        """
+        self._require_connected()
+        clients = [
+            (name, client)
+            for name, client in self._clients.items()
+            if client._skills_unavailable_reason() is None
+        ]
+        skill_lists = await gather(
+            client.list_skills(cache_mode=cache_mode) for _, client in clients
         )
+        return {
+            name: skills for (name, _), skills in zip(clients, skill_lists, strict=True)
+        }
 
-        for (server_name, client), server_tools in zip(
-            clients, tool_lists, strict=True
-        ):
-            for tool in server_tools:
-                public_name = f"{server_name}_{tool.name}"
-                if public_name in routes:
-                    raise ValueError(f"Tool name collision: {public_name!r}")
-                routes[public_name] = ToolRoute(
-                    server_name=server_name,
-                    client=client,
-                    upstream_name=tool.name,
-                )
-                tools.append(tool.model_copy(update={"name": public_name}))
+    async def get_skill(
+        self, server_name: str, uri: str, *, cache_mode: CacheMode = "use"
+    ) -> MCPSkill:
+        """Fetch one skill entry from the named server."""
+        client = self._get_connected_client(server_name)
+        return await client.get_skill(uri, cache_mode=cache_mode)
 
-        self._tool_routes = routes
-        self._catalog_loaded = True
-        return tools
+    async def read_skill(
+        self, server_name: str, uri: str, *, cache_mode: CacheMode = "use"
+    ) -> Skill:
+        """Read one whole skill from the named server; see `Client.read_skill`."""
+        client = self._get_connected_client(server_name)
+        return await client.read_skill(uri, cache_mode=cache_mode)
 
     async def resolve_tool(self, name: str) -> ToolRoute:
         """Resolve a public tool name to its client and upstream identity.

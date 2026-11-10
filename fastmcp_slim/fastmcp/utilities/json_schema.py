@@ -102,6 +102,32 @@ def _resolve_local_ref(
     return node
 
 
+def ref_target_name(
+    ref: str, roots: Sequence[Sequence[str]] = (("$defs",),)
+) -> str | None:
+    """Return the definition name a local JSON Pointer ``$ref`` addresses.
+
+    The name is the first pointer segment after one of *roots* (``$defs`` by
+    default, ``components/schemas`` for raw OpenAPI documents), decoded the
+    way `_resolve_local_ref` decodes pointers: the fragment is percent-decoded
+    before it is split, and ``~1``/``~0`` are unescaped per RFC 6901. A
+    pointer may continue past the name into the definition's own contents, so
+    ``#/$defs/Container/properties/value`` still names ``Container``.
+
+    Returns ``None`` when the pointer does not name a definition under one of
+    *roots*. Reference collectors must use this instead of reading the raw
+    pointer text: a definition called ``a/b`` is referenced as ``a~1b``, one
+    called ``Alias One`` as ``Alias%20One``, and neither decoded name appears
+    in the raw text.
+    """
+    parts = unquote(ref[1:].lstrip("/")).split("/")
+    for root in roots:
+        depth = len(root)
+        if parts[:depth] == list(root) and len(parts) > depth and parts[depth]:
+            return parts[depth].replace("~1", "/").replace("~0", "~")
+    return None
+
+
 def _within_inline_limits(root: dict[str, Any], *, follow_refs: bool) -> bool:
     """Check the node count and depth of *root* once fully expanded.
 
@@ -209,7 +235,7 @@ def _strip_remote_refs(obj: Any) -> Any:
     return obj
 
 
-def _strip_discriminator(obj: Any) -> Any:
+def _strip_discriminator(obj: Any, *, copy_data: bool = False) -> Any:
     """Recursively remove OpenAPI ``discriminator`` keys from a schema.
 
     Pydantic emits ``discriminator.mapping`` with values like
@@ -228,13 +254,24 @@ def _strip_discriminator(obj: Any) -> Any:
             obj = require_discriminator_property(obj)
         # Keys that hold instance data, not sub-schemas — don't recurse.
         _DATA_KEYS = {"default", "const", "examples", "enum"}
-        return {
-            k: (v if k in _DATA_KEYS else _strip_discriminator(v))
-            for k, v in obj.items()
-            if not (k == "discriminator" and skip)
-        }
+        result: dict[str, Any] = {}
+        for k, v in obj.items():
+            if k == "discriminator" and skip:
+                continue
+            if k in _SUBSCHEMA_MAP_KEYS and isinstance(v, dict):
+                # The keys here are user property/definition names, so one
+                # named like a keyword above still holds a sub-schema.
+                result[k] = {
+                    name: _strip_discriminator(sub, copy_data=copy_data)
+                    for name, sub in v.items()
+                }
+            elif k in _DATA_KEYS:
+                result[k] = _copy_schema({"value": v})["value"] if copy_data else v
+            else:
+                result[k] = _strip_discriminator(v, copy_data=copy_data)
+        return result
     if isinstance(obj, list):
-        return [_strip_discriminator(item) for item in obj]
+        return [_strip_discriminator(item, copy_data=copy_data) for item in obj]
     return obj
 
 
@@ -277,6 +314,30 @@ def require_discriminator_property(schema: dict[str, Any]) -> dict[str, Any]:
             for variant in variants
         ]
     return result
+
+
+def _needs_ref_merge(schema: dict[str, Any]) -> bool:
+    """Keep sibling restoration and the existing handling of other pointers."""
+    stack: list[Any] = [schema]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if "$ref" in node:
+                ref = node["$ref"]
+                # The merge only traverses referenced definitions under $defs.
+                # Other pointers retain their previous shared literal values.
+                # jsonref also normalizes these characters before URI lookup.
+                if (
+                    not isinstance(ref, str)
+                    or not ref.startswith("#/$defs/")
+                    or any(character in ref for character in "\t\r\n")
+                    or any(key not in ("$ref", "$defs") for key in node)
+                ):
+                    return True
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    return False
 
 
 def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
@@ -335,10 +396,17 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
 
         # Merge sibling keywords that were lost during dereferencing
         # Pydantic puts description, default, examples as siblings to $ref
-        merged = _merge_ref_siblings(schema, dereferenced, schema)
-        # Type assertion: top-level schema is always a dict
-        assert isinstance(merged, dict)
-        dereferenced = merged
+        needs_merge = _needs_ref_merge(schema)
+        if needs_merge:
+            dereferenced = _merge_ref_siblings(schema, dereferenced, schema)
+        # A boolean schema is valid JSON Schema (`true` accepts every
+        # instance, `false` rejects every instance), so a root $ref can
+        # resolve to a non-dict value. jsonref then replaces the whole
+        # schema with that value, and there is nothing to inline into.
+        # Fall back to the same partial resolution used for circular and
+        # oversized schemas rather than failing the entire listing.
+        if not isinstance(dereferenced, dict):
+            return resolve_root_ref(schema)
 
         # Remove $defs since all references have been resolved
         if "$defs" in dereferenced:
@@ -355,7 +423,10 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         # is an OpenAPI extension; after inlining, the `anyOf` variants
         # already carry `const` on the discriminant field, making the
         # mapping redundant.
-        dereferenced = _strip_discriminator(dereferenced)
+        # Without the sibling pass, jsonref still shares referenced containers.
+        # This traversal copies schemas; also copy literal instance data to keep
+        # each reference's defaults, consts, examples and enums independent.
+        dereferenced = _strip_discriminator(dereferenced, copy_data=not needs_merge)
 
         if not _text_within_limit(dereferenced):
             return resolve_root_ref(schema)
@@ -712,17 +783,12 @@ def _single_pass_optimize(
             # still pins the referenced $def as "used".
             if prune_defs:
                 ref = node.get("$ref")
-                fragment = (
-                    unquote(ref[1:])
-                    if isinstance(ref, str) and ref.startswith("#")
-                    else ""
-                )
-                if fragment.startswith("/"):
-                    parts = fragment[1:].split("/")
-                    if len(parts) >= 2 and parts[0] == "$defs":
-                        # Keep the owning definition even when the pointer
-                        # targets a nested schema within it.
-                        referenced_def = parts[1].replace("~1", "/").replace("~0", "~")
+                if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                    # Decode the pointer: escaped, percent-encoded, and
+                    # sub-pointer references resolve to a definition whose
+                    # name is not the raw text of the segment.
+                    referenced_def = ref_target_name(ref)
+                    if referenced_def is not None:
                         if current_def_name:
                             # We're inside a $def, so this is a def->def reference
                             def_dependencies[referenced_def].append(current_def_name)

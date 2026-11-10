@@ -1,14 +1,20 @@
 """Tests for authorization checks and AuthMiddleware."""
 
+from collections.abc import Sequence
 from unittest.mock import Mock
 
 import pytest
+from mcp import MCPError
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP, FastMCPApp
+from fastmcp.apps.config import PrefabAppConfig
 from fastmcp.client import Client
-from fastmcp.exceptions import AuthorizationError, InsufficientScopeError
+from fastmcp.exceptions import AuthorizationError, InsufficientScopeError, ToolError
+from fastmcp.prompts import Prompt
+from fastmcp.resources.base import Resource
+from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import (
     AccessToken,
     AuthContext,
@@ -18,7 +24,18 @@ from fastmcp.server.auth import (
     run_auth_checks,
 )
 from fastmcp.server.middleware import AuthMiddleware
-from fastmcp.server.transforms import ToolTransform
+from fastmcp.server.providers.addressing import (
+    hashed_backend_name,
+)
+from fastmcp.server.transforms import (
+    GetPromptNext,
+    GetResourceNext,
+    GetResourceTemplateNext,
+    GetToolNext,
+    ToolTransform,
+    Transform,
+)
+from fastmcp.tools.base import Tool
 from fastmcp.tools.tool_transform import ToolTransformConfig, TransformedTool
 from fastmcp.utilities.authorization import scope_requirements
 from fastmcp.utilities.versions import VersionSpec
@@ -1483,3 +1500,338 @@ class TestInsufficientScopeSignal:
             auth_context_var.reset(tok)
 
         assert exc_info.value.required_scopes == ["admin"]
+
+
+# =============================================================================
+# Tests that component auth sees the transformed component on direct lookups
+# =============================================================================
+
+
+class TagAdmin(Transform):
+    """Tag every resource, template, and prompt `admin`, on list and get alike."""
+
+    async def list_resources(self, resources: Sequence[Resource]) -> Sequence[Resource]:
+        return [r.model_copy(update={"tags": {"admin"}}) for r in resources]
+
+    async def get_resource(
+        self,
+        uri: str,
+        call_next: GetResourceNext,
+        *,
+        version: VersionSpec | None = None,
+    ) -> Resource | None:
+        resource = await call_next(uri, version=version)
+        return resource and resource.model_copy(update={"tags": {"admin"}})
+
+    async def list_resource_templates(
+        self, templates: Sequence[ResourceTemplate]
+    ) -> Sequence[ResourceTemplate]:
+        return [t.model_copy(update={"tags": {"admin"}}) for t in templates]
+
+    async def get_resource_template(
+        self,
+        uri: str,
+        call_next: GetResourceTemplateNext,
+        *,
+        version: VersionSpec | None = None,
+    ) -> ResourceTemplate | None:
+        template = await call_next(uri, version=version)
+        return template and template.model_copy(update={"tags": {"admin"}})
+
+    async def list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]:
+        return [p.model_copy(update={"tags": {"admin"}}) for p in prompts]
+
+    async def get_prompt(
+        self, name: str, call_next: GetPromptNext, *, version: VersionSpec | None = None
+    ) -> Prompt | None:
+        prompt = await call_next(name, version=version)
+        return prompt and prompt.model_copy(update={"tags": {"admin"}})
+
+
+class TestAuthSeesTransformedComponent:
+    """A transform that tags a component `admin` must gate direct access, not just listing."""
+
+    def make_tool_server(self) -> FastMCP:
+        mcp = FastMCP()
+
+        @mcp.tool(tags={"public"}, auth=restrict_tag("admin", scopes=["admin"]))
+        def secret() -> str:
+            return "secret"
+
+        mcp.add_transform(
+            ToolTransform({"secret": ToolTransformConfig(tags={"admin"})})
+        )
+        return mcp
+
+    async def test_tool_tagged_by_transform_is_denied_without_scope(self):
+        mcp = self.make_tool_server()
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert await mcp.list_tools() == []
+            assert await mcp.get_tool("secret") is None
+            async with Client(mcp) as client:
+                with pytest.raises(ToolError):
+                    await client.call_tool("secret")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_tool_tagged_by_transform_is_allowed_with_scope(self):
+        mcp = self.make_tool_server()
+        tok = set_token(make_token(scopes=["admin"]))
+        try:
+            assert [t.name for t in await mcp.list_tools()] == ["secret"]
+            async with Client(mcp) as client:
+                result = await client.call_tool("secret")
+            assert result.data == "secret"
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_resource_tagged_by_transform_is_denied_without_scope(self):
+        mcp = FastMCP()
+
+        @mcp.resource(
+            "secret://data",
+            tags={"public"},
+            auth=restrict_tag("admin", scopes=["admin"]),
+        )
+        def secret() -> str:
+            return "secret"
+
+        mcp.add_transform(TagAdmin())
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert await mcp.list_resources() == []
+            assert await mcp.get_resource("secret://data") is None
+            async with Client(mcp) as client:
+                with pytest.raises(MCPError):
+                    await client.read_resource("secret://data")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_template_tagged_by_transform_is_denied_without_scope(self):
+        mcp = FastMCP()
+
+        @mcp.resource(
+            "secret://{name}",
+            tags={"public"},
+            auth=restrict_tag("admin", scopes=["admin"]),
+        )
+        def secret(name: str) -> str:
+            return f"secret {name}"
+
+        mcp.add_transform(TagAdmin())
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert await mcp.list_resource_templates() == []
+            assert await mcp.get_resource_template("secret://{name}") is None
+            async with Client(mcp) as client:
+                with pytest.raises(MCPError):
+                    await client.read_resource("secret://x")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_prompt_tagged_by_transform_is_denied_without_scope(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(tags={"public"}, auth=restrict_tag("admin", scopes=["admin"]))
+        def secret() -> str:
+            return "secret"
+
+        mcp.add_transform(TagAdmin())
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert await mcp.list_prompts() == []
+            assert await mcp.get_prompt("secret") is None
+            async with Client(mcp) as client:
+                with pytest.raises(MCPError):
+                    await client.get_prompt("secret")
+        finally:
+            auth_context_var.reset(tok)
+
+
+# =============================================================================
+# Tests for AuthMiddleware on identity-addressed backend tools
+# =============================================================================
+
+
+class _RefuseLookup(Transform):
+    """Lists every tool but refuses to resolve the named ones."""
+
+    def __init__(self, *names: str) -> None:
+        self.names = set(names)
+
+    async def get_tool(
+        self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
+    ) -> Tool | None:
+        if name in self.names:
+            return None
+        return await call_next(name, version=version)
+
+
+def make_app_server(
+    calls: list[str],
+    *,
+    backend_auth=None,
+) -> FastMCP:
+    """A server whose ``contacts`` app backend tool ``save`` records its calls."""
+    app = FastMCPApp("contacts")
+
+    @app.tool(auth=backend_auth)
+    def save(name: str) -> str:
+        calls.append(name)
+        return f"saved {name}"
+
+    mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("test"))])
+    mcp.add_provider(app)
+    return mcp
+
+
+SAVE_HASHED = hashed_backend_name("contacts", "save")
+
+
+class TestAuthMiddlewareHashedBackendNames:
+    """A backend tool addressed by ``<hash>_<local_name>`` is authorized as the
+    same component as the listed name, so the global and component checks apply
+    identically to both addresses."""
+
+    async def test_hashed_name_call_with_sufficient_scope_executes_tool(self):
+        calls: list[str] = []
+        mcp = make_app_server(calls)
+
+        tok = set_token(make_token(scopes=["test"]))
+        try:
+            result = await mcp.call_tool(SAVE_HASHED, {"name": "alice"})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert calls == ["alice"]
+
+    async def test_hashed_name_call_with_insufficient_scope_is_denied(self):
+        calls: list[str] = []
+        mcp = make_app_server(calls)
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool(SAVE_HASHED, {"name": "alice"})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["test"]
+        assert calls == []
+
+    async def test_hashed_name_call_is_denied_by_backend_component_auth(self):
+        # Component-level auth on the resolved tool still applies: the caller
+        # satisfies the global scope but not the tool's own requirement.
+        calls: list[str] = []
+        mcp = make_app_server(calls, backend_auth=require_scopes("admin"))
+
+        tok = set_token(make_token(scopes=["test"]))
+        try:
+            with pytest.raises(AuthorizationError) as exc_info:
+                await mcp.call_tool(SAVE_HASHED, {"name": "alice"})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert "not found or not authorized" in str(exc_info.value)
+        assert calls == []
+
+    async def test_display_name_call_is_unchanged(self):
+        calls: list[str] = []
+        mcp = make_app_server(calls)
+
+        tok = set_token(make_token(scopes=["test"]))
+        try:
+            result = await mcp.call_tool("save", {"name": "alice"})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert calls == ["alice"]
+
+    async def test_transform_refused_tool_stays_denied_under_hashed_name(self):
+        # The transform refuses to resolve the listed name, so the hashed
+        # fallback must not reach the tool either.
+        calls: list[str] = []
+        mcp = make_app_server(calls)
+        mcp.add_transform(_RefuseLookup("save"))
+
+        tok = set_token(make_token(scopes=["test"]))
+        try:
+            with pytest.raises(AuthorizationError) as exc_info:
+                await mcp.call_tool(SAVE_HASHED, {"name": "alice"})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert "not found or not authorized" in str(exc_info.value)
+        assert calls == []
+
+
+# =============================================================================
+# Tests for AuthMiddleware on synthesized Prefab renderer resources
+# =============================================================================
+
+
+class TestAuthMiddlewareSynthesizedPrefabResources:
+    """Per-tool Prefab renderer resources are synthesized on demand rather than
+    stored, so the middleware must resolve them the same way core read does."""
+
+    @staticmethod
+    def make_server() -> FastMCP:
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("ui"))])
+
+        @mcp.tool(app=PrefabAppConfig())
+        def show_widget() -> str:
+            return "widget"
+
+        return mcp
+
+    @staticmethod
+    async def renderer_uri(mcp: FastMCP) -> str:
+        """Return the renderer URI the server lists to an authorized caller."""
+        tok = set_token(make_token(scopes=["ui"]))
+        try:
+            resources = await mcp.list_resources()
+        finally:
+            auth_context_var.reset(tok)
+        [uri] = [
+            str(resource.uri)
+            for resource in resources
+            if str(resource.uri).startswith("ui://prefab/")
+        ]
+        return uri
+
+    async def test_read_renderer_with_sufficient_scope(self):
+        pytest.importorskip("prefab_ui")
+        mcp = self.make_server()
+        uri = await self.renderer_uri(mcp)
+
+        tok = set_token(make_token(scopes=["ui"]))
+        try:
+            resources = await mcp.list_resources()
+            assert any(str(resource.uri) == uri for resource in resources)
+
+            result = await mcp.read_resource(uri)
+        finally:
+            auth_context_var.reset(tok)
+
+        assert result.contents[0].mime_type == "text/html;profile=mcp-app"
+        assert result.contents[0].content
+
+    async def test_read_renderer_with_insufficient_scope_is_denied(self):
+        pytest.importorskip("prefab_ui")
+        mcp = self.make_server()
+        uri = await self.renderer_uri(mcp)
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            resources = await mcp.list_resources()
+            assert not any(str(resource.uri) == uri for resource in resources)
+
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.read_resource(uri)
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["ui"]

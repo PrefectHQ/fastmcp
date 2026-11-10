@@ -37,13 +37,13 @@ Before you begin, you will need:
 <Step title="Copy the Well-Known URL">
     `DescopeProvider` accepts both resource-specific MCP Server URLs:
 
-    ```
+    ```text
     https://api.descope.com/v1/apps/agentic/P.../M.../.well-known/openid-configuration
     ```
 
     and project-level inbound app URLs:
 
-    ```
+    ```text
     https://api.descope.com/v1/apps/P.../.well-known/openid-configuration
     ```
 
@@ -138,7 +138,7 @@ from fastmcp.server.auth.providers.descope import DescopeProvider
 
 # Load configuration from environment variables
 auth = DescopeProvider(
-    config_url=os.environ.get("DESCOPE_CONFIG_URL"),
+    config_url=os.environ["DESCOPE_CONFIG_URL"],
     base_url=os.environ.get("BASE_URL", "https://your-server.com")
 )
 

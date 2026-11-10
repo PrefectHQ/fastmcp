@@ -20,7 +20,7 @@ which avoids leaking task existence across callers.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
 import mcp_types
@@ -29,9 +29,10 @@ from mcp.shared.exceptions import MCPError
 from mcp_types import INVALID_PARAMS
 
 from fastmcp.exceptions import NotFoundError
-from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
+from fastmcp.tools.base import InputRequiredToolResult, Tool
 from fastmcp.utilities.tasks import DEFAULT_POLL_INTERVAL_MS
 from fastmcp.utilities.versions import VersionSpec
+from fastmcp_tasks.components import TASK_RESULT_ENVELOPE_KEY, task_result_to_wire
 from fastmcp_tasks.context import get_task_scope, refresh_snapshot_ttl
 from fastmcp_tasks.creation import (
     TASK_MAPPING_TTL_BUFFER_SECONDS,
@@ -47,6 +48,7 @@ from fastmcp_tasks.input_store import (
     load_task_args,
     mark_cancelled,
     read_outstanding_inputs,
+    refresh_args_ttl,
     refresh_current_leg_ttl,
     release_update_lock,
     save_current_leg,
@@ -97,7 +99,7 @@ def _normalize_iso_timestamp(stored: str | None) -> str:
             return datetime.fromisoformat(stored.replace("Z", "+00:00")).isoformat()
         except (ValueError, AttributeError):
             pass
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _parse_key_version(key_suffix: str) -> tuple[str, str | None]:
@@ -165,6 +167,9 @@ async def _lookup_task(
         await redis.expire(created_at_key, refresh_ttl)
         await redis.expire(poll_key, refresh_ttl)
     await refresh_current_leg_ttl(docket, task_scope, task_id, refresh_ttl)
+    # A re-entered leg re-reads the original arguments, so the args key has to
+    # outlive the polling window for the same reason the keys above do.
+    await refresh_args_ttl(docket, task_scope, task_id, refresh_ttl)
     # The snapshot must outlive the routing keys it serves: a re-entered leg
     # restores the submitting caller from it, and with encryption configured a
     # missing snapshot fails the task instead of degrading to an anonymous run.
@@ -224,23 +229,7 @@ def _inline_result(tool: Tool, raw_value: Any) -> dict[str, Any]:
                 "Guard-pattern tasks are supported for function tools."
             ),
         )
-    # A raised tool error arrives as an is_error ToolResult the wrapper built
-    # (end-and-reenter G2); use it directly so isError round-trips. A normal
-    # return is converted through the tool's own result coercion.
-    if isinstance(raw_value, ToolResult):
-        mcp_result = raw_value.to_mcp_result()
-    else:
-        mcp_result = tool.convert_result(raw_value).to_mcp_result()
-    if isinstance(mcp_result, mcp_types.CallToolResult):
-        call_tool_result = mcp_result
-    elif isinstance(mcp_result, tuple):
-        content, structured_content = mcp_result
-        call_tool_result = mcp_types.CallToolResult(
-            content=content, structured_content=structured_content
-        )
-    else:
-        call_tool_result = mcp_types.CallToolResult(content=mcp_result)
-    return call_tool_result.model_dump(by_alias=True, mode="json", exclude_none=True)
+    return task_result_to_wire(tool, raw_value)
 
 
 async def tasks_get(server: FastMCP, task_id: str) -> GetTaskResult:
@@ -260,7 +249,7 @@ async def tasks_get(server: FastMCP, task_id: str) -> GetTaskResult:
     await execution.sync()
 
     created_at_iso = _normalize_iso_timestamp(created_at)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
     ttl_ms = _ttl_ms(docket)
 
     def build(
@@ -295,8 +284,17 @@ async def tasks_get(server: FastMCP, task_id: str) -> GetTaskResult:
         if outstanding:
             return build("input_required", input_requests=outstanding)
         raw_value = await execution.get_result(timeout=timedelta(seconds=0))
-        tool = await _resolve_tool(server, base_task_key)
-        return build("completed", result=_inline_result(tool, raw_value))
+        if isinstance(raw_value, dict) and TASK_RESULT_ENVELOPE_KEY in raw_value:
+            # New executions persist the converted protocol result alongside
+            # the Docket result. Polling therefore remains possible after a
+            # dynamic provider removes the Tool that produced it.
+            result = raw_value[TASK_RESULT_ENVELOPE_KEY]
+        else:
+            # Retain compatibility with tasks created before this envelope was
+            # introduced; their Docket result still needs the live Tool schema.
+            tool = await _resolve_tool(server, base_task_key)
+            result = _inline_result(tool, raw_value)
+        return build("completed", result=result)
 
     if execution.state == ExecutionState.FAILED:
         message = "Task failed"
@@ -457,7 +455,8 @@ async def tasks_cancel(server: FastMCP, task_id: str) -> CancelTaskResult:
     concurrently enqueuing the next one: whichever wins the lock runs to
     completion before the other, and the update rechecks the marker under the
     same lock. If the lock is wedged past its timeout, cancel proceeds
-    best-effort rather than hang.
+    best-effort rather than hang. A task that already completed or failed is
+    acknowledged but left as it is: terminal statuses are final.
     """
     docket = server._docket
     if docket is None:
@@ -474,6 +473,18 @@ async def tasks_cancel(server: FastMCP, task_id: str) -> CancelTaskResult:
         execution, _base_task_key, leg_number, _created_at, _poll = await _lookup_task(
             docket, task_scope, task_id
         )
+        # A task that already reached a terminal status stays there: the marker
+        # below outranks the execution state in tasks/get, so recording it now
+        # would replace a finished result or error with `cancelled`. A leg
+        # parked on input has a COMPLETED execution too, but it is not finished.
+        await execution.sync()
+        if execution.state in (ExecutionState.FAILED, ExecutionState.CANCELLED) or (
+            execution.state == ExecutionState.COMPLETED
+            and not await read_outstanding_inputs(
+                docket, task_scope, task_id, leg_number
+            )
+        ):
+            return CancelTaskResult()
         ttl_seconds = int(docket.execution_ttl.total_seconds())
         await mark_cancelled(docket, task_scope, task_id, ttl_seconds)
         await clear_outstanding(docket, task_scope, task_id, leg_number)
