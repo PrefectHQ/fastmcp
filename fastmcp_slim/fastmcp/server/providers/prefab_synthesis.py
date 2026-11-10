@@ -226,15 +226,8 @@ def _walk_prefab_tools(server: FastMCP) -> list[Tool]:
 
 async def _effective_prefab_tools(server: FastMCP) -> list[Tool]:
     """Use provider and session transforms before deriving resource identity."""
-    try:
-        # Recheck availability so an earlier absence does not prevent recovery.
-        if not prefab_available.__wrapped__():
-            return []
-    except ImportError:
+    if not prefab_available():
         return []
-    except Exception:  # noqa: S110
-        # An optional probe must not break resource discovery.
-        pass
 
     from fastmcp.server.providers.base import Provider
     from fastmcp.server.transforms.visibility import (
