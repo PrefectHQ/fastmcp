@@ -2,18 +2,19 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from flows.agentic_intake import revision_evidence
 from flows.agentic_pr_verification import VerificationSpec
-from flows.agentic_stack import StackSpec, digest
+from flows.agentic_stack import digest
 
 
 class Item(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     issue_number: int = Field(gt=0)
-    mode: Literal["fix", "mre", "review"] = "fix"
+    mode: Literal["mre", "review"] = "mre"
     verification_probes: dict[str, str] = Field(default_factory=dict, max_length=5)
 
     @field_validator("verification_probes")
@@ -56,44 +57,41 @@ class Batch(BaseModel):
         return self
 
 
-def publication_revision(
-    evidence: dict, spec: StackSpec | None = None, layers: list[dict] | None = None
-) -> str:
+def publication_revision(evidence: dict) -> str:
     if evidence.get("complete") is not True or evidence.get("schema_version") != 2:
         raise ValueError("Publication needs complete evidence")
     value = revision_evidence(evidence)
-    own = set()
-    if spec is not None:
-        manifest = {layer["branch"]: layer for layer in layers or []}
-        for pr in value["prs"]:
-            expected = manifest.get(pr["head_ref"])
-            if expected is None:
-                continue
-            if (
-                pr["head_repository"] != "PrefectHQ/fastmcp"
-                or pr["head_sha"] != expected["head_sha"]
-                or pr["user"]["id"] != spec.publisher_id
-            ):
-                raise ValueError("Publication branch names do not prove ownership")
-            own.add(pr["number"])
-    value["prs"] = [pr for pr in value["prs"] if pr["number"] not in own]
-    value["timeline"] = [
-        event
-        for event in value["timeline"]
-        if not (
-            event["event"] == "cross-referenced"
-            and event.get("source", {}).get("issue", {}).get("number") in own
-            and event["source"]["issue"]
-            .get("html_url", "")
-            .startswith("https://github.com/PrefectHQ/fastmcp/pull/")
-        )
-    ]
-    value["stacks"] = [
-        stack
-        for stack in value["stacks"]
-        if any(pr["number"] not in own for pr in stack["pull_requests"])
-    ]
+    value["stacks"] = [stack for stack in value["stacks"] if stack["pull_requests"]]
     for key in ("collected_at", "searches", "repository_labels"):
         value.pop(key, None)
     value["issue"].pop("updated_at", None)
     return digest(value)
+
+
+def review_revision(evidence: dict) -> str:
+    value = revision_evidence(evidence)
+    timelines = [value.get("timeline", [])]
+    for pr in value.get("prs", []):
+        for field in ("checks", "statuses", "updated_at"):
+            pr.pop(field, None)
+        timelines.append(pr.get("timeline", []))
+    for timeline in timelines:
+        timeline[:] = [event for event in timeline if not _foreign_reference(event)]
+    return publication_revision(value)
+
+
+def _foreign_reference(event: dict) -> bool:
+    if event.get("event") != "cross-referenced":
+        return False
+    source = (event.get("source") or {}).get("issue") or {}
+    repositories = []
+    name = (source.get("repository") or {}).get("full_name")
+    if name:
+        repositories.append(name.lower())
+    url = urlsplit(source.get("html_url") or "")
+    parts = url.path.strip("/").split("/")
+    if url.hostname == "github.com" and len(parts) >= 4:
+        repositories.append("/".join(parts[:2]).lower())
+    return bool(repositories) and all(
+        name != "prefecthq/fastmcp" for name in repositories
+    )

@@ -45,8 +45,8 @@ Publishing a release triggers the package workflows. On the current line, `fastm
 
 ## Publishing documentation
 
-The live site serves the `published-docs` branch, not `main`. A stable release from `main` opens a PR that copies the release tree to `published-docs` after package publishing succeeds. A maintainer merges that PR, then verifies the `Deploy docs` workflow completed successfully.
+The documentation at `https://gofastmcp.com/docs` is built by Mintlify from `docs/` on `published-docs`; `main` is the authoring source. The separate `PrefectHQ/gofastmcp-website` repository deploys its `main` branch to Vercel for the root landing page and `/docs` proxy. A stable release from the default-branch lineage opens a PR that copies the exact release tree to `published-docs` after package publishing succeeds. A maintainer merges that PR, then verifies the `Deploy docs` workflow completed successfully and checks the changed public docs.
 
-Prereleases do not open that publication PR automatically. Docs-only changes between releases can be published through a PR that synchronizes `main` to `published-docs`; follow the release skill's manual publication procedure. Do not push directly to the publication branch.
+Prereleases and manual package-workflow dispatch do not open that publication PR automatically. Docs-only changes between releases can be published through a PR that synchronizes `main` to `published-docs`; follow the release skill's manual publication procedure and publication checks, including preservation of `/docs` metadata in the candidate tree. Do not push directly to the publication branch. Ordinary publication does not change domains or Mintlify's `/docs` base path.
 
 Maintenance releases update their own changelog and packages without repointing the current documentation site. The `docs/v2/` and `docs/v3/` trees preserve historical documentation; outside their release changelogs, they are frozen snapshots.

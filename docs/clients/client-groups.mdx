@@ -1,6 +1,7 @@
 ---
 title: Client Groups
 sidebarTitle: Client Groups
+description: "Use ClientGroup to coordinate several FastMCP clients, each on its own connection, and route namespaced tool calls back to the server that owns them."
 icon: layer-group
 tag: NEW
 ---
@@ -49,7 +50,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Tool names are prefixed with the configured client name by default. For example, a `get_weather` tool exposed by the `modern` client becomes `modern_get_weather`.
+Tool names are prefixed with the configured client name. For example, a `get_weather` tool exposed by the `modern` client becomes `modern_get_weather`.
 
 A group with a single client is a supported way to get namespacing alone: the one server's tools are presented under its configured name, with no other behavior change.
 
@@ -69,6 +70,8 @@ async with group:
 ```
 
 The group aggregates names and detects collisions; it never stands between the adapter and the client, so everything a single `Client` supports keeps working per tool.
+
+Discovered routes outlive the group's context. After the last exit, `resolve_tool()` and `call_tool()` for a known tool need only that tool's own client to be connected, so an adapter that bound its tools inside the group can keep calling them under the owning client's context. The next unknown name after the last exit reloads the catalog, which requires every client. Call `list_tools()` to drop routes for tools a server has since removed.
 
 ## List skills across servers
 
@@ -113,7 +116,7 @@ config = {
 group = ClientGroup.from_config(config)
 ```
 
-Entries without a `mode` use `"auto"` by default.
+Entries without a `mode` use the `default_mode` argument to `from_config`, which is `"auto"`.
 
 ## Manage connections explicitly
 

@@ -21,7 +21,7 @@ import json
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import timezone
+from datetime import UTC
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlparse
@@ -165,7 +165,9 @@ class CIMDDocument(BaseModel):
                 raise ValueError(
                     f"CIMD redirect_uri must have a scheme (e.g. http:// or https://): {uri!r}"
                 )
-            if not parsed.netloc and not uri.startswith("urn:"):
+            # Private-use schemes (RFC 8252 section 7.1, e.g. com.example.app:/cb)
+            # have no host, so only http(s) redirects must name one.
+            if parsed.scheme in ("http", "https") and not parsed.netloc:
                 raise ValueError(f"CIMD redirect_uri must have a host: {uri!r}")
         return v
 
@@ -276,7 +278,7 @@ class CIMDFetcher:
             try:
                 dt = parsedate_to_datetime(normalized["expires"])
                 if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
+                    dt = dt.replace(tzinfo=UTC)
                 expires_at = dt.timestamp()
             except (TypeError, ValueError):
                 logger.debug(

@@ -20,9 +20,9 @@ When you add a search transform, `list_tools()` returns just two synthetic tools
 
 The original tools are still callable. They're hidden from the listing but remain fully functional — the search transform controls *discovery*, not *access*.
 
-Both synthetic tools search across tool names, descriptions, parameter names, and parameter descriptions. A search for `"email"` would match a tool named `send_email`, a tool with "email" in its description, or a tool with an `email_address` parameter.
+`search_tools` searches across tool names, descriptions, parameter names, and parameter descriptions. A search for `"email"` would match a tool named `send_email`, a tool with "email" in its description, or a tool with an `email_address` parameter.
 
-Search results are returned in the same JSON format as `list_tools`, including the full input schema, so the LLM can construct valid calls immediately without a second round-trip.
+By default, search results are returned in the same JSON format as `list_tools`, including the full input schema, so the LLM can construct valid calls immediately without a second round-trip. See [Result Format](#result-format) to change this.
 
 ## Search Strategies
 
@@ -137,7 +137,7 @@ A catalog no larger than `3 * shortlist` skips the wide pass.
 | --- | --- | --- |
 | `model` | `jev-latest` | TypeSafe model. Pin a versioned id once `fit_threshold` is tuned. |
 | `api_key` | `TYPESAFE_API_KEY` | TypeSafe API key. |
-| `client` | none | A ready `AsyncTypeSafeClient` to use instead of building one. |
+| `client` | none | A ready `AsyncTypeSafeClient` to use instead of building one. When set, `api_key` is not required. |
 | `shortlist` | 8 | Candidates each wide-pass request carries forward; with `close_read=True`, it must be at most half of `chunk_size` so repeated passes remain bounded. The close read sees at most three times this or 255 tools, whichever is smaller. |
 | `fit_threshold` | 0.3 | Minimum "does this tool do it" probability for a tool to be returned. |
 | `chunk_size` | 150 | Tools per wide-pass request, at most 255. |
@@ -196,11 +196,30 @@ mcp.add_transform(RegexSearchTransform(
 ))
 ```
 
+### Result Format
+
+`search_result_serializer` controls what `search_tools` returns. The default, `serialize_tools_for_output_json`, returns the same JSON as `list_tools`. `serialize_tools_for_output_markdown` renders each match as compact Markdown, which uses roughly a third of the tokens:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.transforms.search import (
+    BM25SearchTransform,
+    serialize_tools_for_output_markdown,
+)
+
+search = BM25SearchTransform(
+    search_result_serializer=serialize_tools_for_output_markdown,
+)
+mcp = FastMCP("My Server", transforms=[search])
+```
+
+A custom serializer is any function, sync or async, that takes the sequence of matching `Tool` objects and returns the tool result.
+
 ## The `call_tool` Proxy
 
 The `call_tool` proxy forwards calls to the real tool. When a client calls `call_tool(name="search_database", arguments={...})`, the proxy resolves `search_database` through the server's normal tool pipeline — including transforms and middleware — and executes it.
 
-The proxy rejects attempts to call the synthetic tools themselves. `call_tool(name="call_tool")` raises an error rather than recursing.
+The proxy rejects attempts to call the synthetic tools themselves. `call_tool(name="call_tool")` raises an error rather than recursing. It also refuses any name outside the catalog the client is allowed to see, such as an app-only or disabled tool, with an "Unknown tool" error.
 
 <Note>
 Tools discovered through search can also be called directly via `client.call_tool("search_database", {...})` without going through the proxy. The proxy exists for LLMs that only know about the tools returned by `list_tools` and need a way to invoke discovered tools through a tool they can see.
@@ -215,6 +234,7 @@ App-only tools are excluded too. A [MCP app](/apps/overview) can declare backend
 The search tool queries `list_tools()` through the complete pipeline at search time, so the same filtering that controls what a client sees in the listing also controls what they can discover through search.
 
 ```python
+from fastmcp import FastMCP
 from fastmcp.server.transforms import Visibility
 from fastmcp.server.transforms.search import RegexSearchTransform
 

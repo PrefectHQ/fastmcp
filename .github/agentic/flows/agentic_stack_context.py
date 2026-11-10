@@ -148,6 +148,33 @@ def revisions(pr: dict, read: Read) -> dict:
     }
 
 
+MAX_CONTRIBUTIONS = 6
+
+
+def contributions(prs: list[dict], evidence: dict) -> list[dict]:
+    """Keep every linked PR, then fill the bound with the newest title-search matches.
+
+    Generic issue titles match dozens of unrelated PRs by keyword; those matches
+    should not stop triage of an issue that has few or no linked PRs.
+    """
+    linked = [pr for pr in prs if pr.get("discussion_collected") is not False]
+    if len(linked) > MAX_CONTRIBUTIONS:
+        raise ValueError(
+            f"{len(linked)} PRs link this issue; review handles at most {MAX_CONTRIBUTIONS}"
+        )
+    matches = sorted(
+        (pr for pr in prs if pr.get("discussion_collected") is False),
+        key=lambda pr: pr.get("updated_at") or "",
+        reverse=True,
+    )
+    room = MAX_CONTRIBUTIONS - len(linked)
+    if matches[room:]:
+        evidence["omitted_search_matches"] = sorted(
+            pr["number"] for pr in matches[room:]
+        )
+    return sorted(linked + matches[:room], key=lambda pr: pr["number"])
+
+
 def assessment_context(item: dict, read: Read) -> dict:
     raw = item["evidence"]
     if raw.get("complete") is not True:
@@ -157,12 +184,10 @@ def assessment_context(item: dict, read: Read) -> dict:
     evidence["comments"] = discussion(raw.get("comments", []))
     evidence["timeline"] = events(raw.get("timeline", []))
     evidence["prs"] = []
-    if len(raw.get("prs", [])) > 6:
-        raise ValueError("More than six contributions need a narrower review batch")
-    for pr in raw.get("prs", []):
+    for pr in contributions(raw.get("prs", []), evidence):
         result = fields(
             pr,
-            "number title body state draft merged html_url labels base_ref base_sha head_sha head_repository",
+            "number title body state draft merged html_url labels base_ref base_sha head_sha head_repository canonical_references",
         )
         result["author"] = fields(pr.get("user", {}), "login type")
         result["comments"] = discussion(pr.get("comments", []))
