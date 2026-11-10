@@ -247,8 +247,10 @@ class OpenAPITool(Tool):
                     error_message += f" - {e.response.text}"
             raise ValueError(error_message) from e
 
-        except httpx.TimeoutException as e:
-            raise ValueError(f"HTTP request timed out ({type(e).__name__})") from e
+        except httpx.TimeoutException:
+            # Left intact so the server maps it to the actionable timeout
+            # message, even when error details are masked.
+            raise
 
         except httpx.RequestError as e:
             raise ValueError(f"Request error ({type(e).__name__}): {e!s}") from e
@@ -348,8 +350,10 @@ class OpenAPIResource(Resource):
                     error_message += f" - {e.response.text}"
             raise ValueError(error_message) from e
 
-        except httpx.TimeoutException as e:
-            raise ValueError(f"HTTP request timed out ({type(e).__name__})") from e
+        except httpx.TimeoutException:
+            # Left intact so the server maps it to the actionable timeout
+            # message, even when error details are masked.
+            raise
 
         except httpx.RequestError as e:
             raise ValueError(f"Request error ({type(e).__name__}): {e!s}") from e
