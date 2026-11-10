@@ -302,6 +302,22 @@ The tool generates a QR code as a base64 PNG. The resource loads the MCP Apps JS
 
 FastMCP declares `io.modelcontextprotocol/ui` in `capabilities.extensions` when a registered component carries `_meta.ui`, a resource or resource template uses `ui://`, or a resource uses the MCP Apps MIME type. An untransformed server with no app components omits the declaration. Providers with transforms, proxies, and other dynamic providers retain it conservatively: they may introduce apps that cannot be inspected synchronously during capability negotiation.
 
+Capabilities are negotiated once, when a session initializes. An app tool or `ui://` resource added while a client is connected is not advertised to that client until it reconnects; new sessions see it immediately. If your server registers apps at runtime, register the extension explicitly so every session sees it from the start:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.apps import UI_EXTENSION_ID
+from fastmcp.server.extensions import ServerExtension
+
+
+class AppsExtension(ServerExtension):
+    identifier = UI_EXTENSION_ID
+
+
+mcp = FastMCP("Dynamic Apps")
+mcp.add_extension(AppsExtension())
+```
+
 Not all hosts support the Apps extension. A host that supports it declares the extension back, which is what you check at runtime using the tool's [context](/servers/context):
 
 ```python

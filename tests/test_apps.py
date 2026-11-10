@@ -665,6 +665,35 @@ class TestAppCapabilityGating:
                 assert "ui" in components[0].meta
             assert UI_EXTENSION_ID in (client.server_capabilities.extensions or {})
 
+    async def test_runtime_app_reaches_only_new_sessions(self):
+        """Capabilities are fixed at initialize, so a runtime app waits for a reconnect."""
+        server = FastMCP("test")
+
+        def register_app() -> None:
+            @server.tool(app=AppConfig(resource_uri="ui://late/app"))
+            def late_app() -> str:
+                return "late"
+
+        async with Client(server, mode="auto") as client:
+            register_app()
+            assert "late_app" in {t.name for t in await client.list_tools()}
+            assert UI_EXTENSION_ID not in (client.server_capabilities.extensions or {})
+
+        async with Client(server, mode="auto") as client:
+            assert UI_EXTENSION_ID in (client.server_capabilities.extensions or {})
+
+    async def test_explicit_extension_advertises_without_apps(self):
+        """Servers that add apps at runtime can keep the declaration up front."""
+
+        class AppsExtension(ServerExtension):
+            identifier = UI_EXTENSION_ID
+
+        server = FastMCP("test")
+        server.add_extension(AppsExtension())
+
+        async with Client(server, mode="auto") as client:
+            assert UI_EXTENSION_ID in (client.server_capabilities.extensions or {})
+
 
 class TestContextClientSupportsExtension:
     async def test_returns_false_when_no_session(self):
