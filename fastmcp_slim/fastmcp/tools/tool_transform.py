@@ -5,7 +5,7 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal, LiteralString, cast
 
 import mcp_types
 from mcp_types import ToolAnnotations
@@ -15,7 +15,6 @@ from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator
 from pydantic.json_schema import SkipJsonSchema
 from pydantic_core import InitErrorDetails, PydanticCustomError
-from typing_extensions import LiteralString
 
 from fastmcp.exceptions import ValidationError
 from fastmcp.tools.base import (
