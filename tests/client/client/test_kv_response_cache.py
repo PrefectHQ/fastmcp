@@ -180,20 +180,19 @@ class TestClear:
         assert await store_b.get(key) is not None  # untouched
 
     async def test_clear_removes_more_than_one_page_of_keys(self):
-        """Backends list at most one page of keys per call; clear() drains them all."""
+        """Backends list at most one page of keys per call; clear() keeps paging."""
         backend = MemoryStore()
         store = KeyValueResponseCacheStore(backend, collection="cache")
-        key = _key("p1")
-        await store.set(
-            key,
-            CacheEntry(
-                value=_tools_result(), scope="public", expires_at=time.time() + 60
-            ),
-        )
         filler = [f"filler-{i}" for i in range(10_050)]
         await backend.put_many(
             filler, [{"v": i} for i in range(len(filler))], collection="cache"
         )
+        key = _key("p1")
+        await store.set(
+            key, CacheEntry(value=_tools_result(), scope="public", expires_at=None)
+        )
+        first_page = await backend.keys(collection="cache")
+        assert KeyValueResponseCacheStore._string_key(key) not in first_page
 
         await store.clear()
 

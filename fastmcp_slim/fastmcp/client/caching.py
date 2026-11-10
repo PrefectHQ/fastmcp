@@ -189,11 +189,16 @@ class KeyValueResponseCacheStore:
     async def clear(self) -> None:
         """Clear this adapter's collection only.
 
-        Prefers deleting each enumerated key (which leaves the collection
-        usable), and falls back to whole-collection destruction. Against a
-        backend that supports neither, this is a no-op (entries age out by TTL)
-        and a warning is logged once. Either path is scoped to this adapter's
-        own collection, so a shared store's other tenants are never touched.
+        Prefers deleting enumerated keys page by page until none are listed
+        (which leaves the collection usable), and falls back to whole-collection
+        destruction. Against a backend that supports neither, this is a no-op
+        (entries age out by TTL) and a warning is logged once. Either path is
+        scoped to this adapter's own collection, so a shared store's other
+        tenants are never touched.
+
+        Enumeration is only as complete as the backend's key listing: a backend
+        that can list no keys while entries remain leaves those entries to age
+        out by TTL.
         """
         storage = self._storage
         if isinstance(storage, AsyncEnumerateKeysProtocol):
