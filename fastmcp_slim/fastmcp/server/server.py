@@ -7,6 +7,7 @@ import logging
 import secrets
 from collections.abc import (
     AsyncGenerator,
+    Awaitable,
     Callable,
     Sequence,
 )
@@ -217,6 +218,31 @@ logging.getLogger("mcp.server.lowlevel.server").addFilter(
 )
 
 F = TypeVar("F", bound=Callable[..., Any])
+ComponentT = TypeVar("ComponentT", bound=FastMCPComponent)
+
+
+async def _highest_available_version(
+    candidates: Sequence[FastMCPComponent],
+    lookup: Callable[[VersionSpec], Awaitable[ComponentT | None]],
+) -> ComponentT | None:
+    """Look up each candidate version, highest first, until one is returned.
+
+    Each version goes through `lookup`, the same path an explicit version
+    request takes, so transforms, `get_*` overrides, and auth decide the
+    fallback exactly as they would decide a direct request for that version.
+    Unversioned candidates are skipped: they have no lower version to fall
+    back to.
+    """
+    tried: set[str] = set()
+    for candidate in sorted(candidates, key=version_sort_key, reverse=True):
+        if candidate.version is None or candidate.version in tried:
+            continue
+        tried.add(candidate.version)
+        found = await lookup(VersionSpec(eq=candidate.version))
+        if found is not None:
+            return found
+    return None
+
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
@@ -1039,8 +1065,9 @@ class FastMCP(
         transforms (including session-level) have been applied. This ensures
         session transforms can override provider-level disables.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled or unauthorized and no explicit
+        version was requested, falls back to the highest version that is
+        both enabled and authorized, matching what the list methods expose.
 
         A tool from `ToolInjectionMiddleware` takes precedence over a provider
         tool with the same name. It is matched by name alone, so a requested
@@ -1064,37 +1091,35 @@ class FastMCP(
             return injected if await _component_auth_allows(injected) else None
 
         tool = await super().get_tool(name, version)
-        if tool is None:
-            return None
+        if tool is not None:
+            # Apply session transforms to single item
+            tools = await apply_session_transforms([tool])
+            # Transforms can change what `auth` sees (a tag, for one), so the
+            # check made on the pre-transform component is not enough.
+            if (
+                tools
+                and is_enabled(tools[0])
+                and await _component_auth_allows(tools[0])
+            ):
+                return tools[0]
 
-        # Apply session transforms to single item
-        tools = await apply_session_transforms([tool])
-        # Transforms can change what `auth` sees (a tag, for one), so the check made
-        # on the pre-transform component is not enough.
-        if tools and is_enabled(tools[0]) and await _component_auth_allows(tools[0]):
-            return tools[0]
-
-        # The highest version is disabled. If an explicit version was
-        # requested, respect that. Otherwise fall back to the next-highest
-        # enabled version.
+        # The highest version is disabled or unauthorized (provider lookups
+        # return None for an unauthorized tool). If an explicit version was
+        # requested, respect that. Otherwise fall back to the highest version
+        # that is both enabled and authorized, consistent with list_tools.
         if version is not None:
             return None
 
-        all_tools = [t for t in await super().list_tools() if t.name == name]
+        candidates = [t for t in await super().list_tools() if t.name == name]
         # During a hashed lookup, only versions of the identity being looked
         # up qualify; another tool listed under the same name does not.
         found = hashed_lookup_target(self)
         if found is not None:
             identity = tool_identity(found)
-            all_tools = [t for t in all_tools if tool_identity(t) == identity]
-        all_tools = list(await apply_session_transforms(all_tools))
-        enabled = [t for t in all_tools if is_enabled(t)]
-
-        authorized = [t for t in enabled if await _component_auth_allows(t)]
-
-        if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+            candidates = [t for t in candidates if tool_identity(t) == identity]
+        return await _highest_available_version(
+            candidates, lambda spec: self.get_tool(name, spec)
+        )
 
     async def list_resources(
         self, *, run_middleware: bool = True
@@ -1190,8 +1215,9 @@ class FastMCP(
         Overrides Provider.get_resource() to add visibility filtering after all
         transforms (including session-level) have been applied.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled or unauthorized and no explicit
+        version was requested, falls back to the highest version that is
+        both enabled and authorized, matching what the list methods expose.
 
         Args:
             uri: The resource URI.
@@ -1214,41 +1240,29 @@ class FastMCP(
         try:
             resource = await super().get_resource(uri, version)
         except AuthorizationError:
-            return None, True
-        if resource is None:
-            return None, False
+            # The highest version exists but is unauthorized; fall back below.
+            pass
+        else:
+            if resource is None:
+                return None, False
 
-        # Apply session transforms to single item
-        resources = await apply_session_transforms([resource])
-        if (
-            resources
-            and is_enabled(resources[0])
-            and await _component_auth_allows(resources[0])
-        ):
-            return resources[0], True
+            # Apply session transforms to single item
+            resources = await apply_session_transforms([resource])
+            if (
+                resources
+                and is_enabled(resources[0])
+                and await _component_auth_allows(resources[0])
+            ):
+                return resources[0], True
 
         if version is not None:
             return None, True
 
-        all_resources = [r for r in await super().list_resources() if str(r.uri) == uri]
-        all_resources = list(await apply_session_transforms(all_resources))
-        enabled = [r for r in all_resources if is_enabled(r)]
-
-        skip_auth, token = _get_auth_context()
-        authorized: list[Resource] = []
-        for r in enabled:
-            if not skip_auth and r.auth is not None:
-                ctx = AuthContext(token=token, component=r)
-                try:
-                    if not await run_auth_checks(r.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(r)
-
-        if not authorized:
-            return None, True
-        return max(authorized, key=version_sort_key), True
+        candidates = [r for r in await super().list_resources() if str(r.uri) == uri]
+        resource = await _highest_available_version(
+            candidates, lambda spec: self.get_resource(uri, spec)
+        )
+        return resource, True
 
     async def list_resource_templates(
         self, *, run_middleware: bool = True
@@ -1345,8 +1359,9 @@ class FastMCP(
         Overrides Provider.get_resource_template() to add visibility filtering after
         all transforms (including session-level) have been applied.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled or unauthorized and no explicit
+        version was requested, falls back to the highest version that is
+        both enabled and authorized, matching what the list methods expose.
 
         Args:
             uri: The template URI.
@@ -1356,46 +1371,32 @@ class FastMCP(
             The template if found and enabled, None otherwise.
         """
         template = await super().get_resource_template(uri, version)
-        if template is None:
-            return None
+        if template is not None:
+            # Apply session transforms to single item
+            templates = await apply_session_transforms([template])
+            # Transforms can change what `auth` sees (a tag, for one), so the
+            # check made on the pre-transform component is not enough.
+            if (
+                templates
+                and is_enabled(templates[0])
+                and await _component_auth_allows(templates[0])
+            ):
+                return templates[0]
 
-        # Apply session transforms to single item
-        templates = await apply_session_transforms([template])
-        # Transforms can change what `auth` sees (a tag, for one), so the check made
-        # on the pre-transform component is not enough.
-        if (
-            templates
-            and is_enabled(templates[0])
-            and await _component_auth_allows(templates[0])
-        ):
-            return templates[0]
+        # The highest version is disabled or unauthorized (provider lookups
+        # return None for an unauthorized template).
 
         if version is not None:
             return None
 
-        all_templates = [
+        candidates = [
             t
             for t in await super().list_resource_templates()
             if t.matches(uri) is not None
         ]
-        all_templates = list(await apply_session_transforms(all_templates))
-        enabled = [t for t in all_templates if is_enabled(t)]
-
-        skip_auth, token = _get_auth_context()
-        authorized: list[ResourceTemplate] = []
-        for t in enabled:
-            if not skip_auth and t.auth is not None:
-                ctx = AuthContext(token=token, component=t)
-                try:
-                    if not await run_auth_checks(t.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(t)
-
-        if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+        return await _highest_available_version(
+            candidates, lambda spec: self.get_resource_template(uri, spec)
+        )
 
     async def list_prompts(self, *, run_middleware: bool = True) -> Sequence[Prompt]:
         """List all enabled prompts from providers.
@@ -1480,8 +1481,9 @@ class FastMCP(
         Overrides Provider.get_prompt() to add visibility filtering after all
         transforms (including session-level) have been applied.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled or unauthorized and no explicit
+        version was requested, falls back to the highest version that is
+        both enabled and authorized, matching what the list methods expose.
 
         Args:
             name: The prompt name.
@@ -1491,42 +1493,28 @@ class FastMCP(
             The prompt if found and enabled, None otherwise.
         """
         prompt = await super().get_prompt(name, version)
-        if prompt is None:
-            return None
+        if prompt is not None:
+            # Apply session transforms to single item
+            prompts = await apply_session_transforms([prompt])
+            # Transforms can change what `auth` sees (a tag, for one), so the
+            # check made on the pre-transform component is not enough.
+            if (
+                prompts
+                and is_enabled(prompts[0])
+                and await _component_auth_allows(prompts[0])
+            ):
+                return prompts[0]
 
-        # Apply session transforms to single item
-        prompts = await apply_session_transforms([prompt])
-        # Transforms can change what `auth` sees (a tag, for one), so the check made
-        # on the pre-transform component is not enough.
-        if (
-            prompts
-            and is_enabled(prompts[0])
-            and await _component_auth_allows(prompts[0])
-        ):
-            return prompts[0]
+        # The highest version is disabled or unauthorized (provider lookups
+        # return None for an unauthorized prompt).
 
         if version is not None:
             return None
 
-        all_prompts = [p for p in await super().list_prompts() if p.name == name]
-        all_prompts = list(await apply_session_transforms(all_prompts))
-        enabled = [p for p in all_prompts if is_enabled(p)]
-
-        skip_auth, token = _get_auth_context()
-        authorized: list[Prompt] = []
-        for p in enabled:
-            if not skip_auth and p.auth is not None:
-                ctx = AuthContext(token=token, component=p)
-                try:
-                    if not await run_auth_checks(p.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(p)
-
-        if not authorized:
-            return None
-        return max(authorized, key=version_sort_key)
+        candidates = [p for p in await super().list_prompts() if p.name == name]
+        return await _highest_available_version(
+            candidates, lambda spec: self.get_prompt(name, spec)
+        )
 
     async def call_tool(
         self,
