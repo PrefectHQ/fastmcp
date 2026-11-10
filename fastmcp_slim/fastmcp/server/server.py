@@ -1531,8 +1531,13 @@ class FastMCP(
                         )
                         # Re-raise a rebuilt message: the original carries the
                         # pydantic version URL and the adapter name into the
-                        # tool result the caller reads.
-                        raise ToolError(_validation_error_message(name, cause)) from e
+                        # tool result the caller reads. Chaining from the
+                        # pydantic cause keeps the type and cause that
+                        # middleware, CodeMode and parent servers rely on.
+                        raise ValidationError(
+                            _validation_error_message(name, cause),
+                            log_level=logging.WARNING,
+                        ) from cause
                     logger.warning("Invalid arguments for tool %r", name)
                     raise
                 except FastMCPError as e:

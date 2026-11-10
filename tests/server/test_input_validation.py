@@ -25,6 +25,7 @@ from pydantic import (
     StrictInt,
     field_validator,
 )
+from pydantic import ValidationError as PydanticValidationError
 from pydantic_core import PydanticCustomError
 
 from fastmcp import Client, FastMCP
@@ -559,6 +560,38 @@ class TestEdgeCases:
             "2 validation errors for",
         ):
             assert leaked not in text, leaked
+
+    async def test_call_tool_raises_validation_error_with_rebuilt_message(self):
+        """Direct callers still get ValidationError, chained from pydantic."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def echo(message: str) -> str:
+            return message
+
+        with pytest.raises(ValidationError) as exc_info:
+            await mcp.call_tool("echo", {"message": 123})
+
+        assert not isinstance(exc_info.value, ToolError)
+        assert isinstance(exc_info.value.__cause__, PydanticValidationError)
+        assert str(exc_info.value).startswith("Invalid arguments for tool 'echo'")
+        assert "errors.pydantic.dev" not in str(exc_info.value)
+
+    async def test_mounted_tool_error_names_parent_tool(self):
+        child = FastMCP("Child")
+
+        @child.tool
+        def echo(message: str) -> str:
+            return message
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="child")
+
+        with pytest.raises(ValidationError) as exc_info:
+            await parent.call_tool("child_echo", {"message": 123})
+
+        assert isinstance(exc_info.value.__cause__, PydanticValidationError)
+        assert str(exc_info.value).startswith("Invalid arguments for tool 'child_echo'")
 
 
 class TestExpectedToolFailureLogging:
