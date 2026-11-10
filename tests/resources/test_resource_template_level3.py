@@ -1,9 +1,16 @@
 """Tests for RFC 6570 level-3 operator support in resource templates."""
 
 import pytest
+from mcp.types import TextResourceContents
 
+from fastmcp import Client, FastMCP
 from fastmcp.resources import ResourceTemplate
-from fastmcp.resources.template import extract_query_params
+from fastmcp.resources.template import (
+    expand_uri_template,
+    extract_exploded_query_params,
+    extract_query_params,
+)
+from fastmcp.server import create_proxy
 
 
 class TestQueryParamExtraction:
@@ -24,15 +31,19 @@ class TestQueryParamExtraction:
         params = extract_query_params("data://items{&page,size}")
         assert params == {"page", "size"}
 
-    def test_extract_form_style_query_params(self):
-        """Test extraction from {;param1,param2} syntax."""
+    def test_path_style_params_are_not_query_params(self):
+        """{;param} expands inside the path, so it is not a query param."""
         params = extract_query_params("data://items{;page,size}")
-        assert params == {"page", "size"}
+        assert params == set()
 
-    def test_extract_mixed_query_forms(self):
-        """Test extraction from mixed query-relevant forms."""
-        params = extract_query_params("data://items{?filter}{&page}{;sort}")
+    def test_extract_every_continuation_group(self):
+        """Every {&...} group contributes, not just the first."""
+        params = extract_query_params("data://items{?filter}{&page}{&sort}")
         assert params == {"filter", "page", "sort"}
+
+    def test_exploded_continuation_param(self):
+        """{&tags*} marks tags as exploded, like {?tags*}."""
+        assert extract_exploded_query_params("data://items{?q}{&tags*}") == {"tags"}
 
     def test_strip_explode_modifier(self):
         """Test that the explode modifier (*) is stripped."""
@@ -87,6 +98,74 @@ class TestIssue5706Repro:
         resource = await template.create_resource("data://items", params)
         result = await resource.read()
         assert result == "page=1 size=10"  # both use defaults
+
+
+class TestIssue5706OverClient:
+    """The #5706 repro read through a Client, directly and through forwarding."""
+
+    @pytest.mark.parametrize("via", ["direct", "mount", "proxy"])
+    @pytest.mark.parametrize(
+        "query, expected",
+        [
+            ("?page=2&size=5", "page=2 size=5"),
+            ("?page=2", "page=2 size=10"),
+            ("", "page=1 size=10"),
+        ],
+    )
+    async def test_list_and_read(self, via: str, query: str, expected: str):
+        child = FastMCP("child")
+
+        @child.resource("data://items{?page}{&size}")
+        def items(page: int = 1, size: int = 10) -> str:
+            return f"page={page} size={size}"
+
+        uri = f"data://items{query}"
+        if via == "direct":
+            server = child
+        elif via == "mount":
+            server = FastMCP("parent")
+            server.mount(child, namespace="ns")
+            uri = f"data://ns/items{query}"
+        else:
+            server = create_proxy(child)
+
+        async with Client(server) as client:
+            templates = await client.list_resource_templates()
+            assert [t.uri_template for t in templates] == [
+                uri.split("?")[0] + "{?page}{&size}"
+            ]
+            [contents] = await client.read_resource(uri)
+            assert isinstance(contents, TextResourceContents)
+            assert contents.text == expected
+
+    async def test_second_continuation_group_and_exploded(self):
+        mcp = FastMCP()
+
+        @mcp.resource("x://m{?a}{&b}{&c}")
+        def m(a: str = "", b: str = "", c: str = "") -> str:
+            return f"a={a} b={b} c={c}"
+
+        @mcp.resource("x://u{?q}{&tags*}")
+        def u(q: str = "", tags: list[str] | None = None) -> str:
+            return f"q={q} tags={tags}"
+
+        async with Client(mcp) as client:
+            [m_contents] = await client.read_resource("x://m?a=1&b=2&c=3")
+            [u_contents] = await client.read_resource("x://u?q=1&tags=a&tags=b")
+        assert isinstance(m_contents, TextResourceContents)
+        assert isinstance(u_contents, TextResourceContents)
+        assert m_contents.text == "a=1 b=2 c=3"
+        assert u_contents.text == "q=1 tags=['a', 'b']"
+
+
+class TestExpandContinuation:
+    def test_expand_continuation_after_query(self):
+        uri = expand_uri_template("data://items{?page}{&size}", {"page": 2, "size": 5})
+        assert uri == "data://items?page=2&size=5"
+
+    def test_expand_continuation_without_query_value(self):
+        uri = expand_uri_template("data://items{?page}{&size}", {"size": 5})
+        assert uri == "data://items?size=5"
 
 
 class TestUnsupportedLevel3Operators:
@@ -156,6 +235,34 @@ class TestUnsupportedLevel3Operators:
                 name="file",
             )
 
+    def test_reject_path_style(self):
+        """{;param} expands into the path, so it is rejected."""
+
+        def get_data(id: str, p: str = "") -> str:
+            return f"id={id} p={p}"
+
+        with pytest.raises(
+            ValueError,
+            match=r"RFC 6570 level-3 operators \{;\.\.\.\} are not supported",
+        ):
+            ResourceTemplate.from_function(
+                fn=get_data,
+                uri_template="x://e/{id}{;p}",
+                name="data",
+            )
+
+    def test_error_names_supported_forms_with_single_braces(self):
+        def get_file(path: str) -> str:
+            return path
+
+        with pytest.raises(ValueError) as exc_info:
+            ResourceTemplate.from_function(
+                fn=get_file, uri_template="files://{+path}", name="file"
+            )
+        message = str(exc_info.value)
+        assert "{?param} or {&param}" in message
+        assert "{{" not in message
+
     def test_reject_mixed_path_and_unsupported(self):
         """Test that templates mixing path params and unsupported operators are rejected."""
 
@@ -224,31 +331,3 @@ class TestSupportedQueryForms:
             name="data",
         )
         assert template.uri_template == "data://{id}{&page}"
-
-    async def test_form_style_param_accepted(self):
-        """Test that {;param} form-style query is accepted."""
-
-        def get_data(id: str, sort: str = "asc") -> str:
-            return f"ID: {id}, sort: {sort}"
-
-        template = ResourceTemplate.from_function(
-            fn=get_data,
-            uri_template="data://{id}{;sort}",
-            name="data",
-        )
-        assert template.uri_template == "data://{id}{;sort}"
-
-    async def test_mixed_query_forms_accepted(self):
-        """Test that mixed query-relevant forms are accepted together."""
-
-        def get_items(
-            category: str, page: int = 1, size: int = 10, sort: str = "asc"
-        ) -> str:
-            return f"Category: {category}, page: {page}, size: {size}, sort: {sort}"
-
-        template = ResourceTemplate.from_function(
-            fn=get_items,
-            uri_template="items://{category}{?page}{&size}{;sort}",
-            name="items",
-        )
-        assert template.uri_template == "items://{category}{?page}{&size}{;sort}"

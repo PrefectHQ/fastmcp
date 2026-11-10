@@ -40,32 +40,28 @@ from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.mime import resolve_ui_mime_type
 from fastmcp.utilities.types import get_cached_typeadapter
 
+# `{?...}` starts a query and `{&...}` continues one; both list query params.
+_QUERY_EXPRESSION = re.compile(r"\{[?&]([^}]+)\}")
+
+
+def _query_varspecs(uri_template: str) -> list[str]:
+    """Every varspec (`name` or `name*`) across the template's query expressions."""
+    return [
+        spec.strip()
+        for block in _QUERY_EXPRESSION.findall(uri_template)
+        for spec in block.split(",")
+    ]
+
 
 def extract_query_params(uri_template: str) -> set[str]:
-    """Extract query parameter names from RFC 6570 query-relevant syntax.
+    """Extract query parameter names from RFC 6570 `{?...}` and `{&...}` syntax.
 
-    Supports:
-    - `{?param1,param2}` - initial query parameters
-    - `{&param1,param2}` - continuation query parameters
-    - `{;param1,param2}` - form-style query parameters
-
-    The explode modifier is stripped, so `{?tags*}` yields `{"tags"}`. Use
-    `extract_exploded_query_params` to find which names carried it.
+    `{&...}` continues the query a `{?...}` started, so `{?page}{&size}`
+    yields `{"page", "size"}`. The explode modifier is stripped, so
+    `{?tags*}` yields `{"tags"}`. Use `extract_exploded_query_params` to
+    find which names carried it.
     """
-    result: set[str] = set()
-    # Extract from {?...} syntax (initial query)
-    qmatch = re.search(r"\{\?([^}]+)\}", uri_template)
-    if qmatch:
-        result.update({p.strip().removesuffix("*") for p in qmatch.group(1).split(",")})
-    # Extract from {&...} continuation syntax
-    amatch = re.search(r"\{&([^}]+)\}", uri_template)
-    if amatch:
-        result.update({p.strip().removesuffix("*") for p in amatch.group(1).split(",")})
-    # Extract from {;...} form-style query syntax
-    smatch = re.search(r"\{;([^}]+)\}", uri_template)
-    if smatch:
-        result.update({p.strip().removesuffix("*") for p in smatch.group(1).split(",")})
-    return result
+    return {spec.removesuffix("*") for spec in _query_varspecs(uri_template)}
 
 
 def _is_list_only(annotation: Any) -> bool:
@@ -107,14 +103,14 @@ def _accepts_exploded_query(annotation: Any) -> bool:
 def extract_exploded_query_params(uri_template: str) -> set[str]:
     """Extract query parameter names declared with the RFC 6570 explode modifier.
 
-    `{?tags*}` marks `tags` as repeatable — `?tags=a&tags=b` collects into a
-    list rather than collapsing to the first value.
+    `{?tags*}` (or `{&tags*}`) marks `tags` as repeatable — `?tags=a&tags=b`
+    collects into a list rather than collapsing to the first value.
     """
-    match = re.search(r"\{\?([^}]+)\}", uri_template)
-    if match:
-        names = [p.strip() for p in match.group(1).split(",")]
-        return {n.removesuffix("*") for n in names if n.endswith("*")}
-    return set()
+    return {
+        spec.removesuffix("*")
+        for spec in _query_varspecs(uri_template)
+        if spec.endswith("*")
+    }
 
 
 def _has_literal_query(uri_template: str) -> bool:
@@ -207,9 +203,7 @@ def build_regex(template: str) -> re.Pattern[str] | None:
     - `{var}` - simple path parameter
     - `{var*}` - wildcard path parameter (captures multiple segments)
     - `{?var1,var2}` - query parameters (ignored in path matching)
-    - RFC 6570 level-3 operators: `{&var}`, `{+var}`, `{#var}`,
-      `{.var}`, `{/var}`, `{;var}`
-    - `{a,b}` - set expansion
+    - `{&var1,var2}` - query continuation (ignored in path matching)
     - `?key={var}` - a query written out literally; `{var}` is that key's value
 
     Parameter names are normalized to valid Python identifiers through
@@ -220,7 +214,7 @@ def build_regex(template: str) -> re.Pattern[str] | None:
     parameter names that normalize to the same group).
     """
     # Remove query parameter syntax for path matching
-    template_without_query = re.sub(r"\{\?[^}]+\}", "", template)
+    template_without_query = _QUERY_EXPRESSION.sub("", template)
 
     parts = re.split(r"(\{[^}]+\})", template_without_query)
     pattern = ""
@@ -230,24 +224,12 @@ def build_regex(template: str) -> re.Pattern[str] | None:
     for part in parts:
         if part.startswith("{") and part.endswith("}"):
             name = part[1:-1]
-
-            # Handle RFC 6570 level-3 operators: &, +, #, ., /, ;
-            # These operators affect URI expansion but are not path params,
-            # so we skip them in the path regex and rely on query param extraction.
-            if name.startswith(("&", "+", "#", ".", "/", ";")):
-                # Skip level-3 operator groups in path regex;
-                # the parameter name will be extracted via extract_query_params
-                continue
-
             if in_query:
                 group = name.removesuffix("*").replace("-", "_")
                 pattern += f"(?P<{group}>[^&]*)"
             elif name.endswith("*"):
                 name = name[:-1]
                 pattern += f"(?P<{template_param_key(name)}>.+)"
-            elif "," in name:
-                # Set expansion {a,b}: treat as literal
-                pattern += _literal_pattern("{" + name + "}")
             else:
                 pattern += f"(?P<{template_param_key(name)}>[^/]+)"
         else:
@@ -344,7 +326,7 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
 
     Supports the same RFC 6570 subset:
     - Path params: `{var}`, `{var*}`
-    - Query params: `{?var1,var2}`
+    - Query params: `{?var1,var2}`, `{&var1,var2}`
     """
     # Literal runs carry their own encoding (RFC 6570 3.1); placeholders are
     # left alone here and encoded with their substituted values below.
@@ -375,9 +357,13 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
                 return quote(value_str, safe="/" if wildcard else "")
         return match.group(0)
 
-    result = re.sub(r"\{([^?}][^}]*)\}", substitute, result)
+    result = re.sub(r"\{([^?&}][^}]*)\}", substitute, result)
 
-    # Expand {?param1,param2,...} query parameter blocks
+    # Expand {?param1,param2,...} and {&param1,...} query blocks. The first
+    # block that emits anything opens the query with `?` and later ones
+    # continue it with `&`, so an omitted `{?page}` still yields `?size=5`.
+    query_started = False
+
     def _expand_query_block(match: re.Match[str]) -> str:
         names = [n.strip() for n in match.group(1).split(",")]
         parts = []
@@ -409,11 +395,14 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
                     parts.append(f"{quote(name, safe='')}={joined}")
             else:
                 parts.append(f"{quote(name, safe='')}={quote(str(value), safe='')}")
-        if parts:
-            return "?" + "&".join(parts)
-        return ""
+        if not parts:
+            return ""
+        nonlocal query_started
+        prefix = "&" if query_started else "?"
+        query_started = True
+        return prefix + "&".join(parts)
 
-    result = re.sub(r"\{\?([^}]+)\}", _expand_query_block, result)
+    result = _QUERY_EXPRESSION.sub(_expand_query_block, result)
 
     return result
 
@@ -427,7 +416,7 @@ def forward_uri(uri_template: str, params: dict[str, Any], uri: str) -> str:
     `{?name}` params hold comma-joined lists, so `?tags=a%2Cb,c` would arrive as
     one item instead of two.
     """
-    path_template = re.sub(r"\{\?[^}]+\}", "", uri_template)
+    path_template = _QUERY_EXPRESSION.sub("", uri_template)
     forwarded = expand_uri_template(path_template, params)
     if _has_literal_query(uri_template):
         # The query is literal template text, so the expansion already has it.
@@ -770,15 +759,16 @@ class FunctionResourceTemplate(ResourceTemplate):
         raw_path_params = set(re.findall(r"{([\w-]+)(?:\*)?}", uri_template))
         raw_query_params = extract_query_params(uri_template)
 
-        # Validate unsupported RFC 6570 level-3 operators.
-        # Query-relevant operators ({?...}, {&...}, {;...}) are supported.
-        # Non-query operators cannot be matched in path regex, so refuse them.
-        unsupported_operators = re.findall(r"\{([+#./])", uri_template)
+        # Refuse RFC 6570 level-3 operators other than the query forms
+        # ({?...} and {&...}): the path matcher cannot capture them, so a
+        # template using one would register but never read correctly.
+        unsupported_operators = re.findall(r"\{([+#./;])", uri_template)
         if unsupported_operators:
             ops = ", ".join(sorted(set(unsupported_operators)))
             raise ValueError(
                 f"RFC 6570 level-3 operators {{{ops}...}} are not supported. "
-                "Use {{?param}} for query parameters or {{param}} for path parameters."
+                "Use {?param} or {&param} for query parameters or {param} "
+                "for path parameters."
             )
 
         # Validate set expansion: {a,b} (comma without an operator).
