@@ -260,15 +260,18 @@ async def process_common_args(
     # Try to import server to get its name and dependencies.
     # load_server() resolves paths against cwd, which may differ from our
     # config-relative resolution, so we catch SystemExit from its file check.
+    # Importing runs the user's module, which can raise anything (missing
+    # dependencies, config read from the environment at import time), and the
+    # name is only a default, so any failure falls back to the file name.
     name = server_name
     server = None
     if not name:
         try:
             server = await config.source.load_server()
             name = server.name
-        except (ImportError, ModuleNotFoundError, SystemExit) as e:
+        except (Exception, SystemExit) as e:
             logger.debug(
-                "Could not import server (likely missing dependencies), using file name",
+                "Could not import server, using file name",
                 extra={"error": str(e)},
             )
             name = file.stem
