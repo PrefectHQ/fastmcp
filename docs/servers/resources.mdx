@@ -501,7 +501,7 @@ With these two templates defined, clients can request a variety of resources:
 ### RFC 6570 URI Templates
 
 
-FastMCP implements [RFC 6570 URI Templates](https://datatracker.ietf.org/doc/html/rfc6570) for resource templates, providing a standardized way to define parameterized URIs. This includes support for simple expansion, wildcard path parameters, and form-style query parameters.
+FastMCP implements [RFC 6570 URI Templates](https://datatracker.ietf.org/doc/html/rfc6570) for resource templates, providing a standardized way to define parameterized URIs. This includes support for simple expansion, wildcard path parameters, and form-style query parameters with continuation.
 
 #### Wildcard Parameters
 
@@ -701,6 +701,8 @@ def read_file(path: str, encoding: str = "utf-8", lines: int = 100) -> str:
 - `files://src/main.py?encoding=ascii&lines=50` → Custom encoding and line limit
 
 FastMCP automatically coerces query parameter string values to the correct types based on your function's type hints (`int`, `float`, `bool`, `str`).
+
+RFC 6570 query continuation, `{&param}`, declares query parameters the same way as `{?param}`. Templates written for other tools often split the query this way, as in `data://items{?page}{&size}`, and FastMCP reads `data://items?page=2&size=5` into `page=2, size=5`. The other RFC 6570 level-3 operators (`{+var}`, `{#var}`, `{.var}`, `{/var}`, `{;var}`) and set expansion (`{a,b}`) are not supported, and a template that uses one raises an error when it is created.
 
 **Repeatable query parameters:**
 

@@ -95,8 +95,8 @@ def _accepts_exploded_query(annotation: Any) -> bool:
 def extract_exploded_query_params(uri_template: str) -> set[str]:
     """Extract query parameter names declared with the RFC 6570 explode modifier.
 
-    `{?tags*}` marks `tags` as repeatable — `?tags=a&tags=b` collects into a
-    list rather than collapsing to the first value.
+    `{?tags*}` (or `{&tags*}`) marks `tags` as repeatable — `?tags=a&tags=b`
+    collects into a list rather than collapsing to the first value.
     """
     exploded: set[str] = set()
     for match in re.finditer(r"\{[?&]([^}]+)\}", uri_template):
@@ -349,7 +349,7 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
                 return quote(value_str, safe="/" if wildcard else "")
         return match.group(0)
 
-    result = re.sub(r"\{([^?}][^}]*)\}", substitute, result)
+    result = re.sub(r"\{([^?&}][^}]*)\}", substitute, result)
 
     # Expand {?param1,param2,...} and {&param,...} query blocks. The first
     # block that emits parameters opens the query string with "?", and later
@@ -753,6 +753,29 @@ class FunctionResourceTemplate(ResourceTemplate):
         # match Python function parameter names.
         raw_path_params = set(re.findall(r"{([\w-]+)(?:\*)?}", uri_template))
         raw_query_params = extract_query_params(uri_template)
+
+        # Refuse RFC 6570 level-3 operators other than the query forms
+        # ({?...} and {&...}): the path matcher cannot capture them, so a
+        # template using one would register but never read correctly.
+        unsupported_operators = re.findall(r"\{([+#./;])", uri_template)
+        if unsupported_operators:
+            ops = ", ".join(sorted(set(unsupported_operators)))
+            raise ValueError(
+                f"RFC 6570 level-3 operators {{{ops}...}} are not supported. "
+                "Use {?param} or {&param} for query parameters or {param} "
+                "for path parameters."
+            )
+
+        # Validate set expansion: {a,b} (comma without an operator).
+        # These are treated as literals in path matching and can't be captured,
+        # so refuse them to avoid confusion.
+        set_expansions = re.findall(r"\{([a-zA-Z_][\w-]*,[^}]+)\}", uri_template)
+        if set_expansions:
+            examples = ", ".join(f"{{{s}}}" for s in set_expansions[:2])
+            raise ValueError(
+                f"Set expansion syntax like {examples} is not supported. "
+                "Use {{?param1,param2}} for multiple query parameters."
+            )
 
         # Detect collisions: two raw param names that normalize to the
         # same Python identifier (e.g. {user-id} and {user_id}).
