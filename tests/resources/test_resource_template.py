@@ -1413,6 +1413,19 @@ class TestResourceTemplateAliases:
         assert isinstance(contents, TextResourceContents)
         assert contents.text == "42"
 
+    async def test_alias_matching_another_parameter_name(self):
+        mcp = FastMCP()
+
+        @mcp.resource("data://x/{a}")
+        def pair(a: str = Field(alias="b"), b: str = "default-b") -> str:
+            return f"a={a} b={b}"
+
+        async with Client(mcp) as client:
+            [contents] = await client.read_resource("data://x/1")
+
+        assert isinstance(contents, TextResourceContents)
+        assert contents.text == "a=1 b=default-b"
+
 
 class TestExpandUriTemplate:
     """Test expand_uri_template — the inverse of match_uri_template."""

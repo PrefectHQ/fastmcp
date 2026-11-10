@@ -13,12 +13,12 @@ from urllib.parse import parse_qs, quote, unquote, unquote_plus
 from mcp_types import Annotations, Icon
 from mcp_types import ResourceTemplate as SDKResourceTemplate
 from pydantic import (
+    ConfigDict,
     Field,
     PrivateAttr,
     field_validator,
     validate_call,
 )
-from pydantic.fields import FieldInfo
 from pydantic.json_schema import SkipJsonSchema
 
 from fastmcp.resources.base import (
@@ -38,52 +38,8 @@ from fastmcp.utilities.async_utils import (
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
-from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mime import resolve_ui_mime_type
-from fastmcp.utilities.types import get_cached_typeadapter, get_function_type_hints
-
-logger = get_logger(__name__)
-
-
-def _python_names_by_argument_name(fn: Callable[..., Any]) -> dict[str, str]:
-    """Map call-schema argument names to Python parameter names.
-
-    Resource templates advertise the parameter names from the Pydantic call
-    schema, which uses a field's ``validation_alias`` (or ``alias``) when one is
-    set. URI placeholders still refer to the Python parameter name, so reads
-    need this mapping to translate extracted values back to the name
-    ``validate_call`` expects.
-    """
-    try:
-        sig = inspect.signature(fn)
-        hints = get_function_type_hints(fn)
-    except Exception:
-        return {}
-
-    mapping: dict[str, str] = {}
-    for param_name, param in sig.parameters.items():
-        annotation = hints.get(param_name, param.annotation)
-        default = param.default
-        try:
-            if isinstance(default, FieldInfo):
-                if annotation is inspect.Parameter.empty:
-                    field_info = default
-                else:
-                    field_info = FieldInfo.from_annotated_attribute(annotation, default)
-            elif annotation is not inspect.Parameter.empty:
-                field_info = FieldInfo.from_annotation(annotation)
-            else:
-                continue
-        except Exception as e:
-            logger.debug("Could not determine alias for %s: %s", param_name, e)
-            continue
-
-        advertised = field_info.validation_alias
-        if not isinstance(advertised, str):
-            advertised = field_info.alias
-        if isinstance(advertised, str) and advertised != param_name:
-            mapping[advertised] = param_name
-    return mapping
+from fastmcp.utilities.types import get_cached_typeadapter
 
 
 def extract_query_params(uri_template: str) -> set[str]:
@@ -459,8 +415,6 @@ class ResourceTemplate(FastMCPComponent):
     # Non-exploded `{?name}` query params whose function parameter is a list.
     _list_query_params: frozenset[str] = PrivateAttr(default_factory=frozenset)
     _pattern: tuple[str, re.Pattern[str] | None] | None = PrivateAttr(default=None)
-    # Call-schema argument name -> Python parameter name, for aliased parameters.
-    _argument_python_names: dict[str, str] = PrivateAttr(default_factory=dict)
 
     uri_template: str = Field(
         description="URI template with parameters (e.g. weather://{city}/current)"
@@ -729,19 +683,6 @@ class FunctionResourceTemplate(ResourceTemplate):
                 except (ValueError, AttributeError):
                     raise
 
-        # validate_call is built from the Pydantic call schema, which names an
-        # aliased parameter after its alias. URI placeholders use the Python
-        # name, so translate extracted values before invoking the wrapper.
-        python_to_argument = {
-            python_name: argument_name
-            for argument_name, python_name in self._argument_python_names.items()
-        }
-        if python_to_argument:
-            kwargs = {
-                python_to_argument.get(name, name): value
-                for name, value in kwargs.items()
-            }
-
         # self.fn is wrapped by without_injected_parameters which handles
         # dependency resolution internally
         if is_coroutine_function(self.fn):
@@ -930,13 +871,13 @@ class FunctionResourceTemplate(ResourceTemplate):
         fn = transform_context_annotations(fn)
 
         wrapper_fn = without_injected_parameters(fn)
-        argument_python_names = _python_names_by_argument_name(wrapper_fn)
         type_adapter = get_cached_typeadapter(wrapper_fn)
         parameters = type_adapter.json_schema()
         parameters = compress_schema(parameters, prune_titles=True)
 
-        # Use validate_call on wrapper for runtime type coercion
-        fn = validate_call(wrapper_fn)
+        # Use validate_call on wrapper for runtime type coercion. URI parameters
+        # carry Python parameter names, so accept them for aliased fields too.
+        fn = validate_call(config=ConfigDict(validate_by_name=True))(wrapper_fn)
 
         # Apply ui:// MIME default, then fall back to text/plain
         resolved_mime = resolve_ui_mime_type(uri_template, mime_type)
@@ -958,5 +899,4 @@ class FunctionResourceTemplate(ResourceTemplate):
             security=security,
         )
         template._list_query_params = frozenset(list_query_params)
-        template._argument_python_names = argument_python_names
         return template
