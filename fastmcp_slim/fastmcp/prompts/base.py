@@ -105,6 +105,9 @@ class PromptArgument(FastMCPBaseModel):
     """An argument that can be passed to a prompt."""
 
     name: str = Field(description="Name of the argument")
+    title: str | None = Field(
+        default=None, description="Human-readable name of the argument for display"
+    )
     description: str | None = Field(
         default=None, description="Description of what the argument does"
     )
@@ -247,6 +250,7 @@ class Prompt(FastMCPComponent):
         arguments = [
             SDKPromptArgument(
                 name=arg.name,
+                title=arg.title,
                 description=arg.description,
                 required=arg.required,
             )

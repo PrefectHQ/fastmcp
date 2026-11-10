@@ -5,7 +5,7 @@ import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from logging import Logger
-from typing import Any, TypedDict
+from typing import Any, NotRequired, Self, TypedDict
 
 import mcp_types
 import pydantic_core
@@ -18,7 +18,7 @@ from key_value.aio.wrappers.statistics.wrapper import (
     KVStoreCollectionStatistics,
 )
 from pydantic import Field
-from typing_extensions import NotRequired, Self, TypeVar, override
+from typing_extensions import TypeVar, override
 
 from fastmcp.prompts.base import (
     InputRequiredPromptResult,
@@ -531,6 +531,14 @@ class ResponseCachingMiddleware(Middleware):
             return await call_next(context)
 
         if _is_continuation_leg(context):
+            return await call_next(context)
+
+        if (
+            context.fastmcp_context is not None
+            and context.fastmcp_context.fastmcp._requires_live_resource(
+                str(context.message.uri)
+            )
+        ):
             return await call_next(context)
 
         cache_key: str = _make_read_resource_cache_key(
