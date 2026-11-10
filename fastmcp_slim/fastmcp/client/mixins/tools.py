@@ -21,6 +21,7 @@ from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.json_schema_type import json_schema_to_type_adapter
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.timeout import normalize_timeout_to_seconds
+from fastmcp.utilities.versions import parse_version_key
 
 logger = get_logger(__name__)
 
@@ -454,7 +455,8 @@ async def _parse_call_tool_result(
             # the version that ran; only the result meta's wrap flag applies.
             if pinned_version is None or (
                 listed_versions is not None
-                and listed_versions.get(name) == pinned_version
+                and parse_version_key(listed_versions.get(name))
+                == parse_version_key(pinned_version)
             ):
                 output_schema = tool_output_schemas.get(name)
             else:
