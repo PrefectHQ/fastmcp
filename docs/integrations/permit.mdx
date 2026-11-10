@@ -237,8 +237,13 @@ Create a dynamic resource with conditions like `resource.arg_number greater-than
 
 ```python
 from fastmcp import FastMCP
+from permit_fastmcp.middleware.middleware import PermitMcpMiddleware
 
 mcp = FastMCP("Secure FastMCP Server 🔒")
+mcp.add_middleware(PermitMcpMiddleware(
+    permit_pdp_url="http://localhost:7766",
+    permit_api_key="your-permit-api-key"
+))
 
 
 @mcp.tool
