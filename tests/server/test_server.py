@@ -412,4 +412,5 @@ async def test_render_prompt_serializes_non_string_arguments_for_middleware():
         return f"hi {name} " * times
 
     result = await mcp.render_prompt("greet", {"name": "bob", "times": 3})
+    assert isinstance(result.messages[0].content, TextContent)
     assert result.messages[0].content.text == "hi bob hi bob hi bob "
