@@ -22,6 +22,7 @@ from typing import (
     Any,
     Generic,
     Literal,
+    Self,
     TypeVar,
     cast,
     get_args,
@@ -30,6 +31,7 @@ from typing import (
 
 import httpx2
 import mcp_types
+import pydantic_core
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.request_state import RequestStateSecurity
 from mcp.shared.exceptions import MCPError
@@ -43,7 +45,6 @@ from pydantic import AnyUrl
 from pydantic import ValidationError as PydanticValidationError
 from pydantic_core import ErrorType
 from starlette.routing import BaseRoute
-from typing_extensions import Self
 
 import fastmcp
 import fastmcp.server
@@ -102,7 +103,11 @@ from fastmcp.server.transforms import (
     ToolTransform,
     Transform,
 )
-from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
+from fastmcp.server.transforms.visibility import (
+    Visibility,
+    apply_session_transforms,
+    is_enabled,
+)
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.function_tool import FunctionTool
@@ -190,6 +195,31 @@ logging.getLogger("mcp.server.lowlevel.server").addFilter(
 )
 
 F = TypeVar("F", bound=Callable[..., Any])
+ComponentT = TypeVar("ComponentT", bound=FastMCPComponent)
+
+
+async def _highest_available_version(
+    candidates: Sequence[FastMCPComponent],
+    lookup: Callable[[VersionSpec], Awaitable[ComponentT | None]],
+) -> ComponentT | None:
+    """Look up each candidate version, highest first, until one is returned.
+
+    Each version goes through `lookup`, the same path an explicit version
+    request takes, so transforms, `get_*` overrides, and auth decide the
+    fallback exactly as they would decide a direct request for that version.
+    Unversioned candidates are skipped: they have no lower version to fall
+    back to.
+    """
+    tried: set[str] = set()
+    for candidate in sorted(candidates, key=version_sort_key, reverse=True):
+        if candidate.version is None or candidate.version in tried:
+            continue
+        tried.add(candidate.version)
+        found = await lookup(VersionSpec(eq=candidate.version))
+        if found is not None:
+            return found
+    return None
+
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
@@ -393,6 +423,93 @@ def _lifespan_proxy(
     return wrap
 
 
+class _SchemaCacheLocalProvider(LocalProvider):
+    """LocalProvider that mirrors registered tools into FastMCP's wire-schema
+    cache, so the SDK's `get_tool_input_schema` hook (Mcp-Param header
+    validation, mcp>=2.3) can resolve locally-registered tools before the first
+    `tools/list`. The cache dict is owned by the FastMCP server and shared by
+    reference; listings merge into it by value (`update`, never `clear`), so an
+    auth-scoped listing cannot drop another principal's cached schemas."""
+
+    def __init__(
+        self,
+        schema_cache: dict[str, dict[str, Any]],
+        server_transforms: list[Transform] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._schema_cache = schema_cache
+        # The owning FastMCP's server-level transform list, shared by
+        # reference so transforms added after construction are visible.
+        self._server_transforms = (
+            server_transforms if server_transforms is not None else []
+        )
+
+    def _seed_schema(self, name: str, candidates: list[Tool]) -> None:
+        """Seed the wire-schema cache for `name` from the tool dispatch and
+        `tools/list` would actually serve: the highest version by the same
+        PEP 440-aware `version_sort_key` used by `_get_tool` and
+        `dedupe_with_versions`. When a transform is installed, the wire schema
+        is only computed on the listing path, so seeding is skipped entirely
+        (and any entry dropped): a miss fails open, a wrong entry (e.g. a
+        pre-transform schema) fails closed (#5666 review)."""
+        transforms = [
+            t
+            for t in (*self._server_transforms, *self._transforms)
+            if not isinstance(t, Visibility)
+        ]
+        if transforms:
+            self._schema_cache.pop(name, None)
+            return
+        latest = max(candidates, key=version_sort_key)
+        try:
+            schema = latest.to_mcp_tool(name=latest.name).input_schema
+        except Exception:
+            # Seeding must never break registration; a missing entry only
+            # means the tool is not header-validated until the next listing.
+            return
+        if isinstance(schema, dict):
+            self._schema_cache[name] = schema
+
+    def add_transform(self, transform: Transform) -> None:
+        super().add_transform(transform)
+        # Entries seeded before this transform are pre-transform schemas.
+        if not isinstance(transform, Visibility):
+            self._schema_cache.clear()
+
+    def add_tool(self, tool: Tool | Callable[..., Any]) -> Tool:
+        added = super().add_tool(tool)
+        # Seed from the version dispatch serves, not necessarily the one just
+        # added: registering an older version after a newer one must not
+        # replace the newer version's schema in the cache.
+        same_name = [
+            component
+            for component in self._components.values()
+            if isinstance(component, Tool) and component.name == added.name
+        ]
+        self._seed_schema(added.name, same_name or [added])
+        return added
+
+    def remove_tool(self, name: str, version: str | None = None) -> None:
+        super().remove_tool(name, version=version)
+        # Evict only when no version of the tool remains: a version-scoped
+        # removal can leave other versions live under the same logical name,
+        # in which case re-seed from the surviving tool instead. A stale schema
+        # would let Mcp-Param header validation reject calls for a tool that
+        # no longer exists (or no longer has this schema) until the next
+        # listing; a miss is fail-open, so dropping the entry is always the
+        # safe direction.
+        surviving = [
+            component
+            for component in self._components.values()
+            if isinstance(component, Tool) and component.name == name
+        ]
+        if not surviving:
+            self._schema_cache.pop(name, None)
+            return
+        self._seed_schema(name, surviving)
+
+
 class StateValue(FastMCPBaseModel):
     """Wrapper for stored context state values."""
 
@@ -456,9 +573,19 @@ class FastMCP(
         self._state_storage: AsyncKeyValue | None = session_state_store
         self.__state_store: PydanticAdapter[StateValue] | None = None
 
+        # Wire-format input schemas, keyed by tool name. Shared by reference
+        # with _SchemaCacheLocalProvider (seeded on local tool registration)
+        # and served to the SDK's `get_tool_input_schema` hook (mcp>=2.3, see
+        # LowLevelServer) so Mcp-Param header validation on `tools/call` does
+        # not fall back to a full `tools/list` per call (#5652). Refreshed in
+        # place from every `tools/list` response.
+        self._wire_input_schemas: dict[str, dict[str, Any]] = {}
+
         # Create LocalProvider for local components
-        self._local_provider: LocalProvider = LocalProvider(
-            on_duplicate=self._on_duplicate
+        self._local_provider: LocalProvider = _SchemaCacheLocalProvider(
+            schema_cache=self._wire_input_schemas,
+            server_transforms=self._transforms,
+            on_duplicate=self._on_duplicate,
         )
 
         for t in transforms or []:
@@ -568,12 +695,6 @@ class FastMCP(
             if client_log_level is not None
             else fastmcp.settings.client_log_level
         )
-
-        # Per-session minimum log level requested by clients via logging/setLevel.
-        # Keyed by session id (a sentinel for stdio where session_id is None).
-        # v2 sessions are per-request so this state lives on the server, not the
-        # session object.
-        self._client_log_levels: dict[str, mcp_types.LoggingLevel] = {}
 
         self.experimental_capabilities: dict[str, dict[str, Any]] = (
             experimental_capabilities or {}
@@ -772,13 +893,10 @@ class FastMCP(
         super().add_provider(provider, namespace=namespace)
 
     def _rewrite_prefab_uris(self, tools: list[Tool]) -> list[Tool]:
-        """Replace placeholder Prefab URIs with per-tool hashed ones.
+        """Replace placeholder Prefab URIs with shared renderer identities.
 
-        For each tool whose ``meta.ui.resourceUri`` is the placeholder,
-        reads the tool's stored hash from ``meta.fastmcp.tool_hash``
-        and rewrites the URI to the per-tool form. Also strips CSP from
-        tool meta (it belongs on the resource). Produces ``model_copy``
-        views — originals are untouched.
+        Matching renderer configurations share a URI. Resource-only fields
+        such as CSP are stripped from copies of tool metadata.
         """
         from fastmcp.server.providers.prefab_synthesis import (
             _is_prefab_tool,
@@ -911,6 +1029,11 @@ class FastMCP(
             ```
         """
         self._transforms.append(transform)
+        # Schemas seeded before this transform existed are pre-transform and
+        # would fail closed on Mcp-Param validation; drop them so the next
+        # `tools/list` (which applies the transform) repopulates the cache.
+        if not isinstance(transform, Visibility):
+            self._wire_input_schemas.clear()
 
     async def list_tools(self, *, run_middleware: bool = True) -> Sequence[Tool]:
         """List all enabled tools from providers.
@@ -996,9 +1119,10 @@ class FastMCP(
         transforms (including session-level) have been applied. This ensures
         session transforms can override provider-level disables.
 
-        When the highest version is disabled and no exact version was
-        requested, falls back to the next-highest enabled version (a version
-        range is a constraint, so it falls back within the range).
+        When the highest version is disabled or unauthorized and no exact
+        version was requested, falls back to the highest version that is both
+        enabled and authorized (a version range is a constraint, so it falls
+        back within the range).
 
         A tool from `ToolInjectionMiddleware` takes precedence over a provider
         tool with the same name. It is matched by name alone, so a requested
@@ -1035,17 +1159,16 @@ class FastMCP(
             ):
                 return tools[0]
 
-            # The highest version is disabled. If an exact version was
-            # requested, respect that.
+            # The highest version is disabled or unauthorized. If an exact
+            # version was requested, respect that.
             if version is not None and version.eq is not None:
                 return None
-        elif version is None or version.eq is not None:
-            # The lookup missed. Without a version constraint, or with an
-            # exact-version request, that answer is final: a miss can encode
-            # a lookup-time refusal (auth or a transform) that listing must
-            # not second-guess. A range may still fall back to the
-            # next-highest version within the range that the lookup path
-            # resolves and the session allows.
+        elif version is not None and version.eq is not None:
+            # An exact-version request that missed is final: a miss can
+            # encode a lookup-time refusal (auth or a transform) that listing
+            # must not second-guess. Without a version constraint, or with a
+            # range, fall back to the highest listed version that the lookup
+            # path resolves and the session allows.
             return None
 
         all_tools = [
@@ -1085,7 +1208,10 @@ class FastMCP(
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext(
-                    message={},
+                    # Synthesized with only `method`: params stays None, so
+                    # pagination state (e.g. the client's nextCursor) is not
+                    # visible to list middleware hooks.
+                    message=mcp_types.ListResourcesRequest(method="resources/list"),
                     source="client",
                     type="request",
                     method="resources/list",
@@ -1105,14 +1231,16 @@ class FastMCP(
                 resources = await apply_session_transforms(resources)
                 resources = [r for r in resources if is_enabled(r)]
 
-                # Append synthetic Prefab renderer resources — one per
-                # prefab tool, hashed by mount address. These don't live on
+                # Append synthetic Prefab resources shared by effective
+                # renderer configuration. These don't live on
                 # any provider's storage; they're computed on demand.
                 from fastmcp.server.providers.prefab_synthesis import (
                     synthesize_prefab_resources,
                 )
 
-                resources.extend(await synthesize_prefab_resources(self))
+                known_keys = {resource.key for resource in resources}
+                synthetic = await synthesize_prefab_resources(self)
+                resources.extend(r for r in synthetic if r.key not in known_keys)
 
                 skip_auth, token = _get_auth_context()
                 authorized: list[Resource] = []
@@ -1162,9 +1290,10 @@ class FastMCP(
         Overrides Provider.get_resource() to add visibility filtering after all
         transforms (including session-level) have been applied.
 
-        When the highest version is disabled and no exact version was
-        requested, falls back to the next-highest enabled version (a version
-        range is a constraint, so it falls back within the range).
+        When the highest version is disabled or unauthorized and no exact
+        version was requested, falls back to the highest version that is both
+        enabled and authorized (a version range is a constraint, so it falls
+        back within the range).
 
         Args:
             uri: The resource URI.
@@ -1189,12 +1318,11 @@ class FastMCP(
             resource = await super().get_resource(uri, version)
         except AuthorizationError:
             denied = True
-            # Without a version constraint, or with an exact-version request,
-            # a denial is final: listing must not second-guess a lookup-time
-            # refusal. A range may still fall back to the next-highest version
-            # within the range that the lookup path resolves and the session
-            # allows.
-            if version is None or version.eq is not None:
+            # An exact-version request that is denied is final: listing must
+            # not second-guess a lookup-time refusal. Without a version
+            # constraint, or with a range, fall back to the highest listed
+            # version that the lookup path resolves and the session allows.
+            if version is not None and version.eq is not None:
                 return None, True
             resource = None
 
@@ -1208,17 +1336,16 @@ class FastMCP(
             ):
                 return resources[0], True
 
-            # The highest version is disabled. If an exact version was
-            # requested, respect that.
+            # The highest version is disabled or unauthorized. If an exact
+            # version was requested, respect that.
             if version is not None and version.eq is not None:
                 return None, True
-        elif version is None or version.eq is not None:
-            # The lookup missed. Without a version constraint, or with an
-            # exact-version request, that answer is final: a miss can encode
-            # a lookup-time refusal (auth or a transform) that listing must
-            # not second-guess. A range may still fall back to the
-            # next-highest version within the range that the lookup path
-            # resolves and the session allows.
+        elif version is not None and version.eq is not None:
+            # An exact-version request that missed is final: a miss can
+            # encode a lookup-time refusal (auth or a transform) that listing
+            # must not second-guess. Without a version constraint, or with a
+            # range, fall back to the highest listed version that the lookup
+            # path resolves and the session allows.
             return None, False
 
         all_resources = [
@@ -1256,7 +1383,12 @@ class FastMCP(
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext(
-                    message={},
+                    # Synthesized with only `method`: params stays None, so
+                    # pagination state (e.g. the client's nextCursor) is not
+                    # visible to list middleware hooks.
+                    message=mcp_types.ListResourceTemplatesRequest(
+                        method="resources/templates/list"
+                    ),
                     source="client",
                     type="request",
                     method="resources/templates/list",
@@ -1334,9 +1466,10 @@ class FastMCP(
         Overrides Provider.get_resource_template() to add visibility filtering after
         all transforms (including session-level) have been applied.
 
-        When the highest version is disabled and no exact version was
-        requested, falls back to the next-highest enabled version (a version
-        range is a constraint, so it falls back within the range).
+        When the highest version is disabled or unauthorized and no exact
+        version was requested, falls back to the highest version that is both
+        enabled and authorized (a version range is a constraint, so it falls
+        back within the range).
 
         Args:
             uri: The template URI.
@@ -1359,20 +1492,19 @@ class FastMCP(
             ):
                 return templates[0]
 
-            # The highest version is disabled. If an exact version was
-            # requested, respect that.
+            # The highest version is disabled or unauthorized. If an exact
+            # version was requested, respect that.
             if version is not None and version.eq is not None:
                 return None
-        elif version is None or version.eq is not None:
-            # The lookup missed. Without a version constraint, or with an
-            # exact-version request, that answer is final: a miss can encode
-            # a lookup-time refusal (auth or a transform) that listing must
-            # not second-guess. A range may still fall back to the
-            # next-highest version within the range that the lookup path
-            # resolves and the session allows.
+        elif version is not None and version.eq is not None:
+            # An exact-version request that missed is final: a miss can
+            # encode a lookup-time refusal (auth or a transform) that listing
+            # must not second-guess. Without a version constraint, or with a
+            # range, fall back to the highest listed version that the lookup
+            # path resolves and the session allows.
             return None
 
-        all_templates = [
+        candidates = [
             t
             for t in await super().list_resource_templates()
             if t.matches(uri) is not None
@@ -1389,7 +1521,7 @@ class FastMCP(
             return await super(FastMCP, self).get_resource_template(uri, spec)
 
         return await _resolve_listed_candidates(
-            all_templates,
+            candidates,
             lookup,
             lambda t: t.matches(uri) is not None,
         )
@@ -1404,7 +1536,10 @@ class FastMCP(
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext(
-                    message={},
+                    # Synthesized with only `method`: params stays None, so
+                    # pagination state (e.g. the client's nextCursor) is not
+                    # visible to list middleware hooks.
+                    message=mcp_types.ListPromptsRequest(method="prompts/list"),
                     source="client",
                     type="request",
                     method="prompts/list",
@@ -1474,9 +1609,10 @@ class FastMCP(
         Overrides Provider.get_prompt() to add visibility filtering after all
         transforms (including session-level) have been applied.
 
-        When the highest version is disabled and no exact version was
-        requested, falls back to the next-highest enabled version (a version
-        range is a constraint, so it falls back within the range).
+        When the highest version is disabled or unauthorized and no exact
+        version was requested, falls back to the highest version that is both
+        enabled and authorized (a version range is a constraint, so it falls
+        back within the range).
 
         Args:
             name: The prompt name.
@@ -1499,17 +1635,16 @@ class FastMCP(
             ):
                 return prompts[0]
 
-            # The highest version is disabled. If an exact version was
-            # requested, respect that.
+            # The highest version is disabled or unauthorized. If an exact
+            # version was requested, respect that.
             if version is not None and version.eq is not None:
                 return None
-        elif version is None or version.eq is not None:
-            # The lookup missed. Without a version constraint, or with an
-            # exact-version request, that answer is final: a miss can encode
-            # a lookup-time refusal (auth or a transform) that listing must
-            # not second-guess. A range may still fall back to the
-            # next-highest version within the range that the lookup path
-            # resolves and the session allows.
+        elif version is not None and version.eq is not None:
+            # An exact-version request that missed is final: a miss can
+            # encode a lookup-time refusal (auth or a transform) that listing
+            # must not second-guess. Without a version constraint, or with a
+            # range, fall back to the highest listed version that the lookup
+            # path resolves and the session allows.
             return None
 
         all_prompts = [
@@ -1571,7 +1706,7 @@ class FastMCP(
         #   1. Display-name path — the name this server lists the tool
         #      under, resolved through `get_tool`.
         #   2. Hashed-name path — backend tools that opted into
-        #      app-callable visibility, addressed as `<hash>_<local_name>`
+        #      app-callable visibility, addressed as `__<hash>_<local_name>`
         #      and resolved through `get_tool_by_hash`. It applies the same
         #      transforms, visibility, and auth as the display-name path.
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
@@ -1915,10 +2050,19 @@ class FastMCP(
         """
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
+                serialized_arguments: dict[str, str] | None = None
+                if arguments:
+                    serialized_arguments = {}
+                    for key, value in arguments.items():
+                        serialized_arguments[key] = (
+                            value
+                            if isinstance(value, str)
+                            else pydantic_core.to_json(value).decode("utf-8")
+                        )
                 mw_context = MiddlewareContext(
                     message=mcp_types.GetPromptRequestParams(
                         name=name,
-                        arguments=arguments,
+                        arguments=serialized_arguments,
                         _meta=_version_request_meta(version),
                     ),
                     source="client",
@@ -1979,6 +2123,27 @@ class FastMCP(
             The tool instance that was added to the server.
         """
         return self._local_provider.add_tool(tool)
+
+    def _get_tool_input_schema(self, name: str) -> dict[str, Any] | None:
+        """Synchronous lookup served to the SDK's `get_tool_input_schema` hook
+        (Mcp-Param header validation on `tools/call`, mcp>=2.3).
+
+        Returns the tool's wire input schema from the cache seeded by local
+        tool registration and refreshed by every `tools/list` response. FastMCP
+        tool resolution is async (providers, middleware, proxies) and cannot
+        run inside this sync hook, so a cache miss returns None — which the SDK
+        treats as fail-open, skipping header validation for that call exactly
+        as it does when a `tools/list` listing fails.
+
+        A stale hit fails closed: listings merge into the cache without pruning,
+        and a mounted or proxied server's own registrations do not reach this
+        server's cache, so an entry for a mounted or proxied tool that was
+        removed or changed upstream keeps validating against the old schema
+        until the next `tools/list` on this server. The cache is keyed by name
+        and holds the highest version's schema, so version-pinned calls are
+        validated against that schema too.
+        """
+        return self._wire_input_schemas.get(name)
 
     @overload
     def tool(

@@ -132,6 +132,9 @@ The server creates spans for each operation using [MCP semantic conventions](htt
 | `resources/read` | Resource read (URI in `mcp.resource.uri` attribute, not span name) |
 | `prompts/get {name}` | Prompt render (e.g., `prompts/get greeting`) |
 | `tasks/{operation}` | Task management (`tasks/get`, `tasks/update`, or `tasks/cancel`) |
+| `tools/list`, `resources/list`, `resources/templates/list`, `prompts/list` | Component listing |
+
+Any other request, such as `initialize` or `ping`, gets a server span named after its method.
 
 For mounted servers, an additional `delegate {name}` span shows the delegation to the child server.
 
@@ -143,16 +146,18 @@ The FastMCP client creates spans for outgoing requests with the same naming patt
 
 Spans form a hierarchy showing the request flow. For mounted servers:
 
-```
+```text
 tools/call weather_forecast (CLIENT)
   └── tools/call weather_forecast (SERVER, provider=FastMCPProvider)
         └── delegate get_weather (INTERNAL)
-              └── tools/call get_weather (SERVER, provider=LocalProvider)
+              └── tools/call get_weather (INTERNAL, provider=LocalProvider)
 ```
+
+Each request has exactly one `SERVER` span. The mounted server's span is `INTERNAL`, as is the span for a tool that calls another tool through `ctx.fastmcp.call_tool()`, so trace backends that count `SERVER` spans as requests count each call once.
 
 For proxy providers connecting to remote servers:
 
-```
+```text
 tools/call remote_search (CLIENT)
   └── tools/call remote_search (SERVER, provider=ProxyProvider)
         └── [remote server spans via trace context propagation]
@@ -239,33 +244,29 @@ The context manager has no effect when `telemetry_mode` is already `off`. A requ
 
 ## Programmatic Configuration
 
-For more control, configure the SDK in your Python code before importing FastMCP:
+For more control, configure the SDK in your Python code:
 
 ```python
 from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
-# Configure the SDK with OTLP exporter
+from fastmcp import FastMCP
+
 provider = TracerProvider()
 processor = BatchSpanProcessor(OTLPSpanExporter(endpoint="http://localhost:4317"))
 provider.add_span_processor(processor)
 trace.set_tracer_provider(provider)
 
-# Now import and use FastMCP - traces will be exported automatically
-from fastmcp import FastMCP
-
 mcp = FastMCP("my-server")
 
-@mcp.tool()
+@mcp.tool
 def greet(name: str) -> str:
     return f"Hello, {name}!"
 ```
 
-<Tip>
-The SDK must be configured **before** importing FastMCP to ensure the tracer provider is set when FastMCP initializes.
-</Tip>
+FastMCP looks up the global tracer provider each time it creates a span, so import order does not matter. Set the provider at startup, before the server handles requests; spans created earlier are not exported.
 
 ### Local Development
 
@@ -273,7 +274,8 @@ For quick local trace visualization, [otel-desktop-viewer](https://github.com/Ct
 
 ```bash
 # macOS
-brew install nico-barbas/brew/otel-desktop-viewer
+brew tap ctrlspice/otel-desktop-viewer
+brew install --cask otel-desktop-viewer
 
 # Or download from GitHub releases
 ```
@@ -309,7 +311,16 @@ from fastmcp.telemetry import get_tracer
 
 mcp = FastMCP("custom-spans")
 
-@mcp.tool()
+
+def parse(text: str) -> list[str]:
+    return text.split()
+
+
+def process(words: list[str]) -> str:
+    return " ".join(sorted(words))
+
+
+@mcp.tool
 async def complex_operation(input: str) -> str:
     tracer = get_tracer()
 
@@ -349,6 +360,23 @@ from fastmcp import FastMCP
 from fastmcp.telemetry import get_tracer
 
 mcp = FastMCP("my-server")
+
+
+async def fetch_results(query: str) -> list[str]:
+    return [f"{query} result {i}" for i in range(3)]
+
+
+def rank_results(results: list[str]) -> list[str]:
+    return sorted(results)
+
+
+def format_results(results: list[str]) -> str:
+    return "\n".join(results)
+
+
+async def load_doc(slug: str) -> str:
+    return f"# {slug}"
+
 
 @mcp.tool
 async def search(query: str) -> str:
@@ -393,18 +421,19 @@ For providers with their own OTEL integrations, prefer enabling that instrumenta
 
 ## Error Handling
 
-When errors occur, spans are automatically marked with error status and the exception is recorded:
+When a component raises, FastMCP marks its span with error status and records the exception:
 
 ```python
-@mcp.tool()
+from fastmcp import FastMCP
+
+mcp = FastMCP("my-server")
+
+@mcp.tool
 def risky_operation() -> str:
     raise ValueError("Something went wrong")
-
-# The span will have:
-# - status = ERROR with exception message as description
-# - error.type = "tool_error" (or exception class name for non-tool errors)
-# - exception event with stack trace
 ```
+
+The `tools/call risky_operation` server span gets status `ERROR` with the error message as its description, an exception event carrying the stack trace, and an `error.type` attribute. FastMCP wraps exceptions raised by a tool in a `ToolError`, so tool failures report `error.type` as `tool_error`. A request rejected with a JSON-RPC error, such as a read of an unknown resource, reports the error code (for example `-32602`) as both `error.type` and `rpc.response.status_code`. Other failures report the exception class name.
 
 ## Attributes Reference
 
@@ -421,10 +450,13 @@ FastMCP implements the [OpenTelemetry MCP semantic conventions](https://opentele
 | `mcp.method.name` | The MCP method being called (`tools/call`, `resources/read`, `prompts/get`, `tasks/get`, etc.) |
 | `mcp.protocol.version` | The negotiated MCP protocol version for the request |
 | `mcp.session.id` | Session identifier for the MCP connection |
+| `jsonrpc.request.id` | JSON-RPC request ID (on server spans for inbound requests) |
 | `mcp.resource.uri` | The resource URI (for resource operations) |
 | `gen_ai.tool.name` | Tool name (on `tools/call` spans) |
+| `gen_ai.operation.name` | `execute_tool` (on `tools/call` spans) |
 | `gen_ai.prompt.name` | Prompt name (on `prompts/get` spans) |
-| `error.type` | Error classification (`tool_error` for ToolError, otherwise exception class name) |
+| `error.type` | Error classification (the JSON-RPC error code for protocol errors, `tool_error` for ToolError, otherwise exception class name) |
+| `rpc.response.status_code` | JSON-RPC error code (on spans that failed with a protocol error) |
 
 ### Auth Attributes
 
@@ -432,7 +464,7 @@ Standard [identity attributes](https://opentelemetry.io/docs/specs/semconv/attri
 
 | Attribute | Description |
 |-----------|-------------|
-| `enduser.id` | Client ID from access token (when authenticated) |
+| `enduser.id` | Token subject (`sub`) when present, else client ID (when authenticated) |
 | `enduser.scope` | Space-separated OAuth scopes (when authenticated) |
 
 ### FastMCP Custom Attributes
@@ -452,16 +484,19 @@ Provider-specific attributes for delegation context:
 |-----------|-------------|
 | `fastmcp.delegate.original_name` | Original tool/prompt name before namespacing |
 | `fastmcp.delegate.original_uri` | Original resource URI before namespacing |
+| `fastmcp.delegate.original_uri_template` | Original resource template URI before namespacing |
 | `fastmcp.proxy.backend_name` | Remote server tool/prompt name |
 | `fastmcp.proxy.backend_uri` | Remote server resource URI |
+| `fastmcp.proxy.backend_uri_template` | Remote server resource template URI |
 
 ## Testing with Telemetry
 
-For testing, use the in-memory exporter:
+For testing, use the in-memory exporter. OpenTelemetry allows the global tracer provider to be set only once per process, so install it in a session-scoped fixture and clear the exporter between tests:
 
 ```python
-import pytest
 from collections.abc import Generator
+
+import pytest
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -469,21 +504,29 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 
 from fastmcp import FastMCP
 
-@pytest.fixture
-def trace_exporter() -> Generator[InMemorySpanExporter, None, None]:
+
+@pytest.fixture(scope="session")
+def span_exporter() -> InMemorySpanExporter:
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
-    original_provider = trace.get_tracer_provider()
     trace.set_tracer_provider(provider)
-    yield exporter
-    exporter.clear()
-    trace.set_tracer_provider(original_provider)
+    return exporter
+
+
+@pytest.fixture
+def trace_exporter(
+    span_exporter: InMemorySpanExporter,
+) -> Generator[InMemorySpanExporter, None, None]:
+    span_exporter.clear()
+    yield span_exporter
+    span_exporter.clear()
+
 
 async def test_tool_creates_span(trace_exporter: InMemorySpanExporter) -> None:
     mcp = FastMCP("test")
 
-    @mcp.tool()
+    @mcp.tool
     def hello() -> str:
         return "world"
 

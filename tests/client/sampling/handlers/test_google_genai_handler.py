@@ -7,8 +7,10 @@ try:
     from google.genai import Client as GoogleGenaiClient
     from google.genai.types import (
         Candidate,
+        FinishReason,
         FunctionCall,
         FunctionCallingConfigMode,
+        FunctionResponse,
         GenerateContentResponse,
         ModelContent,
         Part,
@@ -27,6 +29,7 @@ try:
         ToolUseContent,
     )
 
+    from fastmcp.client.sampling.handlers import google_genai as handler_module
     from fastmcp.client.sampling.handlers.google_genai import (
         GoogleGenaiSamplingHandler,
         _convert_messages_to_google_genai_content,
@@ -190,6 +193,7 @@ async def test_response_to_create_message_result():
     # Create a mock response
     mock_response = MagicMock(spec=GenerateContentResponse)
     mock_response.text = "HELPFUL CONTENT FROM GEMINI"
+    mock_response.candidates = [Candidate(finish_reason=FinishReason.STOP)]
 
     result: CreateMessageResult = _response_to_create_message_result(
         response=mock_response, model="gemini-2.0-flash-exp"
@@ -198,7 +202,21 @@ async def test_response_to_create_message_result():
         content=TextContent(type="text", text="HELPFUL CONTENT FROM GEMINI"),
         role="assistant",
         model="gemini-2.0-flash-exp",
+        stop_reason="endTurn",
     )
+
+
+async def test_response_to_create_message_result_reports_max_tokens():
+    """Without tools, a reply cut off at max_tokens must say so too."""
+    mock_response = MagicMock(spec=GenerateContentResponse)
+    mock_response.text = "partial"
+    mock_response.candidates = [Candidate(finish_reason=FinishReason.MAX_TOKENS)]
+
+    result = _response_to_create_message_result(
+        response=mock_response, model="gemini-2.0-flash-exp"
+    )
+
+    assert result.stop_reason == "maxTokens"
 
 
 def test_convert_tool_choice_to_google_genai():
@@ -247,10 +265,11 @@ def test_sampling_content_to_google_genai_part_tool_result():
         content=[TextContent(type="text", text="Weather is sunny")],
     )
 
-    part = _sampling_content_to_google_genai_part(content)
+    part = _sampling_content_to_google_genai_part(
+        content, {"get_weather_abc123": "get_weather"}
+    )
 
     assert part.function_response is not None
-    # Function name is extracted from toolUseId by removing the UUID suffix
     assert part.function_response.name == "get_weather"
     assert part.function_response.response == {"result": "Weather is sunny"}
 
@@ -263,26 +282,40 @@ def test_sampling_content_to_google_genai_part_tool_result_empty():
         content=[],
     )
 
-    part = _sampling_content_to_google_genai_part(content)
+    part = _sampling_content_to_google_genai_part(
+        content, {"my_tool_xyz789": "my_tool"}
+    )
 
     assert part.function_response is not None
     assert part.function_response.name == "my_tool"
     assert part.function_response.response == {"result": ""}
 
 
-def test_sampling_content_to_google_genai_part_tool_result_no_underscore():
-    """Test ToolResultContent when toolUseId has no underscore (fallback)."""
+def test_sampling_content_to_google_genai_part_tool_result_uses_paired_name():
+    """Tool-use IDs are opaque and must resolve through their paired call."""
     content = ToolResultContent(
         type="tool_result",
-        tool_use_id="simplefunction",
+        tool_use_id="call_opaque_123",
         content=[TextContent(type="text", text="Result")],
     )
 
-    part = _sampling_content_to_google_genai_part(content)
+    part = _sampling_content_to_google_genai_part(
+        content, {"call_opaque_123": "lookup_customer"}
+    )
 
-    # When no underscore, the full ID is used as the name
     assert part.function_response is not None
-    assert part.function_response.name == "simplefunction"
+    assert part.function_response.name == "lookup_customer"
+
+
+def test_sampling_content_to_google_genai_part_tool_result_requires_matching_call():
+    content = ToolResultContent(
+        type="tool_result",
+        tool_use_id="call_opaque_123",
+        content=[TextContent(type="text", text="Result")],
+    )
+
+    with pytest.raises(ValueError, match="No matching ToolUseContent"):
+        _sampling_content_to_google_genai_part(content)
 
 
 def test_convert_messages_with_tool_use():
@@ -317,6 +350,15 @@ def test_convert_messages_with_tool_result():
     msgs = _convert_messages_to_google_genai_content(
         messages=[
             SamplingMessage(
+                role="assistant",
+                content=ToolUseContent(
+                    type="tool_use",
+                    id="get_weather_123",
+                    name="get_weather",
+                    input={},
+                ),
+            ),
+            SamplingMessage(
                 role="user",
                 content=ToolResultContent(
                     type="tool_result",
@@ -327,16 +369,194 @@ def test_convert_messages_with_tool_result():
         ],
     )
 
-    assert len(msgs) == 1
-    assert isinstance(msgs[0], UserContent)
-    assert msgs[0].parts[0].function_response is not None
-    assert msgs[0].parts[0].function_response.name == "get_weather"
+    assert len(msgs) == 2
+    assert isinstance(msgs[1], UserContent)
+    assert msgs[1].parts[0].function_response is not None
+    assert msgs[1].parts[0].function_response.name == "get_weather"
+
+
+def test_convert_messages_matches_multiple_tool_results_by_id():
+    msgs = _convert_messages_to_google_genai_content(
+        messages=[
+            SamplingMessage(
+                role="assistant",
+                content=[
+                    ToolUseContent(
+                        type="tool_use",
+                        id="call_opaque_123",
+                        name="lookup_customer",
+                        input={"id": "C-1"},
+                    ),
+                    ToolUseContent(
+                        type="tool_use",
+                        id="lookup_order_12345678",
+                        name="lookup_order",
+                        input={"id": "O-1"},
+                    ),
+                ],
+            ),
+            SamplingMessage(
+                role="user",
+                content=[
+                    ToolResultContent(
+                        type="tool_result",
+                        tool_use_id="lookup_order_12345678",
+                        content=[TextContent(type="text", text="order")],
+                    ),
+                    ToolResultContent(
+                        type="tool_result",
+                        tool_use_id="call_opaque_123",
+                        content=[TextContent(type="text", text="customer")],
+                    ),
+                ],
+            ),
+        ]
+    )
+
+    assert isinstance(msgs[0], ModelContent)
+    function_calls = [part.function_call for part in msgs[0].parts]
+    assert all(function_call is not None for function_call in function_calls)
+    assert [
+        function_call.name
+        for function_call in function_calls
+        if function_call is not None
+    ] == [
+        "lookup_customer",
+        "lookup_order",
+    ]
+    assert isinstance(msgs[1], UserContent)
+    function_responses = [part.function_response for part in msgs[1].parts]
+    assert all(
+        function_response is not None for function_response in function_responses
+    )
+    assert [
+        function_response.name
+        for function_response in function_responses
+        if function_response is not None
+    ] == [
+        "lookup_order",
+        "lookup_customer",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("with_text", "expected_text"),
+    [(False, ""), (True, "caption")],
+    ids=["image-only", "text-and-image"],
+)
+def test_convert_messages_preserves_images_in_tool_results(
+    with_text: bool, expected_text: str
+):
+    result_content = [
+        *([TextContent(type="text", text="caption")] if with_text else []),
+        ImageContent(
+            type="image",
+            data="YWJj",
+            mime_type="image/jpeg" if with_text else "image/png",
+        ),
+    ]
+    messages = [
+        SamplingMessage(
+            role="assistant",
+            content=ToolUseContent(
+                type="tool_use",
+                id="read_image_12345678",
+                name="read_image",
+                input={},
+            ),
+        ),
+        SamplingMessage(
+            role="user",
+            content=ToolResultContent(
+                type="tool_result",
+                tool_use_id="read_image_12345678",
+                content=result_content,
+            ),
+        ),
+    ]
+    if "parts" not in FunctionResponse.model_fields:
+        with pytest.raises(
+            ValueError, match="SDK does not support image function responses"
+        ):
+            _convert_messages_to_google_genai_content(messages)
+        return
+
+    msgs = _convert_messages_to_google_genai_content(messages)
+
+    user_parts = msgs[1].parts
+    assert user_parts is not None
+    function_response = user_parts[0].function_response
+    assert function_response is not None
+    assert function_response.name == "read_image"
+    assert function_response.response == {"result": expected_text}
+    assert function_response.parts is not None
+    assert len(function_response.parts) == 1
+    response_parts = function_response.parts
+    assert response_parts is not None
+    image_data = response_parts[0].inline_data
+    assert image_data is not None
+    assert image_data.data == b"abc"
+    assert image_data.mime_type in {"image/png", "image/jpeg"}
+
+
+@pytest.mark.parametrize(
+    "missing", ["parts", "FunctionResponseBlob", "FunctionResponsePart"]
+)
+def test_tool_result_images_reject_unsupported_sdk(monkeypatch, missing):
+    if missing == "parts":
+        monkeypatch.setattr(FunctionResponse, "model_fields", {})
+    else:
+        monkeypatch.delattr(handler_module.google_genai_types, missing, raising=False)
+    content = ToolResultContent(
+        type="tool_result",
+        tool_use_id="read_image_12345678",
+        content=[ImageContent(type="image", data="YWJj", mime_type="image/png")],
+    )
+    with pytest.raises(
+        ValueError, match="SDK does not support image function responses"
+    ):
+        _sampling_content_to_google_genai_part(
+            content, {"read_image_12345678": "read_image"}
+        )
+
+
+def test_convert_messages_rejects_unsupported_gemini_tool_result_image_mime_type():
+    messages = [
+        SamplingMessage(
+            role="assistant",
+            content=ToolUseContent(
+                type="tool_use", id="read_image_12345678", name="read_image", input={}
+            ),
+        ),
+        SamplingMessage(
+            role="user",
+            content=ToolResultContent(
+                type="tool_result",
+                tool_use_id="read_image_12345678",
+                content=[
+                    ImageContent(type="image", data="YWJj", mime_type="image/gif")
+                ],
+            ),
+        ),
+    ]
+
+    with pytest.raises(ValueError, match="Unsupported image MIME type"):
+        _convert_messages_to_google_genai_content(messages)
 
 
 def test_convert_messages_with_multiple_content_blocks():
     """Test converting messages with multiple content blocks (list content)."""
     msgs = _convert_messages_to_google_genai_content(
         messages=[
+            SamplingMessage(
+                role="assistant",
+                content=ToolUseContent(
+                    type="tool_use",
+                    id="get_weather_xyz",
+                    name="get_weather",
+                    input={},
+                ),
+            ),
             SamplingMessage(
                 role="user",
                 content=[
@@ -351,11 +571,11 @@ def test_convert_messages_with_multiple_content_blocks():
         ],
     )
 
-    assert len(msgs) == 1
-    assert isinstance(msgs[0], UserContent)
-    assert len(msgs[0].parts) == 2
-    assert msgs[0].parts[0].text == "I need weather info."
-    assert msgs[0].parts[1].function_response is not None
+    assert len(msgs) == 2
+    assert isinstance(msgs[1], UserContent)
+    assert len(msgs[1].parts) == 2
+    assert msgs[1].parts[0].text == "I need weather info."
+    assert msgs[1].parts[1].function_response is not None
 
 
 def test_response_to_result_with_tools_text_only():

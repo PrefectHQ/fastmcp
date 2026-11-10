@@ -67,7 +67,9 @@ class StdioTransport(ClientTransport):
         self.log_file = log_file
 
         self._session: ClientSession | None = None
+        self._session_future: asyncio.Future[ClientSession] | None = None
         self._session_options: TransportOptions | None = None
+        self._session_read_timeout: float | None = None
         self._active_sessions = 0
         self._connect_lock = anyio.Lock()
         self._connect_task: asyncio.Task | None = None
@@ -81,6 +83,10 @@ class StdioTransport(ClientTransport):
         transport_options: TransportOptions | None = None,
         **session_kwargs: Unpack[SessionKwargs],
     ) -> AsyncGenerator[ClientSession, None]:
+        # Checked before the cleanup below takes effect: a context refused here
+        # never acquired the connection, so it must not tear down the one
+        # another loop is still using.
+        self._refuse_foreign_loop_in_use()
         try:
             await self.connect(transport_options=transport_options, **session_kwargs)
             self._active_sessions += 1
@@ -101,23 +107,49 @@ class StdioTransport(ClientTransport):
         **session_kwargs: Unpack[SessionKwargs],
     ) -> ClientSession | None:
         options = transport_options or TransportOptions()
+        self._refuse_foreign_loop_in_use()
 
         # Serialized so concurrent callers can't each decide to replace the
         # session and race to spawn competing subprocesses.
         async with self._connect_lock:
+            # An idle connection left by another loop is rebuilt on this one.
+            connect_task = self._connect_task
+            if (
+                connect_task is not None
+                and connect_task.get_loop() is not asyncio.get_running_loop()
+            ):
+                await self.disconnect()
+
             # A kept-alive session was built for one client's options; handing it
             # to a client that wants different ones would silently give it the
             # first client's behavior. Rebuild it when it's idle; refuse when
             # another client is using it, since tearing it down would break them.
-            if self._connect_task is not None and self._session_options != options:
-                if self._active_sessions:
+            # A different request timeout alone does not refuse: the client
+            # shares the live session and its default timeout, as before the
+            # timeout was compared. Compare the timeout value, not callback
+            # identity: proxy clients rebind forwarding callbacks per request.
+            options_differ = self._session_options != options
+            timeout_differs = self._session_read_timeout != session_kwargs.get(
+                "read_timeout_seconds"
+            )
+            if self._connect_task is not None and (options_differ or timeout_differs):
+                if self._active_sessions and options_differ:
                     raise RuntimeError(
                         "This stdio transport has a live session built for different "
                         "connection options and another client is still using it. "
                         "Sharing one transport across clients that need different "
                         "sessions is not supported; give each client its own transport."
                     )
-                await self.disconnect()
+                if not self._active_sessions:
+                    await self.disconnect()
+                else:
+                    logger.warning(
+                        "Sharing a live stdio session whose request timeout is "
+                        f"{self._session_read_timeout}s; this client's timeout "
+                        f"({session_kwargs.get('read_timeout_seconds')}s) applies "
+                        "only to calls that pass their own timeout. Give each "
+                        "client its own transport to keep separate defaults."
+                    )
 
             # If the connect task completed or the session's streams are dead,
             # the subprocess has exited. Tear down so we can start fresh.
@@ -126,48 +158,119 @@ class StdioTransport(ClientTransport):
             ):
                 await self.disconnect()
 
-            if self._connect_task is not None:
-                return
+            # Preserve the established connect() return value when a ready
+            # keep-alive session is reused. connect_session() yields _session.
+            if self._session is not None:
+                return None
 
-            session_future: asyncio.Future[ClientSession] = asyncio.Future()
+            session_future: asyncio.Future[ClientSession] | None = self._session_future
+            if self._connect_task is None:
+                session_future = asyncio.Future()
+                self._session_future = session_future
 
-            # Recorded before the connect completes: while it is in flight the
-            # session already belongs to these options, and a concurrent caller
-            # comparing against an unset value would read it as a mismatch and
-            # tear down the connection being established.
-            self._session_options = options
+                # Recorded before the connect completes: while it is in flight
+                # the session already belongs to these options, and a
+                # concurrent caller comparing against an unset value would read
+                # it as a mismatch and tear down the connection being established.
+                self._session_options = options
+                self._session_read_timeout = session_kwargs.get("read_timeout_seconds")
 
-            # start the connection task
-            self._connect_task = asyncio.create_task(
-                _stdio_transport_connect_task(
-                    command=self.command,
-                    args=self.args,
-                    env=self.env,
-                    cwd=self.cwd,
-                    log_file=self.log_file,
-                    # TODO(ty): remove when ty supports Unpack[TypedDict] inference
-                    session_kwargs=session_kwargs,  # type: ignore[arg-type]
-                    transport_options=options,
-                    ready_event=self._ready_event,
-                    stop_event=self._stop_event,
-                    session_future=session_future,
+                # Start the connection task.
+                self._connect_task = asyncio.create_task(
+                    _stdio_transport_connect_task(
+                        command=self.command,
+                        args=self.args,
+                        env=self.env,
+                        cwd=self.cwd,
+                        log_file=self.log_file,
+                        # TODO(ty): remove when ty supports Unpack[TypedDict] inference
+                        session_kwargs=session_kwargs,  # type: ignore[arg-type]
+                        transport_options=options,
+                        ready_event=self._ready_event,
+                        stop_event=self._stop_event,
+                        session_future=session_future,
+                    )
                 )
-            )
+
+            if session_future is None:
+                raise RuntimeError("Stdio connection has no session future")
 
             # wait for the client to be ready before returning
             await self._ready_event.wait()
 
             # Check if connect task completed with an exception (early failure)
-            if self._connect_task.done():
-                exception = self._connect_task.exception()
+            connect_task = self._connect_task
+            if connect_task is not None and connect_task.done():
+                exception = connect_task.exception()
                 if exception is not None:
                     raise exception
 
             self._session = await session_future
             return self._session
 
+    def _refuse_foreign_loop_in_use(self) -> None:
+        """Refuse a connection while another event loop is using this one.
+
+        The connection task and the session's streams belong to the event loop
+        that created them. A session reused from another loop never sees its
+        responses, so the initialize handshake would hang. Refuse while another
+        loop is using or establishing the connection, before waiting on the
+        lock: the lock is bound to one loop and cannot arbitrate between loops.
+        """
+        connect_task = self._connect_task
+        foreign_loop = (
+            connect_task is not None
+            and connect_task.get_loop() is not asyncio.get_running_loop()
+        )
+        if foreign_loop and (self._active_sessions or self._connect_lock.locked()):
+            raise RuntimeError(
+                "This stdio transport has a live session bound to a different "
+                "event loop and another client is still using it. Sharing one "
+                "transport across event loops with overlapping sessions is not "
+                "supported; give each loop its own transport."
+            )
+
     async def disconnect(self):
         if self._connect_task is None:
+            return
+
+        connect_task = self._connect_task
+        owning_loop = connect_task.get_loop()
+
+        # The task can only be signalled and awaited from the loop that owns
+        # it. From any other loop, run the teardown there and wait for it. A
+        # closed loop has already cancelled the task, so there is nothing left
+        # to stop.
+        if owning_loop is not asyncio.get_running_loop():
+            if owning_loop.is_closed():
+                self._reset()
+                return
+
+            # A stopped loop can't run the teardown until something runs it
+            # again, and forgetting the connection now would leave its
+            # subprocess alive with nothing able to stop it. Keep the
+            # connection and refuse, so the owner can still close it there.
+            if not owning_loop.is_running():
+                raise RuntimeError(
+                    "This stdio transport's connection belongs to an event loop "
+                    "that is stopped but not closed, so it can't be shut down "
+                    "from this loop. Close the client on the loop that opened "
+                    "it, or close that loop, before using it from another loop."
+                )
+
+            stop_event = self._stop_event
+
+            async def stop_on_owning_loop() -> None:
+                stop_event.set()
+                await asyncio.wait({connect_task})
+
+            # Scheduling raises if the loop closed since the check above; its
+            # shutdown cancelled the task, so the teardown is done either way.
+            with contextlib.suppress(RuntimeError):
+                await asyncio.wrap_future(
+                    asyncio.run_coroutine_threadsafe(stop_on_owning_loop(), owning_loop)
+                )
+            self._reset()
             return
 
         # signal the connection task to stop
@@ -176,7 +279,6 @@ class StdioTransport(ClientTransport):
         # Wait without propagating the connection task's cancellation into
         # this caller. Cancellation of this wait therefore still belongs to
         # the caller and must propagate normally.
-        connect_task = self._connect_task
         await asyncio.wait({connect_task})
         try:
             _ = connect_task.result()
@@ -188,10 +290,15 @@ class StdioTransport(ClientTransport):
                 exc_info=True,
             )
 
-        # reset variables and events for potential future reconnects
+        self._reset()
+
+    def _reset(self) -> None:
+        """Clear connection state and events so a future connect starts fresh."""
         self._connect_task = None
         self._session = None
+        self._session_future = None
         self._session_options = None
+        self._session_read_timeout = None
         self._stop_event = anyio.Event()
         self._ready_event = anyio.Event()
 
@@ -352,7 +459,10 @@ class PythonStdioTransport(StdioTransport):
 
 
 class FastMCPStdioTransport(StdioTransport):
-    """Transport for running FastMCP servers using the FastMCP CLI."""
+    """Transport for running FastMCP servers using the FastMCP CLI.
+
+    `args` are passed to the server script, not interpreted as FastMCP CLI options.
+    """
 
     def __init__(
         self,
@@ -369,13 +479,17 @@ class FastMCPStdioTransport(StdioTransport):
         if not str(script_path).endswith(".py"):
             raise ValueError(f"Not a Python script: {script_path}")
 
+        full_args = ["run", str(script_path)]
+        if args:
+            full_args.extend(["--", *args])
+
         # Same UTF-8 default as PythonStdioTransport: the `fastmcp` command
         # is a Python entry point with the same sanitized child environment.
         env = {"PYTHONUTF8": "1", **(env or {})}
 
         super().__init__(
             command="fastmcp",
-            args=["run", str(script_path)],
+            args=full_args,
             env=env,
             cwd=cwd,
             keep_alive=keep_alive,

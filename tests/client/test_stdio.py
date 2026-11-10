@@ -1,5 +1,7 @@
 import asyncio
+import contextlib
 import gc
+import importlib
 import inspect
 import os
 import time
@@ -148,6 +150,7 @@ class TestPartialConstruction:
 
         transport.__del__()  # must not raise
 
+    @pytest.mark.filterwarnings("error::pytest.PytestUnraisableExceptionWarning")
     def test_failed_subclass_construction_is_collectable(self, tmp_path):
         not_python = tmp_path / "server.txt"
         not_python.write_text("not a python script", encoding="utf-8")
@@ -155,7 +158,9 @@ class TestPartialConstruction:
         with pytest.raises(ValueError, match="Not a Python script"):
             PythonStdioTransport(script_path=not_python)
 
-        gc_collect_harder()
+        # One full pass runs the half-built transport's __del__; repeated passes
+        # over a large xdist worker heap can exceed the test timeout.
+        gc.collect()
 
     def test_failed_subclass_construction_does_not_fabricate_an_event(self, tmp_path):
         """The guard must skip the event, not invent one to set."""
@@ -273,6 +278,56 @@ class TestKeepAlive:
         client = Client(transport=StdioTransport(command="python", args=[""]))
 
         assert client.transport.keep_alive is True
+
+    async def test_cancelled_initial_connect_can_reuse_starting_session(
+        self, stdio_script, monkeypatch
+    ):
+        stdio_module = importlib.import_module("fastmcp.client.transports.stdio")
+        original_stdio_client = stdio_module.stdio_client
+        stdio_entered = asyncio.Event()
+        release_stdio = asyncio.Event()
+
+        @contextlib.asynccontextmanager
+        async def gated_stdio_client(*args, **kwargs):
+            async with original_stdio_client(*args, **kwargs) as streams:
+                stdio_entered.set()
+                await release_stdio.wait()
+                yield streams
+
+        monkeypatch.setattr(stdio_module, "stdio_client", gated_stdio_client)
+        transport = PythonStdioTransport(script_path=stdio_script)
+        first_enter = asyncio.create_task(transport.connect_session().__aenter__())
+        retry_context = None
+        retry_enter = None
+
+        try:
+            await asyncio.wait_for(stdio_entered.wait(), timeout=5)
+            first_enter.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await first_enter
+
+            retry_context = transport.connect_session()
+            retry_enter = asyncio.create_task(retry_context.__aenter__())
+            await asyncio.sleep(0)
+            retry_waited_for_startup = not retry_enter.done()
+
+            release_stdio.set()
+            session = await asyncio.wait_for(retry_enter, timeout=5)
+            assert retry_waited_for_startup
+            assert session is not None
+            assert (await session.list_tools()).tools
+        finally:
+            release_stdio.set()
+            if not first_enter.done():
+                first_enter.cancel()
+            await asyncio.gather(first_enter, return_exceptions=True)
+            if retry_enter is not None:
+                if not retry_enter.done():
+                    await asyncio.gather(retry_enter, return_exceptions=True)
+                if not retry_enter.cancelled() and retry_enter.exception() is None:
+                    assert retry_context is not None
+                    await retry_context.__aexit__(None, None, None)
+            await transport.disconnect()
 
     async def test_keep_alive_set_false(self):
         client = Client(
@@ -416,6 +471,99 @@ class TestKeepAlive:
             pid2: int = result2.data
 
         assert pid1 != pid2
+
+    # https://github.com/PrefectHQ/fastmcp/issues/4471
+    @pytest.mark.timeout(30)
+    async def test_keep_alive_reconnects_on_a_different_event_loop(self, stdio_script):
+        """A kept-alive connection belongs to the loop that created it.
+
+        Reusing the transport from a second, concurrently-alive loop has to
+        spawn a fresh subprocess: the first loop's session never sees its
+        responses on the second loop, so reusing it would hang the initialize
+        handshake instead of connecting.
+        """
+        client = Client(transport=PythonStdioTransport(script_path=stdio_script))
+
+        async with client:
+            result1 = await client.call_tool("pid")
+            pid1: int = result1.data
+
+        async def reuse() -> int:
+            async with client:
+                result = await client.call_tool("pid")
+            return int(result.data)
+
+        def reuse_on_new_loop() -> int:
+            # Bounded so a reused foreign-loop session fails as a timeout here
+            # rather than hanging the suite.
+            return asyncio.run(asyncio.wait_for(reuse(), timeout=10))
+
+        # Off-thread, so this test's loop stays running while the second one
+        # connects: only the owning loop can tear the old connection down.
+        pid2 = await asyncio.to_thread(reuse_on_new_loop)
+
+        assert pid2 != pid1
+        await wait_for_process_exit(pid1)
+
+        # The second loop is closed by now; closing from this one must still
+        # succeed rather than fail on a task it cannot await.
+        await client.close()
+
+    @pytest.mark.timeout(30)
+    def test_stopped_owning_loop_keeps_the_connection(self, stdio_script):
+        """A stopped loop can't run the teardown, so the connection stays its.
+
+        Moving to another loop would otherwise forget a subprocess that nothing
+        could stop anymore. The move is refused instead, and the owning loop
+        can still close it.
+        """
+        client = Client(transport=PythonStdioTransport(script_path=stdio_script))
+
+        async def use() -> int:
+            async with client:
+                result = await client.call_tool("pid")
+            return int(result.data)
+
+        def use_on_new_loop() -> int:
+            return asyncio.run(asyncio.wait_for(use(), timeout=10))
+
+        loop_a = asyncio.new_event_loop()
+        try:
+            pid1 = loop_a.run_until_complete(use())
+
+            with pytest.raises(RuntimeError, match="stopped but not closed"):
+                use_on_new_loop()
+            assert psutil.pid_exists(pid1)
+
+            # The transport owns the subprocess; the client keeps the refused
+            # connect's error and would re-raise it on close().
+            loop_a.run_until_complete(client.transport.close())
+            loop_a.run_until_complete(wait_for_process_exit(pid1))
+        finally:
+            loop_a.close()
+
+    @pytest.mark.timeout(30)
+    @pytest.mark.parametrize("keep_alive", [True, False])
+    async def test_refuses_a_different_event_loop_while_in_use(
+        self, stdio_script, keep_alive
+    ):
+        transport = PythonStdioTransport(
+            script_path=stdio_script, keep_alive=keep_alive
+        )
+
+        def connect_on_new_loop() -> None:
+            async def connect() -> None:
+                async with transport.connect_session():
+                    pass
+
+            asyncio.run(asyncio.wait_for(connect(), timeout=10))
+
+        async with transport.connect_session() as session:
+            with pytest.raises(RuntimeError, match="different event loop"):
+                await asyncio.to_thread(connect_on_new_loop)
+            assert (await session.list_tools()).tools
+
+        await transport.close()
 
     async def test_keep_alive_starts_new_session_if_manually_closed(self, stdio_script):
         client = Client(transport=PythonStdioTransport(script_path=stdio_script))
@@ -894,3 +1042,72 @@ class TestPythonTransportEnvironment:
             script_path=script, env={"PYTHONUTF8": "0", "EXTRA": "kept"}
         )
         assert custom.env == {"PYTHONUTF8": "0", "EXTRA": "kept"}
+
+
+class TestFastMCPTransportArguments:
+    @pytest.mark.parametrize(
+        ("args", "expected_tail"),
+        [(None, []), ([], []), (["hello"], ["--", "hello"]), ([""], ["--", ""])],
+    )
+    def test_builds_script_arguments(
+        self, tmp_path: Path, args: list[str] | None, expected_tail: list[str]
+    ) -> None:
+        script = tmp_path / "server.py"
+        script.write_text("", encoding="utf-8")
+        original_args = args.copy() if args is not None else None
+
+        transport = FastMCPStdioTransport(script, args=args)
+
+        assert transport.command == "fastmcp"
+        assert transport.args == ["run", str(script), *expected_tail]
+        assert args == original_args
+
+    def test_omitted_arguments_keep_existing_command(self, tmp_path: Path) -> None:
+        script = tmp_path / "server.py"
+        script.write_text("", encoding="utf-8")
+
+        transport = FastMCPStdioTransport(str(script))
+
+        assert transport.args == ["run", str(script)]
+
+    @pytest.mark.client_process
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["hello"],
+            [""],
+            ["--transport", "http", "two words", "", "雪", "--", "--literal"],
+        ],
+    )
+    async def test_script_receives_arguments(
+        self, tmp_path: Path, args: list[str]
+    ) -> None:
+        script = tmp_path / "server with spaces.py"
+        script.write_text(
+            inspect.cleandoc("""
+                import sys
+                from fastmcp import FastMCP
+
+                arguments = sys.argv[1:]
+                mcp = FastMCP()
+
+                @mcp.tool
+                def get_arguments() -> list[str]:
+                    return arguments
+            """),
+            encoding="utf-8",
+        )
+        transport = FastMCPStdioTransport(
+            script,
+            args=args,
+            env={
+                "FASTMCP_SHOW_SERVER_BANNER": "false",
+                "FASTMCP_CHECK_FOR_UPDATES": "off",
+            },
+            keep_alive=False,
+        )
+
+        async with Client(transport) as client:
+            result = await client.call_tool("get_arguments")
+
+        assert result.data == args
