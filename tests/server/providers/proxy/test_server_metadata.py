@@ -153,9 +153,7 @@ def make_gateway(
     instructions: str | None = None,
     frontend_metadata: bool = False,
 ) -> FastMCP:
-    provider = ProxyProvider(
-        lambda: ProxyClient(upstream, mode=backend_mode), identity=identity
-    )
+    provider = ProxyProvider(lambda: ProxyClient(upstream, mode=backend_mode))
     metadata = ProxyMetadataMiddleware(provider, identity=identity)
     middleware: list[Middleware] = [metadata]
     if frontend_metadata:
@@ -734,3 +732,36 @@ async def test_results_keep_the_backend_stamp_under_upstream_identity(
     # to initialize's serverInfo under upstream identity.
     assert stamp is not None
     assert stamp["name"] == "backend-server"
+
+
+@pytest.mark.parametrize("operation", ["tools/call", "prompts/get"])
+async def test_explicit_middleware_identity_decides_result_stamps(operation: str):
+    """An explicit middleware identity governs results, not just discovery."""
+    backend = FastMCP("backend-server")
+
+    @backend.tool
+    def echo() -> str:
+        return "ok"
+
+    @backend.prompt
+    def greet() -> str:
+        return "hello"
+
+    provider = ProxyProvider(lambda: ProxyClient(backend, mode="auto"))
+    gateway = FastMCP(
+        "gateway",
+        providers=[provider],
+        middleware=[ProxyMetadataMiddleware(provider, identity="upstream")],
+    )
+
+    result: mcp_types.CallToolResult | mcp_types.GetPromptResult
+    async with Client(gateway, mode="auto") as client:
+        assert client.server_info is not None
+        assert client.server_info.name == "backend-server"
+        if operation == "tools/call":
+            result = await client.call_tool_mcp("echo", {})
+        else:
+            result = await client.get_prompt_mcp("greet", {})
+
+    assert result.meta is not None
+    assert result.meta[mcp_types.SERVER_INFO_META_KEY]["name"] == "backend-server"

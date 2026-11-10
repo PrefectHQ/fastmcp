@@ -989,6 +989,25 @@ class ProxyProvider(Provider):
         self._templates_generation = 0
         self._prompts_generation = 0
 
+    def _use_identity(self, identity: ProxyIdentity) -> None:
+        """Adopt the identity a ``ProxyMetadataMiddleware`` was explicitly given.
+
+        Cached components carry the identity they were built with, so a change
+        drops the caches and advances the generations to keep in-flight
+        listings from caching components built under the old identity.
+        """
+        if identity == self.identity:
+            return
+        self.identity = identity
+        self._tools_cache = None
+        self._resources_cache = None
+        self._templates_cache = None
+        self._prompts_cache = None
+        self._tools_generation += 1
+        self._resources_generation += 1
+        self._templates_generation += 1
+        self._prompts_generation += 1
+
     def required_extensions(self) -> Sequence[ServerExtension]:
         if not self._skills:
             return ()
@@ -1277,7 +1296,9 @@ class ProxyMetadataMiddleware(Middleware):
     Instructions and namespaced metadata are forwarded with frontend values
     taking precedence. Protocol versions, capabilities, cache policy, and result
     type are never copied from the backend. ``identity`` controls whether server
-    identity remains the gateway's or uses the backend's when available.
+    identity remains the gateway's or uses the backend's when available. It
+    defaults to the provider's identity; an explicit value also applies to the
+    provider's proxied results, so discovery and results always agree.
     """
 
     def __init__(
@@ -1290,6 +1311,9 @@ class ProxyMetadataMiddleware(Middleware):
             identity = provider.identity
         if identity not in ("proxy", "upstream"):
             raise ValueError("identity must be 'proxy' or 'upstream'")
+        # Results must report the same identity discovery advertises, so an
+        # explicit identity here also decides the provider's result stamps.
+        provider._use_identity(identity)
         self.provider = provider
         self.identity = identity
 
