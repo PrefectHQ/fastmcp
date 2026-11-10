@@ -70,7 +70,7 @@ async def data_analysis_request(dataset: str, ctx: Context = CurrentContext()) -
 - Dependency parameters are automatically excluded from the MCP schema—clients never see them.
 - Context methods are async, so your function usually needs to be async as well.
 - **Each MCP request receives a new context object.** State set with `ctx.set_state()` is scoped to that request and is not available in subsequent ones. To persist state across requests, use [Session State](/servers/sessions).
-- Context is only available during a request; attempting to use context methods outside a request will raise errors.
+- Context is only available during a request; most context methods raise errors outside a request. `ctx.list_resources()` and `ctx.list_prompts()` are the exceptions: they also work from a bare `Context(fastmcp=server)` or a direct `server.call_tool()` call, where they list every component visible without a session.
 
 ### Legacy Type-Hint Injection
 
