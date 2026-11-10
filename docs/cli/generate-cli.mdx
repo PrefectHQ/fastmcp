@@ -59,6 +59,18 @@ Options:
 
 Beyond tool commands, the script includes generic MCP operations — `list-tools`, `list-resources`, `read-resource`, `list-prompts`, and `get-prompt` — that always reflect the server's current state, even if tools have changed since generation.
 
+### Background Tasks
+
+Generated scripts enable [background task support](/clients/tasks) when the optional `fastmcp-tasks` package is installed. Tool commands wait for the task to finish and print its result, just like a regular tool call. Failed tasks exit with a nonzero status.
+
+Run a generated command with the tasks extra to call a tool that requires task execution:
+
+```bash
+uv run --with 'fastmcp[tasks]' python cli.py call-tool slow_computation --duration 10
+```
+
+Without the tasks extra, generated scripts continue to support ordinary tool calls.
+
 ## Parameter Handling
 
 Parameters are mapped based on their JSON Schema type:
