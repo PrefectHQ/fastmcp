@@ -455,6 +455,13 @@ def _resolve_recursive_types(conversion: _Conversion) -> None:
     rechecked: set[type[BaseModel]] = set()
     for cls, field_name in conversion.unchecked_defaults:
         if issubclass(cls, BaseModel):
+            # safe_create_model stores a reserved property name under a
+            # generated field name with the property name as its alias.
+            field_name = next(
+                name
+                for name, info in cls.model_fields.items()
+                if (info.alias or name) == field_name
+            )
             field_info = cls.model_fields[field_name]
             # `annotation` alone drops constraints such as `minimum`
             annotation = field_info.rebuild_annotation()
