@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Self
 
 import httpx2
 import pydantic.json
 from anyio import Path as AsyncPath
 from pydantic import Field
-from typing_extensions import Self, override
+from typing_extensions import override
 
 from fastmcp.exceptions import ResourceError
 from fastmcp.resources.base import Resource, ResourceContent, ResourceResult

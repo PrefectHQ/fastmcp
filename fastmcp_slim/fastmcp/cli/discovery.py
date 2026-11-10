@@ -180,26 +180,42 @@ def _scan_claude_code(start_dir: Path) -> list[DiscoveredServer]:
     if not isinstance(data, dict):
         return []
 
-    results: list[DiscoveredServer] = []
+    global_results: list[DiscoveredServer] = []
+    project_results: list[DiscoveredServer] = []
 
     # Global servers
     if global_servers := data.get("mcpServers"):
         if isinstance(global_servers, dict):
-            results.extend(
+            global_results.extend(
                 _parse_mcp_servers(
                     global_servers, source="claude-code", config_path=path
                 )
             )
 
-    # Project-scoped servers matching start_dir
-    resolved_dir = str(start_dir.resolve())
+    # Project-scoped servers matching start_dir. Claude Code keys
+    # ``projects`` by a raw path string, and on Windows it writes forward
+    # slashes where ``Path.resolve()`` produces backslashes, so fall back to
+    # comparing paths when the exact key is missing. Only one entry is used so
+    # stale duplicate spellings of the same directory don't collide.
+    resolved_dir = start_dir.resolve()
     projects = data.get("projects", {})
     if isinstance(projects, dict):
-        project_data = projects.get(resolved_dir, {})
+        project_data = projects.get(str(resolved_dir))
+        if project_data is None:
+            project_data = next(
+                (
+                    candidate
+                    for key, candidate in projects.items()
+                    if isinstance(key, str)
+                    and isinstance(candidate, dict)
+                    and _is_same_project_dir(key, resolved_dir)
+                ),
+                None,
+            )
         if isinstance(project_data, dict):
             if project_servers := project_data.get("mcpServers"):
                 if isinstance(project_servers, dict):
-                    results.extend(
+                    project_results.extend(
                         _parse_mcp_servers(
                             project_servers,
                             source="claude-code",
@@ -207,7 +223,21 @@ def _scan_claude_code(start_dir: Path) -> list[DiscoveredServer]:
                         )
                     )
 
-    return results
+    # Claude Code's project-local entries override same-name user entries.
+    # Returning both under the same qualified name makes the CLI ambiguous and
+    # would otherwise select the lower-priority user definition.
+    project_names = {server.name for server in project_results}
+    return [
+        server for server in global_results if server.name not in project_names
+    ] + project_results
+
+
+def _is_same_project_dir(stored: str, resolved_start: Path) -> bool:
+    """Return whether a Claude Code ``projects`` key names *resolved_start*."""
+    try:
+        return Path(stored).expanduser().resolve() == resolved_start
+    except (OSError, RuntimeError, ValueError):
+        return False
 
 
 def _scan_cursor_workspace(start_dir: Path) -> list[DiscoveredServer]:
