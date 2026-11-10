@@ -49,3 +49,14 @@ async def test_slow_tool_with_http_transport(streamable_http_server: str):
         # This should NOT timeout since we fixed the default timeout
         result = await client.call_tool("slow_tool", {"duration": 6})
         assert result.data == "Completed in 6 seconds"
+
+
+@pytest.mark.integration
+@pytest.mark.timeout(15)
+async def test_tool_call_timeout_may_exceed_client_timeout(streamable_http_server: str):
+    """A per-call timeout longer than the client's is not cut short by the HTTP read timeout."""
+    async with Client(
+        transport=StreamableHttpTransport(streamable_http_server), timeout=0.5
+    ) as client:
+        result = await client.call_tool("slow_tool", {"duration": 1}, timeout=10)
+        assert result.data == "Completed in 1 seconds"

@@ -27,7 +27,7 @@ Elicitation reaches the user two different ways, depending on the protocol era t
 - **On handshake-era connections (≤ 2025-11-25)**, a running tool calls [`ctx.elicit()`](#requesting-input-on-handshake-connections). The tool pauses mid-execution, the server sends a request over the session back-channel, and the tool resumes with the answer. This is the original elicitation API and the rest of this page's first half covers it in full.
 - **On the modern protocol (2026-07-28)**, that back-channel is gone — server-initiated requests were removed from the wire (SEP-2322, with statelessness from SEP-2575), so a tool cannot issue a request mid-execution and block on the answer. Instead a tool asks for input by *returning* a description of what it needs; each round completes normally and the client issues a new call with the answer attached. This is the [guard pattern](#elicitation-on-the-modern-protocol), covered in the second half.
 
-The era gate is strict: `ctx.elicit()` only works on handshake connections, and the guard pattern only works on modern ones. A tool that returns a guard result on a handshake connection — or calls `ctx.elicit()` on a modern one — raises a clear era error rather than failing obscurely. A server that serves both eras may need both paths; branch on `ctx.request_context.protocol_version` to pick the right one. `fastmcp.Client` drives whichever the connection negotiated automatically.
+The era gate is strict: `ctx.elicit()` only works on handshake connections, and the guard pattern only works on modern ones. A [background task](/servers/tasks#gathering-input-mid-task) also gathers input with the guard pattern; `ctx.elicit()` raises inside one. A tool that returns a guard result on a handshake connection — or calls `ctx.elicit()` on a modern one — raises a clear era error rather than failing obscurely. A server that serves both eras may need both paths; branch on `ctx.request_context.protocol_version` to pick the right one. `fastmcp.Client` drives whichever the connection negotiated automatically.
 
 ## Requesting input on handshake connections
 
@@ -197,9 +197,8 @@ async def approve_action(ctx: Context) -> str:
     result = await ctx.elicit("Approve this action?", response_type=bool)
 
     if result.action == "accept" and result.data:
-        return do_action()
-    else:
-        raise ValueError("Action rejected")
+        return "Action approved"
+    raise ValueError("Action rejected")
 ```
 
 ### Constrained Options
@@ -217,6 +216,7 @@ async def set_priority(ctx: Context) -> str:
 
     if result.action == "accept":
         return f"Priority set to: {result.data}"
+    return "No priority set"
 ```
 ```python title="Literal type"
 from typing import Literal
@@ -268,6 +268,7 @@ async def select_tags(ctx: Context) -> str:
     if result.action == "accept":
         tags = result.data
         return f"Selected tags: {', '.join(tags)}"
+    return "No tags selected"
 ```
 ```python title="list[Enum] type"
 from enum import Enum
@@ -286,6 +287,7 @@ async def select_tags(ctx: Context) -> str:
     if result.action == "accept":
         tags = [tag.value for tag in result.data]
         return f"Selected: {', '.join(tags)}"
+    return "No tags selected"
 ```
 </CodeGroup>
 
@@ -309,6 +311,7 @@ async def set_priority(ctx: Context) -> str:
 
     if result.action == "accept":
         return f"Priority set to: {result.data}"
+    return "No priority set"
 ```
 
 For multi-select with titles, wrap the dict in a list:
@@ -327,6 +330,7 @@ async def select_priorities(ctx: Context) -> str:
 
     if result.action == "accept":
         return f"Selected: {', '.join(result.data)}"
+    return "No priorities selected"
 ```
 
 ### Structured Responses
@@ -479,7 +483,7 @@ Always check `answer.action` before reading `answer.content`: a client may **dec
 
 ### Driving the loop from a client
 
-`fastmcp.Client` drives the whole loop automatically. Point it at a 2026-era connection (`mode="auto"` negotiates one) and give it an elicitation handler; it fulfils each round's requests and retries until the tool returns its final result.
+`fastmcp.Client` drives the whole loop automatically. Connect on a 2026-era connection (the default `mode="auto"` negotiates one when the server supports it) and give it an elicitation handler; it fulfils each round's requests and retries until the tool returns its final result.
 
 ```python
 from fastmcp import Client
@@ -630,4 +634,4 @@ class GuardAwareMiddleware(Middleware):
         return result
 ```
 
-One built-in makes a deliberate exception: the [response caching middleware](/servers/middleware) never stores an `InputRequiredToolResult`, because caching an ask would replay a stale question to a later caller.
+One built-in makes a deliberate exception: the [response caching middleware](/servers/middleware#caching) never stores an `InputRequiredToolResult`, because caching an ask would replay a stale question to a later caller.
