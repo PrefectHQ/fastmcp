@@ -2390,6 +2390,23 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         "expires_at": int(upstream_token_set.expires_at),
                     }
                 )
+                # A verifier without its own required_scopes (e.g. one that
+                # checks an opaque token via userinfo, or an id_token) cannot
+                # enforce the provider's required_scopes. Check them here
+                # against the patched upstream scopes, so the requirement
+                # holds even when an outer layer (e.g. MultiAuth with
+                # required_scopes=[]) does not enforce it.
+                missing_scopes = (
+                    set()
+                    if self._token_validator.required_scopes
+                    else set(self.required_scopes or []) - set(validated.scopes)
+                )
+                if missing_scopes:
+                    logger.debug(
+                        "Upstream token is missing required scopes: %s",
+                        sorted(missing_scopes),
+                    )
+                    return None
 
             # Propagate upstream claims from the verified FastMCP JWT into the
             # final AccessToken object. This allows subclasses to access custom
