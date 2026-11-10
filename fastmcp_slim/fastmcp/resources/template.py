@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, quote, unquote, unquote_plus
 from mcp_types import Annotations, Icon
 from mcp_types import ResourceTemplate as SDKResourceTemplate
 from pydantic import (
+    ConfigDict,
     Field,
     PrivateAttr,
     field_validator,
@@ -887,8 +888,9 @@ class FunctionResourceTemplate(ResourceTemplate):
         parameters = type_adapter.json_schema()
         parameters = compress_schema(parameters, prune_titles=True)
 
-        # Use validate_call on wrapper for runtime type coercion
-        fn = validate_call(wrapper_fn)
+        # Use validate_call on wrapper for runtime type coercion. URI parameters
+        # carry Python parameter names, so accept them for aliased fields too.
+        fn = validate_call(config=ConfigDict(validate_by_name=True))(wrapper_fn)
 
         # Apply ui:// MIME default, then fall back to text/plain
         resolved_mime = resolve_ui_mime_type(uri_template, mime_type)
