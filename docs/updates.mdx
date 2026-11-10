@@ -6,6 +6,16 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 4.2.0a4" description="November 9, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.2.0a4: Skills to Pay the Bills"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0a4"
+cta="Read the release notes"
+>
+FastMCP 4.2.0a4 requires Python 3.11 or newer and adds `Annotated` dependencies. `Depends(...)` and built-ins such as `CurrentContext()` can now be declared as `Annotated` metadata, so a type alias like `Config = Annotated[dict, Depends(get_config)]` works across tools, resources, and prompts. Skill discovery over plain resources no longer lists a nested supporting `SKILL.md` as its own skill, and `download_skill` URIs now encode manifest paths. Since a3, the redirect URI helpers normalize raw strings the way browsers read them, the joserfc and Authlib floors pick up security fixes, and fixes land for OpenAPI request bodies, CIMD redirect URIs, multi-select elicitation schemas, search indexing, and docstring parsing. Skills support remains experimental; this prerelease is intended for integration testing. Thanks to our 68 contributors, including 40 first-time contributors.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.2.0a3" description="November 3, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.2.0a3: A Particular Set of Skills"
