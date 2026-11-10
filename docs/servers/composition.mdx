@@ -144,6 +144,8 @@ main.mount(calendar, namespace="calendar")
 
 Namespacing uses [transforms](/servers/transforms/transforms) under the hood.
 
+Resource and template URIs without `://`, such as `urn:example:config`, remain unchanged and can be read using their listed identifiers. Namespaces do not isolate these URIs from collisions; equal identifiers use the normal [provider resolution order](#conflict-resolution).
+
 ## Dynamic Composition
 
 Because `mount()` creates a live link, you can add components to a child server after mounting and they'll be immediately available through the parent:
