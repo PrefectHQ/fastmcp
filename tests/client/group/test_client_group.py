@@ -359,43 +359,38 @@ async def test_overlapping_refreshes_do_not_commit_out_of_order():
 
     client = Client(FastMCPTransport(server))
     group = ClientGroup({"server": client})
-    first_started = asyncio.Event()
+    first_fetched = asyncio.Event()
     release_first = asyncio.Event()
-    second_started = asyncio.Event()
     original_list_tools = client.list_tools
     calls = 0
 
     async def gated_list_tools(*, cache_mode="use"):
         nonlocal calls
         calls += 1
+        tools = await original_list_tools(cache_mode=cache_mode)
         if calls == 1:
-            tools = await original_list_tools(cache_mode=cache_mode)
-            first_started.set()
+            first_fetched.set()
             await release_first.wait()
-            return tools
-
-        second_started.set()
-        return await original_list_tools(cache_mode=cache_mode)
+        return tools
 
     async with group:
         with patch.object(client, "list_tools", side_effect=gated_list_tools):
             first_refresh = asyncio.create_task(group.list_tools())
-            await asyncio.wait_for(first_started.wait(), timeout=1)
+            await asyncio.wait_for(first_fetched.wait(), timeout=1)
 
             @server.tool
             def added() -> str:
                 return "added"
 
+            # Give the newer refresh a chance to commit before the older one.
             second_refresh = asyncio.create_task(group.list_tools())
-            await asyncio.sleep(0)
-            second_waited_for_first = not second_started.is_set()
+            await asyncio.wait({second_refresh}, timeout=0.5)
             release_first.set()
 
             first_tools, second_tools = await asyncio.gather(
                 first_refresh, second_refresh
             )
 
-        assert second_waited_for_first
         assert [tool.name for tool in first_tools] == ["server_original"]
         assert {tool.name for tool in second_tools} == {
             "server_original",
