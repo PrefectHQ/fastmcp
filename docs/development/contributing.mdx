@@ -116,6 +116,10 @@ The [public backlog dashboard](https://prefecthq.github.io/fastmcp/) charts open
 
 Automation labels and deduplicates issues, enforces the contribution gate, explains CI failures, and checks new dependency releases nightly. Issues marked as duplicates close automatically after three days without further activity, and reports still missing a reproduction close after seven days without an author reply. Maintainers can request work with `/marvin`. A separate triage agent reproduces reported bugs and may leave comment-only reviews on linked pull requests; it does not assign contributors, approve, or merge.
 
+For an on-demand adversarial review, an allowlisted user can post a standalone `/roast` comment on an open PR. The initial allowlist contains `zzstoatzz`; repository administrators can replace it with the JSON array in the `ROAST_ALLOWED_USERS` Actions variable (set `[]` to disable requests). Roast uses the existing `ANTHROPIC_API_KEY` secret and Claude Opus 5.5 for separate finder and verifier conversations. Both are Anthropic models, so this does not provide cross-provider review diversity for Claude-authored changes.
+
+Each request reviews the pinned PR head against its merge base without executing PR code. The report identifies the reviewed revisions and links to a 14-day artifact with findings and token usage. Reviews are advisory, with no approval or merge action. A run allows eight finder turns, ten verified findings, a 500,000-token shared budget, and 15 minutes for review; these are usage controls, not a dollar cap. Incomplete, failed, truncated, and outdated reviews are identified explicitly. A new standalone comment requests another paid run; pushes do not automatically rerun Roast. The workflow must be merged into the default branch before requests work.
+
 Maintainers decide assignments, merge readiness, changes to supported behavior or APIs, releases, and security-report classification. Release publishing and docs deployment run automatically after the corresponding maintainer actions; see [Releases](/development/releases#creating-releases).
 
 ### Triage and merge decisions
