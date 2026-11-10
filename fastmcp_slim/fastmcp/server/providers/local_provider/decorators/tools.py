@@ -41,6 +41,10 @@ DuplicateBehavior = Literal["error", "warn", "replace", "ignore"]
 
 PREFAB_RENDERER_URI = "ui://prefab/renderer.html"
 
+# Sentinel distinguishing "no metadata was stamped" from "stamped as None", so a
+# rejected registration can restore the function to exactly its prior state.
+_MISSING = object()
+
 
 def _is_prefab_type(tp: Any) -> bool:
     """Check if *tp* is or contains a prefab type, recursing through unions and Annotated."""
@@ -320,8 +324,22 @@ class ToolDecoratorMixin:
                 run_in_thread=run_in_thread,
             )
             target = fn.__func__ if hasattr(fn, "__func__") else fn
+            previous = getattr(target, "__fastmcp__", _MISSING)
             target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-            self.add_tool(fn)
+            try:
+                self.add_tool(fn)
+            except Exception:
+                # Registration is what validates the function (a sync body with
+                # task execution enabled raises there). The stamp above is only
+                # meaningful for a tool that was actually registered, so a
+                # rejected call must not leave metadata behind: the caller's
+                # function is then free to register on another server, whose
+                # own task settings apply instead of this one's.
+                if previous is _MISSING:
+                    del target.__fastmcp__  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                else:
+                    target.__fastmcp__ = previous  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                raise
             return fn
 
         if inspect.isroutine(name_or_fn):
