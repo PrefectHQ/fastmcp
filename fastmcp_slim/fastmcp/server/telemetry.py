@@ -16,8 +16,8 @@ from opentelemetry.trace import (
     get_current_span,
 )
 
-from fastmcp.exceptions import ToolError as _ToolError
 from fastmcp.telemetry import (
+    error_span_attributes,
     extract_trace_context,
     get_tracer,
     restore_dropped_attributes,
@@ -89,18 +89,23 @@ def get_session_span_attributes() -> dict[str, str]:
 
 
 def get_protocol_span_attributes() -> dict[str, str]:
-    """Get the negotiated MCP protocol version for the current request.
+    """Get the protocol attributes for the current request.
 
-    Mirrors the `mcp.protocol.version` attribute the SDK's own
-    `OpenTelemetryMiddleware` sets — FastMCP drops that middleware to avoid a
-    duplicate SERVER span, so this restores the attribute on FastMCP's span.
+    Mirrors the `mcp.protocol.version` and `jsonrpc.request.id` attributes the
+    SDK's own `OpenTelemetryMiddleware` sets — FastMCP drops that middleware to
+    avoid a duplicate SERVER span, so this restores them on FastMCP's span.
     """
     from fastmcp.server.dependencies import fastmcp_request_ctx
 
     req_ctx = fastmcp_request_ctx.get()
-    if req_ctx is not None and req_ctx.protocol_version:
-        return {"mcp.protocol.version": req_ctx.protocol_version}
-    return {}
+    attrs: dict[str, str] = {}
+    if req_ctx is None:
+        return attrs
+    if req_ctx.protocol_version:
+        attrs["mcp.protocol.version"] = req_ctx.protocol_version
+    if req_ctx.request_id is not None:
+        attrs["jsonrpc.request.id"] = req_ctx.request_id
+    return attrs
 
 
 def _get_parent_trace_context() -> Context | None:
@@ -163,6 +168,7 @@ def _build_server_span_attrs(
         attrs["mcp.resource.uri"] = resource_uri
     if tool_name is not None:
         attrs["gen_ai.tool.name"] = tool_name
+        attrs["gen_ai.operation.name"] = "execute_tool"
     if prompt_name is not None:
         attrs["gen_ai.prompt.name"] = prompt_name
     return attrs
@@ -171,8 +177,7 @@ def _build_server_span_attrs(
 def record_span_exception(span: Span, e: Exception) -> None:
     """Record an exception and error status on a span."""
     if span.is_recording():
-        error_type = "tool_error" if isinstance(e, _ToolError) else type(e).__qualname__
-        span.set_attribute("error.type", error_type)
+        span.set_attributes(error_span_attributes(e))
         span.record_exception(e)
         span.set_status(Status(StatusCode.ERROR, str(e)))
 

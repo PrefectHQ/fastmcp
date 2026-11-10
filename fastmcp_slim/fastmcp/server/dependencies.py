@@ -15,6 +15,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Mapp
 from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import lru_cache
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Protocol, cast, get_type_hints, runtime_checkable
 
@@ -41,7 +42,6 @@ from uncalled_for.resolution import _Depends
 from fastmcp.exceptions import FastMCPError
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.http import _current_http_request
-from fastmcp.utilities._callable_cache import cache_on_callable
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -728,7 +728,7 @@ def get_access_token() -> AccessToken | None:
 # --- Schema generation helper ---
 
 
-@cache_on_callable
+@lru_cache(maxsize=5000)
 def without_injected_parameters(
     fn: Callable[..., Any], *, run_in_thread: bool = True
 ) -> Callable[..., Any]:

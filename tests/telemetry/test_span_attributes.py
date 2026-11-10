@@ -176,6 +176,7 @@ def test_known_span_attributes_are_available_on_start(
         "mcp.method.name": "tools/call",
         "fastmcp.component.key": "tool:echo@",
         "gen_ai.tool.name": "echo",
+        "gen_ai.operation.name": "execute_tool",
     }
     assert recorder.attributes["server test"] == {
         "mcp.method.name": "tools/call",
@@ -183,6 +184,7 @@ def test_known_span_attributes_are_available_on_start(
         "fastmcp.component.type": "tool",
         "fastmcp.component.key": "tool:echo@",
         "gen_ai.tool.name": "echo",
+        "gen_ai.operation.name": "execute_tool",
     }
     assert recorder.attributes["initialize test"] == {
         "fastmcp.span.seam": True,
@@ -209,6 +211,7 @@ SPAN_HELPER_CASES = [
             "mcp.method.name": "tools/call",
             "fastmcp.component.key": "tool:echo@",
             "gen_ai.tool.name": "echo",
+            "gen_ai.operation.name": "execute_tool",
         },
         id="client_span",
     ),
@@ -228,6 +231,7 @@ SPAN_HELPER_CASES = [
             "fastmcp.component.type": "tool",
             "fastmcp.component.key": "tool:echo@",
             "gen_ai.tool.name": "echo",
+            "gen_ai.operation.name": "execute_tool",
         },
         id="server_span",
     ),
