@@ -359,6 +359,8 @@ async def fetch_data(
 
 ### Annotated Dependencies
 
+<VersionBadge version="4.2.0" />
+
 A dependency can also go in the parameter's annotation instead of its default. The parameter keeps its declared type, so a type checker sees `config` as a `dict` rather than a `Depends` object, and a direct call that forgets it fails with a `TypeError` instead of running with the marker. An alias carries the type and the dependency together, so every tool that needs the config reads the same declaration.
 
 ```python

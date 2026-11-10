@@ -370,6 +370,7 @@
                     "group": "Upgrading",
                     "icon": "up",
                     "pages": [
+                      "getting-started/upgrading/from-fastmcp-4-1",
                       "getting-started/upgrading/from-fastmcp-3",
                       "getting-started/upgrading/from-fastmcp-2",
                       "getting-started/upgrading/from-mcp-sdk-v1",
