@@ -24,8 +24,9 @@ import json
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Annotated, Any
 
-from mcp_types import TextContent
+from mcp_types import InputRequiredResult, TextContent
 
+from fastmcp.prompts.base import InputRequiredPromptResult
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.tools.base import Tool
@@ -134,7 +135,7 @@ class PromptsAsTools(Transform):
                 dict[str, Any] | None,
                 "Optional arguments for the prompt",
             ] = None,
-        ) -> str:
+        ) -> str | InputRequiredResult:
             """Get a prompt by name with optional arguments.
 
             Returns the rendered prompt as JSON with a messages array.
@@ -143,6 +144,8 @@ class PromptsAsTools(Transform):
             """
             ctx = get_context()
             result = await ctx.fastmcp.render_prompt(name, arguments=arguments or {})
+            if isinstance(result, InputRequiredPromptResult):
+                return result.input_required
             return _format_prompt_result(result)
 
         return Tool.from_function(fn=get_prompt)
