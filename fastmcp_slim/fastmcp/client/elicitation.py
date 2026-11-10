@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeAlias
 
@@ -13,10 +12,7 @@ from pydantic_core import to_jsonable_python
 from typing_extensions import TypeVar
 
 from fastmcp.client._sdk_context_shim import LifespanContextT, RequestContext
-from fastmcp.utilities.json_schema_type import (
-    json_schema_to_type,
-    json_schema_to_type_adapter,
-)
+from fastmcp.utilities.json_schema_type import json_schema_to_type
 
 __all__ = ["ElicitRequestParams", "ElicitResult", "ElicitationHandler"]
 
@@ -37,6 +33,21 @@ ElicitationHandler: TypeAlias = Callable[
     ],
     Awaitable[T | dict[str, Any] | ElicitResult[T | dict[str, Any]]],
 ]
+
+
+def _validate_form_content(content: dict[str, Any], schema: dict[str, Any]) -> None:
+    """Check accepted form content against the server's requested schema.
+
+    Validates the JSON value that goes on the wire, as JSON Schema defines it,
+    so `"42"` does not satisfy an integer property and ISO strings satisfy
+    `format: date-time`.
+    """
+    # Imported lazily, as the MCP SDK does for tool output validation.
+    from jsonschema.validators import validator_for
+    from referencing import Registry
+
+    # An empty registry keeps `$ref` resolution inside the schema document.
+    validator_for(schema)(schema, registry=Registry()).validate(content)
 
 
 def create_elicitation_callback(
@@ -84,14 +95,12 @@ def create_elicitation_callback(
                         "Elicitation responses must be serializable as a JSON object (dict). Received: "
                         f"{result.content!r}"
                     )
-            if result.action == "accept" and isinstance(
-                params, ElicitRequestFormParams
+            if (
+                result.action == "accept"
+                and content is not None
+                and isinstance(params, ElicitRequestFormParams)
             ):
-                # Validate the JSON wire value without coercing strings to
-                # numbers (or other Python-only input) before accepting it.
-                json_schema_to_type_adapter(params.requested_schema).validate_json(
-                    json.dumps(content), strict=True
-                )
+                _validate_form_content(content, params.requested_schema)
             return MCPElicitResult(
                 _meta=result.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 action=result.action,
