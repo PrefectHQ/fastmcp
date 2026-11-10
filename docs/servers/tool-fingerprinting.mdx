@@ -60,7 +60,7 @@ The fingerprint is stable across process restarts as long as the tool's name, ve
 
 `tool.key` is FastMCP's canonical component identity. It encodes the component type, identifier, and version into a single string:
 
-```
+```text
 tool:greet@1.0    # versioned tool
 tool:greet@       # unversioned tool
 ```
@@ -76,6 +76,12 @@ Using `key` rather than just the tool name ensures that two versions of the same
 You own the inclusion policy. Add or remove fields depending on what constitutes a "contract" in your system:
 
 ```python
+import hashlib
+import json
+
+from fastmcp import FastMCP
+
+
 async def custom_fingerprint(server: FastMCP, tool_name: str) -> str:
     tool = await server.get_tool(tool_name)
     if tool is None:
@@ -110,8 +116,8 @@ Common variations:
 Store fingerprints as artifacts and compare between deployments:
 
 ```python
-import json
 import hashlib
+import json
 from pathlib import Path
 
 from fastmcp import FastMCP

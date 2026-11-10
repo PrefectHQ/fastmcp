@@ -298,7 +298,14 @@ def _parse_list_syntax(lst: list[Any]) -> ElicitConfig:
         return ElicitConfig(
             schema={
                 "type": "object",
-                "properties": {"value": {"type": "array", "items": {"enum": lst[0]}}},
+                # The MCP 2025-11-25 schema requires items.type == "string" for
+                # multi-select enum properties, matching the list[Literal[...]] form.
+                "properties": {
+                    "value": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": lst[0]},
+                    }
+                },
                 "required": ["value"],
             },
             response_type=list[_choice_literal(lst[0])],  # ty:ignore[invalid-type-form]
