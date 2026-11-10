@@ -7,7 +7,7 @@ from functools import partial, wraps
 
 import cloudpickle
 import pytest
-from uncalled_for import introspection
+from uncalled_for import annotations, introspection
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
@@ -24,16 +24,21 @@ class Payload:
 
 @pytest.fixture
 def external_introspection_caches(monkeypatch: pytest.MonkeyPatch) -> None:
-    # uncalled-for #21 independently retains callables. Isolate its two caches
-    # so these regressions can verify FastMCP's ownership without changing the
-    # dependency's process-wide cache objects in production.
+    # uncalled-for #21 independently retains callables in its introspection
+    # (signature, parameter) and annotations (metadata, annotation) caches.
+    # Isolate them so these regressions can verify FastMCP's ownership without
+    # changing the dependency's process-wide cache objects in production.
     monkeypatch.setattr(introspection, "_signature_cache", {})
     monkeypatch.setattr(introspection, "_parameter_cache", {})
+    monkeypatch.setattr(annotations, "_metadata_cache", {})
+    monkeypatch.setattr(annotations, "_annotation_cache", {})
 
 
 def release_external_introspection() -> None:
     introspection._signature_cache.clear()
     introspection._parameter_cache.clear()
+    annotations._metadata_cache.clear()
+    annotations._annotation_cache.clear()
 
 
 @pytest.mark.usefixtures("external_introspection_caches")
