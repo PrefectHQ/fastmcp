@@ -11,6 +11,7 @@ try:
         Blob,
         Candidate,
         Content,
+        FinishReason,
         FunctionCall,
         FunctionCallingConfig,
         FunctionCallingConfigMode,
@@ -322,6 +323,14 @@ def _convert_messages_to_google_genai_content(
     return google_messages
 
 
+def _stop_reason(finish_reason: FinishReason | None) -> StopReason:
+    """Map Gemini's finish reason to MCP's stop reason, so a caller can tell a
+    reply cut off at max_tokens from a finished one."""
+    if finish_reason == "MAX_TOKENS":
+        return "maxTokens"
+    return "endTurn"
+
+
 def _get_candidate_from_response(response: GenerateContentResponse) -> Candidate:
     """Extract the first candidate from a response."""
     if response.candidates and response.candidates[0]:
@@ -351,10 +360,12 @@ def _response_to_create_message_result(
             msg = f"No content in response (finish_reason={candidate.finish_reason})"
         raise ValueError(msg)
 
+    candidates = response.candidates
     return CreateMessageResult(
         content=TextContent(type="text", text=text),
         role="assistant",
         model=model,
+        stop_reason=_stop_reason(candidates[0].finish_reason if candidates else None),
     )
 
 
@@ -376,14 +387,7 @@ def _response_to_result_with_tools(
                 has_function_calls = True
                 break
 
-    if has_function_calls:
-        stop_reason = "toolUse"
-    elif finish_reason == "STOP":
-        stop_reason = "endTurn"
-    elif finish_reason == "MAX_TOKENS":
-        stop_reason = "maxTokens"
-    else:
-        stop_reason = "endTurn"
+    stop_reason = "toolUse" if has_function_calls else _stop_reason(finish_reason)
 
     # Build content list
     content: list[SamplingMessageContentBlock] = []

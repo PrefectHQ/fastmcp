@@ -3,7 +3,7 @@ name = "fastmcp"
 dynamic = ["version", "dependencies", "optional-dependencies"]
 description = "The fast, Pythonic way to build MCP servers and clients."
 authors = [{ name = "Jeremiah Lowin" }, { name = "Nate Nowack" }]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 readme = "README.md"
 license = "Apache-2.0"
 keywords = [
@@ -19,7 +19,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -170,7 +169,7 @@ exclude = [
 ]
 
 [tool.ty.environment]
-python-version = "3.10"
+python-version = "3.11"
 # Pin the platform ty checks against to the one CI uses. Without it ty uses the
 # host platform, and on Windows typeshed's fcntl has no flock/LOCK_EX/LOCK_UN,
 # so tests/utilities/json_schema_type/test_real_world_schemas.py fails the ty
