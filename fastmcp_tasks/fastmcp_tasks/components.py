@@ -26,9 +26,7 @@ import inspect
 import logging
 from typing import TYPE_CHECKING, Any
 
-from pydantic import AliasChoices, AliasPath
 from pydantic import ValidationError as PydanticValidationError
-from pydantic.fields import FieldInfo
 
 from fastmcp.exceptions import ValidationError
 from fastmcp.prompts.base import Prompt
@@ -44,7 +42,7 @@ from fastmcp.tools.function_tool import (
 )
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.components import FastMCPComponent
-from fastmcp.utilities.types import NotSet, get_cached_typeadapter
+from fastmcp.utilities.types import get_cached_typeadapter
 from fastmcp_tasks.input_loop import reentrant_task_fn
 
 if TYPE_CHECKING:
@@ -172,7 +170,7 @@ def coerce_task_arguments(
     string ``"1"`` into an ``int``) exactly as the synchronous call path does.
     """
     if isinstance(component, TransformedTool):
-        return _validate_transformed_arguments(component, arguments, strict=strict)
+        return _validate_transformed_arguments(component, arguments)
 
     if not isinstance(component, FunctionTool):
         return arguments
@@ -203,8 +201,6 @@ def coerce_task_arguments(
 def _validate_transformed_arguments(
     tool: TransformedTool,
     arguments: dict[str, Any],
-    *,
-    strict: bool | None = None,
 ) -> dict[str, Any]:
     """Reject a transformed-tool submission its own advertised schema forbids.
 
@@ -220,9 +216,11 @@ def _validate_transformed_arguments(
     advertised to clients, so "required" and "unknown" mean here what they mean
     on the wire.
 
-    Pure forwards to FunctionTool also use the parent's real call validators.
-    Custom transform functions may normalize inputs before forwarding, so their
-    execution remains responsible for type validation. Factories run in the worker.
+    Type and constraint violations are deliberately left to the worker. The
+    forwarding function rewrites arguments back onto the parent tool (renames,
+    hidden constants, injected defaults), and the parent validates them against
+    its own call schema; reproducing that rewrite here would duplicate the
+    transform's argument rules rather than reuse them.
     """
     parameters = tool.parameters or {}
     properties = parameters.get("properties", {})
@@ -236,8 +234,6 @@ def _validate_transformed_arguments(
     missing = sorted(set(parameters.get("required", [])) - supplied)
 
     if not (unknown or missing):
-        if _is_pure_forward(tool):
-            _validate_forwarded_arguments(tool, arguments, strict=strict)
         return arguments
 
     details = []
@@ -251,56 +247,7 @@ def _validate_transformed_arguments(
     )
 
 
-def _is_pure_forward(tool: TransformedTool) -> bool:
-    return tool.fn is tool.forwarding_fn and isinstance(tool.parent_tool, FunctionTool)
-
-
-def _validate_forwarded_arguments(
-    tool: TransformedTool, arguments: dict[str, Any], *, strict: bool | None
-) -> None:
-    from fastmcp.server.dependencies import without_injected_parameters
-
-    prepared = arguments.copy()
-    excluded = {
-        name for name, transform in tool.transform_args.items() if transform.hide
-    }
-    for name, schema in tool.parameters.get("properties", {}).items():
-        if name in prepared:
-            continue
-        if "default" not in schema:
-            if name not in tool.parameters.get("required", []):
-                original_name = next(
-                    (
-                        old_name
-                        for old_name, transform in tool.transform_args.items()
-                        if (old_name if transform.name is NotSet else transform.name)
-                        == name
-                    ),
-                    name,
-                )
-                excluded.add(original_name)
-            continue
-        prepared[name] = schema["default"]
-    mapped = tool._map_arguments_for_validation(prepared)
-    parent = tool.parent_tool
-    assert isinstance(parent, FunctionTool)
-    fn = without_injected_parameters(parent.fn, run_in_thread=parent.run_in_thread)
-    adapter = get_cached_typeadapter(
-        _call_shape_probe(fn, exclude_parameters=frozenset(excluded))
-    )
-    try:
-        _validate_input(
-            adapter,
-            {name: value for name, value in mapped.items() if name not in excluded},
-            strict=strict,
-        )
-    except PydanticValidationError as exc:
-        raise ValidationError(str(exc), log_level=logging.WARNING) from exc
-
-
-def _call_shape_probe(
-    fn: Callable[..., Any], *, exclude_parameters: frozenset[str] = frozenset()
-) -> Callable[..., dict[str, Any]]:
+def _call_shape_probe(fn: Callable[..., Any]) -> Callable[..., dict[str, Any]]:
     """Mirror ``fn``'s signature on a function that only returns its keyword arguments.
 
     ``TypeAdapter`` validates a callable's arguments by calling it, so validating
@@ -313,34 +260,7 @@ def _call_shape_probe(
         return inspect.signature(probe).bind(*args, **kwargs).arguments
 
     hints = _resolve_param_hints(fn)
-    original_signature = inspect.signature(fn)
-
-    def keep_parameter(name: str, parameter: inspect.Parameter) -> bool:
-        if not exclude_parameters:
-            return True
-        if name in exclude_parameters:
-            return False
-        annotation = hints.get(name, parameter.annotation)
-        field = (
-            FieldInfo.from_annotation(annotation)
-            if parameter.default is inspect.Parameter.empty
-            else FieldInfo.from_annotated_attribute(annotation, parameter.default)
-        )
-        alias = field.validation_alias or field.alias
-        aliases = alias.choices if isinstance(alias, AliasChoices) else [alias]
-        for item in aliases:
-            candidate = item.path[0] if isinstance(item, AliasPath) else item
-            if isinstance(candidate, str) and candidate in exclude_parameters:
-                return False
-        return True
-
-    sig = original_signature.replace(
-        parameters=[
-            p
-            for name, p in original_signature.parameters.items()
-            if keep_parameter(name, p)
-        ]
-    )
+    sig = inspect.signature(fn)
     annotations = {
         name: hints.get(name, param.annotation)
         for name, param in sig.parameters.items()
