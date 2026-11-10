@@ -25,6 +25,7 @@ from openai.types.chat import (
     ChatCompletionContentPartTextParam,
     ChatCompletionMessage,
     ChatCompletionSystemMessageParam,
+    ChatCompletionToolMessageParam,
     ChatCompletionUserMessageParam,
 )
 from openai.types.chat.chat_completion import Choice
@@ -381,13 +382,17 @@ def test_convert_user_message_with_tool_result_and_text():
     )
 
     assert [m["role"] for m in msgs] == ["assistant", "tool", "user"]
-    tool_msg = msgs[1]
-    assert tool_msg["tool_call_id"] == "call_1"
-    assert tool_msg["content"] == "18C sunny"
-    user_msg = msgs[2]
-    assert user_msg["content"] == [
-        ChatCompletionContentPartTextParam(type="text", text="Now write the forecast.")
-    ]
+    assert msgs[1] == ChatCompletionToolMessageParam(
+        role="tool", tool_call_id="call_1", content="18C sunny"
+    )
+    assert msgs[2] == ChatCompletionUserMessageParam(
+        role="user",
+        content=[
+            ChatCompletionContentPartTextParam(
+                type="text", text="Now write the forecast."
+            )
+        ],
+    )
 
 
 def test_convert_user_message_with_tool_result_and_image():
@@ -425,11 +430,18 @@ def test_convert_user_message_with_tool_result_and_image():
     )
 
     assert [m["role"] for m in msgs] == ["assistant", "tool", "user"]
-    assert msgs[1]["tool_call_id"] == "call_1"
-    assert msgs[1]["content"] == "done"
-    user_parts = msgs[2]["content"]
-    assert len(user_parts) == 1
-    assert user_parts[0]["type"] == "image_url"
+    assert msgs[1] == ChatCompletionToolMessageParam(
+        role="tool", tool_call_id="call_1", content="done"
+    )
+    assert msgs[2] == ChatCompletionUserMessageParam(
+        role="user",
+        content=[
+            ChatCompletionContentPartImageParam(
+                type="image_url",
+                image_url={"url": "data:image/png;base64,aGVsbG8="},
+            )
+        ],
+    )
 
 
 def test_convert_tool_result_only_user_message_unchanged():
@@ -451,5 +463,8 @@ def test_convert_tool_result_only_user_message_unchanged():
         ],
     )
 
-    assert [m["role"] for m in msgs] == ["tool"]
-    assert msgs[0]["tool_call_id"] == "call_1"
+    assert msgs == [
+        ChatCompletionToolMessageParam(
+            role="tool", tool_call_id="call_1", content="18C sunny"
+        )
+    ]
