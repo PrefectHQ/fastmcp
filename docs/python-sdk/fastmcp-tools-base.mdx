@@ -7,7 +7,7 @@ sidebarTitle: base
 
 ## Functions
 
-### `default_serializer` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L72" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `default_serializer` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L73" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_serializer(data: Any) -> str
@@ -15,11 +15,11 @@ default_serializer(data: Any) -> str
 
 ## Classes
 
-### `ToolResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L95" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ToolResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L96" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 **Methods:**
 
-#### `from_mcp_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L160" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_mcp_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L161" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_mcp_result(cls, result: CallToolResult) -> ToolResult
@@ -28,13 +28,13 @@ from_mcp_result(cls, result: CallToolResult) -> ToolResult
 Wrap a protocol result while preserving its exact wire representation.
 
 
-#### `to_mcp_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L171" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `to_mcp_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L172" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 to_mcp_result(self) -> list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]] | CallToolResult
 ```
 
-### `InputRequiredToolResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L193" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `InputRequiredToolResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L194" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 The full result of a single multi-round-trip leg (SEP-2322).
@@ -56,7 +56,7 @@ reads `.input_required` and returns it to the runner as the
 this subclass — they carry nothing.
 
 
-### `Tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L231" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L232" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Internal tool registration info.
@@ -64,7 +64,7 @@ Internal tool registration info.
 
 **Methods:**
 
-#### `to_mcp_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L268" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `to_mcp_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L269" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 to_mcp_tool(self, **overrides: Any) -> MCPTool
@@ -73,7 +73,7 @@ to_mcp_tool(self, **overrides: Any) -> MCPTool
 Convert the FastMCP tool to an MCP tool.
 
 
-#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L311" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L312" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_function(cls, fn: Callable[..., Any]) -> FunctionTool
@@ -82,7 +82,7 @@ from_function(cls, fn: Callable[..., Any]) -> FunctionTool
 Create a Tool from a function.
 
 
-#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L349" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L350" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, arguments: dict[str, Any]) -> ToolResult
@@ -103,7 +103,7 @@ stays inside the declared `ToolResult` result type and flows through the
 middleware chain as an ordinary result (see `FunctionTool.run`).
 
 
-#### `convert_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L367" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `convert_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L368" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 convert_result(self, raw_value: Any) -> ToolResult
@@ -115,13 +115,13 @@ Handles ToolResult passthrough and converts raw values using the tool's
 attributes (output_schema) for proper conversion.
 
 
-#### `from_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L443" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L455" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_tool(cls, tool: Tool | Callable[..., Any]) -> TransformedTool
 ```
 
-#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L489" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/tools/base.py#L501" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_span_attributes(self) -> dict[str, Any]

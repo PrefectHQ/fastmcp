@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Self
 
 import httpx2
 import pydantic.json
 from anyio import Path as AsyncPath
 from pydantic import Field
-from typing_extensions import Self, override
+from typing_extensions import override
 
 from fastmcp.exceptions import ResourceError
 from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
@@ -107,7 +108,13 @@ class FileResource(Resource):
             else:
                 content = await self._async_path.read_text(encoding=self.encoding)
             return ResourceResult(
-                contents=[ResourceContent(content=content, mime_type=self.mime_type)]
+                contents=[
+                    ResourceContent(
+                        content=content,
+                        mime_type=self.mime_type,
+                        meta=public_result_meta(self.meta),
+                    )
+                ]
             )
         except Exception as e:
             raise ResourceError(f"Error reading file {self.path}") from e
@@ -129,7 +136,11 @@ class HttpResource(Resource):
             _ = response.raise_for_status()
             return ResourceResult(
                 contents=[
-                    ResourceContent(content=response.text, mime_type=self.mime_type)
+                    ResourceContent(
+                        content=response.text,
+                        mime_type=self.mime_type,
+                        meta=public_result_meta(self.meta),
+                    )
                 ]
             )
 
@@ -185,7 +196,13 @@ class DirectoryResource(Resource):
 
             content = json.dumps({"files": file_list}, indent=2)
             return ResourceResult(
-                contents=[ResourceContent(content=content, mime_type=self.mime_type)]
+                contents=[
+                    ResourceContent(
+                        content=content,
+                        mime_type=self.mime_type,
+                        meta=public_result_meta(self.meta),
+                    )
+                ]
             )
         except Exception as e:
             raise ResourceError(f"Error reading directory {self.path}") from e

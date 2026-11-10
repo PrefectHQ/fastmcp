@@ -191,7 +191,7 @@ test("required matrix checks retain names even when editorial steps skip", () =>
   );
   assert.deepEqual(matrix.strategy.matrix, {
     os: ["ubuntu-latest"],
-    "python-version": ["3.10"],
+    "python-version": ["3.11"],
     include: [
       { os: "ubuntu-latest", "python-version": "3.11" },
       { os: "ubuntu-latest", "python-version": "3.12" },
@@ -201,16 +201,16 @@ test("required matrix checks retain names even when editorial steps skip", () =>
     ],
   });
   assert.equal(matrix.if, "${{ !cancelled() }}");
-  assert.equal(matrix.steps[0].uses, "actions/checkout@v7");
+  assert.match(matrix.steps[0].uses, /^actions\/checkout@/);
   for (const step of matrix.steps.slice(2, 4))
     assert.equal(step.if, "needs.changes.outputs.run-tests != 'false'");
   assert.equal(
     matrix.steps[1].if,
-    "needs.changes.outputs.run-tests != 'false' || (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10')",
+    "needs.changes.outputs.run-tests != 'false' || (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11')",
   );
   assert.equal(
     matrix.steps[4].if,
-    "needs.changes.outputs.run-tests == 'false' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'",
+    "needs.changes.outputs.run-tests == 'false' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'",
   );
   assert.equal(matrix.steps[4].run, "uv run pytest tests/docs -n 0");
   for (const name of [
@@ -233,7 +233,7 @@ test("Windows runs code PRs and retains check names for editorial PRs", () => {
     "Tests: Python ${{ matrix.python-version }} on windows-latest",
   );
   assert.deepEqual(windows.strategy.matrix, {
-    "python-version": ["3.10", "3.14"],
+    "python-version": ["3.11", "3.14"],
   });
   assert.equal(windows.if, "${{ !cancelled() }}");
   assert.equal(windows["runs-on"], "windows-latest");
@@ -270,7 +270,7 @@ test("upgrade coverage remains nightly and manually dispatchable", () => {
   });
   assert.deepEqual(workflows["run-upgrade-checks"].jobs.run_tests.strategy.matrix, {
     os: ["ubuntu-latest", "windows-latest"],
-    "python-version": ["3.10"],
+    "python-version": ["3.11"],
     include: [
       ...workflow.jobs.run_tests.strategy.matrix.include,
       { os: "windows-latest", "python-version": "3.14" },

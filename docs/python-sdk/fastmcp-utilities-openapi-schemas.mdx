@@ -31,7 +31,9 @@ Extract output schema from OpenAPI responses for use as MCP tool output schema.
 
 This function finds the first successful response (200, 201, 202, 204) with a
 JSON-compatible content type and extracts its schema. If the schema is not an
-object type, it wraps it to comply with MCP requirements.
+object type, it wraps it to comply with MCP requirements. When any successful
+response has no content, there is no output schema, since the operation may
+answer without a body.
 
 **Args:**
 - `responses`: Dictionary of ResponseInfo objects keyed by status code
