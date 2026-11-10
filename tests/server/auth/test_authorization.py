@@ -26,7 +26,6 @@ from fastmcp.server.auth import (
 from fastmcp.server.middleware import AuthMiddleware
 from fastmcp.server.providers.addressing import (
     hashed_backend_name,
-    hashed_resource_uri,
 )
 from fastmcp.server.transforms import (
     GetPromptNext,
@@ -1788,10 +1787,25 @@ class TestAuthMiddlewareSynthesizedPrefabResources:
 
         return mcp
 
+    @staticmethod
+    async def renderer_uri(mcp: FastMCP) -> str:
+        """Return the renderer URI the server lists to an authorized caller."""
+        tok = set_token(make_token(scopes=["ui"]))
+        try:
+            resources = await mcp.list_resources()
+        finally:
+            auth_context_var.reset(tok)
+        [uri] = [
+            str(resource.uri)
+            for resource in resources
+            if str(resource.uri).startswith("ui://prefab/")
+        ]
+        return uri
+
     async def test_read_renderer_with_sufficient_scope(self):
         pytest.importorskip("prefab_ui")
         mcp = self.make_server()
-        uri = hashed_resource_uri("", "show_widget")
+        uri = await self.renderer_uri(mcp)
 
         tok = set_token(make_token(scopes=["ui"]))
         try:
@@ -1808,7 +1822,7 @@ class TestAuthMiddlewareSynthesizedPrefabResources:
     async def test_read_renderer_with_insufficient_scope_is_denied(self):
         pytest.importorskip("prefab_ui")
         mcp = self.make_server()
-        uri = hashed_resource_uri("", "show_widget")
+        uri = await self.renderer_uri(mcp)
 
         tok = set_token(make_token(scopes=["read"]))
         try:

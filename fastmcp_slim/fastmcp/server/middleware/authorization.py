@@ -327,11 +327,12 @@ class AuthMiddleware(Middleware):
                 version=version,
             )
         if component is None:
-            # Per-tool Prefab renderer resources (`ui://prefab/tool/<hash>/
-            # renderer.html`) are synthesized on demand by core `read_resource`
-            # rather than stored on a provider, so neither lookup above can
-            # see them. Mirror that path so the global checks below run
-            # against the component core would actually read.
+            # Prefab renderer resources (`ui://prefab/renderer/<sha256>/
+            # renderer.html`, plus legacy per-tool hashed URIs) are synthesized
+            # on demand by core `read_resource` rather than stored on a
+            # provider, so neither lookup above can see them. Mirror that path
+            # so the global checks below run against the component core would
+            # actually read.
             from fastmcp.server.providers.prefab_synthesis import (
                 synthesize_prefab_resource_by_uri,
             )
