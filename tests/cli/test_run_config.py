@@ -60,7 +60,7 @@ def test_load_mcp_server_config(sample_config, monkeypatch):
         assert isinstance(config.environment, UVEnvironment)
 
         # Source paths are anchored when the configuration is loaded.
-        assert config.source.path == str((sample_config.parent / "server.py").resolve())
+        assert config.source.path == os.path.abspath(sample_config.parent / "server.py")
         assert config.source.entrypoint is None
 
         # Check environment config
@@ -99,7 +99,7 @@ def test_load_config_with_entrypoint_source(tmp_path):
     config = load_mcp_server_config(config_file)
 
     # Source paths are anchored when the configuration is loaded.
-    assert config.source.path == str((tmp_path / "src/server.py").resolve())
+    assert config.source.path == os.path.abspath(tmp_path / "src/server.py")
     assert config.source.entrypoint == "app"
 
     # Check deployment
@@ -185,7 +185,7 @@ def test_load_minimal_config(tmp_path):
 
     # Source paths are anchored when the configuration is loaded.
     assert isinstance(config.source, FileSystemSource)
-    assert config.source.path == str((tmp_path / "server.py").resolve())
+    assert config.source.path == os.path.abspath(tmp_path / "server.py")
 
 
 def test_load_config_with_server_args(tmp_path):
@@ -267,7 +267,7 @@ def test_config_subset_independence(tmp_path):
 
     # Each subset should be independently usable
     # The source is usable independently of the caller working directory.
-    assert config.source.path == str((tmp_path / "server.py").resolve())
+    assert config.source.path == os.path.abspath(tmp_path / "server.py")
     assert config.source.entrypoint is None
 
     assert config.environment.python == "3.12"
@@ -347,3 +347,48 @@ def test_config_symlink_keeps_its_own_name(tmp_path, monkeypatch):
     _, server_spec = load_and_merge_config("fastmcp.json")
 
     assert Path(server_spec) == link
+
+
+def test_load_and_merge_config_anchors_paths_to_config_dir(tmp_path, monkeypatch):
+    """Relative source and requirements paths resolve beside fastmcp.json, not the cwd."""
+    config_dir = tmp_path / "project" / "config"
+    config_dir.mkdir(parents=True)
+    caller_dir = tmp_path / "caller"
+    caller_dir.mkdir()
+    config_file = config_dir / "fastmcp.json"
+    config_file.write_text(
+        json.dumps(
+            {
+                "source": {"path": "../src/server.py"},
+                "environment": {"requirements": "requirements.txt"},
+            }
+        )
+    )
+    monkeypatch.chdir(caller_dir)
+
+    config, _ = load_and_merge_config(os.path.relpath(config_file, caller_dir))
+
+    assert config.source.path == os.path.abspath(tmp_path / "project/src/server.py")
+    assert config.environment.requirements == config_dir / "requirements.txt"
+
+
+def test_symlinked_config_anchors_paths_beside_the_link(tmp_path, monkeypatch):
+    """A symlinked fastmcp.json resolves relative paths beside the link, not its target."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    target = shared / "fastmcp.json"
+    target.write_text(json.dumps({"source": {"path": "server.py"}}))
+    project = tmp_path / "project"
+    project.mkdir()
+    link = project / "fastmcp.json"
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available")
+    monkeypatch.chdir(tmp_path)
+
+    merged, _ = load_and_merge_config("project/fastmcp.json")
+    loaded = MCPServerConfig.from_file(Path("project/fastmcp.json"))
+
+    assert merged.source.path == os.path.abspath(project / "server.py")
+    assert loaded.source.path == os.path.abspath(project / "server.py")

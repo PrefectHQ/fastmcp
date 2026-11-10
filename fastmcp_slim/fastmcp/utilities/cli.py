@@ -93,6 +93,7 @@ def load_and_merge_config(
                         # its own name and directory.
                         config_path = Path(os.path.abspath(config_path))
                         resolved_spec = str(config_path)
+                        config.anchor_paths(config_path.parent)
                         if config.deployment:
                             config.deployment.apply_runtime_settings(config_path)
 

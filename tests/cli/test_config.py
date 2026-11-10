@@ -298,7 +298,7 @@ class TestMCPServerConfig:
 
         # When loaded from JSON with entrypoint format, it becomes EntrypointConfig
         assert isinstance(config.source, FileSystemSource)
-        assert config.source.path == str((tmp_path / "src/server.py").resolve())
+        assert config.source.path == os.path.abspath(tmp_path / "src/server.py")
         assert config.source.entrypoint == "app"
         assert config.environment.python == "3.12"
         assert config.environment.dependencies == ["requests"]
@@ -318,7 +318,7 @@ class TestMCPServerConfig:
         config = MCPServerConfig.from_file(config_file)
         # String entrypoint with : should be converted to EntrypointConfig
         assert isinstance(config.source, FileSystemSource)
-        assert config.source.path == str((tmp_path / "server.py").resolve())
+        assert config.source.path == os.path.abspath(tmp_path / "server.py")
         assert config.source.entrypoint == "mcp"
 
     def test_string_entrypoint_with_entrypoint_and_environment(self, tmp_path):
@@ -336,7 +336,7 @@ class TestMCPServerConfig:
 
         # Should be parsed into EntrypointConfig
         assert isinstance(config.source, FileSystemSource)
-        assert config.source.path == str((tmp_path / "src/server.py").resolve())
+        assert config.source.path == os.path.abspath(tmp_path / "src/server.py")
         assert config.source.entrypoint == "app"
 
         # Environment config should still work
@@ -375,14 +375,9 @@ class TestMCPServerConfig:
 
         config = MCPServerConfig.from_file(config_file)
 
-        assert config.source.path == str(
-            (config_dir.parent / "src/server.py").resolve()
-        )
+        assert config.source.path == os.path.abspath(tmp_path / "project/src/server.py")
         assert config.source.entrypoint == "mcp"
-        assert (
-            config.environment.requirements
-            == (config_dir / "requirements.txt").resolve()
-        )
+        assert config.environment.requirements == config_dir / "requirements.txt"
         assert config.deployment.cwd == "runtime"
 
     def test_from_file_preserves_absolute_paths(self, tmp_path):

@@ -223,9 +223,8 @@ class MCPServerConfig(BaseModel):
     def from_file(cls, file_path: Path) -> MCPServerConfig:
         """Load configuration from a JSON file.
 
-        Relative ``source.path`` and ``environment.requirements`` values are
-        anchored to the configuration file's directory. Other runtime paths,
-        such as ``deployment.cwd``, retain their own resolution semantics.
+        Relative `source.path` and `environment.requirements` values are
+        anchored to the configuration file's directory (see `anchor_paths`).
 
         Args:
             file_path: Path to the configuration file
@@ -238,7 +237,6 @@ class MCPServerConfig(BaseModel):
             json.JSONDecodeError: If the file is not valid JSON
             pydantic.ValidationError: If the configuration is invalid
         """
-        file_path = file_path.expanduser().resolve()
         if not file_path.exists():
             raise FileNotFoundError(f"Configuration file not found: {file_path}")
 
@@ -246,20 +244,33 @@ class MCPServerConfig(BaseModel):
             data = json.load(f)
 
         config = cls.model_validate(data)
-        config_dir = file_path.parent
+        config.anchor_paths(file_path.parent)
+        return config
 
-        source_path = Path(config.source.path).expanduser()
+    def anchor_paths(self, config_dir: Path) -> None:
+        """Make relative file paths absolute against the config file's directory.
+
+        Anchors `source.path` and `environment.requirements`, so a config
+        loaded from another working directory still finds its files. Paths are
+        made absolute without following symlinks, so a symlinked `fastmcp.json`
+        resolves paths beside the link. Other paths, such as `deployment.cwd`,
+        keep their own resolution rules.
+
+        Args:
+            config_dir: Directory containing the configuration file
+        """
+        config_dir = Path(os.path.abspath(config_dir.expanduser()))
+
+        source_path = Path(self.source.path).expanduser()
         if not source_path.is_absolute():
-            config.source.path = str((config_dir / source_path).resolve())
+            self.source.path = os.path.abspath(config_dir / source_path)
 
-        requirements = config.environment.requirements
+        requirements = self.environment.requirements
         if requirements is not None:
             requirements = requirements.expanduser()
             if not requirements.is_absolute():
-                requirements = (config_dir / requirements).resolve()
-            config.environment.requirements = requirements
-
-        return config
+                requirements = Path(os.path.abspath(config_dir / requirements))
+            self.environment.requirements = requirements
 
     @classmethod
     def from_cli_args(
