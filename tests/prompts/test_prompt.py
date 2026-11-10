@@ -877,7 +877,8 @@ class TestUnconvertibleArguments:
         assert exc_info.value.error.code == INVALID_PARAMS
         assert exc_info.value.error.message.startswith("Could not convert argument")
 
-    async def test_get_prompt_validator_type_error_remains_internal(self):
+    @pytest.mark.parametrize("value", ["1", "hello"])
+    async def test_get_prompt_validator_type_error_remains_internal(self, value: str):
         def broken(value: str) -> int:
             raise TypeError("validator bug")
 
@@ -889,9 +890,23 @@ class TestUnconvertibleArguments:
 
         async with Client(mcp) as client:
             with pytest.raises(MCPError) as exc_info:
-                await client.get_prompt("summarize", {"count": "1"})
+                await client.get_prompt("summarize", {"count": value})
 
         assert exc_info.value.error.code == INTERNAL_ERROR
+
+    async def test_get_prompt_validator_expecting_json_input_still_converts(self):
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def summarize(
+            amount: Annotated[float, BeforeValidator(lambda v: round(v, 2))],
+        ) -> str:
+            return str(amount)
+
+        async with Client(mcp) as client:
+            result = await client.get_prompt("summarize", {"amount": "1.2345"})
+
+        assert result.messages[0].content.text == "1.23"
 
 
 class TestPromptFieldDefaults:
