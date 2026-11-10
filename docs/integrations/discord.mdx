@@ -139,6 +139,8 @@ Discord OAuth supports several scopes for accessing different types of user data
 To request additional scopes:
 
 ```python
+from fastmcp.server.auth.providers.discord import DiscordProvider
+
 auth_provider = DiscordProvider(
     client_id="...",
     client_secret="...",
