@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import inspect
+import math
 from collections.abc import Callable
+from numbers import Real
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -58,6 +60,9 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 _JSONABLE_ADAPTER = get_cached_typeadapter(Any)
+_TEXT_JSON_SERIALIZER = pydantic_core.SchemaSerializer(
+    _JSONABLE_ADAPTER.core_schema, config={"ser_json_inf_nan": "constants"}
+)
 
 
 def _default_title(name: str) -> str:
@@ -70,8 +75,37 @@ def _default_title(name: str) -> str:
     return name.replace("_", " ").replace("-", " ").title()
 
 
+def _text_fallback(value: Any) -> str | float:
+    if isinstance(value, Real):
+        try:
+            numeric = float(value)
+        except OverflowError:
+            # A finite real, such as a large Fraction, may not fit in a float.
+            return str(value)
+        if not math.isfinite(numeric):
+            try:
+                if -math.inf < value < math.inf:
+                    # Wider finite reals can saturate when coerced to float.
+                    return str(value)
+            except TypeError:
+                pass
+            # Keep the numeric value visible to the text JSON boundary.
+            return numeric
+    return str(value)
+
+
 def default_serializer(data: Any) -> str:
-    return _JSONABLE_ADAPTER.dump_json(data, fallback=str).decode()
+    """Serialize text content without silently replacing non-finite floats."""
+    payload = _TEXT_JSON_SERIALIZER.to_json(data, fallback=_text_fallback)
+    if b"NaN" in payload or b"Infinity" in payload:
+        try:
+            pydantic_core.from_json(payload, allow_inf_nan=False)
+        except ValueError as exc:
+            raise ToolError(
+                "Tool result contains a non-finite float; "
+                "JSON cannot represent NaN or Infinity"
+            ) from exc
+    return payload.decode()
 
 
 def _serialize_to_jsonable(data: Any, annotation: Any = Any) -> Any:
@@ -83,14 +117,19 @@ def _serialize_to_jsonable(data: Any, annotation: Any = Any) -> Any:
         or annotation is ...
         or isinstance(annotation, str)
     ):
-        adapter = _JSONABLE_ADAPTER
+        serializer = _TEXT_JSON_SERIALIZER
     else:
         try:
-            return get_cached_typeadapter(annotation).dump_python(data, mode="json")
+            serializer = pydantic_core.SchemaSerializer(
+                get_cached_typeadapter(annotation).core_schema,
+                config={"ser_json_inf_nan": "constants"},
+            )
         except PydanticSchemaGenerationError:
-            adapter = _JSONABLE_ADAPTER
+            serializer = _TEXT_JSON_SERIALIZER
 
-    return adapter.dump_python(data, mode="json")
+    # Preserve floats until the text boundary checks them. Embedded model
+    # policies and custom serializers still control the serialized value.
+    return serializer.to_python(data, mode="json")
 
 
 class ToolResult(BaseModel):
@@ -388,11 +427,9 @@ class Tool(FastMCPComponent):
                 fastmcp_app_name=_get_fastmcp_app_name(self),
             )
 
-        content = _convert_to_content(raw_value)
-
         # Bytes can't be represented as structured JSON content
         if isinstance(raw_value, bytes):
-            return ToolResult(content=content)
+            return ToolResult(content=_convert_to_content(raw_value))
 
         is_content_result = isinstance(
             raw_value, ContentBlock | Audio | Image | File
@@ -407,7 +444,7 @@ class Tool(FastMCPComponent):
         # Skip structured content for ContentBlock types only if no output_schema
         # (if output_schema exists, MCP SDK requires structured_content)
         if self.output_schema is None and is_content_result:
-            return ToolResult(content=content)
+            return ToolResult(content=_convert_to_content(raw_value))
 
         try:
             structured = _serialize_to_jsonable(raw_value, self.return_type)
@@ -423,10 +460,9 @@ class Tool(FastMCPComponent):
                     "tool's output_schema to None to disable automatic "
                     "serialization."
                 ) from e
-            return ToolResult(content=content)
+            return ToolResult(content=_convert_to_content(raw_value))
 
-        if not is_content_result:
-            content = _convert_to_content(structured)
+        content = _convert_to_content(raw_value if is_content_result else structured)
 
         if self.output_schema is None:
             # No schema - only use structured_content for dicts
