@@ -3,13 +3,14 @@
 import json
 import warnings
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Literal
 from unittest.mock import patch
 
 import mcp_types
 import pytest
 from cryptography.fernet import Fernet
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
 from fastmcp.cli import client as client_module
@@ -183,6 +184,36 @@ class TestCoerceValue:
         schema = {"anyOf": [{"type": "integer"}, {"type": "array"}]}
         result = coerce_value("null", schema)
         assert result is not None
+
+    @pytest.mark.parametrize(
+        "schema",
+        [
+            {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            {"type": ["string", "null"]},
+        ],
+    )
+    def test_null_literal_stays_string_when_string_is_nullable(self, schema):
+        """``str | None`` keeps ``null`` as the literal string."""
+        assert coerce_value("null", schema) == "null"
+
+    def test_one_of_object_union_parses_json(self):
+        """Discriminated unions produce ``oneOf``; objects are still decoded."""
+        schema = {
+            "oneOf": [
+                {"type": "object", "properties": {"kind": {"const": "cat"}}},
+                {"type": "object", "properties": {"kind": {"const": "dog"}}},
+            ]
+        }
+        assert coerce_value('{"kind": "dog"}', schema) == {"kind": "dog"}
+
+    @pytest.mark.parametrize(
+        "branch",
+        [{"$ref": "#/$defs/Color"}, {"enum": ["[a]", "b"]}, {}],
+    )
+    def test_untyped_union_branch_preserves_raw_string(self, branch):
+        """A branch without a ``type`` may be a string, so input stays raw."""
+        schema = {"anyOf": [{"type": "array"}, branch]}
+        assert coerce_value("[a]", schema) == "[a]"
 
     def test_non_string_union_falls_back_to_string_on_invalid_json(self):
         """When JSON parsing fails for a non-string union, the raw string is returned."""
@@ -716,6 +747,16 @@ def test_named_oauth_server_is_quiet(
 # ---------------------------------------------------------------------------
 
 
+class Cat(BaseModel):
+    kind: Literal["cat"]
+    lives: int = 9
+
+
+class Dog(BaseModel):
+    kind: Literal["dog"]
+    good: bool = True
+
+
 def _build_test_server() -> FastMCP:
     """Create a minimal FastMCP server for integration tests."""
     server = FastMCP("TestServer")
@@ -744,6 +785,11 @@ def _build_test_server() -> FastMCP:
     def maybe(n: int | None = 5) -> str:
         """Return repr of an optional int."""
         return repr(n)
+
+    @server.tool
+    def describe(pet: Annotated[Cat | Dog, Field(discriminator="kind")]) -> str:
+        """Describe a pet from a discriminated union."""
+        return type(pet).__name__
 
     @server.resource("test://greeting")
     def greeting_resource() -> str:
@@ -883,9 +929,7 @@ class TestCallCommandCLI:
         self, capsys: pytest.CaptureFixture[str]
     ):
         """JSON list is parsed and passed correctly for int|list[int] params."""
-        await call_command(
-            "fake://server", "union_sum", "v=[1, 2]", json_output=True
-        )
+        await call_command("fake://server", "union_sum", "v=[1, 2]", json_output=True)
         data = json.loads(capsys.readouterr().out)
         assert data["is_error"] is False
         assert data["structured_content"] == {"result": 3}
@@ -895,9 +939,7 @@ class TestCallCommandCLI:
         self, capsys: pytest.CaptureFixture[str]
     ):
         """Plain integer is passed correctly for int|list[int] params."""
-        await call_command(
-            "fake://server", "union_sum", "v=7", json_output=True
-        )
+        await call_command("fake://server", "union_sum", "v=7", json_output=True)
         data = json.loads(capsys.readouterr().out)
         assert data["is_error"] is False
         assert data["structured_content"] == {"result": 7}
@@ -907,12 +949,25 @@ class TestCallCommandCLI:
         self, capsys: pytest.CaptureFixture[str]
     ):
         """``null`` is passed as None for int|None params."""
-        await call_command(
-            "fake://server", "maybe", "n=null", json_output=True
-        )
+        await call_command("fake://server", "maybe", "n=null", json_output=True)
         data = json.loads(capsys.readouterr().out)
         assert data["is_error"] is False
         assert data["structured_content"] == {"result": "None"}
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_call_discriminated_union_object(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        """A JSON object reaches a discriminated ``Cat | Dog`` param as a dict."""
+        await call_command(
+            "fake://server",
+            "describe",
+            'pet={"kind": "dog", "good": true}',
+            json_output=True,
+        )
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == {"result": "Dog"}
 
 
 # ---------------------------------------------------------------------------

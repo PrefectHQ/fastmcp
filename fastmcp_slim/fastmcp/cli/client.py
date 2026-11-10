@@ -353,49 +353,72 @@ def _unwrap_nullable(schema: dict[str, Any]) -> dict[str, Any]:
     return schema
 
 
+def _union_branches(schema: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Return the ``anyOf``/``oneOf`` branches of a union schema, if any."""
+
+    branches = schema.get("anyOf", schema.get("oneOf"))
+    return branches if isinstance(branches, list) else None
+
+
 def _schema_allows_null(schema: dict[str, Any]) -> bool:
     """Return True if the schema permits a null/None value."""
 
-    if "anyOf" in schema:
-        return any(s.get("type") == "null" for s in schema["anyOf"])
+    branches = _union_branches(schema)
+    if branches is not None:
+        return any(_schema_allows_null(s) for s in branches)
 
     schema_type = schema.get("type")
-    if schema_type == "null":
-        return True
     if isinstance(schema_type, list):
         return "null" in schema_type
+    return schema_type == "null"
 
-    return False
+
+def _schema_may_be_string(schema: dict[str, Any]) -> bool:
+    """Return True if a non-null value matching ``schema`` could be a string.
+
+    Branches without a ``type`` (a ``$ref``, an enum, an unconstrained schema)
+    are treated as possibly strings so the raw CLI input is preserved.
+    """
+
+    branches = _union_branches(schema)
+    if branches is not None:
+        return any(_schema_may_be_string(s) for s in branches)
+
+    schema_type = schema.get("type")
+    if schema_type is None:
+        return True
+    if isinstance(schema_type, list):
+        return "string" in schema_type
+    return schema_type == "string"
 
 
 def coerce_value(raw: str, schema: dict[str, Any]) -> Any:
     """Coerce a string CLI value according to a JSON-Schema type hint."""
 
-    # "null" literal always maps to None when the schema allows it.
-    if raw == "null" and _schema_allows_null(schema):
+    # ``null`` means None for nullable schemas, unless the value could also be
+    # the literal string "null" (e.g. ``str | None``); use --input-json there.
+    if (
+        raw == "null"
+        and _schema_allows_null(schema)
+        and not _schema_may_be_string(schema)
+    ):
         return None
 
     unwrapped = _unwrap_nullable(schema)
-    schema_type = unwrapped.get("type", "string")
 
-    # For anyOf unions with multiple non-null branches (e.g. ``int | list[int]``),
-    # try JSON parsing when no branch accepts a plain string.  This handles
-    # structured values like arrays and objects whose only valid reading is
-    # non-string.  Only attempt JSON parsing when the value looks like an
-    # array or object (starts with ``[`` or ``{``); plain scalars such as
-    # "null", "true", or "42" must fall through to the type-specific paths
-    # below so that a non-nullable union like ``int | list[int]`` does not
-    # accidentally accept "null" as None.
-    # Note: ``oneOf`` schemas are not handled here; only ``anyOf`` is checked.
-    if schema_type == "string" and "anyOf" in unwrapped:
-        non_null = [s for s in unwrapped["anyOf"] if s.get("type") != "null"]
-        has_string_branch = any(s.get("type") == "string" for s in non_null)
-        if not has_string_branch and raw[:1] in "[{":
+    # Unions with several non-null branches (``int | list[int]``, a
+    # discriminated ``Cat | Dog``) have no top-level type. When no branch can
+    # be a string, decode raw arrays and objects as JSON; anything else is
+    # passed through for the server to validate.
+    if _union_branches(unwrapped) is not None and "type" not in unwrapped:
+        if not _schema_may_be_string(unwrapped) and raw[:1] in ("[", "{"):
             try:
                 return json.loads(raw)
             except json.JSONDecodeError:
                 pass
         return raw
+
+    schema_type = unwrapped.get("type", "string")
 
     if schema_type == "integer":
         try:
