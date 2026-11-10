@@ -933,3 +933,68 @@ class TestPatternMatching:
         ) as client:
             result = await client.call_tool("pattern_match_tool", {})
             assert result.data == "Cancelled"
+
+
+class TestAcceptedContentValidation:
+    """Accepted form content must satisfy the requested schema."""
+
+    AGE_SCHEMA: dict[str, Any] = {
+        "type": "object",
+        "properties": {"age": {"type": "integer"}},
+        "required": ["age"],
+    }
+
+    async def _respond(self, schema: dict[str, Any], response: Any):
+        async def handler(message, response_type, params, ctx):
+            return response
+
+        callback = create_elicitation_callback(handler)
+        params = mcp_types.ElicitRequestFormParams(message="?", requested_schema=schema)
+        return await callback(cast(Any, None), params)
+
+    @pytest.mark.parametrize("content", [{"age": "x"}, {}, {"age": "42"}])
+    async def test_invalid_content_is_an_error(self, content: dict[str, Any]):
+        result = await self._respond(self.AGE_SCHEMA, content)
+        assert isinstance(result, mcp_types.ErrorData)
+
+    async def test_valid_content_is_accepted(self):
+        result = await self._respond(self.AGE_SCHEMA, {"age": 42})
+        assert isinstance(result, mcp_types.ElicitResult)
+        assert result.action == "accept"
+        assert result.content == {"age": 42}
+
+    async def test_auto_wrapped_scalar_is_validated(self):
+        schema = {
+            "type": "object",
+            "properties": {"value": {"type": "integer"}},
+            "required": ["value"],
+        }
+        accepted = await self._respond(schema, 5)
+        assert isinstance(accepted, mcp_types.ElicitResult)
+        assert accepted.content == {"value": 5}
+
+        rejected = await self._respond(schema, "five")
+        assert isinstance(rejected, mcp_types.ErrorData)
+
+    async def test_accept_without_content_on_empty_schema(self):
+        schema = {"type": "object", "properties": {}}
+        result = await self._respond(schema, ElicitResult(action="accept"))
+        assert isinstance(result, mcp_types.ElicitResult)
+        assert result.action == "accept"
+
+    async def test_date_time_string_is_accepted(self):
+        schema = {
+            "type": "object",
+            "properties": {"when": {"type": "string", "format": "date-time"}},
+            "required": ["when"],
+        }
+        result = await self._respond(schema, {"when": "2024-01-01T00:00:00Z"})
+        assert isinstance(result, mcp_types.ElicitResult)
+        assert result.content == {"when": "2024-01-01T00:00:00Z"}
+
+    async def test_declined_content_is_not_validated(self):
+        result = await self._respond(
+            self.AGE_SCHEMA, ElicitResult(action="decline", content={"age": "x"})
+        )
+        assert isinstance(result, mcp_types.ElicitResult)
+        assert result.action == "decline"

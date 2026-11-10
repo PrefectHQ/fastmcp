@@ -353,10 +353,72 @@ def _unwrap_nullable(schema: dict[str, Any]) -> dict[str, Any]:
     return schema
 
 
+def _union_branches(schema: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Return the ``anyOf``/``oneOf`` branches of a union schema, if any."""
+
+    branches = schema.get("anyOf", schema.get("oneOf"))
+    return branches if isinstance(branches, list) else None
+
+
+def _schema_allows_null(schema: dict[str, Any]) -> bool:
+    """Return True if the schema permits a null/None value."""
+
+    branches = _union_branches(schema)
+    if branches is not None:
+        return any(_schema_allows_null(s) for s in branches)
+
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        return "null" in schema_type
+    return schema_type == "null"
+
+
+def _schema_may_be_string(schema: dict[str, Any]) -> bool:
+    """Return True if a non-null value matching ``schema`` could be a string.
+
+    Branches without a ``type`` (a ``$ref``, an enum, an unconstrained schema)
+    are treated as possibly strings so the raw CLI input is preserved.
+    """
+
+    branches = _union_branches(schema)
+    if branches is not None:
+        return any(_schema_may_be_string(s) for s in branches)
+
+    schema_type = schema.get("type")
+    if schema_type is None:
+        return True
+    if isinstance(schema_type, list):
+        return "string" in schema_type
+    return schema_type == "string"
+
+
 def coerce_value(raw: str, schema: dict[str, Any]) -> Any:
     """Coerce a string CLI value according to a JSON-Schema type hint."""
 
-    schema_type = _unwrap_nullable(schema).get("type", "string")
+    # ``null`` means None for nullable schemas, unless the value could also be
+    # the literal string "null" (e.g. ``str | None``); use --input-json there.
+    if (
+        raw == "null"
+        and _schema_allows_null(schema)
+        and not _schema_may_be_string(schema)
+    ):
+        return None
+
+    unwrapped = _unwrap_nullable(schema)
+
+    # Unions with several non-null branches (``int | list[int]``, a
+    # discriminated ``Cat | Dog``) have no top-level type. When no branch can
+    # be a string, decode raw arrays and objects as JSON; anything else is
+    # passed through for the server to validate.
+    if _union_branches(unwrapped) is not None and "type" not in unwrapped:
+        if not _schema_may_be_string(unwrapped) and raw[:1] in ("[", "{"):
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                pass
+        return raw
+
+    schema_type = unwrapped.get("type", "string")
 
     if schema_type == "integer":
         try:
