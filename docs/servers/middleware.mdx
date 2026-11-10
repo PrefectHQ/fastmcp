@@ -553,6 +553,7 @@ mcp = FastMCP("MyServer")
 mcp.add_middleware(ErrorHandlingMiddleware(
     include_traceback=True,
     transform_errors=False,
+    error_callback=my_error_callback,
 ))
 ```
 
@@ -562,16 +563,16 @@ mcp.add_middleware(ErrorHandlingMiddleware(
 | `transform_errors` | `bool` | `True` | Convert exceptions to JSON-RPC errors; `False` preserves the original exception |
 | `error_callback` | `Callable` | `None` | Custom callback on errors |
 
-With the default `transform_errors=True`, existing `MCPError` instances pass through unchanged. Otherwise, the middleware maps the immediate chained cause's type, if present, or the exception's own type:
+With the default `transform_errors=True`, existing `MCPError` instances pass through unchanged. Otherwise, the middleware maps the immediate chained cause's type, if present, or the exception's own type. Each row also matches subclasses of the listed types:
 
 | Exception type | JSON-RPC code |
 |----------------|---------------|
-| `ValueError`, `TypeError` | `-32602` (invalid params) |
+| `ValueError`, `TypeError`, FastMCP `ValidationError` | `-32602` (invalid params) |
 | `FileNotFoundError`, `KeyError`, `NotFoundError` | `-32002` for `resources/*`; `-32001` otherwise |
 | `PermissionError`, `TimeoutError`, `asyncio.TimeoutError` | `-32000` |
 | Other exceptions | `-32603` (internal error) |
 
-The table matches exact types, not subclasses. There are no dedicated mappings for FastMCP's `ToolError`, `ValidationError`, or `AuthorizationError`: without a mapped cause, they become `-32603`. For example, a `ToolError` chained from `ValueError` becomes `-32602`, even if that `ValueError` came from a bug inside the tool. A FastMCP `ValidationError` chained from Pydantic's validation error falls through to `-32603`. Use `transform_errors=False` when these generic mappings do not fit your application.
+FastMCP's `ToolError` and `AuthorizationError` have no dedicated mappings: without a mapped cause, they become `-32603`. Because the cause takes precedence, a `ToolError` chained from `ValueError` becomes `-32602`, even if that `ValueError` came from a bug inside the tool. Use `transform_errors=False` when these generic mappings do not fit your application.
 
 This middleware logs every caught exception at `ERROR`, independently of the exception's `log_level` and `transform_errors`. Its logs, the resulting protocol response, and [OpenTelemetry span status](/servers/telemetry#error-handling) are separate signals. Do not infer a JSON-RPC code or span status from the log level.
 

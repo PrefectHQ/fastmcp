@@ -841,7 +841,7 @@ The exceptions in `fastmcp.exceptions` describe different contexts:
 | Exception | When to use it |
 |-----------|----------------|
 | `ToolError` | A tool cannot complete its operation. Give the caller a safe, actionable message so it can correct its arguments or choose another action. |
-| `ValidationError` | Parameter or return-value validation fails. FastMCP also raises this for function-tool argument validation. This is distinct from `pydantic.ValidationError`; neither class guarantees a particular protocol response or monitoring classification. |
+| `ValidationError` | Parameter or return-value validation fails. FastMCP also raises this for function-tool argument validation. This is distinct from `pydantic.ValidationError`. The protocol response for either depends on where the error is handled, as described below. |
 | `AuthorizationError` | An [authorization check](/servers/authorization) or custom middleware denies access. Component-level authorization can hide components from lookup and listing, so the result depends on where the check runs. |
 | `NotFoundError` | FastMCP component lookup fails, such as a missing tool, resource, or prompt. For a missing business entity inside a tool, use `ToolError` with a message about that entity. |
 
