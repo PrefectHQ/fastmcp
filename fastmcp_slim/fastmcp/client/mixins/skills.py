@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import bisect
 import hashlib
 import json
 from typing import TYPE_CHECKING, cast
@@ -230,6 +231,16 @@ class ClientSkillsMixin:
         ]
         resource_uris = {str(resource.uri) for resource in resources}
         skill_uris = {str(resource.uri) for resource in skills}
+        # URIs sharing a prefix sort next to each other, so a skill has a
+        # nested candidate exactly when the URI after its prefix's insertion
+        # point also starts with that prefix.
+        ordered_uris = sorted(skill_uris)
+
+        def has_nested_candidate(prefix: str) -> bool:
+            start = bisect.bisect_left(ordered_uris, prefix)
+            matches = ordered_uris[start : start + 2]
+            return sum(uri.startswith(prefix) for uri in matches) > 1
+
         supporting_uris: set[str] = set()
         # Process parents first, so a supporting file's own name or contents
         # cannot make it an authority over another skill's discovery.
@@ -237,8 +248,8 @@ class ClientSkillsMixin:
             if uri in supporting_uris:
                 continue
             prefix = uri.removesuffix("SKILL.md")
-            if f"{prefix}_manifest" not in resource_uris or not any(
-                other != uri and other.startswith(prefix) for other in skill_uris
+            if f"{prefix}_manifest" not in resource_uris or not has_nested_candidate(
+                prefix
             ):
                 continue
             try:
