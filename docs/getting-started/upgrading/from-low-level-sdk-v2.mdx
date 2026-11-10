@@ -9,7 +9,7 @@ If your server builds on the `mcp` package's low-level `Server` class as SDK v2 
 
 The core idea: instead of describing your tools to the SDK and then separately implementing them, you write ordinary Python functions and let FastMCP derive the protocol layer from your code. Type hints become JSON Schema. Docstrings become descriptions. Return values are serialized automatically. The dispatch you wrote to route a call by name, and the schemas you wrote by hand to describe it, both disappear.
 
-Migrating from SDK v2 is the most direct of the four upgrade paths, because you and FastMCP already share a protocol layer. FastMCP 4 is built on SDK v2, so `mcp_types` imports keep working, field names are already snake_case, and the era negotiation you get is the one you have. Almost nothing about the wire changes — the one exception is [argument strictness](#stricter-arguments), covered below.
+Migrating from the low-level SDK v2 is more direct than migrating from v1, because you and FastMCP already share a protocol layer. FastMCP 4 is built on SDK v2, so `mcp_types` imports keep working, field names are already snake_case, and the era negotiation you get is the one you have. Almost nothing about the wire changes — the one exception is [argument strictness](#stricter-arguments), covered below.
 
 <Note>
 On SDK v1's decorator-registered `Server` — `@server.list_tools()`, `@server.call_tool()` — instead? See [Upgrading from the Low-Level SDK v1](/getting-started/upgrading/from-low-level-sdk-v1), where the before-and-after code matches that API.
@@ -51,7 +51,7 @@ TYPES THAT DISAPPEAR FROM YOUR CODE
 CONTEXT AND SIDE CHANNELS
 - `ctx.session.send_log_message(...)` — `ctx.info()` / `ctx.debug()` / `ctx.warning()` / `ctx.error()` on a `fastmcp.Context` parameter
 - `ctx.session.report_progress(...)` — `ctx.report_progress()`
-- `ctx.request_id`, `ctx.meta`, `ctx.protocol_version` — these live on `ctx.request_context` in FastMCP (`ctx.request_context.request_id`, and so on); note that `ctx.protocol_version` directly on the Context does not exist
+- `ctx.meta`, `ctx.protocol_version` — these live on `ctx.request_context` in FastMCP (`ctx.request_context.meta`, `ctx.request_context.protocol_version`); `ctx.protocol_version` directly on the Context does not exist. `ctx.request_id` is on FastMCP's Context as well, converted to a `str`
 - `ctx.params` — no equivalent, and none is needed: the raw request params were how a low-level handler read the tool's arguments, and those are now the decorated function's typed parameters. `ctx.request_context.params` does NOT exist and raises AttributeError.
 - Direct `ctx.session` use for anything else — `Context.session` exists in FastMCP too and returns the same raw SDK session, so this still works; prefer a `Context` method where one exists, and note the remaining uses as SDK-coupled
 
@@ -66,13 +66,13 @@ For each item found, show the original code, say what it did, and give the FastM
 
 ## Install
 
-FastMCP 4 is in prerelease, so pin the exact version rather than installing unqualified — a bare `pip install fastmcp` resolves to the latest *stable* release, which today is FastMCP 3:
+FastMCP 4 is a stable release:
 
 ```bash
-pip install "fastmcp==4.0.0b3"
+pip install "fastmcp>=4"
 ```
 
-An exact pip pin installs even though it's a prerelease; it does not need `--pre`. uv also needs an explicit constraint for the transitive `fastmcp-slim` prerelease, so follow [Install the v4 Prerelease](/getting-started/upgrading/from-fastmcp-3#install-the-v4-prerelease) for a reproducible uv setup.
+The `fastmcp` package depends on `fastmcp-slim` at the same version; both resolve together with no extra constraints.
 
 FastMCP 4 depends on the MCP SDK v2 you are already using, so `mcp_types` stays importable and every protocol type keeps its current name and fields. Most of those imports vanish from your code anyway — FastMCP derives them — but the ones you keep need no changes.
 
@@ -212,7 +212,7 @@ Constraints carry over too. A schema with `"minimum"` and `"maximum"` becomes a 
 
 ### Return Values
 
-The low-level class requires tools to return a `CallToolResult` wrapping a list of content blocks. FastMCP takes the value itself — strings, numbers, dicts, lists, dataclasses, Pydantic models — and handles both the content block and the structured output. For images and audio, FastMCP provides wrapper types that carry the format:
+The low-level class requires tools to return a `CallToolResult` wrapping a list of content blocks. FastMCP takes the value itself — strings, numbers, dicts, lists, dataclasses, Pydantic models — and handles both the content block and the structured output. For images and audio, FastMCP provides wrapper types that carry the format. Each takes a file path, or raw bytes with `data=` and `format=`:
 
 ```python
 from fastmcp import FastMCP
@@ -222,10 +222,9 @@ mcp = FastMCP("media")
 
 
 @mcp.tool
-def create_chart(data: list[float]) -> Image:
-    """Generate a chart from data."""
-    png_bytes = render_png(data)  # your logic
-    return Image(data=png_bytes, format="png")
+def latest_chart() -> Image:
+    """Return the most recent chart."""
+    return Image(path="chart.png")
 ```
 
 When you need full control over the wire result — multiple content blocks, or structured content that differs from the content blocks — return a `ToolResult` from `fastmcp.tools` instead.

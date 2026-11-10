@@ -21,7 +21,7 @@
 #     version is split across four, forcing the label/comment/reopen helpers
 #     to be duplicated per scope).
 #   - Issue assignment events are handled in this same workflow so assigning
-#     the linked issue reopens previously closed PRs automatically.
+#     the linked issue clears waiting PRs and reopens previously gated PRs.
 #
 # Maintainer override: reopen the PR, or remove the "missing-issue-link"
 # label — either applies a sticky "bypass-issue-check" label and reopens.
@@ -39,8 +39,8 @@ on:
     # becomes reviewable.
     types: [opened, edited, reopened, ready_for_review, labeled, unlabeled]
   issues:
-    # Assignment is what makes a previously closed "not assigned" PR compliant,
-    # so it needs a separate event path that finds and reopens matching PRs.
+    # Assignment makes waiting PRs compliant, so it needs a separate event
+    # path that clears their checks and reopens previously gated PRs.
     types: [assigned]
 
 # Dry run: when 'false' the check still runs and logs its verdict but makes
@@ -304,7 +304,8 @@ jobs:
             // The author must be assigned to at least one linked issue.
             // CONTRIBUTING.md requires external contributors to be assigned
             // before opening a PR (so maintainers can deconflict / steer
-            // approach first).
+            // approach first). The issue stays open as the report, and
+            // assignment reopens the PR automatically.
             //
             // Exception: an issue labeled OPEN_LABEL waives that requirement
             // for everyone. It's how maintainers advertise "the reporter
@@ -448,7 +449,7 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Reopen linked PRs
+      - name: Clear assigned PRs
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
@@ -478,11 +479,11 @@ jobs:
               await fn();
             }
 
-            console.log(`Issue #${issueNumber} assigned to ${assignee} — searching for closed PRs to reopen`);
+            console.log(`Issue #${issueNumber} assigned to ${assignee} — searching for gated PRs`);
 
             const q = [
               'is:pr',
-              'is:closed',
+              'is:unmerged',
               `author:${assignee}`,
               `label:${LABEL}`,
               `repo:${owner}/${repo}`,
@@ -496,13 +497,13 @@ jobs:
               }));
             } catch (e) {
               throw new Error(
-                `Failed to search closed PRs for ${assignee} after assigning #${issueNumber} ` +
+                `Failed to search gated PRs for ${assignee} after assigning #${issueNumber} ` +
                   `(HTTP ${e.status ?? 'unknown'}): ${e.message}`,
               );
             }
 
             if (search.total_count === 0) {
-              console.log('No matching closed PRs found');
+              console.log('No matching gated PRs found');
               return;
             }
 
@@ -534,9 +535,11 @@ jobs:
               }
 
               try {
-                await mutate(`reopen PR #${prNumber}`, () => github.rest.pulls.update({
-                  owner, repo, pull_number: prNumber, state: 'open',
-                }));
+                if (issue.state === 'closed') {
+                  await mutate(`reopen PR #${prNumber}`, () => github.rest.pulls.update({
+                    owner, repo, pull_number: prNumber, state: 'open',
+                  }));
+                }
               } catch (e) {
                 if (e.status === 422) {
                   core.warning(`Cannot reopen PR #${prNumber}: the head branch was likely deleted`);

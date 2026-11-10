@@ -3,7 +3,6 @@ title: Choice
 sidebarTitle: Choice
 description: Present clickable options instead of free-text responses
 icon: list-check
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -45,6 +44,8 @@ This is an advisory interaction, not an enforcement mechanism. The conversation 
 The constructor sets defaults; the LLM can override `title` per-call.
 
 ```python
+from fastmcp.apps.choice import Choice
+
 Choice(
     name="Choice",             # App name
     title="Choose an Option",  # Default card heading
@@ -52,14 +53,14 @@ Choice(
 )
 ```
 
-The LLM provides the options per-call:
+The LLM provides the options per call in the arguments it passes to `choose`:
 
-```python
-choose(
-    prompt="What should we have for lunch?",
-    options=["Pizza", "Tacos", "Ramen", "Salad"],
-    title="The Important Questions",
-)
+```json
+{
+  "prompt": "What should we have for lunch?",
+  "options": ["Pizza", "Tacos", "Ramen", "Salad"],
+  "title": "The Important Questions"
+}
 ```
 
 ## How it works

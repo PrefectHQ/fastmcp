@@ -293,13 +293,22 @@ class OAuth(OAuthClientProvider):
         else:
             scopes_str = ""
 
+        # No pre-registered secret: tell the server this is a public client.
+        extra = dict(self._additional_client_metadata or {})
+        if (
+            not self._client_id
+            and not self._client_secret
+            and "token_endpoint_auth_method" not in extra
+        ):
+            extra["token_endpoint_auth_method"] = "none"
+
         client_metadata = OAuthClientMetadata(
             client_name=self._client_name,
             redirect_uris=[AnyHttpUrl(redirect_uri)],
             grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
             scope=scopes_str,
-            **(self._additional_client_metadata or {}),
+            **extra,
         )
 
         if self._client_id:
@@ -414,9 +423,20 @@ class OAuth(OAuthClientProvider):
             result_ready=result_ready,
         )
 
+        async def serve() -> None:
+            try:
+                await server.serve()
+            except SystemExit as exc:
+                # uvicorn exits the process when it cannot bind its port
+                raise OSError(
+                    "OAuth callback server could not start on "
+                    f"http://{self._callback_host}:{self.redirect_port}; "
+                    "is the port already in use?"
+                ) from exc
+
         # Run server until response is received with timeout logic
         async with anyio.create_task_group() as tg:
-            tg.start_soon(server.serve)
+            tg.start_soon(serve)
             logger.info(
                 f"🎧 OAuth callback server started on http://{self._callback_host}:{self.redirect_port}"
             )

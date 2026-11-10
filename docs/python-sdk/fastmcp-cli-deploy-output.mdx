@@ -1,0 +1,81 @@
+---
+title: output
+sidebarTitle: output
+---
+
+# `fastmcp.cli.deploy.output`
+
+
+Stable terminal and JSON output for Horizon CLI commands.
+
+## Functions
+
+### `emit_device_challenge` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/deploy/output.py#L84" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+emit_device_challenge(authorization: DeviceAuthorization) -> None
+```
+
+
+Show a device challenge before polling starts.
+
+
+### `start_device_approval_status` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/deploy/output.py#L129" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+start_device_approval_status() -> Status | None
+```
+
+
+Start the terminal spinner while the browser approval is pending.
+
+
+### `stop_device_approval_status` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/deploy/output.py#L142" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+stop_device_approval_status(status: Status | None) -> None
+```
+
+
+Stop a device approval spinner when one is active.
+
+
+### `emit_identity` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/deploy/output.py#L148" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+emit_identity(command: Literal['login', 'whoami'], user: HorizonUser) -> None
+```
+
+
+Show the authenticated user.
+
+
+### `emit_environment_logout` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/deploy/output.py#L182" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+emit_environment_logout() -> None
+```
+
+
+Explain why logout cannot change an environment credential.
+
+
+### `emit_logout` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/deploy/output.py#L216" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+emit_logout() -> None
+```
+
+
+Show a successful local logout result.
+
+
+### `emit_error` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/deploy/output.py#L257" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+emit_error(command: CommandName, category: ErrorCategory, message: str) -> None
+```
+
+
+Show a stable expected command failure.
+

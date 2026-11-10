@@ -16,7 +16,6 @@ from uuid import UUID
 
 import mcp_types
 import pytest
-from docket import Docket
 from pydantic import BaseModel
 from typing_extensions import TypedDict
 
@@ -29,16 +28,6 @@ from tests.tasks.task_helpers import (
     run_task,
     running_task_server,
 )
-
-
-@pytest.fixture(autouse=True)
-def reset_docket_memory_server():
-    """Force a fresh memory:// Docket server bound to each test's event loop."""
-    if hasattr(Docket, "_memory_server"):
-        delattr(Docket, "_memory_server")
-    yield
-    if hasattr(Docket, "_memory_server"):
-        delattr(Docket, "_memory_server")
 
 
 def _sync_result_to_wire(result: ToolResult) -> dict[str, Any]:

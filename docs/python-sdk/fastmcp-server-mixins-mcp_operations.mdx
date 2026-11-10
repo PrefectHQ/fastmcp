@@ -1,0 +1,23 @@
+---
+title: mcp_operations
+sidebarTitle: mcp_operations
+---
+
+# `fastmcp.server.mixins.mcp_operations`
+
+
+MCP protocol handler setup and wire-format handlers for FastMCP Server.
+
+## Classes
+
+### `MCPOperationsMixin` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/mcp_operations.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Mixin providing MCP protocol handler setup and wire-format handlers.
+
+Handlers are registered via ``add_request_handler(method, params_type,
+handler)`` on the low-level SDK server. Each adapter takes
+``(ctx: ServerRequestContext, params)`` and returns the bare SDK result
+model (no ``ServerResult`` wrapping — the SDK v2 runner serializes the
+result itself).
+

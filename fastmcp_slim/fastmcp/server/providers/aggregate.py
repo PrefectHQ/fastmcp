@@ -21,10 +21,12 @@ Example:
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Sequence
-from contextlib import AsyncExitStack, asynccontextmanager
+from collections.abc import AsyncGenerator, Generator, Sequence
+from contextlib import AsyncExitStack, ExitStack, asynccontextmanager, contextmanager
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeVar
 
+import fastmcp
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.transforms import Namespace
@@ -36,12 +38,21 @@ if TYPE_CHECKING:
     from fastmcp.prompts.base import Prompt
     from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
+    from fastmcp.server.extensions import ServerExtension
+    from fastmcp.server.server import FastMCP
     from fastmcp.tools.base import Tool
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 ProviderErrorStrategy = Literal["warn", "raise"]
+
+
+@dataclass(eq=False)
+class _ExtensionScope:
+    available: frozenset[str]
+    root: FastMCP | None
+    stack: ExitStack
 
 
 class AggregateProvider(Provider):
@@ -56,7 +67,8 @@ class AggregateProvider(Provider):
 
     Errors from individual providers are logged and skipped by default. Set
     ``provider_error_strategy="raise"`` to fail the aggregate operation when
-    any provider fails.
+    any provider fails. The ``mounted_components_raise_on_load_error`` setting
+    does the same for every aggregate.
 
     Example:
         ```python
@@ -86,6 +98,33 @@ class AggregateProvider(Provider):
         super().__init__()
         self.provider_error_strategy = provider_error_strategy
         self.providers: list[Provider] = list(providers or [])
+        self._extension_scopes: list[_ExtensionScope] = []
+
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        """Collect bundled extensions from children in provider order."""
+        return [
+            extension
+            for provider in self.providers
+            for extension in provider.required_extensions()
+        ]
+
+    @contextmanager
+    def _extension_runtime(
+        self, available: frozenset[str], *, root: FastMCP | None
+    ) -> Generator[None, None, None]:
+        """Carry each root's restrictions through the live provider tree."""
+        with ExitStack() as stack:
+            scope = _ExtensionScope(available, root, stack)
+            self._extension_scopes.append(scope)
+            try:
+                self._validate_provider_extensions(self)
+                for provider in self.providers:
+                    stack.enter_context(
+                        provider._extension_runtime(available, root=root)
+                    )
+                yield
+            finally:
+                self._extension_scopes.remove(scope)
 
     def add_provider(self, provider: Provider, *, namespace: str = "") -> None:
         """Add a provider with optional namespace.
@@ -103,6 +142,8 @@ class AggregateProvider(Provider):
         # Import here to avoid circular imports
         from fastmcp.server.server import FastMCP
 
+        self._validate_provider_extensions(provider)
+
         # Auto-wrap FastMCP servers to ensure middleware is invoked
         if isinstance(provider, FastMCP):
             from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
@@ -113,7 +154,44 @@ class AggregateProvider(Provider):
         if namespace:
             provider = provider.wrap_transform(Namespace(namespace))
 
-        self.providers.append(provider)
+        # New descendants inherit every active root, including roots whose
+        # mounted child's resource lifespan is already running elsewhere.
+        with ExitStack() as pending:
+            attached: list[tuple[_ExtensionScope, ExitStack]] = []
+            for scope in self._extension_scopes:
+                stack = pending.enter_context(ExitStack())
+                stack.enter_context(
+                    provider._extension_runtime(scope.available, root=scope.root)
+                )
+                attached.append((scope, stack))
+            for scope, stack in attached:
+                scope.stack.enter_context(stack.pop_all())
+            self.providers.append(provider)
+
+    def _validate_provider_extensions(self, provider: Provider) -> None:
+        """Require a provider's bundles in every active runtime using this aggregate."""
+        if not self._extension_scopes:
+            return
+        required = {e.identifier for e in provider.required_extensions()}
+        for scope in self._extension_scopes:
+            missing = required - scope.available
+            if missing:
+                raise RuntimeError(
+                    f"Cannot use {provider!r}: extensions {sorted(missing)!r} "
+                    "are unavailable in a running server using this provider. "
+                    "Its lifespan has already started. "
+                    "Finish composing providers before serving."
+                )
+
+    def _raises_on_provider_error(self) -> bool:
+        """Whether a failing provider fails the aggregate operation.
+
+        The global setting is read on every call so it can be toggled at runtime.
+        """
+        return (
+            self.provider_error_strategy == "raise"
+            or fastmcp.settings.mounted_components_raise_on_load_error
+        )
 
     def _collect_list_results(
         self, results: list[Sequence[T] | BaseException], operation: str
@@ -133,7 +211,7 @@ class AggregateProvider(Provider):
         seen_keys: dict[str, int] = {}
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
-                if self.provider_error_strategy == "raise":
+                if self._raises_on_provider_error():
                     raise result
                 logger.warning(
                     f"Error during {operation} from provider "
@@ -167,7 +245,7 @@ class AggregateProvider(Provider):
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 if not isinstance(result, NotFoundError):
-                    if self.provider_error_strategy == "raise":
+                    if self._raises_on_provider_error():
                         raise result
                     logger.warning(
                         f"Error during {operation} from provider "
@@ -213,15 +291,18 @@ class AggregateProvider(Provider):
         )
         for r in results:
             if isinstance(r, BaseException):
-                if self.provider_error_strategy == "raise":
+                if self._raises_on_provider_error():
                     raise r
                 continue
             if r is not None:
                 return r
         return None
 
-    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+    async def _get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
         """Query all child providers for a tool matching a hash.
+
+        Each child applies its own transforms, so a child that hides the tool
+        does not answer.
 
         The hash identifies a tool by app name and registered name, with no
         mount-point component, so composing one app into two branches yields
@@ -241,7 +322,7 @@ class AggregateProvider(Provider):
         matches: list[Tool] = []
         for r in results:
             if isinstance(r, BaseException):
-                if isinstance(r, ToolError) or self.provider_error_strategy == "raise":
+                if isinstance(r, ToolError) or self._raises_on_provider_error():
                     raise r
                 continue
             if r is not None:
@@ -342,9 +423,28 @@ class AggregateProvider(Provider):
     # -------------------------------------------------------------------------
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None, None]:
         """Combine lifespans of all providers."""
+        from fastmcp.server.dependencies import get_server
+
+        # An aggregate can be shared by independent running servers. A new
+        # provider's extensions must be available in every active runtime;
+        # mutating the aggregate must not bypass FastMCP.add_provider's guard.
+        try:
+            root = get_server()
+        except RuntimeError:
+            root = None
+            available = frozenset(e.identifier for e in self.required_extensions())
+        else:
+            available = frozenset(root._extensions)
         async with AsyncExitStack() as stack:
+            # FastMCP tracks the entire tree before extension lifespans start.
+            # Keep direct aggregate lifespan usage protected as well.
+            if root is None or not any(
+                scope.root is root for scope in self._extension_scopes
+            ):
+                stack.enter_context(self._extension_runtime(available, root=root))
             for p in self.providers:
+                self._validate_provider_extensions(p)
                 await stack.enter_async_context(p.lifespan())
             yield

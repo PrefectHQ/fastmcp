@@ -17,10 +17,6 @@ Or with pip:
 pip install fastmcp
 ```
 
-<Note>
-**FastMCP 4 is in prerelease.** The commands above install the latest stable release, which is still 3.x. To get v4, pin the beta explicitly with `pip install "fastmcp==4.0.0b3"`, or see [Install the v4 Prerelease](/getting-started/upgrading/from-fastmcp-3#install-the-v4-prerelease) for the uv constraint you'll need.
-</Note>
-
 ### Optional Dependencies
 
 FastMCP provides optional extras for specific features. For example, to install the background tasks extra:
@@ -44,7 +40,7 @@ You should see output like the following:
 ```bash
 $ fastmcp version
 
-FastMCP version:                         4.0.0b3
+FastMCP version:                           4.0.0
 MCP version:                                2.0.0
 Python version:                            3.12.2
 Platform:            macOS-15.3.1-arm64-arm-64bit
@@ -54,16 +50,15 @@ FastMCP root path:            ~/Developer/fastmcp
 ### Dependency Licensing
 
 <Info>
-FastMCP depends on Cyclopts for CLI functionality. Cyclopts v4 includes docutils as a transitive dependency, which has complex licensing that may trigger compliance reviews in some organizations.
-
-If this is a concern, you can install Cyclopts v5 alpha which removes this dependency:
+FastMCP depends on Cyclopts for its CLI. Older Cyclopts installs pull in docutils through rich-rst 1.x, and docutils has licensing that can trigger compliance reviews. rich-rst 2 no longer depends on docutils, and a fresh install resolves to rich-rst 2. If a scan flags docutils in an existing environment, upgrade both packages:
 
 ```bash
-pip install "cyclopts>=5.0.0a1"
+pip install -U cyclopts rich-rst
 ```
 
-Alternatively, wait for the stable v5 release. See [this issue](https://github.com/BrianPugh/cyclopts/issues/672) for details.
+See [this issue](https://github.com/BrianPugh/cyclopts/issues/672) for background.
 </Info>
+
 ## Upgrading
 
 ### From FastMCP 3.0
@@ -111,11 +106,12 @@ FastMCP 3.3 moved the importable code from the `fastmcp` distribution into `fast
 
 ## Versioning Policy
 
-FastMCP follows semantic versioning with pragmatic adaptations for the rapidly evolving MCP ecosystem. Breaking changes may occur in minor versions (e.g., 2.3.x to 2.4.0) when necessary to stay current with the MCP Protocol.
+FastMCP follows semantic versioning with pragmatic adaptations for the rapidly evolving MCP ecosystem. Breaking changes may occur in minor versions (e.g., 4.1.x to 4.2.0) when necessary to stay current with the MCP Protocol.
 
-For production use, always pin to exact versions:
-```
-fastmcp==4.0.0b3  # Good - an exact version
+For production use, use a lockfile or pin an exact version:
+
+```text
+fastmcp==4.0.5    # Good - an exact version
 fastmcp>=4.0.0    # Bad - may install breaking changes
 ```
 

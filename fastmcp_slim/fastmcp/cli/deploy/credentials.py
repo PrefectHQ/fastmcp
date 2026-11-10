@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -95,6 +96,32 @@ class CredentialStore:
             if active_api_origin != expected_api_origin:
                 raise StateFileError("The Horizon host changed during login")
             self.save(api_key)
+
+    def clear_if_matches(
+        self,
+        api_key: SecretStr | str,
+        *,
+        expected_api_origin: str,
+    ) -> None:
+        """Clear a key only while its Horizon origin and value are active."""
+        from fastmcp.cli.deploy.configuration import ConfigurationStore
+
+        expected_api_origin = normalize_api_origin(expected_api_origin)
+        expected_api_key = (
+            api_key.get_secret_value() if isinstance(api_key, SecretStr) else api_key
+        )
+        with state_lock(self.path.parent):
+            active_api_origin = ConfigurationStore(self.path.parent).load().api_origin
+            active_api_key = self.load()
+            if (
+                active_api_origin == expected_api_origin
+                and active_api_key is not None
+                and secrets.compare_digest(
+                    active_api_key.get_secret_value(),
+                    expected_api_key,
+                )
+            ):
+                self.clear()
 
     def clear(self) -> None:
         remove_state(self.path)

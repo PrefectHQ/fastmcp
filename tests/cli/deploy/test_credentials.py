@@ -183,6 +183,29 @@ async def test_interactive_credential_rejects_an_origin_change(
     assert store.load() is None
 
 
+def test_conditional_clear_preserves_newer_state(tmp_path: Path) -> None:
+    store = CredentialStore(tmp_path)
+    store.save("fmcp_current")
+
+    store.clear_if_matches(
+        "fmcp_different",
+        expected_api_origin="https://horizon.prefect.io",
+    )
+    store.clear_if_matches(
+        "fmcp_current",
+        expected_api_origin="https://dev.horizon.prefect.io",
+    )
+
+    assert load_secret(store).get_secret_value() == "fmcp_current"
+
+    store.clear_if_matches(
+        "fmcp_current",
+        expected_api_origin="https://horizon.prefect.io",
+    )
+
+    assert store.load() is None
+
+
 async def test_missing_noninteractive_credential_is_explicit(tmp_path: Path) -> None:
     with pytest.raises(AuthenticationRequiredError):
         await resolve_credential(CredentialStore(tmp_path), environ={})
@@ -237,13 +260,23 @@ def test_windows_acl_replaces_the_existing_access_list(
     ]
     assert state_paths == [str(path)]
     assert "$path = $env:FASTMCP_STATE_PATH" in calls[0][5]
-    assert "Get-Acl -LiteralPath $path" in calls[0][5]
+    # `Set-Acl` needs SeSecurityPrivilege once the access list is protected,
+    # so a non-elevated user could not re-apply it; only the access list is
+    # read and written back.
+    assert '$item.GetAccessControl("Access")' in calls[0][5]
+    assert "$item.SetAccessControl($acl)" in calls[0][5]
+    assert "Set-Acl" not in calls[0][5]
     assert "SetAccessRuleProtection($true, $false)" in calls[0][5]
     assert "RemoveAccessRuleSpecific($existingRule)" in calls[0][5]
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows ACL inspection")
-def test_windows_credential_state_allows_only_the_current_user(tmp_path: Path) -> None:
+# Several cold PowerShell launches; under a contended runner they can outlast
+# the default timeout, which on Windows kills the xdist worker.
+@pytest.mark.timeout(60)
+def test_windows_credential_state_allows_only_the_current_user(
+    tmp_path: Path, real_windows_acl: None
+) -> None:
     state_directory = tmp_path / "cli"
     store = CredentialStore(state_directory)
     store.save("fmcp_secret")

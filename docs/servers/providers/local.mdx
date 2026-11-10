@@ -3,7 +3,6 @@ title: Local Provider
 sidebarTitle: Local
 description: The default provider for decorator-registered components
 icon: house
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -38,7 +37,7 @@ def analyze(topic: str) -> str:
     return f"Please analyze: {topic}"
 ```
 
-The `LocalProvider` is always queried first when clients request components, ensuring that your directly-defined components take precedence over those from mounted or proxied servers.
+Because the `LocalProvider` is registered first, your directly-defined components win ties against mounted or proxied components with the same identifier and version. A higher version from another provider still wins; see [Provider Order](/servers/providers/overview#provider-order).
 
 ## Component Registration
 
@@ -47,6 +46,11 @@ The `LocalProvider` is always queried first when clients request components, ens
 The most common way to register components:
 
 ```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer")
+
+
 @mcp.tool
 def my_tool(x: int) -> str:
     return str(x)
@@ -65,12 +69,30 @@ def my_prompt(topic: str) -> str:
 You can also add pre-built component objects:
 
 ```python
+from fastmcp import FastMCP
+from fastmcp.prompts import Prompt
+from fastmcp.resources import Resource
 from fastmcp.tools import Tool
 
-# Create a tool object
-my_tool = Tool.from_function(some_function, name="custom_tool")
 
-# Add it to the server
+def add(a: int, b: int) -> int:
+    return a + b
+
+
+def read_info() -> str:
+    return "info"
+
+
+def discuss(topic: str) -> str:
+    return f"Discuss: {topic}"
+
+
+mcp = FastMCP("MyServer")
+
+my_tool = Tool.from_function(add, name="custom_tool")
+my_resource = Resource.from_function(read_info, uri="data://info")
+my_prompt = Prompt.from_function(discuss)
+
 mcp.add_tool(my_tool)
 mcp.add_resource(my_resource)
 mcp.add_prompt(my_prompt)
@@ -78,7 +100,7 @@ mcp.add_prompt(my_prompt)
 
 ### Removing Components
 
-Remove components by name or URI:
+Remove components by name or URI. Each call removes every version unless you pass `version=`, and raises `KeyError` when nothing matches:
 
 ```python
 mcp.local_provider.remove_tool("my_tool")
@@ -88,19 +110,21 @@ mcp.local_provider.remove_prompt("my_prompt")
 
 ## Duplicate Handling
 
-When you try to add a component that already exists, the behavior depends on the `on_duplicate` setting:
+When you try to add a component that already exists, the behavior depends on the `on_duplicate` setting. A `FastMCP` server defaults to `"warn"`; a standalone `LocalProvider` defaults to `"error"`.
 
 | Mode | Behavior |
 |------|----------|
-| `"error"` (default) | Raise `ValueError` |
-| `"warn"` | Log warning and replace |
+| `"warn"` | Log a warning and replace |
+| `"error"` | Raise `ValueError` |
 | `"replace"` | Silently replace |
-| `"ignore"` | Keep existing component |
+| `"ignore"` | Keep the existing component |
 
 Configure this when creating the server:
 
 ```python
-mcp = FastMCP("MyServer", on_duplicate="warn")
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer", on_duplicate="error")
 ```
 
 ## Component Visibility
@@ -110,6 +134,11 @@ mcp = FastMCP("MyServer", on_duplicate="warn")
 Components can be dynamically enabled or disabled at runtime. Disabled components don't appear in listings and can't be called.
 
 ```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer")
+
+
 @mcp.tool(tags={"admin"})
 def delete_all() -> str:
     """Delete everything."""

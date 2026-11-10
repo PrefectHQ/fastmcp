@@ -1,0 +1,48 @@
+---
+title: descope
+sidebarTitle: descope
+---
+
+# `fastmcp.server.auth.providers.descope`
+
+
+Descope authentication provider for FastMCP.
+
+This module provides DescopeProvider - a complete authentication solution that integrates
+with Descope's OAuth 2.1 and OpenID Connect services, supporting Dynamic Client Registration (DCR)
+for seamless MCP client authentication.
+
+
+## Classes
+
+### `DescopeProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/descope.py#L124" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Descope metadata provider for Dynamic Client Registration (DCR).
+
+The provider accepts either a resource-specific Descope MCP Server URL such
+as `/v1/apps/agentic/P.../M.../.well-known/openid-configuration` or a
+project-level inbound app URL such as
+`/v1/apps/P.../.well-known/openid-configuration`. The project-level URL is
+the recommended configuration.
+
+Tokens are accepted from any issuer the project mints: the project-level
+issuer, the resource-scoped issuer of an MCP server, and the tenant-scoped
+issuer used by cross-app access (XAA).
+
+When neither `scopes_supported` nor `required_scopes` is provided, advertised
+scopes are discovered lazily from the OpenID configuration. Use
+`scopes_supported` and `required_scopes` together when the scopes clients
+should request differ from the scopes enforced during token validation.
+
+See [Descope's inbound app documentation](https://docs.descope.com/identity-federation/inbound-apps/creating-inbound-apps#method-2-dynamic-client-registration-dcr)
+for DCR setup instructions.
+
+
+**Methods:**
+
+#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/descope.py#L324" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_routes(self, mcp_path: str | None = None) -> list[Route]
+```

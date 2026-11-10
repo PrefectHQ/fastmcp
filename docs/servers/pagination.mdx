@@ -3,7 +3,6 @@ title: Pagination
 sidebarTitle: Pagination
 description: Control how servers return large lists of components to clients.
 icon: page
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -39,6 +38,8 @@ When `list_page_size` is configured, the `tools/list`, `resources/list`, `resour
 ### Cursor Format
 
 Cursors are opaque base64-encoded strings per the MCP specification. Clients should treat them as black boxes, passing them unchanged between requests. The cursor encodes the offset into the result set, but this is an implementation detail that may change.
+
+A malformed, non-empty cursor returns the MCP `-32602` (Invalid params) error, whether or not `list_page_size` is configured. Omitting the cursor still returns the complete list when pagination is disabled.
 
 ## Client Behavior
 

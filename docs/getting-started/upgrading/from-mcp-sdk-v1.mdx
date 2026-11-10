@@ -51,13 +51,13 @@ If you have already moved to SDK v2 and write against `MCPServer` today, see [Up
 
 ## Install
 
-FastMCP 4 is in prerelease, so pin the exact version rather than installing unqualified — a bare `pip install fastmcp` resolves to the latest *stable* release, which today is FastMCP 3:
+FastMCP 4 is a stable release:
 
 ```bash
-pip install "fastmcp==4.0.0b3"
+pip install "fastmcp>=4"
 ```
 
-An exact pip pin installs even though it's a prerelease; it does not need `--pre`. uv also needs an explicit constraint for the transitive `fastmcp-slim` prerelease, so follow [Install the v4 Prerelease](/getting-started/upgrading/from-fastmcp-3#install-the-v4-prerelease) for a reproducible uv setup.
+The `fastmcp` package depends on `fastmcp-slim` at the same version; both resolve together with no extra constraints.
 
 FastMCP depends on the `mcp` package, so the SDK stays installed and importable. What changes is which parts of it you reach for. FastMCP 4 builds on SDK v2, where `mcp.server.fastmcp` is gone — anything you imported from it needs a new home, and the sections below cover that. `mcp.types` still resolves (it aliases the standalone `mcp_types` package), though its fields are snake_case now. Update your import, run your server, and if your tools work, you're done.
 
@@ -75,16 +75,15 @@ THE IMPORT (every server needs this)
 
 CONSTRUCTOR ARGUMENTS THAT MOVED (all raise TypeError)
 - moved to run()/http_app(), and FastMCP names them in the error: host, port, log_level, debug, sse_path, message_path, streamable_http_path, json_response, stateless_http
-- moved but rejected with only a generic "unexpected keyword argument", so flag these explicitly: `event_store=` (→ `http_app(event_store=...)`; dropping it silently disables streamable-HTTP resumability), `mount_path=` (→ `http_app(path=...)`), `transport=` (→ `run(transport=...)`), `transport_security=` (→ host/origin settings on `http_app()`), `warn_on_duplicate_tools/_resources/_prompts=` (→ one `on_duplicate=`), `dependencies=` (→ a fastmcp.json file)
+- moved but rejected with only a generic "unexpected keyword argument", so flag these explicitly: `event_store=` (→ `http_app(event_store=...)`; dropping it silently disables streamable-HTTP resumability), `retry_interval=` and `session_idle_timeout=` (→ the same keywords on `http_app()`), `mount_path=` (→ `http_app(path=...)`), `transport=` (→ `run(transport=...)`), `transport_security=` (→ host/origin settings on `http_app()`), `warn_on_duplicate_tools/_resources/_prompts=` (→ one `on_duplicate=`), `dependencies=` (→ a fastmcp.json file)
 - `name`, `instructions`, `website_url`, `icons`, `tools`, `lifespan` carry over unchanged
 - note when reporting: FastMCP names the streamable HTTP transport "http", not "streamable-http"
 
 CONTEXT METHODS WITH CHANGED SIGNATURES (compile fine, fail at runtime)
-- `ctx.log(level, data)` → `ctx.log(message, level=...)`, message first
-- `ctx.info(data)` / `debug` / `warning` / `error` → take a str message, not arbitrary JSON-serializable data
+- `ctx.log(level, message)` → `ctx.log(message, level=...)`, message first
 - `ctx.elicit(..., schema=Model)` → `response_type=Model`
 - `ctx.read_resource(uri)` → returns a `ResourceResult`; read `.contents` rather than iterating the return value
-- `ctx.report_progress`, `ctx.request_id`, `ctx.client_id` are unchanged
+- `ctx.info` / `debug` / `warning` / `error`, `ctx.report_progress`, `ctx.request_id`, `ctx.client_id` are unchanged
 
 AUTHENTICATION (the one case where the single import change is NOT enough)
 - `token_verifier=` and `auth_server_provider=` — both raise TypeError on FastMCP 4
@@ -99,9 +98,6 @@ OTHER mcp.* IMPORTS
 - anything from `mcp.types` — the import path still works in the SDK v2 that FastMCP 4 builds on, but the fields were renamed from camelCase to snake_case
 - `from mcp.server.stdio import stdio_server` and any transport boilerplate around it
 - `mcp.types.TextContent` / `ImageContent` used to wrap tool return values — FastMCP has friendlier equivalents, so prefer those over keeping the raw protocol types
-
-DECORATOR RETURN VALUES
-- any code reading `.name`, `.description`, or other component attributes off a `@mcp.tool` / `@mcp.resource` / `@mcp.prompt` decorated function. Decorators return the original function now.
 
 For each item found, show the original line, name what changed, and give the corrected code from the guide. If the only change needed is the import, say so plainly rather than manufacturing work.
 </Prompt>
@@ -133,6 +129,7 @@ A second group is rejected with only a generic "unexpected keyword argument" and
 | SDK v1 `FastMCP(...)` | FastMCP 4 |
 |---|---|
 | `event_store=` | `mcp.http_app(event_store=...)` |
+| `retry_interval=`, `session_idle_timeout=` | the same keywords on `mcp.http_app()` |
 | `mount_path=` | `mcp.http_app(path=...)` |
 | `transport=` | `mcp.run(transport=...)` |
 | `transport_security=` | `host_origin_protection=`, `allowed_hosts=`, `allowed_origins=` on `http_app()` |
@@ -168,16 +165,15 @@ See [Authentication](/servers/auth/authentication) for the full set and their co
 
 ### Context Methods
 
-`from fastmcp import Context` gets you the injected context object, but four of its methods took a different shape in FastMCP 1.0, and a bare import swap leaves calls that compile and then fail:
+`from fastmcp import Context` gets you the injected context object, but three of its methods took a different shape in FastMCP 1.0, and a bare import swap leaves calls that compile and then fail:
 
 | SDK v1 | FastMCP 4 |
 |---|---|
-| `ctx.log(level, data)` | `ctx.log(message, level=...)` — message is first now |
-| `ctx.info(data)` and its `debug`/`warning`/`error` siblings | take a `str` message, where v1 accepted any JSON-serializable value |
+| `ctx.log(level, message)` | `ctx.log(message, level=...)` — message is first now |
 | `ctx.elicit(message, schema=Model)` | `ctx.elicit(message, response_type=Model)` |
 | `ctx.read_resource(uri)` | returns a `ResourceResult`; the payload is under `.contents` rather than being iterable directly |
 
-`ctx.report_progress()`, `ctx.request_id`, and `ctx.client_id` are unchanged.
+`ctx.info()` and its `debug`/`warning`/`error` siblings, `ctx.report_progress()`, `ctx.request_id`, and `ctx.client_id` are unchanged.
 
 ### Prompts
 
@@ -229,7 +225,7 @@ For protocol types without a FastMCP equivalent, import them from `mcp_types` di
 
 ### Decorated Functions
 
-In FastMCP 1.0, `@mcp.tool` replaced your function with a `FunctionTool` object. Now decorators return your original function unchanged, so decorated functions stay callable for testing, reuse, and composition:
+Decorators return your original function unchanged, as they did in FastMCP 1.0, so decorated functions stay callable for testing, reuse, and composition. FastMCP 1.0 required the call form, `@mcp.tool()`; FastMCP accepts that and the bare `@mcp.tool` alike:
 
 ```python
 from fastmcp import FastMCP
@@ -245,7 +241,7 @@ def greet(name: str) -> str:
 assert greet("World") == "Hello, World!"
 ```
 
-Code that reads `.name`, `.description`, or other component attributes off the decorated result needs updating. This is uncommon — most servers never touch the tool object. When you do need the component itself, reach it through the server with `await mcp.get_tool("greet")`.
+When you need the component object itself, reach it through the server with `await mcp.get_tool("greet")`.
 
 ## Verifying the Upgrade
 
@@ -255,7 +251,7 @@ Run your server the way you always have. To confirm every component came across,
 fastmcp inspect my_server.py
 ```
 
-The output lists every tool, resource, template, and prompt your server exposes, so a component that failed to register shows up here rather than at the first client call.
+The summary counts the tools, resources, templates, and prompts your server exposes, and `--format fastmcp` prints each one in full, so a component that failed to register shows up here rather than at the first client call.
 
 ## Looking Ahead
 

@@ -906,6 +906,24 @@ class TestRevocation:
         assert await proxy.load_access_token(issued) is None
 
 
+class TestUnconfiguredGuard:
+    async def test_id_jag_marked_token_rejected_when_not_configured(self):
+        # Regression for #5115: a proxy-signed token carrying the ID-JAG grant
+        # marker must not be trusted as self-contained identity when identity
+        # assertion was never configured. The signing key alone is not identity.
+        proxy = _make_proxy(None)
+        proxy.set_mcp_path("/mcp")
+        forged = proxy.jwt_issuer.issue_access_token(
+            client_id="forged",
+            scopes=["openid"],
+            jti="forged-1",
+            subject="attacker",
+            extra_claims={"fastmcp_grant": "id_jag", "email": "victim@example.com"},
+        )
+
+        assert await proxy.load_access_token(forged) is None
+
+
 class TestGrantTypeEnforcement:
     """The proxy dispatches the jwt-bearer grant itself, so it must enforce the
     registered-grant-type constraint the SDK would otherwise apply: only clients

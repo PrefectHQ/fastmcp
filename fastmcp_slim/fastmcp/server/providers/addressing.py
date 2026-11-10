@@ -4,13 +4,14 @@ Each FastMCPApp backend tool gets a deterministic hash computed from its
 app name + tool name. The hash serves two purposes:
 
 1. **Backend-tool routing.** Tools with ``"app"`` in their visibility are
-   callable via ``<hash>_<local_name>``. The dispatcher parses the prefix,
-   then walks providers recursively (same pattern as the old ``get_app_tool``)
-   to find a tool whose stored hash matches.
+   callable via ``__<hash>_<local_name>``. The dispatcher parses the prefix
+   and calls ``get_tool_by_hash``, which finds the tool whose stored hash
+   matches and applies the same transforms, visibility, and auth as a lookup
+   by the tool's listed name.
 
-2. **Per-tool Prefab renderer URIs.** Each prefab tool gets a unique renderer
-   resource at ``ui://prefab/tool/<hash>/renderer.html``. ``list_resources``
-   and ``read_resource`` synthesize these on demand from the tool's meta.
+2. **Legacy Prefab renderer aliases.** Previously advertised per-tool URIs at
+   ``ui://prefab/tool/<hash>/renderer.html`` remain readable. New renderer
+   resources are shared by effective configuration in ``prefab_synthesis``.
 
 The hash is computed at registration time from ``(app_name, tool_name)`` —
 both known at that moment — and stored in ``meta["fastmcp"]["tool_hash"]``.
@@ -28,6 +29,10 @@ forwarding, so it must survive the wire.
 from __future__ import annotations
 
 import hashlib
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fastmcp.tools.base import Tool
 
 #: Length of the hex hash prefix used in URIs and backend-tool names.
 HASH_LENGTH = 12
@@ -45,13 +50,36 @@ def hash_tool(app_name: str, tool_name: str) -> str:
     return hashlib.sha256(payload).hexdigest()[:HASH_LENGTH]
 
 
+def tool_identity(tool: Tool) -> str | None:
+    """Read a tool's stored identity hash, if it carries one."""
+    meta = tool.meta
+    if not meta:
+        return None
+    fastmcp_meta = meta.get("fastmcp")
+    if not isinstance(fastmcp_meta, dict):
+        return None
+    identity = fastmcp_meta.get(TOOL_HASH_META_KEY)
+    return identity if isinstance(identity, str) else None
+
+
+def is_app_tool_with_identity(tool: Tool, tool_hash: str) -> bool:
+    """Whether a tool carries this identity hash and is callable by apps."""
+    meta = tool.meta or {}
+    ui_meta = meta.get("ui")
+    visibility = ui_meta.get("visibility", []) if isinstance(ui_meta, dict) else []
+    return tool_identity(tool) == tool_hash and "app" in visibility
+
+
 def hashed_backend_name(app_name: str, tool_name: str) -> str:
-    """Format the universal name for a backend tool: ``<hash>_<local_name>``."""
-    return f"{hash_tool(app_name, tool_name)}_{tool_name}"
+    """Format the universal name for a backend tool: ``__<hash>_<local_name>``."""
+    return f"__{hash_tool(app_name, tool_name)}_{tool_name}"
 
 
 def parse_hashed_backend_name(name: str) -> tuple[str, str] | None:
-    """Parse ``<HASH_LENGTH hex>_<rest>`` → ``(hash, local_tool_name)`` or None."""
+    """Parse ``__<HASH_LENGTH hex>_<rest>`` → ``(hash, local_tool_name)`` or None."""
+    if not name.startswith("__"):
+        return None
+    name = name[2:]
     if len(name) <= HASH_LENGTH + 1:
         return None
     prefix = name[:HASH_LENGTH]

@@ -15,6 +15,8 @@ Authentication in MCP presents unique challenges that differ from traditional we
 Authentication applies only to FastMCP's HTTP-based transports (`http` and `sse`). The STDIO transport inherits security from its local execution environment.
 </Tip>
 
+FastMCP servers default to `auth=None`. For HTTP transports, this means the MCP endpoint accepts requests without bearer-token authentication, and components without authorization checks are accessible to anyone who can reach it. Configure an `AuthProvider` for a protected endpoint. If you enforce authentication in a gateway instead, you are responsible for that protection and for preventing direct access to the server; FastMCP does not verify the gateway's enforcement.
+
 <Warning>
 **Authentication is rapidly evolving in MCP.** The specification and best practices are changing quickly. FastMCP aims to provide stable, secure patterns that adapt to these changes while keeping your code simple and maintainable.
 </Warning>
@@ -67,13 +69,13 @@ This pattern makes sense only when you need complete control over the authentica
 
 ## FastMCP Authentication Providers
 
-FastMCP translates these authentication responsibility levels into a variety of concrete classes that handle the complexities of MCP protocol integration. You can build on these classes to handle the complexities of MCP protocol integration.
+FastMCP translates these authentication responsibility levels into concrete classes that handle MCP protocol integration. You can use them directly or build on them.
 
 ### TokenVerifier
 
-`TokenVerifier` provides pure token validation without OAuth metadata endpoints. This class focuses on the essential task of determining whether a token is valid and extracting authorization information from its claims.
+`TokenVerifier` is the base class for pure token validation without OAuth metadata endpoints. A verifier decides whether a token is valid and extracts authorization information from its claims.
 
-The implementation handles JWT signature verification, expiration checking, and claim extraction. It validates tokens against known issuers and audiences, ensuring that tokens intended for your server are not accepted by other systems.
+`JWTVerifier`, the most common implementation, handles JWT signature verification, expiration checking, and claim extraction. It validates tokens against known issuers and audiences, so tokens intended for other systems are not accepted by your server.
 
 ```python
 from fastmcp import FastMCP
@@ -98,7 +100,7 @@ This example configures token validation against a JWT issuer. The `JWTVerifier`
 
 `RemoteAuthProvider` enables authentication with identity providers that **support Dynamic Client Registration (DCR)**, such as Descope and WorkOS AuthKit. With DCR, MCP clients can automatically register themselves with the identity provider and obtain credentials without any manual configuration.
 
-This class combines token validation with OAuth discovery metadata. It extends `TokenVerifier` functionality by adding OAuth 2.0 protected resource endpoints that advertise your authentication requirements. MCP clients examine these endpoints to understand which identity providers you trust and how to obtain valid tokens.
+This class combines token validation with OAuth discovery metadata. It wraps a `TokenVerifier` and adds OAuth 2.0 protected resource endpoints that advertise your authentication requirements. MCP clients examine these endpoints to understand which identity providers you trust and how to obtain valid tokens.
 
 The key requirement is that your identity provider must support DCR - the ability for clients to dynamically register and obtain credentials. This is what enables the seamless, automated authentication flow that MCP requires.
 
@@ -163,16 +165,17 @@ The implementation provides all required OAuth endpoints including authorization
 from fastmcp import FastMCP
 from fastmcp.server.auth import OAuthProvider
 
-auth = MyOAuthProvider(
-    user_store=your_user_database,
-    client_store=your_client_registry,
-    # Additional configuration...
-)
+
+class MyOAuthProvider(OAuthProvider):
+    ...
+
+
+auth = MyOAuthProvider(base_url="https://your-server.com")
 
 mcp = FastMCP(name="Auth Server", auth=auth)
 ```
 
-This example shows the basic structure of a custom OAuth provider. The actual implementation requires significant additional configuration for user management, client registration, and security policies.
+This example shows the basic structure of a custom OAuth provider: subclass `OAuthProvider` and pass your server's public `base_url`. The subclass must implement the client registration, authorization code, and token storage methods listed in the complete guide, along with your own user authentication and consent logic.
 
 `OAuthProvider` should be used only when you have specific requirements that external providers cannot meet and the expertise to implement OAuth securely.
 

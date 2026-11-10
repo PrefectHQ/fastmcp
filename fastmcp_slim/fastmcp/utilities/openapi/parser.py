@@ -37,6 +37,7 @@ from .models import (
 from .schemas import (
     _combine_schemas_and_map_params,
     _discriminator_target_name,
+    _ref_component_name,
     _replace_ref_with_defs,
 )
 
@@ -372,6 +373,11 @@ class OpenAPIParser(
             # Extract content schemas
             if hasattr(request_body, "content") and request_body.content:
                 for media_type_str, media_type_obj in request_body.content.items():
+                    if media_type_obj and media_type_obj.encoding:
+                        request_body_info.encoding[media_type_str] = {
+                            name: value.model_dump(by_alias=True, exclude_unset=True)
+                            for name, value in media_type_obj.encoding.items()
+                        }
                     if (
                         media_type_obj
                         and hasattr(media_type_obj, "media_type_schema")
@@ -447,10 +453,39 @@ class OpenAPIParser(
         # If no success codes found, return None (tool will have no output schema)
         return None
 
+    def _extract_bodiless_success_responses(
+        self, operation_responses: dict[str, Any], primary_status_code: str
+    ) -> dict[str, ResponseInfo]:
+        """Extract the success responses, besides the primary one, that declare no body.
+
+        Such a response (e.g. a 204 next to a 201) means the operation may answer
+        without a body, so the tool cannot promise structured output.
+        """
+        bodiless_responses: dict[str, ResponseInfo] = {}
+        for status_code, resp_or_ref in operation_responses.items():
+            if status_code == primary_status_code or not str(status_code).startswith(
+                "2"
+            ):
+                continue
+            try:
+                response = self._resolve_ref(resp_or_ref)
+            except ValueError as e:
+                logger.debug(f"Skipping unresolved response {status_code}: {e}")
+                continue
+            if isinstance(response, self.response_cls) and not response.content:
+                bodiless_responses[str(status_code)] = ResponseInfo(
+                    description=response.description
+                )
+        return bodiless_responses
+
     def _extract_responses(
         self, operation_responses: dict[str, Any] | None
     ) -> dict[str, ResponseInfo]:
-        """Extract and resolve response information. Only includes the primary success response for MCP tools."""
+        """Extract and resolve response information.
+
+        Only includes the primary success response for MCP tools, plus any other
+        success response that has no body.
+        """
         extracted_responses: dict[str, ResponseInfo] = {}
 
         if not operation_responses:
@@ -495,7 +530,13 @@ class OpenAPIParser(
                                 if isinstance(ref_str, str) and ref_str.startswith(
                                     "#/components/schemas/"
                                 ):
-                                    top_level_schema_name = ref_str.split("/")[-1]
+                                    pointer = ref_str.removeprefix(
+                                        "#/components/schemas/"
+                                    )
+                                    # Only a whole component is a top-level
+                                    # schema; a pointer into one is not.
+                                    if "/" not in pointer:
+                                        top_level_schema_name = pointer
 
                             schema_dict = self._extract_schema_as_dict(media_schema)
                             # Add marker for top-level schema if it was a ref
@@ -543,6 +584,9 @@ class OpenAPIParser(
                 exc_info=False,
             )
 
+        extracted_responses.update(
+            self._extract_bodiless_success_responses(operation_responses, status_code)
+        )
         return extracted_responses
 
     def _extract_schema_dependencies(
@@ -582,9 +626,8 @@ class OpenAPIParser(
                 if "$ref" in obj and isinstance(obj["$ref"], str):
                     ref = obj["$ref"]
                     # Handle both converted and unconverted refs
-                    if ref.startswith(("#/$defs/", "#/components/schemas/")):
-                        schema_name = ref.split("/")[-1]
-                    else:
+                    schema_name = _ref_component_name(ref)
+                    if schema_name is None:
                         return
 
                     # Add this schema and recursively find its dependencies

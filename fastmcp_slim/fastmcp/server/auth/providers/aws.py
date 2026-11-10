@@ -29,6 +29,7 @@ from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
 
 from fastmcp.server.auth.auth import AccessToken
+from fastmcp.server.auth.identity_assertion import IdentityAssertion
 from fastmcp.server.auth.oidc_proxy import (
     DEFAULT_OIDC_DISCOVERY_TIMEOUT_SECONDS,
     OIDCProxy,
@@ -145,6 +146,7 @@ class AWSCognitoProvider(OIDCProxy):
         fastmcp_access_token_expiry_seconds: int | None = None,
         token_expiry_threshold_seconds: int = 0,
         enable_cimd: bool = True,
+        identity_assertion: IdentityAssertion | None = None,
     ):
         """Initialize AWS Cognito OAuth provider.
 
@@ -192,6 +194,8 @@ class AWSCognitoProvider(OIDCProxy):
                 treat a token as expired, refreshing early to avoid races. Defaults to 0.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs (default True). Set to False to disable.
+            identity_assertion: Optional SEP-990 ID-JAG configuration for
+                identity-bound token exchange. Disabled by default.
         """
         # Parse scopes if provided as string
         required_scopes_final = (
@@ -228,6 +232,7 @@ class AWSCognitoProvider(OIDCProxy):
             fastmcp_access_token_expiry_seconds=fastmcp_access_token_expiry_seconds,
             token_expiry_threshold_seconds=token_expiry_threshold_seconds,
             enable_cimd=enable_cimd,
+            identity_assertion=identity_assertion,
         )
 
         logger.debug(

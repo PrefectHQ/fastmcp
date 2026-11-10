@@ -1,0 +1,82 @@
+name: Deploy docs
+
+# Mintlify's GitHub App deploys published-docs on its own, but it rebuilds only
+# files changed since the last commit it recorded, and it records commits it
+# failed on or never processed. This job asks Mintlify's admin API for a
+# deployment of the current tip and waits for a verdict, so a publish either
+# ends with a confirmed live deploy or a red run that names the reason.
+
+on:
+  push:
+    branches: [published-docs]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-docs
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Trigger Mintlify deployment and wait
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MINTLIFY_API_KEY: ${{ secrets.MINTLIFY_API_KEY }}
+      MINTLIFY_PROJECT_ID: ${{ secrets.MINTLIFY_PROJECT_ID }}
+    steps:
+      - name: Require credentials
+        run: |
+          if [ -z "$MINTLIFY_API_KEY" ] || [ -z "$MINTLIFY_PROJECT_ID" ]; then
+            echo "::error::MINTLIFY_API_KEY and MINTLIFY_PROJECT_ID must be set as repository secrets."
+            exit 1
+          fi
+
+      - name: Trigger deployment
+        id: trigger
+        run: |
+          response=$(curl -fsS -X POST \
+            -H "Authorization: Bearer $MINTLIFY_API_KEY" \
+            "https://api.mintlify.com/v1/project/update/$MINTLIFY_PROJECT_ID")
+          status_id=$(echo "$response" | jq -r '.statusId // empty')
+          if [ -z "$status_id" ]; then
+            echo "::error::Mintlify did not return a statusId: $response"
+            exit 1
+          fi
+          echo "status_id=$status_id" >> "$GITHUB_OUTPUT"
+          echo "Triggered Mintlify update $status_id for $GITHUB_SHA"
+
+      - name: Wait for verdict
+        env:
+          STATUS_ID: ${{ steps.trigger.outputs.status_id }}
+        run: |
+          for _ in $(seq 1 120); do
+            body=$(curl -fsS \
+              -H "Authorization: Bearer $MINTLIFY_API_KEY" \
+              "https://api.mintlify.com/v1/project/update-status/$STATUS_ID")
+            status=$(echo "$body" | jq -r '.status')
+            case "$status" in
+              success)
+                echo "Deployment succeeded."
+                echo "$body" | jq -r '.summary // empty'
+                echo "$body" | jq -r '.commit.files // {} | to_entries[] | "\(.key): \(.value | length)"'
+                echo "$body" | jq -r '.logs[]? | tostring' | tail -40
+                exit 0
+                ;;
+              failure)
+                echo "::error::Mintlify deployment failed."
+                echo "$body" | jq -r '.summary // empty'
+                echo "$body" | jq -r '.logs[]? | tostring' | tail -80
+                exit 1
+                ;;
+              queued|in_progress)
+                sleep 20
+                ;;
+              *)
+                echo "::error::Unexpected status: $status"
+                echo "$body"
+                exit 1
+                ;;
+            esac
+          done
+          echo "::error::Mintlify deployment did not finish within 40 minutes."
+          exit 1

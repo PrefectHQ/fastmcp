@@ -1,6 +1,10 @@
+import json
+import typing
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any
 
+import mcp_types
 import pytest
 from inline_snapshot import snapshot
 from mcp_types import (
@@ -13,6 +17,7 @@ from mcp_types import (
 from pydantic import AnyUrl, BaseModel, Field, TypeAdapter
 from typing_extensions import TypedDict
 
+from fastmcp import Client, FastMCP
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import Audio, File, Image
@@ -34,7 +39,6 @@ class TestToolFromFunctionOutputSchema:
             bool,
             str,
             int | float,
-            list,
             list[int],
             list[int | float],
             dict,
@@ -623,3 +627,91 @@ class TestWrapResultMeta:
         result = await tool.run({})
         assert result.structured_content == {"key": "val"}
         assert result.meta is None
+
+
+class TestUnconstrainedSequenceReturns:
+    """A `list`/`tuple` with no item type infers no output schema.
+
+    `Any` is already excluded from inference because the schema it yields
+    constrains nothing. A bare `list` is the sequence-shaped equivalent: its
+    schema is ``{"result": {"items": {}, "type": "array"}}``, which permits
+    every value that no schema at all permits.
+
+    Inferring it is not free. An output schema forces structured content, and
+    `replace_type` cannot suppress the MCP content types inside a `list` that
+    has no item type to match. So a tool annotated `-> list` that returns
+    `[ImageContent(...), {...}]` -- the shape the docs recommend for pairing a
+    picture with its metadata -- put the base64 image on the wire twice: once
+    as an image block, once serialised into `structuredContent`. Clients break
+    on that in both directions, some rendering the JSON blob instead of the
+    picture and others injecting the base64 into model context.
+    """
+
+    @pytest.mark.parametrize(
+        "annotation",
+        [
+            list,
+            tuple,
+            Sequence,
+            list,
+            tuple,
+            typing.Sequence,
+            list[Any],
+            Sequence[Any],
+            tuple[Any, ...],
+            Annotated[list, "meta"],
+            "bare",
+        ],
+    )
+    def test_no_schema_is_inferred(self, annotation):
+        if annotation == "bare":
+
+            def func():
+                return []
+        else:
+
+            def func() -> annotation:  # type: ignore[valid-type]
+                return []
+
+        assert Tool.from_function(func).output_schema is None
+
+    @pytest.mark.parametrize(
+        "annotation",
+        [
+            list[int],
+            dict,
+            str,
+            tuple[int, str],
+            tuple[Any],
+            tuple[Any, Any],
+            Sequence[str],
+        ],
+    )
+    def test_a_constrained_sequence_still_infers(self, annotation):
+        """The guard must not swallow annotations that do say something."""
+
+        def func() -> annotation:  # type: ignore[valid-type]
+            return []
+
+        assert Tool.from_function(func).output_schema is not None
+
+    async def test_an_image_is_not_duplicated_into_structured_content(self):
+        """The regression this exists to prevent."""
+        png = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
+            "z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        def render() -> list:
+            return [
+                mcp_types.ImageContent(type="image", data=png, mime_type="image/png"),
+                {"note": "metadata"},
+            ]
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("render")
+
+        assert [b.type for b in result.content] == ["image", "text"]
+        assert png not in json.dumps(result.structured_content or {})

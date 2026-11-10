@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -299,6 +300,38 @@ class TestCIMDAssertionValidator:
             )
         assert "replay" in str(exc_info.value).lower()
 
+    async def test_jti_cache_does_not_grow_past_capacity(
+        self, validator, key_pair, cimd_doc_with_inline_jwks
+    ):
+        """Rejected assertions do not remain in a full replay cache."""
+        client_id = "https://example.com/client.json"
+        token_endpoint = "https://oauth.example.com/token"
+        validator._jti_cache_max_size = 2
+        validator._jti_cache = {
+            "filler-a": time.time() + 120,
+            "filler-b": time.time() + 120,
+        }
+
+        for index in range(3):
+            assertion = key_pair.create_token(
+                subject=client_id,
+                issuer=client_id,
+                audience=token_endpoint,
+                additional_claims={"jti": f"fresh-{index}"},
+                expires_in_seconds=60,
+                kid="test-key-1",
+            )
+
+            with pytest.raises(ValueError, match="Server overloaded"):
+                await validator.validate_assertion(
+                    assertion,
+                    client_id,
+                    token_endpoint,
+                    cimd_doc_with_inline_jwks,
+                )
+
+        assert len(validator._jti_cache) == 2
+
     async def test_rejects_expired_token(
         self, validator, key_pair, cimd_doc_with_inline_jwks
     ):
@@ -321,6 +354,116 @@ class TestCIMDAssertionValidator:
                 assertion, client_id, token_endpoint, cimd_doc_with_inline_jwks
             )
         assert "Invalid JWT assertion" in str(exc_info.value)
+
+    @staticmethod
+    def _ec_assertion(client_id: str, token_endpoint: str, jti: str):
+        """Sign an ES256 assertion, returning it with the matching public JWK."""
+        from joserfc import jwk, jwt
+
+        key = jwk.ECKey.generate_key(
+            "P-256", {"kid": "ec-key-1", "use": "sig", "alg": "ES256"}
+        )
+        now = int(time.time())
+        assertion = jwt.encode(
+            {"alg": "ES256", "kid": "ec-key-1"},
+            {
+                "iss": client_id,
+                "sub": client_id,
+                "aud": token_endpoint,
+                "iat": now,
+                "exp": now + 60,
+                "jti": jti,
+            },
+            key,
+        )
+        return assertion, key.as_dict(private=False)
+
+    async def test_valid_es256_assertion_with_inline_jwks(self, validator):
+        """An assertion signed with an EC key validates against an EC JWKS."""
+        client_id = "https://example.com/client.json"
+        token_endpoint = "https://oauth.example.com/token"
+        assertion, public_jwk = self._ec_assertion(
+            client_id, token_endpoint, "ec-inline-jti"
+        )
+        doc = CIMDDocument(
+            client_id=AnyHttpUrl(client_id),
+            redirect_uris=["http://localhost:3000/callback"],
+            token_endpoint_auth_method="private_key_jwt",
+            jwks={"keys": [public_jwk]},
+        )
+
+        assert await validator.validate_assertion(
+            assertion, client_id, token_endpoint, doc
+        )
+
+    async def test_valid_es256_assertion_with_jwks_uri(
+        self, validator, cimd_doc_with_jwks_uri, httpx_mock
+    ):
+        """An assertion signed with an EC key validates against a fetched EC JWKS."""
+        client_id = "https://example.com/client.json"
+        token_endpoint = "https://oauth.example.com/token"
+        assertion, public_jwk = self._ec_assertion(
+            client_id, token_endpoint, "ec-uri-jti"
+        )
+
+        with patch(
+            "fastmcp.server.auth.ssrf.resolve_hostname",
+            return_value=[TEST_PUBLIC_IP],
+        ):
+            httpx_mock.add_response(json={"keys": [public_jwk]})
+
+            assert await validator.validate_assertion(
+                assertion, client_id, token_endpoint, cimd_doc_with_jwks_uri
+            )
+
+    async def test_rejects_unsupported_assertion_algorithm(
+        self, validator, cimd_doc_with_inline_jwks
+    ):
+        """Symmetric and unsigned assertion algorithms are rejected up front."""
+        from joserfc import jwk, jwt
+
+        client_id = "https://example.com/client.json"
+        token_endpoint = "https://oauth.example.com/token"
+        now = int(time.time())
+        assertion = jwt.encode(
+            {"alg": "HS256", "kid": "test-key-1"},
+            {
+                "iss": client_id,
+                "sub": client_id,
+                "aud": token_endpoint,
+                "iat": now,
+                "exp": now + 60,
+                "jti": "hs256-jti",
+            },
+            jwk.OctKey.import_key("a-shared-secret-that-is-long-enough-32b"),
+        )
+
+        with pytest.raises(ValueError, match="Unsupported assertion algorithm"):
+            await validator.validate_assertion(
+                assertion, client_id, token_endpoint, cimd_doc_with_inline_jwks
+            )
+
+    @pytest.mark.parametrize("alg", [[], {}, None, 256])
+    async def test_rejects_non_string_assertion_algorithm(
+        self, validator, cimd_doc_with_inline_jwks, alg
+    ):
+        """A header whose alg is not a string is an invalid assertion, not a crash."""
+        import base64
+        import json
+
+        def segment(data: dict) -> str:
+            raw = json.dumps(data).encode()
+            return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+        assertion = f"{segment({'alg': alg, 'typ': 'JWT'})}.{segment({})}.c2ln"
+
+        with pytest.raises(ValueError, match="Unsupported assertion algorithm"):
+            await validator.validate_assertion(
+                assertion,
+                "https://example.com/client.json",
+                "https://oauth.example.com/token",
+                cimd_doc_with_inline_jwks,
+            )
 
 
 class TestCIMDClientManager:
@@ -678,3 +821,36 @@ class TestCIMDRedirectUriEnforcement:
         # Evil.com should fail (in CIMD but doesn't match proxy patterns)
         with pytest.raises(InvalidRedirectUriError):
             client.validate_redirect_uri(AnyUrl("https://evil.com/callback"))
+
+    async def test_private_use_scheme_redirect_uris(self, httpx_mock, mock_dns):
+        """A native client's private-use scheme redirect resolves and is enforced.
+
+        RFC 8252 section 7.1 schemes have no host, and unsafe schemes in the
+        document are never usable.
+        """
+        from mcp.shared.auth import InvalidRedirectUriError
+        from pydantic import AnyUrl
+
+        url = "https://example.com/client.json"
+        httpx_mock.add_response(
+            json={
+                "client_id": url,
+                "client_name": "Native App",
+                "redirect_uris": [
+                    "com.example.app:/oauth",
+                    "javascript:alert(1)",
+                ],
+                "token_endpoint_auth_method": "none",
+            },
+            headers={"content-length": "200"},
+        )
+
+        client = await CIMDClientManager(enable_cimd=True).get_client(url)
+        assert client is not None
+
+        validated = client.validate_redirect_uri(AnyUrl("com.example.app:/oauth"))
+        assert str(validated) == "com.example.app:/oauth"
+
+        for rejected in ("com.evil.app:/oauth", "javascript:alert(1)"):
+            with pytest.raises(InvalidRedirectUriError):
+                client.validate_redirect_uri(AnyUrl(rejected))

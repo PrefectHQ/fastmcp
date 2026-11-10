@@ -3,7 +3,6 @@ title: Versioning
 sidebarTitle: Versioning
 description: Serve multiple API versions from a single codebase
 icon: code-branch
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -65,7 +64,7 @@ VersionFilter(version_gte="2.0", version_lt="3.0")
 
 ### Filtering Mounted Servers
 
-When you mount child servers and apply a `VersionFilter` to the parent, the filter applies to components from mounted servers as well. Range filtering (`version_gte` and `version_lt`) is handled at the provider level, meaning mounted servers don't need to know about the parent's version constraints.
+When you mount child servers and apply a `VersionFilter` to the parent, the filter applies to components from mounted servers as well. Mounted servers don't need to know about the parent's version constraints.
 
 ```python
 from fastmcp import FastMCP
@@ -162,7 +161,7 @@ def summarize(text: str, style: str = "concise") -> str:
 
 ### Version Discovery
 
-When clients list components, each versioned component includes metadata about all available versions. This lets clients discover what versions exist before deciding which to use. The `meta.fastmcp.versions` field contains all registered versions sorted from highest to lowest.
+When clients list components, each versioned component includes metadata about all available versions. This lets clients discover what versions exist before deciding which to use. The `meta.fastmcp.versions` field lists every version visible to the client, sorted from highest to lowest. Versions hidden by a `VersionFilter` don't appear.
 
 ```python
 from fastmcp import Client
@@ -208,7 +207,7 @@ async with Client(server) as client:
     prompt = await client.get_prompt("summarize", {"text": "..."}, version="1.0")
 ```
 
-If the requested version doesn't exist, the server raises a `NotFoundError`. This ensures you get exactly what you asked for rather than silently falling back to a different version.
+If the requested version doesn't exist, the server raises a `NotFoundError` and the client call fails (for tools, `call_tool` raises a `ToolError`). This ensures you get exactly what you asked for rather than silently falling back to a different version.
 
 ### MCP Protocol
 
@@ -268,16 +267,17 @@ For other formats (dates, custom schemes), FastMCP falls back to lexicographic s
 "alpha" < "beta"             # Alphabetical order
 ```
 
-The `v` prefix is stripped before comparison, so `"v1.0"` and `"1.0"` are treated as equal for sorting purposes.
+The `v` prefix is stripped before comparison, so `"v1.0"` and `"1.0"` are treated as equal for sorting purposes. When one identifier mixes formats, every PEP 440 version sorts below every non-PEP 440 version, so `"2025-01-15"` counts as higher than `"10.0"`. Pick one scheme per component.
 
 ## Retrieving Specific Versions
 
 Server-side code can retrieve specific versions rather than just the highest. This is useful during migrations when you need to compare behavior between versions or access legacy implementations.
 
-The `get_tool`, `get_resource`, and `get_prompt` methods accept an optional `version` parameter. Without it, they return the highest version. With it, they return exactly that version.
+The `get_tool`, `get_resource`, and `get_prompt` methods accept an optional `version` parameter. It takes a `VersionSpec` from `fastmcp.utilities.versions`. Without it, they return the highest version. With `VersionSpec(eq="1.0")`, they return exactly that version.
 
 ```python
 from fastmcp import FastMCP
+from fastmcp.utilities.versions import VersionSpec
 
 mcp = FastMCP()
 
@@ -289,16 +289,17 @@ def add(x: int, y: int) -> int:
 def add(x: int, y: int) -> int:
     return x + y + 100  # Different behavior
 
-# Get highest version (default)
-tool = await mcp.get_tool("add")
-print(tool.version)  # "2.0"
+async def main():
+    # Get highest version (default)
+    tool = await mcp.get_tool("add")
+    print(tool.version)  # "2.0"
 
-# Get specific version
-tool_v1 = await mcp.get_tool("add", version="1.0")
-print(tool_v1.version)  # "1.0"
+    # Get specific version
+    tool_v1 = await mcp.get_tool("add", version=VersionSpec(eq="1.0"))
+    print(tool_v1.version)  # "1.0"
 ```
 
-If the requested version doesn't exist, a `NotFoundError` is raised.
+If the requested version doesn't exist, these methods return `None` instead of raising an error.
 
 ## Removing Versions
 
@@ -326,17 +327,20 @@ from fastmcp import FastMCP
 mcp = FastMCP()
 
 @mcp.tool(version="1.0")
-def process_data(input: str) -> str:
+def process_data(text: str) -> str:
     """Original implementation, now versioned."""
-    return legacy_process(input)
+    return text.upper()
 
 @mcp.tool(version="2.0")
-def process_data(input: str, options: dict | None = None) -> str:
+def process_data(text: str, options: dict | None = None) -> str:
     """Updated implementation with new options parameter."""
-    return modern_process(input, options or {})
+    options = options or {}
+    if options.get("reverse"):
+        return text[::-1].upper()
+    return text.upper()
 ```
 
-Clients automatically see version 2.0 (the highest). During the transition, your server code can still access the original implementation via `get_tool("process_data", version="1.0")`.
+Clients automatically see version 2.0 (the highest). During the transition, your server code can still access the original implementation via `get_tool("process_data", version=VersionSpec(eq="1.0"))`.
 
 Once the migration is complete, remove the old version.
 

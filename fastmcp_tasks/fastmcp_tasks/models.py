@@ -71,11 +71,11 @@ class _TaskFields(BaseModel):
     status: TaskStatus
     created_at: str = Field(serialization_alias="createdAt")
     last_updated_at: str = Field(serialization_alias="lastUpdatedAt")
-    ttl_ms: float | None = Field(serialization_alias="ttlMs")
+    ttl_ms: int | None = Field(serialization_alias="ttlMs")
     status_message: str | None = Field(
         default=None, serialization_alias="statusMessage"
     )
-    poll_interval_ms: float | None = Field(
+    poll_interval_ms: int | None = Field(
         default=None, serialization_alias="pollIntervalMs"
     )
 

@@ -52,6 +52,18 @@ _ANTHROPIC_IMAGE_MEDIA_TYPES = frozenset(
 )
 
 
+def _stop_reason(message: Message) -> StopReason:
+    """Map Anthropic's stop reason to MCP's, so a caller can tell a reply cut off
+    at max_tokens from a finished one."""
+    if message.stop_reason == "tool_use":
+        return "toolUse"
+    if message.stop_reason == "max_tokens":
+        return "maxTokens"
+    if message.stop_reason == "stop_sequence":
+        return "stopSequence"
+    return "endTurn"
+
+
 def _image_content_to_anthropic_block(content: ImageContent) -> ImageBlockParam:
     """Convert MCP ImageContent to Anthropic ImageBlockParam."""
     if content.mime_type not in _ANTHROPIC_IMAGE_MEDIA_TYPES:
@@ -135,7 +147,7 @@ class AnthropicSamplingHandler:
         if params.system_prompt is not None:
             kwargs["system"] = params.system_prompt
         if params.temperature is not None:
-            kwargs["temperature"] = params.temperature
+            kwargs["extra_body"] = {"temperature": params.temperature}
         if params.stop_sequences is not None:
             kwargs["stop_sequences"] = params.stop_sequences
         if anthropic_tools is not None:
@@ -348,6 +360,7 @@ class AnthropicSamplingHandler:
                 content=TextContent(type="text", text=text),
                 role="assistant",
                 model=message.model,
+                stop_reason=_stop_reason(message),
             )
 
         raise ValueError(
@@ -411,19 +424,6 @@ class AnthropicSamplingHandler:
         if len(message.content) == 0:
             raise ValueError("No content in response from Anthropic")
 
-        # Determine stop reason
-        stop_reason: StopReason
-        if message.stop_reason == "tool_use":
-            stop_reason = "toolUse"
-        elif message.stop_reason == "end_turn":
-            stop_reason = "endTurn"
-        elif message.stop_reason == "max_tokens":
-            stop_reason = "maxTokens"
-        elif message.stop_reason == "stop_sequence":
-            stop_reason = "endTurn"
-        else:
-            stop_reason = "endTurn"
-
         # Build content list
         content: list[SamplingMessageContentBlock] = []
 
@@ -451,5 +451,5 @@ class AnthropicSamplingHandler:
             content=content,
             role="assistant",
             model=message.model,
-            stop_reason=stop_reason,
+            stop_reason=_stop_reason(message),
         )

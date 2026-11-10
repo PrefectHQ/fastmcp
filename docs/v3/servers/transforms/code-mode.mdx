@@ -287,14 +287,14 @@ mcp = FastMCP("Server", transforms=[code_mode])
 
 The default `MontySandboxProvider` enforces execution limits — timeouts, memory caps, recursion depth, and more.
 
-Constructed with no arguments, it applies a conservative baseline so the out-of-box configuration is not unbounded: `max_duration_secs=30` and `max_memory=100_000_000` (100 MB). Pass an explicit `limits` dict to override it, or `limits=None` to run with no limits at all:
+Constructed with no arguments, it applies a conservative baseline so the out-of-box configuration is not unbounded: `max_duration_secs=30` and `max_memory=100_000_000` (100 MB). Pass an explicit `limits` dict to override it, or `limits=None` to disable the configurable time, memory, and GC limits. Monty's standard recursion limit still applies:
 
 ```python
 from fastmcp.experimental.transforms.code_mode import MontySandboxProvider
 
 MontySandboxProvider()                  # baseline: 30s, 100 MB
 MontySandboxProvider(limits={...})      # your own limits
-MontySandboxProvider(limits=None)       # explicitly uncapped
+MontySandboxProvider(limits=None)       # no time, memory, or GC limits
 ```
 
 ```python
@@ -308,15 +308,16 @@ sandbox = MontySandboxProvider(
 mcp = FastMCP("Server", transforms=[CodeMode(sandbox_provider=sandbox)])
 ```
 
-All keys are optional — omit any to leave that dimension uncapped:
+Time, memory, and GC limits are optional; omit a key to disable that limit. Recursion depth defaults to Monty's standard maximum of 1,000:
 
 | Key | Type | Description |
 |---|---|---|
 | `max_duration_secs` | `float` | Maximum wall-clock execution time |
 | `max_memory` | `int` | Memory ceiling in bytes |
-| `max_allocations` | `int` | Cap on total object allocations |
 | `max_recursion_depth` | `int` | Maximum recursion depth |
 | `gc_interval` | `int` | Garbage collection frequency |
+
+Unsupported keys raise `ValueError` rather than being silently ignored. Monty no longer supports `max_allocations`; use `max_memory` to cap memory usage.
 
 ### Tool Call Limits
 

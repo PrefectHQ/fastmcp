@@ -20,7 +20,7 @@ which avoids leaking task existence across callers.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
 import mcp_types
@@ -47,6 +47,7 @@ from fastmcp_tasks.input_store import (
     load_task_args,
     mark_cancelled,
     read_outstanding_inputs,
+    refresh_args_ttl,
     refresh_current_leg_ttl,
     release_update_lock,
     save_current_leg,
@@ -97,7 +98,7 @@ def _normalize_iso_timestamp(stored: str | None) -> str:
             return datetime.fromisoformat(stored.replace("Z", "+00:00")).isoformat()
         except (ValueError, AttributeError):
             pass
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _parse_key_version(key_suffix: str) -> tuple[str, str | None]:
@@ -165,6 +166,9 @@ async def _lookup_task(
         await redis.expire(created_at_key, refresh_ttl)
         await redis.expire(poll_key, refresh_ttl)
     await refresh_current_leg_ttl(docket, task_scope, task_id, refresh_ttl)
+    # A re-entered leg re-reads the original arguments, so the args key has to
+    # outlive the polling window for the same reason the keys above do.
+    await refresh_args_ttl(docket, task_scope, task_id, refresh_ttl)
     # The snapshot must outlive the routing keys it serves: a re-entered leg
     # restores the submitting caller from it, and with encryption configured a
     # missing snapshot fails the task instead of degrading to an anonymous run.
@@ -261,7 +265,7 @@ async def tasks_get(server: FastMCP, task_id: str) -> GetTaskResult:
     await execution.sync()
 
     created_at_iso = _normalize_iso_timestamp(created_at)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
     ttl_ms = _ttl_ms(docket)
 
     def build(
@@ -458,7 +462,8 @@ async def tasks_cancel(server: FastMCP, task_id: str) -> CancelTaskResult:
     concurrently enqueuing the next one: whichever wins the lock runs to
     completion before the other, and the update rechecks the marker under the
     same lock. If the lock is wedged past its timeout, cancel proceeds
-    best-effort rather than hang.
+    best-effort rather than hang. A task that already completed or failed is
+    acknowledged but left as it is: terminal statuses are final.
     """
     docket = server._docket
     if docket is None:
@@ -475,6 +480,18 @@ async def tasks_cancel(server: FastMCP, task_id: str) -> CancelTaskResult:
         execution, _base_task_key, leg_number, _created_at, _poll = await _lookup_task(
             docket, task_scope, task_id
         )
+        # A task that already reached a terminal status stays there: the marker
+        # below outranks the execution state in tasks/get, so recording it now
+        # would replace a finished result or error with `cancelled`. A leg
+        # parked on input has a COMPLETED execution too, but it is not finished.
+        await execution.sync()
+        if execution.state in (ExecutionState.FAILED, ExecutionState.CANCELLED) or (
+            execution.state == ExecutionState.COMPLETED
+            and not await read_outstanding_inputs(
+                docket, task_scope, task_id, leg_number
+            )
+        ):
+            return CancelTaskResult()
         ttl_seconds = int(docket.execution_ttl.total_seconds())
         await mark_cancelled(docket, task_scope, task_id, ttl_seconds)
         await clear_outstanding(docket, task_scope, task_id, leg_number)

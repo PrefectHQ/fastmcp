@@ -3,7 +3,6 @@ title: Interactive Tools
 sidebarTitle: Interactive Tools
 description: Turn your tools into interactive UIs with charts, tables, and dashboards.
 icon: palette
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -66,6 +65,9 @@ When numbers tell a better story as a visual, swap in a chart. The API is the sa
 <PrefabDemoFrame demo="bar-chart" height="430px" title="Bar chart demo" />
 
 ```python
+from prefab_ui.components.charts import BarChart, ChartSeries
+
+
 @mcp.tool(app=True)
 def quarterly_revenue(year: int) -> BarChart:
     """Show quarterly revenue as a bar chart."""
@@ -92,6 +94,9 @@ Each `ChartSeries` plots a different key from the data. `BarChart`, `LineChart`,
 <PrefabDemoFrame demo="pie-chart" height="410px" title="Pie chart demo" />
 
 ```python
+from prefab_ui.components.charts import PieChart
+
+
 @mcp.tool(app=True)
 def ticket_breakdown() -> PieChart:
     """Show open tickets by category."""
@@ -120,6 +125,13 @@ Tables and charts are useful on their own, but the real power comes from composi
 <PrefabDemoFrame demo="dashboard" height="680px" title="Sales dashboard demo" />
 
 ```python expandable
+from prefab_ui.app import PrefabApp
+from prefab_ui.components import (
+    Badge, Column, DataTable, DataTableColumn, Metric, Row, Separator,
+)
+from prefab_ui.components.charts import BarChart, ChartSeries
+
+
 @mcp.tool(app=True)
 def sales_dashboard() -> PrefabApp:
     """Show sales KPIs, trends, and deals."""
@@ -190,7 +202,14 @@ Everything above renders once from the data your Python provides. But interactiv
 Try switching regions in the dropdown, and toggling the switch on and off.
 
 ```python expandable
+from prefab_ui.app import PrefabApp
+from prefab_ui.components import (
+    Column, Metric, Row, Select, SelectOption, Switch, Text,
+)
+from prefab_ui.components.charts import BarChart, ChartSeries
+from prefab_ui.components.control_flow import If
 from prefab_ui.rx import Rx
+
 
 @mcp.tool(app=True)
 def regional_sales() -> PrefabApp:
@@ -252,7 +271,9 @@ The `state` dict on `PrefabApp` declares initial values. The `Select` writes to 
 Interactive tools render in a sandboxed iframe with a strict CSP. If your tool loads external resources — embedding iframes, fetching from APIs, loading scripts — add the required domains:
 
 ```python
+from prefab_ui.app import PrefabApp
 from fastmcp.apps import PrefabAppConfig, ResourceCSP
+
 
 @mcp.tool(app=PrefabAppConfig(
     csp=ResourceCSP(frame_domains=["https://example.com"]),
@@ -268,7 +289,10 @@ def dashboard_with_embed() -> PrefabApp:
 By default, the LLM sees `"[Rendered Prefab UI]"` as the tool result. If the model needs to reason about the data, return a `ToolResult` with a text summary alongside the UI:
 
 ```python
+from prefab_ui.components import Column
+from prefab_ui.components.charts import BarChart, ChartSeries
 from fastmcp.tools import ToolResult
+
 
 @mcp.tool(app=True)
 def sales_overview(year: int) -> ToolResult:

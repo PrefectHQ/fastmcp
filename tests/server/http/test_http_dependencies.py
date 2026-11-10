@@ -1,7 +1,6 @@
 import json
 
 import pytest
-from docket import Docket
 from fastmcp_tasks.context import _recall_snapshot, get_task_context
 from mcp_types import TextContent, TextResourceContents
 from starlette.requests import Request
@@ -12,16 +11,6 @@ from fastmcp.server.server import FastMCP
 from fastmcp.utilities.tests import ASGIServer, asgi_server
 from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import running_task_server, submit_task, wait_for_task
-
-
-@pytest.fixture
-def reset_docket_memory_server():
-    """Force a fresh memory:// Docket server bound to this test's event loop."""
-    if hasattr(Docket, "_memory_server"):
-        delattr(Docket, "_memory_server")
-    yield
-    if hasattr(Docket, "_memory_server"):
-        delattr(Docket, "_memory_server")
 
 
 def _http_request_with_headers(headers: dict[str, str]) -> Request:
@@ -177,6 +166,66 @@ async def test_get_http_headers_excludes_content_type(sse_server: ASGIServer):
             assert headers["x-custom-header"] == "should-be-included"
 
 
+async def test_get_http_headers_excludes_cookie(sse_server: ASGIServer):
+    """get_http_headers() must not leak the caller's Cookie to a backend.
+
+    The OpenAPI provider forwards this mapping to the upstream named in the
+    spec, so a session cookie scoped to the MCP host would otherwise reach a
+    separate origin on every tool call. Callers that genuinely need it can ask
+    for it back with `include={"cookie"}`, the same escape hatch authorization
+    uses.
+    """
+    from fastmcp.server.dependencies import get_http_headers
+
+    server = FastMCP()
+
+    @server.tool
+    def default_headers() -> dict[str, str]:
+        return get_http_headers()
+
+    @server.tool
+    def opted_in_headers() -> dict[str, str]:
+        return get_http_headers(include={"cookie"})
+
+    async with asgi_server(server, transport="sse") as running_server:
+        async with running_server.client(
+            headers={"Cookie": "session=alice-secret", "X-Keep": "yes"}
+        ) as client:
+            default = (await client.call_tool("default_headers")).data
+            assert "cookie" not in default
+            assert default["x-keep"] == "yes"
+
+            opted_in = (await client.call_tool("opted_in_headers")).data
+            assert opted_in["cookie"] == "session=alice-secret"
+
+
+async def test_current_headers_still_exposes_cookie(sse_server: ASGIServer):
+    """CurrentHeaders() reads the request, so credentials stay visible.
+
+    The default denylist protects call sites that forward headers upstream.
+    A handler inspecting its own request needs the cookie, the same way it
+    already needs authorization.
+    """
+    from fastmcp.server.dependencies import CurrentHeaders
+
+    server = FastMCP()
+
+    @server.tool
+    def read_request(headers: dict = CurrentHeaders()) -> dict[str, str]:
+        return headers
+
+    async with asgi_server(server, transport="sse") as running_server:
+        async with running_server.client(
+            headers={
+                "Cookie": "session=alice-secret",
+                "Authorization": "Bearer alice-token",
+            }
+        ) as client:
+            headers = (await client.call_tool("read_request")).data
+            assert headers["cookie"] == "session=alice-secret"
+            assert headers["authorization"] == "Bearer alice-token"
+
+
 def _worker_snapshot_headers() -> dict[str, str]:
     """Read the HTTP headers snapshotted at task submission from inside a worker."""
     task_info = get_task_context()
@@ -186,9 +235,7 @@ def _worker_snapshot_headers() -> dict[str, str]:
     return dict(snapshot.http_headers)
 
 
-async def test_background_task_can_read_snapshotted_request_headers(
-    reset_docket_memory_server,
-):
+async def test_background_task_can_read_snapshotted_request_headers():
     """A background task worker reads the HTTP headers snapshotted at submission.
 
     There is no client task-submission API yet (Phase 4), so the task is driven
@@ -218,9 +265,7 @@ async def test_background_task_can_read_snapshotted_request_headers(
     assert final.result["structuredContent"] == {"result": "tenant-123"}
 
 
-async def test_background_task_snapshot_preserves_all_request_headers(
-    reset_docket_memory_server,
-):
+async def test_background_task_snapshot_preserves_all_request_headers():
     """The task snapshot preserves every request header, including authorization."""
     server = FastMCP()
     server.add_extension(TasksExtension())

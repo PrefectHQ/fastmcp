@@ -11,7 +11,32 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 Use this when you need to execute server-side functions and process their results.
 
-Tools are executable functions exposed by MCP servers. The client's `call_tool()` method executes a tool by name with arguments and returns structured results.
+Tools are executable functions exposed by MCP servers. The client's `list_tools()` method discovers what a server offers, and `call_tool()` executes a tool by name with arguments and returns structured results.
+
+## Discovering Tools
+
+`list_tools()` returns every tool the server advertises as a list of `mcp_types.Tool` objects, each carrying the tool's name, description, and JSON `input_schema`. It follows pagination automatically, so the result is the complete catalog.
+
+```python
+async with client:
+    tools = await client.list_tools()
+    for tool in tools:
+        print(tool.name, tool.description)
+        print(tool.input_schema)
+```
+
+Servers can change their catalog while the connection is open and notify the client with a `notifications/tools/list_changed` notification; a fresh `list_tools()` call reflects the new set. See [Notifications](/clients/notifications) for reacting to that notification.
+
+For page-by-page control over large catalogs, `list_tools_mcp()` returns one raw `ListToolsResult` at a time and accepts the `cursor` from the previous page's `next_cursor`.
+
+```python
+async with client:
+    page = await client.list_tools_mcp()
+    while page.next_cursor is not None:
+        page = await client.list_tools_mcp(cursor=page.next_cursor)
+```
+
+Both methods accept a `cache_mode` argument when the client was built with a [response cache](/clients/client#response-caching).
 
 ## Basic Execution
 
@@ -91,9 +116,13 @@ async with client:
 <ResponseField name=".is_error" type="bool">
   Boolean indicating if the tool execution failed.
 </ResponseField>
+
+<ResponseField name=".meta" type="dict[str, Any] | None">
+  The `_meta` object the server attached to the result, if any.
+</ResponseField>
 </Card>
 
-For tools without output schemas or when deserialization fails, `.data` will be `None`. Fall back to content blocks in that case:
+Structured content without an output schema is returned as a dictionary in `.data`, including an empty object (`{}`). When structured content is absent or deserialization fails, `.data` is `None`. Fall back to content blocks in that case:
 
 ```python
 async with client:
@@ -165,6 +194,19 @@ async with client:
 ```
 
 See [Client Metadata](/servers/context#client-metadata) to learn how servers access this data.
+
+## Version Selection
+
+<VersionBadge version="3.0.0" />
+
+When a server exposes multiple versions of a tool, `call_tool()` runs the highest by default. Pass `version` to call a specific one:
+
+```python
+async with client:
+    result = await client.call_tool("calculate", {"x": 1, "y": 2}, version="1.0")
+```
+
+See [Version Discovery](/servers/versioning#version-discovery) for how to discover available versions.
 
 ## Raw Protocol Access
 

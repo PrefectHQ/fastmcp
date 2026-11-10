@@ -1,0 +1,145 @@
+---
+title: Client Groups
+sidebarTitle: Client Groups
+description: "Use ClientGroup to coordinate several FastMCP clients, each on its own connection, and route namespaced tool calls back to the server that owns them."
+icon: layer-group
+tag: NEW
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="4.0.0" />
+
+A `ClientGroup` coordinates several independent FastMCP clients without combining them behind a proxy server. Each client keeps its own connection, negotiated protocol version, capabilities, and handlers. The group adds namespaced tool discovery and routes each call back to the client that advertised the tool.
+
+This differs from passing a multi-server configuration directly to `Client`. `Client(config)` presents one aggregate MCP endpoint and therefore selects one protocol era shared by its proxy chain. A `ClientGroup` retains one MCP connection per configured server, so legacy and modern servers can operate in their native eras at the same time.
+
+## Create a group from clients
+
+Construct the clients explicitly when each server needs its own handlers, authentication, or connection settings:
+
+```python
+from pathlib import Path
+import asyncio
+
+from fastmcp import Client, ClientGroup
+
+legacy_client = Client(Path("legacy_server.py"), mode="legacy")
+modern_client = Client("https://modern.example.com/mcp", mode="auto")
+
+group = ClientGroup(
+    {
+        "legacy": legacy_client,
+        "modern": modern_client,
+    }
+)
+
+
+async def main() -> None:
+    async with group:
+        tools = await group.list_tools()
+        print([tool.name for tool in tools])
+
+        result = await group.call_tool(
+            "modern_get_weather",
+            {"city": "Chicago"},
+        )
+        print(result)
+
+
+asyncio.run(main())
+```
+
+Tool names are prefixed with the configured client name. For example, a `get_weather` tool exposed by the `modern` client becomes `modern_get_weather`.
+
+A group with a single client is a supported way to get namespacing alone: the one server's tools are presented under its configured name, with no other behavior change.
+
+The first routed call loads the tool catalog lazily. After a successful load, unknown tool names fail locally rather than repeating discovery against every server. Call `list_tools()` explicitly to refresh the routes when servers add or remove tools dynamically — the explicit call refreshes past any client-side response cache, so the catalog reflects what every server advertises now.
+
+## Bind tools to their owning client
+
+Tool adapters — code that turns MCP tools into callables for an agent framework — often need more than routed calls: session-driven input loops, handler context, and interceptors must run on the connection that owns the tool. `resolve_tool()` returns that route, so an adapter can discover through the group and still bind each generated tool to its real client:
+
+```python
+async with group:
+    for tool in await group.list_tools():
+        route = await group.resolve_tool(tool.name)
+        # route.client is the connected FastMCP client for this tool;
+        # route.upstream_name is the name the server itself advertises
+        register_agent_tool(tool, client=route.client, name=route.upstream_name)
+```
+
+The group aggregates names and detects collisions; it never stands between the adapter and the client, so everything a single `Client` supports keeps working per tool.
+
+Discovered routes outlive the group's context. After the last exit, `resolve_tool()` and `call_tool()` for a known tool need only that tool's own client to be connected, so an adapter that bound its tools inside the group can keep calling them under the owning client's context. The next unknown name after the last exit reloads the catalog, which requires every client. Call `list_tools()` to drop routes for tools a server has since removed.
+
+## List skills across servers
+
+`list_skills()` collects [Skills extension](/servers/skills) entries from every client that opted into it, keyed by server name, since two servers can publish the same skill URI. Clients created without `SkillsClientExtension()`, including those from `from_config`, and servers that don't advertise the extension are left out.
+
+```python
+from fastmcp import Client, ClientGroup
+from fastmcp.skills import SkillsClientExtension
+
+docs = Client("https://docs.example.com/mcp", extensions=[SkillsClientExtension()])
+ops = Client("https://ops.example.com/mcp", extensions=[SkillsClientExtension()])
+group = ClientGroup({"docs": docs, "ops": ops})
+
+async with group:
+    for server_name, entries in (await group.list_skills()).items():
+        for entry in entries:
+            print(server_name, entry.uri)
+    deploy = await group.get_skill("ops", "skill://deploy/SKILL.md")
+```
+
+## Create a group from configuration
+
+`ClientGroup.from_config` creates one client per server rather than passing the entire configuration through a proxy. Each entry’s `timeout` applies to that client in milliseconds; `0` disables the request timeout. A FastMCP-specific `mode` field can select the protocol behavior for each server:
+
+```python
+from fastmcp import ClientGroup
+
+config = {
+    "mcpServers": {
+        "legacy": {
+            "command": "python",
+            "args": ["legacy_server.py"],
+            "mode": "legacy",
+        },
+        "modern": {
+            "url": "https://modern.example.com/mcp",
+            "mode": "auto",
+        },
+    }
+}
+
+group = ClientGroup.from_config(config)
+```
+
+Entries without a `mode` use the `default_mode` argument to `from_config`, which is `"auto"`.
+
+## Manage connections explicitly
+
+Using the group as a context manager is optional. Applications can own each client connection and use the group only for discovery and routing:
+
+```python
+async with legacy_client, modern_client:
+    tools = await group.list_tools()
+```
+
+It is also safe to enter the group inside a client context. FastMCP client contexts are reference counted, so leaving the group does not close a connection still owned by an outer context.
+
+The group's own context is reentrant in the same way (FastMCP 4.0.1 and later). Entering a group that is already connected, whether from a nested block or a concurrent task, reuses the existing connections. The first entry connects every client and the last exit disconnects them, so code that already relies on `Client` being safe to enter more than once can hold a `ClientGroup` the same way:
+
+```python
+async with group:
+    async with group:  # reuses the connections opened above
+        await group.call_tool("modern_get_weather", {"city": "Chicago"})
+    assert modern_client.is_connected()
+```
+
+The group adds no session handling of its own. Each client owns its transport and session exactly as it does standalone, so a legacy stateful session (for example over SSE or stdio) is held open by its client for as long as that client's context is active, whether the group or the caller entered it.
+
+## Related: SDK session groups
+
+The MCP Python SDK has its own aggregation primitive, [`ClientSessionGroup`](https://py.sdk.modelcontextprotocol.io/client/session-groups/), which pools raw `ClientSession` connections. `ClientGroup` exists because FastMCP clients carry more than a session: authentication, handlers, caching, result parsing, and protocol negotiation all live on the `Client`, and routing calls through the client that advertised each tool keeps every one of those intact. Reach for the SDK's group when working with raw sessions directly; reach for `ClientGroup` when the servers are already configured as FastMCP clients.

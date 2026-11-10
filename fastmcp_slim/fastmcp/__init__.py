@@ -12,9 +12,11 @@ from fastmcp.utilities.logging import configure_logging as _configure_logging
 
 if TYPE_CHECKING:
     from fastmcp.client import Client as Client
+    from fastmcp.client.group import ClientGroup as ClientGroup
     from fastmcp.apps.app import FastMCPApp as FastMCPApp
     from fastmcp.server.context import Context as Context
     from fastmcp.server.server import FastMCP as FastMCP
+    from fastmcp.skills import Skill as Skill
 
 settings = Settings()
 if settings.log_enabled:
@@ -41,8 +43,8 @@ if settings.deprecation_warnings:
 
 
 # --- Lazy imports for performance (see #3292) ---
-# Client and the client submodule are deferred so that server-only users
-# don't pay for the client import chain. Do not convert back to top-level.
+# Client exports and the client submodule are deferred so that server-only users
+# don't pay for the client import chain. Do not make these eager module imports.
 
 
 def __getattr__(name: str) -> object:
@@ -53,6 +55,13 @@ def __getattr__(name: str) -> object:
             raise ImportError(_install_hints.CLIENT_SUPPORT) from exc
 
         return Client
+    if name == "ClientGroup":
+        try:
+            from fastmcp.client.group import ClientGroup
+        except ImportError as exc:
+            raise ImportError(_install_hints.CLIENT_SUPPORT) from exc
+
+        return ClientGroup
     if name == "Context":
         try:
             from fastmcp.server.context import Context
@@ -74,6 +83,10 @@ def __getattr__(name: str) -> object:
             raise ImportError(_install_hints.APP_SUPPORT) from exc
 
         return FastMCPApp
+    if name == "Skill":
+        from fastmcp.skills import Skill
+
+        return Skill
     if name == "client":
         try:
             return importlib.import_module("fastmcp.client")
@@ -89,9 +102,11 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "Client",
+    "ClientGroup",
     "Context",
     "FastMCP",
     "FastMCPApp",
     "FastMCPDeprecationWarning",
+    "Skill",
     "settings",
 ]

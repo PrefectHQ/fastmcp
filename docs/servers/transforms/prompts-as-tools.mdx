@@ -3,7 +3,6 @@ title: Prompts as Tools
 sidebarTitle: Prompts as Tools
 description: Expose prompts to tool-only clients
 icon: message-lines
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -47,15 +46,21 @@ def explain_concept(concept: str) -> str:
 mcp.add_transform(PromptsAsTools(mcp))
 ```
 
-Clients now see three items: whatever tools you defined directly, plus `list_prompts` and `get_prompt`.
+Clients now see the tools you defined directly, plus `list_prompts` and `get_prompt`.
 
 ## Listing Prompts
 
-The `list_prompts` tool returns JSON with metadata for each prompt, including its arguments.
+The `list_prompts` tool returns JSON with metadata for each prompt, including its arguments. When a prompt has several versions, only the highest version is listed.
 
 ```python
-result = await client.call_tool("list_prompts", {})
-prompts = json.loads(result.data)
+import json
+
+from fastmcp import Client
+
+async with Client(mcp) as client:
+    result = await client.call_tool("list_prompts", {})
+    prompts = json.loads(result.data)
+
 # [
 #   {
 #     "name": "analyze_code",
@@ -72,7 +77,7 @@ prompts = json.loads(result.data)
 #       {"name": "concept", "description": null, "required": true}
 #     ]
 #   }
-#]
+# ]
 ```
 
 Each argument includes:
@@ -85,19 +90,20 @@ Each argument includes:
 The `get_prompt` tool accepts a prompt name and optional arguments dict. It returns the rendered prompt as JSON with a messages array.
 
 ```python
-# Prompt with required and optional arguments
-result = await client.call_tool(
-    "get_prompt",
-    {
-        "name": "analyze_code",
-        "arguments": {
-            "code": "x = 1\nprint(x)",
-            "language": "python"
-        }
-    }
-)
+import json
 
-response = json.loads(result.data)
+from fastmcp import Client
+
+async with Client(mcp) as client:
+    result = await client.call_tool(
+        "get_prompt",
+        {
+            "name": "analyze_code",
+            "arguments": {"code": "x = 1\nprint(x)", "language": "python"},
+        },
+    )
+    response = json.loads(result.data)
+
 # {
 #   "messages": [
 #     {
@@ -111,20 +117,14 @@ response = json.loads(result.data)
 If a prompt has no arguments, you can omit the `arguments` field or pass an empty dict:
 
 ```python
-result = await client.call_tool(
-    "get_prompt",
-    {"name": "simple_prompt"}
-)
+from fastmcp import Client
+
+async with Client(mcp) as client:
+    result = await client.call_tool("get_prompt", {"name": "simple_prompt"})
 ```
 
 ## Message Format
 
-Rendered prompts return a messages array following the standard MCP format. Each message includes:
-- `role`: The message role ("user" or "assistant")
-- `content`: The message text content
-
-Multi-message prompts are supported - the array will contain all messages in order.
-
-## Binary Content
-
-Unlike resources, prompts always return text content. There is no binary encoding needed.
+Rendered prompts return a messages array in prompt order. Each message includes:
+- `role`: The message role (`"user"` or `"assistant"`)
+- `content`: The message text as a string, or, for non-text content such as images or embedded resources, the MCP content object serialized as JSON

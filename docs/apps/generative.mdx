@@ -3,7 +3,6 @@ title: Generative UI
 sidebarTitle: Generative UI
 description: Let the LLM build custom Prefab UIs on the fly.
 icon: wand-magic-sparkles
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -81,15 +80,18 @@ The model writes real Python — loops, f-strings, computation, helper functions
 
 Before writing code, the LLM can call `search_prefab_components` to discover what's available:
 
-```
+```text
 search_prefab_components("Chart")
-→ 7 components matching 'Chart':
-  AreaChart — from prefab_ui.components.charts import AreaChart
-  BarChart — from prefab_ui.components.charts import BarChart
+→ 9 components matching 'Chart':
+
+  ## Charts
+  Import: `from prefab_ui.components.charts import <name>`
+  AreaChart — Area chart with one or more series.
+  BarChart — Bar chart with one or more series.
   ...
 ```
 
-Passing `detail=True` returns full field descriptions and docstrings. The search tool introspects Prefab classes at runtime, so it's always up to date with the installed version.
+Space-separated terms match independently, so `"Card Badge Metric"` returns all three. A query that matches five or fewer components returns full docstrings and arguments; a broader one returns this compact listing. Pass `detail=True` or `detail=False` to override. The search tool introspects Prefab classes at runtime, so it matches the installed version.
 
 ## Passing data
 
@@ -119,7 +121,7 @@ GenerativeUI(
 
 ## Requirements
 
-Generative UI needs `fastmcp[apps]`, which pulls in `prefab-ui`. The server-side Pyodide sandbox (for final validation) requires Deno — it installs automatically on first use.
+Generative UI needs `fastmcp[apps]`, which pulls in `prefab-ui`. The server-side Pyodide sandbox (for final validation) requires [Deno](https://deno.land) on your `PATH`; FastMCP does not install it, and `generate_prefab_ui` calls fail until it is present. Pyodide itself downloads on first use.
 
 The streaming renderer loads Pyodide from CDN in the browser. The CSP is configured automatically by the provider — no manual setup.
 

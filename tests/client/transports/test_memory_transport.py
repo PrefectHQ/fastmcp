@@ -7,7 +7,6 @@ Client(server) with an in-process FastMCP server.
 import time
 
 import pytest
-from docket import Docket
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import FastMCPTransport
@@ -21,18 +20,8 @@ def test_transport_repr_includes_server_name():
     assert repr(transport) == "<FastMCPTransport(server='repr-test')>"
 
 
-@pytest.fixture
-def reset_docket_memory_server():
-    """Force a fresh memory:// Docket server bound to this test's loop."""
-    if hasattr(Docket, "_memory_server"):
-        delattr(Docket, "_memory_server")
-    yield
-    if hasattr(Docket, "_memory_server"):
-        delattr(Docket, "_memory_server")
-
-
 @pytest.mark.timeout(10)
-async def test_task_teardown_does_not_hang(reset_docket_memory_server):
+async def test_task_teardown_does_not_hang():
     """In-memory transport must tear down in under 2 seconds after a task call.
 
     This is a regression test for a teardown ordering bug where the Docket

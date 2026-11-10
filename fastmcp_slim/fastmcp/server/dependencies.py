@@ -33,6 +33,7 @@ from starlette.requests import Request
 from uncalled_for import (
     CycleError,
     Dependency,
+    Provider,
     frame_scope,
     get_dependency_parameters,
 )
@@ -46,7 +47,11 @@ from fastmcp.utilities.async_utils import (
     is_coroutine_function,
 )
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import find_kwarg_by_type, is_class_member_of_type
+from fastmcp.utilities.types import (
+    find_kwarg_by_type,
+    get_function_type_hints,
+    is_class_member_of_type,
+)
 
 if TYPE_CHECKING:
     from fastmcp.server.context import Context
@@ -238,6 +243,61 @@ _background_task_session_id: ContextVar[str | None] = ContextVar(
 )
 
 
+class _ClientToolCall:
+    """One ``tools/call`` a client sent, until its first dispatch claims it."""
+
+    claimed: bool = False
+
+
+#: The wire ``tools/call`` being served. Per-request client settings, such as
+#: the tasks opt-in, describe the tool the client named; the first dispatch of
+#: that request claims them. Calls a tool body makes in turn, and reads of
+#: resources or prompts, find nothing to claim.
+_client_tool_call: ContextVar[_ClientToolCall | None] = ContextVar(
+    "fastmcp_client_tool_call", default=None
+)
+
+
+@contextmanager
+def _serving_client_tool_call() -> Generator[None, None, None]:
+    token = _client_tool_call.set(_ClientToolCall())
+    try:
+        yield
+    finally:
+        _client_tool_call.reset(token)
+
+
+def _claim_client_tool_call() -> bool:
+    """True once per client ``tools/call``: for the dispatch the client addressed."""
+    call = _client_tool_call.get()
+    if call is None or call.claimed:
+        return False
+    call.claimed = True
+    return True
+
+
+#: Whether the ``call_tool`` dispatch in progress is the client's own call. Each
+#: dispatch sets it on entry, before middleware runs, so a tool that middleware
+#: or a tool body calls sets its own (False) value without disturbing this one.
+_client_dispatch: ContextVar[bool] = ContextVar(
+    "fastmcp_client_dispatch", default=False
+)
+
+
+@contextmanager
+def _dispatching_tool_call() -> Generator[None, None, None]:
+    token = _client_dispatch.set(_claim_client_tool_call())
+    try:
+        yield
+    finally:
+        _client_dispatch.reset(token)
+
+
+def _is_client_tool_call() -> bool:
+    """Whether the tool being dispatched is the one the client's ``tools/call`` named."""
+    return _client_dispatch.get()
+
+
 # --- Docket availability check ---
 
 _DOCKET_AVAILABLE: bool | None = None
@@ -313,6 +373,13 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
     except Exception:
         type_hints = getattr(fn, "__annotations__", {})
 
+    # A parameter that already names its dependency, as a default or as
+    # `Annotated` provider metadata, keeps it.
+    try:
+        declared = set(get_dependency_parameters(fn))
+    except TypeError:
+        declared = set()
+
     # First pass: identify which params need transformation
     params_to_transform: set[str] = set()
     optional_context_params: set[str] = set()
@@ -320,7 +387,7 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
     optional_session_params: set[str] = set()
     for name, param in sig.parameters.items():
         annotation = type_hints.get(name, param.annotation)
-        if isinstance(param.default, Dependency):
+        if name in declared or isinstance(param.default, Dependency):
             continue
         if is_class_member_of_type(annotation, Context):
             params_to_transform.add(name)
@@ -547,9 +614,9 @@ def get_http_headers(
     Never raises an exception, even if there is no active HTTP request (in which case
     an empty dict is returned).
 
-    By default, strips problematic headers like `content-length` and `authorization`
-    that cause issues if forwarded to downstream services. If `include_all` is True,
-    all headers are returned.
+    By default, strips problematic headers like `content-length`, and credential
+    headers like `authorization` and `cookie`, that cause issues if forwarded to
+    downstream services. If `include_all` is True, all headers are returned.
 
     The `include` parameter allows specific headers to be included even if they would
     normally be excluded. This is useful for proxy transports that need to forward
@@ -570,6 +637,7 @@ def get_http_headers(
             "expect",
             "accept",
             "authorization",
+            "cookie",
             # Proxy-related headers
             "proxy-authenticate",
             "proxy-authorization",
@@ -713,27 +781,32 @@ def without_injected_parameters(
     async def wrapper(**user_kwargs: Any) -> Any:
         async with resolve_dependencies(fn, user_kwargs) as resolved_kwargs:
             if fn_is_async:
-                return await fn(**resolved_kwargs)
+                result = await fn(**resolved_kwargs)
             elif run_in_thread:
                 # Run sync functions in threadpool to avoid blocking the event loop
                 result = await call_sync_fn_in_threadpool(fn, **resolved_kwargs)
                 # Handle sync wrappers that return awaitables (e.g., partial(async_fn))
                 if inspect.isawaitable(result):
                     result = await result
-                return result
             else:
                 # Call inline on the event loop thread (thread affinity opt-in).
                 result = fn(**resolved_kwargs)
                 if inspect.isawaitable(result):
                     result = await result
-                return result
+            # Consume generators before dependencies are torn down so
+            # generator bodies still see open context-manager dependencies.
+            if inspect.isasyncgen(result):
+                return [item async for item in result]
+            if inspect.isgenerator(result):
+                return list(result)
+            return result
 
     # Resolve string annotations (from `from __future__ import annotations`) using
     # the original function's module context. The wrapper's __globals__ points to
     # this module (dependencies.py) and is read-only, so some Pydantic versions
     # can't resolve names like Annotated or Literal from string annotations.
     try:
-        resolved_hints = get_type_hints(fn, include_extras=True)
+        resolved_hints = get_function_type_hints(fn)
     except Exception:
         resolved_hints = getattr(fn, "__annotations__", {})
 
@@ -875,7 +948,7 @@ async def resolve_dependencies(
 # so that get_dependency_parameters can detect them.
 
 
-class _CurrentContext(Dependency["Context"]):
+class _CurrentContext(Provider["Context"]):
     """Async context manager for Context dependency.
 
     Returns the active context from _current_context (normal MCP request).
@@ -923,7 +996,7 @@ class _CurrentContext(Dependency["Context"]):
             await ctx.__aexit__(exc_type, exc_value, traceback)
 
 
-class _OptionalCurrentContext(Dependency["Context | None"]):
+class _OptionalCurrentContext(Provider["Context | None"]):
     """Context dependency that returns None instead of raising when no context
     is active. Used for ``ctx: Context = None`` parameter patterns.
 
@@ -983,7 +1056,7 @@ def OptionalCurrentContext() -> Context | None:
     return cast("Context | None", _OptionalCurrentContext())
 
 
-class _CurrentFastMCP(Dependency["FastMCP"]):
+class _CurrentFastMCP(Provider["FastMCP"]):
     """Async context manager for FastMCP server dependency."""
 
     async def __aenter__(self) -> FastMCP:
@@ -1023,7 +1096,7 @@ def CurrentFastMCP() -> FastMCP:
     return cast(FastMCP, _CurrentFastMCP())
 
 
-class _CurrentRequest(Dependency[Request]):
+class _CurrentRequest(Provider[Request]):
     """Async context manager for HTTP Request dependency."""
 
     async def __aenter__(self) -> Request:
@@ -1064,11 +1137,14 @@ def CurrentRequest() -> Request:
     return cast(Request, _CurrentRequest())
 
 
-class _CurrentHeaders(Dependency[dict[str, str]]):
+class _CurrentHeaders(Provider[dict[str, str]]):
     """Async context manager for HTTP Headers dependency."""
 
     async def __aenter__(self) -> dict[str, str]:
-        return get_http_headers(include={"authorization"})
+        # Credential headers are denied by default because most callers forward
+        # what they get. This dependency only exposes the current request to the
+        # handler, so it opts them back in.
+        return get_http_headers(include={"authorization", "cookie"})
 
     async def __aexit__(
         self,
@@ -1083,9 +1159,9 @@ def CurrentHeaders() -> dict[str, str]:
     """Get the current HTTP request headers.
 
     This dependency provides access to the HTTP headers for the current request,
-    including the authorization header. Returns an empty dictionary when no HTTP
-    request is available, making it safe to use in code that might run over any
-    transport.
+    including the `authorization` and `cookie` headers, which `get_http_headers()`
+    withholds by default. Returns an empty dictionary when no HTTP request is
+    available, making it safe to use in code that might run over any transport.
 
     Returns:
         A dependency that resolves to a dictionary of header name -> value
@@ -1198,7 +1274,7 @@ class InMemoryProgress:
         self._message = message
 
 
-class Progress(Dependency["Progress"]):
+class Progress(Provider["Progress"]):
     """Progress dependency that works in both server and worker contexts.
 
     In a Docket worker, delegates to the execution's Redis-backed progress
@@ -1275,7 +1351,7 @@ class Progress(Dependency["Progress"]):
 # --- Access Token dependency ---
 
 
-class _CurrentAccessToken(Dependency[AccessToken]):
+class _CurrentAccessToken(Provider[AccessToken]):
     """Async context manager for AccessToken dependency."""
 
     async def __aenter__(self) -> AccessToken:
@@ -1325,7 +1401,7 @@ def CurrentAccessToken() -> AccessToken:
 # --- Token Claim dependency ---
 
 
-class _TokenClaim(Dependency[str]):
+class _TokenClaim(Provider[str]):
     """Dependency that extracts a specific claim from the access token."""
 
     def __init__(self, claim_name: str):

@@ -1,10 +1,11 @@
 """A middleware for response caching."""
 
+import base64
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from logging import Logger
-from typing import Any, TypedDict
+from typing import Any, NotRequired, Self, TypedDict
 
 import mcp_types
 import pydantic_core
@@ -17,7 +18,7 @@ from key_value.aio.wrappers.statistics.wrapper import (
     KVStoreCollectionStatistics,
 )
 from pydantic import Field
-from typing_extensions import NotRequired, Self, TypeVar, override
+from typing_extensions import TypeVar, override
 
 from fastmcp.prompts.base import (
     InputRequiredPromptResult,
@@ -68,6 +69,7 @@ FIVE_MINUTES_IN_SECONDS = 300
 ONE_MB_IN_BYTES = 1024 * 1024
 
 ANONYMOUS_AUTH_KEY = "__anonymous__"
+DEFAULT_VERSION_CACHE_KEY = "__default__"
 
 BaseModelT = TypeVar("BaseModelT", bound=FastMCPBaseModel)
 
@@ -88,6 +90,7 @@ class CacheableResourceContent(FastMCPBaseModel):
     content: str | bytes
     mime_type: str | None = None
     meta: dict[str, Any] | None = None
+    is_binary: bool = False
 
 
 class CacheableResourceResult(FastMCPBaseModel):
@@ -104,7 +107,14 @@ class CacheableResourceResult(FastMCPBaseModel):
         return cls(
             contents=[
                 CacheableResourceContent(
-                    content=item.content, mime_type=item.mime_type, meta=item.meta
+                    # JSON cannot distinguish bytes from text. Encode binary
+                    # content and retain its type independently of the MIME type.
+                    content=base64.b64encode(item.content).decode("ascii")
+                    if isinstance(item.content, bytes)
+                    else item.content,
+                    mime_type=item.mime_type,
+                    meta=item.meta,
+                    is_binary=isinstance(item.content, bytes),
                 )
                 for item in value.contents
             ],
@@ -115,7 +125,11 @@ class CacheableResourceResult(FastMCPBaseModel):
         return ResourceResult(
             contents=[
                 ResourceContent(
-                    content=item.content, mime_type=item.mime_type, meta=item.meta
+                    content=base64.b64decode(item.content)
+                    if item.is_binary
+                    else item.content,
+                    mime_type=item.mime_type,
+                    meta=item.meta,
                 )
                 for item in self.contents
             ],
@@ -243,11 +257,12 @@ class ResponseCachingMiddleware(Middleware):
 
     Notes:
     - Caches `tools/call`, `resources/read`, `prompts/get`, `tools/list`, `resources/list`, and `prompts/list` requests.
-    - Cache keys are derived from the method name, arguments, and the caller's
-      access token. Entries are partitioned per-token so that responses filtered
-      by per-component authorization (e.g. `auth=require_scopes(...)`) cannot
-      leak across users with different permissions. Unauthenticated callers
-      (including STDIO) share a single anonymous partition.
+    - Cache keys are derived from the method name, requested component version,
+      arguments, and the caller's access token. Entries are partitioned per-token
+      so that responses filtered by per-component authorization (e.g.
+      `auth=require_scopes(...)`) cannot leak across users with different
+      permissions. Unauthenticated callers (including STDIO) share a single
+      anonymous partition.
     """
 
     def __init__(
@@ -517,6 +532,14 @@ class ResponseCachingMiddleware(Middleware):
         if _is_continuation_leg(context):
             return await call_next(context)
 
+        if (
+            context.fastmcp_context is not None
+            and context.fastmcp_context.fastmcp._requires_live_resource(
+                str(context.message.uri)
+            )
+        ):
+            return await call_next(context)
+
         cache_key: str = _make_read_resource_cache_key(
             msg=context.message, auth_key=_get_auth_partition_key()
         )
@@ -649,25 +672,51 @@ def _get_auth_partition_key() -> str:
     return _hash_cache_key(token.token)
 
 
+def _get_component_version_cache_key(msg: mcp_types.RequestParams) -> str:
+    """Return a cache partition for the requested component version."""
+    if not msg.meta:
+        return DEFAULT_VERSION_CACHE_KEY
+
+    fastmcp_meta = msg.meta.get("fastmcp")
+    if not isinstance(fastmcp_meta, Mapping):
+        return DEFAULT_VERSION_CACHE_KEY
+
+    version = fastmcp_meta.get("version")
+    if version is None:
+        return DEFAULT_VERSION_CACHE_KEY
+
+    # Encode the selector as a canonical JSON value so strings and range
+    # selectors cannot collide and equivalent selectors share a partition.
+    return f"__version__:{_get_arguments_str({'version': version})}"
+
+
 def _make_call_tool_cache_key(
     msg: mcp_types.CallToolRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
 ) -> str:
-    """Make a cache key for a tool call using a stable hash of name and arguments."""
+    """Make a cache key for a tool call using name, version, and arguments."""
 
-    return _hash_cache_key(f"{auth_key}:{msg.name}:{_get_arguments_str(msg.arguments)}")
+    return _hash_cache_key(
+        f"{auth_key}:{_get_component_version_cache_key(msg)}:{msg.name}:"
+        f"{_get_arguments_str(msg.arguments)}"
+    )
 
 
 def _make_read_resource_cache_key(
     msg: mcp_types.ReadResourceRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
 ) -> str:
-    """Make a cache key for a resource read using a stable hash of URI."""
+    """Make a cache key for a resource read using version and URI."""
 
-    return _hash_cache_key(f"{auth_key}:{msg.uri}")
+    return _hash_cache_key(
+        f"{auth_key}:{_get_component_version_cache_key(msg)}:{msg.uri}"
+    )
 
 
 def _make_get_prompt_cache_key(
     msg: mcp_types.GetPromptRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
 ) -> str:
-    """Make a cache key for a prompt get using a stable hash of name and arguments."""
+    """Make a cache key for a prompt get using name, version, and arguments."""
 
-    return _hash_cache_key(f"{auth_key}:{msg.name}:{_get_arguments_str(msg.arguments)}")
+    return _hash_cache_key(
+        f"{auth_key}:{_get_component_version_cache_key(msg)}:{msg.name}:"
+        f"{_get_arguments_str(msg.arguments)}"
+    )

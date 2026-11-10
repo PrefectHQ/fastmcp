@@ -11,21 +11,26 @@ Choose based on your WorkOS setup and authentication requirements.
 from __future__ import annotations
 
 import contextlib
-from typing import Literal
+from typing import Annotated, Literal
 
 import httpx2
 from key_value.aio.protocols import AsyncKeyValue
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, TypeAdapter, UrlConstraints
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from fastmcp.server.auth import AccessToken, RemoteAuthProvider, TokenVerifier
+from fastmcp.server.auth.identity_assertion import IdentityAssertion
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+_AUTHKIT_AUTHORIZATION_SERVER_URL_ADAPTER = TypeAdapter(
+    Annotated[AnyHttpUrl, UrlConstraints(preserve_empty_path=True)]
+)
 
 
 class WorkOSTokenVerifier(TokenVerifier):
@@ -183,6 +188,7 @@ class WorkOSProvider(OAuthProxy):
         extra_authorize_params: dict[str, str] | None = None,
         http_client: httpx2.AsyncClient | None = None,
         enable_cimd: bool = True,
+        identity_assertion: IdentityAssertion | None = None,
     ):
         """Initialize WorkOS OAuth provider.
 
@@ -237,6 +243,8 @@ class WorkOSProvider(OAuthProxy):
                 is responsible for its lifecycle. When None (default), a fresh client is created per call.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs (default True). Set to False to disable.
+            identity_assertion: Optional SEP-990 ID-JAG configuration for
+                identity-bound token exchange. Disabled by default.
         """
         # Apply defaults and ensure authkit_domain is a full URL
         authkit_domain_str = authkit_domain
@@ -281,6 +289,7 @@ class WorkOSProvider(OAuthProxy):
             extra_authorize_params=extra_authorize_params,
             valid_scopes=valid_scopes_final,
             enable_cimd=enable_cimd,
+            identity_assertion=identity_assertion,
         )
 
         logger.debug(
@@ -385,7 +394,11 @@ class AuthKitProvider(RemoteAuthProvider):
         # Initialize RemoteAuthProvider with AuthKit as the authorization server
         super().__init__(
             token_verifier=token_verifier,
-            authorization_servers=[AnyHttpUrl(self.authkit_domain)],
+            authorization_servers=[
+                _AUTHKIT_AUTHORIZATION_SERVER_URL_ADAPTER.validate_python(
+                    self.authkit_domain
+                )
+            ],
             base_url=self.base_url,
             resource_base_url=resource_base_url,
             scopes_supported=scopes_supported,

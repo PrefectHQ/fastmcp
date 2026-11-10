@@ -8,7 +8,6 @@ client opts the tasks extension in for the request.
 """
 
 import pytest
-from docket import Docket
 from fastmcp_tasks.models import CreateTaskResult
 
 from fastmcp import FastMCP
@@ -22,16 +21,6 @@ from tests.tasks.task_helpers import (
     auth_scope,
     running_task_server,
 )
-
-
-@pytest.fixture(autouse=True)
-def reset_docket_memory_server():
-    """Force a fresh memory:// Docket server bound to each test's event loop."""
-    if hasattr(Docket, "_memory_server"):
-        delattr(Docket, "_memory_server")
-    yield
-    if hasattr(Docket, "_memory_server"):
-        delattr(Docket, "_memory_server")
 
 
 async def call_tool_with_optin(server: FastMCP, name: str, arguments: dict):

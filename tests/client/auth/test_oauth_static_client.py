@@ -66,6 +66,33 @@ class TestStaticClientInfoConstruction:
         oauth = OAuth(mcp_url="https://example.com/mcp")
         assert oauth._static_client_info is None
 
+    def test_dynamic_registration_is_a_public_client(self):
+        """Browser login has no secret, so registration must say so."""
+        oauth = OAuth(mcp_url="https://example.com/mcp")
+        body = oauth.context.client_metadata.model_dump(mode="json", exclude_none=True)
+        assert body["token_endpoint_auth_method"] == "none"
+
+    def test_dynamic_registration_keeps_an_explicit_auth_method(self):
+        """A caller who sets the method is left alone."""
+        oauth = OAuth(
+            mcp_url="https://example.com/mcp",
+            additional_client_metadata={
+                "token_endpoint_auth_method": "client_secret_post"
+            },
+        )
+        assert (
+            oauth.context.client_metadata.token_endpoint_auth_method
+            == "client_secret_post"
+        )
+
+    def test_auth_oauth_string_registers_as_a_public_client(self):
+        """Client(..., auth='oauth') uses the same public registration."""
+        transport = StreamableHttpTransport("https://example.com/mcp", auth="oauth")
+        assert isinstance(transport.auth, OAuth)
+        assert (
+            transport.auth.context.client_metadata.token_endpoint_auth_method == "none"
+        )
+
     def test_static_client_info_includes_additional_metadata(self):
         """Additional client metadata should be included in static client info."""
         oauth = OAuth(

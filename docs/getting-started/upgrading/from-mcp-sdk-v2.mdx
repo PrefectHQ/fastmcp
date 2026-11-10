@@ -63,7 +63,7 @@ CONSTRUCTOR ARGUMENTS THAT DO NOT CARRY OVER
 - `cache_hints=`
 - `extensions=`
 - `tools=[...]` (rare — the SDK's `Tool` type is not exported): FastMCP takes plain callables, so pass the underlying functions
-These raise TypeError, most naming their replacement. `name`, `version`, `instructions`, `icons`, `website_url`, `lifespan`, `resource_security`, and `request_state_security` carry over unchanged.
+Passing any of these raises TypeError, except `auth=`: the keyword survives, and an SDK `AuthSettings` value fails later, with an AttributeError when the server builds its HTTP app. Only `debug=` and `log_level=` get an error naming the replacement. `name`, `version`, `instructions`, `icons`, `website_url`, `lifespan`, `resource_security`, and `request_state_security` carry over unchanged.
 
 CONTEXT — these ten properties do NOT exist on FastMCP's Context and raise AttributeError if you only swap the import:
 - `ctx.mcp_server` → `ctx.fastmcp`
@@ -79,7 +79,7 @@ These four exist on both but with DIFFERENT signatures, so a bare import swap co
 - `ctx.elicit(message, schema=Model)` → `ctx.elicit(message, response_type=Model)` — the keyword was renamed
 - `ctx.read_resource(uri)` → still takes a URI, but returns a `ResourceResult` whose payload is under `.contents`, where the SDK returned an iterable of content objects directly. Code that iterates or indexes the return value needs updating.
 
-Genuinely unchanged: `report_progress`, `request_id`, `client_id`, `input_responses`, `request_state`, `session`, and `request_context`.
+Genuinely unchanged: `report_progress`, `request_id`, `client_id`, `input_responses`, `request_state`, `close_sse_stream`, `session`, and `request_context`.
 
 RESOLVERS — the one part that is not a rename, so check for it first
 - any `Annotated[T, Resolve(fn)]` parameter, and the resolvers behind it
@@ -91,13 +91,13 @@ For each item found, show the original code, name what changed, and give the Fas
 
 ## Install
 
-FastMCP 4 is in prerelease, so pin the exact version rather than installing unqualified — a bare `pip install fastmcp` resolves to the latest *stable* release, which today is FastMCP 3:
+FastMCP 4 is a stable release:
 
 ```bash
-pip install "fastmcp==4.0.0b3"
+pip install "fastmcp>=4"
 ```
 
-An exact pip pin installs even though it's a prerelease; it does not need `--pre`. uv also needs an explicit constraint for the transitive `fastmcp-slim` prerelease, so follow [Install the v4 Prerelease](/getting-started/upgrading/from-fastmcp-3#install-the-v4-prerelease) for a reproducible uv setup.
+The `fastmcp` package depends on `fastmcp-slim` at the same version; both resolve together with no extra constraints.
 
 FastMCP 4 depends on the MCP SDK v2, so nothing you already import from `mcp_types` moves. That is the practical benefit of migrating at this version rather than an earlier one: you and FastMCP are on the same protocol layer, with the same snake_case field names and the same type package, so the migration touches only the server API.
 
@@ -209,7 +209,7 @@ if __name__ == "__main__":
 
 ## Constructor Arguments
 
-`FastMCP()` describes your server's identity and behavior; how it gets deployed is decided when you serve it. Several `MCPServer` constructor arguments move accordingly, and each raises a `TypeError` naming its replacement rather than being silently ignored.
+`FastMCP()` describes your server's identity and behavior; how it gets deployed is decided when you serve it. Several `MCPServer` constructor arguments move accordingly. Each raises a `TypeError` rather than being silently ignored, but only `debug=` and `log_level=` get an error naming the replacement; the rest fail with a generic "unexpected keyword argument", so use the table below.
 
 `name`, `version`, `instructions`, `icons`, `website_url`, `lifespan`, `resource_security`, and `request_state_security` all mean what they meant before. The rest map like this:
 
@@ -243,10 +243,11 @@ Renaming `streamable_http_app()` to `http_app()` is only mechanical for a call w
 | `streamable_http_app(streamable_http_path=...)` | `http_app(path=...)` |
 | `sse_app(sse_path=...)` | `http_app(path=..., transport="sse")` |
 | `sse_app(message_path=...)` | no equivalent |
+| `max_request_body_size=`, `max_sessions=` | no equivalent |
 | `transport_security=TransportSecuritySettings(...)` | `host_origin_protection=`, `allowed_hosts=`, `allowed_origins=` |
 | `host=...` | pass to `mcp.run(host=...)` instead |
 
-`json_response`, `stateless_http`, `event_store`, and `retry_interval` keep their names. See [Deploying HTTP servers](/deployment/http) for the host and origin settings.
+`json_response`, `stateless_http`, `event_store`, `retry_interval`, and `session_idle_timeout` keep their names. See [Deploying HTTP servers](/deployment/http) for the host and origin settings.
 
 ### Stricter Arguments
 

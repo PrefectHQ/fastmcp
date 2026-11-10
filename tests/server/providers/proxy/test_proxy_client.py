@@ -1,10 +1,12 @@
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from anyio import create_task_group
+from mcp import CreateMessageResult
 from mcp_types import (
     ElicitRequestFormParams,
+    ImageContent,
     LoggingLevel,
     ModelHint,
     ModelPreferences,
@@ -79,12 +81,27 @@ async def _backend_sample(context: Context) -> str:
             )
         ],
         system_prompt="You love FastMCP",
+        include_context="thisServer",
         temperature=0.5,
         max_tokens=100,
+        stop_sequences=["STOP"],
+        metadata={"trace": "abc"},
         model_preferences=ModelPreferences(hints=[ModelHint(name="gpt-4o")]),
         related_request_id=context.origin_request_id,
     )
     return result.content.text if isinstance(result.content, TextContent) else ""
+
+
+async def _backend_sample_result(context: Context) -> dict[str, Any]:
+    """Issue a handshake-era `sampling/createMessage` and return the whole result."""
+    result = await context.session.create_message(  # ty: ignore[deprecated]
+        messages=[
+            SamplingMessage(role="user", content=TextContent(type="text", text="Hi"))
+        ],
+        max_tokens=100,
+        related_request_id=context.origin_request_id,
+    )
+    return result.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
 @pytest.fixture
@@ -104,6 +121,10 @@ def fastmcp_server():
         context: Context,
     ) -> str:
         return await _backend_sample(context)
+
+    @mcp.tool
+    async def sampling_result(context: Context) -> dict[str, Any]:
+        return await _backend_sample_result(context)
 
     @dataclass
     class Person:
@@ -128,6 +149,17 @@ def fastmcp_server():
         message: str, level: LoggingLevel, logger: str, context: Context
     ) -> None:
         await context.log(message=message, level=level, logger_name=logger)
+
+    @mcp.tool
+    async def log_raw(data: Any, context: Context) -> None:
+        # Unlike `context.log`, this sends the payload as-is, the way an MCP
+        # server that is not built on FastMCP would.
+        await context.session.send_log_message(  # ty: ignore[deprecated]
+            level="info",
+            data=data,
+            logger="raw",
+            related_request_id=context.origin_request_id,
+        )
 
     @mcp.tool
     async def report_progress(context: Context) -> int:
@@ -223,8 +255,11 @@ class TestProxyClient:
                 )
             ]
             assert params.system_prompt == "You love FastMCP"
+            assert params.include_context == "thisServer"
             assert params.temperature == 0.5
             assert params.max_tokens == 100
+            assert params.stop_sequences == ["STOP"]
+            assert params.metadata == {"trace": "abc"}
             assert params.model_preferences == ModelPreferences(
                 hints=[ModelHint(name="gpt-4o")]
             )
@@ -246,6 +281,35 @@ class TestProxyClient:
         ) as client:
             result = await client.call_tool("sampling", {})
             assert result.data == "I love FastMCP"
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            TextContent(type="text", text="I love FastMCP"),
+            ImageContent(type="image", data="aGVsbG8=", mime_type="image/png"),
+        ],
+        ids=["text", "image"],
+    )
+    async def test_forward_sampling_response_unchanged(
+        self, proxy_server: FastMCP, content: TextContent | ImageContent
+    ):
+        """
+        The backend receives the client's sampling result as the client sent it:
+        its model, stop reason and content, not a text-only placeholder.
+        """
+        answer = CreateMessageResult(
+            role="assistant",
+            model="claude-sonnet-5-5",
+            content=content,
+            stop_reason="endTurn",
+        )
+        async with Client(
+            proxy_server, mode="legacy", sampling_handler=lambda *args: answer
+        ) as client:
+            result = await client.call_tool("sampling_result", {})
+        assert result.data == answer.model_dump(
+            mode="json", by_alias=True, exclude_none=True
+        )
 
     async def test_elicit_request(self, proxy_server: FastMCP):
         """
@@ -331,6 +395,35 @@ class TestProxyClient:
             )
 
         assert log_handler_called
+
+    @pytest.mark.parametrize(
+        ("data", "expected_msg"),
+        [
+            ("plain string log", "plain string log"),
+            ({"message": "no msg key", "n": 1}, '{"message": "no msg key", "n": 1}'),
+            (["a", 2], '["a", 2]'),
+            (42, "42"),
+        ],
+    )
+    async def test_log_request_with_non_fastmcp_payload(
+        self, proxy_server: FastMCP, data: Any, expected_msg: str
+    ):
+        """
+        Test that the proxy forwards log data that is not FastMCP's `msg`/`extra` dict.
+        """
+        received: list[LogMessage] = []
+
+        async def log_handler(message: LogMessage) -> None:
+            received.append(message)
+
+        async with Client(
+            proxy_server, mode="legacy", log_handler=log_handler
+        ) as client:
+            await client.call_tool("log_raw", {"data": data})
+
+        assert [(m.level, m.logger, m.data["msg"]) for m in received] == [
+            ("info", "raw", expected_msg)
+        ]
 
     async def test_report_progress_request(self, proxy_server: FastMCP):
         """

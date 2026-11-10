@@ -16,10 +16,9 @@ from fastmcp.client.progress import ProgressHandler
 from fastmcp.client.telemetry import client_span
 from fastmcp.exceptions import ToolError
 from fastmcp.telemetry import inject_trace_context
-from fastmcp.utilities.json_schema_type import json_schema_to_type
+from fastmcp.utilities.json_schema_type import json_schema_to_type_adapter
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.timeout import normalize_timeout_to_seconds
-from fastmcp.utilities.types import get_cached_typeadapter
 
 logger = get_logger(__name__)
 
@@ -90,6 +89,8 @@ class ClientToolsMixin:
     async def list_tools(
         self: Client,
         max_pages: int = AUTO_PAGINATION_MAX_PAGES,
+        *,
+        cache_mode: CacheMode = "use",
     ) -> list[mcp_types.Tool]:
         """Retrieve all tools available on the server.
 
@@ -99,6 +100,11 @@ class ClientToolsMixin:
 
         Args:
             max_pages: Maximum number of pages to fetch before raising. Defaults to 250.
+            cache_mode: Response-cache behavior for the first page (only active when
+                the client was built with a cache and the connection is modern).
+                `"use"` (default) serves and stores; `"refresh"` stores without
+                serving; `"bypass"` skips the cache. Subsequent cursor pages always
+                skip the cache.
 
         Returns:
             list[mcp_types.Tool]: A list of all Tool objects.
@@ -112,9 +118,9 @@ class ClientToolsMixin:
         seen_cursors: set[str] = set()
 
         for _ in range(max_pages):
-            result = await self.list_tools_mcp(cursor=cursor)
+            result = await self.list_tools_mcp(cursor=cursor, cache_mode=cache_mode)
             all_tools.extend(result.tools)
-            if not result.next_cursor:
+            if result.next_cursor is None:
                 break
             if result.next_cursor in seen_cursors:
                 logger.warning(
@@ -266,7 +272,9 @@ class ClientToolsMixin:
             name=name,
             result=result,
             tool_output_schemas=self.session._tool_output_schemas,
-            list_tools_fn=self.session.list_tools,
+            # Fetch every page: a tool beyond the first page is otherwise never
+            # found, and its result is left unhydrated.
+            list_tools_fn=self.list_tools,
             client_name=self.name,
             raise_on_error=raise_on_error,
         )
@@ -331,6 +339,31 @@ class ClientToolsMixin:
         )
 
 
+def _wrapped_result_schema(output_schema: dict[str, Any]) -> dict[str, Any] | bool:
+    """Narrow a wrapped output schema to `properties.result` and keep its defs.
+
+    The server leaves `$defs` and draft-07 `definitions` on the root schema,
+    beside `properties.result`. Validating the inner schema without them makes
+    every local `$ref` resolve to an empty object.
+    """
+    properties = output_schema.get("properties")
+    if not isinstance(properties, dict):
+        return output_schema
+    narrowed = properties.get("result")
+    if isinstance(narrowed, bool):
+        return narrowed
+    if not isinstance(narrowed, dict):
+        return output_schema
+    carried = {
+        key: output_schema[key]
+        for key in ("$defs", "definitions")
+        if key in output_schema and key not in narrowed
+    }
+    if not carried:
+        return narrowed
+    return {**narrowed, **carried}
+
+
 async def _parse_call_tool_result(
     name: str,
     result: mcp_types.CallToolResult,
@@ -364,7 +397,7 @@ async def _parse_call_tool_result(
         else:
             msg = f"Tool '{name}' returned an error"
         raise ToolError(msg)
-    elif result.structured_content and not result.is_error:
+    elif result.structured_content is not None and not result.is_error:
         try:
             raw_fastmcp_meta = (result.meta or {}).get("fastmcp")
             fastmcp_meta = (
@@ -395,11 +428,8 @@ async def _parse_call_tool_result(
             output_schema = tool_output_schemas.get(name)
             if output_schema:
                 if wrap_from_meta or output_schema.get("x-fastmcp-wrap-result"):
-                    output_schema = output_schema.get("properties", {}).get(
-                        "result", output_schema
-                    )
-                output_type = json_schema_to_type(output_schema)
-                type_adapter = get_cached_typeadapter(output_type)
+                    output_schema = _wrapped_result_schema(output_schema)
+                type_adapter = json_schema_to_type_adapter(output_schema)
                 data = type_adapter.validate_python(structured_content)
             else:
                 data = structured_content

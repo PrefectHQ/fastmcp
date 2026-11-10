@@ -3,7 +3,6 @@ title: Custom Providers
 sidebarTitle: Custom
 description: Build providers that source components from any data source
 icon: code
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -40,7 +39,7 @@ A provider implements protected `_list_*` methods that return available componen
 from collections.abc import Sequence
 from fastmcp.server.providers import Provider
 from fastmcp.tools import Tool
-from fastmcp.resources import Resource
+from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.prompts import Prompt
 
 class MyProvider(Provider):
@@ -52,6 +51,10 @@ class MyProvider(Provider):
         """Return all resources this provider offers."""
         return []
 
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
+        """Return all resource templates this provider offers."""
+        return []
+
     async def _list_prompts(self) -> Sequence[Prompt]:
         """Return all prompts this provider offers."""
         return []
@@ -59,7 +62,7 @@ class MyProvider(Provider):
 
 You only need to implement the methods for component types you provide. The base class returns empty sequences by default.
 
-The `_get_*` methods (`_get_tool`, `_get_resource`, `_get_prompt`) have default implementations that search through the list results. Override them only if you can fetch individual components more efficiently than iterating the full list.
+The `_get_*` methods (`_get_tool`, `_get_resource`, `_get_resource_template`, `_get_prompt`) have default implementations that search through the list results and return the highest matching version. Override them only if you can fetch individual components more efficiently than iterating the full list.
 
 ## What Providers Return
 
@@ -91,24 +94,28 @@ Similar `from_function` methods exist for `Resource` and `Prompt`.
 
 ## Registering Providers
 
-Add providers when creating the server:
+Add providers when creating the server. These examples use `MyProvider` from above:
 
 ```python
-mcp = FastMCP(
-    "MyServer",
-    providers=[
-        DatabaseProvider(db_url),
-        ConfigProvider(config_path),
-    ]
-)
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer", providers=[MyProvider()])
 ```
 
 Or add them after creation:
 
 ```python
+from fastmcp import FastMCP
+
 mcp = FastMCP("MyServer")
-mcp.add_provider(DatabaseProvider(db_url))
+mcp.add_provider(MyProvider())
 ```
+
+### Bundled Extensions
+
+<VersionBadge version="4.1.0" />
+
+If your components depend on an MCP extension, bundle it with the provider through [`required_extensions()`](/servers/extensions#provider-extensions). Adding the provider then registers its protocol support on the receiving server, including when the provider is composed through aggregates or mounted servers. The extensions guide covers the opt-in flag and how callers configure bundled extensions.
 
 ## A Simple Provider
 
@@ -150,11 +157,14 @@ mcp = FastMCP("Calculator", providers=[
 
 ## Lifecycle Management
 
-Providers often need to set up connections when the server starts and clean them up when it stops. Override the `lifespan` method:
+Providers often need to set up connections when the server starts and clean them up when it stops. Override the `lifespan` method. In this sketch, `connect_database` and `_make_tool` stand in for your database driver and your row-to-`Tool` conversion:
 
 ```python
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator, Sequence
+
+from fastmcp.server.providers import Provider
+from fastmcp.tools import Tool
 
 class DatabaseProvider(Provider):
     def __init__(self, db_url: str):

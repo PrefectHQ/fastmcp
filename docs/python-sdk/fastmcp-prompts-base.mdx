@@ -1,0 +1,137 @@
+---
+title: base
+sidebarTitle: base
+---
+
+# `fastmcp.prompts.base`
+
+
+Base classes for FastMCP prompts.
+
+## Classes
+
+### `Message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/prompts/base.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Wrapper for prompt message with auto-serialization.
+
+Accepts any content - strings pass through, other types
+(dict, list, BaseModel) are JSON-serialized to text.
+
+
+**Methods:**
+
+#### `to_mcp_prompt_message` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/prompts/base.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+to_mcp_prompt_message(self) -> PromptMessage
+```
+
+Convert to MCP PromptMessage.
+
+
+### `PromptArgument` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/prompts/base.py#L98" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+An argument that can be passed to a prompt.
+
+
+### `PromptResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/prompts/base.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Canonical result type for prompt rendering.
+
+Provides explicit control over prompt responses: multiple messages,
+roles, and metadata at both the message and result level.
+
+
+**Methods:**
+
+#### `to_mcp_prompt_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/prompts/base.py#L182" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+to_mcp_prompt_result(self) -> GetPromptResult
+```
+
+Convert to MCP GetPromptResult.
+
+
+### `InputRequiredPromptResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/prompts/base.py#L192" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+The full result of a single multi-round-trip prompt leg (SEP-2322).
+
+`InputRequiredResult` is a result type, not a `tools/call` feature: any
+request may resolve to one. When a prompt returns an `InputRequiredResult`
+from its body to ask the client for input, that ask is the legitimate
+result of this `prompts/get` — so FastMCP wraps it in this `PromptResult`
+subclass, mirroring `InputRequiredToolResult`, and it flows through the
+middleware chain as an ordinary return value.
+
+Invariant: the wrapped `InputRequiredResult` is never rendered as prompt
+messages. `messages` is always empty; the wire handler (`_on_get_prompt`)
+reads `.input_required` and returns it to the runner.
+
+
+### `Prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/prompts/base.py#L224" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A prompt template that can be rendered with parameters.
+
+
+**Methods:**
+
+#### `to_mcp_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/prompts/base.py#L236" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+to_mcp_prompt(self, **overrides: Any) -> SDKPrompt
+```
+
+Convert the prompt to an MCP prompt.
+
+
+#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/prompts/base.py#L262" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+from_function(cls, fn: Callable[..., Any]) -> FunctionPrompt
+```
+
+Create a Prompt from a function.
+
+The function can return:
+- str: wrapped as single user Message
+- list\[Message | str]: converted to list\[Message]
+- PromptResult: used directly
+
+
+#### `render` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/prompts/base.py#L296" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+render(self, arguments: dict[str, Any] | None = None) -> str | list[Message | str] | PromptResult
+```
+
+Render the prompt with arguments.
+
+Subclasses must implement this method. Return one of:
+- str: Wrapped as single user Message
+- list\[Message | str]: Converted to list\[Message]
+- PromptResult: Used directly
+
+
+#### `convert_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/prompts/base.py#L309" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+convert_result(self, raw_value: Any) -> PromptResult
+```
+
+Convert a raw return value to PromptResult.
+
+**Raises:**
+- `TypeError`: for unsupported types
+
+
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/prompts/base.py#L372" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_span_attributes(self) -> dict[str, Any]
+```

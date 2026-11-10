@@ -3,7 +3,6 @@
 from contextlib import asynccontextmanager, contextmanager
 
 import pytest
-from docket import Docket
 from mcp_types import TextContent, TextResourceContents
 
 from fastmcp import FastMCP
@@ -14,16 +13,6 @@ from fastmcp_tasks import TasksExtension
 from tests.conftest import make_server_request_context
 
 HUZZAH = "huzzah!"
-
-
-@pytest.fixture
-def reset_docket_memory_server():
-    """Force a fresh memory:// Docket server bound to this test's event loop."""
-    if hasattr(Docket, "_memory_server"):
-        delattr(Docket, "_memory_server")
-    yield
-    if hasattr(Docket, "_memory_server"):
-        delattr(Docket, "_memory_server")
 
 
 class Connection:
@@ -1205,9 +1194,7 @@ class TestSharedDependencies:
             )
             assert call_count == 1
 
-    async def test_shared_resolves_on_task_capable_server(
-        self, reset_docket_memory_server
-    ):
+    async def test_shared_resolves_on_task_capable_server(self):
         """Shared() dependencies resolve on a normal request even when the server
         has task-enabled components.
 

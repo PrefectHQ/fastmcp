@@ -1,8 +1,10 @@
 """BM25-based search transform."""
 
 import hashlib
+import json
 import math
 import re
+import unicodedata
 from collections.abc import Sequence
 from typing import Annotated, Any
 
@@ -16,8 +18,9 @@ from fastmcp.tools.base import Tool
 
 
 def _tokenize(text: str) -> list[str]:
-    """Lowercase, split on non-alphanumeric, filter short tokens."""
-    return [t for t in re.split(r"[^a-z0-9]+", text.lower()) if len(t) > 1]
+    """Normalize and extract Unicode alphanumeric tokens."""
+    normalized = unicodedata.normalize("NFKC", text).casefold()
+    return re.findall(r"[^\W_]{2,}", normalized)
 
 
 class _BM25Index:
@@ -78,8 +81,8 @@ class _BM25Index:
 
 
 def _catalog_hash(tools: Sequence[Tool]) -> str:
-    """SHA256 hash of sorted tool searchable text for staleness detection."""
-    key = "|".join(sorted(_extract_searchable_text(t) for t in tools))
+    """SHA256 hash of sorted tool names and searchable text for staleness detection."""
+    key = json.dumps(sorted((t.name, _extract_searchable_text(t)) for t in tools))
     return hashlib.sha256(key.encode()).hexdigest()
 
 
@@ -87,7 +90,7 @@ class BM25SearchTransform(BaseSearchTransform):
     """Search transform using BM25 Okapi relevance ranking.
 
     Maintains an in-memory index that is lazily rebuilt when the tool
-    catalog changes (detected via a hash of tool names).
+    catalog's searchable text changes.
     """
 
     def __init__(
@@ -107,7 +110,7 @@ class BM25SearchTransform(BaseSearchTransform):
             search_result_serializer=search_result_serializer,
         )
         self._index = _BM25Index()
-        self._indexed_tools: Sequence[Tool] = ()
+        self._indexed_names: list[str] = []
         self._last_hash: str = ""
 
     def _make_search_tool(self) -> Tool:
@@ -134,11 +137,13 @@ class BM25SearchTransform(BaseSearchTransform):
             documents = [_extract_searchable_text(t) for t in tools]
             new_index = _BM25Index(self._index.k1, self._index.b)
             new_index.build(documents)
-            self._index, self._indexed_tools, self._last_hash = (
+            self._index, self._indexed_names, self._last_hash = (
                 new_index,
-                tools,
+                [t.name for t in tools],
                 current_hash,
             )
 
         indices = self._index.query(query, self._max_results)
-        return [self._indexed_tools[i] for i in indices]
+        # The catalog is deduplicated by name; resolve the current version's schema.
+        tools_by_name = {t.name: t for t in tools}
+        return [tools_by_name[self._indexed_names[i]] for i in indices]

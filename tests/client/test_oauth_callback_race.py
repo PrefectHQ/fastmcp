@@ -62,6 +62,16 @@ def test_oauth_callback_server_uses_configured_host():
     assert server.config.host == "localhost"
 
 
+def test_oauth_callback_server_does_not_need_websockets():
+    """The callback is a plain HTTP route, and `websockets` is not installed with
+    a client-only `fastmcp-slim[client]`, so uvicorn must not load a WebSocket
+    implementation for it."""
+    server = create_oauth_callback_server(port=find_available_port())
+    server.config.load()
+
+    assert server.config.ws_protocol_class is None
+
+
 async def test_oauth_callback_result_captures_iss():
     """RFC 9207: the `iss` query parameter must survive from the raw callback
     request through to `OAuthCallbackResult`, the same as `code` and `state`.

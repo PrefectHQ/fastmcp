@@ -2,9 +2,12 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
-from mcp_types import EmbeddedResource, TextResourceContents
+from mcp import MCPError
+from mcp_types import INVALID_PARAMS, EmbeddedResource, TextResourceContents
 from pydantic import Field
 
+from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ValidationError
 from fastmcp.prompts.base import (
     Message,
     Prompt,
@@ -13,6 +16,23 @@ from fastmcp.prompts.base import (
 
 
 class TestRenderPrompt:
+    async def test_fn_with_postponed_annotations(self):
+        namespace = {}
+        exec(
+            "from __future__ import annotations\n"
+            "from pydantic import BaseModel\n"
+            "class Config(BaseModel):\n"
+            "    key: str\n"
+            "def show_config(cfg: Config) -> str:\n"
+            "    return f'config={cfg.key}'\n",
+            namespace,
+        )
+
+        prompt = Prompt.from_function(namespace["show_config"])
+        result = await prompt.render({"cfg": '{"key": "v"}'})
+
+        assert result.messages == [Message("config=v")]
+
     async def test_basic_fn(self):
         def fn() -> str:
             return "Hello, world!"
@@ -60,8 +80,31 @@ class TestRenderPrompt:
             return f"Hello, {name}! You're {age} years old."
 
         prompt = Prompt.from_function(fn)
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValidationError, match="Missing required arguments: {'name'}"
+        ):
             await prompt.render(arguments=dict(age=40))
+
+    async def test_fn_with_positional_only_parameters_not_allowed(self):
+        def fn(name: str, /, age: int = 30) -> str:
+            return f"Hello, {name}! You're {age} years old."
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                "Functions with positional-only parameters are not supported as "
+                "prompts.*standard parameters"
+            ),
+        ):
+            Prompt.from_function(fn)
+
+    async def test_fn_with_keyword_only_parameters(self):
+        def fn(name: str, *, age: int = 30) -> str:
+            return f"Hello, {name}! You're {age} years old."
+
+        prompt = Prompt.from_function(fn)
+        result = await prompt.render(arguments=dict(name="World", age=40))
+        assert result.messages == [Message("Hello, World! You're 40 years old.")]
 
     async def test_fn_returns_message_list(self):
         async def fn() -> list[Message]:
@@ -646,6 +689,24 @@ class TestPromptArgumentDescriptions:
         assert mcp_prompt.meta is not None
         assert meta_data.items() <= mcp_prompt.meta.items()
 
+    def test_argument_titles_from_field(self):
+        """An explicit Field(title=...) becomes the argument's MCP title."""
+        from pydantic import Field
+
+        def test_prompt(
+            name: Annotated[str, Field(title="Your name")],
+            tone: str = Field(default="playful", title="Tone of voice"),
+            topic: str = "dogs",
+        ) -> str:
+            return f"Hello, {name}!"
+
+        arguments = Prompt.from_function(test_prompt).to_mcp_prompt().arguments or []
+        assert {arg.name: arg.title for arg in arguments} == {
+            "name": "Your name",
+            "tone": "Tone of voice",
+            "topic": None,
+        }
+
 
 class TestMessage:
     def test_message_string_content(self):
@@ -781,6 +842,48 @@ class TestPromptResult:
         assert len(mcp_result.messages) == 2
         assert mcp_result.description == "Test"
         assert mcp_result.meta == {"key": "value"}
+
+
+class TestInternalMetaNotLeaked:
+    """FastMCP's private visibility marker must never reach the wire."""
+
+    async def test_visibility_marker_stripped_from_result_meta(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(meta={"team": "infra", "fastmcp": {"owner": "docs"}})
+        def greet(name: str) -> str:
+            return f"Hello {name}"
+
+        # Applying any visibility rule stamps the internal marker on meta
+        mcp.enable(names={"greet"})
+
+        async with Client(mcp) as client:
+            result = await client.get_prompt("greet", {"name": "Ada"})
+
+        assert result.meta is not None
+        assert result.meta["team"] == "infra"
+        assert result.meta["fastmcp"] == {"owner": "docs"}
+
+
+class TestMissingRequiredArguments:
+    """Omitting a required argument is a client error, not a server fault."""
+
+    @pytest.mark.parametrize("mask_error_details", [False, True])
+    async def test_get_prompt_missing_required_argument_is_invalid_params(
+        self, mask_error_details: bool
+    ):
+        mcp = FastMCP(mask_error_details=mask_error_details)
+
+        @mcp.prompt
+        def summarize(topic: str) -> str:
+            return f"Summarize {topic}"
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError) as exc_info:
+                await client.get_prompt("summarize", {})
+
+        assert exc_info.value.error.code == INVALID_PARAMS
+        assert exc_info.value.error.message == "Missing required arguments: {'topic'}"
 
 
 class TestPromptFieldDefaults:

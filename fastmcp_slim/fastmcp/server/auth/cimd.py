@@ -21,7 +21,7 @@ import json
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import timezone
+from datetime import UTC
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlparse
@@ -37,12 +37,19 @@ from fastmcp.server.auth.ssrf import (
     ssrf_safe_fetch_response,
     validate_url,
 )
+from fastmcp.utilities.auth import decode_jwt_header
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
     from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 logger = get_logger(__name__)
+
+# Signing algorithms accepted for private_key_jwt assertions: the RSA and EC
+# families whose public keys can be published in a client's JWKS.
+ASSERTION_ALGORITHMS = frozenset(
+    {"RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512"}
+)
 
 
 def _jwk_to_pem(key_data: dict[str, Any]) -> str:
@@ -158,7 +165,9 @@ class CIMDDocument(BaseModel):
                 raise ValueError(
                     f"CIMD redirect_uri must have a scheme (e.g. http:// or https://): {uri!r}"
                 )
-            if not parsed.netloc and not uri.startswith("urn:"):
+            # Private-use schemes (RFC 8252 section 7.1, e.g. com.example.app:/cb)
+            # have no host, so only http(s) redirects must name one.
+            if parsed.scheme in ("http", "https") and not parsed.netloc:
                 raise ValueError(f"CIMD redirect_uri must have a host: {uri!r}")
         return v
 
@@ -206,6 +215,8 @@ class CIMDFetcher:
 
     # Maximum response size (bytes)
     MAX_RESPONSE_SIZE = 5120  # 5KB
+    # Maximum number of distinct client documents retained in the process cache
+    MAX_CACHE_SIZE = 1_000
     # Default cache TTL (seconds)
     DEFAULT_CACHE_TTL_SECONDS = 3600
 
@@ -220,6 +231,20 @@ class CIMDFetcher:
         """
         self.timeout = timeout
         self._cache: dict[str, _CIMDCacheEntry] = {}
+
+    def _store_cache_entry(
+        self,
+        client_id_url: str,
+        entry: _CIMDCacheEntry,
+    ) -> None:
+        """Store a document in the bounded process-local cache."""
+        self._cache[client_id_url] = entry
+        while len(self._cache) > self.MAX_CACHE_SIZE:
+            del self._cache[next(iter(self._cache))]
+
+    def _remove_cache_entry(self, client_id_url: str) -> None:
+        """Remove a document from the process-local cache."""
+        self._cache.pop(client_id_url, None)
 
     def _parse_cache_policy(
         self, headers: Mapping[str, str], now: float
@@ -253,7 +278,7 @@ class CIMDFetcher:
             try:
                 dt = parsedate_to_datetime(normalized["expires"])
                 if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
+                    dt = dt.replace(tzinfo=UTC)
                 expires_at = dt.timestamp()
             except (TypeError, ValueError):
                 logger.debug(
@@ -370,16 +395,19 @@ class CIMDFetcher:
                 )
 
             if not policy.no_store:
-                self._cache[client_id_url] = _CIMDCacheEntry(
-                    doc=cached.doc,
-                    etag=policy.etag or cached.etag,
-                    last_modified=policy.last_modified or cached.last_modified,
-                    expires_at=policy.expires_at,
-                    freshness_lifetime=policy.freshness_lifetime,
-                    must_revalidate=policy.must_revalidate,
+                self._store_cache_entry(
+                    client_id_url,
+                    _CIMDCacheEntry(
+                        doc=cached.doc,
+                        etag=policy.etag or cached.etag,
+                        last_modified=policy.last_modified or cached.last_modified,
+                        expires_at=policy.expires_at,
+                        freshness_lifetime=policy.freshness_lifetime,
+                        must_revalidate=policy.must_revalidate,
+                    ),
                 )
             else:
-                self._cache.pop(client_id_url, None)
+                self._remove_cache_entry(client_id_url)
             return cached.doc
 
         now = time.time()
@@ -418,16 +446,19 @@ class CIMDFetcher:
         )
 
         if not policy.no_store:
-            self._cache[client_id_url] = _CIMDCacheEntry(
-                doc=doc,
-                etag=policy.etag,
-                last_modified=policy.last_modified,
-                expires_at=policy.expires_at,
-                freshness_lifetime=policy.freshness_lifetime,
-                must_revalidate=policy.must_revalidate,
+            self._store_cache_entry(
+                client_id_url,
+                _CIMDCacheEntry(
+                    doc=doc,
+                    etag=policy.etag,
+                    last_modified=policy.last_modified,
+                    expires_at=policy.expires_at,
+                    freshness_lifetime=policy.freshness_lifetime,
+                    must_revalidate=policy.must_revalidate,
+                ),
             )
         else:
-            self._cache.pop(client_id_url, None)
+            self._remove_cache_entry(client_id_url)
 
         return doc
 
@@ -528,16 +559,27 @@ class CIMDAssertionValidator:
         # Periodic cleanup of expired JTIs
         self._maybe_cleanup()
 
-        # 1. Validate CIMD document has key material and get/create verifier
+        # 1. Validate CIMD document has key material and get/create verifier.
+        # The verifier only accepts keys of the type its algorithm needs, so
+        # taking the algorithm from the header cannot widen what the client's
+        # own JWKS permits.
+        try:
+            algorithm = decode_jwt_header(assertion).get("alg")
+        except (ValueError, AttributeError) as e:
+            raise ValueError(f"Invalid JWT assertion: {e}") from e
+        if not isinstance(algorithm, str) or algorithm not in ASSERTION_ALGORITHMS:
+            raise ValueError(f"Unsupported assertion algorithm: {algorithm!r}")
+
         if cimd_doc.jwks_uri:
             jwks_uri_str = str(cimd_doc.jwks_uri)
-            cache_key = f"{jwks_uri_str}|{client_id}|{token_endpoint}"
+            cache_key = f"{jwks_uri_str}|{client_id}|{token_endpoint}|{algorithm}"
             verifier = self._verifier_cache.get(cache_key)
             if verifier is None:
                 verifier = _JWTVerifier(
                     jwks_uri=jwks_uri_str,
                     issuer=client_id,
                     audience=token_endpoint,
+                    algorithm=algorithm,
                     ssrf_safe=True,
                 )
                 if len(self._verifier_cache) >= self._verifier_cache_max_size:
@@ -551,6 +593,7 @@ class CIMDAssertionValidator:
                 public_key=public_key,
                 issuer=client_id,
                 audience=token_endpoint,
+                algorithm=algorithm,
             )
         else:
             raise ValueError(
@@ -608,20 +651,20 @@ class CIMDAssertionValidator:
             # Expired in cache, can be reused (clean it up)
             del self._jti_cache[jti]
 
-        # Add to cache with expiration time
-        # Use the assertion's exp claim so it stays cached until it would expire anyway
-        self._jti_cache[jti] = exp
-
         # Emergency size limit (shouldn't hit with proper TTL cleanup)
-        if len(self._jti_cache) > self._jti_cache_max_size:
+        if len(self._jti_cache) >= self._jti_cache_max_size:
             self._cleanup_expired_jtis()
             # If still over limit after cleanup, reject to prevent DoS
-            if len(self._jti_cache) > self._jti_cache_max_size:
+            if len(self._jti_cache) >= self._jti_cache_max_size:
                 self.logger.warning(
                     "JTI cache at max capacity (%d), possible attack",
                     self._jti_cache_max_size,
                 )
                 raise ValueError("Server overloaded, please retry")
+
+        # Add to cache with expiration time
+        # Use the assertion's exp claim so it stays cached until it would expire anyway
+        self._jti_cache[jti] = exp
 
         self.logger.debug(
             "JWT assertion validated successfully for client %s", client_id

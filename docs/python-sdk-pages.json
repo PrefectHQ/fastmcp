@@ -1,5 +1,4 @@
 [
-  "python-sdk/fastmcp-cli",
   "python-sdk/fastmcp-decorators",
   "python-sdk/fastmcp-dependencies",
   "python-sdk/fastmcp-exceptions",
@@ -21,14 +20,125 @@
     ]
   },
   {
+    "group": "fastmcp.cli",
+    "pages": [
+      "python-sdk/fastmcp-cli-__init__",
+      "python-sdk/fastmcp-cli-apps_dev",
+      "python-sdk/fastmcp-cli-apps_dev_security",
+      "python-sdk/fastmcp-cli-auth",
+      "python-sdk/fastmcp-cli-cimd",
+      "python-sdk/fastmcp-cli-cli",
+      "python-sdk/fastmcp-cli-client",
+      {
+        "group": "deploy",
+        "pages": [
+          "python-sdk/fastmcp-cli-deploy-__init__",
+          "python-sdk/fastmcp-cli-deploy-authentication",
+          "python-sdk/fastmcp-cli-deploy-command",
+          "python-sdk/fastmcp-cli-deploy-configuration",
+          "python-sdk/fastmcp-cli-deploy-credentials",
+          "python-sdk/fastmcp-cli-deploy-horizon_client",
+          "python-sdk/fastmcp-cli-deploy-output",
+          "python-sdk/fastmcp-cli-deploy-state"
+        ]
+      },
+      "python-sdk/fastmcp-cli-discovery",
+      "python-sdk/fastmcp-cli-generate",
+      {
+        "group": "install",
+        "pages": [
+          "python-sdk/fastmcp-cli-install-__init__",
+          "python-sdk/fastmcp-cli-install-claude_code",
+          "python-sdk/fastmcp-cli-install-claude_desktop",
+          "python-sdk/fastmcp-cli-install-cursor",
+          "python-sdk/fastmcp-cli-install-gemini_cli",
+          "python-sdk/fastmcp-cli-install-goose",
+          "python-sdk/fastmcp-cli-install-mcp_json",
+          "python-sdk/fastmcp-cli-install-shared",
+          "python-sdk/fastmcp-cli-install-stdio"
+        ]
+      },
+      "python-sdk/fastmcp-cli-run"
+    ]
+  },
+  {
+    "group": "fastmcp.client",
+    "pages": [
+      {
+        "group": "auth",
+        "pages": [
+          "python-sdk/fastmcp-client-auth-bearer",
+          "python-sdk/fastmcp-client-auth-client_credentials",
+          "python-sdk/fastmcp-client-auth-oauth"
+        ]
+      },
+      "python-sdk/fastmcp-client-caching",
+      "python-sdk/fastmcp-client-client",
+      "python-sdk/fastmcp-client-dependencies",
+      "python-sdk/fastmcp-client-elicitation",
+      "python-sdk/fastmcp-client-extension_hooks",
+      "python-sdk/fastmcp-client-group",
+      "python-sdk/fastmcp-client-logging",
+      "python-sdk/fastmcp-client-messages",
+      {
+        "group": "mixins",
+        "pages": [
+          "python-sdk/fastmcp-client-mixins-__init__",
+          "python-sdk/fastmcp-client-mixins-prompts",
+          "python-sdk/fastmcp-client-mixins-resources",
+          "python-sdk/fastmcp-client-mixins-skills",
+          "python-sdk/fastmcp-client-mixins-tools"
+        ]
+      },
+      "python-sdk/fastmcp-client-oauth_callback",
+      "python-sdk/fastmcp-client-progress",
+      "python-sdk/fastmcp-client-roots",
+      {
+        "group": "sampling",
+        "pages": [
+          "python-sdk/fastmcp-client-sampling-__init__",
+          {
+            "group": "handlers",
+            "pages": [
+              "python-sdk/fastmcp-client-sampling-handlers-anthropic",
+              "python-sdk/fastmcp-client-sampling-handlers-google_genai",
+              "python-sdk/fastmcp-client-sampling-handlers-openai"
+            ]
+          }
+        ]
+      },
+      "python-sdk/fastmcp-client-telemetry",
+      {
+        "group": "transports",
+        "pages": [
+          "python-sdk/fastmcp-client-transports-base",
+          "python-sdk/fastmcp-client-transports-config",
+          "python-sdk/fastmcp-client-transports-http",
+          "python-sdk/fastmcp-client-transports-inference",
+          "python-sdk/fastmcp-client-transports-memory",
+          "python-sdk/fastmcp-client-transports-sse",
+          "python-sdk/fastmcp-client-transports-stdio"
+        ]
+      }
+    ]
+  },
+  {
     "group": "fastmcp.experimental",
     "pages": [
       {
         "group": "transforms",
         "pages": [
-          "python-sdk/fastmcp-experimental-transforms-code_mode"
+          "python-sdk/fastmcp-experimental-transforms-code_mode",
+          "python-sdk/fastmcp-experimental-transforms-jev_search"
         ]
       }
+    ]
+  },
+  {
+    "group": "fastmcp.prompts",
+    "pages": [
+      "python-sdk/fastmcp-prompts-base",
+      "python-sdk/fastmcp-prompts-function_prompt"
     ]
   },
   {
@@ -44,6 +154,60 @@
   {
     "group": "fastmcp.server",
     "pages": [
+      {
+        "group": "auth",
+        "pages": [
+          "python-sdk/fastmcp-server-auth-auth",
+          "python-sdk/fastmcp-server-auth-cimd",
+          {
+            "group": "handlers",
+            "pages": [
+              "python-sdk/fastmcp-server-auth-handlers-authorize"
+            ]
+          },
+          "python-sdk/fastmcp-server-auth-identity_assertion",
+          "python-sdk/fastmcp-server-auth-jwt_issuer",
+          "python-sdk/fastmcp-server-auth-middleware",
+          {
+            "group": "oauth_proxy",
+            "pages": [
+              "python-sdk/fastmcp-server-auth-oauth_proxy-__init__",
+              "python-sdk/fastmcp-server-auth-oauth_proxy-consent",
+              "python-sdk/fastmcp-server-auth-oauth_proxy-models",
+              "python-sdk/fastmcp-server-auth-oauth_proxy-proxy",
+              "python-sdk/fastmcp-server-auth-oauth_proxy-ui",
+              "python-sdk/fastmcp-server-auth-oauth_proxy-upstream"
+            ]
+          },
+          "python-sdk/fastmcp-server-auth-oidc_proxy",
+          {
+            "group": "providers",
+            "pages": [
+              "python-sdk/fastmcp-server-auth-providers-auth0",
+              "python-sdk/fastmcp-server-auth-providers-aws",
+              "python-sdk/fastmcp-server-auth-providers-azure",
+              "python-sdk/fastmcp-server-auth-providers-clerk",
+              "python-sdk/fastmcp-server-auth-providers-debug",
+              "python-sdk/fastmcp-server-auth-providers-descope",
+              "python-sdk/fastmcp-server-auth-providers-discord",
+              "python-sdk/fastmcp-server-auth-providers-github",
+              "python-sdk/fastmcp-server-auth-providers-google",
+              "python-sdk/fastmcp-server-auth-providers-huggingface",
+              "python-sdk/fastmcp-server-auth-providers-in_memory",
+              "python-sdk/fastmcp-server-auth-providers-introspection",
+              "python-sdk/fastmcp-server-auth-providers-jwt",
+              "python-sdk/fastmcp-server-auth-providers-keycloak",
+              "python-sdk/fastmcp-server-auth-providers-oci",
+              "python-sdk/fastmcp-server-auth-providers-propelauth",
+              "python-sdk/fastmcp-server-auth-providers-scalekit",
+              "python-sdk/fastmcp-server-auth-providers-supabase",
+              "python-sdk/fastmcp-server-auth-providers-workos"
+            ]
+          },
+          "python-sdk/fastmcp-server-auth-redirect_validation",
+          "python-sdk/fastmcp-server-auth-ssrf"
+        ]
+      },
       "python-sdk/fastmcp-server-caching",
       "python-sdk/fastmcp-server-completions",
       "python-sdk/fastmcp-server-context",
@@ -54,13 +218,129 @@
       "python-sdk/fastmcp-server-http",
       "python-sdk/fastmcp-server-lifespan",
       "python-sdk/fastmcp-server-low_level",
-      "python-sdk/fastmcp-server-mixins",
-      "python-sdk/fastmcp-server-providers",
+      {
+        "group": "middleware",
+        "pages": [
+          "python-sdk/fastmcp-server-middleware-authorization",
+          "python-sdk/fastmcp-server-middleware-caching",
+          "python-sdk/fastmcp-server-middleware-dereference",
+          "python-sdk/fastmcp-server-middleware-error_handling",
+          "python-sdk/fastmcp-server-middleware-logging",
+          "python-sdk/fastmcp-server-middleware-middleware",
+          "python-sdk/fastmcp-server-middleware-ping",
+          "python-sdk/fastmcp-server-middleware-rate_limiting",
+          "python-sdk/fastmcp-server-middleware-response_limiting",
+          "python-sdk/fastmcp-server-middleware-timing",
+          "python-sdk/fastmcp-server-middleware-tool_injection"
+        ]
+      },
+      {
+        "group": "mixins",
+        "pages": [
+          "python-sdk/fastmcp-server-mixins-__init__",
+          "python-sdk/fastmcp-server-mixins-extensions",
+          "python-sdk/fastmcp-server-mixins-lifespan",
+          "python-sdk/fastmcp-server-mixins-mcp_operations",
+          "python-sdk/fastmcp-server-mixins-transport"
+        ]
+      },
+      {
+        "group": "providers",
+        "pages": [
+          "python-sdk/fastmcp-server-providers-__init__",
+          "python-sdk/fastmcp-server-providers-addressing",
+          "python-sdk/fastmcp-server-providers-aggregate",
+          "python-sdk/fastmcp-server-providers-base",
+          "python-sdk/fastmcp-server-providers-fastmcp_provider",
+          "python-sdk/fastmcp-server-providers-filesystem",
+          "python-sdk/fastmcp-server-providers-filesystem_discovery",
+          {
+            "group": "local_provider",
+            "pages": [
+              "python-sdk/fastmcp-server-providers-local_provider-__init__",
+              {
+                "group": "decorators",
+                "pages": [
+                  "python-sdk/fastmcp-server-providers-local_provider-decorators-__init__",
+                  "python-sdk/fastmcp-server-providers-local_provider-decorators-prompts",
+                  "python-sdk/fastmcp-server-providers-local_provider-decorators-resources",
+                  "python-sdk/fastmcp-server-providers-local_provider-decorators-tools"
+                ]
+              },
+              "python-sdk/fastmcp-server-providers-local_provider-local_provider"
+            ]
+          },
+          {
+            "group": "openapi",
+            "pages": [
+              "python-sdk/fastmcp-server-providers-openapi-__init__",
+              "python-sdk/fastmcp-server-providers-openapi-components",
+              "python-sdk/fastmcp-server-providers-openapi-provider",
+              "python-sdk/fastmcp-server-providers-openapi-routing"
+            ]
+          },
+          "python-sdk/fastmcp-server-providers-prefab_payload",
+          "python-sdk/fastmcp-server-providers-prefab_synthesis",
+          "python-sdk/fastmcp-server-providers-proxy",
+          {
+            "group": "skills",
+            "pages": [
+              "python-sdk/fastmcp-server-providers-skills-__init__",
+              "python-sdk/fastmcp-server-providers-skills-claude_provider",
+              "python-sdk/fastmcp-server-providers-skills-directory_provider",
+              "python-sdk/fastmcp-server-providers-skills-skill_provider",
+              "python-sdk/fastmcp-server-providers-skills-vendor_providers"
+            ]
+          },
+          "python-sdk/fastmcp-server-providers-wrapped_provider"
+        ]
+      },
       "python-sdk/fastmcp-server-server",
       "python-sdk/fastmcp-server-session_scoped_event_store",
       "python-sdk/fastmcp-server-sessions",
       "python-sdk/fastmcp-server-telemetry",
-      "python-sdk/fastmcp-server-transforms"
+      {
+        "group": "transforms",
+        "pages": [
+          "python-sdk/fastmcp-server-transforms-__init__",
+          "python-sdk/fastmcp-server-transforms-catalog",
+          "python-sdk/fastmcp-server-transforms-namespace",
+          "python-sdk/fastmcp-server-transforms-prompts_as_tools",
+          "python-sdk/fastmcp-server-transforms-resources_as_tools",
+          {
+            "group": "search",
+            "pages": [
+              "python-sdk/fastmcp-server-transforms-search-__init__",
+              "python-sdk/fastmcp-server-transforms-search-base",
+              "python-sdk/fastmcp-server-transforms-search-bm25",
+              "python-sdk/fastmcp-server-transforms-search-regex"
+            ]
+          },
+          "python-sdk/fastmcp-server-transforms-tool_transform",
+          "python-sdk/fastmcp-server-transforms-version_filter",
+          "python-sdk/fastmcp-server-transforms-visibility"
+        ]
+      }
+    ]
+  },
+  {
+    "group": "fastmcp.skills",
+    "pages": [
+      "python-sdk/fastmcp-skills-__init__",
+      "python-sdk/fastmcp-skills-client",
+      "python-sdk/fastmcp-skills-extension",
+      "python-sdk/fastmcp-skills-models",
+      "python-sdk/fastmcp-skills-provider",
+      "python-sdk/fastmcp-skills-skill"
+    ]
+  },
+  {
+    "group": "fastmcp.tools",
+    "pages": [
+      "python-sdk/fastmcp-tools-base",
+      "python-sdk/fastmcp-tools-function_parsing",
+      "python-sdk/fastmcp-tools-function_tool",
+      "python-sdk/fastmcp-tools-tool_transform"
     ]
   },
   {
@@ -109,7 +389,18 @@
         ]
       },
       "python-sdk/fastmcp-utilities-mime",
-      "python-sdk/fastmcp-utilities-openapi",
+      {
+        "group": "openapi",
+        "pages": [
+          "python-sdk/fastmcp-utilities-openapi-__init__",
+          "python-sdk/fastmcp-utilities-openapi-director",
+          "python-sdk/fastmcp-utilities-openapi-formatters",
+          "python-sdk/fastmcp-utilities-openapi-json_schema_converter",
+          "python-sdk/fastmcp-utilities-openapi-models",
+          "python-sdk/fastmcp-utilities-openapi-parser",
+          "python-sdk/fastmcp-utilities-openapi-schemas"
+        ]
+      },
       "python-sdk/fastmcp-utilities-pagination",
       "python-sdk/fastmcp-utilities-prefab",
       "python-sdk/fastmcp-utilities-skills",

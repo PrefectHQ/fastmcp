@@ -133,7 +133,9 @@ def _package_path_matches(module: ModuleType, package_root: Path) -> bool:
 
 def _private_package_prefix(directory: Path) -> str:
     """Compute a collision-safe synthetic package name anchored at a directory."""
-    digest = hashlib.sha1(str(directory.resolve()).encode()).hexdigest()[:12]
+    digest = hashlib.sha1(
+        str(directory.resolve()).encode(), usedforsecurity=False
+    ).hexdigest()[:12]
     return f"_fastmcp_pkg_{digest}"
 
 
@@ -233,7 +235,10 @@ def import_module_from_file(
         if existing is not None and getattr(existing, "__file__", None) != str(
             file_path
         ):
-            module_name = f"_fastmcp_{stem}_{hashlib.sha1(str(file_path).encode()).hexdigest()[:12]}"
+            digest = hashlib.sha1(
+                str(file_path).encode(), usedforsecurity=False
+            ).hexdigest()[:12]
+            module_name = f"_fastmcp_{stem}_{digest}"
         else:
             module_name = stem
 
@@ -367,6 +372,7 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
                         annotations=meta.annotations,
                         meta=meta.meta,
                         auth=meta.auth,
+                        security=meta.security,
                     )
                 else:
                     resource = Resource.from_function(
@@ -413,7 +419,8 @@ def discover_and_import(root: Path) -> DiscoveryResult:
         DiscoveryResult with components and any failed files.
 
     Note:
-        Files that fail to import are tracked in failed_files, not logged.
+        Files that fail to import or construct components are tracked in
+        failed_files, not logged. No components from a failed file are returned.
         The caller is responsible for logging/handling failures.
         Files with no components are silently skipped.
     """
@@ -422,11 +429,11 @@ def discover_and_import(root: Path) -> DiscoveryResult:
     for file_path in discover_files(root):
         try:
             module = import_module_from_file(file_path, provider_root=root)
+            components = extract_components(module)
         except Exception as e:
             result.failed_files[file_path] = str(e)
             continue
 
-        components = extract_components(module)
         for component in components:
             result.components.append((file_path, component))
 

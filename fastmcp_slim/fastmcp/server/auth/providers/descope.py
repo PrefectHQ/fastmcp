@@ -8,6 +8,7 @@ for seamless MCP client authentication.
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx2
@@ -76,13 +77,62 @@ async def _discover_scopes(openid_configuration_url: str) -> list[str] | None:
     return None
 
 
+class _DescopeJWTVerifier(JWTVerifier):
+    """JWT verifier that accepts every issuer form of a Descope project.
+
+    A project mints tokens under several issuers, and which one a token carries
+    depends on how it was minted rather than on the configuration URL this
+    server was given:
+
+    - project: `.../v1/apps/<project_id>`
+    - MCP server: `.../v1/apps/agentic/<project_id>/<server_id>`
+    - tenant (XAA): `.../v1/apps/<project_id>/<tenant_id>`
+
+    All of them are signed with the same project keys and carry the project ID
+    as their audience, so which one a token names does not narrow what it may
+    access. Any issuer scoped to the configured project is therefore accepted.
+    """
+
+    def __init__(self, *, descope_base_url: str, project_id: str, **kwargs: Any):
+        """Initialize the verifier.
+
+        Args:
+            descope_base_url: Descope API base URL, e.g. `https://api.descope.com`.
+            project_id: Descope project ID that issuers must be scoped to.
+            **kwargs: Passed through to `JWTVerifier`.
+        """
+        super().__init__(**kwargs)
+        self.project_issuer = f"{descope_base_url}/v1/apps/{project_id}"
+        self.agentic_issuer = f"{descope_base_url}/v1/apps/agentic/{project_id}"
+
+    def _validate_issuer(self, issuer: Any) -> bool:
+        if super()._validate_issuer(issuer):
+            return True
+        if not isinstance(issuer, str):
+            return False
+        # An MCP server ID extends the project's agentic path and a tenant ID
+        # extends the project issuer, so exactly one segment may follow either.
+        # The agentic path is checked first as the more specific of the two.
+        for prefix in (self.agentic_issuer, self.project_issuer):
+            if issuer.startswith(f"{prefix}/"):
+                segment = issuer[len(prefix) + 1 :].strip("/")
+                if segment and "/" not in segment:
+                    return True
+        return False
+
+
 class DescopeProvider(RemoteAuthProvider):
     """Descope metadata provider for Dynamic Client Registration (DCR).
 
     The provider accepts either a resource-specific Descope MCP Server URL such
     as `/v1/apps/agentic/P.../M.../.well-known/openid-configuration` or a
     project-level inbound app URL such as
-    `/v1/apps/P.../.well-known/openid-configuration`.
+    `/v1/apps/P.../.well-known/openid-configuration`. The project-level URL is
+    the recommended configuration.
+
+    Tokens are accepted from any issuer the project mints: the project-level
+    issuer, the resource-scoped issuer of an MCP server, and the tenant-scoped
+    issuer used by cross-app access (XAA).
 
     When neither `scopes_supported` nor `required_scopes` is provided, advertised
     scopes are discovered lazily from the OpenID configuration. Use
@@ -176,6 +226,11 @@ class DescopeProvider(RemoteAuthProvider):
             self.openid_configuration_url.replace(_OPENID_WK, _OAUTH_WK)
         )
 
+        # Tokens are accepted from any issuer scoped to this project, whichever
+        # configuration URL was supplied (see _DescopeJWTVerifier). The
+        # project-level issuer is the canonical one.
+        project_issuer = f"{self.descope_base_url}/v1/apps/{self.project_id}"
+
         # Advertised scopes are discovered from Descope's OpenID configuration
         # only when the caller supplied neither explicit advertised scopes nor
         # required scopes. Discovery is deferred to the first protected resource
@@ -195,9 +250,11 @@ class DescopeProvider(RemoteAuthProvider):
         self._scopes_discovery_lock = asyncio.Lock()
 
         if token_verifier is None:
-            token_verifier = JWTVerifier(
+            token_verifier = _DescopeJWTVerifier(
+                descope_base_url=self.descope_base_url,
+                project_id=self.project_id,
                 jwks_uri=f"{self.descope_base_url}/{self.project_id}/.well-known/jwks.json",
-                issuer=issuer_url,
+                issuer=project_issuer,
                 algorithm="RS256",
                 audience=self.project_id,
                 required_scopes=parsed_required_scopes,
@@ -296,7 +353,14 @@ class DescopeProvider(RemoteAuthProvider):
                             response = await client.get(metadata_url)
                             response.raise_for_status()
                             return JSONResponse(response.json())
-                        except Exception:
+                        except Exception as metadata_error:
+                            # Don't log `metadata_url`: CodeQL's taint tracking
+                            # flags it as sensitive (it's built from the same
+                            # class attributes as authenticated request URLs
+                            # elsewhere in this provider).
+                            logger.debug(
+                                "Failed to fetch Descope metadata: %s", metadata_error
+                            )
                             continue
             except Exception as e:
                 return JSONResponse(

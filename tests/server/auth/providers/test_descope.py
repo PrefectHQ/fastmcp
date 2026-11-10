@@ -10,8 +10,11 @@ from starlette.requests import Request
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
-from fastmcp.server.auth.providers.descope import DescopeProvider
-from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.server.auth.providers.descope import (
+    DescopeProvider,
+    _DescopeJWTVerifier,
+)
+from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
 
 PROJECT_LEVEL_OPENID_CONFIGURATION = {
@@ -355,14 +358,12 @@ class TestDescopeProvider:
         assert str(provider.descope_base_url) == "https://api.descope.com"
         assert isinstance(provider.token_verifier, JWTVerifier)
         assert (
-            provider.token_verifier.issuer
-            == "https://api.descope.com/v1/apps/agentic/P2new123/M123"
+            provider.token_verifier.issuer == "https://api.descope.com/v1/apps/P2new123"
         )
 
     def test_jwt_verifier_configured_correctly(self):
         """Test that JWT verifier is configured correctly."""
         config_url = "https://api.descope.com/v1/apps/agentic/P2abc123/M123/.well-known/openid-configuration"
-        issuer_url = "https://api.descope.com/v1/apps/agentic/P2abc123/M123"
 
         provider = DescopeProvider(
             config_url=config_url,
@@ -375,9 +376,145 @@ class TestDescopeProvider:
             provider.token_verifier.jwks_uri
             == "https://api.descope.com/P2abc123/.well-known/jwks.json"
         )
-        assert provider.token_verifier.issuer == issuer_url
-        assert isinstance(provider.token_verifier, JWTVerifier)
         assert provider.token_verifier.audience == "P2abc123"
+
+    def test_mcp_server_config_url_expects_the_project_level_issuer(self):
+        """Descope mints project-level issuers even for MCP server config URLs."""
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/agentic/P2abc123/M123/.well-known/openid-configuration",
+            base_url="https://myserver.com",
+        )
+
+        assert isinstance(provider.token_verifier, _DescopeJWTVerifier)
+        assert (
+            provider.token_verifier.issuer == "https://api.descope.com/v1/apps/P2abc123"
+        )
+        # The MCP server URL remains the advertised authorization server.
+        assert [str(server) for server in provider.authorization_servers] == [
+            "https://api.descope.com/v1/apps/agentic/P2abc123/M123"
+        ]
+
+    def test_issuers_are_scoped_to_the_configured_project(self):
+        """The verifier derives both issuer families from the project."""
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/P2abc123/.well-known/openid-configuration",
+            base_url="https://myserver.com",
+        )
+
+        assert isinstance(provider.token_verifier, _DescopeJWTVerifier)
+        assert (
+            provider.token_verifier.project_issuer
+            == "https://api.descope.com/v1/apps/P2abc123"
+        )
+        assert (
+            provider.token_verifier.agentic_issuer
+            == "https://api.descope.com/v1/apps/agentic/P2abc123"
+        )
+
+    @pytest.mark.parametrize(
+        "config_url",
+        [
+            "https://api.descope.com/v1/apps/P2abc123/.well-known/openid-configuration",
+            "https://api.descope.com/v1/apps/agentic/P2abc123/M123/.well-known/openid-configuration",
+        ],
+        ids=["project-level-config", "mcp-server-config"],
+    )
+    @pytest.mark.parametrize(
+        "token_issuer",
+        [
+            "https://api.descope.com/v1/apps/P2abc123",
+            "https://api.descope.com/v1/apps/agentic/P2abc123/M123",
+            "https://api.descope.com/v1/apps/P2abc123/T2tenant456",
+        ],
+        ids=["project-level-issuer", "mcp-server-issuer", "tenant-issuer"],
+    )
+    async def test_every_issuer_form_is_accepted(
+        self, config_url: str, token_issuer: str
+    ):
+        """Both config URL forms accept all three issuer forms of the project."""
+        key_pair = RSAKeyPair.generate()
+        provider = DescopeProvider(
+            config_url=config_url, base_url="https://myserver.com"
+        )
+        token = key_pair.create_token(
+            subject="user-123",
+            issuer=token_issuer,
+            audience="P2abc123",
+        )
+
+        with patch.object(
+            JWTVerifier,
+            "_get_verification_key",
+            new=AsyncMock(return_value=key_pair.public_key),
+        ):
+            access_token = await provider.token_verifier.verify_token(token)
+
+        assert access_token is not None
+        assert access_token.claims["iss"] == token_issuer
+
+    async def test_old_api_accepts_every_issuer_form(self):
+        """project_id + descope_base_url derive the same project-scoped issuers."""
+        key_pair = RSAKeyPair.generate()
+        provider = DescopeProvider(
+            project_id="P2abc123",
+            descope_base_url="https://api.descope.com",
+            base_url="https://myserver.com",
+        )
+        tokens = [
+            key_pair.create_token(issuer=issuer, audience="P2abc123")
+            for issuer in (
+                "https://api.descope.com/v1/apps/P2abc123",
+                "https://api.descope.com/v1/apps/agentic/P2abc123/M123",
+                "https://api.descope.com/v1/apps/P2abc123/T2tenant456",
+            )
+        ]
+
+        with patch.object(
+            JWTVerifier,
+            "_get_verification_key",
+            new=AsyncMock(return_value=key_pair.public_key),
+        ):
+            for token in tokens:
+                assert await provider.token_verifier.verify_token(token) is not None
+
+    @pytest.mark.parametrize(
+        "token_issuer",
+        [
+            # Another project entirely.
+            "https://api.descope.com/v1/apps/agentic/P2other456/M123",
+            # Extra path segments below an MCP server.
+            "https://api.descope.com/v1/apps/agentic/P2abc123/M123/extra",
+            # The agentic path with no MCP server ID.
+            "https://api.descope.com/v1/apps/agentic/P2abc123",
+            # A different Descope deployment.
+            "https://evil.example.com/v1/apps/agentic/P2abc123/M123",
+            # A tenant of a different project.
+            "https://api.descope.com/v1/apps/P2other456/T2tenant789",
+            # A project ID that merely starts with the configured one.
+            "https://api.descope.com/v1/apps/P2abc123456",
+            # Another project's project-level issuer.
+            "https://api.descope.com/v1/apps/P2other456",
+        ],
+    )
+    async def test_issuers_outside_the_project_are_rejected(self, token_issuer: str):
+        """Only issuers of the configured project, plus one ID segment, pass."""
+        key_pair = RSAKeyPair.generate()
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/P2abc123/.well-known/openid-configuration",
+            base_url="https://myserver.com",
+        )
+        token = key_pair.create_token(
+            subject="user-123",
+            issuer=token_issuer,
+            audience="P2abc123",
+        )
+
+        with patch.object(
+            JWTVerifier,
+            "_get_verification_key",
+            new=AsyncMock(return_value=key_pair.public_key),
+        ):
+            assert await provider.token_verifier.verify_token(token) is None
 
     def test_required_scopes_support(self):
         """Test that required_scopes are supported and passed to JWT verifier."""

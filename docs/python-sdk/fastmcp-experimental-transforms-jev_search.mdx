@@ -1,0 +1,84 @@
+---
+title: jev_search
+sidebarTitle: jev_search
+---
+
+# `fastmcp.experimental.transforms.jev_search`
+
+
+Tool search ranked by TypeSafe's Jev.
+
+Jev is a System One model: it does not generate text. A request carries a
+``state`` and a map of typed questions, every question is judged against the
+same state in parallel, and each answer is a probability distribution over
+options the caller defined. That makes it a natural ranker for a tool
+catalog: the query is the state, the tool names are the options, and the
+probabilities are the ranking.
+
+The transform follows the shape of TypeSafe's skill-suggestion cookbook
+(https://docs.typesafe.ai/cookbooks/skill_suggestion): a cheap wide pass over
+the whole catalog on one-line summaries, then a close read of a shortlist
+with each tool's full description and parameters. The close read asks two
+kinds of question. A Choice decides *which* candidate fits best and orders
+the results. One Noul per candidate decides *whether* it does what the query
+asks at all, so a query nothing serves comes back empty instead of returning
+the least-wrong tool.
+
+
+## Classes
+
+### `SystemOneClient` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/jev_search.py#L54" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+The slice of ``typesafe_sdk.AsyncTypeSafeClient`` the transform uses.
+
+
+**Methods:**
+
+#### `system_one` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/jev_search.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+system_one(self, state: Any, questions: Any) -> Any
+```
+
+### `JevSearchTransform` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/jev_search.py#L87" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Search transform that ranks tools with TypeSafe's Jev.
+
+Experimental: the ranking parameters may change. Requires the ``jev``
+extra (``pip install "fastmcp[jev]"``) and a TypeSafe API key, read from
+``TYPESAFE_API_KEY`` unless ``api_key`` or ``client`` is given. A missing
+key is an error at construction, not at the first search.
+
+Tool descriptions are model input. A description written to argue for
+its own selection can move the ranking; the transform only ranks tools
+the caller could already list, so that exposure is bounded by what the
+catalog holds.
+
+**Args:**
+- `model`: The TypeSafe model name. ``jev-latest`` follows releases;
+pin a versioned id once you have tuned ``fit_threshold``.
+- `api_key`: TypeSafe API key. Defaults to ``TYPESAFE_API_KEY``.
+- `client`: A ready ``AsyncTypeSafeClient`` (or anything with an async
+``system_one``) to use instead of building one.
+- `timeout`: Seconds per API attempt when the transform builds its own
+client. A search is one to a few requests.
+- `shortlist`: How many candidates each wide-pass request carries
+forward. With ``close_read=True``, this must be at most half of
+``chunk_size`` so every wide pass reduces the candidate set by a
+meaningful amount. The close read sees at most
+``min(3 * shortlist, 255)`` candidates.
+- `fit_threshold`: A candidate whose "does this tool do what the request
+asks" probability falls below this is dropped from the results.
+Tune it against queries from your own users.
+- `close_read`: Whether to re-read the shortlist with full descriptions
+and parameters in a second request. ``False`` asks the fit
+question of every tool in the wide pass instead, on summaries
+only, so a search is a single round trip.
+- `chunk_size`: Tools per wide-pass request. Catalogs above this size
+are ranked in concurrent chunks. At most 255, the Choice limit.
+- `summary_chars`: Characters of description per tool in the wide pass.
+- `detail_chars`: Characters of rendered description and parameters per
+tool in the close read.
+

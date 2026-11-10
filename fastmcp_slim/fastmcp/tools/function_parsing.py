@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import inspect
 import types
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, Generic, Union, get_args, get_origin, get_type_hints
 
@@ -41,6 +41,9 @@ def _contains_bytes_type(tp: Any) -> bool:
     return False
 
 
+_UNCONSTRAINED_SEQUENCE_ORIGINS = (list, tuple, Sequence)
+
+
 def _contains_prefab_type(tp: Any) -> bool:
     """Check if *tp* is or contains a prefab type, recursing through unions and Annotated."""
     if is_prefab_type(tp):
@@ -49,6 +52,31 @@ def _contains_prefab_type(tp: Any) -> bool:
     if origin is Union or origin is types.UnionType or origin is Annotated:
         return any(_contains_prefab_type(a) for a in get_args(tp))
     return False
+
+
+def _is_unconstrained_sequence(tp: Any) -> bool:
+    """A sequence annotation that says nothing about its items.
+
+    Bare `list`, `tuple`, `Sequence` (and their `typing` spellings), plus
+    `list[Any]`, `Sequence[Any]` and the variadic `tuple[Any, ...]`. The schema
+    these produce -- ``{"result": {"items": {}, "type": "array"}}`` -- constrains
+    nothing, which is why `Any` itself is already excluded from inference. A
+    fixed-length `tuple[Any, Any]` still pins its length, so it keeps its schema.
+    """
+    tp = _unwrap_type_alias(tp)
+    if get_origin(tp) is Annotated:
+        tp = get_args(tp)[0]
+    if tp in _UNCONSTRAINED_SEQUENCE_ORIGINS:
+        return True
+    origin = get_origin(tp)
+    if origin not in _UNCONSTRAINED_SEQUENCE_ORIGINS:
+        return False
+    args = get_args(tp)
+    if not args:
+        return True
+    if origin is tuple:
+        return len(args) == 2 and args[0] is Any and args[1] is Ellipsis
+    return all(a is Any for a in args)
 
 
 def _unwrap_type_alias(tp: Any) -> Any:
@@ -271,9 +299,23 @@ class ParsedFunction:
                         "Functions with **kwargs are not supported as tools"
                     )
 
-        # collect name and description before we potentially modify the function
-        fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
-        outer_docstring = parse_docstring(fn)
+        # Keep the partial's bound signature, and fall back to the wrapped
+        # callable only for metadata the partial hasn't explicitly overridden.
+        target = fn
+        partial_name = None
+        partial_docstring = ParsedDocstring()
+        has_partial_docstring = False
+        while isinstance(target, functools.partial):
+            partial_name = partial_name or getattr(target, "__name__", None)
+            if not has_partial_docstring and "__doc__" in target.__dict__:
+                partial_docstring = parse_docstring(target)
+                has_partial_docstring = True
+            target = target.func
+        fn_name = partial_name or getattr(target, "__name__", None)
+        fn_name = fn_name or target.__class__.__name__
+        outer_docstring = (
+            partial_docstring if has_partial_docstring else parse_docstring(target)
+        )
 
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
@@ -288,11 +330,25 @@ class ParsedFunction:
         # describes __init__, so falling back to it would risk injecting
         # constructor docs into __call__'s schema on overlapping names.
         # The description, however, comes from the class docstring (which
-        # describes what the tool IS) when present.
-        inner_docstring = parse_docstring(fn)
+        # describes what the tool IS) when present. A partial likewise keeps
+        # its own partially-bound signature but declares its parameters in
+        # the wrapped function's docstring.
+        if isinstance(fn, functools.partial):
+            doc_fn = target if inspect.isroutine(target) else target.__call__
+        else:
+            doc_fn = fn
+        inner_docstring = parse_docstring(doc_fn)
         parsed_docstring = ParsedDocstring(
-            description=outer_docstring.description or inner_docstring.description,
-            parameters=inner_docstring.parameters,
+            description=(
+                outer_docstring.description
+                if has_partial_docstring
+                else outer_docstring.description or inner_docstring.description
+            ),
+            parameters=(
+                partial_docstring.parameters
+                if has_partial_docstring
+                else inner_docstring.parameters
+            ),
         )
 
         # Transform Context type annotations to Depends() for unified DI
@@ -307,9 +363,21 @@ class ParsedFunction:
         wrapper_fn = without_injected_parameters(fn)
 
         input_type_adapter = get_cached_typeadapter(wrapper_fn)
-        input_schema = input_type_adapter.json_schema()
+        raw_input_schema = input_type_adapter.json_schema()
 
-        input_schema = compress_schema(input_schema, prune_titles=True)
+        input_schema = compress_schema(raw_input_schema, prune_titles=True)
+
+        # Pruning drops every title, since Pydantic derives one from each
+        # parameter name. Restore the ones the author wrote with
+        # Field(title=...): those are display labels a client can't rederive.
+        properties = input_schema.get("properties", {})
+        title_from_name = GenerateJsonSchema().get_title_from_name
+        for param_name, raw_property in raw_input_schema.get("properties", {}).items():
+            if param_name not in properties or not isinstance(raw_property, dict):
+                continue
+            title = raw_property.get("title")
+            if isinstance(title, str) and title != title_from_name(param_name):
+                properties[param_name]["title"] = title
 
         # Inject parameter descriptions from the docstring into the schema.
         # Explicit annotations (Field(description=...), Annotated[x, "..."])
@@ -401,6 +469,19 @@ class ParsedFunction:
             # `run()`'s subclass-aware control handling and covering every alias
             # shape that exact-match replace_type below would miss.
             if _contains_input_required(output_type):
+                output_type = _UnserializableType
+
+            # A bare `list`/`tuple` carries no item type, so `replace_type`
+            # below has nothing to match and the content types it exists to
+            # suppress slip through. The schema that results constrains
+            # nothing, and inferring it is not free: an output schema forces
+            # structured content, so a tool returning `[ImageContent, {...}]`
+            # under a `-> list` annotation sends the base64 image BOTH as an
+            # image block and again inside `structuredContent`. Clients
+            # mishandle that in both directions -- some render the JSON blob
+            # instead of the picture, others inject the base64 into model
+            # context and blow their tool-output token cap.
+            if _is_unconstrained_sequence(output_type):
                 output_type = _UnserializableType
 
             # there are a variety of types that we don't want to attempt to

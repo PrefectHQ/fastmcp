@@ -69,17 +69,26 @@ def my_tool() -> str:
 
 The `visibility` field controls where a tool appears:
 
-- `["model"]` — visible to the LLM (the default behavior)
+- `["model"]` — visible to the LLM
 - `["app"]` — callable from within the app UI, kept out of the LLM's tool list
 - `["model", "app"]` — both
 
+Omitting `visibility` defaults to both audiences.
+
 This is useful when you have tools that only make sense as part of the app's interactive flow, not as standalone LLM actions.
+
+**App tool visibility is not a security boundary.** `visibility=["app"]` asks the host to omit a tool from the model's tool list; it does not authorize callers or prevent direct `tools/call` requests. The server cannot distinguish a model-originated request from an app-originated request on the same MCP connection. Any client that knows the tool's name can call it, subject to the server's [authentication](/servers/auth/authentication) and [authorization](/servers/authorization) checks. Enforce sensitive operations with those checks and server-side validation, rather than relying on visibility.
 
 Visibility is a declaration, and on `tools/list` the host does the filtering — the division the MCP Apps specification defines. Every tool is advertised carrying its `visibility` metadata, which is also what lets a proxy or gateway forward it: an intermediary can only route to a tool it can see.
 
-That division assumes a host stands between the server and the model. Where one doesn't, FastMCP applies the declaration itself. [Tool search](/servers/transforms/tool-search) and code mode reach the model as ordinary tool output rather than as an advertised listing, and their call-tool proxies execute a name the model supplies — nothing downstream can filter either, so app-only tools are excluded from both. The app's own UI still reaches its backends, because a UI calling by identity is not the model.
+FastMCP also applies the declaration to its own model-facing surfaces. [Tool search](/servers/transforms/tool-search) and code mode exclude app-only tools from their results and call-tool proxies. This keeps the model's discovery consistent with the declared audience; direct MCP calls still use the server's authentication and authorization rules.
 
 ```python
+from fastmcp import FastMCP
+from fastmcp.apps import AppConfig
+
+mcp = FastMCP("My App Server")
+
 @mcp.tool(
     app=AppConfig(
         resource_uri="ui://my-app/view.html",
@@ -87,8 +96,8 @@ That division assumes a host stands between the server and the model. Where one 
     )
 )
 def refresh_data() -> str:
-    """Only callable from the app UI, not by the LLM."""
-    return fetch_latest()
+    """Refresh data for the app UI."""
+    return "Latest data"
 ```
 
 ### AppConfig fields

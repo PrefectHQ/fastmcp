@@ -1,9 +1,266 @@
 ---
 title: "FastMCP Updates"
 sidebarTitle: "Updates"
+description: "Summaries of each FastMCP release, with links to the full release notes on GitHub."
 icon: "sparkles"
 tag: NEW
 ---
+
+<Update label="FastMCP 4.2.0a4" description="November 9, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.2.0a4: Skills to Pay the Bills"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0a4"
+cta="Read the release notes"
+>
+FastMCP 4.2.0a4 requires Python 3.11 or newer and adds `Annotated` dependencies. `Depends(...)` and built-ins such as `CurrentContext()` can now be declared as `Annotated` metadata, so a type alias like `Config = Annotated[dict, Depends(get_config)]` works across tools, resources, and prompts. Skill discovery over plain resources no longer lists a nested supporting `SKILL.md` as its own skill, and `download_skill` URIs now encode manifest paths. Since a3, the redirect URI helpers normalize raw strings the way browsers read them, the joserfc and Authlib floors pick up security fixes, and fixes land for OpenAPI request bodies, CIMD redirect URIs, multi-select elicitation schemas, search indexing, and docstring parsing. Skills support remains experimental; this prerelease is intended for integration testing. Thanks to our 68 contributors, including 40 first-time contributors.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.2.0a3" description="November 3, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.2.0a3: A Particular Set of Skills"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0a3"
+cta="Read the release notes"
+>
+FastMCP 4.2.0a3 consolidates skills around `Skill`, `SkillCatalogProvider`, and the new strict `SkillsDirectoryProvider` in `fastmcp.skills.provider`. Directory loading validates each skill before publication, and skills with structured metadata or YAML `allowed-tools` lists are accepted without changing their values. This alpha also fixes stale proxy discovery caches, preserves OpenAPI schema references and explicit null values, and improves client connection recovery. Skills support remains experimental; this prerelease is intended for integration testing. If you import the 4.1 skills providers directly, they keep their behavior in 4.2 and now warn ahead of removal in 4.3. Move directory loading to `from fastmcp.skills.provider import SkillsDirectoryProvider`; its startup errors and the legacy providers' warnings identify folders that need fixing. For a single skill, use `Skill.from_directory(...)` with `SkillCatalogProvider` from `fastmcp.skills.provider`. `Client.list_skill_resources()` remains available for servers without the Skills extension. The old `experimental_skills=True` path redirects to the new provider for the base class and rejects subclasses to preserve access controls. Legacy `Skill` wire-model construction still works with a warning, wire entries retain `isinstance(entry, Skill)` behavior, and existing Pydantic `Skill` fields still validate wire payloads. Use `MCPSkill` for wire entries, annotations, and checks, and `Skill` for authoring. For manifest metadata on resource-only servers, read `skill://<name>/_manifest` with `client.read_resource()` and parse its JSON; `client.get_skill()` requires the Skills extension, while `client.read_skill()` downloads and validates the whole skill. Since a2, `ClientGroup` retains known tool routes after its context exits, OpenAPI tool inputs omit `readOnly` properties, and header and path parameters follow their declared simple serialization style. OAuth consent bindings survive concurrent approvals, exception middleware matches subclasses, and empty logging method filters mean “log nothing.” Thanks to our 46 contributors, including 29 first-time contributors.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.2.0a2" description="November 1, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.2.0a2: Skill Waters Run Deep"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0a2"
+cta="Read the release notes"
+>
+The second 4.2 alpha carries every fix from 4.1.5 plus the ones that only land on 4.2: Skills discovery through proxies pages its backends with a bound, pre-4.2 Prefab backend addresses rebind through 4.2 proxies, large tool catalogs expand their schemas faster, and kept-alive stdio transports respect each client's timeout. Before tagging, this build ran against pydantic-ai, langchain, agno, Microsoft Agent Framework, and the OpenAI Agents SDK. Skills support remains experimental; this prerelease is intended for integration testing. Behavior changes since a1: JSON Schema `const` and `enum` compare by JSON equality, so `true` no longer passes for `1`; `prompts/get` with a missing argument returns invalid params (`-32602`); OpenAPI upstream errors are cut to 1 KB with HTML bodies dropped, and strict input validation rejects undeclared OpenAPI arguments; a later client with a different timeout restarts an idle kept-alive stdio subprocess, while one nested inside a live client shares its session's timeout and logs a warning. Thanks to our 22 contributors, including 13 first-time contributors.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.2.0a1" description="October 27, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.2.0a1: Skill Issue"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0a1"
+cta="Read the release notes"
+>
+FastMCP 4.2's first alpha brings code-defined skills, discovery through mounted and proxied servers, and verified downloads into one workflow. Build a `Skill` in Python or load one from a folder or package, publish it through `SkillCatalogProvider`, and let clients discover its metadata or download and export its files. Proxy discovery is opt-in with `skills=True`. Skills support remains experimental; this prerelease is intended for integration testing. It also includes lazy, shared Prefab renderer resources and backend-addressing fixes. Migration: `Skill` now represents file contents; the wire metadata model is named `MCPSkill`. Whole-skill downloads require a standard `SKILL.md` with a `name` matching its URI and a `description`. Exports with `overwrite=True` replace the installed folder, including locally added files. Ordinary resource providers still support their existing document formats. Thanks to our 8 contributors, including 3 first-time contributors.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.1.4" description="October 26, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.1.4: Token Gesture"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.4"
+cta="Read the release notes"
+>
+Generated CLIs now preserve remote transports, empty arrays, and parameters whose names collide with their own helpers; mounted servers honor session visibility and `mounted_components_raise_on_load_error`, a stale client context no longer closes a newer session, and OAuth provider wrappers accept identity assertions. Tasks accept a redis-py credential provider that returns current credentials for each new connection (streaming providers such as redis-entraid's are rejected until Docket can refresh them safely), Redis 8.1.0 is excluded, and custom `KeyringStore` users must now install `py-key-value-aio[keyring]` explicitly. Thanks to our 16 contributors, including 9 first-time contributors.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.1.3" description="October 20, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.1.3: Root Awakening"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.3"
+cta="Read the release notes"
+>
+This release updates certifi-backed dependencies following the eMudhra CA compromise and fixes public-client OAuth authentication, empty visibility selections, generator transforms, and per-server timeouts for ordinary requests. FastMCP 4 uses system trust by default: follow the [security notice](https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026) to update operating-system, container, custom, and installer trust stores; upgrading FastMCP alone is insufficient. Thanks to our 11 contributors, including 6 first-time contributors.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.1.2" description="October 20, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.1.2: License to Deny"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.2"
+cta="Read the release notes"
+>
+Component authorization now applies after transforms, denied resources cannot fall through matching templates, and OAuth client credentials providers support issuer binding across fresh and cached-token flows. Existing configurations remain compatible, but users of `ClientCredentialsOAuthProvider` or `PrivateKeyJWTOAuthProvider` must set `issuer` to enable this protection; upgrading alone is insufficient. Thanks to our 18 contributors, including 9 first-time contributors.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.1.1" description="October 17, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.1.1: Regex Marks the Spot"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.1"
+cta="Read the release notes"
+>
+Regex tool search now rejects patterns over 1,000 characters and stops after about a second, and `SkillsDirectoryProvider` discovers skill folders that are links again, including links to folders outside the skills root; a skill's own files must still resolve inside the folder it links to. All 4.x users are encouraged to upgrade. Thanks to our 4 contributors, including 1 first-time contributor.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.1.0" description="October 8, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.1.0: Fourth and One"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.0"
+cta="Read the release notes"
+>
+FastMCP 4.1.0 is a maintenance release at heart: a broad sweep of fixes across OpenAPI, proxies, auth, tasks, and the CLI, plus full Python 3.15 support. It doesn't change how most servers behave. A few security fixes do tighten inputs that FastMCP previously accepted, though, and our versioning policy keeps breaking changes out of patch releases, so this ships as a point-one release.
+
+Thanks to our 48 contributors, including 21 first-time contributors!
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.11" description="October 4, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.11: Fort Knocks"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.11"
+cta="Read the release notes"
+>
+This release contains important security and bug fixes. All users are encouraged to upgrade. Thanks to our 10 contributors, including 6 first-time contributors.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.10" description="September 25, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.10: Inside Job"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.10"
+cta="Read the release notes"
+>
+Task-enabled tools now work behind search transforms and CodeMode: they're registered with the task backend even when hidden, and a tool, resource, or prompt that calls one through `ctx.fastmcp.call_tool()` (including the search `call_tool` proxy and CodeMode's `execute`) now gets its result instead of an empty task receipt.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.9" description="September 24, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.9: Cache and Release"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.9"
+cta="Read the release notes"
+>
+`ResourceTemplate` now keeps its compiled URI pattern for its own lifetime while the shared cache is bounded again, preventing dynamic proxies from growing process memory without restoring the 4,096-template performance cliff.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.8" description="September 23, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.8: Take Three"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.8"
+cta="Read the release notes"
+>
+Completion goes back to its 4.0.5 behavior. The visibility check added in 4.0.6 and reworked in 4.0.7 simulated list requests through middleware, and in 4.0.7 that could let a response cache serve hidden prompts to other clients. New tests pin both problems, and withholding suggestions for hidden references will return with a proper design. Resource template patterns are now cached without a size limit, so servers with thousands of templates read fast again, and OAuthProxy revokes the upstream refresh token instead of sending its own token upstream.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.7" description="September 23, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.7: Double Take"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.7"
+cta="Read the release notes"
+>
+Fixes two regressions from 4.0.6. The completion visibility check runs only the list-specific middleware hooks, so rate limits, logging, and metrics see a single request per completion again. Resource template patterns are cached, which makes template reads faster than in 4.0.5.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.6" description="September 23, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.6: Comma Chameleon"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.6"
+cta="Read the release notes"
+>
+Resource templates now match what clients actually send: literals raw or percent-encoded, and list query parameters exploded or comma-joined. A `Client` whose exit is cancelled releases its session instead of leaking it, completion no longer answers for prompts and templates the caller can't see, and JSON schemas with float or oversized length limits load instead of failing. The auth fixes cache OIDC discovery and keep Google tokens out of request URLs.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.5" description="September 17, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.5: No Country for Loose Ints"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.5"
+cta="Read the release notes"
+>
+Tool parameters declared strict with `Field(strict=True)`, `StrictInt`, or a strict model config are honored again, on both direct calls and task submission. Since the SDK v2 migration the server's lax default overrode them and silently coerced values.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.4" description="September 15, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.4: Here Be No Dragons"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.4"
+cta="Read the release notes"
+>
+OpenAPI request bodies get most of the attention in this patch: multipart string arrays are sent as repeated fields, whole-body arguments no longer clobber same-named HTTP parameters, dictionary bodies and raw content types survive intact, and JSON scalar bodies are encoded. On the auth side, OAuthProxy rejects ID-JAG tokens unless identity assertion is configured and refuses non-positive upstream token expiries. Clients now follow empty pagination cursors and servers reject malformed ones.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.3" description="September 4, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.3: Once Is Enough"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.3"
+cta="Read the release notes"
+>
+Multi-server clients with legacy-only backends now avoid unnecessary startup retries, and tools returning unconstrained sequences no longer send images twice. This patch also fixes task timing values rejected by strict clients and cleans up unfinished Monty callbacks when execution ends.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.2" description="September 2, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.2: Root Access"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.2"
+cta="Read the release notes"
+>
+`ClientGroup` is now importable from the package root, `from fastmcp import ClientGroup`, with the same lazy export and install hint as `Client`, so integrations no longer couple to FastMCP's internal module layout.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.1" description="September 1, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.1: Come Back Any Time"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.1"
+cta="Read the release notes"
+>
+`ClientGroup` is now reentrant like `Client`: nested or concurrent entries reuse the group's connections, and only the last exit closes them.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.0" description="August 31, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.0: Four Real"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.0"
+cta="Read the release notes"
+>
+FastMCP 4 is stable: the FastMCP release for the new MCP protocol and the rewritten Python SDK v2, with old-protocol clients supported through per-connection negotiation. Read the announcement: [FastMCP 4 is GA](https://blog.gofastmcp.com/3mufbh2vcv22o).
+
+🌐 **Every protocol era** — one deployment serves `2026-07-28` and legacy clients; `Client(url)` negotiates from the other side.
+
+🔁 **Interactive tools** — tools request follow-up input across complete request-response rounds.
+
+⚙️ **Background tasks** — `@mcp.tool(task=True)` via the `io.modelcontextprotocol/tasks` extension in the optional `fastmcp-tasks` package.
+
+🧩 **Extensions** — `add_extension()` registers capability-negotiated protocol extensions with their own methods and lifespan.
+
+💉 **Dependency injection** — `Depends` + `CallArgument` bind dependencies to call arguments while keeping them out of tool schemas.
+
+🤝 **Client groups** — `ClientGroup` manages one client per server with collision-checked namespacing.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.0b5" description="August 28, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.0b5: Group Effourt"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.0b5"
+cta="Read the release notes"
+>
+FastMCP 4 beta 5 introduces client groups: coordinate several independent MCP server connections through one tool catalog, without a proxy in the middle.
+
+🤝 **Client groups** — `ClientGroup` manages one client per server, each negotiating its own protocol era, with collision-checked `{server}_{tool}` namespacing, call routing, and per-tool provenance for adapters.
+
+📏 **Consistent limits** — middleware response limits now align with declared output schemas.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.0b4" description="August 26, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.0b4: Calm Befour the Storm"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.0b4"
+cta="Read the release notes"
+>
+FastMCP 4 beta 4 is the final hardening pass before the stable release, improving modern multi-server clients, operational tooling, and security boundaries.
+
+🌐 **Modern multi-server clients** — proxy-backed client configurations now preserve modern protocol support instead of forcing the legacy handshake.
+
+☁️ **Horizon accounts** — new commands manage Prefect Horizon account authentication from the FastMCP CLI.
+
+🔐 **Safer boundaries** — HTTP proxies no longer forward cookies, MCP transport headers reach their backends correctly, and CIMD caches stay bounded.
+
+🔎 **Sharper tools** — BM25 search handles Unicode tokens and MCP inspect reports server instructions correctly.
+</Card>
+</Update>
 
 <Update label="FastMCP 4.0.0b3" description="August 14, 2026" tags={["Releases"]}>
 <Card

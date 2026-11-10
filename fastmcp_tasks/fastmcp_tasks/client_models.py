@@ -51,9 +51,9 @@ class _ClientTaskFields(Result):
     status: TaskStatus
     created_at: str = Field(alias="createdAt")
     last_updated_at: str = Field(alias="lastUpdatedAt")
-    ttl_ms: float | None = Field(default=None, alias="ttlMs")
+    ttl_ms: int | None = Field(default=None, alias="ttlMs")
     status_message: str | None = Field(default=None, alias="statusMessage")
-    poll_interval_ms: float | None = Field(default=None, alias="pollIntervalMs")
+    poll_interval_ms: int | None = Field(default=None, alias="pollIntervalMs")
 
 
 class ClientCreateTaskResult(_ClientTaskFields):
@@ -110,6 +110,7 @@ class GetTaskRequest(mcp_types.Request[GetTaskRequestParams, Literal["tasks/get"
 
     method: Literal["tasks/get"] = "tasks/get"
     params: GetTaskRequestParams
+    name_param = "taskId"
 
 
 class UpdateTaskRequest(
@@ -119,6 +120,7 @@ class UpdateTaskRequest(
 
     method: Literal["tasks/update"] = "tasks/update"
     params: UpdateTaskRequestParams
+    name_param = "taskId"
 
 
 class CancelTaskRequest(
@@ -128,3 +130,4 @@ class CancelTaskRequest(
 
     method: Literal["tasks/cancel"] = "tasks/cancel"
     params: CancelTaskRequestParams
+    name_param = "taskId"

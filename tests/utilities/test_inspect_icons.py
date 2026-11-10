@@ -425,6 +425,7 @@ class TestFormatFunctions:
 
         # Check server version in MCP format
         assert data["serverInfo"]["version"] == "2.0.0"
+        assert data["instructions"] == "Test instructions"
 
         # MCP format SHOULD have environment fields
         assert "environment" in data

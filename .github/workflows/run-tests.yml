@@ -6,60 +6,152 @@ env:
 on:
   push:
     branches: ["main"]
-    paths:
-      - "fastmcp_slim/**"
-      - "fastmcp_remote/**"
-      - "tests/**"
-      - "pyproject.toml"
-      - "uv.lock"
-      - ".github/workflows/**"
 
   # run on all pull requests because these checks are required and will block merges otherwise
   pull_request:
 
   workflow_dispatch:
 
+# Only newer revisions of the same PR supersede a run. Main and manual runs
+# use unique groups so they always complete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
+  changes:
+    name: Classify test changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      run-tests: ${{ steps.classify.outputs.result }}
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        id: classify
+        with:
+          script: |
+            // Main and manual runs always exercise the full matrix.
+            if (context.eventName !== 'pull_request') return true;
+            const pr = context.payload.pull_request;
+            try {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                ...context.repo,
+                pull_number: pr.number,
+                per_page: 100,
+              });
+              const { data: current } = await github.rest.pulls.get({
+                ...context.repo,
+                pull_number: pr.number,
+              });
+              if (current.head.sha !== pr.head.sha || current.base.sha !== pr.base.sha) return true;
+              // The API caps results at 3,000 files. Never skip an incomplete
+              // or empty diff, including when the PR changed during pagination.
+              if (!files.length || files.length !== pr.changed_files || files.length >= 3000) return true;
+              const editorial = (path) =>
+                /^(README|CONTRIBUTING|CODE_OF_CONDUCT)\.md$/.test(path) ||
+                /^docs\/.*\.(md|mdx)$/.test(path);
+              return files.some((file) =>
+                !editorial(file.filename) ||
+                (file.previous_filename && !editorial(file.previous_filename))
+              );
+            } catch (error) {
+              core.warning(`Could not classify changes; running all tests: ${error.message}`);
+              return true;
+            }
+
   run_tests:
+    needs: changes
+    # Expand the matrix even for editorial PRs so every required check keeps
+    # its exact name. Skip the expensive steps, not the matrix job.
+    if: ${{ !cancelled() }}
     name: "Tests: Python ${{ matrix.python-version }} on ${{ matrix.os }}"
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.10"]
+        os: [ubuntu-latest]
+        python-version: ["3.11"]
         include:
           - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
             python-version: "3.13"
+          - os: ubuntu-latest
+            python-version: "3.14"
+          - os: ubuntu-latest
+            python-version: "3.15"
       fail-fast: false
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v7
+      # Keep local composite action definitions available to the runner.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup uv
+        if: needs.changes.outputs.run-tests != 'false' || (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11')
         uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ matrix.python-version }}
           resolution: locked
 
       - name: Run unit tests
+        if: needs.changes.outputs.run-tests != 'false'
         uses: ./.github/actions/run-pytest
 
       - name: Run serial subprocess tests
+        if: needs.changes.outputs.run-tests != 'false'
+        uses: ./.github/actions/run-pytest
+        with:
+          test-type: client_process
+
+      - name: Run documentation tests
+        if: needs.changes.outputs.run-tests == 'false' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: uv run pytest tests/docs -n 0
+
+  run_windows_tests:
+    needs: changes
+    # Run Windows tests for code changes, preserving required check names
+    # when editorial-only PRs skip the expensive steps.
+    if: ${{ !cancelled() }}
+    name: "Tests: Python ${{ matrix.python-version }} on windows-latest"
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.14"]
+      fail-fast: false
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Setup uv
+        if: needs.changes.outputs.run-tests != 'false'
+        uses: ./.github/actions/setup-uv
+        with:
+          python-version: ${{ matrix.python-version }}
+          resolution: locked
+      - name: Run unit tests
+        if: needs.changes.outputs.run-tests != 'false'
+        uses: ./.github/actions/run-pytest
+      - name: Run serial subprocess tests
+        if: needs.changes.outputs.run-tests != 'false'
         uses: ./.github/actions/run-pytest
         with:
           test-type: client_process
 
   run_tests_lowest_direct:
+    needs: changes
+    # Run even if classification fails, preserving coverage and check names.
+    if: ${{ !cancelled() && needs.changes.outputs.run-tests != 'false' }}
     name: "Tests with lowest-direct dependencies"
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup uv (lowest-direct)
         uses: ./.github/actions/setup-uv
@@ -75,12 +167,15 @@ jobs:
           test-type: client_process
 
   run_conformance_tests:
+    needs: changes
+    # Run even if classification fails, preserving coverage and check names.
+    if: ${{ !cancelled() && needs.changes.outputs.run-tests != 'false' }}
     name: "MCP conformance tests"
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup uv
         uses: ./.github/actions/setup-uv
@@ -88,9 +183,9 @@ jobs:
           resolution: locked
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: "24"
+          node-version: "26"
 
       - name: Run conformance tests
         uses: ./.github/actions/run-pytest
@@ -98,12 +193,15 @@ jobs:
           test-type: conformance
 
   run_integration_tests:
+    needs: changes
+    # Run even if classification fails, preserving coverage and check names.
+    if: ${{ !cancelled() && needs.changes.outputs.run-tests != 'false' }}
     name: "Integration tests"
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup uv
         uses: ./.github/actions/setup-uv
@@ -120,12 +218,15 @@ jobs:
           FASTMCP_TEST_AUTH_GITHUB_CLIENT_SECRET: ${{ secrets.FASTMCP_TEST_AUTH_GITHUB_CLIENT_SECRET }}
 
   package_install_smoke:
+    needs: changes
+    # Run even if classification fails, preserving coverage and check names.
+    if: ${{ !cancelled() && needs.changes.outputs.run-tests != 'false' }}
     name: "Package install smoke"
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup uv
         uses: ./.github/actions/setup-uv

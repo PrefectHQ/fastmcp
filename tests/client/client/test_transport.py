@@ -1,15 +1,20 @@
 """Client transport inference tests."""
 
+import warnings
+
 import pytest
 
 from fastmcp.client.transports import (
     FastMCPTransport,
     MCPConfigTransport,
+    NodeStdioTransport,
+    PythonStdioTransport,
     SSETransport,
     StdioTransport,
     StreamableHttpTransport,
     infer_transport,
 )
+from fastmcp.exceptions import FastMCPDeprecationWarning
 
 
 class TestInferTransport:
@@ -135,3 +140,49 @@ class TestInferTransport:
         server = FastMCP1()
         transport = infer_transport(server)
         assert isinstance(transport, FastMCPTransport)
+
+
+class TestScriptPathInference:
+    def test_path_to_python_script_infers_stdio(self, tmp_path):
+        script = tmp_path / "server.py"
+        script.write_text("")
+        assert isinstance(infer_transport(script), PythonStdioTransport)
+
+    def test_path_to_node_script_infers_stdio(self, tmp_path):
+        script = tmp_path / "server.js"
+        script.write_text("")
+        assert isinstance(infer_transport(script), NodeStdioTransport)
+
+    def test_string_script_path_still_works_but_warns(self, tmp_path):
+        script = tmp_path / "server.py"
+        script.write_text("")
+        with pytest.warns(FastMCPDeprecationWarning, match="pathlib.Path") as record:
+            transport = infer_transport(str(script))
+        assert isinstance(transport, PythonStdioTransport)
+        assert record[0].filename == __file__
+
+    def test_warning_points_at_the_caller_for_every_entry_point(self, tmp_path):
+        from fastmcp import Client
+        from fastmcp.server import create_proxy
+
+        script = tmp_path / "server.py"
+        script.write_text("")
+        for build in (Client, create_proxy):
+            with pytest.warns(FastMCPDeprecationWarning) as record:
+                build(str(script))
+            assert record[0].filename == __file__, build
+
+    def test_path_does_not_warn(self, tmp_path):
+        script = tmp_path / "server.py"
+        script.write_text("")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            infer_transport(script)
+
+    def test_string_to_missing_script_is_not_a_transport(self, tmp_path):
+        with pytest.raises(ValueError, match="Could not infer"):
+            infer_transport(str(tmp_path / "missing.py"))
+
+    def test_path_with_unsupported_suffix_is_rejected(self, tmp_path):
+        with pytest.raises(ValueError, match="Unsupported script type"):
+            infer_transport(tmp_path / "server.rb")

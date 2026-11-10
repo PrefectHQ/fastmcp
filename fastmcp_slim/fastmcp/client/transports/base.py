@@ -1,6 +1,6 @@
 import abc
 import contextlib
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar
 
@@ -15,10 +15,37 @@ from mcp.client.session import (
     MessageHandlerFnT,
     SamplingFnT,
 )
+from mcp.shared._httpx_utils import McpHttpClientFactory
 from typing_extensions import TypedDict, Unpack
 
 # TypeVar for preserving specific ClientTransport subclass types
 ClientTransportT = TypeVar("ClientTransportT", bound="ClientTransport")
+
+#: Attribute set on factories generated from a transport's ``verify`` setting.
+#: A non-default factory without this marker was supplied by the caller (for
+#: proxies, mTLS, custom headers, ...) and takes precedence over ``verify``.
+#: The value is exactly ``True``; dynamic attribute lookup (proxies, mocks)
+#: must not be mistaken for the marker.
+_VERIFY_FACTORY_MARKER = "_fastmcp_verify_factory"
+
+
+def _mark_verify_factory(factory: McpHttpClientFactory) -> McpHttpClientFactory:
+    """Tag a factory generated from ``verify`` so it can be told apart from a
+    caller-supplied factory."""
+    setattr(factory, _VERIFY_FACTORY_MARKER, True)
+    return factory
+
+
+def _is_verify_replaceable_factory(factory: object) -> bool:
+    """Whether a Client-level ``verify`` may replace this OAuth factory.
+
+    Only the bare ``httpx2.AsyncClient`` default and factories generated from
+    a transport's own ``verify`` setting are replaceable. A caller-supplied
+    factory must be preserved.
+    """
+    if factory is httpx2.AsyncClient:
+        return True
+    return getattr(factory, _VERIFY_FACTORY_MARKER, False) is True
 
 
 class ClientSessionKwargs(TypedDict, total=False):
@@ -44,22 +71,27 @@ class TransportOptions:
 
     These belong to the client rather than to the transport, so a transport
     shared between clients doesn't leak one client's settings to another.
+    Different client layers may own different fields; a layer that adds its
+    settings must preserve the existing options rather than replace the bundle.
 
     Attributes:
         session_class: The ClientSession class to instantiate. Proxies supply a
             session that skips output-schema validation, since they relay
             results rather than consume them.
-        forward_incoming_headers: Whether to forward the inbound request's
-            authorization header upstream. Only appropriate for proxies, where
-            the caller's credentials are meant to be propagated. Honored by the
-            HTTP and SSE transports; ignored by the others.
+        forward_incoming_headers: Whether to forward eligible inbound HTTP
+            headers upstream, including authorization. Hop-specific HTTP headers
+            and MCP transport, routing, and event-stream state are excluded
+            because each backend connection owns that state. Only appropriate
+            for proxies; honored by the HTTP and SSE transports and ignored by
+            the others.
         backend_mode: The connect `mode` to give backend clients that a wrapping
             transport builds on this client's behalf, so a chain of connections
             speaks one protocol era end to end. `None` leaves each backend
             client at its own default. Honored by `MCPConfigTransport`, whose
-            multi-server form mounts a proxy per configured server; ignored by
-            transports that connect to a single backend directly, since those
-            carry the connecting client's own session and era.
+            multi-server form mounts a proxy per configured server and resolves
+            one shared era for the aggregate; ignored by transports that connect
+            to a single backend directly, since those carry the connecting
+            client's own session and era.
     """
 
     session_class: type[ClientSession] = ClientSession
@@ -95,7 +127,7 @@ class ClientTransport(abc.ABC):
         *,
         transport_options: TransportOptions | None = None,
         **session_kwargs: Unpack[SessionKwargs],
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         """
         Establishes a connection and yields an active ClientSession.
 

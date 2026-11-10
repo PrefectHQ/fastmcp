@@ -3,7 +3,6 @@ title: Component Visibility
 sidebarTitle: Visibility
 description: Control which components are available to clients
 icon: toggle-on
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -112,7 +111,7 @@ A component is disabled if it has **any** of the disabled tags. The component do
 
 ### Versions
 
-When a component has several registered versions, `names` matches every one of them. To act on a particular version, filter by `version` with a [`VersionSpec`](/servers/versioning).
+When a component has several registered versions, `names` matches every one of them. To act on a particular version, filter by `version` with a [`VersionSpec`](/servers/versioning). Unversioned components never match a `version` filter.
 
 ```python
 from fastmcp.utilities.versions import VersionSpec
@@ -202,11 +201,10 @@ Allowlist mode is useful for restrictive environments where you want to explicit
 
 ### Allowlist Behavior
 
-When you call `enable(only=True)`:
+When you call `enable(only=True)`, FastMCP adds two rules:
 
-1. Default visibility state switches to "disabled"
-2. Previous allowlists are cleared
-3. Only specified keys/tags become enabled
+1. A rule that disables every component, overriding everything earlier `enable()` calls turned on, including previous allowlists
+2. A rule that enables the components matching your criteria
 
 ```python
 # Start fresh - only enable these specific tools
@@ -241,6 +239,7 @@ Server-level visibility state applies to all components from all providers. When
 from fastmcp import FastMCP
 
 main = FastMCP("Main")
+sub_server = FastMCP("Sub")
 main.mount(sub_server, namespace="api")
 
 @main.tool(tags={"internal"})
@@ -339,6 +338,8 @@ mcp.disable(tags={"premium"})
 
 All sessions start with `premium_analysis` hidden. When a session calls `unlock_premium`, that session gains access to premium tools while other sessions remain unaffected. Calling `reset_features` returns the session to the global defaults.
 
+For a mounted server, these rules use that server's session state store and its local component names. Components it enables can be listed and called through the parent, including through a namespace. The parent's visibility rules still apply to the components exposed by the mount.
+
 ### How Session Rules Work
 
 Session rules override global transforms. When listing components, FastMCP first applies global enable/disable rules, then applies session-specific rules on top. Rules within a session accumulate, and later rules override earlier ones for the same component.
@@ -362,7 +363,7 @@ Each call adds a rule to the session. The `dangerous_admin_tool` ends up disable
 
 ### Filter Criteria
 
-The session visibility methods accept the same filter criteria as `server.enable()` and `server.disable()`:
+The session visibility methods accept the same filter criteria as `server.enable()` and `server.disable()`, plus `match_all`. They have no `only` parameter; to build a session allowlist, disable with `match_all=True` and then enable what the session should see.
 
 | Parameter | Description |
 |-----------|-------------|
@@ -385,6 +386,12 @@ async def enable_recent_tools(ctx: Context) -> str:
     )
     return "Recent tools enabled"
 ```
+
+An explicit empty `names` or `keys` set matches no components, even when combined with other filters, unless `match_all=True`. Omit the parameter or pass `None` to leave that criterion unrestricted.
+
+### Sessions on MCP 2026-07-28
+
+MCP 2026-07-28 connections, which FastMCP clients negotiate by default, have no session. On those connections, session rules are scoped to the authenticated user, the same identity [`UserSession`](/servers/sessions) uses, so they apply to every connection that user makes. Without authentication, stdio servers keep one set of rules for the process, because a stdio server serves a single client. An unauthenticated HTTP request carries nothing that identifies its client between requests, so `enable_components()`, `disable_components()`, and `reset_visibility()` raise an error rather than changing what every client sees.
 
 ### Automatic Notifications
 
@@ -454,15 +461,23 @@ Sessions start seeing only the activation tools. Calling `activate_finance` reve
 
 ## Client Notifications
 
-When visibility state changes, FastMCP automatically notifies connected clients. Clients supporting the MCP notification protocol receive `list_changed` events and can refresh their component lists.
+Server-level and provider-level `enable()` and `disable()` calls change the rules in place and send no notifications. Connected clients see the change the next time they list components. Session visibility changes are different: they notify the affected session automatically, as described in [Automatic Notifications](#automatic-notifications).
 
-This happens automatically. You don't need to trigger notifications manually.
+To tell a client about a global change made during a request, send the notification from the tool yourself. This reaches only the session that made the request.
 
 ```python
-# This automatically notifies clients
-mcp.disable(tags={"maintenance"})
+import mcp_types
+from fastmcp import FastMCP
+from fastmcp.server.context import Context
 
-# Clients receive: tools/list_changed, resources/list_changed, etc.
+mcp = FastMCP("Server")
+
+@mcp.tool
+async def start_maintenance(ctx: Context) -> str:
+    """Hide maintenance-tagged tools from every client."""
+    mcp.disable(tags={"maintenance"})
+    await ctx.send_notification(mcp_types.ToolListChangedNotification())
+    return "Maintenance tools hidden"
 ```
 
 ## Filtering Logic

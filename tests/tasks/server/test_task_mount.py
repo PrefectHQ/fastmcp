@@ -44,16 +44,6 @@ from tests.tasks.task_helpers import (
 )
 
 
-@pytest.fixture(autouse=True)
-def reset_docket_memory_server():
-    """Reset the shared memory:// Docket server between tests for isolation."""
-    if hasattr(Docket, "_memory_server"):
-        delattr(Docket, "_memory_server")
-    yield
-    if hasattr(Docket, "_memory_server"):
-        delattr(Docket, "_memory_server")
-
-
 @pytest.fixture
 def child_server() -> FastMCP:
     mcp = FastMCP("child-server")

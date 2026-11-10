@@ -3,7 +3,6 @@ title: Form Input
 sidebarTitle: Form Input
 description: Collect structured data from users via Pydantic models
 icon: rectangle-list
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -42,7 +41,7 @@ This registers two tools:
 | `collect_bugreport` | Model | Opens the form UI |
 | `submit_form` | App only | Validates and processes the submission |
 
-The tool name is derived from the model class name, lowercased: `collect_{modelname}`. So `BugReport` becomes `collect_bugreport`, `ShippingAddress` becomes `collect_shippingaddress`. Use `tool_name` to override if needed. The LLM calls it with a prompt explaining what it needs, and the user gets a form with fields matching the model.
+The tool name is derived from the model class name, lowercased: `collect_{modelname}`. So `BugReport` becomes `collect_bugreport`, `ShippingAddress` becomes `collect_shippingaddress`. Use `tool_name` to override if needed. The LLM calls it with a prompt explaining what it needs, and the user gets a form with fields matching the model. The LLM can also pass `title` and `submit_text` to override the card heading and button label, and `default`, a partial dict of field values that pre-fills the form for the user to confirm or edit. `default` requires `prefab-ui>=0.19.1` and is ignored on older versions.
 
 ## Field mapping
 
@@ -64,14 +63,25 @@ Use `Field()` metadata to control labels (`title`), placeholders (`description`)
 By default, the validated model is returned as JSON. Provide an `on_submit` callback to process the data server-side:
 
 ```python
-def save_report(report: BugReport) -> str:
-    db.insert(report.model_dump())
-    return f"Bug #{db.last_id} filed: {report.title}"
+from pydantic import BaseModel
+from fastmcp import FastMCP
+from fastmcp.apps.form import FormInput
 
+class BugReport(BaseModel):
+    title: str
+    description: str
+
+reports: list[BugReport] = []
+
+def save_report(report: BugReport) -> str:
+    reports.append(report)
+    return f"Bug #{len(reports)} filed: {report.title}"
+
+mcp = FastMCP("My Server")
 mcp.add_provider(FormInput(model=BugReport, on_submit=save_report))
 ```
 
-The callback receives a validated model instance and returns a string that becomes the tool result.
+The callback receives a validated model instance and returns a string that becomes the result of the `submit_form` call.
 
 ## Configuration
 
@@ -87,13 +97,29 @@ FormInput(
 )
 ```
 
-Set `send_message=True` to push the result back into the conversation via `SendMessage`, triggering the LLM's next turn. Without it, the result is just the tool return value.
+Set `send_message=True` to push the result back into the conversation via `SendMessage`, triggering the LLM's next turn. Without it, the result goes only to the form UI, which shows "Submitted.", and the LLM does not see the submission.
 
 ## Multiple forms
 
 Add multiple providers for different models — each gets its own tool:
 
 ```python
+from pydantic import BaseModel
+from fastmcp import FastMCP
+from fastmcp.apps.form import FormInput
+
+class ShippingAddress(BaseModel):
+    street: str
+    city: str
+
+class BugReport(BaseModel):
+    title: str
+    description: str
+
+class ContactInfo(BaseModel):
+    name: str
+    email: str
+
 mcp = FastMCP(
     "My Server",
     providers=[

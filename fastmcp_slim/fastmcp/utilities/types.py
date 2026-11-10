@@ -18,6 +18,7 @@ from typing import (
     get_origin,
     get_type_hints,
 )
+from urllib.parse import quote
 
 import mcp_types
 from mcp_types import Annotations, ContentBlock, ModelPreferences, SamplingMessage
@@ -46,6 +47,11 @@ class FastMCPBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def get_function_type_hints(fn: Callable[..., Any]) -> dict[str, Any]:
+    """Resolve a function's type hints, keeping `Annotated` metadata."""
+    return get_type_hints(fn, include_extras=True)
+
+
 @lru_cache(maxsize=5000)
 def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
     """
@@ -60,7 +66,7 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
         if hasattr(cls, "__annotations__") and cls.__annotations__:
             try:
                 # Resolve forward references first
-                resolved_hints = get_type_hints(cls, include_extras=True)
+                resolved_hints = get_function_type_hints(cls)
             except Exception:
                 # If forward reference resolution fails, use original annotations
                 resolved_hints = cls.__annotations__
@@ -118,9 +124,9 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
 
                 if inspect.ismethod(cls):
                     new_method = types.MethodType(new_func, cls.__self__)
-                    return TypeAdapter(new_method)
+                    return TypeAdapter(new_method)  # ty:ignore[invalid-type-form]
                 else:
-                    return TypeAdapter(new_func)
+                    return TypeAdapter(new_func)  # ty:ignore[invalid-type-form]
 
     return TypeAdapter(cls)
 
@@ -268,15 +274,21 @@ class Image:
 
     def _get_mime_type(self) -> str:
         """Get MIME type from format or guess from file extension."""
+        mapping = {
+            "jpg": "image/jpeg",
+            "svg": "image/svg+xml",
+            "tif": "image/tiff",
+        }
+
         if self._format:
-            return f"image/{self._format.lower()}"
+            return mapping.get(self._format.lower(), f"image/{self._format.lower()}")
 
         if self.path:
             # Workaround for WEBP in Py3.10
             mimetypes.add_type("image/webp", ".webp")
-            resp = mimetypes.guess_type(self.path, strict=False)
-            if resp and resp[0] is not None:
-                return resp[0]
+            mime_type, _ = mimetypes.guess_type(self.path, strict=False)
+            if mime_type is not None:
+                return mime_type
             return "application/octet-stream"
         return "image/png"  # default for raw binary data
 
@@ -341,6 +353,11 @@ class Audio:
             "ogg": "audio/ogg",
             "m4a": "audio/mp4",
             "flac": "audio/flac",
+            "opus": "audio/ogg",
+            "aac": "audio/aac",
+            "webm": "audio/webm",
+            "aiff": "audio/aiff",
+            "aif": "audio/aiff",
         }
 
         if self._format:
@@ -398,12 +415,21 @@ class File:
 
     def _get_mime_type(self) -> str:
         """Get MIME type from format or guess from file extension."""
+        # Text formats whose canonical MIME type is text/*, not application/*
+        mapping = {
+            "plain": "text/plain",
+            "txt": "text/plain",
+            "text": "text/plain",
+            "csv": "text/csv",
+            "html": "text/html",
+            "htm": "text/html",
+            "md": "text/markdown",
+            "markdown": "text/markdown",
+        }
+
         if self._format:
             fmt = self._format.lower()
-            # Map common text formats to text/plain
-            if fmt in {"plain", "txt", "text"}:
-                return "text/plain"
-            return f"application/{fmt}"
+            return mapping.get(fmt, f"application/{fmt}")
 
         if self.path:
             mime_type, _ = mimetypes.guess_type(self.path)
@@ -423,15 +449,20 @@ class File:
                 uri_str = self.path.resolve().as_uri()
         elif self.data is not None:
             raw_data = self.data
+            # The URI extension follows the requested format, not the MIME
+            # subtype (format="txt" is text/plain but should stay .txt).
+            extension = (
+                f".{self._format.lower()}"
+                if self._format
+                else f".{self._mime_type.split('/')[1]}"
+            )
             if self._name:
-                extension = (
-                    ""
-                    if Path(self._name).suffix
-                    else f".{self._mime_type.split('/')[1]}"
-                )
-                uri_str = f"file:///{self._name}{extension}"
+                if Path(self._name).suffix:
+                    uri_str = f"file:///{quote(self._name)}"
+                else:
+                    uri_str = f"file:///{quote(self._name + extension)}"
             else:
-                uri_str = f"file:///resource.{self._mime_type.split('/')[1]}"
+                uri_str = f"file:///resource{extension}"
         else:
             raise ValueError("No resource data available")
 

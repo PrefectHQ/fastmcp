@@ -3,6 +3,7 @@ import sys
 from typing import Any
 from unittest.mock import patch
 
+import pytest
 from jsonref import replace_refs
 
 from fastmcp.utilities.json_schema import (
@@ -381,6 +382,94 @@ class TestDereferenceRefs:
         assert "$defs" not in result
         assert "discriminator" in result["properties"]["item"]["properties"]
 
+    def test_falls_back_for_root_ref_to_boolean_schema(self):
+        """A root $ref resolving to a boolean schema must not crash.
+
+        `true` is a valid JSON Schema, so ``$defs: {"Any": true}`` with a
+        root $ref is legal. jsonref replaces the whole schema with the
+        boolean, which previously hit the dict assertion and failed
+        tools/list for the entire server (#6125). The schema now falls
+        back to partial resolution and keeps its own keywords.
+        """
+        schema = {
+            "type": "object",
+            "$ref": "#/$defs/Any",
+            "$defs": {"Any": True},
+        }
+        result = dereference_refs(schema)
+
+        assert result == schema
+
+    def test_falls_back_for_root_ref_to_false_schema_without_siblings(self):
+        """A root $ref resolving to `false` (no siblings) stays intact."""
+        schema = {"$ref": "#/$defs/Any", "$defs": {"Any": False}}
+        result = dereference_refs(schema)
+
+        assert result == schema
+
+    def test_falls_back_for_root_ref_to_non_schema_json_value(self):
+        """A root $ref resolving to any non-dict value must not crash.
+
+        $defs entries are arbitrary JSON, so a pointer can also reach a
+        list or scalar; the same fallback applies.
+        """
+        schema = {
+            "type": "object",
+            "$ref": "#/$defs/List",
+            "$defs": {"List": [1, 2, 3]},
+        }
+        result = dereference_refs(schema)
+
+        assert result == schema
+
+    def test_nested_ref_to_boolean_schema_is_inlined_as_is(self):
+        """A nested $ref resolving to a boolean schema is kept in place.
+
+        jsonref replaces the property node with the boolean itself, which
+        is a valid sub-schema; this has always worked and must keep working.
+        """
+        schema = {
+            "type": "object",
+            "properties": {"x": {"$ref": "#/$defs/B"}},
+            "$defs": {"B": True},
+        }
+        result = dereference_refs(schema)
+
+        assert "$defs" not in result
+        assert result["properties"]["x"] is True
+
+    @pytest.mark.parametrize("name", ["default", "const", "enum", "examples"])
+    def test_strips_discriminator_under_property_named_like_a_keyword(self, name: str):
+        """A property named like a data keyword still holds a sub-schema."""
+        schema = {
+            "$defs": {
+                "Cat": {
+                    "type": "object",
+                    "properties": {"kind": {"const": "cat", "type": "string"}},
+                },
+                "Dog": {
+                    "type": "object",
+                    "properties": {"kind": {"const": "dog", "type": "string"}},
+                },
+            },
+            "type": "object",
+            "properties": {
+                name: {
+                    "anyOf": [{"$ref": "#/$defs/Cat"}, {"$ref": "#/$defs/Dog"}],
+                    "discriminator": {
+                        "mapping": {"cat": "#/$defs/Cat", "dog": "#/$defs/Dog"},
+                        "propertyName": "kind",
+                    },
+                },
+            },
+        }
+        result = dereference_refs(schema)
+
+        assert "$defs" not in result
+        assert "discriminator" not in result["properties"][name]
+        for variant in result["properties"][name]["anyOf"]:
+            assert variant["required"] == ["kind"]
+
 
 class TestCompressSchema:
     """Tests for the compress_schema function."""
@@ -607,7 +696,7 @@ class TestCompressSchema:
             """A greeting function."""
             return f"Hello {title} {name}"
 
-        adapter = TypeAdapter(greet)
+        adapter = TypeAdapter(greet)  # ty:ignore[invalid-type-form]
         schema = adapter.json_schema()
 
         # Compress with title pruning
@@ -1025,6 +1114,95 @@ class TestResolveRootRef:
 
         # Should return original schema unchanged
         assert result is schema
+
+    @pytest.mark.parametrize(
+        ("defs_key", "pointers"),
+        [
+            ("$defs", ["#/$defs/Actual"]),
+            ("$defs", ["#/$defs/Alias", "#/$defs/Actual"]),
+            ("$defs", ["#/$defs/Alias1", "#/$defs/Alias2", "#/$defs/Actual"]),
+            (
+                "definitions",
+                ["#/definitions/Alias", "#/definitions/Actual"],
+            ),
+            (
+                "$defs",
+                ["#/$defs/Alias%20One", "#/$defs/Actual"],
+            ),
+            (
+                "$defs",
+                ["#/$defs/a~1b", "#/$defs/Actual"],
+            ),
+        ],
+    )
+    def test_follows_alias_chain_to_object_definition(
+        self, defs_key: str, pointers: list[str]
+    ):
+        decoded = {
+            "Alias%20One": "Alias One",
+            "a~1b": "a/b",
+        }
+        defs: dict[str, Any] = {
+            "Actual": {
+                "type": "object",
+                "properties": {"id": {"type": "string"}},
+                "required": ["id"],
+            }
+        }
+        for pointer, next_pointer in zip(pointers, pointers[1:], strict=False):
+            name = pointer.rsplit("/", 1)[1]
+            defs[decoded.get(name, name)] = {"$ref": next_pointer}
+        schema = {defs_key: defs, "$ref": pointers[0]}
+
+        result = resolve_root_ref(schema)
+
+        assert result["type"] == "object"
+        assert result["properties"] == {"id": {"type": "string"}}
+        assert result["required"] == ["id"]
+        assert "$ref" not in result
+        assert result[defs_key] == defs
+
+    def test_alias_chain_keeps_outer_siblings(self):
+        schema = {
+            "title": "Outer",
+            "$defs": {
+                "Alias": {
+                    "title": "Middle",
+                    "description": "Middle text",
+                    "$ref": "#/$defs/Actual",
+                },
+                "Actual": {
+                    "title": "Inner",
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                },
+            },
+            "$ref": "#/$defs/Alias",
+        }
+
+        result = resolve_root_ref(schema)
+
+        assert result["type"] == "object"
+        assert result["title"] == "Outer"
+        assert result["description"] == "Middle text"
+
+    @pytest.mark.parametrize(
+        "defs",
+        [
+            {"A": {"$ref": "#/$defs/A"}},
+            {"A": {"$ref": "#/$defs/B"}, "B": {"$ref": "#/$defs/A"}},
+            {
+                "A": {"$ref": "#/$defs/B"},
+                "B": {"$ref": "#/$defs/C"},
+                "C": {"$ref": "#/$defs/A"},
+            },
+            {"A": {"$ref": "#/$defs/Missing"}},
+        ],
+    )
+    def test_alias_cycle_or_missing_target_is_unchanged(self, defs: dict[str, Any]):
+        schema = {"$defs": defs, "$ref": "#/$defs/A"}
+
+        assert resolve_root_ref(schema) is schema
 
 
 class TestStripRemoteRefs:

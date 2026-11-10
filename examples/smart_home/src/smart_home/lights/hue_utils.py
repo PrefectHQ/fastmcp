@@ -1,34 +1,33 @@
-from typing import Any
+"""One verified, pooled Hue connection for the server's lifetime."""
+
+import ssl
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from phue import Bridge
-from phue.exceptions import PhueException
 
-from smart_home.settings import settings
-
-
-def _get_bridge() -> Bridge | None:
-    """Attempts to connect to the Hue bridge using settings."""
-    try:
-        return Bridge(
-            ip=settings.hue_bridge_ip,
-            username=settings.hue_bridge_username,
-            save_config=False,
-        )
-    except Exception:
-        # Broad exception to catch potential connection issues
-        # TODO: Add more specific logging or error handling
-        return None
+from fastmcp import Context, FastMCP
+from fastmcp.dependencies import CurrentContext
+from fastmcp.server.lifespan import lifespan
+from smart_home.settings import Settings
 
 
-def handle_phue_error(
-    light_or_group: str, operation: str, error: Exception
-) -> dict[str, Any]:
-    """Creates a standardized error response for phue operations."""
-    base_info = {"target": light_or_group, "operation": operation, "success": False}
-    if isinstance(error, KeyError):
-        base_info["error"] = f"Target '{light_or_group}' not found"
-    elif isinstance(error, PhueException):
-        base_info["error"] = f"phue error during {operation}: {error}"
-    else:
-        base_info["error"] = f"Unexpected error during {operation}: {error}"
-    return base_info
+@lifespan
+async def hue_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Bridge]]:
+    settings = Settings()
+    verify: bool | ssl.SSLContext = True
+    if settings.hue_bridge_certificate is not None:
+        verify = ssl.create_default_context(cafile=str(settings.hue_bridge_certificate))
+        verify.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
+        # The explicitly trusted bridge certificate identifies the bridge, not its IP.
+        verify.check_hostname = False
+    async with Bridge(
+        settings.hue_bridge_ip, settings.hue_bridge_username, verify=verify
+    ) as bridge:
+        yield {"bridge": bridge}
+
+
+@asynccontextmanager
+async def get_bridge(ctx: Context = CurrentContext()) -> AsyncIterator[Bridge]:
+    # Yield an already-open client; returning it would make DI enter it again.
+    yield ctx.lifespan_context["bridge"]

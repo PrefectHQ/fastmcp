@@ -3,7 +3,6 @@ title: Resources as Tools
 sidebarTitle: Resources as Tools
 description: Expose resources to tool-only clients
 icon: toolbox
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -47,7 +46,7 @@ def user_profile(user_id: str) -> str:
 mcp.add_transform(ResourcesAsTools(mcp))
 ```
 
-Clients now see three tools: whatever tools you defined directly, plus `list_resources` and `read_resource`.
+Clients now see `list_resources` and `read_resource` alongside any tools you defined directly.
 
 Both generated tools are annotated with `readOnlyHint=True`, since they only read data. Clients that respect tool annotations (like Cursor) can use this to auto-confirm these tool calls without prompting the user.
 
@@ -84,28 +83,36 @@ The client can distinguish resource types by checking which field is present: `u
 The `read_resource` tool accepts a single `uri` argument. For static resources, pass the exact URI. For templates, fill in the placeholders with actual values.
 
 ```python
-# Reading a static resource
-result = await client.call_tool("read_resource", {"uri": "config://app"})
-print(result.data)  # '{"app_name": "My App", "version": "1.0.0"}'
+from fastmcp import Client
 
-# Reading a templated resource - fill in {user_id} with an actual ID
-result = await client.call_tool("read_resource", {"uri": "user://42/profile"})
-print(result.data)  # '{"user_id": "42", "name": "User 42"}'
+async with Client(mcp) as client:
+    # Reading a static resource
+    result = await client.call_tool("read_resource", {"uri": "config://app"})
+    print(result.data)  # '{"app_name": "My App", "version": "1.0.0"}'
+
+    # Reading a templated resource - fill in {user_id} with an actual ID
+    result = await client.call_tool("read_resource", {"uri": "user://42/profile"})
+    print(result.data)  # '{"user_id": "42", "name": "User 42"}'
 ```
 
 The transform handles template matching automatically. When you request `user://42/profile`, it matches against the `user://{user_id}/profile` template, extracts `user_id=42`, and calls your resource function with that parameter.
 
 ## Binary Content
 
-Resources that return binary data (like images or files) are automatically base64-encoded when read through the `read_resource` tool. This ensures binary content can be transmitted as a string in the tool response.
+Resources that return binary data (like images or files) are automatically base64-encoded when read through the `read_resource` tool. This ensures binary content can be transmitted as a string in the tool response. A resource that returns several content items comes back as a JSON array of objects with `content` and `mime_type` fields.
 
 ```python
+import base64
+
+from fastmcp import Client
+
 @mcp.resource("data://binary", mime_type="application/octet-stream")
 def binary_data() -> bytes:
     return b"\x00\x01\x02\x03"
 
-# Client receives base64-encoded string
-result = await client.call_tool("read_resource", {"uri": "data://binary"})
-decoded = base64.b64decode(result.data)  # b'\x00\x01\x02\x03'
+async with Client(mcp) as client:
+    # Client receives base64-encoded string
+    result = await client.call_tool("read_resource", {"uri": "data://binary"})
+    decoded = base64.b64decode(result.data)  # b'\x00\x01\x02\x03'
 ```
 

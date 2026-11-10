@@ -1,0 +1,59 @@
+---
+title: state
+sidebarTitle: state
+---
+
+# `fastmcp.cli.deploy.state`
+
+
+Versioned JSON state helpers for the FastMCP CLI.
+
+## Functions
+
+### `state_lock` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/deploy/state.py#L97" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+state_lock(directory: Path) -> Generator[None, None, None]
+```
+
+
+Lock related CLI state changes across processes.
+
+
+### `read_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/deploy/state.py#L146" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+read_state(path: Path, model: type[ModelT]) -> ModelT | None
+```
+
+
+Read and validate a versioned JSON state file.
+
+
+### `write_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/deploy/state.py#L170" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+write_state(path: Path, data: dict[str, Any]) -> None
+```
+
+
+Write JSON through a restricted temporary file and atomic replacement.
+
+
+### `remove_state` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/deploy/state.py#L222" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+remove_state(path: Path) -> None
+```
+
+
+Remove a state file when it exists.
+
+
+## Classes
+
+### `StateFileError` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/deploy/state.py#L20" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A CLI state file could not be read or written safely.
+

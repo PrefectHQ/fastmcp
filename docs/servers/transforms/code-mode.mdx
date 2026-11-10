@@ -3,7 +3,6 @@ title: Code Mode
 sidebarTitle: Code Mode
 description: Let LLMs write Python to orchestrate tools in a sandbox
 icon: flask
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -61,7 +60,7 @@ First, the LLM uses the `search` meta-tool to find tools by keyword.
 
 For example, it might do `search(query="math numbers")` and receive the following response:
 
-```
+```text
 - add: Add two numbers.
 - multiply: Multiply two numbers.
 ```
@@ -74,7 +73,7 @@ Next, the LLM calls `get_schema` to get parameter details for the tools it found
 
 For example, it might do `get_schema(tools=["add", "multiply"])` and receive the following response:
 
-```
+```text
 ### add
 
 Add two numbers.
@@ -83,6 +82,9 @@ Add two numbers.
 - `x` (integer, required)
 - `y` (integer, required)
 
+**Returns**
+- `result` (integer, required)
+
 ### multiply
 
 Multiply two numbers.
@@ -90,6 +92,9 @@ Multiply two numbers.
 **Parameters**
 - `x` (integer, required)
 - `y` (integer, required)
+
+**Returns**
+- `result` (integer, required)
 ```
 
 Now the LLM knows the parameters for the tools it found, and can write code that chains the tool calls. If it needed more detail, it could have called `get_schema` with `detail="full"` to get the complete JSON schema.
@@ -102,11 +107,11 @@ For example, it might write the following code and call the `execute` tool with 
 
 ```python
 a = await call_tool("add", {"x": 3, "y": 4})
-b = await call_tool("multiply", {"x": a, "y": 2})
-return b
+b = await call_tool("multiply", {"x": a["result"], "y": 2})
+return b["result"]
 ```
 
-The result is returned to the LLM.
+`call_tool` returns the tool's structured content when the tool has an output schema, and its text otherwise. A tool that returns a bare value such as an `int` has its output wrapped as `{"result": ...}`, which is why the code reads `a["result"]`; the Returns section from `get_schema` shows that shape. The value of the block's `return` is returned to the LLM.
 </Step>
 </Steps>
 
@@ -123,7 +128,7 @@ CodeMode ships with four built-in discovery tools: `Search`, `GetSchemas`, `GetT
 | Level | Output | Token cost |
 |---|---|---|
 | `"brief"` | Tool names and one-line descriptions | Cheapest — good for scanning |
-| `"detailed"` | Compact markdown with parameter names, types, and required markers | Medium — often enough to write code |
+| `"detailed"` | Compact markdown with parameter names, types, literal values, defaults, required markers, and the field names one level inside any object-valued parameter or return | Medium — often enough to write code |
 | `"full"` | Complete JSON schema | Most expensive — everything |
 
 `Search` defaults to `"brief"` and `GetSchemas` defaults to `"detailed"`.
@@ -132,25 +137,35 @@ CodeMode ships with four built-in discovery tools: `Search`, `GetSchemas`, `GetT
 
 `Search` finds tools by natural-language query using BM25 ranking. At its default `"brief"` detail, results include just tool names and descriptions — enough to decide which tools are worth inspecting further. The LLM can request `"detailed"` to get parameter schemas inline, or `"full"` for the complete JSON.
 
-Search results include an annotation like `"2 of 10 tools:"` when the result set is smaller than the full catalog, so the LLM knows there are more tools to discover with different queries.
+Search results include an annotation like `"2 of 10 tools:"` when the result set is smaller than the full catalog, so the LLM knows there are more tools to discover with different queries. Results at `"full"` detail are plain JSON and omit it.
 
-You can cap result count with `default_limit`. The LLM can also override the limit per call. This is useful for large catalogs where you want to keep search results focused:
+By default, `Search` returns all matching tools (`default_limit=None`). You can cap the result count with `default_limit` to keep large catalogs focused. The LLM can override this limit per call, including requesting more results or passing `limit=None` to return all matches:
 
 ```python
 Search(default_limit=5)  # return at most 5 results per search
 ```
 
-If your tools use [tags](/servers/visibility#tags), Search also accepts a `tags` parameter so the LLM can narrow results to specific categories before searching.
+If your tools use [tags](/servers/visibility#tags), Search also accepts a `tags` parameter so the LLM can narrow results to specific categories before searching. The tag `"untagged"` matches tools with no tags.
+
+To replace BM25 ranking, pass `search_fn`, an async callable that takes the candidate tools and the query string and returns the matching tools in ranked order.
 
 ### GetSchemas
 
-`GetSchemas` returns parameter details for specific tools by name. At its default `"detailed"` level, it renders compact markdown with parameter names, types, and required markers. At `"full"`, it returns the complete JSON schema — useful when tools have deeply nested parameters that the compact format doesn't capture.
+`GetSchemas` returns parameter details for specific tools by name. At its default `"detailed"` level, it renders compact markdown with parameter names, types, literal values, defaults, and required markers. Object-valued parameters and return values also list their own field names one level down, following `$ref`s into `$defs`, so a tool returning `list[Card]` renders as ``- `items` (object[]): `id`, `url`, `title`, …`` rather than an opaque `object[]`. At `"full"`, it returns the complete JSON schema — useful when tools have deeply nested parameters that the compact format doesn't capture.
+
+For example, a parameter declared as `sort: Literal["top", "recent"] = "recent"` appears as:
+
+```text
+- `sort` (string, one of "top"/"recent", default "recent")
+```
+
+Single-value literals also show their allowed value. Literal value lists are included up to eight values; parameter descriptions and complete constraints remain available at `"full"` detail.
 
 ### GetTags
 
-`GetTags` lets the LLM browse tools by category using [tag](/servers/visibility#tags) metadata. At brief detail, the LLM sees tag names with counts. At full detail, it sees tools listed under each tag:
+`GetTags` lets the LLM browse tools by category using [tag](/servers/visibility#tags) metadata. It supports only `"brief"` and `"full"` detail. At brief detail, the LLM sees tag names with counts; at full detail, it sees tools listed under each tag. Tools without tags are grouped under `untagged`:
 
-```
+```text
 - math (3 tools)
 - text (2 tools)
 - untagged (1 tool)
@@ -268,7 +283,8 @@ The LLM sees the docstring of each discovery tool's inner function as its descri
 Discovery tools and the execute tool can also have custom names:
 
 ```python
-from fastmcp.experimental.transforms.code_mode import Search, GetSchemas
+from fastmcp import FastMCP
+from fastmcp.experimental.transforms.code_mode import CodeMode, GetSchemas, Search
 
 code_mode = CodeMode(
     discovery_tools=[
@@ -283,40 +299,47 @@ mcp = FastMCP("Server", transforms=[code_mode])
 
 ## Sandbox Configuration
 
+The sandbox controls the Python environment used by the code submitted to `execute`. Calls to `call_tool()` dispatch registered tools through FastMCP in the current request context, with the same authorization checks as a normal tool call. Those tool functions run in the server environment and retain their configured access to files, networks, and other resources.
+
 ### Resource Limits
 
 The default `MontySandboxProvider` enforces execution limits — timeouts, memory caps, recursion depth, and more.
 
-Constructed with no arguments, it applies a conservative baseline so the out-of-box configuration is not unbounded: `max_duration_secs=30` and `max_memory=100_000_000` (100 MB). Pass an explicit `limits` dict to override it, or `limits=None` to run with no limits at all:
+Constructed with no arguments, it applies a conservative baseline so the out-of-box configuration is not unbounded: `max_feed_duration_secs=30` and `max_memory=100_000_000` (100 MB). Pass an explicit `limits` dict to override it, or `limits=None` to disable the configurable time, memory, and GC limits. Monty's standard recursion limit still applies:
 
 ```python
 from fastmcp.experimental.transforms.code_mode import MontySandboxProvider
 
 MontySandboxProvider()                  # baseline: 30s, 100 MB
 MontySandboxProvider(limits={...})      # your own limits
-MontySandboxProvider(limits=None)       # explicitly uncapped
+MontySandboxProvider(limits=None)       # no time, memory, or GC limits
 ```
 
 ```python
+from fastmcp import FastMCP
 from fastmcp.experimental.transforms.code_mode import CodeMode
 from fastmcp.experimental.transforms.code_mode import MontySandboxProvider
 
 sandbox = MontySandboxProvider(
-    limits={"max_duration_secs": 10, "max_memory": 50_000_000},
+    limits={"max_feed_duration_secs": 10, "max_memory": 50_000_000},
 )
 
 mcp = FastMCP("Server", transforms=[CodeMode(sandbox_provider=sandbox)])
 ```
 
-All keys are optional — omit any to leave that dimension uncapped:
+Time, memory, and GC limits are optional; omit a key to disable that limit. Recursion depth defaults to Monty's standard maximum of 1,000:
 
 | Key | Type | Description |
 |---|---|---|
-| `max_duration_secs` | `float` | Maximum wall-clock execution time |
+| `max_feed_duration_secs` | `float` | Maximum sandbox execution time for the entire code block |
+| `max_turn_duration_secs` | `float` | Maximum sandbox execution time between host round trips |
 | `max_memory` | `int` | Memory ceiling in bytes |
-| `max_allocations` | `int` | Cap on total object allocations |
 | `max_recursion_depth` | `int` | Maximum recursion depth |
 | `gc_interval` | `int` | Garbage collection frequency |
+
+Duration limits exclude time spent waiting for host tools. The feed limit covers the entire code block; the turn limit resets after each host round trip.
+
+Unsupported keys raise `ValueError` rather than being silently ignored. Replace `max_duration_secs` with `max_feed_duration_secs` in existing configurations. Monty no longer supports `max_allocations`; use `max_memory` to cap memory usage.
 
 ### Tool Call Limits
 
@@ -332,14 +355,14 @@ CodeMode(max_tool_calls=None)   # no cap
 
 ### Custom Sandbox Providers
 
-You can replace the default sandbox with any object implementing the `SandboxProvider` protocol:
+You can replace the default sandbox with any object implementing the `SandboxProvider` protocol. The `code` it receives is untrusted, LLM-generated Python: run it in an isolated sandbox, never with plain `exec()`.
 
 ```python
 from collections.abc import Callable
 from typing import Any
 
+from fastmcp import FastMCP
 from fastmcp.experimental.transforms.code_mode import CodeMode
-from fastmcp.experimental.transforms.code_mode import SandboxProvider
 
 class RemoteSandboxProvider:
     async def run(
