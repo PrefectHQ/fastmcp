@@ -12,14 +12,14 @@ Each FastMCPApp backend tool gets a deterministic hash computed from its
 app name + tool name. The hash serves two purposes:
 
 1. **Backend-tool routing.** Tools with ``"app"`` in their visibility are
-   callable via ``<hash>_<local_name>``. The dispatcher parses the prefix
+   callable via ``__<hash>_<local_name>``. The dispatcher parses the prefix
    and calls ``get_tool_by_hash``, which finds the tool whose stored hash
    matches and applies the same transforms, visibility, and auth as a lookup
    by the tool's listed name.
 
-2. **Per-tool Prefab renderer URIs.** Each prefab tool gets a unique renderer
-   resource at ``ui://prefab/tool/<hash>/renderer.html``. ``list_resources``
-   and ``read_resource`` synthesize these on demand from the tool's meta.
+2. **Legacy Prefab renderer aliases.** Previously advertised per-tool URIs at
+   ``ui://prefab/tool/<hash>/renderer.html`` remain readable. New renderer
+   resources are shared by effective configuration in ``prefab_synthesis``.
 
 The hash is computed at registration time from ``(app_name, tool_name)`` —
 both known at that moment — and stored in ``meta["fastmcp"]["tool_hash"]``.
@@ -75,7 +75,7 @@ hashed_backend_name(app_name: str, tool_name: str) -> str
 ```
 
 
-Format the universal name for a backend tool: ``<hash>_<local_name>``.
+Format the universal name for a backend tool: ``__<hash>_<local_name>``.
 
 
 ### `parse_hashed_backend_name` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/addressing.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
@@ -85,10 +85,10 @@ parse_hashed_backend_name(name: str) -> tuple[str, str] | None
 ```
 
 
-Parse ``<HASH_LENGTH hex>_<rest>`` → ``(hash, local_tool_name)`` or None.
+Parse ``__<HASH_LENGTH hex>_<rest>`` → ``(hash, local_tool_name)`` or None.
 
 
-### `hashed_resource_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/addressing.py#L90" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `hashed_resource_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/addressing.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 hashed_resource_uri(app_name: str, tool_name: str) -> str
@@ -98,7 +98,7 @@ hashed_resource_uri(app_name: str, tool_name: str) -> str
 Per-tool Prefab renderer resource URI.
 
 
-### `parse_hashed_resource_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/addressing.py#L95" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `parse_hashed_resource_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/addressing.py#L98" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 parse_hashed_resource_uri(uri: str) -> str | None

@@ -27,7 +27,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Check published skills match their sources
+        run: diff -ru skills docs/.mintlify/skills
 
       - name: Setup uv
         uses: ./.github/actions/setup-uv
@@ -41,6 +44,6 @@ jobs:
         run: node --test .github/scripts/test-*.mjs
 
       - name: Run prek
-        uses: j178/prek-action@v3.0.0
+        uses: j178/prek-action@44924fe9ef4a6f88253c4b6b1bf11c689d3ce53d # v3.1.0
         env:
           SKIP: no-commit-to-branch
