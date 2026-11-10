@@ -8,7 +8,7 @@ icon: message-smile
 [ChatGPT](https://chatgpt.com/) supports MCP servers through remote HTTP connections in two modes: **Chat mode** for interactive conversations and **Deep Research mode** for comprehensive information retrieval.
 
 <Tip>
-**Developer Mode Required for Chat Mode**: To use MCP servers in regular ChatGPT conversations, you must first enable Developer Mode in your ChatGPT settings. This feature is available for ChatGPT Pro, Team, Enterprise, and Edu users.
+**Developer Mode Required for Chat Mode**: To use MCP servers in regular ChatGPT conversations, you must first enable Developer Mode in your ChatGPT settings. [OpenAI's Developer Mode guide](https://platform.openai.com/docs/guides/developer-mode) lists which plans include it.
 </Tip>
 
 <Note>
@@ -66,7 +66,7 @@ Chat mode lets you use MCP tools directly in ChatGPT conversations. See [OpenAI'
 1. In **Settings** → **Connectors**, click **Create**
 2. Enter:
    - **Name**: Your server name
-   - **Server URL**: `https://your-server.ngrok.io/mcp/`
+   - **Server URL**: `https://your-server.ngrok.io/mcp`
 3. Check **I trust this provider**
 4. Add authentication if needed
 5. Click **Create**
@@ -95,7 +95,10 @@ The connector must be explicitly enabled in each chat session through Developer 
 Use `annotations=ToolAnnotations(readOnlyHint=True)` to skip confirmation prompts for read-only tools:
 
 ```python
-from mcp.types import ToolAnnotations
+from fastmcp import FastMCP
+from mcp_types import ToolAnnotations
+
+mcp = FastMCP("Demo Server")
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def get_status() -> str:
@@ -121,6 +124,10 @@ Deep Research mode provides systematic information retrieval with citations. See
 Deep Research tools must follow this pattern:
 
 ```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("Research Server")
+
 @mcp.tool()
 def search(query: str) -> dict:
     """

@@ -3,6 +3,8 @@
 import asyncio
 import contextlib
 import datetime
+import gc
+import weakref
 from collections.abc import AsyncGenerator
 from typing import Any, cast
 
@@ -505,6 +507,25 @@ async def test_client_nested_context_manager(fastmcp_server):
     # After connection
     assert not client.is_connected()
     assert client._session_state.session is None
+
+
+async def test_client_context_does_not_keep_entering_task_alive(fastmcp_server):
+    """A context entered in a task and released with close() leaves nothing behind."""
+    client = Client(fastmcp_server)
+    refs = []
+    for _ in range(3):
+        task = asyncio.create_task(client.__aenter__())
+        await task
+        refs.append(weakref.ref(task))
+        del task
+        await client.close()
+
+    async with client:
+        result = await client.call_tool("greet", {"name": "World"})
+    assert result.data == "Hello, World!"
+
+    gc.collect()
+    assert [ref() for ref in refs] == [None, None, None]
 
 
 @pytest.mark.parametrize("mode", ["auto", "legacy"])

@@ -21,6 +21,23 @@ from fastmcp.prompts.base import (
 
 
 class TestRenderPrompt:
+    async def test_fn_with_postponed_annotations(self):
+        namespace = {}
+        exec(
+            "from __future__ import annotations\n"
+            "from pydantic import BaseModel\n"
+            "class Config(BaseModel):\n"
+            "    key: str\n"
+            "def show_config(cfg: Config) -> str:\n"
+            "    return f'config={cfg.key}'\n",
+            namespace,
+        )
+
+        prompt = Prompt.from_function(namespace["show_config"])
+        result = await prompt.render({"cfg": '{"key": "v"}'})
+
+        assert result.messages == [Message("config=v")]
+
     async def test_basic_fn(self):
         def fn() -> str:
             return "Hello, world!"
@@ -673,6 +690,24 @@ class TestPromptArgumentDescriptions:
         # MCP prompt includes fastmcp meta, so check that our meta is included
         assert mcp_prompt.meta is not None
         assert meta_data.items() <= mcp_prompt.meta.items()
+
+    def test_argument_titles_from_field(self):
+        """An explicit Field(title=...) becomes the argument's MCP title."""
+        from pydantic import Field
+
+        def test_prompt(
+            name: Annotated[str, Field(title="Your name")],
+            tone: str = Field(default="playful", title="Tone of voice"),
+            topic: str = "dogs",
+        ) -> str:
+            return f"Hello, {name}!"
+
+        arguments = Prompt.from_function(test_prompt).to_mcp_prompt().arguments or []
+        assert {arg.name: arg.title for arg in arguments} == {
+            "name": "Your name",
+            "tone": "Tone of voice",
+            "topic": None,
+        }
 
 
 class TestMessage:
