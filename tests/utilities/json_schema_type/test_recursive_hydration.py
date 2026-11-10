@@ -112,6 +112,29 @@ def test_mutual_recursion_with_root_reference(model: bool) -> None:
     assert result.first.b.a.doc.first is None
 
 
+def test_recursive_default_hydrates_after_resolution() -> None:
+    generated = json_schema_type.json_schema_to_type(
+        {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {"node": {"$ref": "#/$defs/Node", "default": {"name": "x"}}},
+            "$defs": {
+                "Node": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "child": {"$ref": "#/$defs/Node"},
+                    },
+                }
+            },
+        }
+    )
+    result = TypeAdapter[Any](generated).validate_python({})
+    assert not isinstance(result.node, dict)
+    assert result.node.name == "x"
+    assert result.node.child is None
+
+
 class HydrationPerson(BaseModel):
     name: str
     pet: HydrationPet | None = None

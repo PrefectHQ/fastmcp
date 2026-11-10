@@ -244,6 +244,9 @@ class _Conversion:
     building: set[tuple[str, str]] = field(default_factory=set)
     classes: dict[tuple[str, str], type] = field(default_factory=dict)
     recursive_refs: dict[str, tuple[str, str]] = field(default_factory=dict)
+    # Model fields whose default failed its probe, possibly only because a
+    # recursive reference was still unresolved; rechecked after resolution.
+    unchecked_defaults: list[tuple[type[BaseModel], str]] = field(default_factory=list)
     depth: int = 0
     steps: int = 0
 
@@ -421,6 +424,25 @@ def _resolve_recursive_types(conversion: _Conversion) -> None:
             cls.model_rebuild(
                 force=True, _types_namespace={cls.__name__: cls, **namespace}
             )
+    rechecked: set[type[BaseModel]] = set()
+    for model, field_name in conversion.unchecked_defaults:
+        field_info = model.model_fields[field_name]
+        if _default_is_valid(field_info.annotation, field_info.default):
+            field_info.validate_default = True
+            rechecked.add(model)
+    for model in rechecked:
+        model.model_rebuild(
+            force=True, _types_namespace={model.__name__: model, **namespace}
+        )
+
+
+def _default_is_valid(field_type: Any, default: Any) -> bool:
+    try:
+        TypeAdapter(field_type).validate_python(default)
+    except Exception:
+        # Invalid, or not checkable yet because a recursive reference is unresolved
+        return False
+    return True
 
 
 def json_schema_to_type_adapter(schema: Mapping[str, Any] | bool) -> TypeAdapter[Any]:
@@ -1144,6 +1166,7 @@ def _build_pydantic_model(
     required = schema.get("required", [])
 
     field_definitions: dict[str, tuple[Any, Any]] = {}
+    unchecked: list[str] = []
     for prop_name, prop_schema in properties.items():
         # Boolean schemas (JSON Schema draft-06+): resolve type directly,
         # then use an empty dict for .get() calls below.
@@ -1161,13 +1184,9 @@ def _build_pydantic_model(
             # 1. Valid defaults get hydrated (e.g., date strings → date objects)
             # 2. Invalid defaults are preserved as-is rather than causing
             #    validation errors that would be caught and logged during parsing
-            validate_default = False
-            try:
-                TypeAdapter(field_type).validate_python(default_value)  # ty:ignore[invalid-argument-type]
-                validate_default = True
-            except Exception:  # noqa: S110
-                # Default doesn't satisfy its own type; keep it as-is
-                pass
+            validate_default = _default_is_valid(field_type, default_value)
+            if not validate_default:
+                unchecked.append(prop_name)
             field_definitions[prop_name] = (
                 field_type,
                 Field(default=default_value, validate_default=validate_default),
@@ -1177,7 +1196,10 @@ def _build_pydantic_model(
         else:
             field_definitions[prop_name] = (Union[field_type, type(None)], None)  # type: ignore[misc]  # noqa: UP007  # ty:ignore[invalid-type-form]
 
-    return safe_create_model(name, field_definitions, config=ConfigDict(extra="allow"))
+    model = safe_create_model(name, field_definitions, config=ConfigDict(extra="allow"))
+    conversion = _conversion.get()
+    conversion.unchecked_defaults.extend((model, prop) for prop in unchecked)
+    return model
 
 
 def _create_dataclass(
