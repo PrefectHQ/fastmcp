@@ -288,13 +288,13 @@ Message(["item1", "item2"])
 
 `Message` accepts two fields:
 
-**`content`** - The message content. Strings pass through directly. Other types (dict, list, BaseModel) are automatically JSON-serialized to text.
+**`content`** - The message content. Strings pass through directly. MCP content blocks (`TextContent`, `ImageContent`, `AudioContent`, `ResourceLink`, and `EmbeddedResource`) pass through unchanged. Other types (dict, list, BaseModel) are automatically JSON-serialized to text.
 
 **`role`** - The message role, either `"user"` (default) or `"assistant"`.
 
 <Card title="Message">
 <ParamField body="content" type="Any" required>
-  The content data. Strings pass through directly. Other types (dict, list, BaseModel) are automatically JSON-serialized.
+  The content data. Strings and MCP content blocks (`TextContent`, `ImageContent`, `AudioContent`, `ResourceLink`, `EmbeddedResource`) pass through unchanged. Other types (dict, list, BaseModel) are automatically JSON-serialized.
 </ParamField>
 <ParamField body="role" type="Literal['user', 'assistant']" default="user">
   The message role.

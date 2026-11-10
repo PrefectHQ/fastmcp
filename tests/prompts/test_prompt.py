@@ -3,7 +3,12 @@ from typing import Annotated, Any
 
 import pytest
 from mcp import MCPError
-from mcp_types import INVALID_PARAMS, EmbeddedResource, TextResourceContents
+from mcp_types import (
+    INVALID_PARAMS,
+    EmbeddedResource,
+    ResourceLink,
+    TextResourceContents,
+)
 from pydantic import Field
 
 from fastmcp import Client, FastMCP
@@ -784,6 +789,33 @@ class TestMessage:
         mcp_msg = msg.to_mcp_prompt_message()
         assert isinstance(mcp_msg.content, ImageContent)
         assert mcp_msg.content.data == "base64data"
+
+    def test_message_passthrough_resource_link(self):
+        """Test Message passes through ResourceLink without JSON serialization."""
+        link = ResourceLink(
+            type="resource_link",
+            uri="docs://guide",
+            name="guide",
+            mime_type="text/markdown",
+        )
+        msg = Message(link, role="user")
+        assert isinstance(msg.content, ResourceLink)
+        assert msg.content == link
+        assert msg.to_mcp_prompt_message().content == link
+
+    async def test_message_resource_link_reaches_client(self):
+        """Test a ResourceLink message is delivered as a resource_link block."""
+        mcp = FastMCP()
+        link = ResourceLink(type="resource_link", uri="docs://guide", name="guide")
+
+        @mcp.prompt
+        def review_guide() -> list[Message]:
+            return [Message("Please review this document:"), Message(link)]
+
+        async with Client(mcp) as client:
+            result = await client.get_prompt("review_guide")
+
+        assert result.messages[1].content == link
 
 
 class TestPromptResult:

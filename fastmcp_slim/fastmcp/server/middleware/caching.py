@@ -169,6 +169,7 @@ class CacheableMessage(FastMCPBaseModel):
         mcp_types.TextContent
         | mcp_types.ImageContent
         | mcp_types.AudioContent
+        | mcp_types.ResourceLink
         | mcp_types.EmbeddedResource
     )
 
