@@ -27,6 +27,6 @@ async def test_client_hydrates_percent_encoded_reference(dereference_schemas: bo
 
     assert result.structured_content == {"observed_at": "2026-01-01T12:00:00Z"}
     assert result.data.observed_at == datetime.datetime(
-        2026, 1, 1, 12, tzinfo=datetime.timezone.utc
+        2026, 1, 1, 12, tzinfo=datetime.UTC
     )
     assert type(result.data.observed_at) is datetime.datetime
