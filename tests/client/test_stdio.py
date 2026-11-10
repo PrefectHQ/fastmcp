@@ -507,10 +507,46 @@ class TestKeepAlive:
         await client.close()
 
     @pytest.mark.timeout(30)
-    async def test_keep_alive_refuses_a_different_event_loop_while_in_use(
-        self, stdio_script
+    def test_stopped_owning_loop_keeps_the_connection(self, stdio_script):
+        """A stopped loop can't run the teardown, so the connection stays its.
+
+        Moving to another loop would otherwise forget a subprocess that nothing
+        could stop anymore. The move is refused instead, and the owning loop
+        can still close it.
+        """
+        client = Client(transport=PythonStdioTransport(script_path=stdio_script))
+
+        async def use() -> int:
+            async with client:
+                result = await client.call_tool("pid")
+            return int(result.data)
+
+        def use_on_new_loop() -> int:
+            return asyncio.run(asyncio.wait_for(use(), timeout=10))
+
+        loop_a = asyncio.new_event_loop()
+        try:
+            pid1 = loop_a.run_until_complete(use())
+
+            with pytest.raises(RuntimeError, match="stopped but not closed"):
+                use_on_new_loop()
+            assert psutil.pid_exists(pid1)
+
+            # The transport owns the subprocess; the client keeps the refused
+            # connect's error and would re-raise it on close().
+            loop_a.run_until_complete(client.transport.close())
+            loop_a.run_until_complete(wait_for_process_exit(pid1))
+        finally:
+            loop_a.close()
+
+    @pytest.mark.timeout(30)
+    @pytest.mark.parametrize("keep_alive", [True, False])
+    async def test_refuses_a_different_event_loop_while_in_use(
+        self, stdio_script, keep_alive
     ):
-        transport = PythonStdioTransport(script_path=stdio_script)
+        transport = PythonStdioTransport(
+            script_path=stdio_script, keep_alive=keep_alive
+        )
 
         def connect_on_new_loop() -> None:
             async def connect() -> None:
