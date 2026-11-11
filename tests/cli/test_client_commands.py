@@ -599,7 +599,12 @@ class TestBuildClient:
             assert isinstance(other, OAuth)
             assert await other.token_storage_adapter.get_tokens() is None
 
-        assert not emitted
+        # xdist worksteal can finalize a socket left by an earlier test inside
+        # this block; only warnings attributed to FastMCP source are ours.
+        package_root = str(
+            Path(__file__).resolve().parents[2] / "fastmcp_slim" / "fastmcp"
+        )
+        assert not [w for w in emitted if (w.filename or "").startswith(package_root)]
         files = [path for path in tmp_path.rglob("*") if path.is_file()]
         assert files
         for path in files:
