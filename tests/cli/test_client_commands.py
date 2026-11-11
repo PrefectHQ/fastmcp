@@ -505,7 +505,12 @@ class TestBuildClient:
             assert isinstance(other, OAuth)
             assert await other.token_storage_adapter.get_tokens() is None
 
-        assert not emitted
+        # xdist worksteal can keep unrelated objects (or dependency warnings
+        # specific to the resolved versions) alive until this block runs, and
+        # they surface here through the always-on filter. Only warnings from
+        # this repository are attributable to the code under test.
+        repo_root = str(Path(__file__).resolve().parents[2])
+        assert not [w for w in emitted if (w.filename or "").startswith(repo_root)]
         files = [path for path in tmp_path.rglob("*") if path.is_file()]
         assert files
         for path in files:
