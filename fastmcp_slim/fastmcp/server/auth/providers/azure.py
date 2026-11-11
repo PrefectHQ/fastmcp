@@ -871,7 +871,11 @@ class _EntraOBOToken(Dependency[str]):
     async def __aenter__(self) -> str:
         _require_azure_identity("EntraOBOToken")
 
-        from fastmcp.server.dependencies import get_access_token, get_server
+        from fastmcp.server.dependencies import (
+            get_access_token,
+            get_http_request,
+            get_server,
+        )
 
         access_token = get_access_token()
         if access_token is None:
@@ -879,12 +883,21 @@ class _EntraOBOToken(Dependency[str]):
                 "No access token available. Cannot perform OBO exchange."
             )
 
-        server = get_server()
-        azure_provider = _find_azure_provider(server.auth)
+        auth = get_server().auth
+        try:
+            request = get_http_request()
+        except RuntimeError:
+            # Non-HTTP callers use the current server's provider.
+            pass
+        else:
+            app_state = getattr(request.scope.get("app"), "state", None)
+            # An explicit None disables auth for this app; do not fall back.
+            auth = getattr(app_state, "fastmcp_auth", auth)
+        azure_provider = _find_azure_provider(auth)
         if azure_provider is None:
             raise RuntimeError(
                 "EntraOBOToken requires an AzureProvider as the auth provider. "
-                f"Current provider: {type(server.auth).__name__}"
+                f"Current provider: {type(auth).__name__}"
             )
 
         credential = await azure_provider.get_obo_credential(
@@ -901,6 +914,10 @@ def EntraOBOToken(scopes: list[str]) -> str:
     This dependency performs a Microsoft Entra On-Behalf-Of (OBO) token exchange,
     allowing your MCP server to call downstream APIs (like Microsoft Graph) on
     behalf of the authenticated user.
+
+    HTTP requests use the serving app's authentication provider, including an
+    override passed to `http_app(auth=...)`. Without an HTTP request, the
+    current server's provider is used.
 
     Args:
         scopes: The scopes to request for the downstream API. For Microsoft Graph,

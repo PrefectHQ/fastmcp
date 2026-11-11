@@ -492,6 +492,87 @@ Your existing API remains at `http://localhost:8000/api` while MCP is available 
 Just like with Starlette, you **must** pass the lifespan from the MCP app to FastAPI. Without this, the session manager won't initialize properly and requests will fail.
 </Warning>
 
+## Several HTTP Apps Sharing One Server
+
+Use separate HTTP apps when the same server needs different authentication providers, such as serving old and new hostnames during a domain migration. Each provider can advertise its own metadata and configure its own issuer, audience, and redirect URLs, while the apps share the server's tools and resources.
+
+Pass `auth=` to `http_app()` to select a provider for that app without changing `mcp.auth`. Omitting `auth` uses the server's configured provider, as before. Explicitly passing `auth=None` disables authentication for that app only; it does not inherit the server's provider.
+
+Own the shared server resources with `mcp.lifespan_context()`. Enter this context **before starting any of the HTTP apps**, and keep it open **until every app has stopped**. Each app must also run its own lifespan to initialize and shut down its transport.
+
+This example routes two hostnames to separate authenticated apps. The outer Starlette app starts the shared HTTP client once, then starts both MCP apps:
+
+```python app.py
+from contextlib import AsyncExitStack, asynccontextmanager
+
+import httpx2
+from pydantic import AnyHttpUrl
+from starlette.applications import Starlette
+from starlette.routing import Host
+
+from fastmcp import Context, FastMCP
+from fastmcp.server.auth import RemoteAuthProvider
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+
+@asynccontextmanager
+async def resources(server: FastMCP):
+    async with httpx2.AsyncClient() as http:
+        yield {"http": http}
+
+
+mcp = FastMCP("Shared Server", lifespan=resources)
+
+
+@mcp.tool
+def ready(ctx: Context) -> bool:
+    return not ctx.lifespan_context["http"].is_closed
+
+
+http_apps = {}
+for host in ("old.example.com", "new.example.com"):
+    verifier = JWTVerifier(
+        jwks_uri="https://identity.example.com/.well-known/jwks.json",
+        issuer="https://identity.example.com/",
+        audience=f"https://{host}/mcp",
+    )
+    auth = RemoteAuthProvider(
+        token_verifier=verifier,
+        authorization_servers=[AnyHttpUrl("https://identity.example.com")],
+        base_url=f"https://{host}",
+    )
+    http_apps[host] = mcp.http_app(auth=auth)
+
+
+@asynccontextmanager
+async def app_lifespan(app: Starlette):
+    async with mcp.lifespan_context():
+        async with AsyncExitStack() as stack:
+            for http_app in http_apps.values():
+                await stack.enter_async_context(http_app.lifespan(http_app))
+            yield
+
+
+app = Starlette(
+    routes=[Host(host, app=http_app) for host, http_app in http_apps.items()],
+    lifespan=app_lifespan,
+)
+```
+
+Save this as `app.py`, replace the identity-provider settings with your deployment's values, and run it with:
+
+```bash
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+Route both public hostnames to this deployment through your TLS reverse proxy, preserving the `Host` header. Each hostname serves `/mcp` and its own authentication metadata. At shutdown, `AsyncExitStack` closes the app lifespans before `lifespan_context()` closes the shared HTTP client.
+
+`FastMCP(lifespan=...)` still configures your resource setup and teardown. `mcp.lifespan_context()` runs the complete server lifecycle, including providers and extensions; it is distinct from a provider's `lifespan()` hook. A single HTTP app already manages this lifecycle automatically and needs no extra owner context.
+
+<Warning>
+The outer context is the owner, not a background reference-counted service. If you start apps in independent tasks, start those tasks only after entering `mcp.lifespan_context()` and await their shutdown before leaving it. Enter and exit the owner context in the same task. Independently overlapping owner contexts without an enclosing owner are not supported by this pattern.
+</Warning>
+
 ## Mounting Authenticated Servers
 
 <VersionBadge version="2.13.0" />

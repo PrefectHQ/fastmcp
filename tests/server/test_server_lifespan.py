@@ -115,6 +115,30 @@ class TestServerLifespan:
             result = await client.call_tool("get_db_info", {})
             assert result.data == "mock_db"
 
+    async def test_explicit_lifespan_owner_restarts_after_error(self):
+        events: list[str] = []
+
+        @asynccontextmanager
+        async def resources(server: FastMCP) -> AsyncGenerator[dict[str, Any], None]:
+            events.append("enter")
+            try:
+                yield {"initialized": True}
+            finally:
+                events.append("exit")
+
+        server = FastMCP("explicit-owner", lifespan=resources)
+
+        for cycle in range(2):
+            with pytest.raises(ValueError, match="application failed"):
+                async with server.lifespan_context():
+                    assert events == ["enter", "exit"] * cycle + ["enter"]
+                    async with server.lifespan_context():
+                        assert events == ["enter", "exit"] * cycle + ["enter"]
+                    assert events == ["enter", "exit"] * cycle + ["enter"]
+                    raise ValueError("application failed")
+
+            assert events == ["enter", "exit"] * (cycle + 1)
+
 
 class TestComposableLifespans:
     """Test composable lifespan functionality."""

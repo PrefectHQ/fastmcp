@@ -39,6 +39,26 @@ _lifespan_root_active: ContextVar[bool] = ContextVar(
 class LifespanMixin:
     """Mixin providing lifespan infrastructure for FastMCP."""
 
+    @asynccontextmanager
+    async def lifespan_context(self: FastMCP) -> AsyncGenerator[None, None]:
+        """Own the server's resources without starting a transport.
+
+        Use this context when several HTTP apps share one server. Enter it
+        before starting any app lifespans, and exit it only after every app
+        has stopped. The user lifespan, providers, and extensions start once
+        and remain available throughout the enclosing context.
+
+        Each HTTP app's lifespan must still run to manage its own transport.
+        Nested entries reuse the active server resources; independent,
+        overlapping contexts without an enclosing owner are not supported
+        by this API. Enter and exit the context in the same async task.
+
+        A single app manages the server lifespan automatically and does not
+        need this explicit owner.
+        """
+        async with self._lifespan_manager():
+            yield
+
     @property
     def docket(self: FastMCP) -> Docket | None:
         """The Docket instance owned by this server, if the tasks extension is active.

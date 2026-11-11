@@ -17,6 +17,7 @@ from starlette.responses import Response
 from starlette.routing import BaseRoute, Route
 
 import fastmcp
+from fastmcp.server.auth import AuthProvider
 from fastmcp.server.http import (
     HostOriginProtection,
     StarletteWithLifespan,
@@ -28,6 +29,7 @@ from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
 from fastmcp.server.providers.wrapped_provider import _WrappedProvider
 from fastmcp.utilities.logging import get_logger, temporary_log_level
+from fastmcp.utilities.types import NotSet, NotSetT
 
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP, Transport
@@ -377,6 +379,8 @@ class TransportMixin:
         allowed_hosts: list[str] | None = None,
         allowed_origins: list[str] | None = None,
         session_idle_timeout: float | Literal["auto"] | None = None,
+        *,
+        auth: AuthProvider | None | NotSetT = NotSet,
     ) -> StarletteWithLifespan:
         """Create a Starlette app using the specified HTTP transport.
 
@@ -406,10 +410,14 @@ class TransportMixin:
                 falls back to the `http_session_idle_timeout` setting.
                 "auto" uses the MCP SDK's default. To disable the timeout,
                 set `FASTMCP_HTTP_SESSION_IDLE_TIMEOUT=none`.
+            auth: Authentication provider for this app. If omitted, uses the
+                server's provider. Pass None to disable authentication for this
+                app only. Does not change the server's auth configuration.
 
         Returns:
             A Starlette application configured with the specified transport
         """
+        resolved_auth = self.auth if isinstance(auth, NotSetT) else auth
 
         if transport in ("streamable-http", "http"):
             return create_streamable_http_app(
@@ -419,7 +427,7 @@ class TransportMixin:
                 else fastmcp.settings.streamable_http_path,
                 event_store=event_store,
                 retry_interval=retry_interval,
-                auth=self.auth,
+                auth=resolved_auth,
                 json_response=(
                     json_response
                     if json_response is not None
@@ -458,7 +466,7 @@ class TransportMixin:
                 server=self,
                 message_path=fastmcp.settings.message_path,
                 sse_path=path if path is not None else fastmcp.settings.sse_path,
-                auth=self.auth,
+                auth=resolved_auth,
                 debug=fastmcp.settings.debug,
                 middleware=middleware,
                 host_origin_protection=(
