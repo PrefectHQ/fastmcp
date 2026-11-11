@@ -21,7 +21,7 @@ Example usage with SDK:
     ```
 """
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -74,7 +74,7 @@ class _DisabledTracer(NoOpTracer):
         record_exception: bool = True,
         set_status_on_exception: bool = True,
         end_on_exit: bool = True,
-    ) -> Iterator[Span]:
+    ) -> Generator[Span, None, None]:
         yield INVALID_SPAN
 
 
@@ -106,7 +106,7 @@ def native_spans_enabled() -> bool:
 
 
 @contextmanager
-def suppress_fastmcp_telemetry() -> Iterator[None]:
+def suppress_fastmcp_telemetry() -> Generator[None, None, None]:
     """Suppress FastMCP's own spans without disabling trace propagation.
 
     Scoped equivalent of `telemetry_mode="propagation_only"`, for callers that
@@ -178,6 +178,23 @@ def inject_trace_context(
     if trace_meta:
         return {**(meta or {}), **trace_meta}
     return meta
+
+
+def error_span_attributes(exception: BaseException) -> dict[str, str]:
+    """Map an exception to the `error.type` attributes for a failed MCP span.
+
+    Per the MCP semantic conventions, a JSON-RPC error reports its code as
+    both `error.type` and `rpc.response.status_code`; a tool error reports
+    `tool_error`; anything else reports its class name.
+    """
+    from fastmcp.exceptions import MCPError, ToolError
+
+    if isinstance(exception, MCPError):
+        code = str(exception.error.code)
+        return {"error.type": code, "rpc.response.status_code": code}
+    if isinstance(exception, ToolError):
+        return {"error.type": "tool_error"}
+    return {"error.type": type(exception).__qualname__}
 
 
 def record_span_error(span: Span, exception: BaseException) -> None:
@@ -305,6 +322,7 @@ __all__ = [
     "INSTRUMENTATION_NAME",
     "TRACE_PARENT_KEY",
     "TRACE_STATE_KEY",
+    "error_span_attributes",
     "extract_trace_context",
     "get_tracer",
     "inject_trace_context",

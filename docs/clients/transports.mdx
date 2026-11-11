@@ -49,12 +49,14 @@ Transport inference treats its input as trusted configuration. A string naming a
 
 ### Environment Variables
 
-Values you pass through `env` are merged on top of the inherited allowlist, so you add configuration rather than replacing the base environment. Anything your server needs beyond those six variables has to be listed explicitly.
+Values you pass through `env` are merged on top of the inherited allowlist, so you add configuration rather than replacing the base environment. Anything your server needs beyond the allowlist has to be listed explicitly.
 
 **Selective forwarding** passes only the variables your server needs:
 
 ```python
 import os
+
+from fastmcp import Client
 from fastmcp.client.transports import StdioTransport
 
 required_vars = ["API_KEY", "DATABASE_URL", "REDIS_HOST"]
@@ -68,6 +70,7 @@ client = Client(transport)
 
 ```python
 from dotenv import dotenv_values
+from fastmcp import Client
 from fastmcp.client.transports import StdioTransport
 
 env = {
@@ -84,6 +87,7 @@ client = Client(transport)
 STDIO transports maintain sessions across multiple client contexts by default (`keep_alive=True`). This reuses the same subprocess for multiple connections, improving performance.
 
 ```python
+from fastmcp import Client
 from fastmcp.client.transports import StdioTransport
 
 transport = StdioTransport(command="python", args=["server.py"])
@@ -97,17 +101,43 @@ async def efficient_multiple_operations():
         await client.call_tool("process_data", {"file": "data.csv"})
 ```
 
+A kept-alive session is reused when the transport options and request timeout
+match. Connecting with a different `Client(timeout=...)` restarts an idle
+subprocess. If another client is still connected, the new client shares its
+session and that session's timeout, and FastMCP logs a warning; use separate
+transports when concurrent clients need different defaults. Per-call `timeout`
+overrides do not restart the session.
+
 For complete isolation between connections, disable session persistence:
 
 ```python
 transport = StdioTransport(command="python", args=["server.py"], keep_alive=False)
 ```
 
+A persisted session belongs to the event loop that created it, so reuse from a different loop transparently starts a fresh subprocess instead. Sharing one transport between loops still works, but only reuses the subprocess within a single loop — and it raises if two loops try to hold overlapping sessions on the same transport, which needs one transport per loop. The old subprocess is shut down on the loop that started it, so that loop must still be running or already closed: if it is stopped but still open (as after `loop.run_until_complete(...)`), reuse from another loop raises until you close the client on the original loop.
+
 ## HTTP Transport
 
 <VersionBadge version="2.3.0" />
 
 HTTP transport connects to MCP servers running as web services. This is the recommended transport for production deployments.
+
+Incoming SSE events are limited to 1 MiB by default. If a server returns larger
+tool results or resources, set `max_sse_event_size` on `StreamableHttpTransport`
+to a byte limit that accommodates them, or use `None` to disable the limit:
+
+```python
+from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
+
+transport = StreamableHttpTransport(
+    "https://api.example.com/mcp",
+    max_sse_event_size=8 * 1024 * 1024,
+)
+client = Client(transport)
+```
+
+The same field is available as `max_sse_event_size` on an [MCP config](/integrations/mcp-json-configuration)'s remote server entry, which forwards it when building the transport. A client created from a bare URL (`Client("https://api.example.com/mcp")`) keeps the 1 MiB default; pass an explicit `StreamableHttpTransport` as above to raise or disable it.
 
 ```python
 from fastmcp import Client
@@ -137,7 +167,13 @@ client = Client(
 
 ### SSL Verification
 
-By default, HTTPS connections verify the server's SSL certificate. You can customize this behavior with the `verify` parameter, which accepts the same values as httpx2 (documented in [httpx's SSL guide](https://www.python-httpx.org/advanced/ssl/), which httpx2 follows):
+By default, HTTPS connections verify the server's SSL certificate using the operating system's trust store through HTTPX2. You can customize this behavior with the `verify` parameter; see [HTTPX2's SSL guide](https://pydantic.dev/docs/httpx2/advanced/ssl/).
+
+Keep the trust store used by your deployment current. Updating certifi does not update the operating system's CA store or a custom bundle selected by `SSL_CERT_FILE`, `SSL_CERT_DIR`, or `verify`. Custom client factories configure their own TLS verification. Rebuild containers and restart processes after updating trust stores. This also matters for servers making outbound HTTPS requests to OAuth providers, JWKS endpoints, and upstream APIs.
+
+For the October 2026 eMudhra CA incident, follow the [FastMCP security notice](https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026). A FastMCP package upgrade alone does not remediate every trust store.
+
+The `verify` parameter on `Client` accepts a boolean, a CA bundle path, or an `ssl.SSLContext`:
 
 ```python
 from fastmcp import Client
@@ -158,6 +194,7 @@ client = Client("https://corp-server.internal/mcp", verify=ctx)
 The `verify` parameter is also available directly on `StreamableHttpTransport` and `SSETransport`:
 
 ```python
+from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
 transport = StreamableHttpTransport(
@@ -167,11 +204,36 @@ transport = StreamableHttpTransport(
 client = Client(transport)
 ```
 
+### Custom HTTP Client
+
+For anything beyond SSL settings — proxies, mTLS, event hooks — pass an `httpx_client_factory`. The factory receives `headers`, `auth`, and `follow_redirects`, plus `timeout` when the client has one configured (for example `Client(transport, timeout=60)`). Accept `**kwargs` so the factory stays forward-compatible.
+
+When no client timeout is configured, the factory **owns the timeout**: none is passed, and an `httpx2.AsyncClient` built without one uses httpx's 5 second default, which is too short for many MCP tool calls. Set a default with `setdefault`, so an explicit client timeout still wins:
+
+```python
+import httpx2
+from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
+
+def httpx_client_factory(**kwargs):
+    kwargs.setdefault("timeout", httpx2.Timeout(30.0, read=300.0))
+    return httpx2.AsyncClient(verify=False, **kwargs)
+
+transport = StreamableHttpTransport(
+    url="https://api.example.com/mcp",
+    httpx_client_factory=httpx_client_factory,
+)
+client = Client(transport)
+```
+
+These 30s connect / 300s read values match the defaults FastMCP applies when no factory is used.
+
 ### SSE Transport
 
 Server-Sent Events transport is maintained for backward compatibility. Use Streamable HTTP for new deployments unless you have specific infrastructure requirements.
 
 ```python
+from fastmcp import Client
 from fastmcp.client.transports import SSETransport
 
 transport = SSETransport(
@@ -237,9 +299,36 @@ async with client:
     answer = await client.call_tool("assistant_ask", {"question": "What?"})
 ```
 
+### Per-server Timeouts
+
+Set `timeout` on a server entry to limit how long its requests can wait. Entry timeouts use **milliseconds**, apply to HTTP, SSE, and STDIO servers, and take precedence over the timeout passed to `Client`. An omitted or `null` entry timeout uses the client timeout; `0` disables the timeout for that backend session.
+
+For example, give the weather server 5 seconds and use a 30-second client timeout for entries without their own limit:
+
+```python
+from fastmcp import Client
+
+config = {
+    "mcpServers": {
+        "weather": {
+            "url": "https://weather.example.com/mcp",
+            "timeout": 5000,
+        },
+        "assistant": {
+            "command": "python",
+            "args": ["./assistant.py"],
+        },
+    }
+}
+
+client = Client(config, timeout=30)
+```
+
+With multiple servers, the client timeout also limits the entire routed request, so a backend timeout cannot extend that outer limit. Composite clients and configurations with tool transformations or tag filters use backend proxy sessions: a per-call `timeout` cannot extend those sessions' configured limits. `sse_read_timeout` remains a separate setting for the SSE connection.
+
 ### Tool Transformations
 
-FastMCP supports tool transformations within the configuration. You can change names, descriptions, tags, and arguments for tools from a server.
+FastMCP supports tool transformations within the configuration. You can change names, descriptions, tags, and arguments for tools from a server. Key each transformation by the tool's name on that server, before any server-name prefix is added.
 
 ```python
 config = {
@@ -248,7 +337,7 @@ config = {
             "url": "https://weather.example.com/mcp",
             "transport": "http",
             "tools": {
-                "weather_get_forecast": {
+                "get_forecast": {
                     "name": "miami_weather",
                     "description": "Get the weather for Miami",
                     "arguments": {
@@ -276,3 +365,7 @@ config = {
     }
 }
 ```
+
+Omit `include_tags` to leave inclusion unrestricted. An empty `include_tags` list
+includes no tools, while an empty `exclude_tags` list excludes none. These filters
+apply to each server in both single-server and multi-server configurations.

@@ -3,13 +3,14 @@
 import json
 import warnings
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Literal
 from unittest.mock import patch
 
 import mcp_types
 import pytest
 from cryptography.fernet import Fernet
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
 from fastmcp.cli import client as client_module
@@ -20,6 +21,7 @@ from fastmcp.cli.client import (
     _format_call_result_text,
     _is_http_target,
     _sanitize_untrusted_text,
+    _terminal_elicitation_handler,
     call_command,
     coerce_value,
     format_tool_signature,
@@ -125,6 +127,99 @@ class TestCoerceValue:
     )
     def test_ambiguous_union_stays_string(self, schema):
         assert coerce_value("42", schema) == "42"
+
+    @pytest.mark.parametrize(
+        ("raw", "schema", "expected"),
+        [
+            # null literal maps to None when schema allows null
+            ("null", {"anyOf": [{"type": "integer"}, {"type": "null"}]}, None),
+            ("null", {"anyOf": [{"type": "array"}, {"type": "null"}]}, None),
+            ("null", {"type": ["integer", "null"]}, None),
+            ("null", {"anyOf": [{"type": "null"}]}, None),
+        ],
+    )
+    def test_null_literal_returns_none_when_nullable(self, raw, schema, expected):
+        """``null`` maps to ``None`` when the schema allows it."""
+        assert coerce_value(raw, schema) is None
+
+    def test_null_literal_stays_string_when_not_nullable(self):
+        """``null`` stays as a string when the schema does not allow null."""
+        assert coerce_value("null", {"type": "string"}) == "null"
+
+    @pytest.mark.parametrize(
+        ("raw", "schema", "expected"),
+        [
+            # int | list[int]: JSON array is parsed, not passed as string
+            ("[1, 2]", {"anyOf": [{"type": "integer"}, {"type": "array"}]}, [1, 2]),
+            # discriminated union (object branches only): JSON object is parsed
+            (
+                '{"kind": "dog"}',
+                {"anyOf": [{"type": "object"}, {"type": "integer"}]},
+                {"kind": "dog"},
+            ),
+            # int | list[int] | None: JSON array is parsed
+            (
+                "[3, 4]",
+                {
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"type": "array"},
+                        {"type": "null"},
+                    ]
+                },
+                [3, 4],
+            ),
+            # plain integer in a non-string union: only arrays/objects are
+            # JSON-parsed, so the scalar falls back to the raw string
+            ("42", {"anyOf": [{"type": "integer"}, {"type": "array"}]}, "42"),
+        ],
+    )
+    def test_non_string_union_parses_json(self, raw, schema, expected):
+        """Unions with no string branch parse arrays/objects as JSON."""
+        result = coerce_value(raw, schema)
+        assert result == expected
+
+    def test_non_string_union_null_not_accepted_when_not_nullable(self):
+        """``null`` in a non-nullable union must not silently return None."""
+        schema = {"anyOf": [{"type": "integer"}, {"type": "array"}]}
+        result = coerce_value("null", schema)
+        assert result is not None
+
+    @pytest.mark.parametrize(
+        "schema",
+        [
+            {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            {"type": ["string", "null"]},
+        ],
+    )
+    def test_null_literal_stays_string_when_string_is_nullable(self, schema):
+        """``str | None`` keeps ``null`` as the literal string."""
+        assert coerce_value("null", schema) == "null"
+
+    def test_one_of_object_union_parses_json(self):
+        """Discriminated unions produce ``oneOf``; objects are still decoded."""
+        schema = {
+            "oneOf": [
+                {"type": "object", "properties": {"kind": {"const": "cat"}}},
+                {"type": "object", "properties": {"kind": {"const": "dog"}}},
+            ]
+        }
+        assert coerce_value('{"kind": "dog"}', schema) == {"kind": "dog"}
+
+    @pytest.mark.parametrize(
+        "branch",
+        [{"$ref": "#/$defs/Color"}, {"enum": ["[a]", "b"]}, {}],
+    )
+    def test_untyped_union_branch_preserves_raw_string(self, branch):
+        """A branch without a ``type`` may be a string, so input stays raw."""
+        schema = {"anyOf": [{"type": "array"}, branch]}
+        assert coerce_value("[a]", schema) == "[a]"
+
+    def test_non_string_union_falls_back_to_string_on_invalid_json(self):
+        """When JSON parsing fails for a non-string union, the raw string is returned."""
+        schema = {"anyOf": [{"type": "integer"}, {"type": "array"}]}
+        result = coerce_value("hello", schema)
+        assert result == "hello"
 
 
 # ---------------------------------------------------------------------------
@@ -652,6 +747,16 @@ def test_named_oauth_server_is_quiet(
 # ---------------------------------------------------------------------------
 
 
+class Cat(BaseModel):
+    kind: Literal["cat"]
+    lives: int = 9
+
+
+class Dog(BaseModel):
+    kind: Literal["dog"]
+    good: bool = True
+
+
 def _build_test_server() -> FastMCP:
     """Create a minimal FastMCP server for integration tests."""
     server = FastMCP("TestServer")
@@ -670,6 +775,21 @@ def _build_test_server() -> FastMCP:
     def total(values: list[int] | None = None) -> int:
         """Sum an optional list of numbers."""
         return sum(values or [])
+
+    @server.tool
+    def union_sum(v: int | list[int]) -> int:
+        """Accept an int or a list of ints."""
+        return v if isinstance(v, int) else sum(v)
+
+    @server.tool
+    def maybe(n: int | None = 5) -> str:
+        """Return repr of an optional int."""
+        return repr(n)
+
+    @server.tool
+    def describe(pet: Annotated[Cat | Dog, Field(discriminator="kind")]) -> str:
+        """Describe a pet from a discriminated union."""
+        return type(pet).__name__
 
     @server.resource("test://greeting")
     def greeting_resource() -> str:
@@ -804,6 +924,51 @@ class TestCallCommandCLI:
         with pytest.raises(SystemExit):
             await call_command("fake://server", "")
 
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_call_union_no_string_branch_list(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        """JSON list is parsed and passed correctly for int|list[int] params."""
+        await call_command("fake://server", "union_sum", "v=[1, 2]", json_output=True)
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == {"result": 3}
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_call_union_no_string_branch_scalar(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        """Plain integer is passed correctly for int|list[int] params."""
+        await call_command("fake://server", "union_sum", "v=7", json_output=True)
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == {"result": 7}
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_call_nullable_non_string_null(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        """``null`` is passed as None for int|None params."""
+        await call_command("fake://server", "maybe", "n=null", json_output=True)
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == {"result": "None"}
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_call_discriminated_union_object(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        """A JSON object reaches a discriminated ``Cat | Dog`` param as a dict."""
+        await call_command(
+            "fake://server",
+            "describe",
+            'pet={"kind": "dog", "good": true}',
+            json_output=True,
+        )
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == {"result": "Dog"}
+
 
 # ---------------------------------------------------------------------------
 # Structured content serialization
@@ -851,3 +1016,47 @@ class TestSanitizeUntrustedText:
         value = "[bold]hello[/bold]\x07"
         sanitized = _sanitize_untrusted_text(value)
         assert sanitized == "\\[bold]hello\\[/bold]\\x07"
+
+
+class TestTerminalElicitationHandler:
+    @pytest.fixture(autouse=True)
+    def _press_enter(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr("builtins.input", lambda *args: "")
+
+    @staticmethod
+    def _params(message: str, field: dict[str, Any], name: str = "answer"):
+        return mcp_types.ElicitRequestFormParams(
+            message=message,
+            requested_schema={"type": "object", "properties": {name: field}},
+        )
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Deploy to production? [y/N]",
+            "Branch to deploy [main]",
+            "Tag format is v[/]MAJOR",
+        ],
+    )
+    async def test_message_is_printed_verbatim(
+        self, message: str, capsys: pytest.CaptureFixture[str]
+    ):
+        result = await _terminal_elicitation_handler(
+            message, None, self._params(message, {"type": "string"}), None
+        )
+
+        assert result.action == "accept"
+        assert f"Server asks: {message}" in capsys.readouterr().out
+
+    @pytest.mark.parametrize(
+        ("field_name", "field_type"),
+        [("name[bold]", "string"), ("tag", "string[/]")],
+    )
+    async def test_field_prompt_is_printed_verbatim(
+        self, field_name: str, field_type: str, capsys: pytest.CaptureFixture[str]
+    ):
+        params = self._params("Pick one", {"type": field_type}, name=field_name)
+
+        await _terminal_elicitation_handler("Pick one", None, params, None)
+
+        assert f"  {field_name} ({field_type}): " in capsys.readouterr().out

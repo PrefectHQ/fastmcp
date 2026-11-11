@@ -1008,6 +1008,51 @@ async def test_code_mode_max_tool_calls_none_is_unlimited() -> None:
     assert _unwrap_result(result) == 60
 
 
+async def test_code_mode_wall_clock_timeout_raises_tool_error() -> None:
+    """A tool call outlasting the wall-clock limit fails the execute call."""
+    mcp = FastMCP("CodeMode Timeout")
+
+    @mcp.tool
+    async def slow_tool() -> str:
+        await asyncio.sleep(5)
+        return "done"
+
+    mcp.add_transform(
+        CodeMode(
+            sandbox_provider=_UnsafeTestSandboxProvider(),
+            wall_clock_timeout_secs=0.05,
+        )
+    )
+
+    code = "await call_tool('slow_tool', {})\nreturn 1"
+    with pytest.raises(ToolError, match="wall-clock limit of 0.05 seconds"):
+        await _run_tool(mcp, "execute", {"code": code})
+
+
+@requires_monty
+async def test_code_mode_wall_clock_timeout_bounds_monty_callbacks() -> None:
+    """Monty's duration limits skip callback time; the wall clock does not."""
+    mcp = FastMCP("CodeMode Monty Timeout")
+    callback_cancelled = asyncio.Event()
+
+    @mcp.tool
+    async def hang() -> str:
+        try:
+            await asyncio.sleep(5)
+        except asyncio.CancelledError:
+            callback_cancelled.set()
+            raise
+        return "done"
+
+    mcp.add_transform(CodeMode(wall_clock_timeout_secs=1))
+
+    code = "await call_tool('hang', {})\nreturn 1"
+    with pytest.raises(ToolError, match="wall-clock limit"):
+        await _run_tool(mcp, "execute", {"code": code})
+
+    assert callback_cancelled.is_set()
+
+
 async def test_monty_provider_cancels_future_when_task_cancelled() -> None:
     """Cancelling the awaiting task must cancel the underlying sandbox future.
 

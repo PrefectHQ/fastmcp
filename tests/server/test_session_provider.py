@@ -10,7 +10,7 @@ principal.
 """
 
 import re
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 from uuid import UUID
@@ -26,7 +26,9 @@ from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_session
 from fastmcp.server.sessions import (
     SESSION_ID_DESCRIPTION,
+    CurrentSession,
     InvalidSession,
+    Session,
     SessionId,
     SessionProvider,
     UserSession,
@@ -56,7 +58,7 @@ def make_token(*, subject: str = "user-a") -> SDKAccessToken:
 
 
 @contextmanager
-def as_principal(token: SDKAccessToken | None) -> Iterator[None]:
+def as_principal(token: SDKAccessToken | None) -> Generator[None, None, None]:
     if token is None:
         yield
         return
@@ -262,6 +264,57 @@ class TestInjectedSession:
             session_id=_USER_SESSION_ID,
         )
         assert await reconstructed.get("cart") == ["apple"]
+
+
+class TestInjectedSessionOnResources:
+    """`session: UserSession` on a resource or template registers and is
+    injected, exactly like an explicit `= CurrentSession()` default."""
+
+    @pytest.mark.parametrize("explicit_default", [False, True])
+    async def test_static_resource(self, explicit_default: bool):
+        server = FastMCP("notes")
+
+        if explicit_default:
+
+            @server.resource("notes://latest")
+            async def latest(session: Session = CurrentSession()) -> str:
+                return await session.get("note", default="empty")
+
+        else:
+
+            @server.resource("notes://latest")
+            async def latest(session: UserSession) -> str:
+                return await session.get("note", default="empty")
+
+        with as_principal(make_token()):
+            async with Client(server) as client:
+                resources = await client.list_resources()
+                assert [str(r.uri) for r in resources] == ["notes://latest"]
+                result = await client.read_resource("notes://latest")
+        assert result[0].text == "empty"
+
+    @pytest.mark.parametrize("explicit_default", [False, True])
+    async def test_resource_template(self, explicit_default: bool):
+        server = FastMCP("notes")
+
+        if explicit_default:
+
+            @server.resource("notes://{key}")
+            async def note(key: str, session: Session = CurrentSession()) -> str:
+                return f"{key}={await session.get(key, default='empty')}"
+
+        else:
+
+            @server.resource("notes://{key}")
+            async def note(key: str, session: UserSession) -> str:
+                return f"{key}={await session.get(key, default='empty')}"
+
+        with as_principal(make_token()):
+            async with Client(server) as client:
+                templates = await client.list_resource_templates()
+                assert [t.uri_template for t in templates] == ["notes://{key}"]
+                result = await client.read_resource("notes://hello")
+        assert result[0].text == "hello=empty"
 
 
 # ---------------------------------------------------------------------------

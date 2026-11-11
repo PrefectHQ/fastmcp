@@ -1,0 +1,81 @@
+{
+  "issue_number": 5835,
+  "triage_review_run_id": "06ae39c2-6165-70d7-8000-b3e275d4f1da",
+  "adversarial_review": {
+    "decision": "review_existing",
+    "reason": "Want: a worthwhile contract-restoring fix for users of advertised prompt aliases, but the current contribution is incomplete. Pinned docs/servers/prompts.mdx promises signature validation and typed string conversion; the source constructs advertised arguments from the Pydantic validation schema. This establishes the framework-level expectation that its advertised input is usable, without claiming that MCP mandates Pydantic aliases. The failure originates in renderer filtering, not installation: retained verification records missing alias keys and silently ignored explicit values, and independent execution reproduced the six failing alias tests on the pinned base with the ordinary-name control passing.\n\nCommands actually executed: bounded git init/fetch/checkout of base 0a125c1c0b5a619275de913bc5b355cd258af781, fetch of contributor head 54c49cc32d487a6705665062fcb9c11bb7bf472f, and `uv sync --quiet`. Copied the exact head's test_prompt.py onto the unchanged base and ran `uv run pytest tests/prompts/test_prompt.py -k 'TestPromptArgumentAliases' -n 0 --tb=no -q`: 6 failed, 1 passed. Restored that temporary test change, checked out the exact head, and ran `uv run pytest tests/prompts/test_prompt.py -n 0 --tb=short -q`: 71 passed, 3 warnings. An initial checkout was rejected because of the temporary test copy; restoring it resolved that safely. No source changes or commits were made.\n\nIndependent `uv run python /tmp/probe_alias.py` at the exact head exposed a reachable partial fix: `name: str = Field(alias='Name', validation_alias='Input')` advertises Input and the same call adapter accepts Input='Ada', but render drops Input and raises a missing-argument PromptError. With default='default', the same explicit input silently returns 'got default' instead of 'got Ada'. The helper chooses alias before validation_alias, contrary to the validation schema. The probe also exercised a real in-memory Client.get_prompt control using an Annotated integer alias; it returned 'got 5'. This is a localized precedence repair, not an unresolved product choice or grounds for replacing the reporter's contribution.\n\nSupplied bot feedback was read: the no-findings review covers old commit 28e9807, not the verified head. The issue-link failure is administrative; supplied CI still has nine jobs in progress. Full/static validation, independent-agent adversarial review, current-target composition and live platform preflights were not performed. Focused passing tests do not establish merge readiness.",
+    "next_action": "Finish PR #5836 at head 54c49cc32d487a6705665062fcb9c11bb7bf472f against base 0a125c1c0b5a619275de913bc5b355cd258af781: correct `_python_names_by_argument_name()` to follow the validation schema's string validation_alias precedence over alias, and add required plus defaulted dual-alias regressions asserting the supplied value survives, including JSON-string conversion for a typed argument. Preserve the injected-parameter exclusion and ordinary-name controls. Re-run focused base/head tests and applicable static checks on the revised head; then refresh CI and revision-specific review. Keep assignment separate pending the required public-history and live eligibility checks; do not create a competing fix or treat the administrative gate as a code defect.",
+    "findings": [
+      "PR #5836, fastmcp_slim/fastmcp/prompts/function_prompt.py:80-84: choosing FieldInfo.alias before a distinct string validation_alias maps the wrong advertised name. With Field(alias='Name', validation_alias='Input'), Input is advertised and accepted by the call adapter but removed by render; required arguments fail and explicit optional values silently revert to defaults. Independently reproduced at 54c49cc32d487a6705665062fcb9c11bb7bf472f.",
+      "The current seven alias regressions omit simultaneous distinct alias and validation_alias; all 71 module tests pass despite the independently reproduced failure.",
+      "The old bot review does not cover the current head; pending CI, administrative assignment, applicable static checks and current-target composition remain distinct gates. No public-history or assignee-eligibility verification is available to support an assignment proposal."
+    ],
+    "recommendations": [
+      {
+        "action": "finish_pr",
+        "target_number": 5836,
+        "related_pr": 5836,
+        "head_sha": "54c49cc32d487a6705665062fcb9c11bb7bf472f",
+        "base_sha": "0a125c1c0b5a619275de913bc5b355cd258af781",
+        "evidence_sha256": "28ceefbd09127ce7496e76d989d6c2376459e428f2a3a775cf0667f0a8f5cff1",
+        "reason": "Preserve the reporter's scoped contribution, but finish the localized alias-precedence correction: independent probes show advertised validation_alias inputs still fail or silently lose explicit overrides when alias is also supplied.",
+        "next_step": "Within authorized maintainer finishing work, prefer the string validation_alias used by the validation schema, otherwise use the appropriate alias/name fallback. Add required and defaulted dual-alias tests checking actual supplied values, plus typed JSON conversion; retain injection and ordinary-name controls. Verify the revised head with relevant tests and applicable static checks before seeking a revision-specific verdict. This recommendation does not authorize a write.",
+        "scope_notes": "Prompt renderer alias lookup only; no API expansion, competing implementation, assignment, gate bypass or merge. Existing author remains BlueX888. Current-head module tests passed, but independently reproduced dual-alias failures block implementation acceptance; broader validation remains separate.",
+        "assignee": null,
+        "canonical_issue": null,
+        "merged_pr": null,
+        "canonical_pr": null,
+        "canonical_head_sha": null,
+        "canonical_base_sha": null,
+        "policy_url": null,
+        "public_comment": "",
+        "norm_evidence": [
+          {
+            "check": "scope_contract",
+            "satisfied": true,
+            "summary": "Pinned prompt docs promise validated function inputs, and source advertises names from the validation schema.",
+            "evidence_urls": [
+              "https://github.com/PrefectHQ/fastmcp/blob/0a125c1c0b5a619275de913bc5b355cd258af781/docs/servers/prompts.mdx",
+              "https://github.com/PrefectHQ/fastmcp/issues/5835"
+            ]
+          },
+          {
+            "check": "reporter_first_claim",
+            "satisfied": true,
+            "summary": "Issue reporter BlueX888 authored the existing linked PR #5836.",
+            "evidence_urls": [
+              "https://github.com/PrefectHQ/fastmcp/issues/5835",
+              "https://github.com/PrefectHQ/fastmcp/pull/5836"
+            ]
+          },
+          {
+            "check": "bot_feedback",
+            "satisfied": true,
+            "summary": "Supplied bot discussion was evaluated: assignment gates review, while the old no-findings result covers a different commit.",
+            "evidence_urls": [
+              "https://github.com/PrefectHQ/fastmcp/pull/5836#issuecomment-6263976098",
+              "https://github.com/PrefectHQ/fastmcp/pull/5836#issuecomment-6263977249"
+            ]
+          },
+          {
+            "check": "coverage_parity",
+            "satisfied": false,
+            "summary": "Current-head tests pass but omit distinct simultaneous alias and validation_alias, which independent probes show remain broken.",
+            "evidence_urls": [
+              "https://github.com/PrefectHQ/fastmcp/blob/54c49cc32d487a6705665062fcb9c11bb7bf472f/tests/prompts/test_prompt.py",
+              "https://github.com/PrefectHQ/fastmcp/blob/54c49cc32d487a6705665062fcb9c11bb7bf472f/fastmcp_slim/fastmcp/prompts/function_prompt.py#L80-L84"
+            ]
+          }
+        ]
+      }
+    ],
+    "public_reviews": [
+      {
+        "pr_number": 5836,
+        "summary": "One alias case still fails: `Field(alias=\"Name\", validation_alias=\"Input\")` advertises `Input`, but the helper chooses `Name`. Rendering drops supplied values: required arguments error and optional arguments silently use defaults.",
+        "requested_change": "Please prefer string `validation_alias` over `alias` and add required/defaulted dual-alias tests, including typed JSON-string conversion.",
+        "evidence": "Both failures reproduced on this revision; the existing 71 prompt-module tests pass."
+      }
+    ]
+  }
+}

@@ -4,7 +4,7 @@ import asyncio
 import functools
 import json
 import threading
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Generator, Iterator
 from contextlib import contextmanager
 from typing import Any
 
@@ -152,7 +152,7 @@ async def test_sync_generator_consumed_before_dependency_cleanup() -> None:
     state = {"open": False}
 
     @contextmanager
-    def connection() -> Iterator[dict[str, bool]]:
+    def connection() -> Generator[dict[str, bool], None, None]:
         state["open"] = True
         try:
             yield state

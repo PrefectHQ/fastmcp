@@ -547,6 +547,28 @@ class TestCallToolAppRouting:
         finally:
             _current_transport.reset(token)
 
+    async def test_display_name_shaped_like_hashed_address_wins(self):
+        """A display tool whose name parses as a hashed address resolves by
+        display name before hashed dispatch is tried."""
+        from fastmcp.server.providers.addressing import hashed_backend_name
+
+        app = FastMCPApp("contacts")
+
+        @app.tool()
+        def save() -> str:
+            return "backend"
+
+        address = hashed_backend_name("contacts", "save")
+        server = FastMCP("Platform")
+        server.add_provider(app)
+
+        @server.tool(name=address)
+        def display() -> str:
+            return "display"
+
+        result = await server.call_tool(address, {})
+        assert result.content[0].text == "display"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+
     async def test_two_apps_same_tool_name_routed_by_address(self):
         """Two FastMCPApps each with a `save` tool live at distinct
         addresses, so they hash differently and the dispatcher routes
@@ -875,9 +897,8 @@ class TestComposition:
         names = {t.name for t in tools}
         assert names == {"dashboard", "save"}
 
-    async def test_ui_synthesizes_per_tool_renderer_resource(self):
-        """Each @app.ui() tool gets its own renderer resource synthesized
-        on demand from the server's address registry."""
+    async def test_ui_synthesizes_renderer_resource(self):
+        """An @app.ui() tool gets its renderer resource synthesized on demand."""
         app = FastMCPApp("test")
 
         @app.ui()
@@ -888,7 +909,7 @@ class TestComposition:
         server.add_provider(app)
 
         resources = list(await server.list_resources())
-        prefab = [r for r in resources if "prefab/tool" in str(r.uri)]
+        prefab = [r for r in resources if "prefab/renderer" in str(r.uri)]
         assert len(prefab) == 1
 
 

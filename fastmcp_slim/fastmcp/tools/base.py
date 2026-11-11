@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import inspect
+import json
+import math
 from collections.abc import Callable
+from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -30,8 +33,10 @@ from pydantic import (
 )
 from pydantic.json_schema import SkipJsonSchema
 
+from fastmcp.exceptions import ToolError
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
+from fastmcp.utilities.json_schema import is_object_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.prefab import (
     is_prefab_app,
@@ -73,8 +78,52 @@ def default_serializer(data: Any) -> str:
     return _JSONABLE_ADAPTER.dump_json(data, fallback=str).decode()
 
 
+@lru_cache(maxsize=5000)
+def _get_json_serializer(annotation: Any) -> pydantic_core.SchemaSerializer:
+    """Build a serializer that follows the real JSON serialization contract.
+
+    `ser_json_inf_nan="constants"` keeps non-finite floats as NaN/Infinity JSON
+    tokens instead of silently rewriting them to null, so the tokens that reach
+    the wire can be rejected at the JSON boundary (see `_reject_nonfinite`).
+    The schema is the annotation's own, so custom serializers and explicit
+    per-model policies keep control of their output.
+    """
+    return pydantic_core.SchemaSerializer(
+        get_cached_typeadapter(annotation).core_schema,
+        config={"ser_json_inf_nan": "constants"},
+    )
+
+
+def _reject_nonfinite(value: Any, path: str = "$") -> None:
+    """Raise ToolError if a non-finite float survived JSON serialization.
+
+    JSON cannot represent NaN or Infinity. A non-finite float in the parsed
+    output means the value would reach the client as an invalid JSON literal
+    (or be silently rewritten to null by stricter serializers). Values the
+    serialization contract legitimately converted — custom serializers or
+    explicit per-model `ser_json_inf_nan` policies — never appear here.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ToolError(
+            f"Tool result contains a non-finite float ({value!r}) at {path}; "
+            "JSON cannot represent NaN or Infinity"
+        )
+    if isinstance(value, dict):
+        for key, item in value.items():
+            _reject_nonfinite(item, f"{path}.{key}")
+    elif isinstance(value, list | tuple):
+        for index, item in enumerate(value):
+            _reject_nonfinite(item, f"{path}[{index}]")
+
+
 def _serialize_to_jsonable(data: Any, annotation: Any = Any) -> Any:
-    """Serialize through Pydantic, falling back for unsupported annotations."""
+    """Serialize through the real JSON serialization contract.
+
+    The value is serialized to JSON and parsed back, so the output is exactly
+    what would go on the wire. JSON cannot represent NaN or Infinity: rather
+    than letting them be silently rewritten to null, any non-finite float that
+    survives serialization is rejected. Falls back for unsupported annotations.
+    """
     if (
         annotation is inspect.Signature.empty
         or annotation is None
@@ -82,14 +131,20 @@ def _serialize_to_jsonable(data: Any, annotation: Any = Any) -> Any:
         or annotation is ...
         or isinstance(annotation, str)
     ):
-        adapter = _JSONABLE_ADAPTER
+        serializer = _get_json_serializer(Any)
     else:
         try:
-            return get_cached_typeadapter(annotation).dump_python(data, mode="json")
+            serializer = _get_json_serializer(annotation)
         except PydanticSchemaGenerationError:
-            adapter = _JSONABLE_ADAPTER
+            serializer = _get_json_serializer(Any)
 
-    return adapter.dump_python(data, mode="json")
+    payload = serializer.to_json(data)
+    value = json.loads(payload)
+    # Only walk the structure when a NaN/Infinity token was emitted; the
+    # substring check keeps clean results on the cheap path.
+    if b"NaN" in payload or b"Infinity" in payload:
+        _reject_nonfinite(value)
+    return value
 
 
 class ToolResult(BaseModel):
@@ -188,6 +243,40 @@ class ToolResult(BaseModel):
         if self.structured_content is None:
             return self.content
         return self.content, self.structured_content
+
+
+class RawStructuredToolResult(ToolResult):
+    """A proxied result whose structured value need not be an object."""
+
+    structured_content: Any = None
+
+    def __init__(
+        self,
+        content: list[ContentBlock],
+        structured_content: Any,
+        meta: dict[str, Any] | None = None,
+        is_error: bool = False,
+    ) -> None:
+        # The proxy already received wire-format content from the backend.
+        # ToolResult's constructor intentionally rejects non-object values for
+        # ordinary tools; the wire handler wraps these for legacy clients.
+        BaseModel.__init__(
+            self,
+            content=content,
+            structured_content=structured_content,
+            meta=meta,
+            is_error=is_error,
+        )
+
+    def to_mcp_result(self) -> CallToolResult:
+        # Serialize the current public fields so response middleware edits are
+        # reflected on the wire, including when it uses model_copy().
+        return CallToolResult(
+            content=self.content,
+            structured_content=self.structured_content,
+            is_error=self.is_error,
+            _meta=self.meta,  # type: ignore[call-arg]
+        )
 
 
 class InputRequiredToolResult(ToolResult):
@@ -410,7 +499,18 @@ class Tool(FastMCPComponent):
 
         try:
             structured = _serialize_to_jsonable(raw_value, self.return_type)
-        except (pydantic_core.PydanticSerializationError, UnicodeDecodeError):
+        except (pydantic_core.PydanticSerializationError, UnicodeDecodeError) as e:
+            if self.output_schema is not None:
+                # The declared output schema obligates structured content
+                # (the MCP SDK's client-side validation rejects the result
+                # without it), so a silent content-only fallback would report
+                # success while breaking that contract.
+                raise ToolError(
+                    f"Could not serialize the return value of tool {self.name!r} "
+                    f"for its output schema: {e}. If this is unexpected, set the "
+                    "tool's output_schema to None to disable automatic "
+                    "serialization."
+                ) from e
             return ToolResult(content=content)
 
         if not is_content_result:
@@ -437,7 +537,32 @@ class Tool(FastMCPComponent):
         subclasses can customize dispatch. For example, ``FastMCPProviderTool``
         overrides this to delegate to child-server middleware.
         """
-        return await self.run(arguments)
+        result = await self.run(arguments)
+        return self._mark_non_object_result(result)
+
+    def _mark_non_object_result(self, result: ToolResult) -> ToolResult:
+        """Mark structured content declared by a non-object output schema.
+
+        Legacy MCP clients require object structured content, so the wire
+        handler wraps a `RawStructuredToolResult` under `result` to match the
+        wrapper it advertises for non-object schemas.
+        """
+        if (
+            isinstance(result, RawStructuredToolResult | InputRequiredToolResult)
+            or result.structured_content is None
+            or self.output_schema is None
+            or is_object_schema(self.output_schema)
+        ):
+            return result
+        fastmcp_meta = result.meta.get("fastmcp") if result.meta else None
+        if isinstance(fastmcp_meta, dict) and fastmcp_meta.get("wrap_result") is True:
+            return result
+        return RawStructuredToolResult(
+            content=result.content,
+            structured_content=result.structured_content,
+            meta=result.meta,
+            is_error=result.is_error,
+        )
 
     @classmethod
     def from_tool(
@@ -538,7 +663,7 @@ def _get_tool_resolver(app_name: str | None = None) -> Callable[..., str] | None
 def _prefab_to_json(app: Any, fastmcp_app_name: str | None = None) -> dict[str, Any]:
     """Serialize a PrefabApp, addressing its peer-tool references by identity.
 
-    The resolver writes each reference as ``<hash>_<local_name>``, and the
+    The resolver writes each reference as ``__<hash>_<local_name>``, and the
     identity behind it is recorded in the payload's meta so that servers
     can re-address the reference on the way out without losing track of
     what it points at.

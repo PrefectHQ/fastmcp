@@ -31,7 +31,7 @@ import mcp_types as mt
 
 from fastmcp.exceptions import AuthorizationError, InsufficientScopeError
 from fastmcp.prompts.base import Prompt, PromptResult
-from fastmcp.resources.base import Resource, ResourceResult
+from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.middleware import (
@@ -39,6 +39,7 @@ from fastmcp.server.middleware.middleware import (
     Middleware,
     MiddlewareContext,
 )
+from fastmcp.server.providers.addressing import parse_hashed_backend_name
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.authorization import (
     AuthCheck,
@@ -228,6 +229,18 @@ class AuthMiddleware(Middleware):
         version = _requested_version(context.message.meta)
         tool = await fastmcp.fastmcp.get_tool(tool_name, version=version)
         if tool is None:
+            # Core routing retries a failed display-name lookup as a hashed
+            # backend name: backend tools callable by apps are addressed as
+            # `<hash>_<local_name>` and resolved through `get_tool_by_hash`.
+            # Mirror that path so such a tool is authorized as the same
+            # component however it was addressed. `get_tool_by_hash` applies
+            # the transforms, visibility, enabled state, and component auth
+            # a name lookup applies, so a refused tool still resolves to None.
+            hashed = parse_hashed_backend_name(tool_name)
+            if hashed is not None:
+                digest, local_name = hashed
+                tool = await fastmcp.fastmcp.get_tool_by_hash(digest, local_name)
+        if tool is None:
             raise AuthorizationError(
                 f"Authorization failed for tool '{tool_name}': "
                 "not found or not authorized"
@@ -280,17 +293,15 @@ class AuthMiddleware(Middleware):
 
         return authorized_resources
 
-    async def on_read_resource(
-        self,
-        context: MiddlewareContext[mt.ReadResourceRequestParams],
-        call_next: CallNext[mt.ReadResourceRequestParams, ResourceResult],
-    ) -> ResourceResult:
-        """Check auth before resource read."""
+    async def check_resource_access(
+        self, context: MiddlewareContext[mt.ReadResourceRequestParams]
+    ) -> None:
+        """Apply the resource policy shared by reads and extension discovery."""
         # STDIO has no auth concept, skip enforcement
         from fastmcp.server.context import _current_transport
 
         if _current_transport.get() == "stdio":
-            return await call_next(context)
+            return
 
         # Get the resource being read
         uri = context.message.uri
@@ -316,6 +327,20 @@ class AuthMiddleware(Middleware):
                 version=version,
             )
         if component is None:
+            # Prefab renderer resources (`ui://prefab/renderer/<sha256>/
+            # renderer.html`, plus legacy per-tool hashed URIs) are synthesized
+            # on demand by core `read_resource` rather than stored on a
+            # provider, so neither lookup above can see them. Mirror that path
+            # so the global checks below run against the component core would
+            # actually read.
+            from fastmcp.server.providers.prefab_synthesis import (
+                synthesize_prefab_resource_by_uri,
+            )
+
+            component = await synthesize_prefab_resource_by_uri(
+                fastmcp.fastmcp, str(uri)
+            )
+        if component is None:
             raise AuthorizationError(
                 f"Authorization failed for resource '{uri}': "
                 "not found or not authorized"
@@ -338,8 +363,6 @@ class AuthMiddleware(Middleware):
             raise AuthorizationError(
                 f"Authorization failed for resource '{uri}': insufficient permissions"
             )
-
-        return await call_next(context)
 
     async def on_list_resource_templates(
         self,

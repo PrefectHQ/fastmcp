@@ -7,10 +7,17 @@ import hashlib
 import secrets
 import ssl
 import uuid
-from collections.abc import AsyncIterator, Callable, Coroutine, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    Callable,
+    Coroutine,
+    Mapping,
+    Sequence,
+)
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
 
 import anyio
@@ -102,7 +109,7 @@ from .transports import (
     StreamableHttpTransport,
     infer_transport,
 )
-from .transports.base import TransportOptions
+from .transports.base import TransportOptions, _is_verify_replaceable_factory
 
 __all__ = [
     "Client",
@@ -140,7 +147,7 @@ The ``str`` arm is only for the version-pin case; ``Client.__init__`` rejects an
 @asynccontextmanager
 async def _conformant_discover_only(
     session: ClientSession,
-) -> AsyncIterator[None]:
+) -> AsyncGenerator[None, None]:
     """Hold ``session.send_discover`` to the same wire schema every later reply must meet.
 
     ``negotiate_auto`` accepts a probe that parses as the version-free
@@ -311,6 +318,8 @@ class Client(
         timeout: Optional timeout for requests (seconds or timedelta)
         init_timeout: Optional timeout for initial connection (seconds or timedelta).
             Set to 0 to disable. If None, uses the value in the FastMCP global settings.
+        client_info: The identity this client declares to servers. Defaults to
+            `fastmcp` and the installed FastMCP version.
         mode: Protocol-era negotiation at connect time. `"auto"` (the default) probes
             `server/discover` and negotiates the modern era, denylist-falling-back to the
             initialize handshake for any server that is not positive evidence of a modern
@@ -471,12 +480,16 @@ class Client(
             if isinstance(self.transport, StreamableHttpTransport | SSETransport):
                 self.transport.verify = verify
                 # Re-sync existing OAuth auth with the new verify setting,
-                # but only if the transport doesn't have a custom factory
-                # (which takes precedence and was already applied to OAuth).
+                # but only if neither the transport nor the auth provider has
+                # a custom factory (which takes precedence and was already
+                # applied to OAuth).
                 if (
                     isinstance(self.transport.auth, OAuth)
                     and auth is None
                     and self.transport.httpx_client_factory is None
+                    and _is_verify_replaceable_factory(
+                        self.transport.auth.httpx_client_factory
+                    )
                 ):
                     verify_factory = self.transport._make_verify_factory()
                     if verify_factory is not None:
@@ -558,7 +571,8 @@ class Client(
             "log_level": "debug",
             "message_handler": effective_message_handler,
             "read_timeout_seconds": read_timeout_seconds,
-            "client_info": client_info,
+            "client_info": client_info
+            or mcp_types.Implementation(name="fastmcp", version=fastmcp.__version__),
             **self._build_extension_kwargs(),
         }
 
@@ -584,6 +598,12 @@ class Client(
         self._disconnect_timeout: float = fastmcp.settings.client_disconnect_timeout
         # Session stops handed off by exiting contexts; referenced until done.
         self._stoppers: set[asyncio.Task[None]] = set()
+        # Context-manager holds belong to the task that entered them. Keeping
+        # the session task lets an exit from an older connection avoid
+        # decrementing the reference count of a connection opened afterward.
+        self._context_session_tasks: dict[
+            asyncio.Task[Any], list[asyncio.Task[Any]]
+        ] = {}
 
         # Session context management - see class docstring for detailed explanation
         self._session_state = ClientSessionState()
@@ -655,6 +675,19 @@ class Client(
     def session(self) -> ClientSession:
         """Get the current active session. Raises RuntimeError if not connected."""
         if self._session_state.session is None:
+            # Inside a held context, a missing session means the connection was
+            # lost, not that the caller forgot to connect. Report that failure:
+            # the transport's own error once the session task has finished, and
+            # the SDK's closed-connection error while it is still unwinding.
+            session_task = self._session_state.session_task
+            if self._session_state.nesting_counter > 0 and session_task is not None:
+                if session_task.done() and not session_task.cancelled():
+                    exc = session_task.exception()
+                    if exc is not None:
+                        raise exc
+                raise MCPError(
+                    code=mcp_types.CONNECTION_CLOSED, message="Connection closed"
+                )
             raise RuntimeError(
                 "Client is not connected. Use the 'async with client:' context manager first."
             )
@@ -776,6 +809,7 @@ class Client(
         # share lifecycle state with the original instance.
         new_client._session_state = ClientSessionState()
         new_client._transport_options = self._transport_options
+        new_client._context_session_tasks = {}
 
         # Give the clone its own response cache so cached entries are not shared
         # across independent sessions, and rebuild the negotiated_version closure
@@ -949,11 +983,73 @@ class Client(
             )
         return self.initialize_result
 
+    async def _enter_context(self) -> asyncio.Task[Any]:
+        """Connect and return the session held by this context."""
+        await self._connect()
+        session_task = self._session_state.session_task
+        if session_task is None:
+            raise RuntimeError("Client connected without a session task")
+        return session_task
+
     async def __aenter__(self):
-        return await self._connect()
+        session_task = await self._enter_context()
+        task = asyncio.current_task()
+        if task is None:
+            raise RuntimeError("Client context entered outside an asyncio task")
+        # A finished task can never run its own exit, so its holds are dead.
+        # They remain when a context is released by close() or exited from
+        # another task.
+        for done in [t for t in self._context_session_tasks if t.done()]:
+            del self._context_session_tasks[done]
+        self._context_session_tasks.setdefault(task, []).append(session_task)
+        return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self._disconnect()
+        task = asyncio.current_task()
+        session_task = None
+        if task is not None:
+            session_tasks = self._context_session_tasks.get(task)
+            if session_tasks:
+                session_task = session_tasks.pop()
+                if not session_tasks:
+                    del self._context_session_tasks[task]
+        await self._disconnect(held=session_task)
+
+    async def _exit_context(
+        self,
+        held: asyncio.Task[Any] | None,
+        entered_task: asyncio.Task[Any] | None,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> bool | None:
+        """Exit a context entered by another task, preserving its session hold."""
+        if entered_task is not None and held is not None:
+            self._remove_context_session(entered_task, held)
+
+        task = asyncio.current_task()
+        if task is None or held is None:
+            return await self.__aexit__(exc_type, exc_val, exc_tb)
+
+        self._context_session_tasks.setdefault(task, []).append(held)
+        try:
+            return await self.__aexit__(exc_type, exc_val, exc_tb)
+        finally:
+            self._remove_context_session(task, held)
+
+    def _remove_context_session(
+        self, task: asyncio.Task[Any], held: asyncio.Task[Any]
+    ) -> None:
+        """Remove one matching context hold from a task's pending exits."""
+        session_tasks = self._context_session_tasks.get(task)
+        if session_tasks is None:
+            return
+        for index in range(len(session_tasks) - 1, -1, -1):
+            if session_tasks[index] is held:
+                del session_tasks[index]
+                break
+        if not session_tasks:
+            del self._context_session_tasks[task]
 
     async def _connect(self):
         """
@@ -1053,7 +1149,9 @@ class Client(
 
         return self
 
-    async def _disconnect(self, force: bool = False):
+    async def _disconnect(
+        self, force: bool = False, held: asyncio.Task[Any] | None = None
+    ):
         """
         Disconnect from session using reference counting.
 
@@ -1071,6 +1169,13 @@ class Client(
             # An explicit close stops the session it finds, in order with the
             # contexts around it, so it runs here under the lock as before.
             await self._stop_session(None, force=True)
+            return
+
+        # A context entered before an explicit close owns the old session. If
+        # the client has since reconnected, its exit must not release the new
+        # session's hold. There is no await between this check and the counter
+        # update, so another task cannot replace the session in between.
+        if held is not None and self._session_state.session_task is not held:
             return
 
         # Release this context's hold before any await. A context that exits
@@ -1253,6 +1358,8 @@ class Client(
             return await send()
         # A closed (or never-entered) client must raise, never serve cached entries.
         _ = self.session
+        if self.protocol_version not in MODERN_PROTOCOL_VERSIONS:
+            return await send()
         if cursor is not None:
             # Continuation pages skip the cache; an expired cursor means the listing
             # changed, so evict (spec SHOULD) and re-raise.
