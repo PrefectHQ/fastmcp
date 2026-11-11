@@ -462,3 +462,38 @@ async def test_query_only_template_completes_by_its_own_identifier(mode, gate):
         )
     assert visible.values == ["v"]
     assert gated.values == ([] if gate != "none" else ["v"])
+
+
+@pytest.mark.parametrize("mode", MODES)
+async def test_versioned_template_completion_checks_the_listed_version(mode):
+    """Completion authorizes the version clients list, not the first one
+    registered."""
+    from fastmcp.server.middleware import AuthMiddleware
+
+    mcp = FastMCP(
+        middleware=[
+            AuthMiddleware(
+                auth=lambda ctx: ctx.component is None
+                or "secret" not in ctx.component.tags
+            )
+        ]
+    )
+
+    @mcp.resource("data://item/{id}", version="1", tags={"secret"})
+    def item_v1(id: str) -> str:
+        return id
+
+    @mcp.resource("data://item/{id}", version="2")
+    def item_v2(id: str) -> str:
+        return id
+
+    @mcp.completion
+    def complete(ref, argument, context):
+        return ["v"]
+
+    async with Client(mcp, mode=mode) as client:
+        result = await client.complete(
+            ResourceTemplateReference(uri="data://item/{id}"),
+            {"name": "id", "value": ""},
+        )
+    assert result.values == ["v"]

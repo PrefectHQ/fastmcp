@@ -565,9 +565,14 @@ class MCPOperationsMixin:
         # A template's own identifier does not always match it as a URI
         # (query-only templates such as `data://search{?q}`), so look for the
         # template itself before treating the reference as a concrete URI.
-        for template in await self.list_resource_templates(run_middleware=False):
-            if template.uri_template == key:
-                return template
+        # Several versions can share the identifier; pick the one clients list.
+        matches = [
+            template
+            for template in await self.list_resource_templates(run_middleware=False)
+            if template.uri_template == key
+        ]
+        if matches:
+            return dedupe_with_versions(matches, lambda t: t.uri_template)[0]
         return await self.get_resource_template(key)
 
     def _register_completion_handler(self: FastMCP) -> None:
