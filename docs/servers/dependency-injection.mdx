@@ -497,6 +497,26 @@ When a client calls `show_account`, the factory receives the same `user_id` valu
 
 Clients still cannot override dependencies this way: an argument whose name collides with a dependency parameter is stripped before resolution, so a `CallArgument` reference to that parameter resolves the dependency itself.
 
+A dependency can also own the argument it reads. When the tool doesn't declare the parameter a `CallArgument` names, FastMCP adds it to the tool's schema and passes the client's value only to the dependency, so the tool needs no unused parameter:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.dependencies import CallArgument, Depends
+
+mcp = FastMCP("Workspaces")
+
+
+async def current_workspace(workspace: str | None = CallArgument(default=None)) -> str:
+    return workspace or "default"
+
+
+@mcp.tool
+async def list_items(resolved: str = Depends(current_workspace)) -> str:
+    return f"items in {resolved}"
+```
+
+The schema for `list_items` has an optional `workspace` argument. A reference without a `default` adds a required argument. `CallArgument(optional=True)` never adds one.
+
 ### Bindings
 
 <VersionBadge version="4.0.0" />

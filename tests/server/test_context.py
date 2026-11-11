@@ -697,3 +697,44 @@ class TestContextToClientLogger:
             for r in caplog.records
             if r.name == to_client_logger.name
         ] == [(logging.DEBUG, "DEBUG", f"Sending {method.upper()} to client: hello")]
+
+
+async def test_background_context_logging_without_session():
+    from fastmcp.server.dependencies import _background_task_session_id
+
+    context = Context(
+        fastmcp=FastMCP("test"),
+        task_id="task-1",
+        origin_request_id="request-1",
+    )
+    token = _background_task_session_id.set("session-1")
+    try:
+        await context.info("worker progress")
+    finally:
+        _background_task_session_id.reset(token)
+
+
+async def test_background_context_logging_honors_server_log_level(
+    caplog: pytest.LogCaptureFixture,
+):
+    from fastmcp.server.dependencies import _background_task_session_id
+
+    mcp = FastMCP("test", client_log_level="warning")
+    context = Context(
+        fastmcp=mcp,
+        task_id="task-1",
+        origin_request_id="request-1",
+    )
+    to_client = logging.getLogger("fastmcp.server.context.to_client")
+    to_client.setLevel(logging.DEBUG)
+    token = _background_task_session_id.set("snapshot-session")
+    try:
+        await context.info("suppressed")
+        await context.warning("emitted")
+    finally:
+        _background_task_session_id.reset(token)
+        to_client.setLevel(logging.NOTSET)
+
+    assert [r.getMessage() for r in caplog.records if r.name == to_client.name] == [
+        "Sending WARNING to client: emitted"
+    ]

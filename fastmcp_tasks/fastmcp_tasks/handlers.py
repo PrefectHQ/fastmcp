@@ -29,10 +29,9 @@ from mcp.shared.exceptions import MCPError
 from mcp_types import INVALID_PARAMS
 
 from fastmcp.exceptions import NotFoundError
-from fastmcp.tools.base import InputRequiredToolResult, Tool
+from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
 from fastmcp.utilities.tasks import DEFAULT_POLL_INTERVAL_MS
 from fastmcp.utilities.versions import VersionSpec
-from fastmcp_tasks.components import TASK_RESULT_ENVELOPE_KEY, task_result_to_wire
 from fastmcp_tasks.context import get_task_scope, refresh_snapshot_ttl
 from fastmcp_tasks.creation import (
     TASK_MAPPING_TTL_BUFFER_SECONDS,
@@ -229,7 +228,23 @@ def _inline_result(tool: Tool, raw_value: Any) -> dict[str, Any]:
                 "Guard-pattern tasks are supported for function tools."
             ),
         )
-    return task_result_to_wire(tool, raw_value)
+    # A raised tool error arrives as an is_error ToolResult the wrapper built
+    # (end-and-reenter G2); use it directly so isError round-trips. A normal
+    # return is converted through the tool's own result coercion.
+    if isinstance(raw_value, ToolResult):
+        mcp_result = raw_value.to_mcp_result()
+    else:
+        mcp_result = tool.convert_result(raw_value).to_mcp_result()
+    if isinstance(mcp_result, mcp_types.CallToolResult):
+        call_tool_result = mcp_result
+    elif isinstance(mcp_result, tuple):
+        content, structured_content = mcp_result
+        call_tool_result = mcp_types.CallToolResult(
+            content=content, structured_content=structured_content
+        )
+    else:
+        call_tool_result = mcp_types.CallToolResult(content=mcp_result)
+    return call_tool_result.model_dump(by_alias=True, mode="json", exclude_none=True)
 
 
 async def tasks_get(server: FastMCP, task_id: str) -> GetTaskResult:
@@ -284,17 +299,8 @@ async def tasks_get(server: FastMCP, task_id: str) -> GetTaskResult:
         if outstanding:
             return build("input_required", input_requests=outstanding)
         raw_value = await execution.get_result(timeout=timedelta(seconds=0))
-        if isinstance(raw_value, dict) and TASK_RESULT_ENVELOPE_KEY in raw_value:
-            # New executions persist the converted protocol result alongside
-            # the Docket result. Polling therefore remains possible after a
-            # dynamic provider removes the Tool that produced it.
-            result = raw_value[TASK_RESULT_ENVELOPE_KEY]
-        else:
-            # Retain compatibility with tasks created before this envelope was
-            # introduced; their Docket result still needs the live Tool schema.
-            tool = await _resolve_tool(server, base_task_key)
-            result = _inline_result(tool, raw_value)
-        return build("completed", result=result)
+        tool = await _resolve_tool(server, base_task_key)
+        return build("completed", result=_inline_result(tool, raw_value))
 
     if execution.state == ExecutionState.FAILED:
         message = "Task failed"

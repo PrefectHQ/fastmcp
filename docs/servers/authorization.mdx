@@ -90,7 +90,6 @@ Keeping the claim path at the call site means any provider works, including ones
 | Provider | Extractor |
 | --- | --- |
 | Keycloak | `lambda c: c["realm_access"]["roles"]` |
-| OpenStack Keystone | `lambda c: c["roles"]` |
 | Microsoft Entra | `lambda c: c["roles"]` |
 | AWS Cognito | `lambda c: c["cognito:groups"]` |
 | Auth0 | `lambda c: c["permissions"]` |

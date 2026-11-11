@@ -643,8 +643,17 @@ class Context:
         # Resolve the client-requested minimum level (set via logging/setLevel),
         # falling back to the server's configured default.
         min_level = self.fastmcp.client_log_level
-        session = self.session
-        session_min = _get_client_log_level(self.fastmcp, session)
+        try:
+            session = self.session
+        except RuntimeError:
+            from fastmcp.server.dependencies import _background_task_session_id
+
+            # Background workers have no live session; a client-set level lives
+            # on a connection they cannot reach, so the server default applies.
+            if _background_task_session_id.get() is None:
+                raise
+            session = None
+        session_min = _get_client_log_level(session)
         if session_min is not None:
             min_level = session_min
 
@@ -1346,33 +1355,28 @@ def _detached_request_context(context: Context) -> ServerRequestContext:
     )
 
 
-# `Connection.state` key holding the level a client set with logging/setLevel
-# on a connection that has no session id.
+# `Connection.state` key holding the level a client set with logging/setLevel.
 _CONNECTION_LOG_LEVEL_KEY = "_fastmcp_client_log_level"
 
 
-def _get_client_log_level(
-    server: FastMCP, session: ServerSession
-) -> LoggingLevel | None:
+def _get_client_log_level(session: ServerSession | None) -> LoggingLevel | None:
     """Return the minimum log level the client set with logging/setLevel, if any.
 
     v2 constructs sessions per-request, so the stable identity is the
-    connection. A handshake-era HTTP session is keyed by its session id on the
-    server. Any other connection (stdio, in-memory, stateless HTTP, 2026-07-28)
-    has no session id, so its level lives in the connection's own state, where
-    no other client can see it and which ends with the connection.
+    connection. The level lives in the connection's own state, where no other
+    client can see it and which ends with the connection. Every server that
+    handles the connection's requests, mounted servers included, reads the same
+    value.
     """
     connection = getattr(session, "_connection", None)
     if connection is None:
         return None
-    if connection.session_id is None:
-        return connection.state.get(_CONNECTION_LOG_LEVEL_KEY)
-    return server._client_log_levels.get(connection.session_id)
+    return connection.state.get(_CONNECTION_LOG_LEVEL_KEY)
 
 
 async def _log_to_server_and_client(
     data: LogData,
-    session: ServerSession,
+    session: ServerSession | None,
     level: LoggingLevel,
     logger_name: str | None = None,
     related_request_id: str | None = None,
@@ -1396,6 +1400,10 @@ async def _log_to_server_and_client(
         msg=f"{msg_prefix}: {data.msg}",
         extra={k: v for k, v in (data.extra or {}).items() if k not in reserved},
     )
+
+    # Background workers have no live MCP session or client back-channel.
+    if session is None:
+        return
 
     # Deprecated upstream in SDK v2 but deliberately kept per compat directive;
     # removed with the multi-round-trip follow-up.

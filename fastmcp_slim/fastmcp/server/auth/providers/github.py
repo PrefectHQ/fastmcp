@@ -268,7 +268,10 @@ class GitHubTokenVerifier(TokenVerifier):
                         "github_user_data": user_data,
                     },
                 )
-                self._cache.set(token, result)
+                # A token verified while scope discovery was down carries no
+                # scopes; caching it would keep it scopeless after recovery.
+                if not scope_discovery_unavailable:
+                    self._cache.set(token, result)
                 return result
 
         except TokenVerificationError:

@@ -472,6 +472,99 @@ class TestKeepAlive:
 
         assert pid1 != pid2
 
+    # https://github.com/PrefectHQ/fastmcp/issues/4471
+    @pytest.mark.timeout(30)
+    async def test_keep_alive_reconnects_on_a_different_event_loop(self, stdio_script):
+        """A kept-alive connection belongs to the loop that created it.
+
+        Reusing the transport from a second, concurrently-alive loop has to
+        spawn a fresh subprocess: the first loop's session never sees its
+        responses on the second loop, so reusing it would hang the initialize
+        handshake instead of connecting.
+        """
+        client = Client(transport=PythonStdioTransport(script_path=stdio_script))
+
+        async with client:
+            result1 = await client.call_tool("pid")
+            pid1: int = result1.data
+
+        async def reuse() -> int:
+            async with client:
+                result = await client.call_tool("pid")
+            return int(result.data)
+
+        def reuse_on_new_loop() -> int:
+            # Bounded so a reused foreign-loop session fails as a timeout here
+            # rather than hanging the suite.
+            return asyncio.run(asyncio.wait_for(reuse(), timeout=10))
+
+        # Off-thread, so this test's loop stays running while the second one
+        # connects: only the owning loop can tear the old connection down.
+        pid2 = await asyncio.to_thread(reuse_on_new_loop)
+
+        assert pid2 != pid1
+        await wait_for_process_exit(pid1)
+
+        # The second loop is closed by now; closing from this one must still
+        # succeed rather than fail on a task it cannot await.
+        await client.close()
+
+    @pytest.mark.timeout(30)
+    def test_stopped_owning_loop_keeps_the_connection(self, stdio_script):
+        """A stopped loop can't run the teardown, so the connection stays its.
+
+        Moving to another loop would otherwise forget a subprocess that nothing
+        could stop anymore. The move is refused instead, and the owning loop
+        can still close it.
+        """
+        client = Client(transport=PythonStdioTransport(script_path=stdio_script))
+
+        async def use() -> int:
+            async with client:
+                result = await client.call_tool("pid")
+            return int(result.data)
+
+        def use_on_new_loop() -> int:
+            return asyncio.run(asyncio.wait_for(use(), timeout=10))
+
+        loop_a = asyncio.new_event_loop()
+        try:
+            pid1 = loop_a.run_until_complete(use())
+
+            with pytest.raises(RuntimeError, match="stopped but not closed"):
+                use_on_new_loop()
+            assert psutil.pid_exists(pid1)
+
+            # The transport owns the subprocess; the client keeps the refused
+            # connect's error and would re-raise it on close().
+            loop_a.run_until_complete(client.transport.close())
+            loop_a.run_until_complete(wait_for_process_exit(pid1))
+        finally:
+            loop_a.close()
+
+    @pytest.mark.timeout(30)
+    @pytest.mark.parametrize("keep_alive", [True, False])
+    async def test_refuses_a_different_event_loop_while_in_use(
+        self, stdio_script, keep_alive
+    ):
+        transport = PythonStdioTransport(
+            script_path=stdio_script, keep_alive=keep_alive
+        )
+
+        def connect_on_new_loop() -> None:
+            async def connect() -> None:
+                async with transport.connect_session():
+                    pass
+
+            asyncio.run(asyncio.wait_for(connect(), timeout=10))
+
+        async with transport.connect_session() as session:
+            with pytest.raises(RuntimeError, match="different event loop"):
+                await asyncio.to_thread(connect_on_new_loop)
+            assert (await session.list_tools()).tools
+
+        await transport.close()
+
     async def test_keep_alive_starts_new_session_if_manually_closed(self, stdio_script):
         client = Client(transport=PythonStdioTransport(script_path=stdio_script))
         assert client.transport.keep_alive is True

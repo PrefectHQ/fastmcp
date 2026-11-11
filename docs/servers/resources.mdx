@@ -387,22 +387,28 @@ Use these when the content is static or sourced directly from a file/URL, bypass
 
 <VersionBadge version="2.9.1" />
 
-FastMCP automatically sends `notifications/resources/list_changed` notifications to connected clients when resources or templates are added, enabled, or disabled. This allows clients to stay up-to-date with the current resource set without manually polling for changes.
+Adding, removing, enabling, or disabling resources at the server or provider level does not notify connected clients. Clients see the change the next time they list resources.
+
+When a request changes the resource set, the tool handling it can tell the calling session by sending `notifications/resources/list_changed` itself. The notification reaches only that session.
 
 ```python
-from fastmcp.resources import resource
+from fastmcp import FastMCP
+from fastmcp.server.context import Context
+from mcp_types import ResourceListChangedNotification
 
-@resource("data://example")
-def example_resource() -> str:
-    return "Hello!"
+mcp = FastMCP("Server")
 
-# These operations trigger notifications:
-mcp.add_resource(example_resource)                   # Sends resources/list_changed notification
-mcp.disable(names={"data://example"})  # Sends resources/list_changed notification
-mcp.enable(names={"data://example"})   # Sends resources/list_changed notification
+@mcp.tool
+async def unlock_extras(ctx: Context) -> str:
+    def stats() -> str:
+        return "42"
+
+    mcp.resource("data://stats")(stats)
+    await ctx.send_notification(ResourceListChangedNotification())
+    return "Extras unlocked"
 ```
 
-Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.
+Session visibility changes made with `ctx.enable_components()` and `ctx.disable_components()` send these notifications automatically. See [Client Notifications](/servers/visibility#client-notifications).
 
 Clients can handle these notifications using a [message handler](/clients/notifications) to automatically refresh their resource lists or update their interfaces.
 

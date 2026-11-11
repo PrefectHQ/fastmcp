@@ -15,6 +15,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Mapp
 from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import lru_cache
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Protocol, cast, get_type_hints, runtime_checkable
 
@@ -34,6 +35,7 @@ from uncalled_for import (
     Dependency,
     Provider,
     frame_scope,
+    get_call_argument_parameters,
     get_dependency_parameters,
 )
 from uncalled_for.resolution import _Depends
@@ -41,7 +43,6 @@ from uncalled_for.resolution import _Depends
 from fastmcp.exceptions import FastMCPError
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.http import _current_http_request
-from fastmcp.utilities._callable_cache import cache_on_callable
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -728,7 +729,7 @@ def get_access_token() -> AccessToken | None:
 # --- Schema generation helper ---
 
 
-@cache_on_callable
+@lru_cache(maxsize=5000)
 def without_injected_parameters(
     fn: Callable[..., Any], *, run_in_thread: bool = True
 ) -> Callable[..., Any]:
@@ -772,18 +773,34 @@ def without_injected_parameters(
     if not exclude:
         return fn
 
+    # A dependency's CallArgument can own an argument the function doesn't
+    # declare. It joins the public signature; its value reaches only the
+    # dependency, never fn.
+    referenced = get_call_argument_parameters(fn)
+    referenced_names = {param.name for param in referenced}
+
     # Build new signature with only user parameters
     sig = inspect.signature(fn)
     user_params = [
         param for name, param in sig.parameters.items() if name not in exclude
     ]
-    new_sig = inspect.Signature(user_params)
+    variadic = [p for p in user_params if p.kind is inspect.Parameter.VAR_KEYWORD]
+    user_params = [
+        p for p in user_params if p.kind is not inspect.Parameter.VAR_KEYWORD
+    ]
+    new_sig = inspect.Signature([*user_params, *referenced, *variadic])
 
     # Create async wrapper that handles dependency resolution
     fn_is_async = is_coroutine_function(fn)
 
     async def wrapper(**user_kwargs: Any) -> Any:
         async with resolve_dependencies(fn, user_kwargs) as resolved_kwargs:
+            if referenced_names:
+                resolved_kwargs = {
+                    name: value
+                    for name, value in resolved_kwargs.items()
+                    if name not in referenced_names
+                }
             if fn_is_async:
                 result = await fn(**resolved_kwargs)
             elif run_in_thread:
@@ -817,7 +834,7 @@ def without_injected_parameters(
     wrapper.__signature__ = new_sig  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     wrapper.__annotations__ = {
         k: v for k, v in resolved_hints.items() if k not in exclude and k != "return"
-    }
+    } | {param.name: param.annotation for param in referenced}
     wrapper.__name__ = getattr(fn, "__name__", "wrapper")
     wrapper.__doc__ = getattr(fn, "__doc__", None)
     wrapper.__module__ = fn.__module__

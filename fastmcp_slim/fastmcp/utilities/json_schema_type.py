@@ -10,7 +10,7 @@ for validation with Pydantic. It supports:
 - String constraints (minLength, maxLength, pattern)
 - Array constraints (minItems, maxItems, uniqueItems)
 - Object properties with defaults
-- References and recursive schemas (including sibling constraints on scalar references)
+- References and recursive schemas
 - Enums and constants
 - Union types
 
@@ -455,6 +455,13 @@ def _resolve_recursive_types(conversion: _Conversion) -> None:
     rechecked: set[type[BaseModel]] = set()
     for cls, field_name in conversion.unchecked_defaults:
         if issubclass(cls, BaseModel):
+            # safe_create_model stores a reserved property name under a
+            # generated field name with the property name as its alias.
+            field_name = next(
+                name
+                for name, info in cls.model_fields.items()
+                if (info.alias or name) == field_name
+            )
             field_info = cls.model_fields[field_name]
             # `annotation` alone drops constraints such as `minimum`
             annotation = field_info.rebuild_annotation()
@@ -579,7 +586,6 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
         return base
 
     annotated: Any = Annotated[str, StringConstraints(**constraints)]
-    unsupported_pattern: str | None = None
 
     if "pattern" in constraints:
         try:
@@ -595,7 +601,6 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
                 stacklevel=2,
             )
             pattern_field = Field(json_schema_extra={"x-unsupported-pattern": pattern})
-            unsupported_pattern = pattern
             if constraints:
                 annotated = Annotated[
                     str, StringConstraints(**constraints), pattern_field
@@ -605,19 +610,7 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
 
     if base is str:
         return annotated
-    constrained = _constrain_raw_string(base, **constraints)
-    if unsupported_pattern is None:
-        return constrained
-    # The dropped pattern stays visible for the shapes a `format` maps to a
-    # non-str type too, as the module docstring's third point promises.
-    return _with_pattern_marker(constrained, unsupported_pattern)
-
-
-@lru_cache(maxsize=1024)
-def _with_pattern_marker(constrained: Any, pattern: str) -> Any:
-    return Annotated[
-        constrained, Field(json_schema_extra={"x-unsupported-pattern": pattern})
-    ]
+    return _constrain_raw_string(base, **constraints)
 
 
 @lru_cache(maxsize=1024)
@@ -1122,65 +1115,7 @@ def _convert_schema(
             resolved_refs[ref] = _schema_to_type(
                 _resolve_ref(ref, schemas), schemas, resolving_refs | {ref}
             )
-        ref_type = resolved_refs[ref]
-        # Draft 4-7 treat a $ref object as a reference only. In newer drafts,
-        # constraints next to a reference also apply to that use of the type.
-        if (
-            schemas.get("$schema", "")
-            .rstrip("#")
-            .endswith(("/draft-04/schema", "/draft-06/schema", "/draft-07/schema"))
-        ):
-            return ref_type
-        siblings = {
-            k: v
-            for k, v in schema.items()
-            if k
-            in (
-                "type",
-                "format",
-                "const",
-                "enum",
-                "minLength",
-                "maxLength",
-                "pattern",
-                "minimum",
-                "maximum",
-                "exclusiveMinimum",
-                "exclusiveMaximum",
-                "multipleOf",
-            )
-        }
-        if not siblings:
-            return ref_type
-        resolved = _resolve_ref(ref, schemas)
-        seen = {ref}
-        while isinstance(resolved, Mapping) and "$ref" in resolved:
-            next_ref = resolved["$ref"]
-            if next_ref in seen:
-                return ref_type
-            seen.add(next_ref)
-            resolved = _resolve_ref(next_ref, schemas)
-        if not isinstance(resolved, Mapping) or resolved.get("type") not in (
-            "string",
-            "integer",
-            "number",
-            "boolean",
-            "null",
-        ):
-            return ref_type
-        sibling_type = _schema_to_type(
-            {"type": resolved["type"], **siblings}, schemas, resolving_refs
-        )
-        sibling_adapter = TypeAdapter(cast(Any, sibling_type))
-
-        def validate_siblings(value: Any) -> Any:
-            # Validate the original input, before formats turn strings into
-            # dates/URLs. Keep both validators intact: merging their metadata
-            # could replace a stricter constraint on the referenced type.
-            sibling_adapter.validate_python(value)
-            return value
-
-        return cast(type, Annotated[ref_type, BeforeValidator(validate_siblings)])
+        return resolved_refs[ref]
 
     if "const" in schema:
         return _create_enum(f"Const_{len(_classes)}", [schema["const"]])

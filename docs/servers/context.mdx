@@ -284,7 +284,7 @@ Tools can customize which components are visible to their current session using 
 
 <VersionBadge version="3.0.0" />
 
-FastMCP automatically sends list change notifications when components (such as tools, resources, or prompts) are added, removed, enabled, or disabled. In rare cases where you need to manually trigger these notifications, you can use the context's notification methods:
+Session visibility changes made with `ctx.enable_components()`, `ctx.disable_components()`, and `ctx.reset_visibility()` notify the calling session automatically. Server-level and provider-level changes (adding, removing, enabling, or disabling components) send no notifications. To tell the calling session about such a change, send the notifications yourself:
 
 ```python
 from mcp.types import (
@@ -302,7 +302,7 @@ async def custom_tool_management(ctx: Context) -> str:
     return "Notifications sent"
 ```
 
-These methods are primarily used internally by FastMCP's automatic notification system and most users will not need to invoke them directly.
+These notifications reach only the session that made the request. See [Client Notifications](/servers/visibility#client-notifications).
 
 ### FastMCP Server
 

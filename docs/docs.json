@@ -302,7 +302,6 @@
                       "integrations/google",
                       "integrations/huggingface",
                       "integrations/keycloak",
-                      "integrations/keystone",
                       "integrations/oci",
                       "integrations/permit",
                       "integrations/propelauth",

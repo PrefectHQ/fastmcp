@@ -5,8 +5,11 @@ from contextlib import contextmanager
 
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
-from fastmcp.exceptions import ToolError as _ToolError
-from fastmcp.telemetry import get_tracer, restore_dropped_attributes
+from fastmcp.telemetry import (
+    error_span_attributes,
+    get_tracer,
+    restore_dropped_attributes,
+)
 
 
 @contextmanager
@@ -35,6 +38,7 @@ def client_span(
         attrs["mcp.resource.uri"] = resource_uri
     if tool_name is not None:
         attrs["gen_ai.tool.name"] = tool_name
+        attrs["gen_ai.operation.name"] = "execute_tool"
     if prompt_name is not None:
         attrs["gen_ai.prompt.name"] = prompt_name
 
@@ -62,10 +66,7 @@ def client_span(
             yield span
         except Exception as e:
             if span.is_recording():
-                error_type = (
-                    "tool_error" if isinstance(e, _ToolError) else type(e).__qualname__
-                )
-                span.set_attribute("error.type", error_type)
+                span.set_attributes(error_span_attributes(e))
                 span.record_exception(e)
                 span.set_status(Status(StatusCode.ERROR, str(e)))
             raise
