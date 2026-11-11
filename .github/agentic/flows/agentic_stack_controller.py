@@ -215,6 +215,7 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                         result,
                         review,
                         review_run,
+                        route,
                     )
                     if runtime.publish_reviews and destination == "existing_review":
                         try:
