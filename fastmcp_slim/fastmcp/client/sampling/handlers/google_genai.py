@@ -1,4 +1,4 @@
-"""Google GenAI sampling handler with tool support for FastMCP 3.0."""
+"""Google GenAI sampling handler for FastMCP."""
 
 import base64
 from collections.abc import Mapping, Sequence

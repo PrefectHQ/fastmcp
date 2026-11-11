@@ -39,7 +39,7 @@ class FastMCPProviderTool(Tool):
     """Tool that delegates execution to a wrapped server's middleware.
 
     When `run()` is called, this tool invokes the wrapped server's
-    `_call_tool_middleware()` method, ensuring the server's middleware
+    `call_tool()` method, ensuring the server's middleware
     chain is executed.
     """
 

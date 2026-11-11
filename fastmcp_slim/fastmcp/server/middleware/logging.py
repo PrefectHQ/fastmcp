@@ -179,15 +179,15 @@ class LoggingMiddleware(BaseLoggingMiddleware):
         """Initialize logging middleware.
 
         Args:
-            logger: Logger instance to use. If None, creates a logger named 'fastmcp.requests'
+            logger: Logger instance to use. If None, creates a logger named 'fastmcp.middleware.logging'
             log_level: Log level for messages (default: INFO)
             include_payloads: Whether to include message payloads in logs
-            include_payload_length: Whether to include response size in logs
-            estimate_payload_tokens: Whether to estimate response tokens
+            include_payload_length: Whether to include payload size in logs
+            estimate_payload_tokens: Whether to estimate payload tokens using length // 4
             max_payload_length: Maximum length of payload to log (prevents huge logs)
             methods: List of methods to log. If None, logs all methods.
             payload_serializer: Callable that converts objects to a JSON string for the
-                payload. If not provided, uses FastMCP's default tool serializer.
+                payload. If not provided, uses `default_serializer` (pydantic_core JSON with a `str` fallback).
         """
         self.logger: Logger = logger or logging.getLogger("fastmcp.middleware.logging")
         self.log_level = log_level
@@ -230,14 +230,14 @@ class StructuredLoggingMiddleware(BaseLoggingMiddleware):
         """Initialize structured logging middleware.
 
         Args:
-            logger: Logger instance to use. If None, creates a logger named 'fastmcp.structured'
+            logger: Logger instance to use. If None, creates a logger named 'fastmcp.middleware.structured_logging'
             log_level: Log level for messages (default: INFO)
             include_payloads: Whether to include message payloads in logs
             include_payload_length: Whether to include payload size in logs
             estimate_payload_tokens: Whether to estimate token count using length // 4
             methods: List of methods to log. If None, logs all methods.
             payload_serializer: Callable that converts objects to a JSON string for the
-                payload. If not provided, uses FastMCP's default tool serializer.
+                payload. If not provided, uses `default_serializer` (pydantic_core JSON with a `str` fallback).
         """
         self.logger: Logger = logger or logging.getLogger(
             "fastmcp.middleware.structured_logging"

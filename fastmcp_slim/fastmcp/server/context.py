@@ -229,16 +229,16 @@ class Context:
     def is_background_task(self) -> bool:
         """True when this context is running in a background task (Docket worker).
 
-        When True, certain operations like elicit() will use task-aware
-        implementations that can pause the task and wait for client input.
+        When True, imperative `ctx.elicit()` is unavailable; gather input by
+        returning an `InputRequiredResult` and reading `ctx.input_responses` /
+        `ctx.request_state` when the task re-runs.
 
         Example:
             ```python
             @server.tool(task=True)
             async def my_task(ctx: Context) -> str:
-                # Works transparently in both foreground and background task modes
-                result = await ctx.elicit("Need input", str)
-                return str(result)
+                await ctx.report_progress(1, 2)
+                return "done"
             ```
         """
         return self._task_id is not None

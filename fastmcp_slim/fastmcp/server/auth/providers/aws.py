@@ -7,14 +7,15 @@ the complexity of AWS Cognito's OAuth flow, token validation, and user managemen
 Example:
     ```python
     from fastmcp import FastMCP
-    from fastmcp.server.auth.providers.aws_cognito import AWSCognitoProvider
+    from fastmcp.server.auth.providers.aws import AWSCognitoProvider
 
     # Simple AWS Cognito OAuth protection
     auth = AWSCognitoProvider(
         user_pool_id="your-user-pool-id",
         aws_region="eu-central-1",
         client_id="your-cognito-client-id",
-        client_secret="your-cognito-client-secret"
+        client_secret="your-cognito-client-secret",
+        base_url="https://my-server.com",
     )
 
     mcp = FastMCP("My Protected Server", auth=auth)
@@ -108,7 +109,7 @@ class AWSCognitoProvider(OIDCProxy):
     Example:
         ```python
         from fastmcp import FastMCP
-        from fastmcp.server.auth.providers.aws_cognito import AWSCognitoProvider
+        from fastmcp.server.auth.providers.aws import AWSCognitoProvider
 
         auth = AWSCognitoProvider(
             user_pool_id="eu-central-1_XXXXXXXXX",

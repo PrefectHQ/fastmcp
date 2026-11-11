@@ -248,7 +248,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     5. Token Management:
        - Clients may expect different token formats/claims than upstream provides
        - Need to track tokens for revocation and refresh
-       - Solution: Store token relationships, forward upstream tokens transparently
+       - Solution: Issue FastMCP-signed JWTs and map their JTIs to the stored upstream tokens
 
     OAuth Flow Implementation
     ------------------------
@@ -268,7 +268,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
     4. Token Exchange:
        - Validate client's code and PKCE verifier
-       - Return previously obtained upstream tokens
+       - Issue FastMCP access/refresh tokens backed by the stored upstream tokens
        - Clean up one-time use authorization code
 
     5. Token Refresh:
@@ -279,8 +279,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     State Management
     ---------------
     The proxy maintains minimal but crucial state via pluggable storage (client_storage):
-    - _oauth_transactions: Active authorization flows with client context
-    - _client_codes: Authorization codes with PKCE challenges and upstream tokens
+    - _transaction_store: Active authorization flows with client context
+    - _code_store: Authorization codes with PKCE challenges and upstream tokens
+    - _upstream_token_store: Upstream token sets
     - _jti_mapping_store: Maps FastMCP token JTIs to upstream token IDs
     - _refresh_token_store: Refresh token metadata (keyed by token hash)
 
@@ -589,7 +590,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         if isinstance(jwt_signing_key, str):
             if len(jwt_signing_key) < 12:
                 logger.warning(
-                    "jwt_signing_key is less than 12 characters; it is recommended to use a longer. "
+                    "jwt_signing_key is less than 12 characters; it is recommended to use a longer "
                     "string for the key derivation."
                 )
             jwt_signing_key = derive_jwt_key(

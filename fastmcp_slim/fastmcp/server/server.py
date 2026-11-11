@@ -2037,7 +2037,7 @@ class FastMCP(
 
         This decorator supports multiple calling patterns:
         - @server.tool (without parentheses)
-        - @server.tool (with empty parentheses)
+        - @server.tool() (with empty parentheses)
         - @server.tool("custom_name") (with name as first argument)
         - @server.tool(name="custom_name") (with name as keyword argument)
         - server.tool(function, name="custom_name") (direct function call)
@@ -2052,13 +2052,8 @@ class FastMCP(
             meta: Optional meta information about the tool
 
         Examples:
-            Register a tool with a custom name:
+            Register a tool:
             ```python
-            @server.tool
-            def my_tool(x: int) -> str:
-                return str(x)
-
-            # Register a tool with a custom name
             @server.tool
             def my_tool(x: int) -> str:
                 return str(x)
@@ -2176,7 +2171,7 @@ class FastMCP(
                 return "Hello, world!"
 
             @server.resource("resource://my-resource")
-            async get_data() -> str:
+            async def get_data() -> str:
                 data = await fetch_data()
                 return f"Hello, world! {data}"
 
