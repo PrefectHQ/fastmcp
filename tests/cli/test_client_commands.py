@@ -507,10 +507,12 @@ class TestBuildClient:
 
         # xdist worksteal can keep unrelated objects (or dependency warnings
         # specific to the resolved versions) alive until this block runs, and
-        # they surface here through the always-on filter. Only warnings from
-        # this repository are attributable to the code under test.
-        repo_root = str(Path(__file__).resolve().parents[2])
-        assert not [w for w in emitted if (w.filename or "").startswith(repo_root)]
+        # they surface here through the always-on filter. Only warnings
+        # attributed to FastMCP source are attributable to the code under
+        # test; `.venv` lives inside the checkout, so site-packages must be
+        # excluded explicitly.
+        package_root = str(Path(__file__).resolve().parents[2] / "fastmcp_slim" / "fastmcp")
+        assert not [w for w in emitted if (w.filename or "").startswith(package_root)]
         files = [path for path in tmp_path.rglob("*") if path.is_file()]
         assert files
         for path in files:
