@@ -583,21 +583,29 @@ class TestBuildClient:
                     message=r"<class 'key_value\.aio\.protocols\.key_value\.AsyncKeyValue'> isn't explicitly decorated",
                     category=DeprecationWarning,
                 )
-                first = _build_client(resolved, auth=auth).transport.auth
+                first_client = _build_client(resolved, auth=auth)
+                first = first_client.transport.auth
                 assert isinstance(first, OAuth)
                 await first.token_storage_adapter.set_tokens(tokens)
                 await first.token_storage_adapter.set_client_info(registration)
-                second = _build_client(resolved, auth=auth).transport.auth
+                second_client = _build_client(resolved, auth=auth)
+                second = second_client.transport.auth
                 assert isinstance(second, OAuth)
+                other_client = _build_client("https://example.com/other")
+                other = other_client.transport.auth
+                assert isinstance(other, OAuth)
 
-            assert await second.token_storage_adapter.get_tokens() == tokens
-            assert await second.token_storage_adapter.get_client_info() == registration
-            assert await second.token_storage_adapter.get_token_expiry() == (
-                await first.token_storage_adapter.get_token_expiry()
-            )
-            other = _build_client("https://example.com/other").transport.auth
-            assert isinstance(other, OAuth)
-            assert await other.token_storage_adapter.get_tokens() is None
+            try:
+                assert await second.token_storage_adapter.get_tokens() == tokens
+                assert await second.token_storage_adapter.get_client_info() == registration
+                assert await second.token_storage_adapter.get_token_expiry() == (
+                    await first.token_storage_adapter.get_token_expiry()
+                )
+                assert await other.token_storage_adapter.get_tokens() is None
+            finally:
+                await first_client.close()
+                await second_client.close()
+                await other_client.close()
 
         assert not emitted
         files = [path for path in tmp_path.rglob("*") if path.is_file()]
