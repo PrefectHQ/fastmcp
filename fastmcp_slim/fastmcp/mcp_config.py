@@ -27,7 +27,7 @@ from __future__ import annotations
 import datetime
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Self, cast
 from urllib.parse import urlparse
 
 import httpx2
@@ -39,7 +39,7 @@ from pydantic import (
     PrivateAttr,
     model_validator,
 )
-from typing_extensions import Self, override
+from typing_extensions import override
 
 from fastmcp import _install_hints
 
@@ -148,14 +148,17 @@ class _TransformingMCPServerMixin(BaseModel):
         )
         wrapped_mcp_server = create_proxy(client, name=server_name)
 
-        if self.include_tags is not None:
-            wrapped_mcp_server.enable(tags=self.include_tags, only=True)
-        if self.exclude_tags is not None:
-            wrapped_mcp_server.disable(tags=self.exclude_tags)
+        # Add tool transforms FIRST - they may add/modify tags. Then add
+        # enabled filters - they filter based on tags. This mirrors the order
+        # used by the multi-server composite path.
         if self.tools:
             wrapped_mcp_server.add_transform(
                 ToolTransform(_coerce_tool_transform_configs(self.tools))
             )
+        if self.include_tags is not None:
+            wrapped_mcp_server.enable(tags=self.include_tags, only=True)
+        if self.exclude_tags is not None:
+            wrapped_mcp_server.disable(tags=self.exclude_tags)
 
         return wrapped_mcp_server, transport
 

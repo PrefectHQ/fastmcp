@@ -4,11 +4,10 @@ import base64
 import inspect
 import mimetypes
 import os
-import sys
 from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
-from types import EllipsisType, SimpleNamespace, UnionType
+from types import EllipsisType, UnionType
 from typing import (
     Annotated,
     Any,
@@ -28,9 +27,7 @@ from typing_extensions import TypeVar
 
 T = TypeVar("T", default=Any)
 
-# TODO(sdkv2): the SDK's `mcp.types.AnyFunction` alias was removed with the
-# mcp.types module. FastMCP owns it now; keep the same `Callable[..., Any]`
-# meaning used by tool/prompt/resource decorators.
+# MCP SDK v2 dropped the `AnyFunction` alias; FastMCP owns it now with the same `Callable[..., Any]` meaning.
 AnyFunction: TypeAlias = Callable[..., Any]
 
 # sentinel values for optional arguments
@@ -49,26 +46,8 @@ class FastMCPBaseModel(BaseModel):
 
 
 def get_function_type_hints(fn: Callable[..., Any]) -> dict[str, Any]:
-    """Resolve a function's type hints, keeping `Annotated` metadata.
-
-    Before Python 3.11, `typing.get_type_hints` wraps the hint of every
-    parameter that defaults to `None` in `Optional[...]`. For
-    `Annotated[int | None, Field(title="Limit")] = None` that produces
-    `Optional[Annotated[...]]`, which buries the `Field` metadata in a nested
-    union branch of the JSON schema. Hints are resolved here without that
-    wrapping, so every supported Python version yields the same schema.
-    """
-    if sys.version_info >= (3, 11) or getattr(fn, "__annotations__", None) is None:
-        return get_type_hints(fn, include_extras=True)
-
-    # get_type_hints only adds the Optional wrapper for defaults it reads from
-    # `__code__`, so resolve the annotations through a proxy that has none.
-    namespace_fn = inspect.unwrap(fn)
-    proxy = SimpleNamespace(
-        __annotations__=fn.__annotations__,
-        __globals__=getattr(namespace_fn, "__globals__", {}),
-    )
-    return get_type_hints(proxy, include_extras=True)
+    """Resolve a function's type hints, keeping `Annotated` metadata."""
+    return get_type_hints(fn, include_extras=True)
 
 
 @lru_cache(maxsize=5000)

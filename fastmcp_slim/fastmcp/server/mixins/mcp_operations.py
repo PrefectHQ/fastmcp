@@ -36,16 +36,23 @@ from fastmcp.server.dependencies import (
     bind_request_context,
     extract_version_spec,
 )
-from fastmcp.tools.base import InputRequiredToolResult, ToolResult
+from fastmcp.tools.base import (
+    InputRequiredToolResult,
+    RawStructuredToolResult,
+    ToolResult,
+)
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
+from fastmcp.utilities.json_schema import is_object_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.pagination import paginate_sequence
 from fastmcp.utilities.versions import VersionSpec, dedupe_with_versions
 
 if TYPE_CHECKING:
+    from fastmcp.prompts.base import Prompt
+    from fastmcp.resources.template import ResourceTemplate
     from fastmcp.server.server import FastMCP
 
 logger = get_logger(__name__)
@@ -145,7 +152,62 @@ class MCPOperationsMixin:
             tools = dedupe_with_versions(
                 list(await self.list_tools()), lambda t: t.name
             )
-            sdk_tools = [tool.to_mcp_tool(name=tool.name) for tool in tools]
+            sdk_tools = []
+            for tool in tools:
+                output_schema = tool.output_schema
+                if (
+                    ctx.protocol_version not in MODERN_PROTOCOL_VERSIONS
+                    and output_schema is not None
+                ):
+                    if (
+                        is_object_schema(output_schema)
+                        and output_schema.get("type") != "object"
+                    ):
+                        # Implicit and nullable object schemas are valid JSON
+                        # Schema, but legacy MCP requires a literal object type
+                        # at the root. A null result is sent without structured
+                        # content, which legacy clients already accept.
+                        output_schema = {**output_schema, "type": "object"}
+                    elif not is_object_schema(output_schema):
+                        output_schema = {
+                            "type": "object",
+                            "properties": {"result": output_schema},
+                            "required": ["result"],
+                            "x-fastmcp-wrap-result": True,
+                            # Local references inside the original schema still
+                            # resolve from the document root after wrapping.
+                            **(
+                                {"$defs": output_schema["$defs"]}
+                                if "$defs" in output_schema
+                                else {}
+                            ),
+                            **(
+                                {"definitions": output_schema["definitions"]}
+                                if "definitions" in output_schema
+                                else {}
+                            ),
+                        }
+                sdk_tools.append(
+                    tool.to_mcp_tool(name=tool.name, outputSchema=output_schema)
+                )
+            # Refresh the Mcp-Param schema cache (served to the SDK's
+            # `get_tool_input_schema` hook, mcp>=2.3) from the full visible
+            # set, pre-pagination: these are the authoritative wire schemas,
+            # including proxied and mounted tools. Merged in place with
+            # `update` (never `clear`) — the dict is shared with
+            # _SchemaCacheLocalProvider and single server-wide, so an
+            # auth-scoped listing of one client must not evict the schemas
+            # another (differently authorized) client validated against. The
+            # cache may therefore hold a superset of any one client's listing;
+            # a stale entry can only appear for tools removed remotely between
+            # listings, and a miss stays fail-open.
+            self._wire_input_schemas.update(
+                {
+                    sdk_tool.name: sdk_tool.input_schema
+                    for sdk_tool in sdk_tools
+                    if sdk_tool.input_schema is not None
+                }
+            )
             cursor = params.cursor if params else None
             page, next_cursor = _apply_pagination(
                 sdk_tools, cursor, self._list_page_size
@@ -296,6 +358,33 @@ class MCPOperationsMixin:
                         ),
                     )
                 return result.input_required
+            # Tool._run marks results declared by a non-object output schema
+            # as raw; legacy clients receive them under the advertised
+            # `result` wrapper.
+            if ctx.protocol_version not in MODERN_PROTOCOL_VERSIONS and (
+                isinstance(result, RawStructuredToolResult)
+                or (
+                    result.structured_content is not None
+                    and not isinstance(result.structured_content, dict)
+                )
+            ):
+                fastmcp_meta = result.meta.get("fastmcp") if result.meta else None
+                already_wrapped = (
+                    isinstance(fastmcp_meta, dict)
+                    and fastmcp_meta.get("wrap_result") is True
+                )
+                if not already_wrapped:
+                    meta = dict(result.meta or {})
+                    meta["fastmcp"] = {
+                        **(fastmcp_meta if isinstance(fastmcp_meta, dict) else {}),
+                        "wrap_result": True,
+                    }
+                    result = ToolResult(
+                        content=result.content,
+                        structured_content={"result": result.structured_content},
+                        meta=meta,
+                        is_error=result.is_error,
+                    )
             return _normalize_call_tool_result(result.to_mcp_result())
 
     async def _on_read_resource(
@@ -405,26 +494,18 @@ class MCPOperationsMixin:
     ) -> mcp_types.EmptyResult:
         """Handle MCP 'logging/setLevel' requests.
 
-        Stores the requested minimum log level keyed by session id so that
-        subsequent log messages below this level are suppressed. v2 sessions are
-        per-request, so this state lives on the FastMCP server.
+        Stores the requested minimum log level so that subsequent log messages
+        below this level are suppressed. v2 sessions are per-request, so the
+        level lives on the client's connection, where mounted servers handling
+        the same connection also see it.
         """
-        from fastmcp.server.context import _log_level_session_key
+        from fastmcp.server.context import _CONNECTION_LOG_LEVEL_KEY
 
         with bind_request_context(ctx) as rc:
             logger.debug(
                 f"[{self.name}] Handler called: set_logging_level %s", params.level
             )
-            session_id = _log_level_session_key(rc.session)
-            self._client_log_levels[session_id] = params.level
-            if session_id != "__no_session__":
-                connection = rc.session._connection
-                cleanup_key = "_fastmcp_log_level_cleanup_registered"
-                if not connection.state.get(cleanup_key):
-                    connection.exit_stack.callback(
-                        self._client_log_levels.pop, session_id, None
-                    )
-                    connection.state[cleanup_key] = True
+            rc.session._connection.state[_CONNECTION_LOG_LEVEL_KEY] = params.level
             return EmptyResult()
 
     async def _on_complete(
@@ -439,17 +520,24 @@ class MCPOperationsMixin:
         and returns candidate values. A handler that does not recognize the
         reference/argument returns ``None`` or an empty sequence, which becomes
         an empty completion rather than an error — an unknown reference is not a
-        protocol failure. This handler is registered on the low-level server
-        only once a completion handler exists, so the completions capability is
-        declared exactly when the server can answer.
+        protocol failure. A reference the caller cannot see (disabled, hidden by
+        a visibility transform, or denied by its own `auth`) gets the same empty
+        completion, so completion never discloses what listing hides. This
+        handler is registered on the low-level server only once a completion
+        handler exists, so the completions capability is declared exactly when
+        the server can answer.
         """
+        empty = mcp_types.CompleteResult(completion=mcp_types.Completion(values=[]))
         with bind_request_context(ctx):
             logger.debug(f"[{self.name}] Handler called: complete %s", params.ref)
             handler = self._completion_handler
             if handler is None:
-                return mcp_types.CompleteResult(
-                    completion=mcp_types.Completion(values=[])
-                )
+                return empty
+
+            ref = params.ref
+            key = ref.name if isinstance(ref, mcp_types.PromptReference) else ref.uri
+            if await self._completion_target(ref.type, key) is None:
+                return empty
 
             if is_coroutine_function(handler):
                 raw = handler(params.ref, params.argument, params.context)
@@ -463,6 +551,29 @@ class MCPOperationsMixin:
             result = await raw if inspect.isawaitable(raw) else raw
             completion = normalize_completion(cast(CompletionValues, result))
             return mcp_types.CompleteResult(completion=completion)
+
+    async def _completion_target(
+        self: FastMCP, ref_type: str, key: str
+    ) -> Prompt | ResourceTemplate | None:
+        """The visible prompt or template a completion reference names, if any.
+
+        Resolves without middleware, so a completion stays one request to rate
+        limits and caches (see test_completions.py).
+        """
+        if ref_type == "ref/prompt":
+            return await self.get_prompt(key)
+        # A template's own identifier does not always match it as a URI
+        # (query-only templates such as `data://search{?q}`), so look for the
+        # template itself before treating the reference as a concrete URI.
+        # Several versions can share the identifier; pick the one clients list.
+        matches = [
+            template
+            for template in await self.list_resource_templates(run_middleware=False)
+            if template.uri_template == key
+        ]
+        if matches:
+            return dedupe_with_versions(matches, lambda t: t.uri_template)[0]
+        return await self.get_resource_template(key)
 
     def _register_completion_handler(self: FastMCP) -> None:
         """Register the low-level ``completion/complete`` handler.

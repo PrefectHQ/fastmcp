@@ -2,7 +2,7 @@
 
 > **Audience**: LLM-driven engineering agents and human developers
 
-FastMCP is a comprehensive Python framework (Python ≥3.10) for building Model Context Protocol (MCP) servers and clients.
+FastMCP is a comprehensive Python framework (Python ≥3.11) for building Model Context Protocol (MCP) servers and clients.
 
 ## Required Development Workflow
 
@@ -162,7 +162,7 @@ Load the `release` skill to cut one; it holds the procedure. The policy it imple
 
 ### Code Standards
 
-- Python ≥ 3.10 with full type annotations
+- Python ≥ 3.11 with full type annotations
 - Follow existing patterns and maintain consistency
 - **Prioritize readable, understandable code** - clarity over cleverness
 - Avoid obfuscated or confusing patterns even if they're shorter

@@ -101,5 +101,9 @@ SSL_CERT_FILE=/path/to/ca-bundle.pem uvx fastmcp-remote https://internal.example
 - `--ignore-tool`: Hide tools whose names match a glob pattern.
 - `--auth`: Choose `oauth` or `none`. The default uses OAuth unless an `Authorization` header is provided.
 - `--verify`: Control TLS certificate verification. Pass a path to a CA bundle to trust a self-signed certificate, or `false` to disable verification (insecure). Defaults to verification enabled.
+- `--debug`: Enable debug logging.
+- `--silent`: Suppress non-critical logs. Cannot be combined with `--debug`.
+
+Pass a port after the URL (`uvx fastmcp-remote <url> 3334`) to fix the OAuth callback port; by default an available local port is used.
 
 OAuth tokens are stored under `~/.fastmcp/remote` by default. Set `FASTMCP_REMOTE_CONFIG_DIR` to use another directory.

@@ -229,16 +229,16 @@ class Context:
     def is_background_task(self) -> bool:
         """True when this context is running in a background task (Docket worker).
 
-        When True, certain operations like elicit() will use task-aware
-        implementations that can pause the task and wait for client input.
+        When True, imperative `ctx.elicit()` is unavailable; gather input by
+        returning an `InputRequiredResult` and reading `ctx.input_responses` /
+        `ctx.request_state` when the task re-runs.
 
         Example:
             ```python
             @server.tool(task=True)
             async def my_task(ctx: Context) -> str:
-                # Works transparently in both foreground and background task modes
-                result = await ctx.elicit("Need input", str)
-                return str(result)
+                await ctx.report_progress(1, 2)
+                return "done"
             ```
         """
         return self._task_id is not None
@@ -339,7 +339,13 @@ class Context:
             return await call_next(context)
         ```
         """
-        return fastmcp_request_ctx.get()
+        request_ctx = fastmcp_request_ctx.get()
+        # Outside a live request, _paginate_list binds a stand-in request
+        # context with no session. That is not an MCP session, so report it
+        # as no request context to session consumers.
+        if request_ctx is None or request_ctx.session is None:
+            return None
+        return request_ctx
 
     def client_extension_settings(self, identifier: str) -> dict[str, Any] | None:
         """This request's per-request opt-in settings for an MCP extension.
@@ -635,12 +641,19 @@ class Context:
         related_request_id = self.origin_request_id
 
         # Resolve the client-requested minimum level (set via logging/setLevel),
-        # keyed by session id, falling back to the server's configured default.
+        # falling back to the server's configured default.
         min_level = self.fastmcp.client_log_level
-        session = self.session
-        session_min = self.fastmcp._client_log_levels.get(
-            _log_level_session_key(session)
-        )
+        try:
+            session = self.session
+        except RuntimeError:
+            from fastmcp.server.dependencies import _background_task_session_id
+
+            # Background workers have no live session; a client-set level lives
+            # on a connection they cannot reach, so the server default applies.
+            if _background_task_session_id.get() is None:
+                raise
+            session = None
+        session_min = _get_client_log_level(session)
         if session_min is not None:
             min_level = session_min
 
@@ -1342,22 +1355,28 @@ def _detached_request_context(context: Context) -> ServerRequestContext:
     )
 
 
-def _log_level_session_key(session: ServerSession) -> str:
-    """Derive the per-session key used for logging/setLevel gating.
+# `Connection.state` key holding the level a client set with logging/setLevel.
+_CONNECTION_LOG_LEVEL_KEY = "_fastmcp_client_log_level"
+
+
+def _get_client_log_level(session: ServerSession | None) -> LoggingLevel | None:
+    """Return the minimum log level the client set with logging/setLevel, if any.
 
     v2 constructs sessions per-request, so the stable identity is the
-    connection session id (stateful HTTP). stdio/in-memory has no session id,
-    so a sentinel key is used — all such connections share one gate, matching
-    the single-connection nature of those transports.
+    connection. The level lives in the connection's own state, where no other
+    client can see it and which ends with the connection. Every server that
+    handles the connection's requests, mounted servers included, reads the same
+    value.
     """
     connection = getattr(session, "_connection", None)
-    session_id = getattr(connection, "session_id", None) if connection else None
-    return session_id if session_id is not None else "__no_session__"
+    if connection is None:
+        return None
+    return connection.state.get(_CONNECTION_LOG_LEVEL_KEY)
 
 
 async def _log_to_server_and_client(
     data: LogData,
-    session: ServerSession,
+    session: ServerSession | None,
     level: LoggingLevel,
     logger_name: str | None = None,
     related_request_id: str | None = None,
@@ -1381,6 +1400,10 @@ async def _log_to_server_and_client(
         msg=f"{msg_prefix}: {data.msg}",
         extra={k: v for k, v in (data.extra or {}).items() if k not in reserved},
     )
+
+    # Background workers have no live MCP session or client back-channel.
+    if session is None:
+        return
 
     # Deprecated upstream in SDK v2 but deliberately kept per compat directive;
     # removed with the multi-round-trip follow-up.

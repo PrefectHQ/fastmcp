@@ -8,7 +8,7 @@ current records give creation and latest closure dates, not every reopen cycle.
 import argparse
 import json
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -176,7 +176,7 @@ def main() -> None:
         ]
     # Timestamp the beginning of collection so updates during pagination are
     # not represented as a snapshot from after an item was read.
-    now = datetime.now(timezone.utc).replace(microsecond=0)
+    now = datetime.now(UTC).replace(microsecond=0)
     # Pages are oldest-first, so a listing that stops early silently drops the
     # newest items. Anything created before collection began must be present.
     newest = newest_number()

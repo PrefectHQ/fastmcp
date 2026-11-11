@@ -369,6 +369,7 @@
                     "group": "Upgrading",
                     "icon": "up",
                     "pages": [
+                      "getting-started/upgrading/from-fastmcp-4-1",
                       "getting-started/upgrading/from-fastmcp-3",
                       "getting-started/upgrading/from-fastmcp-2",
                       "getting-started/upgrading/from-mcp-sdk-v1",
@@ -417,7 +418,7 @@
             "icon": "code"
           }
         ],
-        "version": "v4.0.5"
+        "version": "v4"
       },
       {
         "$ref": "./v3-navigation.json"
@@ -562,7 +563,7 @@
     }
   ],
   "search": {
-    "prompt": "Search the docs..."
+    "prompt": "Search..."
   },
   "seo": {
     "metatags": {

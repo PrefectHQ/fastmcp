@@ -3,7 +3,12 @@ from typing import Annotated, Any
 
 import pytest
 from mcp import MCPError
-from mcp_types import INVALID_PARAMS, EmbeddedResource, TextResourceContents
+from mcp_types import (
+    INVALID_PARAMS,
+    EmbeddedResource,
+    ResourceLink,
+    TextResourceContents,
+)
 from pydantic import Field
 
 from fastmcp import Client, FastMCP
@@ -16,6 +21,23 @@ from fastmcp.prompts.base import (
 
 
 class TestRenderPrompt:
+    async def test_fn_with_postponed_annotations(self):
+        namespace = {}
+        exec(
+            "from __future__ import annotations\n"
+            "from pydantic import BaseModel\n"
+            "class Config(BaseModel):\n"
+            "    key: str\n"
+            "def show_config(cfg: Config) -> str:\n"
+            "    return f'config={cfg.key}'\n",
+            namespace,
+        )
+
+        prompt = Prompt.from_function(namespace["show_config"])
+        result = await prompt.render({"cfg": '{"key": "v"}'})
+
+        assert result.messages == [Message("config=v")]
+
     async def test_basic_fn(self):
         def fn() -> str:
             return "Hello, world!"
@@ -672,6 +694,24 @@ class TestPromptArgumentDescriptions:
         assert mcp_prompt.meta is not None
         assert meta_data.items() <= mcp_prompt.meta.items()
 
+    def test_argument_titles_from_field(self):
+        """An explicit Field(title=...) becomes the argument's MCP title."""
+        from pydantic import Field
+
+        def test_prompt(
+            name: Annotated[str, Field(title="Your name")],
+            tone: str = Field(default="playful", title="Tone of voice"),
+            topic: str = "dogs",
+        ) -> str:
+            return f"Hello, {name}!"
+
+        arguments = Prompt.from_function(test_prompt).to_mcp_prompt().arguments or []
+        assert {arg.name: arg.title for arg in arguments} == {
+            "name": "Your name",
+            "tone": "Tone of voice",
+            "topic": None,
+        }
+
 
 class TestMessage:
     def test_message_string_content(self):
@@ -749,6 +789,33 @@ class TestMessage:
         mcp_msg = msg.to_mcp_prompt_message()
         assert isinstance(mcp_msg.content, ImageContent)
         assert mcp_msg.content.data == "base64data"
+
+    def test_message_passthrough_resource_link(self):
+        """Test Message passes through ResourceLink without JSON serialization."""
+        link = ResourceLink(
+            type="resource_link",
+            uri="docs://guide",
+            name="guide",
+            mime_type="text/markdown",
+        )
+        msg = Message(link, role="user")
+        assert isinstance(msg.content, ResourceLink)
+        assert msg.content == link
+        assert msg.to_mcp_prompt_message().content == link
+
+    async def test_message_resource_link_reaches_client(self):
+        """Test a ResourceLink message is delivered as a resource_link block."""
+        mcp = FastMCP()
+        link = ResourceLink(type="resource_link", uri="docs://guide", name="guide")
+
+        @mcp.prompt
+        def review_guide() -> list[Message]:
+            return [Message("Please review this document:"), Message(link)]
+
+        async with Client(mcp) as client:
+            result = await client.get_prompt("review_guide")
+
+        assert result.messages[1].content == link
 
 
 class TestPromptResult:

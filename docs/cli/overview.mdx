@@ -5,8 +5,6 @@ description: The fastmcp command-line interface
 icon: terminal
 ---
 
-import { VersionBadge } from '/snippets/version-badge.mdx'
-
 The `fastmcp` CLI is installed automatically with FastMCP. It's the primary way to run, test, install, and interact with MCP servers from your terminal.
 
 ```bash
@@ -66,7 +64,7 @@ fastmcp list --command 'npx -y @modelcontextprotocol/server-github'
 
 ### Name-Based Resolution
 
-If your servers are already configured in an editor or tool, you can refer to them by name. FastMCP scans configs from Claude Desktop, Claude Code, Cursor, Gemini CLI, and Goose:
+If your servers are already configured in an editor or tool, you can refer to them by name. FastMCP scans configs from Claude Desktop, Claude Code, Cursor, Gemini CLI, Goose, and a project-level `mcp.json`:
 
 ```bash
 fastmcp list weather

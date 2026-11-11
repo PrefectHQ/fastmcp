@@ -17,7 +17,7 @@ Use [python-tests](../python-tests/SKILL.md). Reproduce the failure on unchanged
 
 Self-review the full change with [review-pr](../review-pr/SKILL.md), including docs and dependency bounds. Separate necessary compatibility changes from accidental regressions and say whether a breaking change remains. Do not infer compatibility from passing tests.
 
-Run the repository's required dependency sync, full tests, and static checks before committing. Honor branch and attribution conventions. If a required check fails, investigate and report evidence rather than hiding the failure.
+Run the repository's required dependency sync, the relevant tests, and applicable static checks before committing, per AGENTS.md. Honor branch and attribution conventions. If a required check fails, investigate and report evidence rather than hiding the failure.
 
 ## Publish and follow through
 
