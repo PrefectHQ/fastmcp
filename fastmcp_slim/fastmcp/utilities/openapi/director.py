@@ -56,6 +56,33 @@ def _is_json_media_type(content_type: str | None) -> bool:
     return media_type == "application/json" or media_type.endswith("+json")
 
 
+def _multipart_json_part(
+    value: Any, encoding: dict[str, Any]
+) -> tuple[None, str, str] | None:
+    """Return a JSON form part for an object-shaped multipart value, if one applies.
+
+    Per the OAS Encoding Object, object properties default to
+    `contentType: application/json`. A dict, or a non-empty list of dicts, is
+    sent as one JSON part instead of its Python `repr`. An explicit
+    non-JSON `contentType` keeps the existing serialization.
+    """
+    is_object_shaped = isinstance(value, dict) or (
+        isinstance(value, list)
+        and bool(value)
+        and all(isinstance(item, dict) for item in value)
+    )
+    if not is_object_shaped:
+        return None
+    content_type = encoding.get("contentType")
+    if content_type is not None and not _is_json_media_type(content_type):
+        return None
+    return (
+        None,
+        _json.dumps(value, allow_nan=False),
+        content_type or "application/json",
+    )
+
+
 def _resolve_schema_ref(
     schema: Any,
     definitions: dict[str, Any],
@@ -403,6 +430,8 @@ class RequestDirector:
                         # httpx can transmit them as binary parts without
                         # stringifying to their Python repr.
                         files.append((k, (None, v)))
+                    elif json_part := _multipart_json_part(v, encoding.get(k, {})):
+                        files.append((k, json_part))
                     else:
                         files.append((k, (None, _query_scalar_to_str(v))))
             elif (

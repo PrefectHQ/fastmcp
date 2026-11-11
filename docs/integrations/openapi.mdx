@@ -503,6 +503,8 @@ For `multipart/form-data`, non-empty string arrays use one form field per elemen
 
 This applies when the property's `encoding` is omitted or explicitly uses the defaults: `style: form`, `explode: true`, `contentType: text/plain`, `allowReserved: false`, and no custom headers. Existing scalar fields and binary file parts keep their serialization.
 
+Object properties, and non-empty arrays of objects, are sent as one JSON part with `Content-Type: application/json`, or the JSON `contentType` the property's `encoding` declares. An `encoding` with a non-JSON `contentType` keeps the field as a Python string.
+
 Other arrays are sent as a single field holding the list's Python string representation. That covers empty arrays (sent as `[]`), non-string arrays, and string arrays whose property declares a custom encoding such as `explode: false`, a JSON part, or a charset override.
 
 If a backend depended on Python list strings for non-empty string arrays, adapt it to read repeated fields.
