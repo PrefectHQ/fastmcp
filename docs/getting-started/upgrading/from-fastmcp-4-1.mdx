@@ -1,0 +1,76 @@
+---
+title: Upgrading from FastMCP 4.1
+sidebarTitle: "From FastMCP 4.1"
+description: What changes when you upgrade from FastMCP 4.1 to 4.2
+icon: up
+---
+
+FastMCP 4.2 raises the Python floor and deprecates the 4.1 skills API. Everything else in 4.1 keeps working. This page covers what to check before upgrading and what to move before 4.3.
+
+```bash
+pip install "fastmcp>=4.2"
+```
+
+## Python 3.11 or newer
+
+FastMCP 4.2 requires Python 3.11. On Python 3.10, your installer keeps resolving to 4.1.x, so a project that must stay on 3.10 should pin `fastmcp<4.2`. To take 4.2, move the project to Python 3.11 and raise `requires-python` to match:
+
+```toml
+[project]
+requires-python = ">=3.11"
+dependencies = ["fastmcp>=4.2"]
+```
+
+## The 4.1 skills API
+
+The providers in `fastmcp.server.providers.skills` and the helpers in `fastmcp.utilities.skills` still work in 4.2 and are removed in 4.3. Each emits a deprecation warning that names its replacement. The new API lives in `fastmcp.skills`: author skills with `Skill`, serve a folder with `SkillsDirectoryProvider` from `fastmcp.skills.provider`, and read them from a client with `client.read_skill()`.
+
+| 4.1 | 4.2 |
+| --- | --- |
+| `SkillsDirectoryProvider(root)` from `fastmcp.server.providers.skills` | `SkillsDirectoryProvider(root)` from `fastmcp.skills.provider` |
+| `ClaudeSkillsProvider()` and the other vendor presets | `SkillsDirectoryProvider(Path.home() / ".claude" / "skills")` with the preset's folder |
+| `SkillProvider(path)` | `SkillCatalogProvider([Skill.from_directory(path)])` |
+| `list_skills(client)` | `client.list_skill_resources()` |
+| `download_skill()` / `sync_skills()` | `client.read_skill(uri)` then `skill.to_directory(path)` |
+| `Skill` as a wire model | `MCPSkill`; `Skill` is now the authoring class |
+
+The usual change is one import:
+
+```python
+from pathlib import Path
+
+from fastmcp import FastMCP
+from fastmcp.skills.provider import SkillsDirectoryProvider
+
+root = Path("skills")
+mcp = FastMCP("Skills", providers=[SkillsDirectoryProvider(root)])
+```
+
+The new provider refuses folders the old one accepted, such as a `SKILL.md` whose frontmatter name doesn't match its folder. The 4.1 provider's warning lists each folder it would refuse and the fix, so start the server once on 4.2, fix what it reports, then switch. The [Skills](/servers/skills) page has the full migration table and the client-side details.
+
+## Annotated dependencies
+
+4.2 also accepts dependencies as `Annotated` metadata. This is optional; `Depends()` defaults keep working. An alias declares a dependency once and gives the parameter its real type for type checkers:
+
+```python
+from typing import Annotated
+
+from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
+
+mcp = FastMCP("Demo")
+
+
+def get_config() -> dict:
+    return {"api_url": "https://api.example.com"}
+
+
+Config = Annotated[dict, Depends(get_config)]
+
+
+@mcp.tool
+async def fetch(query: str, config: Config) -> str:
+    return f"Fetching '{query}' from {config['api_url']}"
+```
+
+A parameter takes one form or the other: an `Annotated` dependency combined with a `Depends()` default raises `TypeError`. See [Annotated Dependencies](/servers/dependency-injection#annotated-dependencies).

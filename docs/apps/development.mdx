@@ -61,6 +61,8 @@ With `--host 0.0.0.0`, open the dev UI through `localhost` or an IP address. To 
 
 ### npm registry
 
+<VersionBadge version="4.2.0" />
+
 On first run, the dev server downloads the `@modelcontextprotocol/ext-apps` package from the public npm registry and caches it. If your network only allows an internal npm mirror, set `npm_config_registry` (or `NPM_CONFIG_REGISTRY`) to the mirror's URL, the same variable npm reads. When neither is set, or the value is empty, the dev server uses `https://registry.npmjs.org`. The mirror must serve the standard npm tarball layout.
 
 ```bash
