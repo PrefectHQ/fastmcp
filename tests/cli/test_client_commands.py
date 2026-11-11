@@ -583,6 +583,13 @@ class TestBuildClient:
                     message=r"<class 'key_value\.aio\.protocols\.key_value\.AsyncKeyValue'> isn't explicitly decorated",
                     category=DeprecationWarning,
                 )
+                # An xdist worker can finalize a socket left by an earlier test
+                # while this block runs; that ResourceWarning is not ours.
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"unclosed <socket\.socket",
+                    category=ResourceWarning,
+                )
                 first_client = _build_client(resolved, auth=auth)
                 first = first_client.transport.auth
                 assert isinstance(first, OAuth)
@@ -597,7 +604,9 @@ class TestBuildClient:
 
             try:
                 assert await second.token_storage_adapter.get_tokens() == tokens
-                assert await second.token_storage_adapter.get_client_info() == registration
+                assert (
+                    await second.token_storage_adapter.get_client_info() == registration
+                )
                 assert await second.token_storage_adapter.get_token_expiry() == (
                     await first.token_storage_adapter.get_token_expiry()
                 )
