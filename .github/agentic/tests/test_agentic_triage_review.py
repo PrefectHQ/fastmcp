@@ -26,7 +26,11 @@ def test_disposition_routes_automatic_triage_to_its_action_queue(decision, desti
         "findings": [],
     }
     category, result = apply_disposition(
-        "evidence", {"issue_number": 1, "decision": "reproduced"}, review, "review-run"
+        "evidence",
+        {"issue_number": 1, "decision": "reproduced"},
+        review,
+        "review-run",
+        {"route": "triage"},
     )
     assert category == destination
     assert result["triage_review_run_id"] == "review-run"
@@ -42,17 +46,46 @@ def test_prepare_disposition_carries_scope_controls_to_preparation():
         "findings": ["Include shared resource controls when implementing"],
     }
     category, _ = apply_disposition(
-        "evidence", {"decision": "reproduced"}, review, "review-run"
+        "evidence",
+        {"decision": "reproduced"},
+        review,
+        "review-run",
+        {"route": "triage"},
     )
     assert category == "evidence"
     with pytest.raises(ValueError, match="reproduced bug"):
         apply_disposition(
-            "evidence", {"decision": "not_reproduced"}, review, "review-run"
+            "evidence",
+            {"decision": "not_reproduced"},
+            review,
+            "review-run",
+            {"route": "triage"},
         )
     with pytest.raises(ValueError, match="existing contribution"):
         apply_disposition(
-            "evidence", {}, {**review, "decision": "review_existing"}, "review-run"
+            "evidence",
+            {},
+            {**review, "decision": "review_existing"},
+            "review-run",
+            {"route": "triage"},
         )
+
+
+def test_review_existing_accepts_contributions_found_at_intake():
+    # #6400: intake routed a gate-closed fixing PR to review_existing, native
+    # triage filed it under decisions, and the reviewer chose review_existing.
+    review = {
+        "decision": "review_existing",
+        "reason": "Review the linked fix",
+        "next_action": "Review PR #2",
+        "findings": [],
+    }
+    route = {"route": "review_existing", "pull_requests": [{"number": 2}]}
+    category, result = apply_disposition(
+        "decisions", {"issue_number": 1, "decision": "maintainer"}, review, "run", route
+    )
+    assert category == "existing_review"
+    assert result["adversarial_review"] == review
 
 
 def test_closure_recommendation_stays_on_the_review_without_github_reads():
@@ -65,7 +98,7 @@ def test_closure_recommendation_stays_on_the_review_without_github_reads():
         "recommendations": [recommendation],
     }
     category, result = apply_disposition(
-        "decisions", {"issue_number": 1}, review, "review-run"
+        "decisions", {"issue_number": 1}, review, "review-run", {"route": "triage"}
     )
     assert category == "pruning"
     assert result["adversarial_review"]["recommendations"] == [recommendation]

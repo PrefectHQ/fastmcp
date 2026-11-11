@@ -82,6 +82,32 @@ class TestSessionId:
         finally:
             fastmcp_request_ctx.reset(token)
 
+    def test_session_id_raises_when_request_context_has_no_session(self, context):
+        """A request context without a session is not a session: raise RuntimeError."""
+        from fastmcp.server.dependencies import (
+            FastMCPRequestContext,
+            fastmcp_request_ctx,
+        )
+
+        token = fastmcp_request_ctx.set(
+            FastMCPRequestContext(
+                session=None,  # ty: ignore[invalid-argument-type]
+                request_id=None,
+                meta=None,
+                request=None,
+                protocol_version="2025-06-18",
+                close_sse_stream=None,
+                lifespan_context={},
+                _srctx=MagicMock(meta=None),
+            )
+        )
+
+        try:
+            with pytest.raises(RuntimeError, match="no session exists"):
+                context.session_id
+        finally:
+            fastmcp_request_ctx.reset(token)
+
 
 class TestContextState:
     """Test suite for Context state functionality."""
@@ -494,6 +520,64 @@ class TestTransportIntegration:
             assert result.data == "streamable-http"
 
 
+class TestListComponentsOutsideRequest:
+    """`Context.list_resources` and `list_prompts` without a live MCP request."""
+
+    @pytest.fixture
+    def server(self) -> FastMCP:
+        mcp = FastMCP("test")
+
+        @mcp.resource("docs://readme")
+        def readme() -> str:
+            return "readme"
+
+        @mcp.prompt
+        def summarize(text: str) -> str:
+            return f"Summarize: {text}"
+
+        return mcp
+
+    async def test_tool_run_by_call_tool(self, server: FastMCP):
+        @server.tool
+        async def catalog(ctx: Context) -> dict[str, list[str]]:
+            return {
+                "resources": [str(r.uri) for r in await ctx.list_resources()],
+                "prompts": [p.name for p in await ctx.list_prompts()],
+            }
+
+        result = await server.call_tool("catalog", {})
+
+        assert result.structured_content == {
+            "resources": ["docs://readme"],
+            "prompts": ["summarize"],
+        }
+
+    async def test_bare_context(self, server: FastMCP):
+        async with Context(fastmcp=server) as ctx:
+            resources = await ctx.list_resources()
+            prompts = await ctx.list_prompts()
+
+        assert [str(r.uri) for r in resources] == ["docs://readme"]
+        assert [p.name for p in prompts] == ["summarize"]
+
+    async def test_session_middleware_sees_no_request_context(self, server: FastMCP):
+        """The stand-in request context has no session, so PingMiddleware must
+        not start a keepalive task for it."""
+        from fastmcp.server.middleware.ping import PingMiddleware
+
+        ping = PingMiddleware(interval_ms=50)
+        server.add_middleware(ping)
+
+        @server.tool
+        async def catalog(ctx: Context) -> list[str]:
+            return [str(r.uri) for r in await ctx.list_resources()]
+
+        result = await server.call_tool("catalog", {})
+
+        assert result.structured_content == {"result": ["docs://readme"]}
+        assert ping._active_sessions == set()
+
+
 class TestContextLogExtra:
     async def test_log_extra_with_log_record_attribute_names(self):
         """`extra` keys that collide with LogRecord attributes must not fail the call."""
@@ -630,13 +714,12 @@ async def test_background_context_logging_without_session():
         _background_task_session_id.reset(token)
 
 
-async def test_background_context_logging_honors_no_session_level(
+async def test_background_context_logging_honors_server_log_level(
     caplog: pytest.LogCaptureFixture,
 ):
     from fastmcp.server.dependencies import _background_task_session_id
 
-    mcp = FastMCP("test")
-    mcp._client_log_levels["__no_session__"] = "warning"
+    mcp = FastMCP("test", client_log_level="warning")
     context = Context(
         fastmcp=mcp,
         task_id="task-1",

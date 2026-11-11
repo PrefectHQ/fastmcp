@@ -150,3 +150,27 @@ async def test_required_mode_without_optin_raises_32021():
             await client.call_tool("must_task", {"x": 1})
 
     assert excinfo.value.error.code == MISSING_REQUIRED_CLIENT_CAPABILITY
+
+
+async def test_task_handle_carries_the_pinned_call_flag() -> None:
+    """A tasked pinned call keeps its version through the handle.
+
+    `call_tool_task` returns before the result exists, so the flag cannot ride
+    on the request context; the handle carries it to `result()` instead.
+    """
+    mcp = FastMCP("versioned-tasks")
+    mcp.add_extension(TasksExtension())
+
+    @mcp.tool(name="value", version="1.0", task=True)
+    async def value_v1() -> int:
+        return 7
+
+    @mcp.tool(name="value", version="2.0", task=True)
+    async def value_v2() -> str:
+        return "hello"
+
+    async with Client(mcp, mode="auto") as client:
+        task = await call_tool_task(client, "value", version="1.0")
+        result = await task.result()
+
+    assert result.data == 7

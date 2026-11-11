@@ -10,11 +10,18 @@ def apply_disposition(
     outcome: dict,
     review: dict,
     run_id: str,
+    route: dict,
 ) -> tuple[str, dict]:
     decision = review["decision"]
     if decision == "prepare_fix" and outcome.get("decision") != "reproduced":
         raise ValueError("A fix recommendation requires a reproduced bug")
-    if decision == "review_existing" and destination != "existing_review":
+    # Intake routes an issue to review_existing when a PR claims to fix it, even
+    # when native triage then files it under decisions; either is evidence.
+    if (
+        decision == "review_existing"
+        and destination != "existing_review"
+        and route.get("route") != "review_existing"
+    ):
         raise ValueError(
             "A contribution recommendation requires existing contribution evidence"
         )
