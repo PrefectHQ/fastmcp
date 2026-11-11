@@ -30,7 +30,7 @@ from fastmcp.client.elicitation import ElicitResult
 from fastmcp.client.transports.base import ClientTransport
 from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.sse import SSETransport
-from fastmcp.client.transports.stdio import StdioTransport
+from fastmcp.client.transports.stdio import NodeStdioTransport, StdioTransport
 from fastmcp.skills.client import SkillsClientExtension
 from fastmcp.skills.models import MCPSkill
 from fastmcp.utilities.logging import get_logger
@@ -125,8 +125,7 @@ def resolve_server_spec(
                 command="fastmcp",
                 args=["run", str(resolved_path), "--no-banner"],
             )
-        # .js — pass through for Client's infer_transport
-        return spec
+        return NodeStdioTransport(script_path=path.resolve())
 
     # 3. Name-based resolution (bare name or source:name)
     try:

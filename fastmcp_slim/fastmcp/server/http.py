@@ -105,13 +105,13 @@ class StreamableHTTPASGIApp:
                     "passed to the parent ASGI application (e.g., FastAPI or Starlette). "
                     "Please ensure you are setting `lifespan=mcp_app.lifespan` in your "
                     "parent app's constructor, where `mcp_app` is the application instance "
-                    "returned by `fastmcp_instance.http_app()`. \\n"
+                    "returned by `fastmcp_instance.http_app()`.\n"
                     "For more details, see the FastMCP ASGI integration documentation: "
-                    "https://gofastmcp.com/deployment/asgi"
+                    "https://gofastmcp.com/deployment/http#integration-with-web-frameworks"
                 )
                 # Raise a new RuntimeError that includes the original error's message
                 # for full context, but leads with the more helpful guidance.
-                raise RuntimeError(f"{new_error_message}\\nOriginal error: {e}") from e
+                raise RuntimeError(f"{new_error_message}\nOriginal error: {e}") from e
             else:
                 # Re-raise other RuntimeErrors if they don't match the specific message
                 raise
