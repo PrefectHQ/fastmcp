@@ -106,6 +106,7 @@ class TasksExtension(ServerExtension):
         redelivery_timeout: timedelta | None = None,
         reconnection_delay: timedelta | None = None,
         minimum_check_interval: timedelta | None = None,
+        execution_ttl: timedelta | None = None,
     ) -> None:
         if credential_provider is not None:
             from redis.credentials import StreamingCredentialProvider
@@ -126,6 +127,7 @@ class TasksExtension(ServerExtension):
             "redelivery_timeout": redelivery_timeout,
             "reconnection_delay": reconnection_delay,
             "minimum_check_interval": minimum_check_interval,
+            "execution_ttl": execution_ttl,
         }
         self._settings = DocketSettings(
             **{k: v for k, v in overrides.items() if v is not None}

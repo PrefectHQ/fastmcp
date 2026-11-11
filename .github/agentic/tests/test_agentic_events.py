@@ -13,6 +13,9 @@ from prefect.server.utilities.user_templates import (
     register_user_template_filters,
     render_user_template_sync,
 )
+from prefect.utilities.schema_tools.hydration import HydrationContext, hydrate
+
+from flows.agentic_backlog import Intake
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -222,53 +225,49 @@ def test_failure_alert_shows_the_cause_and_one_run_link(automations):
     assert failed.startswith("❌ triage failed before finishing\nboom\n")
 
 
-def test_notification_announces_admitted_issues_only(automations):
-    configs, controller, intake = automations
-    config = configs["fastmcp-triage-run-started"]
-    trigger = AutomationCore.model_validate(config).trigger
-    run_id = str(uuid4())
+@pytest.mark.parametrize("kind", ["issue", "pr"])
+def test_launch_passes_the_event_sender_to_intake(automations, kind):
+    configs, _, _ = automations
+    event = github_event(configs, kind=kind)
+    parameters = hydrate(
+        configs["fastmcp-triage-on-github-" + kind]["actions"][0]["parameters"],
+        HydrationContext(
+            raise_on_error=True, render_jinja=True, jinja_context={"event": event}
+        ),
+    )
+    config = Intake.model_validate(parameters["config"])
+    target = "issues" if kind == "issue" else "pull_requests"
+    assert config.sender == "zzstoatzz"
+    assert getattr(config, target) == [6089]
+    # The sender does not split the shared event queue.
+    assert config.scope() == Intake(queue="events", **{target: [6089]}).scope()
 
-    def event(deployment):
+
+def test_outcome_notification_posts_the_emitted_text_verbatim(automations):
+    configs, _, _ = automations
+    assert "fastmcp-triage-run-started" not in configs
+    config = configs["fastmcp-triage-outcome"]
+    trigger = AutomationCore.model_validate(config).trigger
+    text = (
+        "<https://github.com/PrefectHQ/fastmcp/issues/6344|#6344> A &lt;b&gt; title"
+        " · @reporter → close? Promotional\n"
+        "<https://github.com/PrefectHQ/fastmcp/issues/6349|#6349> → needs repro info"
+    )
+
+    def event(name, resource):
         return Event.model_validate(
             {
                 "id": uuid4(),
                 "occurred": datetime.now(UTC),
-                "event": "prefect.flow-run.Running",
-                "resource": {
-                    "prefect.resource.id": "prefect.flow-run." + run_id,
-                    "prefect.resource.name": "fastmcp-stack-intake-" + run_id,
-                },
-                "related": [
-                    {
-                        "prefect.resource.id": "prefect.deployment." + deployment,
-                        "prefect.resource.role": "deployment",
-                    }
-                ],
+                "event": name,
+                "resource": {"prefect.resource.id": resource},
+                "payload": {"text": text},
             }
         )
 
-    assert not trigger.covers(event(intake))
-    assert trigger.covers(event(controller))
-    register_user_template_filters(
-        {"ui_url": lambda run: "https://app.prefect.cloud/runs/" + run["id"]}
-    )
-    message = render_user_template_sync(
-        config["actions"][0]["body"],
-        {
-            "flow_run": {
-                "id": run_id,
-                "parameters": {
-                    "batch": {
-                        "groups": [
-                            {"items": [{"issue_number": 123}, {"issue_number": 456}]},
-                        ]
-                    }
-                },
-            },
-        },
-    )
-    assert message == (
-        "Accepted for triage: <https://github.com/PrefectHQ/fastmcp/issues/123|#123>, "
-        "<https://github.com/PrefectHQ/fastmcp/issues/456|#456>\n"
-        f"<https://app.prefect.cloud/runs/{run_id}|Follow triage>"
-    )
+    outcome = event("fastmcp.triage.outcome", f"fastmcp.triage.intake.{uuid4()}")
+    assert trigger.covers(outcome) and trigger.expects(outcome.event)
+    other = event("prefect.flow-run.Running", f"prefect.flow-run.{uuid4()}")
+    assert not (trigger.covers(other) and trigger.expects(other.event))
+    body = config["actions"][0]["body"]
+    assert render_user_template_sync(body, {"event": outcome}) == text

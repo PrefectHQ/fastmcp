@@ -8,6 +8,10 @@ on:
       - ".github/workflows/backlog-status.yml"
       - "scripts/backlog_status.py"
       - "tests/test_backlog_status.py"
+      - "scripts/public_triage.py"
+      - "tests/test_public_triage.py"
+      - "tests/test_status_refresh.cjs"
+      - "status-site/app.js"
 permissions: {}
 concurrency:
   group: backlog-status-${{ github.event.pull_request.number || 'publisher' }}
@@ -36,6 +40,29 @@ jobs:
           name: backlog
           path: ${{ runner.temp }}/backlog.json
           retention-days: 3
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "26"
+      - name: Check dashboard refresh ordering
+        run: node --test tests/test_status_refresh.cjs
+      - name: Collect optional public triage analytics
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/public_triage.py --output "$RUNNER_TEMP/triage.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: triage
+          path: ${{ runner.temp }}/triage.json
+          retention-days: 3
   publish:
     needs: build
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -46,6 +73,7 @@ jobs:
     concurrency:
       group: maintenance-status-publish
       cancel-in-progress: false
+      queue: max
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -66,4 +94,36 @@ jobs:
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               commit -q -m "backlog: $(jq -r .as_of backlog.json)"
+          git push -q origin status
+  publish-triage:
+    needs: triage
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    concurrency:
+      group: maintenance-status-publish
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: triage
+          path: snapshot
+      - name: Preserve the public triage snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          git init -q site
+          cd site
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git"
+          git fetch -q --depth 1 origin status
+          git checkout -q -b status FETCH_HEAD
+          cp ../snapshot/triage.json .
+          git add triage.json
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "triage: $(jq -r .collection_started_at triage.json)"
           git push -q origin status

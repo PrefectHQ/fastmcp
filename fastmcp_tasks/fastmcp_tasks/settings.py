@@ -125,6 +125,20 @@ class DocketSettings(BaseSettings):
         ),
     ] = timedelta(milliseconds=50)
 
+    execution_ttl: Annotated[
+        timedelta,
+        Field(
+            description=inspect.cleandoc(
+                """
+                How long a task's state and result are kept in the Docket
+                backend. Clients see this as the task's ttlMs. Raise it for
+                tasks that run, or whose results are retrieved, after more
+                than the default 15 minutes.
+                """
+            ),
+        ),
+    ] = timedelta(minutes=15)
+
 
 docket_settings = DocketSettings()
 
