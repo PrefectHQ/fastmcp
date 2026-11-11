@@ -138,11 +138,11 @@ class AuthMiddleware(Middleware):
         ref = message.get("ref") if isinstance(message, Mapping) else None
         if not isinstance(ref, Mapping) or context.fastmcp_context is None:
             return False
-        server = context.fastmcp_context.fastmcp
-        if ref.get("type") == "ref/prompt":
-            component = await server.get_prompt(str(ref.get("name")))
-        else:
-            component = await server.get_resource_template(str(ref.get("uri")))
+        ref_type = str(ref.get("type"))
+        key = str(ref.get("name") if ref_type == "ref/prompt" else ref.get("uri"))
+        component = await context.fastmcp_context.fastmcp._completion_target(
+            ref_type, key
+        )
         if component is None:
             # Unknown or already hidden; the server answers empty.
             return True

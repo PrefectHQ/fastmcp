@@ -417,3 +417,48 @@ async def test_auth_middleware_denied_references_complete_like_unknown_ones(mode
         ]
     )
     assert await _completions(mcp, mode) == ([], [], ["private/salary.md"])
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("gate", ["none", "disable", "auth_middleware"])
+async def test_query_only_template_completes_by_its_own_identifier(mode, gate):
+    """A template's identifier does not match it as a URI when it only has
+    query parameters, so completion must resolve the template itself."""
+    from fastmcp.server.middleware import AuthMiddleware
+
+    middleware = []
+    if gate == "auth_middleware":
+        middleware = [
+            AuthMiddleware(
+                auth=lambda ctx: ctx.component is None
+                or "secret" not in ctx.component.tags
+            )
+        ]
+    mcp = FastMCP(middleware=middleware)
+
+    @mcp.resource("data://search{?q}")
+    def search(q: str = "") -> str:
+        return q
+
+    @mcp.resource("data://hidden{?q}", tags={"secret"})
+    def hidden(q: str = "") -> str:
+        return q
+
+    @mcp.completion
+    def complete(ref, argument, context):
+        return ["v"]
+
+    if gate == "disable":
+        mcp.disable(tags={"secret"})
+
+    async with Client(mcp, mode=mode) as client:
+        visible = await client.complete(
+            ResourceTemplateReference(uri="data://search{?q}"),
+            {"name": "q", "value": ""},
+        )
+        gated = await client.complete(
+            ResourceTemplateReference(uri="data://hidden{?q}"),
+            {"name": "q", "value": ""},
+        )
+    assert visible.values == ["v"]
+    assert gated.values == ([] if gate != "none" else ["v"])

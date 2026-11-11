@@ -51,6 +51,8 @@ from fastmcp.utilities.pagination import paginate_sequence
 from fastmcp.utilities.versions import VersionSpec, dedupe_with_versions
 
 if TYPE_CHECKING:
+    from fastmcp.prompts.base import Prompt
+    from fastmcp.resources.template import ResourceTemplate
     from fastmcp.server.server import FastMCP
 
 logger = get_logger(__name__)
@@ -532,14 +534,9 @@ class MCPOperationsMixin:
             if handler is None:
                 return empty
 
-            # Resolve without middleware: completion is one request to
-            # middleware, never a hidden listing (see test_completions.py).
             ref = params.ref
-            if isinstance(ref, mcp_types.PromptReference):
-                visible = await self.get_prompt(ref.name) is not None
-            else:
-                visible = await self.get_resource_template(ref.uri) is not None
-            if not visible:
+            key = ref.name if isinstance(ref, mcp_types.PromptReference) else ref.uri
+            if await self._completion_target(ref.type, key) is None:
                 return empty
 
             if is_coroutine_function(handler):
@@ -554,6 +551,24 @@ class MCPOperationsMixin:
             result = await raw if inspect.isawaitable(raw) else raw
             completion = normalize_completion(cast(CompletionValues, result))
             return mcp_types.CompleteResult(completion=completion)
+
+    async def _completion_target(
+        self: FastMCP, ref_type: str, key: str
+    ) -> Prompt | ResourceTemplate | None:
+        """The visible prompt or template a completion reference names, if any.
+
+        Resolves without middleware, so a completion stays one request to rate
+        limits and caches (see test_completions.py).
+        """
+        if ref_type == "ref/prompt":
+            return await self.get_prompt(key)
+        # A template's own identifier does not always match it as a URI
+        # (query-only templates such as `data://search{?q}`), so look for the
+        # template itself before treating the reference as a concrete URI.
+        for template in await self.list_resource_templates(run_middleware=False):
+            if template.uri_template == key:
+                return template
+        return await self.get_resource_template(key)
 
     def _register_completion_handler(self: FastMCP) -> None:
         """Register the low-level ``completion/complete`` handler.
