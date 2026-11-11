@@ -215,17 +215,6 @@ class LocalProvider(
 
         del self._components[key]
 
-    def _get_component(self, key: str) -> FastMCPComponent | None:
-        """Get a component by its prefixed key.
-
-        Args:
-            key: The prefixed key (e.g., "tool:name", "resource:uri").
-
-        Returns:
-            The component, or None if not found.
-        """
-        return self._components.get(key)
-
     def remove_tool(self, name: str, version: str | None = None) -> None:
         """Remove tool(s) from this provider's storage.
 

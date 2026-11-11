@@ -61,18 +61,6 @@ def _get_npx_command():
     return "npx"  # On Unix-like systems, just use npx
 
 
-def _parse_env_var(env_var: str) -> tuple[str, str]:
-    """Parse environment variable string in format KEY=VALUE."""
-    if "=" not in env_var:
-        logger.error("Invalid environment variable format. Must be KEY=VALUE")
-        sys.exit(1)
-    key, value = env_var.split("=", 1)
-    if not key.strip():
-        logger.error("Invalid environment variable format. KEY cannot be empty")
-        sys.exit(1)
-    return key.strip(), value.strip()
-
-
 @contextmanager
 def with_argv(args: list[str] | None):
     """Temporarily replace sys.argv if args provided.

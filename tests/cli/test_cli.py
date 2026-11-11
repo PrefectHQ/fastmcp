@@ -5,7 +5,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from fastmcp.cli.cli import _parse_env_var, app
+from fastmcp.cli.cli import app
+from fastmcp.cli.install.shared import parse_env_var
 
 
 class TestMainCLI:
@@ -21,18 +22,18 @@ class TestMainCLI:
 
     def test_parse_env_var_valid(self):
         """Test parsing valid environment variables."""
-        key, value = _parse_env_var("KEY=value")
+        key, value = parse_env_var("KEY=value")
         assert key == "KEY"
         assert value == "value"
 
-        key, value = _parse_env_var("COMPLEX_KEY=complex=value=with=equals")
+        key, value = parse_env_var("COMPLEX_KEY=complex=value=with=equals")
         assert key == "COMPLEX_KEY"
         assert value == "complex=value=with=equals"
 
     def test_parse_env_var_invalid(self):
         """Test parsing invalid environment variables exits."""
         with pytest.raises(SystemExit) as exc_info:
-            _parse_env_var("INVALID_FORMAT")
+            parse_env_var("INVALID_FORMAT")
         assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 1
 
