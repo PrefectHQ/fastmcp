@@ -8,12 +8,16 @@ fall back to the next-highest enabled version instead of returning None.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.server.auth import AccessToken, require_scopes
+from fastmcp.server.providers import Provider
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.versions import VersionSpec
 
 
@@ -493,3 +497,64 @@ class TestEquivalentVersionSpellings:
         content = result.content[0]
         assert isinstance(content, TextContent)
         assert content.text == "second"
+
+
+class _RefusingProvider(Provider):
+    """Lists tools but refuses to resolve any of them by name."""
+
+    def __init__(self, tools: Sequence[Tool]) -> None:
+        super().__init__()
+        self._tools = list(tools)
+
+    async def _list_tools(self) -> Sequence[Tool]:
+        return self._tools
+
+    async def _get_tool(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Tool | None:
+        return None
+
+
+class _PlainProvider(Provider):
+    """Lists a fixed set of tools and resolves them normally."""
+
+    def __init__(self, tools: Sequence[Tool]) -> None:
+        super().__init__()
+        self._tools = list(tools)
+
+    async def _list_tools(self) -> Sequence[Tool]:
+        return self._tools
+
+
+class TestProviderLookupAuthority:
+    """Same-version duplicates must keep each provider's lookup authority."""
+
+    async def test_disabled_duplicate_does_not_expose_a_refused_same_version_tool(
+        self,
+    ):
+        import pytest
+
+        from fastmcp.exceptions import NotFoundError
+
+        def first_impl() -> str:
+            return "first"
+
+        def second_impl() -> str:
+            return "second"
+
+        first = _PlainProvider(
+            [Tool.from_function(first_impl, name="calc", version="1.0", tags={"a"})]
+        )
+        second = _RefusingProvider(
+            [Tool.from_function(second_impl, name="calc", version="1.0", tags={"b"})]
+        )
+        mcp = FastMCP(providers=[first, second])
+        mcp.disable(tags={"a"})
+
+        # The refused duplicate is still listed: listing is not authority.
+        listed = [(t.name, t.version, sorted(t.tags)) for t in await mcp.list_tools()]
+        assert listed == [("calc", "1.0", ["b"])]
+
+        assert await mcp.get_tool("calc") is None
+        with pytest.raises(NotFoundError):
+            await mcp.call_tool("calc", {})

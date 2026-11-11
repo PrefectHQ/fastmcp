@@ -317,6 +317,8 @@ async def _resolve_listed_candidates(
     candidates: Sequence[C],
     lookup: Callable[[VersionSpec | None], Awaitable[C | None]],
     matches: Callable[[C], bool],
+    admitted: Callable[[VersionSpec | None], Awaitable[Sequence[C] | None]]
+    | None = None,
 ) -> C | None:
     """Resolve the highest listed candidate through the normal lookup path.
 
@@ -327,16 +329,23 @@ async def _resolve_listed_candidates(
 
     Candidates are grouped by PEP 440-normalized version because the lookup
     path accepts a version, not a spelling: ``eq`` matches ``"1"`` and
-    ``"1.0"`` alike, and duplicate same-version components from different
-    providers are indistinguishable by name and version. A refused group is
-    skipped. Within a resolvable group the highest enabled and authorized
-    component is chosen, so a disabled sibling cannot shadow an enabled one
-    the lookup happens to return.
+    ``"1.0"`` alike. A refused group is skipped. Within a resolvable group
+    the highest enabled and authorized component is chosen, so a disabled
+    sibling cannot shadow an enabled one the lookup happens to return.
+
+    Same-version components from different providers are indistinguishable by
+    name and version, so the lookup path can only speak for the provider whose
+    component it returned. ``admitted`` reports, per version spec, the
+    components that providers' own lookups accepted; a sibling that no
+    provider admitted is refused even if listing still shows it. Passing
+    ``None`` keeps the plain listing behavior for callers without providers.
 
     Args:
         candidates: Listed components to consider.
         lookup: Performs a get for one version spec.
         matches: Confirms the resolved component has the candidate's identity.
+        admitted: Per-version components accepted by a provider's own lookup,
+            or None when the caller cannot establish lookup authority.
 
     Returns:
         The highest enabled and authorized resolved component, or None.
@@ -371,8 +380,17 @@ async def _resolve_listed_candidates(
             continue
         # The lookup path admits this version. Prefer its component, then the
         # listed components of the same normalized version that it cannot
-        # distinguish from it.
-        for item in (resolved, *(c for c in group if matches(c))):
+        # distinguish from it. A sibling is only a candidate if a provider's
+        # own lookup admitted it: listing alone must not resurrect a component
+        # that provider refuses.
+        siblings = [c for c in group if matches(c)]
+        authority: Sequence[C] | None = None
+        if admitted is not None and siblings:
+            authority = await admitted(spec)
+        for item in (resolved, *siblings):
+            if item is not resolved and authority is not None:
+                if not any(item is known or item == known for known in authority):
+                    continue
             resolved_items = await apply_session_transforms([item])
             # Transforms can change what `auth` sees (a tag, for one), so the
             # check made on the pre-transform component is not enough.
@@ -1192,8 +1210,24 @@ class FastMCP(
         async def lookup(spec: VersionSpec | None) -> Tool | None:
             return await super(FastMCP, self).get_tool(name, spec)
 
+        async def admitted(spec: VersionSpec | None) -> Sequence[Tool] | None:
+            known: list[Tool] = []
+            for provider in self.providers:
+                try:
+                    if await provider.get_tool(name, spec) is None:
+                        continue
+                    known.extend(
+                        t for t in await provider.list_tools() if t.name == name
+                    )
+                except Exception as error:
+                    # The aggregate lookup already applied the provider error
+                    # policy; an unreadable provider simply admits nothing.
+                    logger.debug("Provider %r admits no %r: %r", provider, name, error)
+                    continue
+            return known or None
+
         return await _resolve_listed_candidates(
-            all_tools, lookup, lambda t: t.name == name
+            all_tools, lookup, lambda t: t.name == name, admitted
         )
 
     async def list_resources(
@@ -1362,8 +1396,22 @@ class FastMCP(
         async def lookup(spec: VersionSpec | None) -> Resource | None:
             return await super(FastMCP, self).get_resource(uri, spec)
 
+        async def admitted(spec: VersionSpec | None) -> Sequence[Resource] | None:
+            known: list[Resource] = []
+            for provider in self.providers:
+                try:
+                    if await provider.get_resource(uri, spec) is None:
+                        continue
+                    known.extend(
+                        r for r in await provider.list_resources() if str(r.uri) == uri
+                    )
+                except Exception as error:
+                    logger.debug("Provider lookup probe failed: %r", error)
+                    continue
+            return known or None
+
         resolved = await _resolve_listed_candidates(
-            all_resources, lookup, lambda r: str(r.uri) == uri
+            all_resources, lookup, lambda r: str(r.uri) == uri, admitted
         )
         # A concrete resource that exists but cannot be served (disabled or
         # refused) must still shadow matching templates, exactly as when the
@@ -1519,10 +1567,29 @@ class FastMCP(
         async def lookup(spec: VersionSpec | None) -> ResourceTemplate | None:
             return await super(FastMCP, self).get_resource_template(uri, spec)
 
+        async def admitted(
+            spec: VersionSpec | None,
+        ) -> Sequence[ResourceTemplate] | None:
+            known: list[ResourceTemplate] = []
+            for provider in self.providers:
+                try:
+                    if await provider.get_resource_template(uri, spec) is None:
+                        continue
+                    known.extend(
+                        t
+                        for t in await provider.list_resource_templates()
+                        if t.matches(uri) is not None
+                    )
+                except Exception as error:
+                    logger.debug("Provider lookup probe failed: %r", error)
+                    continue
+            return known or None
+
         return await _resolve_listed_candidates(
             candidates,
             lookup,
             lambda t: t.matches(uri) is not None,
+            admitted,
         )
 
     async def list_prompts(self, *, run_middleware: bool = True) -> Sequence[Prompt]:
@@ -1661,8 +1728,22 @@ class FastMCP(
         async def lookup(spec: VersionSpec | None) -> Prompt | None:
             return await super(FastMCP, self).get_prompt(name, spec)
 
+        async def admitted(spec: VersionSpec | None) -> Sequence[Prompt] | None:
+            known: list[Prompt] = []
+            for provider in self.providers:
+                try:
+                    if await provider.get_prompt(name, spec) is None:
+                        continue
+                    known.extend(
+                        p for p in await provider.list_prompts() if p.name == name
+                    )
+                except Exception as error:
+                    logger.debug("Provider lookup probe failed: %r", error)
+                    continue
+            return known or None
+
         return await _resolve_listed_candidates(
-            all_prompts, lookup, lambda p: p.name == name
+            all_prompts, lookup, lambda p: p.name == name, admitted
         )
 
     async def call_tool(
