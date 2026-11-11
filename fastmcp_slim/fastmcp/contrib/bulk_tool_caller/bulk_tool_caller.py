@@ -1,6 +1,6 @@
 from typing import Any
 
-from mcp_types import CallToolResult, TextContent
+from mcp_types import SERVER_INFO_META_KEY, CallToolResult, TextContent
 from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
@@ -39,12 +39,22 @@ class CallToolRequestResult(CallToolResult):
     ) -> "CallToolRequestResult":
         """
         Create a CallToolRequestResult from a CallToolResult.
+
+        Result metadata is kept (including FastMCP's `wrap_result` marker), except
+        the server info entry, which describes the inner connection.
         """
+        meta = {
+            key: value
+            for key, value in (result.meta or {}).items()
+            if key != SERVER_INFO_META_KEY
+        }
         return cls(
             tool=tool,
             arguments=arguments,
             is_error=result.is_error,
             content=result.content,
+            structured_content=result.structured_content,
+            meta=meta or None,
         )
 
 
@@ -153,9 +163,6 @@ class BulkToolCaller(MCPMixin):
         async with Client(self.connection) as client:
             result = await client.call_tool_mcp(name=tool, arguments=arguments)
 
-            return CallToolRequestResult(
-                tool=tool,
-                arguments=arguments,
-                is_error=result.is_error,
-                content=result.content,
+            return CallToolRequestResult.from_call_tool_result(
+                result, tool=tool, arguments=arguments
             )

@@ -25,6 +25,27 @@ from fastmcp.server.server import FastMCP
 
 
 class TestErrorHandling:
+    async def test_invalid_typed_extra_leaves_parser_data_unset(self):
+        payload = {"name": "cache", "hits": "many"}
+        result = mcp_types.CallToolResult(content=[], structured_content=payload)
+        schema = {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+            "additionalProperties": {"type": "integer"},
+        }
+
+        parsed = await _parse_call_tool_result(
+            name="counters",
+            result=result,
+            tool_output_schemas={"counters": schema},
+            list_tools_fn=None,
+        )
+
+        assert parsed.structured_content == payload
+        assert parsed.data is None
+        assert not parsed.is_error
+
     async def test_general_tool_exceptions_are_not_masked_by_default(self):
         mcp = FastMCP("TestServer")
 

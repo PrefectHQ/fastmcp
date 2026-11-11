@@ -113,6 +113,8 @@ For advanced configuration, see [Proxying](/servers/providers/proxy).
 When mounting multiple servers, use namespaces to avoid naming conflicts:
 
 ```python
+from fastmcp import FastMCP
+
 weather = FastMCP("Weather")
 calendar = FastMCP("Calendar")
 
@@ -151,6 +153,10 @@ Resource and template URIs without `://`, such as `urn:example:config`, remain u
 Because `mount()` creates a live link, you can add components to a child server after mounting and they'll be immediately available through the parent:
 
 ```python
+from fastmcp import FastMCP
+
+dynamic_server = FastMCP("Dynamic")
+
 main = FastMCP("Main")
 main.mount(dynamic_server, namespace="dynamic")
 
@@ -175,6 +181,8 @@ Compose providers that need new extensions before the parent starts. Once extens
 Parent server tag filters apply recursively to mounted servers:
 
 ```python
+from fastmcp import FastMCP
+
 api_server = FastMCP("API")
 
 @api_server.tool(tags={"production"})
@@ -234,6 +242,8 @@ main.mount(subserver, namespace="sub")
 When mounting multiple servers with the same namespace (or no namespace), FastMCP queries all mounted providers for a requested component and returns the highest matching version. If two unversioned components (or two equal versions) use the same identifier, the provider registered first wins.
 
 ```python
+from fastmcp import FastMCP
+
 server_a = FastMCP("A")
 server_b = FastMCP("B")
 

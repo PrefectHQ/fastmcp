@@ -547,6 +547,28 @@ class TestCallToolAppRouting:
         finally:
             _current_transport.reset(token)
 
+    async def test_display_name_shaped_like_hashed_address_wins(self):
+        """A display tool whose name parses as a hashed address resolves by
+        display name before hashed dispatch is tried."""
+        from fastmcp.server.providers.addressing import hashed_backend_name
+
+        app = FastMCPApp("contacts")
+
+        @app.tool()
+        def save() -> str:
+            return "backend"
+
+        address = hashed_backend_name("contacts", "save")
+        server = FastMCP("Platform")
+        server.add_provider(app)
+
+        @server.tool(name=address)
+        def display() -> str:
+            return "display"
+
+        result = await server.call_tool(address, {})
+        assert result.content[0].text == "display"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+
     async def test_two_apps_same_tool_name_routed_by_address(self):
         """Two FastMCPApps each with a `save` tool live at distinct
         addresses, so they hash differently and the dispatcher routes

@@ -5,13 +5,13 @@ description: Add fine-grained authorization to your FastMCP servers with Permit.
 icon: shield-check
 ---
 
-Add **policy-based authorization** to your FastMCP servers with one-line code addition with the **[Permit.io][permit-github] authorization middleware**.
+Add **policy-based authorization** to your FastMCP servers with a single line of code using the **[Permit.io][permit-github] authorization middleware**.
 
 Control which tools, resources and prompts MCP clients can view and execute on your server. Define dynamic policies using Permit.io's powerful RBAC, ABAC, and REBAC capabilities, and obtain comprehensive audit logs of all access attempts and violations.
 
 ## How it Works
 
-Leveraging FastMCP's [Middleware][fastmcp-middleware], the Permit.io middleware intercepts all MCP requests to your server and automatically maps MCP methods to authorization checks against your Permit.io policies; covering both server methods and tool execution.
+Leveraging FastMCP's [Middleware][fastmcp-middleware], the Permit.io middleware intercepts all MCP requests to your server and automatically maps MCP methods to authorization checks against your Permit.io policies, covering both server methods and tool execution.
 
 ### Policy Mapping
 
@@ -39,7 +39,7 @@ For detailed policy mapping examples and configuration, see [Detailed Policy Map
 
 ### Listing Operations
 
-The middleware behaves as a filter for listing operations (`tools/list`, `resources/list`, `prompts/list`), hiding to the client components that are not authorized by the defined policies.
+The middleware behaves as a filter for listing operations (`tools/list`, `resources/list`, `prompts/list`), hiding components that the defined policies do not authorize.
 
 ```mermaid
 sequenceDiagram
@@ -201,16 +201,21 @@ The middleware supports multiple identity extraction modes:
 - **JWT-based**: Extract and verify JWT tokens
 - **Source-based**: Use the MCP context source field
 
-For detailed identity mode configuration and environment variables, see [Identity Modes & Environment Variables](https://github.com/permitio/permit-fastmcp/blob/main/docs/identity-modes.md).
+The middleware reads its `PERMIT_MCP_*` environment variables once, when `permit_fastmcp` is imported, so set them before the import. For detailed identity mode configuration and environment variables, see [Identity Modes & Environment Variables](https://github.com/permitio/permit-fastmcp/blob/main/docs/identity-modes.md).
 
 #### JWT Authentication Example
 
 ```python
 import os
 
-# Configure JWT identity extraction
+# Configure JWT identity extraction before importing the middleware
 os.environ["PERMIT_MCP_IDENTITY_MODE"] = "jwt"
 os.environ["PERMIT_MCP_IDENTITY_JWT_SECRET"] = "your-jwt-secret"
+
+from fastmcp import FastMCP
+from permit_fastmcp.middleware.middleware import PermitMcpMiddleware
+
+mcp = FastMCP("Secure FastMCP Server 🔒")
 
 mcp.add_middleware(PermitMcpMiddleware(
     permit_pdp_url="http://localhost:7766",
@@ -231,6 +236,16 @@ The middleware supports Attribute-Based Access Control (ABAC) policies that can 
 Create a dynamic resource with conditions like `resource.arg_number greater-than 10` to allow the `conditional-greet` tool only when the number argument exceeds 10.
 
 ```python
+from fastmcp import FastMCP
+from permit_fastmcp.middleware.middleware import PermitMcpMiddleware
+
+mcp = FastMCP("Secure FastMCP Server 🔒")
+mcp.add_middleware(PermitMcpMiddleware(
+    permit_pdp_url="http://localhost:7766",
+    permit_api_key="your-permit-api-key"
+))
+
+
 @mcp.tool
 def conditional_greet(name: str, number: int) -> str:
     """Greet a user only if number > 10"""
@@ -281,7 +296,10 @@ For a complete list of all configuration options and environment variables, see 
 ### Custom Middleware Configuration
 
 ```python
+from fastmcp import FastMCP
 from permit_fastmcp.middleware.middleware import PermitMcpMiddleware
+
+mcp = FastMCP("Secure FastMCP Server 🔒")
 
 middleware = PermitMcpMiddleware(
     permit_pdp_url="http://localhost:7766",
@@ -304,12 +322,13 @@ import os
 import datetime
 
 import jwt
-from fastmcp import FastMCP, Context
-from permit_fastmcp.middleware.middleware import PermitMcpMiddleware
 
-# Configure JWT identity extraction
+# Configure JWT identity extraction before importing the middleware
 os.environ["PERMIT_MCP_IDENTITY_MODE"] = "jwt"
 os.environ["PERMIT_MCP_IDENTITY_JWT_SECRET"] = "mysecretkey"
+
+from fastmcp import FastMCP, Context
+from permit_fastmcp.middleware.middleware import PermitMcpMiddleware
 
 mcp = FastMCP("My MCP Server")
 
@@ -318,7 +337,7 @@ def login(username: str, password: str) -> str:
     """Login to get a JWT token"""
     if username == "admin" and password == "password":
         token = jwt.encode(
-            {"sub": username, "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=1)},
+            {"sub": username, "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)},
             "mysecretkey",
             algorithm="HS256"
         )
