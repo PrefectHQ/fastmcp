@@ -19,6 +19,8 @@ Provide a `log_handler` function when creating the client:
 
 ```python
 import logging
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.logging import LogMessage
 
@@ -59,7 +61,7 @@ async def log_handler(message: LogMessage):
     logger.log(level, msg, extra=extra)
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     log_handler=log_handler,
 )
 ```

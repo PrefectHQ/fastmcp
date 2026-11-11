@@ -56,7 +56,7 @@ class DocketSettings(BaseSettings):
 
                 Default is memory:// for single-process scenarios. Use Redis or Valkey
                 when coordinating tasks across multiple processes (e.g., additional
-                workers via the fastmcp tasks CLI).
+                workers via `python -m fastmcp_tasks.worker_cli`).
                 """
             ),
         ),

@@ -1,8 +1,8 @@
 """Example: CodeMode transform — search and execute tools via code.
 
-CodeMode replaces the entire tool catalog with two meta-tools: `search`
-(keyword-based tool discovery) and `execute` (run Python code that chains
-tool calls in a sandbox). This dramatically reduces round-trips and
+CodeMode replaces the entire tool catalog with three meta-tools: `search`
+(keyword-based tool discovery), `get_schema` (parameter details), and
+`execute` (run Python code that chains tool calls in a sandbox). This dramatically reduces round-trips and
 context window usage when an LLM needs to orchestrate many tools.
 
 Requires pydantic-monty for the sandbox:
@@ -74,7 +74,7 @@ def read_file(path: str) -> str:
         return f.read()
 
 
-# CodeMode collapses all 8 tools into just `search` + `execute`.
+# CodeMode collapses all 8 tools into `search`, `get_schema` and `execute`.
 # The LLM discovers tools via keyword search, then writes Python
 # scripts that chain multiple tool calls in a single round-trip.
 mcp.add_transform(CodeMode())

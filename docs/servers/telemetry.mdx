@@ -217,7 +217,7 @@ The name check must happen before `ParentBased` delegates. If the name-based sam
 
 FastMCP assumes it owns the MCP span hierarchy. When something else already owns it — an MCP-aware OpenTelemetry instrumentation library, or a service mesh that understands the protocol — FastMCP's spans duplicate what that layer already emits, and the same request shows up twice in your traces.
 
-Setting `propagation_only` resolves the duplication in FastMCP's favor of the other layer:
+Setting `propagation_only` resolves the duplication in favor of the other layer:
 
 ```bash
 export FASTMCP_TELEMETRY_MODE=propagation_only

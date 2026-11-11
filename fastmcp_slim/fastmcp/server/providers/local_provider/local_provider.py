@@ -61,7 +61,7 @@ class LocalProvider(
 
     When used standalone, LocalProvider uses default settings. When attached
     to a FastMCP server via the server's decorators, server-level settings
-    like `_tool_serializer` and `_support_tasks_by_default` are injected.
+    like `_support_tasks_by_default` are injected.
 
     Example:
         ```python

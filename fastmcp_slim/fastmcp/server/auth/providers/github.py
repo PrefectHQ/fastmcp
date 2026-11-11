@@ -1,7 +1,7 @@
 """GitHub OAuth provider for FastMCP.
 
 This module provides a complete GitHub OAuth integration that's ready to use
-with just a client ID and client secret. It handles all the complexity of
+with a client ID, client secret, and base URL. It handles all the complexity of
 GitHub's OAuth flow, token validation, and user management.
 
 Example:
@@ -12,7 +12,8 @@ Example:
     # Simple GitHub OAuth protection
     auth = GitHubProvider(
         client_id="your-github-client-id",
-        client_secret="your-github-client-secret"
+        client_secret="your-github-client-secret",
+        base_url="https://my-server.com",
     )
 
     mcp = FastMCP("My Protected Server", auth=auth)

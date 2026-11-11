@@ -60,7 +60,7 @@ Pass your server instance to `Client(server)` in a test to exercise tool discove
 
 ### Discovering and Downloading Skills
 
-An agent can also use the client to retrieve a server's skills. `list_skills()` discovers them, `read_skill()` fetches and verifies every file of one, and `skill.to_directory()` [installs it into a local agent](/servers/skills#install-skills-into-a-local-agent).
+An agent can also use the client to retrieve a server's skills. With `SkillsClientExtension` (see [Skills extension](#skills-extension)), `list_skills()` discovers them; for servers that publish skills only as resources, use `list_skill_resources()`. `read_skill()` fetches and verifies every file of one, and `skill.to_directory()` [installs it into a local agent](/servers/skills#install-skills-into-a-local-agent).
 
 ## Choosing a Transport
 

@@ -1,6 +1,5 @@
 """Error handling middleware for consistent error responses and tracking."""
 
-import asyncio
 import logging
 import traceback
 from collections.abc import Callable
@@ -113,8 +112,7 @@ class ErrorHandlingMiddleware(Middleware):
             return MCPError(code=-32001, message=f"Not found: {error!s}")
         elif issubclass(error_type, PermissionError):
             return MCPError(code=-32000, message=f"Permission denied: {error!s}")
-        # asyncio.TimeoutError is a subclass of TimeoutError in Python 3.10, alias in 3.11+
-        elif issubclass(error_type, (TimeoutError, asyncio.TimeoutError)):
+        elif issubclass(error_type, TimeoutError):
             return MCPError(code=-32000, message=f"Request timeout: {error!s}")
         else:
             return MCPError(code=-32603, message=f"Internal error: {error!s}")
