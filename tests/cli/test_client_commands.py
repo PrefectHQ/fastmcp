@@ -33,7 +33,7 @@ from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.client import CallToolResult
 from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.sse import SSETransport
-from fastmcp.client.transports.stdio import StdioTransport
+from fastmcp.client.transports.stdio import NodeStdioTransport, StdioTransport
 from fastmcp.mcp_config import RemoteMCPServer
 from fastmcp.settings import Settings
 from fastmcp.utilities.tests import temporary_settings
@@ -400,6 +400,17 @@ class TestResolveServerSpec:
         assert isinstance(result, StdioTransport)
         assert result.command == "fastmcp"
         assert result.args == ["run", str(py_file.resolve()), "--no-banner"]
+
+    def test_js_file_builds_client_without_deprecation_warning(self, tmp_path: Path):
+        js_file = tmp_path / "server.js"
+        js_file.write_text("// empty")
+        result = resolve_server_spec(str(js_file))
+        assert isinstance(result, NodeStdioTransport)
+        assert result.command == "node"
+        assert result.args == [str(js_file.resolve())]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            Client(result)
 
     def test_json_mcp_config(self, tmp_path: Path):
         config_file = tmp_path / "mcp.json"
