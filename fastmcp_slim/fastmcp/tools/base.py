@@ -408,6 +408,7 @@ class Tool(FastMCPComponent):
         icons: list[Icon] | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
+        input_schema_extra: dict[str, Any] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
@@ -415,7 +416,11 @@ class Tool(FastMCPComponent):
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool | None = None,
     ) -> FunctionTool:
-        """Create a Tool from a function."""
+        """Create a Tool from a function.
+
+        `input_schema_extra` adds or overrides top-level keys in the generated
+        input schema without changing runtime validation.
+        """
         from fastmcp.tools.function_tool import FunctionTool
 
         return FunctionTool.from_function(
@@ -427,6 +432,7 @@ class Tool(FastMCPComponent):
             icons=icons,
             tags=tags,
             annotations=annotations,
+            input_schema_extra=input_schema_extra,
             output_schema=output_schema,
             meta=meta,
             task=task,

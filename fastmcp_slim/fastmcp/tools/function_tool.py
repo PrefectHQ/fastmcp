@@ -6,6 +6,7 @@ import functools
 import inspect
 import logging
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import lru_cache
 from types import MethodType
@@ -216,6 +217,7 @@ class ToolMeta:
     description: str | None = None
     icons: list[Icon] | None = None
     tags: set[str] | None = None
+    input_schema_extra: dict[str, Any] | None = None
     output_schema: dict[str, Any] | NotSetT | None = NotSet
     annotations: ToolAnnotations | None = None
     meta: dict[str, Any] | None = None
@@ -284,6 +286,7 @@ class FunctionTool(Tool):
         icons: list[Icon] | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
+        input_schema_extra: dict[str, Any] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
@@ -299,6 +302,8 @@ class FunctionTool(Tool):
                 individual parameters must not be passed.
             name, title, etc.: Individual parameters for backwards compatibility.
                 Cannot be used together with metadata parameter.
+            input_schema_extra: Top-level additions or overrides for the generated
+                input schema. Affects discovery only, not runtime validation.
         """
         # Check mutual exclusion
         individual_params_provided = (
@@ -312,6 +317,7 @@ class FunctionTool(Tool):
                     icons,
                     tags,
                     annotations,
+                    input_schema_extra,
                     meta,
                     task,
                     timeout,
@@ -342,6 +348,7 @@ class FunctionTool(Tool):
                 description=description,
                 icons=icons,
                 tags=tags,
+                input_schema_extra=input_schema_extra,
                 output_schema=output_schema,
                 annotations=annotations,
                 meta=meta,
@@ -386,6 +393,11 @@ class FunctionTool(Tool):
         else:
             task_config = task_value
         task_config.validate_function(fn, func_name)
+
+        if metadata.input_schema_extra:
+            parsed_fn.input_schema.update(deepcopy(metadata.input_schema_extra))
+            if parsed_fn.input_schema.get("type") != "object":
+                raise ValueError("Input schemas must have type 'object'.")
 
         # Handle output_schema
         if isinstance(metadata.output_schema, NotSetT):
@@ -578,6 +590,7 @@ def tool(
     description: str | None = None,
     icons: list[Icon] | None = None,
     tags: set[str] | None = None,
+    input_schema_extra: dict[str, Any] | None = None,
     output_schema: dict[str, Any] | NotSetT | None = NotSet,
     annotations: ToolAnnotations | dict[str, Any] | None = None,
     meta: dict[str, Any] | None = None,
@@ -596,6 +609,7 @@ def tool(
     description: str | None = None,
     icons: list[Icon] | None = None,
     tags: set[str] | None = None,
+    input_schema_extra: dict[str, Any] | None = None,
     output_schema: dict[str, Any] | NotSetT | None = NotSet,
     annotations: ToolAnnotations | dict[str, Any] | None = None,
     meta: dict[str, Any] | None = None,
@@ -615,6 +629,7 @@ def tool(
     description: str | None = None,
     icons: list[Icon] | None = None,
     tags: set[str] | None = None,
+    input_schema_extra: dict[str, Any] | None = None,
     output_schema: dict[str, Any] | NotSetT | None = NotSet,
     annotations: ToolAnnotations | dict[str, Any] | None = None,
     meta: dict[str, Any] | None = None,
@@ -629,6 +644,9 @@ def tool(
     using mcp.add_tool().
 
     Args:
+        input_schema_extra: Top-level additions or overrides for the generated
+            input schema. Nested values replace, rather than merge with, generated
+            values. Affects discovery only, not runtime validation.
         run_in_thread: Applies to sync tool functions only. When True (default),
             the sync function is dispatched to a worker thread so it does not
             block the event loop. Set to False to run the function inline on the
@@ -655,6 +673,7 @@ def tool(
             description=description,
             icons=icons,
             tags=tags,
+            input_schema_extra=input_schema_extra,
             output_schema=output_schema,
             annotations=annotations,
             meta=meta,
