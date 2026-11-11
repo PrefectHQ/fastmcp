@@ -643,7 +643,16 @@ class Context:
         # Resolve the client-requested minimum level (set via logging/setLevel),
         # falling back to the server's configured default.
         min_level = self.fastmcp.client_log_level
-        session = self.session
+        try:
+            session = self.session
+        except RuntimeError:
+            from fastmcp.server.dependencies import _background_task_session_id
+
+            # Background workers have no live session; a client-set level lives
+            # on a connection they cannot reach, so the server default applies.
+            if _background_task_session_id.get() is None:
+                raise
+            session = None
         session_min = _get_client_log_level(session)
         if session_min is not None:
             min_level = session_min
@@ -1350,7 +1359,7 @@ def _detached_request_context(context: Context) -> ServerRequestContext:
 _CONNECTION_LOG_LEVEL_KEY = "_fastmcp_client_log_level"
 
 
-def _get_client_log_level(session: ServerSession) -> LoggingLevel | None:
+def _get_client_log_level(session: ServerSession | None) -> LoggingLevel | None:
     """Return the minimum log level the client set with logging/setLevel, if any.
 
     v2 constructs sessions per-request, so the stable identity is the
@@ -1367,7 +1376,7 @@ def _get_client_log_level(session: ServerSession) -> LoggingLevel | None:
 
 async def _log_to_server_and_client(
     data: LogData,
-    session: ServerSession,
+    session: ServerSession | None,
     level: LoggingLevel,
     logger_name: str | None = None,
     related_request_id: str | None = None,
@@ -1391,6 +1400,10 @@ async def _log_to_server_and_client(
         msg=f"{msg_prefix}: {data.msg}",
         extra={k: v for k, v in (data.extra or {}).items() if k not in reserved},
     )
+
+    # Background workers have no live MCP session or client back-channel.
+    if session is None:
+        return
 
     # Deprecated upstream in SDK v2 but deliberately kept per compat directive;
     # removed with the multi-round-trip follow-up.
