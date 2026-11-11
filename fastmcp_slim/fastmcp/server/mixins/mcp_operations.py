@@ -518,17 +518,29 @@ class MCPOperationsMixin:
         and returns candidate values. A handler that does not recognize the
         reference/argument returns ``None`` or an empty sequence, which becomes
         an empty completion rather than an error — an unknown reference is not a
-        protocol failure. This handler is registered on the low-level server
-        only once a completion handler exists, so the completions capability is
-        declared exactly when the server can answer.
+        protocol failure. A reference the caller cannot see (disabled, hidden by
+        a visibility transform, or denied by its own `auth`) gets the same empty
+        completion, so completion never discloses what listing hides. This
+        handler is registered on the low-level server only once a completion
+        handler exists, so the completions capability is declared exactly when
+        the server can answer.
         """
+        empty = mcp_types.CompleteResult(completion=mcp_types.Completion(values=[]))
         with bind_request_context(ctx):
             logger.debug(f"[{self.name}] Handler called: complete %s", params.ref)
             handler = self._completion_handler
             if handler is None:
-                return mcp_types.CompleteResult(
-                    completion=mcp_types.Completion(values=[])
-                )
+                return empty
+
+            # Resolve without middleware: completion is one request to
+            # middleware, never a hidden listing (see test_completions.py).
+            ref = params.ref
+            if isinstance(ref, mcp_types.PromptReference):
+                visible = await self.get_prompt(ref.name) is not None
+            else:
+                visible = await self.get_resource_template(ref.uri) is not None
+            if not visible:
+                return empty
 
             if is_coroutine_function(handler):
                 raw = handler(params.ref, params.argument, params.context)

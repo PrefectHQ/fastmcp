@@ -357,3 +357,63 @@ async def test_generic_middleware_sees_one_request_per_completion(mode):
             {"name": "path", "value": ""},
         )
     assert seen == ["completion/complete", "completion/complete"]
+
+
+def _gated_server(**kwargs: Any) -> FastMCP:
+    mcp = FastMCP(**kwargs)
+
+    @mcp.prompt(tags={"secret"})
+    def hidden_prompt(x: str) -> str:
+        return x
+
+    @mcp.resource("notes://{path}", tags={"secret"})
+    def hidden_note(path: str) -> str:
+        return path
+
+    @mcp.resource("public://{path}")
+    def public_note(path: str) -> str:
+        return path
+
+    @mcp.completion
+    def complete(ref, argument, context):
+        return ["private/salary.md"]
+
+    return mcp
+
+
+async def _completions(mcp: FastMCP, mode: str) -> tuple[list, list, list]:
+    async with Client(mcp, mode=mode) as client:
+        prompt = await client.complete(
+            PromptReference(name="hidden_prompt"), {"name": "x", "value": ""}
+        )
+        template = await client.complete(
+            ResourceTemplateReference(uri="notes://{path}"),
+            {"name": "path", "value": ""},
+        )
+        public = await client.complete(
+            ResourceTemplateReference(uri="public://{path}"),
+            {"name": "path", "value": ""},
+        )
+    return prompt.values, template.values, public.values
+
+
+@pytest.mark.parametrize("mode", MODES)
+async def test_disabled_references_complete_like_unknown_ones(mode):
+    mcp = _gated_server()
+    mcp.disable(tags={"secret"})
+    assert await _completions(mcp, mode) == ([], [], ["private/salary.md"])
+
+
+@pytest.mark.parametrize("mode", MODES)
+async def test_auth_middleware_denied_references_complete_like_unknown_ones(mode):
+    from fastmcp.server.middleware import AuthMiddleware
+
+    mcp = _gated_server(
+        middleware=[
+            AuthMiddleware(
+                auth=lambda ctx: ctx.component is None
+                or "secret" not in ctx.component.tags
+            )
+        ]
+    )
+    assert await _completions(mcp, mode) == ([], [], ["private/salary.md"])
