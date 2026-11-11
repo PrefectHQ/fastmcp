@@ -736,9 +736,9 @@ def generate_skill_content(
     tools: list[mcp_types.Tool],
 ) -> str:
     """Generate a SKILL.md file for a generated CLI script."""
-    skill_name = (
-        server_name.replace(" ", "-").lower().replace("\\", "").replace('"', "")
-    )
+    skill_name = re.sub(r"[^a-z0-9]+", "-", server_name.lower()).strip("-")
+    # Reserve four characters for the "-cli" suffix in the 64-character limit.
+    skill_name = skill_name[:60].rstrip("-") or "server"
     safe_name = server_name.replace("\\", "").replace('"', "")
     description = f"CLI for the {safe_name} MCP server. Call tools, list resources, and get prompts."
 
