@@ -460,7 +460,7 @@ mcp.add_middleware(ResponseCachingMiddleware(
 Each settings class accepts:
 - `enabled` — Enable/disable caching for this operation
 - `ttl` — Time-to-live in seconds
-- `included_*` / `excluded_*` — Whitelist or blacklist specific items
+- `included_tools` / `excluded_tools` (`CallToolSettings` only) — Allowlist or blocklist specific tools by name
 
 For persistence or distributed deployments, configure a different storage backend:
 
