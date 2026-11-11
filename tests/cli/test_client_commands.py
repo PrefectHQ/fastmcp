@@ -511,7 +511,9 @@ class TestBuildClient:
         # attributed to FastMCP source are attributable to the code under
         # test; `.venv` lives inside the checkout, so site-packages must be
         # excluded explicitly.
-        package_root = str(Path(__file__).resolve().parents[2] / "fastmcp_slim" / "fastmcp")
+        package_root = str(
+            Path(__file__).resolve().parents[2] / "fastmcp_slim" / "fastmcp"
+        )
         assert not [w for w in emitted if (w.filename or "").startswith(package_root)]
         files = [path for path in tmp_path.rglob("*") if path.is_file()]
         assert files
