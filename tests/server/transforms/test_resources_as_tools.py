@@ -52,6 +52,20 @@ class TestResourcesAsToolsBasic:
             assert "list_resources" in tool_names
             assert "read_resource" in tool_names
 
+    @pytest.mark.parametrize("name", ["list_resources", "read_resource"])
+    async def test_user_tool_with_generated_name_wins(self, name: str):
+        """A user tool sharing a generated tool's name is listed and called."""
+        mcp = FastMCP("Test")
+        mcp.tool(lambda: "user tool", name=name)
+        mcp.add_transform(ResourcesAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = [t.name for t in await client.list_tools()]
+            result = await client.call_tool(name, {})
+
+        assert tools.count(name) == 1
+        assert result.content[0].text == "user tool"
+
 
 class TestListResourcesTool:
     """Test the list_resources tool."""

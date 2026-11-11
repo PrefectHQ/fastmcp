@@ -49,6 +49,20 @@ class TestPromptsAsToolsBasic:
             assert "list_prompts" in tool_names
             assert "get_prompt" in tool_names
 
+    @pytest.mark.parametrize("name", ["list_prompts", "get_prompt"])
+    async def test_user_tool_with_generated_name_wins(self, name: str):
+        """A user tool sharing a generated tool's name is listed and called."""
+        mcp = FastMCP("Test")
+        mcp.tool(lambda: "user tool", name=name)
+        mcp.add_transform(PromptsAsTools(mcp))
+
+        async with Client(mcp) as client:
+            tools = [t.name for t in await client.list_tools()]
+            result = await client.call_tool(name, {})
+
+        assert tools.count(name) == 1
+        assert result.content[0].text == "user tool"
+
 
 class TestListPromptsTool:
     """Test the list_prompts tool."""
