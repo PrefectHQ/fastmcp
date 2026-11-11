@@ -46,7 +46,7 @@ def explain_concept(concept: str) -> str:
 mcp.add_transform(PromptsAsTools(mcp))
 ```
 
-Clients now see the tools you defined directly, plus `list_prompts` and `get_prompt`. If you already define a tool named `list_prompts` or `get_prompt`, your tool keeps that name and the transform skips its own.
+Clients now see the tools you defined directly, plus `list_prompts` and `get_prompt`. These names belong to the transform: a tool you define as `list_prompts` or `get_prompt` is replaced, so listing and calling always reach the generated tool. Rename your tool to keep it.
 
 ## Listing Prompts
 

@@ -46,7 +46,7 @@ def user_profile(user_id: str) -> str:
 mcp.add_transform(ResourcesAsTools(mcp))
 ```
 
-Clients now see `list_resources` and `read_resource` alongside any tools you defined directly. If you already define a tool named `list_resources` or `read_resource`, your tool keeps that name and the transform skips its own.
+Clients now see `list_resources` and `read_resource` alongside any tools you defined directly. These names belong to the transform: a tool you define as `list_resources` or `read_resource` is replaced, so listing and calling always reach the generated tool. Rename your tool to keep it.
 
 Both generated tools are annotated with `readOnlyHint=True`, since they only read data. Clients that respect tool annotations (like Cursor) can use this to auto-confirm these tool calls without prompting the user.
 

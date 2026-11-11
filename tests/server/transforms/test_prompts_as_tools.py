@@ -7,6 +7,7 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.transforms import PromptsAsTools
+from fastmcp.server.transforms.search import RegexSearchTransform
 
 
 class TestPromptsAsToolsBasic:
@@ -49,19 +50,29 @@ class TestPromptsAsToolsBasic:
             assert "list_prompts" in tool_names
             assert "get_prompt" in tool_names
 
-    @pytest.mark.parametrize("name", ["list_prompts", "get_prompt"])
-    async def test_user_tool_with_generated_name_wins(self, name: str):
-        """A user tool sharing a generated tool's name is listed and called."""
+    @pytest.mark.parametrize("search_first", [False, True])
+    @pytest.mark.parametrize(
+        ("name", "arguments", "expected"),
+        [("list_prompts", {}, "greet"), ("get_prompt", {"name": "greet"}, "hello")],
+    )
+    async def test_generated_tool_replaces_user_tool_with_same_name(
+        self, name: str, arguments: dict, expected: str, search_first: bool
+    ):
+        """The generated tool owns its name in both listing and calls."""
         mcp = FastMCP("Test")
-        mcp.tool(lambda: "user tool", name=name)
+        mcp.tool(lambda path: "user tool", name=name)
+        mcp.prompt(lambda: "hello", name="greet")
+        if search_first:
+            mcp.add_transform(RegexSearchTransform())
         mcp.add_transform(PromptsAsTools(mcp))
 
         async with Client(mcp) as client:
-            tools = [t.name for t in await client.list_tools()]
-            result = await client.call_tool(name, {})
+            listed = [t for t in await client.list_tools() if t.name == name]
+            result = await client.call_tool(name, arguments)
 
-        assert tools.count(name) == 1
-        assert result.content[0].text == "user tool"
+        assert len(listed) == 1
+        assert "path" not in listed[0].input_schema.get("properties", {})
+        assert expected in result.content[0].text
 
 
 class TestListPromptsTool:

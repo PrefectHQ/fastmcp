@@ -78,22 +78,19 @@ class ResourcesAsTools(Transform):
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """Add resource tools to the tool list."""
-        names = {tool.name for tool in tools}
         generated = [self._make_list_resources_tool(), self._make_read_resource_tool()]
-        return [*tools, *(tool for tool in generated if tool.name not in names)]
+        names = {tool.name for tool in generated}
+        return [*(tool for tool in tools if tool.name not in names), *generated]
 
     async def get_tool(
         self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
     ) -> Tool | None:
         """Get a tool by name, including generated resource tools."""
-        tool = await call_next(name, version=version)
-        if tool is not None:
-            return tool
         if name == "list_resources":
             return self._make_list_resources_tool()
         if name == "read_resource":
             return self._make_read_resource_tool()
-        return None
+        return await call_next(name, version=version)
 
     def _make_list_resources_tool(self) -> Tool:
         """Create the list_resources tool."""
