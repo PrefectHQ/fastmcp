@@ -7,10 +7,6 @@ respect_gitignore = true
 exclude = ["**/uv.lock", ".git/**", "docs/**"]
 
 [[rules]]
-path = "tests/**"
-max_lines = 1000
-
-[[rules]]
 path = "fastmcp_slim/fastmcp/server/context.py"
 max_lines = 1404
 
@@ -49,10 +45,6 @@ max_lines = 1016
 [[rules]]
 path = "tests/server/providers/openapi/test_openapi_features.py"
 max_lines = 1029
-
-[[rules]]
-path = "tests/server/tasks/test_task_mount.py"
-max_lines = 1088
 
 [[rules]]
 path = "tests/server/test_dependencies.py"
