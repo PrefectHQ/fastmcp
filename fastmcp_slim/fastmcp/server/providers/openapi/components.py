@@ -8,6 +8,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 import httpx2
+from jsonschema import Draft202012Validator
 from mcp_types import ToolAnnotations
 from pydantic.networks import AnyUrl
 
@@ -244,6 +245,35 @@ class OpenAPITool(Tool):
                     f"Accepted: {', '.join(sorted(accepted)) or 'none'}",
                     log_level=logging.WARNING,
                 )
+            # The director dispatches body values verbatim, and the top-level
+            # key check above cannot see nested schema constraints, so invalid
+            # nested values (wrong type, extra key under
+            # ``additionalProperties: false``, missing required property)
+            # would otherwise reach the HTTP transport. Validate each body
+            # argument against its advertised property schema instead. Refs
+            # inside a property schema resolve against the tool schema's
+            # ``$defs`` because the validator keeps the full document as its
+            # resolution root — the same pattern the director uses for its
+            # null-representation check.
+            properties = self.parameters.get("properties", {})
+            root_validator = Draft202012Validator(self.parameters)
+            for name in sorted(arguments.keys() & parameter_map.keys()):
+                if parameter_map[name].get("location") != "body":
+                    continue
+                schema = properties.get(name)
+                if schema is None:
+                    continue
+                errors = list(
+                    root_validator.evolve(schema=schema).iter_errors(arguments[name])
+                )
+                if errors:
+                    details = "; ".join(
+                        f"{error.json_path}: {error.message}" for error in errors[:3]
+                    )
+                    raise ValidationError(
+                        f"Argument '{name}' does not match its schema: {details}",
+                        log_level=logging.WARNING,
+                    )
         # Build the request — errors here are programming/schema issues,
         # not HTTP failures, so we catch them separately.
         try:
