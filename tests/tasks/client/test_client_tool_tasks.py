@@ -58,6 +58,29 @@ async def test_tool_task_result_returns_parsed_result(tool_task_server: FastMCP)
         assert result.data == 42
 
 
+@pytest.mark.parametrize("version", [None, "1.0"])
+@pytest.mark.parametrize("raise_on_error", [True, False])
+async def test_tool_task_result_validates_output_schema(
+    version: str | None, raise_on_error: bool
+) -> None:
+    mcp = FastMCP("invalid-task-output")
+    mcp.add_extension(TasksExtension())
+
+    @mcp.tool(version=version, task=True)
+    async def liar() -> int:
+        return "oops"  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+
+    async with Client(mcp) as client:
+        with pytest.raises(RuntimeError, match="Invalid structured content"):
+            await client.call_tool("liar", version=version)
+
+        task = await call_tool_task(
+            client, "liar", version=version, raise_on_error=raise_on_error
+        )
+        with pytest.raises(RuntimeError, match="Invalid structured content"):
+            await task.result()
+
+
 async def test_tool_task_await_syntax(tool_task_server: FastMCP):
     async with Client(tool_task_server, mode="auto") as client:
         task = await call_tool_task(client, "multiply", {"a": 7, "b": 6})

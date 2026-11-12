@@ -33,6 +33,7 @@ from mcp.client.session import ClientRequestContext, ClientSession, ElicitationF
 from mcp_types import CallToolResult
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
+from fastmcp.client._version_pin import PinnedCall, pinned_call
 from fastmcp.client.telemetry import client_span
 from fastmcp.exceptions import ToolError
 from fastmcp.telemetry import inject_trace_context
@@ -504,6 +505,18 @@ class ToolTask:
                 content=[mcp_types.TextContent(type="text", text=message)],
                 is_error=True,
             )
+
+        if not mcp_result.is_error:
+            pin_token = (
+                pinned_call.set(PinnedCall(self._session, self._pinned_version))
+                if self._pinned_version is not None
+                else None
+            )
+            try:
+                await self._session.validate_tool_result(self._tool_name, mcp_result)
+            finally:
+                if pin_token is not None:
+                    pinned_call.reset(pin_token)
 
         parsed = await self._client._parse_call_tool_result(
             self._tool_name,
