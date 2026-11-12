@@ -85,7 +85,6 @@ class SkillFile(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    path: str
     digest: str = Field(pattern=_SHA256_PATTERN)
     size: int = Field(ge=0)
 
@@ -100,14 +99,12 @@ class SkillManifest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     frontmatter: SkillFrontmatter
-    files: tuple[SkillFile, ...]
+    files: dict[str, SkillFile]
+    """Every file in the skill, keyed by relative path, including `SKILL.md`."""
 
     @model_validator(mode="after")
     def validate_files(self) -> Self:
-        sizes = {file.path: file.size for file in self.files}
-        if len(sizes) != len(self.files):
-            raise ValueError("Each skill file path may appear only once")
-        _validate_files(sizes)
+        _validate_files({path: file.size for path, file in self.files.items()})
         return self
 
     def to_mcp_skill(self, path: str | None = None) -> MCPSkill:
@@ -115,11 +112,11 @@ class SkillManifest(BaseModel):
         prefix = f"skill://{quote(path or self.frontmatter.name, safe='/')}/"
         resources = [
             SkillResource(
-                uri=prefix + quote(file.path, safe="/"),
+                uri=prefix + quote(file_path, safe="/"),
                 digest=file.digest,
                 size=file.size,
             )
-            for file in self.files
+            for file_path, file in self.files.items()
         ]
         return MCPSkill(
             uri=f"{prefix}SKILL.md",
@@ -248,14 +245,13 @@ class Skill(metaclass=_SkillMeta):
         # Validated above, so the manifest skips validating the same files again.
         manifest = SkillManifest.model_construct(
             frontmatter=parse_frontmatter(contents["SKILL.md"]),
-            files=tuple(
-                SkillFile.model_construct(
-                    path=path,
+            files={
+                path: SkillFile.model_construct(
                     digest=f"sha256:{hashlib.sha256(content).hexdigest()}",
                     size=len(content),
                 )
                 for path, content in contents.items()
-            ),
+            },
         )
         object.__setattr__(self, "_files", MappingProxyType(contents))
         object.__setattr__(self, "_manifest", manifest)

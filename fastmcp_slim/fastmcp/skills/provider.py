@@ -56,17 +56,20 @@ class SkillManifestProvider(Provider):
 
     Example:
         ```python
-        from fastmcp import FastMCP
+        from fastmcp import FastMCP, Skill
         from fastmcp.skills import SkillFile, SkillManifest
         from fastmcp.skills.provider import SkillManifestProvider
+
+        review = Skill(name="review", description="Review changes.", instructions="")
+        blobs = {review.manifest.files["SKILL.md"].digest: review.files["SKILL.md"]}
 
 
         class StoredSkills(SkillManifestProvider):
             async def load_manifests(self) -> dict[str, SkillManifest]:
-                return await store.manifests()
+                return {"review": review.manifest}
 
-            async def read_file(self, path: str, file: SkillFile) -> bytes:
-                return await store.read(file.digest)
+            async def read_file(self, path: str, file_path: str, file: SkillFile) -> bytes:
+                return blobs[file.digest]
 
 
         mcp = FastMCP("Skills", providers=[StoredSkills()])
@@ -82,8 +85,8 @@ class SkillManifestProvider(Provider):
         """Return the skills to serve, keyed by the path each is served under."""
         raise NotImplementedError
 
-    async def read_file(self, path: str, file: SkillFile) -> bytes:
-        """Return the content of `file` in the skill served at `skill://{path}/`."""
+    async def read_file(self, path: str, file_path: str, file: SkillFile) -> bytes:
+        """Return the content of `file_path` in the skill served at `skill://{path}/`."""
         raise NotImplementedError
 
     async def _manifests(self) -> dict[str, SkillManifest]:
@@ -110,7 +113,8 @@ class SkillManifestProvider(Provider):
         resources: list[Resource] = []
         for path, manifest in (await self._manifests()).items():
             resources.extend(
-                _file_resource(self, path, manifest, file) for file in manifest.files
+                _file_resource(self, path, manifest, file_path, file)
+                for file_path, file in manifest.files.items()
             )
             resources.append(_manifest_resource(path, manifest))
         return resources
@@ -124,10 +128,10 @@ class SkillManifestProvider(Provider):
         path, manifest, file_path = located
         if file_path == "_manifest":
             return _manifest_resource(path, manifest)
-        for file in manifest.files:
-            if file.path == file_path:
-                return _file_resource(self, path, manifest, file)
-        return None
+        file = manifest.files.get(file_path)
+        if file is None:
+            return None
+        return _file_resource(self, path, manifest, file_path, file)
 
     # -------------------------------------------------------------------------
     # Skills extension source
@@ -160,8 +164,8 @@ class SkillManifestProvider(Provider):
     async def _is_served(self, path: str, manifest: SkillManifest) -> bool:
         """Advertise a skill only when this caller can read every file as listed."""
         server = get_context().fastmcp
-        for file in manifest.files:
-            uri = _file_uri(path, file.path)
+        for file_path, file in manifest.files.items():
+            uri = _file_uri(path, file_path)
             served = await _resolve_read(server, uri)
             if not (
                 isinstance(served, SkillFileResource)
@@ -182,10 +186,13 @@ class SkillFileResource(Resource):
 
     provider: SkillManifestProvider = Field(exclude=True, repr=False)
     skill_path: str
+    file_path: str
     file: SkillFile
 
     async def read(self) -> ResourceResult:
-        content = await self.provider.read_file(self.skill_path, self.file)
+        content = await self.provider.read_file(
+            self.skill_path, self.file_path, self.file
+        )
         value: str | bytes = content
         if self.mime_type.startswith("text/"):
             with suppress(UnicodeDecodeError):
@@ -200,8 +207,8 @@ class SkillManifestResource(Resource):
 
     async def read(self) -> str:
         files = [
-            {"path": file.path, "size": file.size, "hash": file.digest}
-            for file in self.manifest.files
+            {"path": path, "size": file.size, "hash": file.digest}
+            for path, file in self.manifest.files.items()
         ]
         return json.dumps(
             {"skill": self.manifest.frontmatter.name, "files": files}, indent=2
@@ -249,8 +256,8 @@ class SkillCatalogProvider(SkillManifestProvider):
     async def load_manifests(self) -> Mapping[str, SkillManifest]:
         return {path: skill.manifest for path, skill in (await self._catalog()).items()}
 
-    async def read_file(self, path: str, file: SkillFile) -> bytes:
-        return (await self._catalog())[path].files[file.path]
+    async def read_file(self, path: str, file_path: str, file: SkillFile) -> bytes:
+        return (await self._catalog())[path].files[file_path]
 
     async def _catalog(self) -> dict[str, Skill]:
         async def load() -> dict[str, Skill]:
@@ -499,18 +506,23 @@ def _locate(uri: str, catalog: Mapping[str, _T]) -> tuple[str, _T, str] | None:
 
 
 def _file_resource(
-    provider: SkillManifestProvider, path: str, manifest: SkillManifest, file: SkillFile
+    provider: SkillManifestProvider,
+    path: str,
+    manifest: SkillManifest,
+    file_path: str,
+    file: SkillFile,
 ) -> SkillFileResource:
-    mime_type = mimetypes.guess_type(file.path)[0] or "application/octet-stream"
+    mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
     return SkillFileResource(
-        uri=AnyUrl(_file_uri(path, file.path)),
-        name=f"{path}/{file.path}",
+        uri=AnyUrl(_file_uri(path, file_path)),
+        name=f"{path}/{file_path}",
         description=manifest.frontmatter.description
-        if file.path == "SKILL.md"
+        if file_path == "SKILL.md"
         else None,
         mime_type=mime_type,
         provider=provider,
         skill_path=path,
+        file_path=file_path,
         file=file,
     )
 

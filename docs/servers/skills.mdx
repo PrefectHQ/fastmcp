@@ -78,14 +78,16 @@ from fastmcp.skills import Skill, SkillFile, SkillManifest
 from fastmcp.skills.provider import SkillManifestProvider
 
 review = Skill(name="review", description="Review changes.", instructions="# Review\n")
-blobs = {file.digest: review.files[file.path] for file in review.manifest.files}
+blobs = {
+    file.digest: review.files[path] for path, file in review.manifest.files.items()
+}
 
 
 class StoredSkills(SkillManifestProvider):
     async def load_manifests(self) -> dict[str, SkillManifest]:
         return {"review": review.manifest}
 
-    async def read_file(self, path: str, file: SkillFile) -> bytes:
+    async def read_file(self, path: str, file_path: str, file: SkillFile) -> bytes:
         return blobs[file.digest]
 
 

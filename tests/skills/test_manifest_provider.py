@@ -20,17 +20,17 @@ class StoredSkills(SkillManifestProvider):
         super().__init__()
         self.manifests = {skill.name: skill.manifest for skill in skills}
         self.blobs = {
-            file.digest: skill.files[file.path]
+            file.digest: skill.files[file_path]
             for skill in skills
-            for file in skill.manifest.files
+            for file_path, file in skill.manifest.files.items()
         }
         self.reads: list[str] = []
 
     async def load_manifests(self) -> dict[str, SkillManifest]:
         return self.manifests
 
-    async def read_file(self, path: str, file: SkillFile) -> bytes:
-        self.reads.append(f"{path}/{file.path}")
+    async def read_file(self, path: str, file_path: str, file: SkillFile) -> bytes:
+        self.reads.append(f"{path}/{file_path}")
         return self.blobs[file.digest]
 
 
@@ -69,14 +69,9 @@ async def test_read_skill_returns_the_stored_skill():
 
 
 def test_manifest_requires_skill_md():
-    files = tuple(file for file in REVIEW.manifest.files if file.path != "SKILL.md")
+    files = {
+        path: file for path, file in REVIEW.manifest.files.items() if path != "SKILL.md"
+    }
 
     with pytest.raises(ValueError, match="must contain SKILL.md"):
-        SkillManifest(frontmatter=REVIEW.manifest.frontmatter, files=files)
-
-
-def test_manifest_rejects_a_repeated_path():
-    files = REVIEW.manifest.files + REVIEW.manifest.files[:1]
-
-    with pytest.raises(ValueError, match="may appear only once"):
         SkillManifest(frontmatter=REVIEW.manifest.frontmatter, files=files)
