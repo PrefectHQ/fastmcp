@@ -70,6 +70,30 @@ class StoredSkills(SkillCatalogProvider):
         ]
 ```
 
+A `Skill` holds the bytes of every file, so a catalog of large skills is a lot to keep in memory. When the files already live somewhere else, such as object storage, subclass `SkillManifestProvider` instead. Discovery only needs each skill's frontmatter and the digest and size of each file, which a `SkillManifest` holds. FastMCP calls `read_file()` only when a client reads that file.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.skills import Skill, SkillFile, SkillManifest
+from fastmcp.skills.provider import SkillManifestProvider
+
+review = Skill(name="review", description="Review changes.", instructions="# Review\n")
+blobs = {file.digest: review.files[file.path] for file in review.manifest.files}
+
+
+class StoredSkills(SkillManifestProvider):
+    async def load_manifests(self) -> dict[str, SkillManifest]:
+        return {"review": review.manifest}
+
+    async def read_file(self, path: str, file: SkillFile) -> bytes:
+        return blobs[file.digest]
+
+
+mcp = FastMCP("Stored Skills", providers=[StoredSkills()])
+```
+
+Like `load_skills()`, `load_manifests()` runs once per request. A manifest's paths and digests are what clients check when they read a skill, so `read_file()` must return exactly the bytes the manifest describes.
+
 To serve a folder of skills, point `SkillsDirectoryProvider` at it. Every subfolder with a `SKILL.md` becomes a skill, served at its path below the root, so `ops/deploy/SKILL.md` becomes `skill://ops/deploy/SKILL.md`. A coding agent's own skills folder works the same way:
 
 ```python

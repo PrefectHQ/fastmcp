@@ -13,12 +13,7 @@ from fastmcp import Client, FastMCP
 from fastmcp._warnings import FastMCPDeprecationWarning
 from fastmcp.skills import MCPSkill, Skill, SkillsClientExtension
 from fastmcp.skills.extension import SkillsExtension
-from fastmcp.skills.provider import (
-    SkillCatalogProvider,
-    SkillFileResource,
-    SkillManifestResource,
-    SkillsDirectoryProvider,
-)
+from fastmcp.skills.provider import SkillCatalogProvider, SkillsDirectoryProvider
 from fastmcp.utilities.tests import temporary_settings
 
 REVIEW = Skill(name="review", description="Review changes", instructions="# Review\n")
@@ -275,17 +270,6 @@ def test_wire_skill_is_not_an_authored_catalog_value():
         SkillCatalogProvider({"review": entry})
     with pytest.raises(TypeError, match="Expected a Skill"):
         SkillCatalogProvider([entry])
-
-
-@pytest.mark.parametrize("resource_cls", [SkillFileResource, SkillManifestResource])
-def test_skill_resources_require_authored_file_contents(resource_cls: type):
-    with pytest.raises(ValidationError, match="Expected an authored Skill"):
-        resource_cls(
-            uri="skill://review/SKILL.md",
-            skill=REVIEW.to_mcp_skill(),
-            skill_path="review",
-            file_path="SKILL.md",
-        )
 
 
 def test_wire_skill_does_not_satisfy_an_authoring_subclass():
