@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import warnings
 from collections import Counter
 from collections.abc import AsyncGenerator, Sequence
@@ -112,7 +113,10 @@ class OpenAPIProvider(Provider):
         """
         super().__init__()
 
+        self._openapi_spec = openapi_spec
         self._owns_client = client is None
+        self._client_ref_count = 0
+        self._client_lock = asyncio.Lock()
         if client is None:
             client = self._create_default_client(openapi_spec)
         elif _is_legacy_httpx_client(client):
@@ -200,14 +204,38 @@ class OpenAPIProvider(Provider):
             base_url = base_url.replace(f"{{{name}}}", var.get("default", ""))
         return httpx2.AsyncClient(base_url=base_url, timeout=DEFAULT_TIMEOUT)
 
+    def _update_components_client(self, client: httpx2.AsyncClient) -> None:
+        """Update client reference on provider and its registered components."""
+        self._client = client
+        for tool in self._tools.values():
+            tool._client = client
+        for resource in self._resources.values():
+            resource._client = client
+        for template in self._templates.values():
+            template._client = client
+
     @asynccontextmanager
     async def lifespan(self) -> AsyncGenerator[None, None]:
         """Manage the lifecycle of the auto-created httpx client."""
-        if self._owns_client:
-            async with self._client:
-                yield
-        else:
+        if not self._owns_client:
             yield
+            return
+
+        async with self._client_lock:
+            if self._client.is_closed:
+                new_client = self._create_default_client(self._openapi_spec)
+                self._update_components_client(new_client)
+            if self._client_ref_count == 0:
+                await self._client.__aenter__()
+            self._client_ref_count += 1
+
+        try:
+            yield
+        finally:
+            async with self._client_lock:
+                self._client_ref_count -= 1
+                if self._client_ref_count == 0:
+                    await self._client.__aexit__(None, None, None)
 
     def _generate_default_name(
         self, route: HTTPRoute, mcp_names_map: dict[str, str] | None = None

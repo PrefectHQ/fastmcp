@@ -1,5 +1,8 @@
 """Unit tests for OpenAPIProvider."""
 
+import asyncio
+from typing import Any
+
 import httpx2
 import pytest
 
@@ -444,3 +447,167 @@ class TestOpenAPIProviderComponentNames:
             resources = await client.list_resources()
 
         assert len({str(resource.uri) for resource in resources}) == 3
+
+
+class TestOpenAPIProviderLifespanReuse:
+    """Test OpenAPIProvider client lifecycle across multiple or concurrent lifespans."""
+
+    @staticmethod
+    def _spec() -> dict[str, Any]:
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "Tiny", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/items": {
+                    "get": {
+                        "operationId": "list_items",
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                },
+                "/items/{id}": {
+                    "get": {
+                        "operationId": "get_item",
+                        "parameters": [
+                            {
+                                "name": "id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                },
+            },
+        }
+
+    async def test_from_openapi_without_explicit_client_reconnects(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """FastMCP.from_openapi without client= can be connected multiple times."""
+        call_count = 0
+
+        def make_client(
+            cls: type[OpenAPIProvider], spec: dict[str, Any]
+        ) -> httpx2.AsyncClient:
+            def handler(request: httpx2.Request) -> httpx2.Response:
+                nonlocal call_count
+                call_count += 1
+                return httpx2.Response(200, json={"attempt": call_count})
+
+            return httpx2.AsyncClient(
+                base_url="https://api.example.com",
+                transport=httpx2.MockTransport(handler),
+            )
+
+        monkeypatch.setattr(
+            OpenAPIProvider, "_create_default_client", classmethod(make_client)
+        )
+
+        mcp = FastMCP.from_openapi(openapi_spec=self._spec(), name="Tiny")
+        for attempt in (1, 2):
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+                assert len(tools) >= 1
+                result = await client.call_tool("list_items", {})
+                assert result.data == {"attempt": attempt}
+
+    async def test_concurrent_lifespans_share_and_close_client_safely(self):
+        """Concurrent lifespans on one OpenAPIProvider must not double-open or close early."""
+        provider = OpenAPIProvider(openapi_spec=self._spec())
+        first_client = provider._client
+
+        async with provider.lifespan():
+            assert not first_client.is_closed
+            async with provider.lifespan():
+                assert provider._client is first_client
+                assert not first_client.is_closed
+            # Inner lifespan exited, outer is still active
+            assert not first_client.is_closed
+
+        # Outer lifespan exited, owned client should now be closed
+        assert first_client.is_closed
+
+        # Entering another lifespan afterward recreates a fresh open client
+        async with provider.lifespan():
+            assert provider._client is not first_client
+            assert not provider._client.is_closed
+            for tool in provider._tools.values():
+                assert tool._client is provider._client
+            for resource in provider._resources.values():
+                assert resource._client is provider._client
+            for template in provider._templates.values():
+                assert template._client is provider._client
+        assert provider._client.is_closed
+
+    async def test_explicit_client_not_closed_or_replaced(self):
+        """Explicitly provided clients are not owned, closed, or replaced."""
+        explicit = httpx2.AsyncClient(base_url="https://api.example.com")
+        try:
+            mcp = FastMCP.from_openapi(
+                openapi_spec=self._spec(), client=explicit, name="Tiny"
+            )
+            for _ in (1, 2):
+                async with Client(mcp) as client:
+                    tools = await client.list_tools()
+                    assert len(tools) >= 1
+                assert not explicit.is_closed
+        finally:
+            await explicit.aclose()
+
+    async def test_concurrent_tasks_interleaved_lifespans(self):
+        """Separate async tasks entering/exiting OpenAPIProvider lifespan interleaved."""
+        provider = OpenAPIProvider(
+            openapi_spec=self._spec(),
+            route_maps=[
+                RouteMap(pattern=r"^/items$", mcp_type=MCPType.RESOURCE),
+                RouteMap(
+                    pattern=r"^/items/\{id\}$", mcp_type=MCPType.RESOURCE_TEMPLATE
+                ),
+            ],
+        )
+        assert len(provider._resources) >= 1
+        assert len(provider._templates) >= 1
+
+        first_client = provider._client
+        task1_entered = asyncio.Event()
+        task2_entered = asyncio.Event()
+        task1_can_exit = asyncio.Event()
+        task2_can_exit = asyncio.Event()
+
+        async def worker1():
+            async with provider.lifespan():
+                task1_entered.set()
+                await task1_can_exit.wait()
+
+        async def worker2():
+            await task1_entered.wait()
+            async with provider.lifespan():
+                task2_entered.set()
+                await task2_can_exit.wait()
+
+        t1 = asyncio.create_task(worker1())
+        t2 = asyncio.create_task(worker2())
+
+        await task1_entered.wait()
+        await task2_entered.wait()
+        assert not first_client.is_closed
+
+        # Task 1 exits first while Task 2 is still running
+        task1_can_exit.set()
+        await t1
+        assert not first_client.is_closed
+
+        # Task 2 exits; now client should close
+        task2_can_exit.set()
+        await t2
+        assert first_client.is_closed
+
+        # Verify a new lifespan updates resources and templates as well
+        async with provider.lifespan():
+            assert provider._client is not first_client
+            for r in provider._resources.values():
+                assert r._client is provider._client
+            for t in provider._templates.values():
+                assert t._client is provider._client
