@@ -254,7 +254,9 @@ class SkillCatalogProvider(SkillManifestProvider):
         return self._static
 
     async def load_manifests(self) -> Mapping[str, SkillManifest]:
-        return {path: skill.manifest for path, skill in (await self._catalog()).items()}
+        return {
+            path: skill._manifest for path, skill in (await self._catalog()).items()
+        }
 
     async def read_file(self, path: str, file_path: str, file: SkillFile) -> bytes:
         return (await self._catalog())[path].files[file_path]
