@@ -161,6 +161,19 @@ class TestClear:
         )
         assert await store.get(key) is not None
 
+    @pytest.mark.timeout(120)
+    async def test_clear_removes_more_than_one_page_of_keys(self):
+        """clear() must not stop at the backend's first page of keys (10,000)."""
+        backend = MemoryStore()
+        store = KeyValueResponseCacheStore(backend, collection="cache_big")
+        for i in range(10_050):
+            await backend.put(key=f"k{i}", value={"v": i}, collection="cache_big")
+
+        await store.clear()
+
+        remaining = await backend.keys(collection="cache_big")
+        assert len(remaining) == 0
+
     async def test_clear_scoped_to_own_collection(self):
         """Two adapters over one backend clear independently."""
         backend = MemoryStore()

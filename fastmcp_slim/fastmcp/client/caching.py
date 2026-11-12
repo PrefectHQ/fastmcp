@@ -197,9 +197,11 @@ class KeyValueResponseCacheStore:
         """
         storage = self._storage
         if isinstance(storage, AsyncEnumerateKeysProtocol):
-            keys = await storage.keys(collection=self._collection)
-            for stored_key in keys:
-                await storage.delete(key=stored_key, collection=self._collection)
+            # `keys()` returns one page per call (the memory store caps it at
+            # 10,000), so keep draining until the collection is empty.
+            while keys := await storage.keys(collection=self._collection):
+                for stored_key in keys:
+                    await storage.delete(key=stored_key, collection=self._collection)
             return
         if isinstance(storage, AsyncDestroyCollectionProtocol):
             await storage.destroy_collection(collection=self._collection)
