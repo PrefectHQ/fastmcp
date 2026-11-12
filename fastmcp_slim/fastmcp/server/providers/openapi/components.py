@@ -248,7 +248,9 @@ class OpenAPITool(Tool):
         # not HTTP failures, so we catch them separately.
         try:
             base_url = str(self._client.base_url) or "http://localhost"
-            directed_request = self._director.build(self._route, arguments, base_url)
+            directed_request = self._director.build(
+                self._route, arguments, base_url, cookie_jar=self._client.cookies.jar
+            )
 
             # Rebuild through the configured client so its default headers are
             # merged with the directed headers taking priority.
@@ -349,7 +351,9 @@ class OpenAPIResource(Resource):
     async def read(self) -> ResourceResult:
         """Fetch the resource data by making an HTTP request."""
         base_url = str(self._client.base_url) or "http://localhost"
-        directed_request = self._director.build(self._route, self._arguments, base_url)
+        directed_request = self._director.build(
+            self._route, self._arguments, base_url, cookie_jar=self._client.cookies.jar
+        )
         # Build through the configured client so its defaults are applied.
         request = self._client.build_request(
             method=directed_request.method,
