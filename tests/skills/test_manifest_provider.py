@@ -4,8 +4,8 @@ import pytest
 from mcp_types import TextResourceContents
 
 from fastmcp import Client, FastMCP
-from fastmcp.skills import Skill, SkillFile, SkillManifest, SkillsClientExtension
-from fastmcp.skills.provider import SkillManifestProvider
+from fastmcp.skills import Skill, SkillManifest, SkillsClientExtension
+from fastmcp.skills.provider import SkillFileResource, SkillManifestProvider
 
 REVIEW = Skill(
     name="review",
@@ -29,9 +29,9 @@ class StoredSkills(SkillManifestProvider):
     async def load_manifests(self) -> dict[str, SkillManifest]:
         return self.manifests
 
-    async def read_file(self, path: str, file_path: str, file: SkillFile) -> bytes:
-        self.reads.append(f"{path}/{file_path}")
-        return self.blobs[file.digest]
+    async def read_file(self, resource: SkillFileResource) -> bytes:
+        self.reads.append(f"{resource.skill_path}/{resource.file_path}")
+        return self.blobs[resource.file.digest]
 
 
 def skills_client(provider: SkillManifestProvider) -> Client:

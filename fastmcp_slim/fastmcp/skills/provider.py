@@ -57,8 +57,8 @@ class SkillManifestProvider(Provider):
     Example:
         ```python
         from fastmcp import FastMCP, Skill
-        from fastmcp.skills import SkillFile, SkillManifest
-        from fastmcp.skills.provider import SkillManifestProvider
+        from fastmcp.skills import SkillManifest
+        from fastmcp.skills.provider import SkillFileResource, SkillManifestProvider
 
         review = Skill(name="review", description="Review changes.", instructions="")
         blobs = {review.manifest.files["SKILL.md"].digest: review.files["SKILL.md"]}
@@ -68,8 +68,8 @@ class SkillManifestProvider(Provider):
             async def load_manifests(self) -> dict[str, SkillManifest]:
                 return {"review": review.manifest}
 
-            async def read_file(self, path: str, file_path: str, file: SkillFile) -> bytes:
-                return blobs[file.digest]
+            async def read_file(self, resource: SkillFileResource) -> bytes:
+                return blobs[resource.file.digest]
 
 
         mcp = FastMCP("Skills", providers=[StoredSkills()])
@@ -85,11 +85,11 @@ class SkillManifestProvider(Provider):
         """Return the skills to serve, keyed by the path each is served under."""
         raise NotImplementedError
 
-    async def read_file(self, path: str, file_path: str, file: SkillFile) -> bytes:
-        """Return the content of `file_path` in the skill served at `skill://{path}/`."""
+    async def read_file(self, resource: SkillFileResource) -> bytes:
+        """Return the content of the skill file that a client reads."""
         raise NotImplementedError
 
-    async def _manifests(self) -> dict[str, SkillManifest]:
+    async def _request_manifests(self) -> dict[str, SkillManifest]:
         async def load() -> dict[str, SkillManifest]:
             manifests = {
                 _validate_relative_path(path): manifest
@@ -111,7 +111,7 @@ class SkillManifestProvider(Provider):
 
     async def _list_resources(self) -> Sequence[Resource]:
         resources: list[Resource] = []
-        for path, manifest in (await self._manifests()).items():
+        for path, manifest in (await self._request_manifests()).items():
             resources.extend(
                 _file_resource(self, path, manifest, file_path, file)
                 for file_path, file in manifest.files.items()
@@ -122,7 +122,7 @@ class SkillManifestProvider(Provider):
     async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
-        located = _locate(uri, await self._manifests())
+        located = _locate(uri, await self._request_manifests())
         if located is None:
             return None
         path, manifest, file_path = located
@@ -141,7 +141,7 @@ class SkillManifestProvider(Provider):
         return uri.startswith("skill://")
 
     async def _skill_uris(self, uri: str | None = None) -> Sequence[str]:
-        uris = [_skill_md_uri(path) for path in await self._manifests()]
+        uris = [_skill_md_uri(path) for path in await self._request_manifests()]
         return uris if uri is None else [u for u in uris if u == uri]
 
     async def _list_skill_entries(
@@ -149,14 +149,14 @@ class SkillManifestProvider(Provider):
     ) -> Sequence[MCPSkill]:
         return [
             manifest.to_mcp_skill(path)
-            for path, manifest in (await self._manifests()).items()
+            for path, manifest in (await self._request_manifests()).items()
             if await self._is_served(path, manifest)
         ]
 
     async def _get_skill_entry(
         self, uri: str, context: ServerRequestContext[Any, Any]
     ) -> MCPSkill | None:
-        for path, manifest in (await self._manifests()).items():
+        for path, manifest in (await self._request_manifests()).items():
             if _skill_md_uri(path) == uri and await self._is_served(path, manifest):
                 return manifest.to_mcp_skill(path)
         return None
@@ -190,9 +190,7 @@ class SkillFileResource(Resource):
     file: SkillFile
 
     async def read(self) -> ResourceResult:
-        content = await self.provider.read_file(
-            self.skill_path, self.file_path, self.file
-        )
+        content = await self.provider.read_file(self)
         value: str | bytes = content
         if self.mime_type.startswith("text/"):
             with suppress(UnicodeDecodeError):
@@ -258,8 +256,8 @@ class SkillCatalogProvider(SkillManifestProvider):
             path: skill._manifest for path, skill in (await self._catalog()).items()
         }
 
-    async def read_file(self, path: str, file_path: str, file: SkillFile) -> bytes:
-        return (await self._catalog())[path].files[file_path]
+    async def read_file(self, resource: SkillFileResource) -> bytes:
+        return (await self._catalog())[resource.skill_path].files[resource.file_path]
 
     async def _catalog(self) -> dict[str, Skill]:
         async def load() -> dict[str, Skill]:
