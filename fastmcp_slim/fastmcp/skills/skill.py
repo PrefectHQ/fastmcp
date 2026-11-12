@@ -387,8 +387,8 @@ class Skill(metaclass=_SkillMeta):
 
     @property
     def manifest(self) -> SkillManifest:
-        """The skill's frontmatter and the digest and size of each file."""
-        return self._manifest
+        """A copy of the skill's frontmatter and file digests; changing it does not change the skill."""
+        return self._manifest.model_copy(deep=True)
 
     @property
     def files(self) -> Mapping[str, bytes]:

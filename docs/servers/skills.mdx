@@ -94,7 +94,7 @@ class StoredSkills(SkillManifestProvider):
 mcp = FastMCP("Stored Skills", providers=[StoredSkills()])
 ```
 
-Like `load_skills()`, `load_manifests()` runs once per request. A manifest's paths and digests are what clients check when they read a skill, so `read_file()` must return exactly the bytes the manifest describes.
+Like `load_skills()`, `load_manifests()` runs once per request. Clients check what they read against the manifest, so `read_file()` must return exactly the bytes each digest describes, and the frontmatter in `SKILL.md` must match the manifest's.
 
 To serve a folder of skills, point `SkillsDirectoryProvider` at it. Every subfolder with a `SKILL.md` becomes a skill, served at its path below the root, so `ops/deploy/SKILL.md` becomes `skill://ops/deploy/SKILL.md`. A coding agent's own skills folder works the same way:
 
