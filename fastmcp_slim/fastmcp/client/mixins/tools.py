@@ -45,7 +45,11 @@ def _round_trips_to_payload(
     the schema positions that actually declare it.
     """
     try:
-        rehydrated = json.loads(type_adapter.dump_json(typed))
+        # by_alias: schemas whose property names are pydantic-reserved
+        # (``model_config``, ``_private``, ...) generate aliased fields, and
+        # the wire payload uses the alias spellings — the default dump
+        # re-emits the renamed field names instead.
+        rehydrated = json.loads(type_adapter.dump_json(typed, by_alias=True))
     except Exception:
         # If the typed form cannot be re-serialized, fidelity is unknowable;
         # keep the hydrated value rather than second-guessing a valid model.
