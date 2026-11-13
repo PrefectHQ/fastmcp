@@ -26,7 +26,7 @@ mcp = FastMCP("Team Skills")
 mcp.add_provider(SkillCatalogProvider([release_notes]))
 ```
 
-That's a skills server. Every client can read `skill://release-notes/SKILL.md` and `template.md` as ordinary resources. Clients that speak the [Skills extension](https://modelcontextprotocol.io/seps/2640-skills-extension) can also call `skills/list` and get each skill's description and a hashed manifest of its files, so a host can offer the skill without an install step. Few hosts do yet, and FastMCP's support is experimental, but you get both from the same provider. Run `fastmcp list server.py --skills` to see what you're serving.
+That's a skills server. A client that reads resources can read `skill://release-notes/SKILL.md` and `template.md` directly. Clients that speak the [Skills extension](https://modelcontextprotocol.io/seps/2640-skills-extension) can also call `skills/list` and get each skill's description and a hashed manifest of its files, so a host can offer the skill without an install step. Few hosts do yet (VS Code 1.146 has it in preview), and FastMCP's support is experimental, but you get both from the same provider. For clients that only call tools, see [Clients that only call tools](#clients-that-only-call-tools). Run `fastmcp list server.py --skills` to see what you're serving.
 
 ## Where skills come from
 
@@ -147,6 +147,18 @@ gateway.mount(proxy, namespace="github")
 ```
 
 Skills listing and lookup follow the gateway's `provider_error_strategy`: the default `"warn"` logs a failing source and keeps healthy skills available. Set `gateway.provider_error_strategy = "raise"` to fail the operation when a source fails.
+
+## Clients that only call tools
+
+Many MCP clients never show resources to the model, but nearly all of them call tools. Add the [`ResourcesAsTools`](/servers/transforms/resources-as-tools) transform and the server also exposes `list_resources` and `read_resource` tools, which list and read the same `skill://` files:
+
+```python
+from fastmcp.server.transforms import ResourcesAsTools
+
+mcp.add_transform(ResourcesAsTools(mcp))
+```
+
+The agent reads the server's current copy on every call, so nothing drifts. The model has to choose to call `list_resources`, though; a host that supports skills loads them for it. For agents that only load skills from a folder, [install them](#install-skills-into-a-local-agent) instead.
 
 ## Read skills from a client
 
