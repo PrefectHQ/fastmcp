@@ -633,6 +633,10 @@ class FunctionResourceTemplate(ResourceTemplate):
 
     fn: SkipJsonSchema[Callable[..., Any]]
 
+    # Resolved parameter hints, so string annotations from
+    # `from __future__ import annotations` coerce like real ones in read().
+    _param_hints: dict[str, Any] = PrivateAttr(default_factory=dict)
+
     async def _read(self, uri: str, params: dict[str, Any]) -> ResourceResult:
         """Optimized server entry point that skips ephemeral resource creation.
 
@@ -673,7 +677,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         for param_name, param_value in list(kwargs.items()):
             if param_name in sig.parameters and isinstance(param_value, str):
                 param = sig.parameters[param_name]
-                annotation = param.annotation
+                annotation = self._param_hints.get(param_name, param.annotation)
 
                 if annotation is inspect.Parameter.empty or annotation is str:
                     continue
@@ -825,6 +829,19 @@ class FunctionResourceTemplate(ResourceTemplate):
         # Validate RFC 6570 query parameters
         # Query params must be optional (have defaults)
         list_query_params: set[str] = set()
+        # Resolve the hints rather than reading the raw signature: under
+        # `from __future__ import annotations` every annotation is a string,
+        # and `Annotated[...]` wrappers hide the underlying type.
+        from fastmcp.tools.function_tool import _resolve_param_hints
+
+        try:
+            hints = _resolve_param_hints(fn)
+        except NameError:
+            # Pydantic resolves annotations against namespaces this doesn't
+            # see, so a name we can't resolve may still be valid. Fall back
+            # to the raw form rather than failing a working registration.
+            hints = {}
+
         if query_params:
             invalid_query_params = query_params - optional_params
             if invalid_query_params:
@@ -834,20 +851,6 @@ class FunctionResourceTemplate(ResourceTemplate):
 
             # A list-typed query parameter reads `{?tags*}` as repeated keys and
             # `{?tags}` as one comma-joined value (RFC 6570 section 3.2.8).
-            #
-            # Resolve the hints rather than reading the raw signature: under
-            # `from __future__ import annotations` every annotation is a string,
-            # and `Annotated[...]` wrappers hide the underlying type.
-            from fastmcp.tools.function_tool import _resolve_param_hints
-
-            try:
-                hints = _resolve_param_hints(fn)
-            except NameError:
-                # Pydantic resolves annotations against namespaces this doesn't
-                # see, so a name we can't resolve may still be valid. Fall back
-                # to the raw form rather than failing a working registration.
-                hints = {}
-
             exploded = {
                 p.replace("-", "_") for p in extract_exploded_query_params(uri_template)
             }
@@ -935,4 +938,5 @@ class FunctionResourceTemplate(ResourceTemplate):
             security=security,
         )
         template._list_query_params = frozenset(list_query_params)
+        template._param_hints = hints
         return template
