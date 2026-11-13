@@ -71,7 +71,9 @@ def use_token(monkeypatch: pytest.MonkeyPatch, subject: str | None) -> None:
 
 class TestUsageMiddleware:
     async def test_records_tool_calls(self, meter_provider, reader):
-        mcp = make_server(UsageMiddleware(meter_provider=meter_provider))
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id_salt="salt")
+        )
 
         async with Client(mcp) as client:
             await client.call_tool("add", {"a": 1, "b": 2})
@@ -86,7 +88,9 @@ class TestUsageMiddleware:
         }
 
     async def test_records_errors(self, meter_provider, reader):
-        mcp = make_server(UsageMiddleware(meter_provider=meter_provider))
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id_salt="salt")
+        )
 
         async with Client(mcp) as client:
             with pytest.raises(ToolError):
@@ -97,7 +101,9 @@ class TestUsageMiddleware:
         assert point.attributes["error.type"] == "tool_error"
 
     async def test_records_prompts(self, meter_provider, reader):
-        mcp = make_server(UsageMiddleware(meter_provider=meter_provider))
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id_salt="salt")
+        )
 
         async with Client(mcp) as client:
             await client.get_prompt("greet", {"name": "nate"})
@@ -107,7 +113,9 @@ class TestUsageMiddleware:
         assert point.attributes["gen_ai.prompt.name"] == "greet"
 
     async def test_ignores_list_requests(self, meter_provider, reader):
-        mcp = make_server(UsageMiddleware(meter_provider=meter_provider))
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id_salt="salt")
+        )
 
         async with Client(mcp) as client:
             await client.list_tools()
@@ -163,12 +171,21 @@ class TestUsageMiddleware:
         assert not any(key.startswith("enduser.") for key in point.attributes)
 
     async def test_no_meter_provider_is_a_no_op(self):
-        mcp = make_server(UsageMiddleware())
+        mcp = make_server(UsageMiddleware(user_id_salt="salt"))
 
         async with Client(mcp) as client:
             result = await client.call_tool("add", {"a": 1, "b": 2})
 
         assert result.data == 3
+
+    @pytest.mark.parametrize("salt", [None, "", b""])
+    def test_hashing_requires_a_salt(self, salt):
+        with pytest.raises(ValueError, match="user_id_salt"):
+            UsageMiddleware(user_id_salt=salt)
+
+    @pytest.mark.parametrize("mode", ["raw", "omit"])
+    def test_salt_not_required_without_hashing(self, mode):
+        UsageMiddleware(user_id=mode)
 
     def test_rejects_unknown_user_id_mode(self):
         with pytest.raises(ValueError, match="user_id"):
