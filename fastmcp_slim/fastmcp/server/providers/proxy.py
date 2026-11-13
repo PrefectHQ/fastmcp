@@ -1712,6 +1712,10 @@ async def default_proxy_sampling_handler(
     # the same model, stop reason and content as with a direct connection.
     return await ctx.session.create_message(  # ty: ignore[deprecated]
         messages=list(messages),
+        # tools and tool_choice select the overload, so they go first: ty stops
+        # expanding optional arguments before it reaches the end of this call.
+        tools=params.tools,
+        tool_choice=params.tool_choice,
         system_prompt=params.system_prompt,
         include_context=params.include_context,
         temperature=params.temperature,
