@@ -57,9 +57,10 @@ class UsageMiddleware(Middleware):
             can be grouped per user without exporting the identity itself.
             `"raw"` reports the token subject (or client ID) as `enduser.id`.
             `"omit"` reports no user attribute.
-        user_id_salt: Key for the `"hashed"` digest. Set a secret value in
-            production: without one, a known identifier such as an email
-            address can be matched against its digest.
+        user_id_salt: Secret key for the `"hashed"` digest. Required when
+            `user_id="hashed"`, because an unkeyed digest of a known
+            identifier such as an email address can be recomputed and
+            matched. Ignored for `"raw"` and `"omit"`.
         meter_provider: Meter provider to use. Defaults to the global
             provider.
 
@@ -83,6 +84,13 @@ class UsageMiddleware(Middleware):
         if user_id not in ("hashed", "raw", "omit"):
             raise ValueError(
                 f"user_id must be 'hashed', 'raw', or 'omit', not {user_id!r}"
+            )
+        if user_id == "hashed" and not user_id_salt:
+            raise ValueError(
+                "UsageMiddleware hashes user IDs by default and needs a secret "
+                "key to do it safely. Pass user_id_salt='<secret>', or choose "
+                "user_id='raw' to record identities as-is or user_id='omit' to "
+                "record no user."
             )
         self.user_id = user_id
         if isinstance(user_id_salt, str):
