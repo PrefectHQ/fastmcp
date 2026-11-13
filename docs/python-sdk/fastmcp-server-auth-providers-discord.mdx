@@ -9,7 +9,7 @@ sidebarTitle: discord
 Discord OAuth provider for FastMCP.
 
 This module provides a complete Discord OAuth integration that's ready to use
-with just a client ID and client secret. It handles all the complexity of
+with a client ID, client secret, and base URL. It handles all the complexity of
 Discord's OAuth flow, token validation, and user management.
 
 Example:
@@ -20,7 +20,8 @@ Example:
     # Simple Discord OAuth protection
     auth = DiscordProvider(
         client_id="your-discord-client-id",
-        client_secret="your-discord-client-secret"
+        client_secret="your-discord-client-secret",
+        base_url="https://my-server.com",
     )
 
     mcp = FastMCP("My Protected Server", auth=auth)
@@ -29,7 +30,7 @@ Example:
 
 ## Classes
 
-### `DiscordTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/discord.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `DiscordTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/discord.py#L44" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Token verifier for Discord OAuth tokens.
@@ -40,7 +41,7 @@ by calling Discord's tokeninfo API to check if they're valid and get user info.
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/discord.py#L73" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/discord.py#L74" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -49,7 +50,7 @@ verify_token(self, token: str) -> AccessToken | None
 Verify Discord OAuth token by calling Discord's tokeninfo API.
 
 
-### `DiscordProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/discord.py#L167" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `DiscordProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/discord.py#L168" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Complete Discord OAuth provider for FastMCP.
