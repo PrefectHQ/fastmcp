@@ -141,10 +141,14 @@ Shorter intervals give clients faster feedback but increase server load. The int
 
 ### Server-Wide Default
 
-To enable background task support for all tools by default, pass `tasks=True` to the constructor. Individual decorators can still override this with `task=False`.
+To enable background task support for all tools by default, pass `tasks=True` to the constructor. Individual decorators can still override this with `task=False`. The server still needs the tasks extension registered.
 
 ```python
+from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
+
 mcp = FastMCP("MyServer", tasks=True)
+mcp.add_extension(TasksExtension())
 ```
 
 <Warning>
@@ -164,6 +168,7 @@ mcp.add_extension(TasksExtension(url="redis://localhost:6379/0", concurrency=20)
 | `FASTMCP_DOCKET_URL` | `memory://` | Backend URL (`memory://` or `redis://host:port/db`) |
 | `FASTMCP_DOCKET_NAME` | `fastmcp` | Queue name. Servers and workers sharing a name and URL share a queue. |
 | `FASTMCP_DOCKET_CONCURRENCY` | `10` | Maximum concurrent tasks per worker. |
+| `FASTMCP_DOCKET_EXECUTION_TTL` | `PT15M` | How long task state and results are kept, reported to clients as `ttlMs`. Accepts an ISO 8601 duration or seconds. |
 | `FASTMCP_TASKS_ENCRYPTION_KEY` | (unset) | Encrypts [task context snapshots at rest](#credentials-at-rest). Every server and worker sharing a queue must set the same key. |
 
 ## Backends
@@ -261,7 +266,7 @@ The key protects the snapshot only. Tool arguments and any answers a task gather
 
 ## Workers
 
-Every FastMCP server with task-enabled tools automatically starts an **embedded worker**. You do not need to start a separate worker process for tasks to execute.
+A server with the tasks extension registered and at least one task-enabled tool automatically starts an **embedded worker**. You do not need to start a separate worker process for tasks to execute.
 
 To scale horizontally, add more workers:
 
@@ -374,19 +379,24 @@ from fastmcp_tasks.dependencies import CurrentDocket, CurrentWorker
 mcp = FastMCP("MyServer")
 mcp.add_extension(TasksExtension())
 
+
+async def send_report(user_id: str) -> None:
+    ...
+
+
 @mcp.tool(task=True)
 async def my_task(
+    user_id: str,
     progress: Progress = Progress(),
     docket: Docket = CurrentDocket(),
     worker: Worker = CurrentWorker(),
 ) -> str:
     # Schedule additional background work
-    await docket.add(another_task, arg1, arg2)
+    await docket.add(send_report)(user_id)
 
-    # Access worker metadata
-    worker_name = worker.name
-
-    return "Done"
+    return f"Report scheduled by {worker.name}"
 ```
+
+`docket.add()` takes the function and returns a scheduler; call that with the function's arguments to enqueue it.
 
 With `CurrentDocket()`, you can schedule additional background tasks, chain work together, and coordinate complex workflows. See the [Docket documentation](https://docket.lol/) for the complete API, including retry policies, timeouts, and custom dependencies.

@@ -1,16 +1,18 @@
-"""Google GenAI sampling handler with tool support for FastMCP 3.0."""
+"""Google GenAI sampling handler for FastMCP."""
 
 import base64
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, cast
 from uuid import uuid4
 
 try:
     from google.genai import Client as GoogleGenaiClient
+    from google.genai import types as google_genai_types
     from google.genai.types import (
         Blob,
         Candidate,
         Content,
+        FinishReason,
         FunctionCall,
         FunctionCallingConfig,
         FunctionCallingConfigMode,
@@ -51,6 +53,38 @@ from mcp_types import CreateMessageRequestParams as SamplingParams
 from mcp_types import Tool as MCPTool
 
 from fastmcp.client._sdk_context_shim import LifespanContextT, RequestContext
+
+_GEMINI_FUNCTION_RESPONSE_IMAGE_MIME_TYPES = frozenset(
+    {"image/jpeg", "image/png", "image/webp"}
+)
+
+
+def _google_function_response_image_part(content: ImageContent) -> Any:
+    """Build a Gemini function-response image part when supported by the SDK."""
+    if content.mime_type not in _GEMINI_FUNCTION_RESPONSE_IMAGE_MIME_TYPES:
+        msg = (
+            "Unsupported image MIME type for Gemini function responses: "
+            f"{content.mime_type!r}"
+        )
+        raise ValueError(msg)
+
+    if "parts" not in getattr(FunctionResponse, "model_fields", {}):
+        msg = "The installed google-genai SDK does not support image function responses"
+        raise ValueError(msg)
+
+    blob_type = getattr(google_genai_types, "FunctionResponseBlob", None)
+    part_type = getattr(google_genai_types, "FunctionResponsePart", None)
+    if blob_type is None or part_type is None:
+        msg = "The installed google-genai SDK does not support image function responses"
+        raise ValueError(msg)
+
+    return part_type(
+        inline_data=blob_type(
+            data=base64.b64decode(content.data),
+            mime_type=content.mime_type,
+        )
+    )
+
 
 __all__ = ["GoogleGenaiSamplingHandler"]
 
@@ -202,6 +236,7 @@ def _sampling_content_to_google_genai_part(
     | AudioContent
     | ToolUseContent
     | ToolResultContent,
+    tool_names_by_id: Mapping[str, str] | None = None,
 ) -> Part:
     """Convert MCP content to Google GenAI Part."""
     if isinstance(content, TextContent):
@@ -238,36 +273,36 @@ def _sampling_content_to_google_genai_part(
         )
 
     if isinstance(content, ToolResultContent):
-        # Extract text from tool result content
+        # Google represents text in FunctionResponse.response and media in
+        # FunctionResponse.parts.
         result_parts: list[str] = []
+        image_parts: list[Any] = []
         if content.content:
             for item in content.content:
                 if isinstance(item, TextContent):
                     result_parts.append(item.text)
+                elif isinstance(item, ImageContent):
+                    image_parts.append(_google_function_response_image_part(item))
                 else:
                     msg = f"Unsupported tool result content type: {type(item).__name__}"
                     raise ValueError(msg)
         result_text = "".join(result_parts)
 
-        # Extract function name from toolUseId
-        # Our IDs are formatted as "{function_name}_{uuid8}", so extract the name.
-        # Note: This is a limitation of MCP's ToolResultContent which only carries
-        # toolUseId, while Google's FunctionResponse requires the function name.
-        tool_use_id = content.tool_use_id
-        if "_" in tool_use_id:
-            # Split and rejoin all but the last part (the UUID suffix)
-            parts = tool_use_id.rsplit("_", 1)
-            function_name = parts[0]
-        else:
-            # Fallback: use the full ID as the name
-            function_name = tool_use_id
-
-        return Part(
-            function_response=FunctionResponse(
-                name=function_name,
-                response={"result": result_text},
+        function_name = (tool_names_by_id or {}).get(content.tool_use_id)
+        if function_name is None:
+            msg = (
+                "No matching ToolUseContent found for tool_use_id "
+                f"{content.tool_use_id!r}"
             )
-        )
+            raise ValueError(msg)
+
+        response_kwargs: dict[str, Any] = {
+            "name": function_name,
+            "response": {"result": result_text},
+        }
+        if image_parts:
+            response_kwargs["parts"] = image_parts
+        return Part(function_response=FunctionResponse(**response_kwargs))
 
     msg = f"Unsupported content type: {type(content)}"
     raise ValueError(msg)
@@ -278,6 +313,20 @@ def _convert_messages_to_google_genai_content(
 ) -> list[Content]:
     """Convert MCP messages to Google GenAI content."""
     google_messages: list[Content] = []
+    tool_names_by_id: dict[str, str] = {}
+
+    for message in messages:
+        content = message.content
+        blocks = content if isinstance(content, list) else [content]
+        for item in blocks:
+            if isinstance(item, ToolUseContent):
+                if (
+                    item.id in tool_names_by_id
+                    and tool_names_by_id[item.id] != item.name
+                ):
+                    msg = f"Conflicting function names for tool-use ID {item.id!r}"
+                    raise ValueError(msg)
+                tool_names_by_id[item.id] = item.name
 
     for message in messages:
         content = message.content
@@ -285,7 +334,8 @@ def _convert_messages_to_google_genai_content(
         # Handle list content (tool calls + results)
         if isinstance(content, list):
             parts: list[Part] = [
-                _sampling_content_to_google_genai_part(item) for item in content
+                _sampling_content_to_google_genai_part(item, tool_names_by_id)
+                for item in content
             ]
 
             if message.role == "user":
@@ -298,7 +348,7 @@ def _convert_messages_to_google_genai_content(
             continue
 
         # Handle single content item
-        part = _sampling_content_to_google_genai_part(content)
+        part = _sampling_content_to_google_genai_part(content, tool_names_by_id)
 
         if message.role == "user":
             google_messages.append(UserContent(parts=[part]))
@@ -309,6 +359,14 @@ def _convert_messages_to_google_genai_content(
             raise ValueError(msg)
 
     return google_messages
+
+
+def _stop_reason(finish_reason: FinishReason | None) -> StopReason:
+    """Map Gemini's finish reason to MCP's stop reason, so a caller can tell a
+    reply cut off at max_tokens from a finished one."""
+    if finish_reason == "MAX_TOKENS":
+        return "maxTokens"
+    return "endTurn"
 
 
 def _get_candidate_from_response(response: GenerateContentResponse) -> Candidate:
@@ -340,10 +398,12 @@ def _response_to_create_message_result(
             msg = f"No content in response (finish_reason={candidate.finish_reason})"
         raise ValueError(msg)
 
+    candidates = response.candidates
     return CreateMessageResult(
         content=TextContent(type="text", text=text),
         role="assistant",
         model=model,
+        stop_reason=_stop_reason(candidates[0].finish_reason if candidates else None),
     )
 
 
@@ -365,14 +425,7 @@ def _response_to_result_with_tools(
                 has_function_calls = True
                 break
 
-    if has_function_calls:
-        stop_reason = "toolUse"
-    elif finish_reason == "STOP":
-        stop_reason = "endTurn"
-    elif finish_reason == "MAX_TOKENS":
-        stop_reason = "maxTokens"
-    else:
-        stop_reason = "endTurn"
+    stop_reason = "toolUse" if has_function_calls else _stop_reason(finish_reason)
 
     # Build content list
     content: list[SamplingMessageContentBlock] = []

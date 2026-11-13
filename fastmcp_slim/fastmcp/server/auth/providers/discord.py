@@ -1,7 +1,7 @@
 """Discord OAuth provider for FastMCP.
 
 This module provides a complete Discord OAuth integration that's ready to use
-with just a client ID and client secret. It handles all the complexity of
+with a client ID, client secret, and base URL. It handles all the complexity of
 Discord's OAuth flow, token validation, and user management.
 
 Example:
@@ -12,7 +12,8 @@ Example:
     # Simple Discord OAuth protection
     auth = DiscordProvider(
         client_id="your-discord-client-id",
-        client_secret="your-discord-client-secret"
+        client_secret="your-discord-client-secret",
+        base_url="https://my-server.com",
     )
 
     mcp = FastMCP("My Protected Server", auth=auth)

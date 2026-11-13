@@ -9,7 +9,7 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="3.0.0" />
 
-Tool transformation lets you modify tool schemas - renaming tools, changing descriptions, adjusting tags, and reshaping argument schemas. FastMCP provides two mechanisms that share the same configuration options but differ in timing.
+Tool transformation lets you modify tool schemas - renaming tools, changing descriptions, adjusting tags, and reshaping argument schemas. FastMCP provides two mechanisms that differ in timing and in the options they accept.
 
 **Deferred transformation** with `ToolTransform` applies modifications when tools flow through a transform chain. Use this for tools from mounted servers, proxies, or other providers where you don't control the source directly.
 
@@ -53,7 +53,7 @@ from fastmcp import FastMCP
 from fastmcp.tools import Tool, tool
 from fastmcp.tools.tool_transform import ArgTransform
 
-# Create a tool without registering it
+# Define a tool without registering it
 @tool
 def search(q: str, limit: int = 10) -> list[str]:
     """Search for items."""
@@ -76,36 +76,41 @@ mcp = FastMCP("Server")
 mcp.add_tool(better_search)
 ```
 
-The standalone `@tool` decorator (from `fastmcp.tools`) creates a Tool object without registering it to any server. This separates creation from registration, letting you transform tools before deciding where they go.
+The standalone `@tool` decorator (from `fastmcp.tools`) attaches tool metadata to a function without registering it to any server; `Tool.from_tool()` accepts the decorated function directly. This separates creation from registration, letting you transform tools before deciding where they go.
 
 ## Modification Options
 
-Both mechanisms support the same modifications.
+The two mechanisms overlap but are not identical. Only `ToolTransformConfig` sets `version` and `enabled`; only `Tool.from_tool()` accepts annotations, output schemas, and a custom function.
 
 **Tool-level options:**
 
-| Option | Description |
-|--------|-------------|
-| `name` | New name for the tool |
-| `description` | New description |
-| `title` | Human-readable title |
-| `tags` | Set of tags for categorization |
-| `annotations` | MCP ToolAnnotations |
-| `meta` | Custom metadata dictionary |
-| `enabled` | Whether the tool is visible to clients (default `True`) |
+| Option | Description | `ToolTransformConfig` | `Tool.from_tool()` |
+|--------|-------------|:---:|:---:|
+| `name` | New name for the tool | Yes | Yes |
+| `description` | New description | Yes | Yes |
+| `title` | Human-readable title | Yes | Yes |
+| `tags` | Set of tags for categorization | Yes | Yes |
+| `meta` | Custom metadata dictionary | Yes | Yes |
+| `version` | New version for the tool | Yes | No |
+| `enabled` | Whether the tool is visible to clients (default `True`) | Yes | No |
+| `annotations` | MCP `ToolAnnotations` | No | Yes |
+| `output_schema` | Output schema for structured results | No | Yes |
+| `transform_fn` | Custom function that wraps execution (see below) | No | Yes |
 
-**Argument-level options** (via `ArgTransform` or `ArgTransformConfig`):
+Argument transforms go in `arguments` on `ToolTransformConfig` (as `ArgTransformConfig`) and in `transform_args` on `Tool.from_tool()` (as `ArgTransform`).
 
-| Option | Description |
-|--------|-------------|
-| `name` | Rename the argument |
-| `description` | New description for the argument |
-| `default` | New default value |
-| `default_factory` | Callable that generates a default (requires `hide=True`) |
-| `hide` | Remove from client-visible schema |
-| `required` | Make an optional argument required |
-| `type` | Change the argument's type |
-| `examples` | Example values for the argument |
+**Argument-level options:**
+
+| Option | Description | `ArgTransformConfig` | `ArgTransform` |
+|--------|-------------|:---:|:---:|
+| `name` | Rename the argument | Yes | Yes |
+| `description` | New description for the argument | Yes | Yes |
+| `default` | New default value (`ArgTransformConfig` accepts only strings, numbers, booleans, and `None`) | Yes | Yes |
+| `hide` | Remove from client-visible schema | Yes | Yes |
+| `required` | Make an optional argument required (only `True` is accepted) | Yes | Yes |
+| `examples` | Example values for the argument | Yes | Yes |
+| `default_factory` | Callable that generates a default (requires `hide=True`) | No | Yes |
+| `type` | Change the argument's type | No | Yes |
 
 ## Hiding Arguments
 
@@ -129,7 +134,7 @@ transform_args = {
 Hidden arguments disappear from the tool's schema. The client never sees them, but the underlying function receives the configured value.
 
 <Warning>
-`default_factory` requires `hide=True`. Visible arguments need static defaults that can be represented in JSON Schema.
+`default_factory` requires `hide=True`. Visible arguments need static defaults that can be represented in JSON Schema. A hidden argument also cannot be `required`, and `required=True` cannot be combined with a default.
 </Warning>
 
 ## Renaming Arguments

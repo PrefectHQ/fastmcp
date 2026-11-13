@@ -724,6 +724,53 @@ class TestCacheableToolResult:
 
         assert cached_tool_result.is_error is True
 
+    def test_cached_raw_mcp_result_uses_edited_public_fields(self):
+        original = mcp_types.CallToolResult(
+            content=[mcp_types.TextContent(type="text", text="secret")],
+            structured_content={"secret": "original"},
+            _meta={"source": "backend"},
+        )
+        cached = CacheableToolResult.wrap(ToolResult.from_mcp_result(original)).unwrap()
+        edited = cached.model_copy(
+            update={
+                "content": [mcp_types.TextContent(type="text", text="redacted")],
+                "structured_content": {"secret": "redacted"},
+                "meta": {"source": "middleware"},
+            }
+        )
+
+        wire = edited.to_mcp_result()
+        assert isinstance(wire, mcp_types.CallToolResult)
+        assert isinstance(wire.content[0], mcp_types.TextContent)
+        assert wire.content[0].text == "redacted"
+        assert wire.structured_content == {"secret": "redacted"}
+        assert wire.meta == {"source": "middleware"}
+
+
+class TestCachedPromptResult:
+    async def test_resource_link_survives_cache(self):
+        link = mcp_types.ResourceLink(
+            type="resource_link", uri="docs://guide", name="guide"
+        )
+        mcp = FastMCP("PromptCachingTestServer")
+        mcp.add_middleware(ResponseCachingMiddleware(cache_storage=MemoryStore()))
+
+        call_count = 0
+
+        @mcp.prompt
+        def review_guide() -> list[Message]:
+            nonlocal call_count
+            call_count += 1
+            return [Message(link)]
+
+        async with Client(mcp) as client:
+            first = await client.get_prompt("review_guide")
+            second = await client.get_prompt("review_guide")
+
+        assert call_count == 1
+        assert first.messages[0].content == link
+        assert second.messages[0].content == link
+
 
 class TestErrorResultsAreNotCached:
     """Regression tests for issue #4395: an error result was cached for the full

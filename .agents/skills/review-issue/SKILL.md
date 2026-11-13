@@ -21,7 +21,7 @@ Assignment commits us to reviewing the PR, not to merging it. A gate closure is 
 - A linked PR stays open with a failing check until its author is assigned to that issue. Issues labeled `prs welcome` waive assignment but still need the link.
 - Assigning the author (`gh issue edit N --add-assignee <login>`) re-runs the check and reopens a gate-closed PR. If that run fails, the gate misbehaved: investigate the run rather than re-assigning.
 - Maintainer PRs are exempt, and so are authors with the `trusted-contributor` label. Reopening a PR by hand or removing `missing-issue-link` applies a sticky `bypass-issue-check`, so prefer assignment.
-- `marvin-triage-issue`, `marvin-dedupe-issues`, `auto-close-duplicates`, and `auto-close-needs-mre` have usually commented already. Read them as leads.
+- `marvin-dedupe-issues`, `auto-close-duplicates`, and `auto-close-needs-mre` have usually commented already. Read them as leads.
 
 ## Procedure
 

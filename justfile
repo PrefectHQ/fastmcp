@@ -23,7 +23,7 @@ docs-broken-links:
 # Generate API reference documentation for all modules
 api-ref-all:
     uvx --with-editable "{{api_ref_package}}" --refresh-package mdxify mdxify@latest --all --root-module fastmcp --nav-output docs/python-sdk-pages.json --exclude fastmcp.contrib
-# Generate API reference for specific modules (e.g., just api-ref prefect.flows prefect.tasks)
+# Generate API reference for specific modules (e.g., just api-ref fastmcp.server.server fastmcp.client.client)
 api-ref *MODULES:
     uvx --with-editable "{{api_ref_package}}" --refresh-package mdxify mdxify@latest {{MODULES}} --root-module fastmcp --nav-output docs/python-sdk-pages.json
 
@@ -33,11 +33,3 @@ api-ref-clean:
 
 copy-context:
     uvx --with-editable fastmcp_slim --refresh-package copychat copychat@latest fastmcp_slim/fastmcp docs/ -x changelog.mdx -x python-sdk/ -v
-
-# Browse ranked maintainer attention in Textual
-issues *ARGS:
-    uv run scripts/rank_issues_tui.py {{ARGS}}
-
-# Print the same ranking or export it with --public --json
-issues-table *ARGS:
-    uv run scripts/rank_issues.py {{ARGS}}

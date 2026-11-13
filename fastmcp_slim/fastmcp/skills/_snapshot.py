@@ -1,24 +1,19 @@
-"""Strict filesystem snapshots for experimental Skills publication."""
+"""Strict `SKILL.md` frontmatter parsing and skill folder scanning."""
 
 from __future__ import annotations
 
-import hashlib
 import math
 import re
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 import yaml
-from mcp.shared.path_security import safe_join
 from yaml.nodes import MappingNode
 
-from fastmcp.skills.models import MCPSkill, SkillFrontmatter, SkillResource
+from fastmcp.skills.models import SkillFrontmatter
+from fastmcp.utilities.logging import get_logger
 
-# SEP-2640 per-skill limits; servers should not serve skills that exceed them.
-MAX_SKILL_RESOURCES = 512
-MAX_SKILL_BYTES = 16 * 1024 * 1024
+logger = get_logger(__name__)
 
 
 class _FrontmatterLoader(yaml.SafeLoader):
@@ -65,11 +60,27 @@ def parse_frontmatter(content: bytes) -> SkillFrontmatter:
     match = re.match(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|\Z)", text, re.DOTALL)
     if match is None:
         raise ValueError("SKILL.md must begin with YAML frontmatter")
-    value = yaml.load(match.group(1), Loader=_FrontmatterLoader)  # noqa: S506 - SafeLoader subclass rejects duplicate keys
+    try:
+        value = yaml.load(match.group(1), Loader=_FrontmatterLoader)  # noqa: S506 - SafeLoader subclass rejects duplicate keys
+    except (yaml.YAMLError, RecursionError) as exc:
+        raise ValueError(f"frontmatter is not valid YAML: {exc}") from exc
     if not isinstance(value, dict):
         raise ValueError("frontmatter must be a mapping")
     _validate_json(value, set())
-    return SkillFrontmatter.model_validate(value)
+    frontmatter = SkillFrontmatter.model_validate(value)
+    if any(not isinstance(item, str) for item in (frontmatter.metadata or {}).values()):
+        logger.info(
+            "Skill %r has non-string metadata values; the Agent Skills spec "
+            "expects strings, so they are served as written",
+            frontmatter.name,
+        )
+    if isinstance(frontmatter.allowed_tools, list):
+        logger.info(
+            "Skill %r lists allowed-tools as a list; the Agent Skills spec "
+            "expects a space-separated string, so it is served as written",
+            frontmatter.name,
+        )
+    return frontmatter
 
 
 def scan_files(root: Path) -> list[Path]:
@@ -86,48 +97,3 @@ def scan_files(root: Path) -> list[Path]:
                 f"skill contains a non-regular file: {path.relative_to(root)}"
             )
     return files
-
-
-@dataclass(frozen=True)
-class Snapshot:
-    entry: MCPSkill
-    files: tuple[tuple[str, Path], ...]
-
-
-def snapshot(root: Path, skill_path: str) -> Snapshot:
-    paths = scan_files(root)
-    main = root / "SKILL.md"
-    if main not in paths:
-        raise ValueError("skill must contain SKILL.md")
-    if len(paths) > MAX_SKILL_RESOURCES:
-        raise ValueError(f"skill has more than {MAX_SKILL_RESOURCES} files")
-    if sum(path.stat().st_size for path in paths) > MAX_SKILL_BYTES:
-        raise ValueError(f"skill is larger than {MAX_SKILL_BYTES} bytes")
-    records: list[SkillResource] = []
-    files: list[tuple[str, Path]] = []
-    frontmatter: SkillFrontmatter | None = None
-    for path in paths:
-        safe_join(root, path.relative_to(root).as_posix())
-        content = path.read_bytes()
-        uri = f"skill://{quote(skill_path, safe='/')}/{quote(path.relative_to(root).as_posix(), safe='/')}"
-        records.append(
-            SkillResource(
-                uri=uri,
-                digest=f"sha256:{hashlib.sha256(content).hexdigest()}",
-                size=len(content),
-            )
-        )
-        files.append((uri, path))
-        if path == main:
-            frontmatter = parse_frontmatter(content)
-    if scan_files(root) != paths:
-        raise ValueError("skill files changed while building the manifest")
-    if sum(record.size for record in records) > MAX_SKILL_BYTES:
-        raise ValueError(f"skill is larger than {MAX_SKILL_BYTES} bytes")
-    assert frontmatter is not None
-    entry = MCPSkill(
-        uri=f"skill://{quote(skill_path, safe='/')}/SKILL.md",
-        frontmatter=frontmatter,
-        resources=records,
-    )
-    return Snapshot(entry=entry, files=tuple(files))

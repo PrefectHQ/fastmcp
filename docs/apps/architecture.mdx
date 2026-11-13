@@ -15,7 +15,7 @@ You don't need this page to build apps. It's for when something isn't rendering 
 
 An MCP app moves through five stages from Python to pixels:
 
-```
+```text
 Python components  →  JSON tree  →  structuredContent  →  Renderer iframe  →  Host UI
 ```
 
@@ -47,15 +47,17 @@ When a Prefab tool runs, its return value — a `PrefabApp` or a bare `Component
 
 ### `PrefabApp.to_json()`
 
-The entry point is `PrefabApp.to_json()`. It walks the component tree and produces a JSON object with three top-level keys: `view` (the component tree), `state` (initial state values), and `_meta` (routing metadata).
+The entry point is `PrefabApp.to_json()`. It walks the component tree and produces a JSON object with a `$prefab` protocol version, `view` (the component tree), and, when set, `state` (initial state values), `defs`, and theme keys. FastMCP then adds routing metadata under `_meta`, described below.
 
-FastMCP passes a `tool_resolver` callback to `to_json()`. Whenever the tree contains a `CallTool` action that references a function (not a string), the resolver converts it to a `ResolvedTool` with the function's registered name. For `FastMCPApp` backend tools, that registered name is then wrapped in the deterministic hashed format described below. The resolver also handles `unwrap_result` — a flag telling the renderer to unwrap single-value results from the `{"result": value}` envelope FastMCP uses for schema compliance.
+FastMCP passes a `tool_resolver` callback to `to_json()`. The resolver runs on every `CallTool` action in the tree and returns a `ResolvedTool` carrying the tool's name: a function reference resolves to the function's registered name, and a string passes through. For tools that belong to a `FastMCPApp`, that name is then wrapped in the deterministic hashed format described below.
 
 ### Hashed backend tool references
 
-FastMCP still tags app tools with `meta["fastmcp"]["app"]`, but backend routing no longer depends on sending the app name through each tool call. During serialization, FastMCP passes a resolver to `PrefabApp.to_json()`. When the tree contains `CallTool(save_contact)`, the resolver turns it into a deterministic hashed name such as `<hash>_save_contact`, where the hash is derived from the app name and backend tool name.
+Backend routing does not depend on sending the app name through each tool call. When a `FastMCPApp` tree contains `CallTool(save_contact)`, the resolver turns it into a deterministic hashed name such as `__<hash>_save_contact`, where the hash is the first 12 hex characters of a SHA-256 digest of the app name and backend tool name.
 
-That hashed name rides along inside `structuredContent` all the way to the renderer. When the renderer calls the backend tool, it sends the hashed tool name in the normal MCP `tools/call` request. The server recognizes that format and routes through the app-tool lookup path described below.
+The `__<12 lowercase hex>_<name>` pattern is reserved for these generated addresses. `FastMCPApp` rejects registered backend and UI tool names matching it, so the resolver can distinguish registered names from addresses. This reservation concerns the name sent in tool calls; a component key such as `tool:save@` is a separate lookup identifier. Other double-underscore names, such as `__save`, remain valid.
+
+FastMCP records each hashed reference in `structuredContent` under `_meta.fastmcp.toolNames`. On the way out, each server rewrites the reference to the name it lists that tool under, as described in [Late-bound tool names](#late-bound-tool-names). A reference no server could rewrite reaches the renderer in hashed form, and the server routes a `tools/call` with that name through the [hashed lookup fallback](#the-hashed-lookup-fallback).
 
 ### ToolResult assembly
 
@@ -85,7 +87,7 @@ The reason is structural. Identity is derived from the app name and the tool's r
 
 FastMCP declines to bind rather than picking a copy, so buttons stop working instead of quietly invoking the wrong tenant's tool. Expect a message naming the cause:
 
-```
+```text
 Ambiguous app tool 'save': 2 components share the identity '10c0803009ff'.
 The same app is composed more than once, so this call cannot be routed to a
 single tool.
@@ -95,7 +97,9 @@ Give each copy its own app name. Two tenants running the same product want `Fast
 
 ### The hashed lookup fallback
 
-The identity-addressed form `<hash>_<local_name>` remains callable. FastMCP first tries normal tool resolution; if no tool matches and the name has that shape, it calls `get_tool_by_hash(hash, local_name)`, which resolves the tool through the same lookup as its listed name. Transforms, enabled state, and authorization apply to a hashed name exactly as they do to a name call.
+Upgrading a server updates both address generation and lookup automatically. If you deploy an app backend and a proxy gateway separately, upgrade both to use the `__` address format; gateways cannot rewrite identity addresses emitted in the earlier `<hash>_<local_name>` format.
+
+The identity-addressed form `__<hash>_<local_name>` remains callable. FastMCP first tries normal tool resolution; if no tool matches and the name has that shape, it calls `get_tool_by_hash(hash, local_name)`, which resolves the tool through the same lookup as its listed name. Only tools whose `meta["ui"]["visibility"]` includes `"app"` answer to a hashed name. Transforms, enabled state, and authorization apply to a hashed name exactly as they do to a name call.
 
 When one identity is claimed by more than one tool — which happens when the same app is composed into two branches — the call is refused rather than resolved, since picking either one would silently route into the wrong branch.
 
@@ -121,13 +125,13 @@ The resource also carries CSP metadata (via `get_renderer_csp()`) declaring the 
 
 The renderer lives in a sandboxed iframe and communicates with the host using `postMessage`. The protocol follows the [MCP Apps extension](https://modelcontextprotocol.io/docs/extensions/apps) spec:
 
-The host pushes the tool result (with `structuredContent`) into the iframe. The renderer parses the component tree, initializes state, and renders the UI. When the user interacts — submitting a form, clicking a button — and the interaction triggers a `CallTool` action, the renderer sends a `callServerTool` message back to the host via `postMessage`. The host forwards it as a regular MCP `tools/call` request to the server, using the hashed backend name that FastMCP serialized into the action.
+The host pushes the tool result (with `structuredContent`) into the iframe. The renderer parses the component tree, initializes state, and renders the UI. When the user interacts — submitting a form, clicking a button — and the interaction triggers a `CallTool` action, the renderer sends a `tools/call` request to the host via `postMessage`. The host forwards it as a regular MCP `tools/call` request to the server, using the tool name in the action.
 
 The response flows back the same way: server → host → iframe via `postMessage`, and the renderer updates state with the result.
 
 ### AppBridge
 
-The `@modelcontextprotocol/ext-apps` JavaScript SDK provides the `App` class (sometimes called AppBridge) that manages the `postMessage` handshake. It handles connection negotiation, tool result delivery, server tool calls, and host context (safe area insets, theme preferences). The Prefab renderer uses it internally; you only touch it directly when building [custom HTML apps](/apps/low-level).
+The `@modelcontextprotocol/ext-apps` JavaScript SDK provides both ends of the `postMessage` handshake: the `App` class runs inside the iframe, and the `AppBridge` class runs in the host. Together they handle connection negotiation, tool result delivery, server tool calls, and host context (safe area insets, theme preferences). The Prefab renderer uses `App` internally; you only touch it directly when building [custom HTML apps](/apps/low-level).
 
 ## The dev server
 
@@ -137,10 +141,10 @@ The `@modelcontextprotocol/ext-apps` JavaScript SDK provides the `App` class (so
 
 Two HTTP servers. Your MCP server runs on port 8000 with the Streamable HTTP transport. The dev UI runs on port 8080 and serves a picker page that lists your app tools.
 
-A reverse proxy at `/mcp` on the dev server forwards requests to your MCP server. This matters because the renderer iframe runs on `localhost:8080` and your MCP server runs on `localhost:8000` — without the proxy, the renderer's `callServerTool` requests would be cross-origin and the browser would block them. The proxy keeps everything same-origin from the iframe's perspective.
+A reverse proxy at `/mcp` on the dev server forwards requests to your MCP server. This matters because the dev UI and your MCP server listen on different ports: the host page's MCP client sends every request, including the renderer's tool calls relayed over `postMessage`, to `/mcp` on its own origin, and the proxy passes them on. Without the proxy, those requests would be cross-origin and the browser would block them.
 
 ### The launch flow
 
-When you select a tool and click launch, the dev UI calls the tool through the proxy, receives the `structuredContent` response, and opens a new tab. That tab loads the tool's renderer resource (via the proxy), creates an AppBridge, and pushes the tool result into the renderer. From here on it matches what a real host provides: the renderer displays the UI, and any `CallTool` actions route back through the proxy to your server.
+When you select a tool and click launch, the dev UI stores the tool name and arguments and opens a new tab. That tab connects to your server through the proxy, creates an AppBridge, and loads the tool's renderer resource. Once the renderer initializes, the tab calls the tool and pushes the result into the renderer. From here on it matches what a real host provides: the renderer displays the UI, and any `CallTool` actions route back through the proxy to your server.
 
 Auto-reload is on by default, so changes to your server code restart the MCP server automatically. The dev UI keeps running — relaunch the tool to see changes.

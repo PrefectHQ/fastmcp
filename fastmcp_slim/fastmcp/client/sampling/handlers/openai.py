@@ -61,6 +61,16 @@ _OPENAI_IMAGE_MEDIA_TYPES: frozenset[str] = frozenset(
 )
 
 
+def _stop_reason(finish_reason: str | None) -> StopReason:
+    """Map OpenAI's finish reason to MCP's stop reason, so a caller can tell a
+    reply cut off at max_tokens from a finished one."""
+    if finish_reason == "tool_calls":
+        return "toolUse"
+    if finish_reason == "length":
+        return "maxTokens"
+    return "endTurn"
+
+
 def _image_content_to_openai_part(
     content: ImageContent,
 ) -> ChatCompletionContentPartImageParam:
@@ -91,6 +101,18 @@ def _audio_content_to_openai_part(
         type="input_audio",
         input_audio={"data": content.data, "format": audio_format},
     )
+
+
+def _tool_result_content_to_openai_text(content: Sequence[Any]) -> str:
+    """Convert text-only OpenAI tool output and reject images explicitly."""
+    result_texts: list[str] = []
+    for item in content:
+        if isinstance(item, ImageContent):
+            msg = "ImageContent in tool results is not supported by OpenAI"
+            raise ValueError(msg)
+        if isinstance(item, TextContent):
+            result_texts.append(item.text)
+    return "\n".join(result_texts)
 
 
 class OpenAISamplingHandler:
@@ -230,14 +252,7 @@ class OpenAISamplingHandler:
                         content_parts.append(_audio_content_to_openai_part(item))
                     elif isinstance(item, ToolResultContent):
                         # Collect tool results (added after assistant message)
-                        content_text = ""
-                        if item.content:
-                            result_texts = [
-                                sub_item.text
-                                for sub_item in item.content
-                                if isinstance(sub_item, TextContent)
-                            ]
-                            content_text = "\n".join(result_texts)
+                        content_text = _tool_result_content_to_openai_text(item.content)
                         tool_messages.append(
                             ChatCompletionToolMessageParam(
                                 role="tool",
@@ -319,17 +334,11 @@ class OpenAISamplingHandler:
 
             # Handle ToolResultContent (user's tool results)
             if isinstance(content, ToolResultContent):
-                # Extract text parts from the content list
-                result_texts: list[str] = []
-                if content.content:
-                    for item in content.content:
-                        if isinstance(item, TextContent):
-                            result_texts.append(item.text)
                 openai_messages.append(
                     ChatCompletionToolMessageParam(
                         role="tool",
                         tool_call_id=content.tool_use_id,
-                        content="\n".join(result_texts),
+                        content=_tool_result_content_to_openai_text(content.content),
                     )
                 )
                 continue
@@ -398,6 +407,7 @@ class OpenAISamplingHandler:
                 content=TextContent(type="text", text=content),
                 role="assistant",
                 model=chat_completion.model,
+                stop_reason=_stop_reason(first_choice.finish_reason),
             )
 
         raise ValueError("No content in response from completion")
@@ -459,17 +469,6 @@ class OpenAISamplingHandler:
         first_choice = chat_completion.choices[0]
         message = first_choice.message
 
-        # Determine stop reason
-        stop_reason: StopReason
-        if first_choice.finish_reason == "tool_calls":
-            stop_reason = "toolUse"
-        elif first_choice.finish_reason == "stop":
-            stop_reason = "endTurn"
-        elif first_choice.finish_reason == "length":
-            stop_reason = "maxTokens"
-        else:
-            stop_reason = "endTurn"
-
         # Build content list
         content: list[TextContent | ToolUseContent] = []
 
@@ -510,5 +509,5 @@ class OpenAISamplingHandler:
             content=cast(Any, content),
             role="assistant",
             model=chat_completion.model,
-            stop_reason=stop_reason,
+            stop_reason=_stop_reason(first_choice.finish_reason),
         )

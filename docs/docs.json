@@ -60,8 +60,8 @@
   },
   "logo": {
     "href": "https://gofastmcp.com",
-    "dark": "/assets/brand/wordmark-white.png",
-    "light": "/assets/brand/wordmark.png"
+    "dark": "/assets/brand/wordmark-white.svg",
+    "light": "/assets/brand/wordmark.svg"
   },
   "name": "FastMCP",
   "navbar": {
@@ -74,7 +74,7 @@
       {
         "href": "https://www.prefect.io/horizon?utm_source=gofastmcp&utm_medium=docs&utm_campaign=docs_horizon&utm_content=header",
         "icon": "cloud",
-        "label": "Prefect Horizon"
+        "label": "FastMCP Gateway"
       }
     ],
     "primary": {
@@ -203,7 +203,7 @@
                       "deployment/running-server",
                       "deployment/http",
                       "deployment/sandboxed-agents",
-                      "deployment/prefect-horizon",
+                      "deployment/fastmcp-gateway",
                       "deployment/server-configuration",
                       "servers/testing",
                       "servers/telemetry"
@@ -369,6 +369,7 @@
                     "group": "Upgrading",
                     "icon": "up",
                     "pages": [
+                      "getting-started/upgrading/from-fastmcp-4-1",
                       "getting-started/upgrading/from-fastmcp-3",
                       "getting-started/upgrading/from-fastmcp-2",
                       "getting-started/upgrading/from-mcp-sdk-v1",
@@ -489,11 +490,15 @@
       "source": "/clients/generate-cli"
     },
     {
-      "destination": "/deployment/prefect-horizon",
+      "destination": "/deployment/fastmcp-gateway",
+      "source": "/deployment/prefect-horizon"
+    },
+    {
+      "destination": "/deployment/fastmcp-gateway",
       "source": "/deployment/fastmcp-cloud"
     },
     {
-      "destination": "/deployment/prefect-horizon",
+      "destination": "/deployment/fastmcp-gateway",
       "source": "/v2/deployment/fastmcp-cloud"
     },
     {

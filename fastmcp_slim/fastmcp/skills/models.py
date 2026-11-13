@@ -62,10 +62,18 @@ class SkillFrontmatter(RootModel[dict[str, JsonValue]]):
         ):
             raise ValueError("description must contain 1-1024 characters")
 
-        for field_name in ("license", "allowed-tools"):
-            value = self.root.get(field_name)
-            if field_name in self.root and not isinstance(value, str):
-                raise ValueError(f"{field_name} must be a string")
+        if "license" in self.root and not isinstance(self.root["license"], str):
+            raise ValueError("license must be a string")
+
+        allowed_tools = self.root.get("allowed-tools")
+        if "allowed-tools" in self.root and not (
+            isinstance(allowed_tools, str)
+            or (
+                isinstance(allowed_tools, list)
+                and all(isinstance(tool, str) for tool in allowed_tools)
+            )
+        ):
+            raise ValueError("allowed-tools must be a string or a list of strings")
 
         compatibility = self.root.get("compatibility")
         if "compatibility" in self.root and not isinstance(compatibility, str):
@@ -73,12 +81,8 @@ class SkillFrontmatter(RootModel[dict[str, JsonValue]]):
         if isinstance(compatibility, str) and not 1 <= len(compatibility) <= 500:
             raise ValueError("compatibility must contain 1-500 characters")
 
-        metadata = self.root.get("metadata")
-        if "metadata" in self.root and (
-            not isinstance(metadata, dict)
-            or any(not isinstance(value, str) for value in metadata.values())
-        ):
-            raise ValueError("metadata must map string keys to string values")
+        if "metadata" in self.root and not isinstance(self.root["metadata"], dict):
+            raise ValueError("metadata must be a mapping")
 
         _reject_non_finite(self.root)
         return self
@@ -100,12 +104,12 @@ class SkillFrontmatter(RootModel[dict[str, JsonValue]]):
         return cast("str | None", self.root.get("compatibility"))
 
     @property
-    def metadata(self) -> dict[str, str] | None:
-        return cast("dict[str, str] | None", self.root.get("metadata"))
+    def metadata(self) -> dict[str, JsonValue] | None:
+        return cast("dict[str, JsonValue] | None", self.root.get("metadata"))
 
     @property
-    def allowed_tools(self) -> str | None:
-        return cast("str | None", self.root.get("allowed-tools"))
+    def allowed_tools(self) -> str | list[str] | None:
+        return cast("str | list[str] | None", self.root.get("allowed-tools"))
 
 
 def _reject_non_finite(value: JsonValue) -> None:
@@ -221,3 +225,20 @@ class GetSkillRequest(mcp_types.Request[GetSkillParams, Literal["skills/get"]]):
 
     method: Literal["skills/get"] = "skills/get"
     params: GetSkillParams
+
+
+def __getattr__(name: str) -> object:
+    if name == "Skill":
+        import warnings
+
+        from fastmcp._warnings import FastMCPDeprecationWarning
+
+        warnings.warn(
+            "`fastmcp.skills.models.Skill` is now `MCPSkill`; replace it with "
+            "`from fastmcp.skills import MCPSkill`. This alias is removed in "
+            "FastMCP 4.3.",
+            FastMCPDeprecationWarning,
+            stacklevel=2,
+        )
+        return MCPSkill
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
