@@ -127,13 +127,17 @@ class TokenCache:
 
         cache_key = self._hash_token(token)
 
+        now = time.time()
+        expires_at = now + self._ttl
+        if result.expires_at is not None:
+            expires_at = min(expires_at, float(result.expires_at))
+        if expires_at <= now:
+            self._entries.pop(cache_key, None)
+            return
+
         self._maybe_cleanup()
         if cache_key not in self._entries:
             self._enforce_size_limit()
-
-        expires_at = time.time() + self._ttl
-        if result.expires_at:
-            expires_at = min(expires_at, float(result.expires_at))
 
         self._entries[cache_key] = _CacheEntry(
             result=result.model_copy(deep=True),
