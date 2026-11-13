@@ -12,6 +12,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict, Field
 
 from fastmcp import Client, FastMCP
+from fastmcp.client.mixins.tools import _hydration_covers_payload, _json_text_decodes_to
 from fastmcp.tools import Tool, ToolResult
 
 
@@ -290,3 +291,319 @@ class TestWrappedResultKeepsDefs:
             data = (await client.call_tool("example")).data
 
         assert data == "example"
+
+
+class TestUnionHydrationFidelity:
+    """``result.data`` is a convenience view of ``structured_content`` and must
+    not disagree with what the server sent. A pydantic union can coerce across
+    branches (0 → False) or drop keys, so hydration falls back to the payload
+    itself when the typed form would change it (#6136)."""
+
+    async def test_anyof_branch_coercion_keeps_server_value(self):
+        mcp = FastMCP()
+
+        # Only the first branch accepts {"a": 0}; the second requires a boolean.
+        schema = {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "anyOf": [
+                        {"type": "object", "properties": {"x": {}}},
+                        {"type": "object", "properties": {"a": {"type": "boolean"}}},
+                    ]
+                }
+            },
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"value": {"a": 0}}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"value": {"a": 0}}
+        assert result.data == {"value": {"a": 0}}
+
+    async def test_anyof_string_coercion_keeps_server_value(self):
+        mcp = FastMCP()
+
+        # Only the first branch accepts {"a": "5"}; the second coerces the
+        # string to an integer. No ``format: json`` anywhere in the schema,
+        # so the string the server sent must reach data unchanged (#6136).
+        schema = {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "anyOf": [
+                        {"type": "object", "properties": {"x": {}}},
+                        {"type": "object", "properties": {"a": {"type": "integer"}}},
+                    ]
+                }
+            },
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"value": {"a": "5"}}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"value": {"a": "5"}}
+        assert result.data == {"value": {"a": "5"}}
+
+    async def test_json_format_sibling_does_not_license_coercion(self):
+        mcp = FastMCP()
+
+        # A format: json field elsewhere in the schema must not open the
+        # decode asymmetry for value: the anyOf coercion of "5" to 5 is
+        # still a fidelity loss (#6136).
+        schema = {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "anyOf": [
+                        {"type": "object", "properties": {"x": {}}},
+                        {"type": "object", "properties": {"a": {"type": "integer"}}},
+                    ]
+                },
+                "payload": {"type": "string", "format": "json"},
+            },
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"value": {"a": "5"}}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"value": {"a": "5"}}
+        assert result.data == {"value": {"a": "5"}}
+
+    async def test_json_format_field_decodes_beside_ordinary_fields(self):
+        mcp = FastMCP()
+
+        # Mixed payload: the format: json field still decodes (its own path
+        # asks for it) while the anyOf field keeps the server's string.
+        schema = {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "anyOf": [
+                        {"type": "object"},
+                        {"type": "object", "properties": {"a": {"type": "integer"}}},
+                    ]
+                },
+                "payload": {"type": "string", "format": "json"},
+            },
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"value": {"a": "5"}, "payload": '{"b": 1}'}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {
+            "value": {"a": "5"},
+            "payload": '{"b": 1}',
+        }
+        assert result.data.value["a"] == "5"
+        assert result.data.payload == {"b": 1}
+
+    async def test_unambiguous_anyof_still_hydrates(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "anyOf": [
+                        {"type": "object", "properties": {"a": {"type": "boolean"}}},
+                        {"type": "object", "properties": {"n": {"type": "integer"}}},
+                    ]
+                }
+            },
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"value": {"n": 3}}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"value": {"n": 3}}
+        assert result.data.value.n == 3
+
+
+class TestHydrationGuardNoFalsePositives:
+    """The fidelity guard must not reject hydration the schema supports:
+    omitted optional fields (defaults serialize into the dump) and
+    equivalent date-time spellings (+00:00 vs Z) both keep their models."""
+
+    async def test_omitted_optional_field_still_hydrates(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "a": {"type": "integer"},
+                "note": {"type": "string"},
+            },
+            "required": ["a"],
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"a": 1}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"a": 1}
+        # Attribute access and typed values are preserved; the dump may
+        # carry the optional field's default without being a mismatch.
+        assert result.data.a == 1
+        assert result.data.note is None
+
+    async def test_utc_offset_datetime_still_hydrates(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {"ts": {"type": "string", "format": "date-time"}},
+            "required": ["ts"],
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"ts": "2024-06-01T12:00:00+00:00"}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"ts": "2024-06-01T12:00:00+00:00"}
+        # Same instant: pydantic serializes UTC as "Z"; the guard must treat
+        # the spellings as equivalent rather than discarding the model.
+        assert result.data.ts.year == 2024
+        assert result.data.ts.hour == 12
+
+
+class TestHydrationGuardIntentionalDecodes:
+    """Decodes the schema itself calls for must not look like corruption:
+    ``format: json`` hydrates JSON text into a value (pydantic Json), while a
+    timestamp with sub-microsecond precision cannot survive the round trip
+    and keeps the server's exact payload."""
+
+    async def test_format_json_field_still_hydrates(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {"payload": {"type": "string", "format": "json"}},
+            "required": ["payload"],
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"payload": '{"a": 1}'}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"payload": '{"a": 1}'}
+        # format: json is documented to decode: the typed value is the
+        # parsed object, not the raw text.
+        assert result.data.payload == {"a": 1}
+
+    async def test_format_json_scalar_and_bool_decode(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "count": {"type": "string", "format": "json"},
+                "flag": {"type": "string", "format": "json"},
+            },
+            "required": ["count", "flag"],
+        }
+
+        def get_value() -> dict[str, Any]:
+            # JSON booleans stay strict: the text "0" is a number, not False.
+            return {"count": "3", "flag": "true"}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"count": "3", "flag": "true"}
+        assert result.data.count == 3
+        assert result.data.flag is True
+
+    def test_decoded_boolean_comparison_is_type_strict(self):
+        # 0 == False in Python: JSON text that decodes to a number must
+        # never stand in for a boolean (the #6136 corruption shape).
+        assert _json_text_decodes_to("0", False) is False
+        assert _json_text_decodes_to("true", True) is True
+        assert _json_text_decodes_to('{"a": 1}', {"a": 1}) is True
+        assert _json_text_decodes_to("no json", {"a": 1}) is False
+        assert _hydration_covers_payload(False, "0") is False
+        assert _hydration_covers_payload(True, "true") is True
+
+    async def test_sub_microsecond_timestamp_keeps_server_string(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {"ts": {"type": "string", "format": "date-time"}},
+            "required": ["ts"],
+        }
+
+        def get_value() -> dict[str, Any]:
+            # Seven fractional digits: pydantic's datetime truncates to
+            # microseconds, so hydration would lose what the server sent.
+            return {"ts": "2024-06-01T12:00:00.1234567+00:00"}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"ts": "2024-06-01T12:00:00.1234567+00:00"}
+        # The lossy datetime is rejected; the payload survives verbatim.
+        assert result.data == {"ts": "2024-06-01T12:00:00.1234567+00:00"}
+
+    async def test_microsecond_timestamp_still_hydrates(self):
+        mcp = FastMCP()
+
+        schema = {
+            "type": "object",
+            "properties": {"ts": {"type": "string", "format": "date-time"}},
+            "required": ["ts"],
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"ts": "2024-06-01T12:00:00.123456+00:00"}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"ts": "2024-06-01T12:00:00.123456+00:00"}
+        # Microsecond precision survives the round trip intact.
+        assert result.data.ts.year == 2024
+        assert result.data.ts.microsecond == 123456

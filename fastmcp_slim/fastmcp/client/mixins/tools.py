@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import datetime
+import json
+import re
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
@@ -10,8 +13,6 @@ from mcp.client.caching import CacheMode
 from opentelemetry.trace import Status, StatusCode
 
 if TYPE_CHECKING:
-    import datetime
-
     from fastmcp.client.client import CallToolResult, Client
 from fastmcp.client._version_pin import PinnedCall, pinned_call
 from fastmcp.client.progress import ProgressHandler
@@ -25,6 +26,247 @@ from fastmcp.utilities.timeout import normalize_timeout_to_seconds
 logger = get_logger(__name__)
 
 AUTO_PAGINATION_MAX_PAGES = 250
+
+
+def _round_trips_to_payload(
+    type_adapter: Any, typed: Any, original: Any, *, output_schema: Any
+) -> bool:
+    """Check that the typed hydration re-serializes to the server's payload.
+
+    Pydantic unions validate with smart mode, which may coerce across
+    branches (0 → False) or drop keys the model does not declare, so the
+    hydrated object can disagree with `structured_content`. Re-serializing
+    through the same adapter compares them in JSON terms, with three
+    hydration-legitimate asymmetries: fields the payload omitted may appear
+    in the dump (schema defaults serialize out), date-time strings may
+    be spelled differently for the same instant (pydantic renders UTC as
+    ``Z`` while a payload may say ``+00:00``), and ``format: json`` text
+    is compared as its decoded value (pydantic's ``Json`` type) — only at
+    the schema positions that actually declare it.
+    """
+    try:
+        # by_alias: schemas whose property names are pydantic-reserved
+        # (``model_config``, ``_private``, ...) generate aliased fields, and
+        # the wire payload uses the alias spellings — the default dump
+        # re-emits the renamed field names instead.
+        rehydrated = json.loads(type_adapter.dump_json(typed, by_alias=True))
+    except Exception:
+        # If the typed form cannot be re-serialized, fidelity is unknowable;
+        # keep the hydrated value rather than second-guessing a valid model.
+        return True
+    return _hydration_covers_payload(
+        rehydrated, original, [output_schema], output_schema
+    )
+
+
+def _ref_target(node: dict[str, Any], root: Any) -> Any:
+    """Resolve a local ``$ref`` (``#/$defs/Name``) against the root schema."""
+    ref = node.get("$ref")
+    if not (isinstance(ref, str) and ref.startswith("#/")):
+        return node
+    target: Any = root
+    for part in ref[2:].split("/"):
+        if not isinstance(target, dict):
+            return node
+        target = target.get(part.replace("~1", "/").replace("~0", "~"))
+    return target if target is not None else node
+
+
+def _schema_branches(node: Any, root: Any) -> list[Any]:
+    """Schema node(s) governing one value position: local ``$ref``s resolved
+    and ``anyOf``/``oneOf``/``allOf`` flattened. Recursive references are
+    safe; unresolvable ones keep the original node."""
+    branches: list[Any] = []
+    seen: set[int] = set()
+    frontier: list[Any] = [node]
+    while frontier:
+        current = frontier.pop()
+        if isinstance(current, dict):
+            current = _ref_target(current, root)
+            if not isinstance(current, dict) or id(current) in seen:
+                continue
+            seen.add(id(current))
+            flattened = False
+            for keyword in ("anyOf", "oneOf", "allOf"):
+                sub = current.get(keyword)
+                if isinstance(sub, list):
+                    frontier.extend(sub)
+                    flattened = True
+                    break
+            if not flattened:
+                branches.append(current)
+        else:
+            branches.append(current)
+    return branches
+
+
+def _node_asks_json_text(node: Any, root: Any) -> bool:
+    """True when any branch of `node` declares ``format: json``."""
+    return any(
+        isinstance(branch, dict) and branch.get("format") == "json"
+        for branch in _schema_branches(node, root)
+    )
+
+
+def _property_schemas(
+    schemas: list[Any] | None, key: str, root: Any
+) -> list[Any] | None:
+    """Candidate schema nodes for `key` under each candidate node."""
+    if schemas is None:
+        return None
+    children: list[Any] = []
+    for node in schemas:
+        for branch in _schema_branches(node, root):
+            if not isinstance(branch, dict):
+                continue
+            properties = branch.get("properties")
+            if isinstance(properties, dict) and key in properties:
+                children.append(properties[key])
+                continue
+            matched_pattern = False
+            pattern_properties = branch.get("patternProperties")
+            if isinstance(pattern_properties, dict):
+                for pattern, sub in pattern_properties.items():
+                    try:
+                        if re.search(pattern, key):
+                            children.append(sub)
+                            matched_pattern = True
+                    except re.error:
+                        pass
+            if matched_pattern:
+                continue
+            additional = branch.get("additionalProperties")
+            if isinstance(additional, dict):
+                children.append(additional)
+    return children
+
+
+def _item_schemas(schemas: list[Any] | None, index: int, root: Any) -> list[Any] | None:
+    """Candidate schema nodes for item `index` under each candidate node."""
+    if schemas is None:
+        return None
+    children: list[Any] = []
+    for node in schemas:
+        for branch in _schema_branches(node, root):
+            if not isinstance(branch, dict):
+                continue
+            prefix_items = branch.get("prefixItems")
+            if isinstance(prefix_items, list) and index < len(prefix_items):
+                children.append(prefix_items[index])
+                continue
+            items = branch.get("items")
+            if isinstance(items, list):
+                if index < len(items):
+                    children.append(items[index])
+            elif isinstance(items, dict):
+                children.append(items)
+    return children
+
+
+def _json_text_decodes_to(original: Any, dumped: Any) -> bool:
+    """True when `original` is JSON text whose decode equals `dumped`.
+
+    ``format: json`` properties hydrate through pydantic's ``Json`` type:
+    the server sends JSON text and the typed value is the decoded object,
+    so the dump re-emits the decoded form rather than the original string.
+    Callers gate this on the schema position actually declaring
+    ``format: json``; without it, a JSON-looking string must not stand in
+    for its decoded value.
+    """
+    if not isinstance(original, str):
+        return False
+    try:
+        decoded = json.loads(original)
+    except (ValueError, RecursionError):
+        return False
+    if isinstance(decoded, bool) != isinstance(dumped, bool):
+        # 0 == False in Python; keep booleans strict.
+        return False
+    return decoded == dumped
+
+
+def _hydration_covers_payload(
+    dumped: Any, original: Any, schemas: list[Any] | None = None, root: Any = None
+) -> bool:
+    """Every value the server sent must survive hydration; extra keys in the
+    dump are defaults for fields the payload omitted and are allowed.
+
+    `schemas` holds the candidate output-schema nodes for THIS position and
+    `root` is the schema document ``$ref``s resolve against. They gate the
+    JSON-text decode asymmetry to the paths that declare ``format: json``;
+    with no schema context (direct callers) the asymmetry stays open, so a
+    coerced value can never slip through at a path the schema does not
+    exempt."""
+    if schemas and root is not None:
+        node_asks = any(_node_asks_json_text(node, root) for node in schemas)
+    else:
+        node_asks = schemas is None
+    if node_asks and _json_text_decodes_to(original, dumped):
+        # Intentional decode: format: json hydrates JSON text into a value.
+        return True
+    if isinstance(original, bool) or isinstance(dumped, bool):
+        # JSON booleans are not numbers: 0 does not hydrate to False.
+        return (
+            isinstance(original, bool)
+            and isinstance(dumped, bool)
+            and (original == dumped)
+        )
+    if isinstance(original, Mapping) or isinstance(dumped, Mapping):
+        if not isinstance(original, Mapping) or not isinstance(dumped, Mapping):
+            return False
+        return all(
+            key in dumped
+            and _hydration_covers_payload(
+                dumped[key],
+                value,
+                _property_schemas(schemas, str(key), root),
+                root,
+            )
+            for key, value in original.items()
+        )
+    if isinstance(original, list) or isinstance(dumped, list):
+        if (
+            not isinstance(original, list)
+            or not isinstance(dumped, list)
+            or len(original) != len(dumped)
+        ):
+            return False
+        return all(
+            _hydration_covers_payload(
+                d,
+                o,
+                _item_schemas(schemas, position, root),
+                root,
+            )
+            for position, (o, d) in enumerate(zip(original, dumped, strict=True))
+        )
+    if original == dumped:
+        return True
+    # Same instant, different spelling: "+00:00" and "Z".
+    left = _parse_iso_instant(original)
+    right = _parse_iso_instant(dumped)
+    if left is not None and right is not None:
+        return left == right
+    return False
+
+
+def _parse_iso_instant(value: Any) -> Any:
+    if not isinstance(value, str) or len(value) < 8:
+        return None
+    if re.search(r"\.\d{7,}", value):
+        # Sub-microsecond precision: parsing would truncate it, so an
+        # instant comparison could bless a lossy value.
+        return None
+    try:
+        return datetime.datetime.fromisoformat(value)
+    except ValueError:
+        pass
+    if value.endswith("Z"):
+        try:
+            return datetime.datetime.fromisoformat(value[:-1] + "+00:00")
+        except ValueError:
+            return None
+    return None
 
 
 class ClientToolsMixin:
@@ -472,7 +714,21 @@ async def _parse_call_tool_result(
                 if wrap_from_meta or output_schema.get("x-fastmcp-wrap-result"):
                     output_schema = _wrapped_result_schema(output_schema)
                 type_adapter = json_schema_to_type_adapter(output_schema)
-                data = type_adapter.validate_python(structured_content)
+                typed = type_adapter.validate_python(structured_content)
+                # `data` is a convenience view of `structured_content`, so it
+                # must not disagree with what the server sent: a pydantic
+                # union can coerce across branches (0 → False) or drop keys.
+                # When the typed form re-serializes differently, hand back
+                # the payload untouched.
+                if _round_trips_to_payload(
+                    type_adapter,
+                    typed,
+                    structured_content,
+                    output_schema=output_schema,
+                ):
+                    data = typed
+                else:
+                    data = structured_content
             else:
                 data = structured_content
         except Exception as e:
