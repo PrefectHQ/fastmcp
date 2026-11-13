@@ -113,7 +113,7 @@ class _ProxiedSkills:
                         return []
                     raise
                 entries.extend(page.skills)
-                if not page.next_cursor or page.next_cursor in seen:
+                if page.next_cursor is None or page.next_cursor in seen:
                     return entries
                 seen.add(page.next_cursor)
                 cursor = page.next_cursor
