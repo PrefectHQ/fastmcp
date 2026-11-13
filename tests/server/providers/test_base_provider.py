@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from fastmcp import FastMCP
 from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.transforms import Namespace
@@ -97,6 +98,34 @@ class TestBaseProviderGetTasks:
 
         assert len(tasks) == 1
         assert tasks[0].name == "api_my_tool"
+
+
+class TestAggregateProviderGetTasks:
+    async def test_get_tasks_applies_own_transforms(self):
+        """Task keys must match the names get_tool() resolves through the aggregate."""
+        aggregate = AggregateProvider(
+            [SimpleProvider(tools=[CustomTool(name="my_tool")])]
+        )
+        aggregate.add_transform(Namespace("api"))
+
+        tasks = await aggregate.get_tasks()
+
+        assert [t.key for t in tasks] == ["tool:api_my_tool@"]
+        tool = await aggregate.get_tool("api_my_tool")
+        assert tool is not None
+        assert tool.key == tasks[0].key
+
+    async def test_server_transforms_apply_once(self):
+        aggregate = AggregateProvider(
+            [SimpleProvider(tools=[CustomTool(name="my_tool")])]
+        )
+        aggregate.add_transform(Namespace("api"))
+        server = FastMCP("Test", providers=[aggregate])
+        server.add_transform(Namespace("srv"))
+
+        tasks = await server.get_tasks()
+
+        assert [t.key for t in tasks] == ["tool:srv_api_my_tool@"]
 
 
 class TestAggregateProviderErrors:

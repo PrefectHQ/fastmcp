@@ -411,7 +411,20 @@ class AggregateProvider(Provider):
     # -------------------------------------------------------------------------
 
     async def get_tasks(self) -> Sequence[FastMCPComponent]:
-        """Get all task-eligible components from all providers."""
+        """Get all task-eligible components from all providers.
+
+        Applies this aggregate's own transforms, so components register with
+        Docket under the names `get_tool()` resolves through them.
+        """
+        components = await self._get_child_tasks()
+        return [
+            c
+            for c in await self._apply_task_transforms(components)
+            if c.task_config.supports_tasks()
+        ]
+
+    async def _get_child_tasks(self) -> list[FastMCPComponent]:
+        """Task-eligible components from all providers, before own transforms."""
         results = await gather(
             (p.get_tasks() for p in self.providers),
             return_exceptions=True,
