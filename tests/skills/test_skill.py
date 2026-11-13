@@ -179,8 +179,11 @@ def test_frontmatter_changes_do_not_leak_into_the_skill():
     skill = Skill(name="review", description="Review", instructions="")
     skill.frontmatter.root["description"] = "changed"
     skill.to_mcp_skill().frontmatter.root["description"] = "changed"
+    skill.manifest.frontmatter.root["description"] = "changed"
+    skill.manifest.files.clear()
     assert skill.description == "Review"
     assert skill.to_mcp_skill().frontmatter.description == "Review"
+    assert skill.manifest.files.keys() == {"SKILL.md"}
 
 
 def test_to_mcp_skill_describes_every_file(tmp_path: Path):

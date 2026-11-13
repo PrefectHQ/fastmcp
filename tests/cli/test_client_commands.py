@@ -33,7 +33,7 @@ from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.client import CallToolResult
 from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.sse import SSETransport
-from fastmcp.client.transports.stdio import StdioTransport
+from fastmcp.client.transports.stdio import NodeStdioTransport, StdioTransport
 from fastmcp.mcp_config import RemoteMCPServer
 from fastmcp.settings import Settings
 from fastmcp.utilities.tests import temporary_settings
@@ -401,6 +401,17 @@ class TestResolveServerSpec:
         assert result.command == "fastmcp"
         assert result.args == ["run", str(py_file.resolve()), "--no-banner"]
 
+    def test_js_file_builds_client_without_deprecation_warning(self, tmp_path: Path):
+        js_file = tmp_path / "server.js"
+        js_file.write_text("// empty")
+        result = resolve_server_spec(str(js_file))
+        assert isinstance(result, NodeStdioTransport)
+        assert result.command == "node"
+        assert result.args == [str(js_file.resolve())]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            Client(result)
+
     def test_json_mcp_config(self, tmp_path: Path):
         config_file = tmp_path / "mcp.json"
         config = {"mcpServers": {"test": {"url": "http://localhost:8000"}}}
@@ -583,6 +594,9 @@ class TestBuildClient:
                     message=r"<class 'key_value\.aio\.protocols\.key_value\.AsyncKeyValue'> isn't explicitly decorated",
                     category=DeprecationWarning,
                 )
+                # Garbage collection can finalize sockets leaked by earlier tests
+                # inside this block; those warnings aren't about token storage.
+                warnings.filterwarnings("ignore", category=ResourceWarning)
                 first = _build_client(resolved, auth=auth).transport.auth
                 assert isinstance(first, OAuth)
                 await first.token_storage_adapter.set_tokens(tokens)
@@ -627,6 +641,7 @@ class TestBuildClient:
         with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
             with warnings.catch_warnings(record=True) as emitted:
                 warnings.simplefilter("always")
+                warnings.filterwarnings("ignore", category=ResourceWarning)
                 first = _build_client("https://example.com/mcp").transport.auth
                 second = _build_client("https://example.com/mcp").transport.auth
             assert not emitted
@@ -738,6 +753,7 @@ def test_named_oauth_server_is_quiet(
     with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
         with warnings.catch_warnings(record=True) as emitted:
             warnings.simplefilter("always")
+            warnings.filterwarnings("ignore", category=ResourceWarning)
             _build_client(resolve_server_spec("weather"))
     assert not emitted
 

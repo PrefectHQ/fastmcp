@@ -13,12 +13,24 @@ from types import MappingProxyType
 from typing import Any, Self, TypeGuard, cast
 from urllib.parse import quote
 
-from pydantic import GetCoreSchemaHandler, JsonValue
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    GetCoreSchemaHandler,
+    JsonValue,
+    model_validator,
+)
 from pydantic_core import CoreSchema, core_schema
 
 from fastmcp._warnings import FastMCPDeprecationWarning
 from fastmcp.skills._constants import MAX_SKILL_BYTES, MAX_SKILL_FILES
-from fastmcp.skills.models import MCPSkill, SkillFrontmatter, SkillResource
+from fastmcp.skills.models import (
+    _SHA256_PATTERN,
+    MCPSkill,
+    SkillFrontmatter,
+    SkillResource,
+)
 
 
 def _warn_wire_model(call: str) -> None:
@@ -55,6 +67,64 @@ def _validate_relative_path(path: str) -> str:
     return path
 
 
+def _validate_files(sizes: Mapping[str, int]) -> None:
+    for path in sizes:
+        _validate_relative_path(path)
+    if "SKILL.md" not in sizes:
+        raise ValueError("A skill must contain SKILL.md")
+    _validate_limits(len(sizes), sum(sizes.values()))
+    for path in sizes:
+        parts = path.split("/")
+        for index in range(1, len(parts)):
+            if "/".join(parts[:index]) in sizes:
+                raise ValueError(f"Skill file is also used as a directory: {path!r}")
+
+
+class SkillFile(BaseModel):
+    """One file of a skill, described by its digest and size instead of its bytes."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    digest: str = Field(pattern=_SHA256_PATTERN)
+    size: int = Field(ge=0)
+
+
+class SkillManifest(BaseModel):
+    """A skill's frontmatter and files, without the files' contents.
+
+    A provider can advertise a skill from its manifest and read a file only when
+    a client reads it. See `SkillManifestProvider`.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    frontmatter: SkillFrontmatter
+    files: dict[str, SkillFile]
+    """Every file in the skill, keyed by relative path, including `SKILL.md`."""
+
+    @model_validator(mode="after")
+    def validate_files(self) -> Self:
+        _validate_files({path: file.size for path, file in self.files.items()})
+        return self
+
+    def to_mcp_skill(self, path: str | None = None) -> MCPSkill:
+        """Build the Skills extension entry for this skill served at `skill://{path}/`."""
+        prefix = f"skill://{quote(path or self.frontmatter.name, safe='/')}/"
+        resources = [
+            SkillResource(
+                uri=prefix + quote(file_path, safe="/"),
+                digest=file.digest,
+                size=file.size,
+            )
+            for file_path, file in self.files.items()
+        ]
+        return MCPSkill(
+            uri=f"{prefix}SKILL.md",
+            frontmatter=self.frontmatter.model_copy(deep=True),
+            resources=resources,
+        )
+
+
 def _render_skill_md(frontmatter: Mapping[str, JsonValue], instructions: str) -> bytes:
     import yaml
 
@@ -74,12 +144,6 @@ class _SkillMeta(type):
 def _is_authored_skill(value: object) -> TypeGuard[Skill]:
     """Check real inheritance, excluding the public wire-model compatibility alias."""
     return issubclass(type(value), Skill)
-
-
-def _require_authored_skill(value: object) -> Skill:
-    if not _is_authored_skill(value):
-        raise ValueError("Expected an authored Skill with file contents")
-    return value
 
 
 class Skill(metaclass=_SkillMeta):
@@ -103,10 +167,10 @@ class Skill(metaclass=_SkillMeta):
         ```
     """
 
-    __slots__ = ("_files", "_frontmatter")
+    __slots__ = ("_files", "_manifest")
 
     _files: Mapping[str, bytes]
-    _frontmatter: SkillFrontmatter
+    _manifest: SkillManifest
 
     @classmethod
     def __get_pydantic_core_schema__(
@@ -170,28 +234,27 @@ class Skill(metaclass=_SkillMeta):
     def _initialize(self, files: Mapping[str, str | bytes]) -> None:
         from fastmcp.skills._snapshot import parse_frontmatter
 
-        normalized: dict[str, bytes] = {}
-        for path, content in files.items():
-            clean = _validate_relative_path(path)
-            normalized[clean] = (
-                content.encode("utf-8") if isinstance(content, str) else bytes(content)
-            )
-        if "SKILL.md" not in normalized:
-            raise ValueError("A skill must contain SKILL.md")
-        _validate_limits(len(normalized), sum(map(len, normalized.values())))
-        for path in normalized:
-            parts = path.split("/")
-            for index in range(1, len(parts)):
-                if "/".join(parts[:index]) in normalized:
-                    raise ValueError(
-                        f"Skill file is also used as a directory: {path!r}"
-                    )
-        object.__setattr__(
-            self, "_frontmatter", parse_frontmatter(normalized["SKILL.md"])
+        normalized = {
+            path: content.encode("utf-8")
+            if isinstance(content, str)
+            else bytes(content)
+            for path, content in files.items()
+        }
+        _validate_files({path: len(content) for path, content in normalized.items()})
+        contents = dict(sorted(normalized.items()))
+        # Validated above, so the manifest skips validating the same files again.
+        manifest = SkillManifest.model_construct(
+            frontmatter=parse_frontmatter(contents["SKILL.md"]),
+            files={
+                path: SkillFile.model_construct(
+                    digest=f"sha256:{hashlib.sha256(content).hexdigest()}",
+                    size=len(content),
+                )
+                for path, content in contents.items()
+            },
         )
-        object.__setattr__(
-            self, "_files", MappingProxyType(dict(sorted(normalized.items())))
-        )
+        object.__setattr__(self, "_files", MappingProxyType(contents))
+        object.__setattr__(self, "_manifest", manifest)
 
     def __setattr__(self, name: str, value: object) -> None:
         raise AttributeError("Skill is immutable")
@@ -311,16 +374,21 @@ class Skill(metaclass=_SkillMeta):
 
     @property
     def name(self) -> str:
-        return self._frontmatter.name
+        return self._manifest.frontmatter.name
 
     @property
     def description(self) -> str:
-        return self._frontmatter.description
+        return self._manifest.frontmatter.description
 
     @property
     def frontmatter(self) -> SkillFrontmatter:
         """A copy of the parsed frontmatter; changing it does not change the skill."""
-        return self._frontmatter.model_copy(deep=True)
+        return self._manifest.frontmatter.model_copy(deep=True)
+
+    @property
+    def manifest(self) -> SkillManifest:
+        """A copy of the skill's frontmatter and file digests; changing it does not change the skill."""
+        return self._manifest.model_copy(deep=True)
 
     @property
     def files(self) -> Mapping[str, bytes]:
@@ -329,18 +397,7 @@ class Skill(metaclass=_SkillMeta):
 
     def to_mcp_skill(self, path: str | None = None) -> MCPSkill:
         """Build the Skills extension entry for this skill served at `skill://{path}/`."""
-        prefix = f"skill://{quote(path or self.name, safe='/')}/"
-        resources = [
-            SkillResource(
-                uri=prefix + quote(relative, safe="/"),
-                digest=f"sha256:{hashlib.sha256(content).hexdigest()}",
-                size=len(content),
-            )
-            for relative, content in self._files.items()
-        ]
-        return MCPSkill(
-            uri=f"{prefix}SKILL.md", frontmatter=self.frontmatter, resources=resources
-        )
+        return self._manifest.to_mcp_skill(path)
 
     def __eq__(self, other: object) -> bool:
         return _is_authored_skill(other) and self._files == other._files

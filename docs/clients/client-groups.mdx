@@ -75,6 +75,8 @@ Discovered routes outlive the group's context. After the last exit, `resolve_too
 
 ## List skills across servers
 
+<VersionBadge version="4.2.0" />
+
 `list_skills()` collects [Skills extension](/servers/skills) entries from every client that opted into it, keyed by server name, since two servers can publish the same skill URI. Clients created without `SkillsClientExtension()`, including those from `from_config`, and servers that don't advertise the extension are left out.
 
 ```python

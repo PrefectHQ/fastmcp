@@ -306,7 +306,7 @@ class Client(
                 - ClientTransport: Direct transport instance
                 - FastMCP: In-process FastMCP server
                 - AnyUrl or str: URL to connect to
-                - Path: File path for local socket
+                - Path: Python (.py) or Node (.js) script to run over stdio
                 - MCPConfig: MCP server configuration
                 - dict: Transport configuration
 

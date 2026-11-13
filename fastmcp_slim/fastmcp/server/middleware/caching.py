@@ -260,8 +260,7 @@ class ResponseCachingStatistics(FastMCPBaseModel):
 
 
 class ResponseCachingMiddleware(Middleware):
-    """The response caching middleware offers a simple way to cache responses to mcp methods. The Middleware
-    supports cache invalidation via notifications from the server. The Middleware implements TTL-based caching
+    """The response caching middleware offers a simple way to cache responses to mcp methods. The Middleware implements TTL-based caching
     but cache implementations may offer additional features like LRU eviction, size limits, and more.
 
     When items are retrieved from the cache they will no longer be the original objects, but rather no-op objects
@@ -376,7 +375,7 @@ class ResponseCachingMiddleware(Middleware):
         call_next: CallNext[mcp_types.ListToolsRequest, Sequence[Tool]],
     ) -> Sequence[Tool]:
         """List tools from the cache, if caching is enabled, and the result is in the cache. Otherwise,
-        otherwise call the next middleware and store the result in the cache if caching is enabled."""
+        call the next middleware and store the result in the cache if caching is enabled."""
         if self._list_tools_settings.get("enabled") is False:
             return await call_next(context)
 
@@ -409,7 +408,7 @@ class ResponseCachingMiddleware(Middleware):
         call_next: CallNext[mcp_types.ListResourcesRequest, Sequence[Resource]],
     ) -> Sequence[Resource]:
         """List resources from the cache, if caching is enabled, and the result is in the cache. Otherwise,
-        otherwise call the next middleware and store the result in the cache if caching is enabled."""
+        call the next middleware and store the result in the cache if caching is enabled."""
         if self._list_resources_settings.get("enabled") is False:
             return await call_next(context)
 
@@ -442,7 +441,7 @@ class ResponseCachingMiddleware(Middleware):
         call_next: CallNext[mcp_types.ListPromptsRequest, Sequence[Prompt]],
     ) -> Sequence[Prompt]:
         """List prompts from the cache, if caching is enabled, and the result is in the cache. Otherwise,
-        otherwise call the next middleware and store the result in the cache if caching is enabled."""
+        call the next middleware and store the result in the cache if caching is enabled."""
         if self._list_prompts_settings.get("enabled") is False:
             return await call_next(context)
 
@@ -473,7 +472,7 @@ class ResponseCachingMiddleware(Middleware):
         call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
         """Call a tool from the cache, if caching is enabled, and the result is in the cache. Otherwise,
-        otherwise call the next middleware and store the result in the cache if caching is enabled."""
+        call the next middleware and store the result in the cache if caching is enabled."""
         tool_name = context.message.name
 
         if self._call_tool_settings.get(
@@ -542,7 +541,7 @@ class ResponseCachingMiddleware(Middleware):
         call_next: CallNext[mcp_types.ReadResourceRequestParams, ResourceResult],
     ) -> ResourceResult:
         """Read a resource from the cache, if caching is enabled, and the result is in the cache. Otherwise,
-        otherwise call the next middleware and store the result in the cache if caching is enabled."""
+        call the next middleware and store the result in the cache if caching is enabled."""
         if self._read_resource_settings.get("enabled") is False:
             return await call_next(context)
 
@@ -591,7 +590,7 @@ class ResponseCachingMiddleware(Middleware):
         call_next: CallNext[mcp_types.GetPromptRequestParams, PromptResult],
     ) -> PromptResult:
         """Get a prompt from the cache, if caching is enabled, and the result is in the cache. Otherwise,
-        otherwise call the next middleware and store the result in the cache if caching is enabled."""
+        call the next middleware and store the result in the cache if caching is enabled."""
         if self._get_prompt_settings.get("enabled") is False:
             return await call_next(context)
 
