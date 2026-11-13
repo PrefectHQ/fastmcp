@@ -6,6 +6,16 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 4.2.0a5" description="November 12, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.2.0a5: Skillium Fancyson"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0a5"
+cta="Read the release notes"
+>
+FastMCP 4.2.0a5 adds `SkillManifestProvider`, which serves skills from their manifests (frontmatter plus each file's digest and size) and reads a file only when a client reads it, so skills kept in a bucket or database don't have to be loaded to answer `skills/list`. `SkillCatalogProvider` now builds on it and no longer re-hashes every file on each request. Since a4, a dependency can own the tool argument it reads through `CallArgument`, completion no longer suggests values for prompts or templates a caller can't see, `ctx.info()` and the other logging helpers work inside background tasks, and a final polish pass covered docs, examples and docstrings. This is the last prerelease before 4.2.0. Thanks to our 128 contributors, including 54 first-time contributors.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.1.8" description="November 10, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.1.8: Backporch Light"
