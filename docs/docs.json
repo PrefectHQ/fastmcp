@@ -60,8 +60,8 @@
   },
   "logo": {
     "href": "https://gofastmcp.com",
-    "dark": "/assets/brand/wordmark-white.png",
-    "light": "/assets/brand/wordmark.png"
+    "dark": "/assets/brand/wordmark-white.svg",
+    "light": "/assets/brand/wordmark.svg"
   },
   "name": "FastMCP",
   "navbar": {
