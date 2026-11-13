@@ -19,6 +19,8 @@ Provide a `log_handler` function when creating the client:
 
 ```python
 import logging
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.logging import LogMessage
 
@@ -59,7 +61,7 @@ async def log_handler(message: LogMessage):
     logger.log(level, msg, extra=extra)
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     log_handler=log_handler,
 )
 ```
@@ -85,6 +87,8 @@ The handler receives a `LogMessage` object:
 The `message.data` attribute contains the server's JSON-serializable log payload. FastMCP servers commonly send a dictionary with `msg` and `extra` keys, which enables structured logging with rich contextual information.
 
 ```python
+from fastmcp.client.logging import LogMessage
+
 async def detailed_log_handler(message: LogMessage):
     data = message.data
     msg = data.get('msg', data) if isinstance(data, dict) else data
@@ -102,10 +106,13 @@ This structure is preserved even when logs are forwarded through a FastMCP proxy
 
 ## Default Behavior
 
-If you do not provide a custom `log_handler`, FastMCP's default handler routes server logs to Python's logging system at the appropriate severity level. The MCP levels map as follows: `notice` becomes INFO; `alert` and `emergency` become CRITICAL.
+If you do not provide a custom `log_handler`, FastMCP's default handler routes server logs to Python's logging system through the `fastmcp.client.from_server` logger, at the matching severity. The MCP levels map as follows: `notice` becomes INFO; `alert` and `emergency` become CRITICAL.
 
 ```python
 from pathlib import Path
+
+from fastmcp import Client
+
 client = Client(Path("my_mcp_server.py"))
 
 async with client:

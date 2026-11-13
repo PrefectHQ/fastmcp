@@ -61,7 +61,7 @@ class LocalProvider(
 
     When used standalone, LocalProvider uses default settings. When attached
     to a FastMCP server via the server's decorators, server-level settings
-    like `_tool_serializer` and `_support_tasks_by_default` are injected.
+    like `_support_tasks_by_default` are injected.
 
     Example:
         ```python
@@ -214,17 +214,6 @@ class LocalProvider(
             raise KeyError(f"Component {key!r} not found")
 
         del self._components[key]
-
-    def _get_component(self, key: str) -> FastMCPComponent | None:
-        """Get a component by its prefixed key.
-
-        Args:
-            key: The prefixed key (e.g., "tool:name", "resource:uri").
-
-        Returns:
-            The component, or None if not found.
-        """
-        return self._components.get(key)
 
     def remove_tool(self, name: str, version: str | None = None) -> None:
         """Remove tool(s) from this provider's storage.

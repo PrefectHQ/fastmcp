@@ -18,6 +18,7 @@ from pydantic import AnyUrl
 from fastmcp import Client, FastMCP
 from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import FunctionResource
+from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from fastmcp.server.providers import Provider
 from fastmcp.server.transforms import Namespace
 from fastmcp.skills import MCPSkill, SkillsClientExtension
@@ -63,9 +64,6 @@ class MemorySkillProvider(Provider):
             for skill in (addressable if addressable is not None else listed)
         }
         self.contexts: list[ServerRequestContext[Any, Any]] = []
-
-    def _validate_skill_source(self) -> None:
-        pass
 
     async def _skill_uris(self, uri: str | None = None) -> Sequence[str]:
         return [key for key in self.addressable if uri is None or key == uri]
@@ -173,6 +171,29 @@ async def test_list_skills_enforces_page_limit() -> None:
     async with skills_client(server) as client:
         with pytest.raises(RuntimeError, match="Reached auto-pagination limit"):
             await client.list_skills(max_pages=1)
+
+
+class EmptyCursorSkillsExtension(SkillsExtension):
+    """Serves two pages whose continuation cursor is the empty string."""
+
+    async def _handle_list(
+        self,
+        context: ServerRequestContext[Any, Any],
+        params: ListSkillsParams,
+    ) -> ListSkillsResult:
+        if params.cursor is None:
+            return ListSkillsResult(skills=[make_skill("alpha")], next_cursor="")
+        return ListSkillsResult(skills=[make_skill("beta")])
+
+
+async def test_list_skills_follows_empty_cursor() -> None:
+    server = FastMCP("skills")
+    server.add_extension(EmptyCursorSkillsExtension())
+
+    async with skills_client(server) as client:
+        all_skills = await client.list_skills()
+
+    assert [skill.frontmatter.name for skill in all_skills] == ["alpha", "beta"]
 
 
 async def test_get_skill_is_authoritative_for_unlisted_skill() -> None:
@@ -410,3 +431,21 @@ async def test_duplicate_uris_are_omitted_from_list_and_get(
 
     assert exc_info.value.error.code == INVALID_PARAMS
     assert "Omitting duplicate Skills entries" in caplog.text
+
+
+async def test_transform_added_after_registration_keeps_unrelated_reads() -> None:
+    provider = MemorySkillProvider(listed=[])
+    server = make_server(provider)
+    server.add_middleware(ResponseCachingMiddleware())
+
+    @server.resource("data://plain")
+    def plain() -> str:
+        return "plain"
+
+    server.add_transform(Namespace("docs"))
+
+    async with skills_client(server) as client:
+        result = await client.read_resource("data://docs/plain")
+
+    assert isinstance(result[0], TextResourceContents)
+    assert result[0].text == "plain"

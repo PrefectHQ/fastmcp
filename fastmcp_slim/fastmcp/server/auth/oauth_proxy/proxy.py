@@ -18,6 +18,7 @@ production use with enterprise identity providers.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import secrets
 import time
@@ -55,7 +56,7 @@ from mcp.server.auth.provider import (
     RegistrationError,
     TokenError,
 )
-from mcp.server.auth.routes import build_metadata, cors_middleware
+from mcp.server.auth.routes import build_metadata, cors_middleware, create_auth_routes
 from mcp.server.auth.settings import (
     ClientRegistrationOptions,
     RevocationOptions,
@@ -76,6 +77,7 @@ from fastmcp.server.auth.auth import (
     OAuthProvider,
     PrivateKeyJWTClientAuthenticator,
     TokenHandler,
+    TokenVerificationError,
     TokenVerifier,
 )
 from fastmcp.server.auth.cimd import CIMDClientManager
@@ -108,6 +110,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     UpstreamTokenSet,
     _hash_token,
 )
+from fastmcp.server.auth.oauth_proxy.revocation import RevocationProvider
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
 from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client, OAuthError
 from fastmcp.server.auth.redirect_validation import (
@@ -187,6 +190,16 @@ def _assertion_granted_scopes(claims: dict[str, Any]) -> list[str]:
     return []
 
 
+def _log_cull_failure(task: asyncio.Task[None]) -> None:
+    """Log an exception from a background state cull, if any."""
+    if not task.cancelled() and (exc := task.exception()) is not None:
+        logger.warning("Failed to cull expired OAuth proxy state: %s", exc)
+
+
+# Minimum seconds between culls of the default on-disk OAuth state store.
+_STATE_CULL_INTERVAL_SECONDS = 3600.0
+
+
 class OAuthProxy(OAuthProvider, ConsentMixin):
     """OAuth provider that presents a DCR-compliant interface while proxying to non-DCR IDPs.
 
@@ -235,7 +248,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     5. Token Management:
        - Clients may expect different token formats/claims than upstream provides
        - Need to track tokens for revocation and refresh
-       - Solution: Store token relationships, forward upstream tokens transparently
+       - Solution: Issue FastMCP-signed JWTs and map their JTIs to the stored upstream tokens
 
     OAuth Flow Implementation
     ------------------------
@@ -255,7 +268,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
     4. Token Exchange:
        - Validate client's code and PKCE verifier
-       - Return previously obtained upstream tokens
+       - Issue FastMCP access/refresh tokens backed by the stored upstream tokens
        - Clean up one-time use authorization code
 
     5. Token Refresh:
@@ -266,8 +279,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     State Management
     ---------------
     The proxy maintains minimal but crucial state via pluggable storage (client_storage):
-    - _oauth_transactions: Active authorization flows with client context
-    - _client_codes: Authorization codes with PKCE challenges and upstream tokens
+    - _transaction_store: Active authorization flows with client context
+    - _code_store: Authorization codes with PKCE challenges and upstream tokens
+    - _upstream_token_store: Upstream token sets
     - _jti_mapping_store: Maps FastMCP token JTIs to upstream token IDs
     - _refresh_token_store: Refresh token metadata (keyed by token hash)
 
@@ -576,7 +590,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         if isinstance(jwt_signing_key, str):
             if len(jwt_signing_key) < 12:
                 logger.warning(
-                    "jwt_signing_key is less than 12 characters; it is recommended to use a longer. "
+                    "jwt_signing_key is less than 12 characters; it is recommended to use a longer "
                     "string for the key derivation."
                 )
             jwt_signing_key = derive_jwt_key(
@@ -594,6 +608,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # keys get isolated directories (e.g. two servers on the same machine with
         # different keys won't collide). Decryption errors are treated as cache misses
         # rather than hard failures, so key rotation just causes re-registration.
+        default_file_store: FileTreeStore | None = None
         if client_storage is None:
             storage_encryption_key = derive_jwt_key(
                 high_entropy_material=jwt_signing_key.decode(),
@@ -604,7 +619,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             storage_dir = settings.home / "oauth-proxy" / key_fingerprint
             storage_dir.mkdir(parents=True, exist_ok=True)
 
-            file_store = FileTreeStore(
+            default_file_store = FileTreeStore(
                 data_directory=storage_dir,
                 key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(
                     storage_dir
@@ -615,11 +630,16 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             )
 
             client_storage = FernetEncryptionWrapper(
-                key_value=file_store,
+                key_value=default_file_store,
                 fernet=Fernet(key=storage_encryption_key),
                 raise_on_decryption_error=False,
             )
 
+        # The store FastMCP created itself, if any. Expired entries are only ever
+        # reaped from this store: a user-provided client_storage is never culled.
+        self._default_file_store: FileTreeStore | None = default_file_store
+        self._cull_task: asyncio.Task[None] | None = None
+        self._last_cull_started: float | None = None
         self._client_storage: AsyncKeyValue = client_storage
 
         # Cache HTTPS check to avoid repeated logging
@@ -740,6 +760,37 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             "Initialized OAuth proxy provider with upstream server %s",
             self._upstream_authorization_endpoint,
         )
+
+    def _maybe_cull_expired_state(self) -> None:
+        """Reap expired entries from the default on-disk store, at most hourly.
+
+        Called on the OAuth write paths, so a long-running server keeps its
+        state directory bounded without a dedicated scheduler, and the first
+        flow after a restart clears what previous runs left behind. The cull
+        runs as a background task so it never delays the request that
+        triggered it. A custom `client_storage` is never culled: FastMCP only
+        reaps the store it created itself, and entries without a TTL (e.g.
+        DCR client registrations) are left untouched.
+
+        See https://github.com/PrefectHQ/fastmcp/issues/5718.
+        """
+        if self._default_file_store is None:
+            return
+        if self._cull_task is not None and not self._cull_task.done():
+            return
+        now = time.monotonic()
+        if (
+            self._last_cull_started is not None
+            and now - self._last_cull_started < _STATE_CULL_INTERVAL_SECONDS
+        ):
+            return
+        self._last_cull_started = now
+        # Keep a strong reference: the loop only holds tasks weakly.
+        self._cull_task = asyncio.get_running_loop().create_task(
+            self._default_file_store.cull(),
+            name="fastmcp-oauth-proxy-state-cull",
+        )
+        self._cull_task.add_done_callback(_log_cull_failure)
 
     # -------------------------------------------------------------------------
     # Scope Management
@@ -1132,6 +1183,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         "remember" mode, still route through /consent so the cookie lookup and
         Sec-Fetch-Site gating can run.
         """
+        self._maybe_cull_expired_state()
         # Security check: validate client's requested resource matches this server
         # This prevents tokens intended for one server from being used on another
         #
@@ -1311,6 +1363,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         PKCE validation is handled by the MCP framework before this method is called.
         """
+        self._maybe_cull_expired_state()
         # Look up stored code data
         code_model = await self._code_store.get(key=authorization_code.code)
         if not code_model:
@@ -1793,6 +1846,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         5. Issue new FastMCP access token
         6. Keep same FastMCP refresh token (unless upstream rotates)
         """
+        self._maybe_cull_expired_state()
         # Verify FastMCP refresh token
         try:
             refresh_payload = self.jwt_issuer.verify_token(
@@ -2289,6 +2343,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                                 validated = await self._token_validator.verify_token(
                                     verification_token
                                 )
+                except TokenVerificationError:
+                    raise
                 except Exception as e:
                     logger.debug("Transparent upstream refresh failed: %s", e)
                     # In a distributed deployment, another worker may have
@@ -2306,6 +2362,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                                 )
                                 if validated:
                                     upstream_token_set = reloaded
+                    except TokenVerificationError:
+                        raise
                     except Exception as reload_error:
                         logger.debug(
                             "Re-read of upstream token after refresh failure also failed: %s",
@@ -2333,6 +2391,23 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         "expires_at": int(upstream_token_set.expires_at),
                     }
                 )
+                # A verifier without its own required_scopes (e.g. one that
+                # checks an opaque token via userinfo, or an id_token) cannot
+                # enforce the provider's required_scopes. Check them here
+                # against the patched upstream scopes, so the requirement
+                # holds even when an outer layer (e.g. MultiAuth with
+                # required_scopes=[]) does not enforce it.
+                missing_scopes = (
+                    set()
+                    if self._token_validator.required_scopes
+                    else set(self.required_scopes or []) - set(validated.scopes)
+                )
+                if missing_scopes:
+                    logger.debug(
+                        "Upstream token is missing required scopes: %s",
+                        sorted(missing_scopes),
+                    )
+                    return None
 
             # Propagate upstream claims from the verified FastMCP JWT into the
             # final AccessToken object. This allows subclasses to access custom
@@ -2350,6 +2425,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             )
             return validated
 
+        except TokenVerificationError:
+            raise
         except Exception as e:
             logger.debug("Token swap validation failed: %s", e)
             return None
@@ -2464,6 +2541,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         This method creates standard OAuth routes and replaces:
         - /authorize endpoint: Enhanced error responses for unregistered clients
         - /token endpoint: OAuth 2.1 compliant error codes
+        - /revoke endpoint: Downstream client ownership without changing user identity
 
         Args:
             mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
@@ -2540,6 +2618,24 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         ),
                         methods=["POST", "OPTIONS"],
                     )
+                )
+            elif (
+                isinstance(route, Route)
+                and route.path == "/revoke"
+                and route.methods is not None
+                and "POST" in route.methods
+            ):
+                # Let the SDK retain its request-size limit, CORS, and other
+                # endpoint protections; only token ownership needs adapting.
+                revocation_routes = create_auth_routes(
+                    provider=RevocationProvider(self),
+                    issuer_url=self.base_url,  # ty: ignore[invalid-argument-type]
+                    revocation_options=self.revocation_options,
+                )
+                custom_routes.extend(
+                    candidate
+                    for candidate in revocation_routes
+                    if candidate.path == route.path
                 )
             elif (
                 isinstance(route, Route)
@@ -2885,7 +2981,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             logger.debug(f"Forwarding to client callback for transaction {txn_id}")
 
             response = RedirectResponse(url=client_callback_url, status_code=302)
-            self._clear_consent_binding_cookie(request, response, txn_id)
+            self._clear_consent_binding_cookie(response, txn_id)
             return response
 
         except Exception as e:

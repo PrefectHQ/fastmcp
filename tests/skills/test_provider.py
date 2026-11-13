@@ -5,9 +5,11 @@ import hashlib
 import json
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 import anyio
 import pytest
+from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
 from mcp_types import BlobResourceContents, TextResourceContents
 
@@ -16,8 +18,8 @@ from fastmcp.server.middleware import Middleware
 from fastmcp.server.middleware.authorization import AuthMiddleware
 from fastmcp.skills import Skill, SkillsClientExtension
 from fastmcp.skills.extension import SkillsExtension
+from fastmcp.skills.models import MCPSkill
 from fastmcp.skills.provider import SkillCatalogProvider
-from fastmcp.utilities.skills import list_skill_summaries, sync_skills
 
 REVIEW = Skill(
     name="review",
@@ -79,24 +81,16 @@ async def test_resources_work_without_the_extension():
         )
         manifest = json.loads(await read_bytes(client, "skill://review/_manifest"))
         assert {f["path"] for f in manifest["files"]} == set(REVIEW.files)
-        summaries = await list_skill_summaries(client)
-        assert [(s.name, s.description) for s in summaries] == [
-            ("review", "Review changes")
-        ]
 
 
-async def test_sync_skills_installs_code_defined_skills(tmp_path: Path):
+async def test_listed_skills_install_into_a_local_folder(tmp_path: Path):
     server = FastMCP("Skills", providers=[SkillCatalogProvider([REVIEW, DEPLOY])])
-    async with Client(server) as client:
-        await sync_skills(client, tmp_path)
-    # download_skill writes text files in text mode, so compare file sets and
-    # binary bytes rather than exact text bytes (Windows translates newlines).
+    async with skills_client(server) as client:
+        for entry in await client.list_skills():
+            skill = await client.read_skill(entry.uri)
+            skill.to_directory(tmp_path / skill.name)
     for skill in (REVIEW, DEPLOY):
-        installed = Skill.from_directory(tmp_path / skill.name)
-        assert installed.frontmatter == skill.frontmatter
-        assert set(installed.files) == set(skill.files)
-    review = Skill.from_directory(tmp_path / "review")
-    assert review.files["refs/logo.bin"] == REVIEW.files["refs/logo.bin"]
+        assert Skill.from_directory(tmp_path / skill.name) == skill
 
 
 async def test_load_skills_is_called_once_per_request():
@@ -194,3 +188,39 @@ async def test_shadowed_file_hides_skill():
 def test_invalid_catalogs(skills: object, message: str):
     with pytest.raises(ValueError, match=message):
         SkillCatalogProvider(skills)  # ty: ignore[invalid-argument-type]
+
+
+async def test_read_skill_returns_the_served_skill():
+    server = serve(SkillCatalogProvider({"team/review": REVIEW, "deploy": DEPLOY}))
+    async with skills_client(server) as client:
+        assert await client.read_skill("skill://team/review/SKILL.md") == REVIEW
+        assert await client.read_skill("skill://deploy/SKILL.md") == DEPLOY
+
+
+async def test_read_skill_can_be_served_again():
+    source = serve(SkillCatalogProvider([REVIEW]))
+    async with skills_client(source) as client:
+        skill = await client.read_skill("skill://review/SKILL.md")
+
+    mirror = serve(SkillCatalogProvider([skill]))
+    async with skills_client(mirror) as client:
+        assert await client.read_skill("skill://review/SKILL.md") == REVIEW
+
+
+async def test_read_skill_rejects_bytes_that_miss_the_manifest():
+    class PublishedManifest(SkillCatalogProvider):
+        async def _get_skill_entry(
+            self, uri: str, context: ServerRequestContext[Any, Any]
+        ) -> MCPSkill | None:
+            return REVIEW.to_mcp_skill()
+
+    provider = PublishedManifest([REVIEW])
+    server = serve(provider)
+
+    @server.resource("skill://review/notes.md")
+    def tampered() -> str:
+        return "tampered!\n"
+
+    async with skills_client(server) as client:
+        with pytest.raises(ValueError, match="does not match its manifest"):
+            await client.read_skill("skill://review/SKILL.md")

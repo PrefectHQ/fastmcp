@@ -33,7 +33,9 @@ from starlette.requests import Request
 from uncalled_for import (
     CycleError,
     Dependency,
+    Provider,
     frame_scope,
+    get_call_argument_parameters,
     get_dependency_parameters,
 )
 from uncalled_for.resolution import _Depends
@@ -372,6 +374,13 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
     except Exception:
         type_hints = getattr(fn, "__annotations__", {})
 
+    # A parameter that already names its dependency, as a default or as
+    # `Annotated` provider metadata, keeps it.
+    try:
+        declared = set(get_dependency_parameters(fn))
+    except TypeError:
+        declared = set()
+
     # First pass: identify which params need transformation
     params_to_transform: set[str] = set()
     optional_context_params: set[str] = set()
@@ -379,7 +388,7 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
     optional_session_params: set[str] = set()
     for name, param in sig.parameters.items():
         annotation = type_hints.get(name, param.annotation)
-        if isinstance(param.default, Dependency):
+        if name in declared or isinstance(param.default, Dependency):
             continue
         if is_class_member_of_type(annotation, Context):
             params_to_transform.add(name)
@@ -726,9 +735,9 @@ def without_injected_parameters(
 ) -> Callable[..., Any]:
     """Create a wrapper function without injected parameters.
 
-    Returns a wrapper that excludes Context and Docket dependency parameters,
-    making it safe to use with Pydantic TypeAdapter for schema generation and
-    validation. The wrapper internally handles all dependency resolution and
+    Returns a wrapper that excludes Context, UserSession, and Docket dependency
+    parameters, making it safe to use with Pydantic TypeAdapter for schema
+    generation and validation. The wrapper internally handles all dependency resolution and
     Context injection when called.
 
     Handles:
@@ -746,32 +755,52 @@ def without_injected_parameters(
         Async wrapper function without injected parameters
     """
     from fastmcp.server.context import Context
+    from fastmcp.server.sessions import UserSession
 
     # Identify parameters to exclude
     context_kwarg = find_kwarg_by_type(fn, Context)
+    session_kwarg = find_kwarg_by_type(fn, UserSession)
     dependency_params = get_dependency_parameters(fn)
 
     exclude = set()
     if context_kwarg:
         exclude.add(context_kwarg)
+    if session_kwarg:
+        exclude.add(session_kwarg)
     if dependency_params:
         exclude.update(dependency_params.keys())
 
     if not exclude:
         return fn
 
+    # A dependency's CallArgument can own an argument the function doesn't
+    # declare. It joins the public signature; its value reaches only the
+    # dependency, never fn.
+    referenced = get_call_argument_parameters(fn)
+    referenced_names = {param.name for param in referenced}
+
     # Build new signature with only user parameters
     sig = inspect.signature(fn)
     user_params = [
         param for name, param in sig.parameters.items() if name not in exclude
     ]
-    new_sig = inspect.Signature(user_params)
+    variadic = [p for p in user_params if p.kind is inspect.Parameter.VAR_KEYWORD]
+    user_params = [
+        p for p in user_params if p.kind is not inspect.Parameter.VAR_KEYWORD
+    ]
+    new_sig = inspect.Signature([*user_params, *referenced, *variadic])
 
     # Create async wrapper that handles dependency resolution
     fn_is_async = is_coroutine_function(fn)
 
     async def wrapper(**user_kwargs: Any) -> Any:
         async with resolve_dependencies(fn, user_kwargs) as resolved_kwargs:
+            if referenced_names:
+                resolved_kwargs = {
+                    name: value
+                    for name, value in resolved_kwargs.items()
+                    if name not in referenced_names
+                }
             if fn_is_async:
                 result = await fn(**resolved_kwargs)
             elif run_in_thread:
@@ -805,7 +834,7 @@ def without_injected_parameters(
     wrapper.__signature__ = new_sig  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     wrapper.__annotations__ = {
         k: v for k, v in resolved_hints.items() if k not in exclude and k != "return"
-    }
+    } | {param.name: param.annotation for param in referenced}
     wrapper.__name__ = getattr(fn, "__name__", "wrapper")
     wrapper.__doc__ = getattr(fn, "__doc__", None)
     wrapper.__module__ = fn.__module__
@@ -940,7 +969,7 @@ async def resolve_dependencies(
 # so that get_dependency_parameters can detect them.
 
 
-class _CurrentContext(Dependency["Context"]):
+class _CurrentContext(Provider["Context"]):
     """Async context manager for Context dependency.
 
     Returns the active context from _current_context (normal MCP request).
@@ -988,7 +1017,7 @@ class _CurrentContext(Dependency["Context"]):
             await ctx.__aexit__(exc_type, exc_value, traceback)
 
 
-class _OptionalCurrentContext(Dependency["Context | None"]):
+class _OptionalCurrentContext(Provider["Context | None"]):
     """Context dependency that returns None instead of raising when no context
     is active. Used for ``ctx: Context = None`` parameter patterns.
 
@@ -1048,7 +1077,7 @@ def OptionalCurrentContext() -> Context | None:
     return cast("Context | None", _OptionalCurrentContext())
 
 
-class _CurrentFastMCP(Dependency["FastMCP"]):
+class _CurrentFastMCP(Provider["FastMCP"]):
     """Async context manager for FastMCP server dependency."""
 
     async def __aenter__(self) -> FastMCP:
@@ -1088,7 +1117,7 @@ def CurrentFastMCP() -> FastMCP:
     return cast(FastMCP, _CurrentFastMCP())
 
 
-class _CurrentRequest(Dependency[Request]):
+class _CurrentRequest(Provider[Request]):
     """Async context manager for HTTP Request dependency."""
 
     async def __aenter__(self) -> Request:
@@ -1129,7 +1158,7 @@ def CurrentRequest() -> Request:
     return cast(Request, _CurrentRequest())
 
 
-class _CurrentHeaders(Dependency[dict[str, str]]):
+class _CurrentHeaders(Provider[dict[str, str]]):
     """Async context manager for HTTP Headers dependency."""
 
     async def __aenter__(self) -> dict[str, str]:
@@ -1266,7 +1295,7 @@ class InMemoryProgress:
         self._message = message
 
 
-class Progress(Dependency["Progress"]):
+class Progress(Provider["Progress"]):
     """Progress dependency that works in both server and worker contexts.
 
     In a Docket worker, delegates to the execution's Redis-backed progress
@@ -1343,7 +1372,7 @@ class Progress(Dependency["Progress"]):
 # --- Access Token dependency ---
 
 
-class _CurrentAccessToken(Dependency[AccessToken]):
+class _CurrentAccessToken(Provider[AccessToken]):
     """Async context manager for AccessToken dependency."""
 
     async def __aenter__(self) -> AccessToken:
@@ -1393,7 +1422,7 @@ def CurrentAccessToken() -> AccessToken:
 # --- Token Claim dependency ---
 
 
-class _TokenClaim(Dependency[str]):
+class _TokenClaim(Provider[str]):
     """Dependency that extracts a specific claim from the access token."""
 
     def __init__(self, claim_name: str):

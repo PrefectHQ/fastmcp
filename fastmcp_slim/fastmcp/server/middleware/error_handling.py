@@ -1,6 +1,5 @@
 """Error handling middleware for consistent error responses and tracking."""
 
-import asyncio
 import logging
 import traceback
 from collections.abc import Callable
@@ -9,9 +8,12 @@ from typing import Any
 import anyio
 from mcp import MCPError
 
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import NotFoundError, ValidationError
 
 from .middleware import CallNext, Middleware, MiddlewareContext
+
+_MAX_ERROR_STATS = 1000
+_OTHER_ERROR_STATS_KEY = "<other>"
 
 
 class ErrorHandlingMiddleware(Middleware):
@@ -61,7 +63,16 @@ class ErrorHandlingMiddleware(Middleware):
 
         # Track error counts
         error_key = f"{error_type}:{method}"
-        self.error_counts[error_key] = self.error_counts.get(error_key, 0) + 1
+        if error_key in self.error_counts:
+            self.error_counts[error_key] += 1
+        elif len(self.error_counts) < _MAX_ERROR_STATS - 1:
+            self.error_counts[error_key] = 1
+        else:
+            # Method names come from incoming requests. Keep the statistics map
+            # bounded even when callers send a new unsupported method each time.
+            self.error_counts[_OTHER_ERROR_STATS_KEY] = (
+                self.error_counts.get(_OTHER_ERROR_STATS_KEY, 0) + 1
+            )
 
         base_message = f"Error in {method}: {error_type}: {error!s}"
 
@@ -87,21 +98,21 @@ class ErrorHandlingMiddleware(Middleware):
         if not self.transform_errors:
             return error
 
-        # Map common exceptions to appropriate MCP error codes
+        # Map common exceptions to appropriate MCP error codes. Match subclasses
+        # too: pydantic's ValidationError, for one, is a ValueError.
         error_type = type(error.__cause__) if error.__cause__ else type(error)
 
-        if error_type in (ValueError, TypeError):
+        if issubclass(error_type, (ValueError, TypeError, ValidationError)):
             return MCPError(code=-32602, message=f"Invalid params: {error!s}")
-        elif error_type in (FileNotFoundError, KeyError, NotFoundError):
+        elif issubclass(error_type, (FileNotFoundError, KeyError, NotFoundError)):
             # MCP spec defines -32002 specifically for resource not found
             method = context.method or ""
             if method.startswith("resources/"):
                 return MCPError(code=-32002, message=f"Resource not found: {error!s}")
             return MCPError(code=-32001, message=f"Not found: {error!s}")
-        elif error_type is PermissionError:
+        elif issubclass(error_type, PermissionError):
             return MCPError(code=-32000, message=f"Permission denied: {error!s}")
-        # asyncio.TimeoutError is a subclass of TimeoutError in Python 3.10, alias in 3.11+
-        elif error_type in (TimeoutError, asyncio.TimeoutError):
+        elif issubclass(error_type, TimeoutError):
             return MCPError(code=-32000, message=f"Request timeout: {error!s}")
         else:
             return MCPError(code=-32603, message=f"Internal error: {error!s}")
@@ -121,7 +132,11 @@ class ErrorHandlingMiddleware(Middleware):
             raise transformed_error from error
 
     def get_error_stats(self) -> dict[str, int]:
-        """Get error statistics for monitoring."""
+        """Get error statistics for monitoring.
+
+        The map is capped at 1000 entries. Errors that would exceed the cap are
+        counted together under ``<other>``.
+        """
         return self.error_counts.copy()
 
 

@@ -3,8 +3,11 @@ from typing import Any, cast
 
 import pytest
 from anyio import create_task_group
+from mcp import CreateMessageResult
 from mcp_types import (
     ElicitRequestFormParams,
+    ElicitRequestURLParams,
+    ImageContent,
     LoggingLevel,
     ModelHint,
     ModelPreferences,
@@ -20,7 +23,11 @@ from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingPar
 from fastmcp.exceptions import ToolError
 from fastmcp.server import create_proxy
 from fastmcp.server.elicitation import AcceptedElicitation
-from fastmcp.server.providers.proxy import ProxyClient, _create_client_factory
+from fastmcp.server.providers.proxy import (
+    ProxyClient,
+    _create_client_factory,
+    default_proxy_elicitation_handler,
+)
 
 
 class TestProxyClientEraDefault:
@@ -79,13 +86,27 @@ async def _backend_sample(context: Context) -> str:
             )
         ],
         system_prompt="You love FastMCP",
+        include_context="thisServer",
         temperature=0.5,
         max_tokens=100,
         stop_sequences=["STOP"],
+        metadata={"trace": "abc"},
         model_preferences=ModelPreferences(hints=[ModelHint(name="gpt-4o")]),
         related_request_id=context.origin_request_id,
     )
     return result.content.text if isinstance(result.content, TextContent) else ""
+
+
+async def _backend_sample_result(context: Context) -> dict[str, Any]:
+    """Issue a handshake-era `sampling/createMessage` and return the whole result."""
+    result = await context.session.create_message(  # ty: ignore[deprecated]
+        messages=[
+            SamplingMessage(role="user", content=TextContent(type="text", text="Hi"))
+        ],
+        max_tokens=100,
+        related_request_id=context.origin_request_id,
+    )
+    return result.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
 @pytest.fixture
@@ -106,6 +127,10 @@ def fastmcp_server():
     ) -> str:
         return await _backend_sample(context)
 
+    @mcp.tool
+    async def sampling_result(context: Context) -> dict[str, Any]:
+        return await _backend_sample_result(context)
+
     @dataclass
     class Person:
         name: str
@@ -123,6 +148,17 @@ def fastmcp_server():
             return f"Hello, {result.data.name}!"
         else:
             return "No name provided."
+
+    @mcp.tool
+    async def elicit_url(context: Context) -> str:
+        # Handshake-era URL-mode elicitation, sent through the SDK session.
+        result = await context.session.elicit_url(
+            message="Sign in to continue",
+            url="https://example.com/oauth/start",
+            elicitation_id="elicit-1",
+            related_request_id=context.origin_request_id,
+        )
+        return result.action
 
     @mcp.tool
     async def log(
@@ -150,6 +186,10 @@ def fastmcp_server():
                 message=f"{(i + 1) / 3 * 100:.2f}% complete",
             )
         return 100
+
+    @mcp.tool
+    async def hide_echo(context: Context) -> None:
+        await context.disable_components(names={"echo"})
 
     return mcp
 
@@ -235,9 +275,11 @@ class TestProxyClient:
                 )
             ]
             assert params.system_prompt == "You love FastMCP"
+            assert params.include_context == "thisServer"
             assert params.temperature == 0.5
             assert params.max_tokens == 100
             assert params.stop_sequences == ["STOP"]
+            assert params.metadata == {"trace": "abc"}
             assert params.model_preferences == ModelPreferences(
                 hints=[ModelHint(name="gpt-4o")]
             )
@@ -259,6 +301,35 @@ class TestProxyClient:
         ) as client:
             result = await client.call_tool("sampling", {})
             assert result.data == "I love FastMCP"
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            TextContent(type="text", text="I love FastMCP"),
+            ImageContent(type="image", data="aGVsbG8=", mime_type="image/png"),
+        ],
+        ids=["text", "image"],
+    )
+    async def test_forward_sampling_response_unchanged(
+        self, proxy_server: FastMCP, content: TextContent | ImageContent
+    ):
+        """
+        The backend receives the client's sampling result as the client sent it:
+        its model, stop reason and content, not a text-only placeholder.
+        """
+        answer = CreateMessageResult(
+            role="assistant",
+            model="claude-sonnet-5-5",
+            content=content,
+            stop_reason="endTurn",
+        )
+        async with Client(
+            proxy_server, mode="legacy", sampling_handler=lambda *args: answer
+        ) as client:
+            result = await client.call_tool("sampling_result", {})
+        assert result.data == answer.model_dump(
+            mode="json", by_alias=True, exclude_none=True
+        )
 
     async def test_elicit_request(self, proxy_server: FastMCP):
         """
@@ -288,6 +359,45 @@ class TestProxyClient:
             await client.call_tool("elicit", {})
 
         assert elicitation_handler_called
+
+    async def test_elicit_url_request(self, proxy_server: FastMCP):
+        """
+        Test that the proxy client forwards a URL-mode `elicit` request as URL mode.
+        """
+        received: list[ElicitRequestParams] = []
+
+        async def elicitation_handler(
+            message, response_type, params: ElicitRequestParams, ctx
+        ):
+            received.append(params)
+            return ElicitResult(action="accept")
+
+        async with Client(
+            proxy_server, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
+            result = await client.call_tool("elicit_url", {})
+            assert result.data == "accept"
+
+        assert len(received) == 1
+        assert isinstance(received[0], ElicitRequestURLParams)
+        assert received[0].message == "Sign in to continue"
+        assert received[0].url == "https://example.com/oauth/start"
+        assert received[0].elicitation_id == "elicit-1"
+
+    async def test_elicit_url_request_without_elicitation_id(self):
+        """
+        Test that the proxy rejects a URL-mode request that has no elicitation ID.
+        """
+        params = ElicitRequestURLParams(
+            mode="url", message="Sign in", url="https://example.com/oauth/start"
+        )
+        with pytest.raises(ValueError, match="no elicitationId"):
+            await default_proxy_elicitation_handler(
+                "Sign in",
+                dict,
+                params,
+                None,  # ty: ignore[invalid-argument-type]
+            )
 
     async def test_elicit_accept_response(self, proxy_server: FastMCP):
         """
@@ -399,6 +509,24 @@ class TestProxyClient:
             await client.call_tool("report_progress", {})
 
         assert PROGRESS_MESSAGES == EXPECTED_PROGRESS_MESSAGES
+
+    async def test_forward_list_changed_notifications(self, proxy_server: FastMCP):
+        received: list[str] = []
+
+        async def message_handler(message: Any) -> None:
+            if not isinstance(message, Exception):
+                received.append(message.method)
+
+        async with Client(
+            proxy_server, mode="legacy", message_handler=message_handler
+        ) as client:
+            await client.call_tool("hide_echo", {})
+
+        assert received == [
+            "notifications/tools/list_changed",
+            "notifications/resources/list_changed",
+            "notifications/prompts/list_changed",
+        ]
 
     async def test_concurrent_log_requests_no_mixing(self, proxy_server: FastMCP):
         """Test that concurrent log requests don't mix handlers (fixes #1068)."""

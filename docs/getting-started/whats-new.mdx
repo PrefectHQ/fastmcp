@@ -127,7 +127,7 @@ The default in-memory state store is process-local. To preserve state across res
 
 Long-running tools create a different kind of state problem: holding a request open for several minutes invites timeouts and leaves the user unable to tell whether work is progressing. Background tasks accept the call and return a handle immediately, then let the client poll while work proceeds asynchronously.
 
-FastMCP implements the `io.modelcontextprotocol/tasks` extension in the optional `fastmcp-tasks` package. The authoring API remains `@mcp.tool(task=True)`, backed by [Docket](https://github.com/chrisguidry/docket):
+FastMCP implements the `io.modelcontextprotocol/tasks` extension in the optional `fastmcp-tasks` package, installed with `pip install "fastmcp[tasks]"`. The authoring API remains `@mcp.tool(task=True)`, backed by [Docket](https://github.com/chrisguidry/docket):
 
 ```python
 import asyncio

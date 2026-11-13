@@ -61,18 +61,6 @@ def _get_npx_command():
     return "npx"  # On Unix-like systems, just use npx
 
 
-def _parse_env_var(env_var: str) -> tuple[str, str]:
-    """Parse environment variable string in format KEY=VALUE."""
-    if "=" not in env_var:
-        logger.error("Invalid environment variable format. Must be KEY=VALUE")
-        sys.exit(1)
-    key, value = env_var.split("=", 1)
-    if not key.strip():
-        logger.error("Invalid environment variable format. KEY cannot be empty")
-        sys.exit(1)
-    return key.strip(), value.strip()
-
-
 @contextmanager
 def with_argv(args: list[str] | None):
     """Temporarily replace sys.argv if args provided.
@@ -184,7 +172,7 @@ async def inspector(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_requirements: Annotated[
@@ -260,10 +248,9 @@ async def inspector(
             sys.exit(1)
         assert config is not None  # For type checker
 
-        # Skip server-object validation in module mode — the module
-        # manages its own startup and may not expose an importable server.
-        if not module:
-            await config.source.load_server()
+        # Let the child server load the source. Importing it here would happen
+        # outside the configured uv environment and would invoke factories a
+        # second time when `fastmcp run` starts.
 
         env_vars = {}
         if ui_port:
@@ -451,7 +438,7 @@ async def run(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_packages: Annotated[
@@ -811,7 +798,7 @@ async def inspect(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_packages: Annotated[
