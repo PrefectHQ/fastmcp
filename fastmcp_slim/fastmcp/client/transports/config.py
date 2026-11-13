@@ -401,6 +401,14 @@ class MCPConfigTransport(ClientTransport):
             proxy.disable(tags=set(exclude_tags))
         return transport, client, proxy
 
+    def get_session_id(self) -> str | None:
+        # A single-server config connects through its transport directly, so
+        # the session is that transport's. A multi-server composite is an
+        # in-memory router with no session id of its own.
+        if len(self.config.mcpServers) == 1:
+            return self.transport.get_session_id()
+        return None
+
     async def close(self):
         for transport in self._transports:
             await transport.close()

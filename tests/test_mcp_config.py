@@ -173,6 +173,31 @@ class TestConfigTransportEraNegotiation:
         assert transport.legacy_only is True
 
 
+class TestConfigTransportSessionId:
+    """A single-server config delegates to its transport, so its session ID is that
+    transport's; a multi-server composite has no session of its own."""
+
+    def test_single_server_reports_its_transports_session_id(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        transport = MCPConfigTransport(
+            {"mcpServers": {"only": {"url": "https://example.com/mcp"}}}
+        )
+        monkeypatch.setattr(transport.transport, "get_session_id", lambda: "abc123")
+        assert transport.get_session_id() == "abc123"
+
+    def test_multi_server_config_has_no_session_id(self):
+        transport = MCPConfigTransport(
+            {
+                "mcpServers": {
+                    "a": {"url": "https://a.example.com/mcp"},
+                    "b": {"url": "https://b.example.com/mcp"},
+                }
+            }
+        )
+        assert transport.get_session_id() is None
+
+
 def _make_protocol_era_server(name: str, starts: list[str] | None = None) -> FastMCP:
     if starts is None:
         server = FastMCP(name)
