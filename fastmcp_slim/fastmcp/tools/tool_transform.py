@@ -658,7 +658,10 @@ class TransformedTool(Tool):
         if transform_fn is None:
             # User wants pure transformation - use forwarding_fn as the main function
             final_fn = forwarding_fn
-            final_schema = schema
+            # Identity-only transforms preserve cross-parameter constraints and
+            # other top-level schema customizations. Argument transforms rebuild
+            # the schema because those constraints may reference changed names.
+            final_schema = schema if transform_args else deepcopy(tool.parameters)
         else:
             # parsed fn is not none here
             parsed_fn = cast(ParsedFunction, parsed_fn)

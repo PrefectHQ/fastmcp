@@ -344,6 +344,7 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
                     description=meta.description,
                     icons=meta.icons,
                     tags=meta.tags,
+                    input_schema_extra=meta.input_schema_extra,
                     output_schema=meta.output_schema,
                     annotations=meta.annotations,
                     meta=meta.meta,

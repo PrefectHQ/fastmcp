@@ -10,6 +10,7 @@ import anyio
 import pytest
 from anyio.abc import TaskStatus
 from anyio.to_thread import run_sync
+from jsonschema import Draft202012Validator
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -460,6 +461,46 @@ def greet(name: str) -> str:
             # Call tool
             result = await client.call_tool("greet", {"name": "World"})
             assert "Hello, World!" in str(result)
+
+    @pytest.mark.parametrize("reload", [False, True])
+    async def test_discovered_tool_preserves_input_schema_extra(
+        self, tmp_path: Path, reload: bool
+    ) -> None:
+        (tmp_path / "lookup.py").write_text(
+            """\
+from fastmcp.tools import tool
+
+@tool(input_schema_extra={
+    "anyOf": [{"required": ["team_id"]}, {"required": ["club_id"]}]
+})
+def lookup_team(
+    team_id: str | None = None, club_id: str | None = None
+) -> dict[str, str | None]:
+    return {"team_id": team_id, "club_id": club_id}
+"""
+        )
+        provider = FileSystemProvider(tmp_path, reload=reload)
+        mcp = FastMCP("Teams", providers=[provider])
+
+        async with Client(mcp) as client:
+            listed = await client.list_tools()
+            assert len(listed) == 1
+            assert listed[0].name == "lookup_team"
+            schema = listed[0].input_schema
+            assert schema["anyOf"] == [
+                {"required": ["team_id"]},
+                {"required": ["club_id"]},
+            ]
+            assert set(schema["properties"]) == {"team_id", "club_id"}
+            validator = Draft202012Validator(schema)
+            assert not validator.is_valid({})
+            assert validator.is_valid({"team_id": "team-1"})
+            assert validator.is_valid({"club_id": "club-1"})
+
+            result = await client.call_tool("lookup_team", {"club_id": "club-1"})
+            assert result.data == {"team_id": None, "club_id": "club-1"}
+            empty_result = await client.call_tool("lookup_team", {})
+            assert empty_result.data == {"team_id": None, "club_id": None}
 
     async def test_provider_with_resources(self, tmp_path: Path):
         """FileSystemProvider should work with resources."""

@@ -1975,6 +1975,7 @@ class FastMCP(
         description: str | None = None,
         icons: list[mcp_types.Icon] | None = None,
         tags: set[str] | None = None,
+        input_schema_extra: dict[str, Any] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         meta: dict[str, Any] | None = None,
@@ -1996,6 +1997,7 @@ class FastMCP(
         description: str | None = None,
         icons: list[mcp_types.Icon] | None = None,
         tags: set[str] | None = None,
+        input_schema_extra: dict[str, Any] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         meta: dict[str, Any] | None = None,
@@ -2016,6 +2018,7 @@ class FastMCP(
         description: str | None = None,
         icons: list[mcp_types.Icon] | None = None,
         tags: set[str] | None = None,
+        input_schema_extra: dict[str, Any] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         meta: dict[str, Any] | None = None,
@@ -2047,6 +2050,8 @@ class FastMCP(
             name: Optional name for the tool (keyword-only, alternative to name_or_fn)
             description: Optional description of what the tool does
             tags: Optional set of tags for categorizing the tool
+            input_schema_extra: Top-level additions or overrides for the generated
+                input schema. Affects discovery only, not runtime validation.
             output_schema: Optional JSON schema for the tool's output
             annotations: Optional annotations about the tool's behavior
             meta: Optional meta information about the tool
@@ -2087,6 +2092,7 @@ class FastMCP(
             description=description,
             icons=icons,
             tags=tags,
+            input_schema_extra=input_schema_extra,
             output_schema=output_schema,
             annotations=annotations,
             meta=meta,
