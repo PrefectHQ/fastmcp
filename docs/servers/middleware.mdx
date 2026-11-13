@@ -415,6 +415,22 @@ mcp = FastMCP("MyServer")
 mcp.add_middleware(TimingMiddleware())
 ```
 
+### Usage Metrics
+
+```python
+from fastmcp.server.middleware.usage import UsageMiddleware
+```
+
+`UsageMiddleware` records every tool call and prompt get as an OpenTelemetry metric, tagged with the component name, the outcome, and the authenticated user (hashed by default). See [Usage Metrics](/servers/telemetry#usage-metrics) for setup and attributes.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.middleware.usage import UsageMiddleware
+
+mcp = FastMCP("MyServer")
+mcp.add_middleware(UsageMiddleware(user_id_salt="a-secret-value"))
+```
+
 ### Caching
 
 ```python
