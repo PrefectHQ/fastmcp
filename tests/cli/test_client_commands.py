@@ -594,6 +594,9 @@ class TestBuildClient:
                     message=r"<class 'key_value\.aio\.protocols\.key_value\.AsyncKeyValue'> isn't explicitly decorated",
                     category=DeprecationWarning,
                 )
+                # Garbage collection can finalize sockets leaked by earlier tests
+                # inside this block; those warnings aren't about token storage.
+                warnings.filterwarnings("ignore", category=ResourceWarning)
                 first = _build_client(resolved, auth=auth).transport.auth
                 assert isinstance(first, OAuth)
                 await first.token_storage_adapter.set_tokens(tokens)
@@ -638,6 +641,7 @@ class TestBuildClient:
         with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
             with warnings.catch_warnings(record=True) as emitted:
                 warnings.simplefilter("always")
+                warnings.filterwarnings("ignore", category=ResourceWarning)
                 first = _build_client("https://example.com/mcp").transport.auth
                 second = _build_client("https://example.com/mcp").transport.auth
             assert not emitted
@@ -749,6 +753,7 @@ def test_named_oauth_server_is_quiet(
     with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
         with warnings.catch_warnings(record=True) as emitted:
             warnings.simplefilter("always")
+            warnings.filterwarnings("ignore", category=ResourceWarning)
             _build_client(resolve_server_spec("weather"))
     assert not emitted
 
