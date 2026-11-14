@@ -1,7 +1,7 @@
 ---
 title: Events
 sidebarTitle: Events
-description: Let clients learn that something happened on your server by polling event types.
+description: Let clients learn that something happened on your server by subscribing to event types.
 icon: bell
 ---
 
@@ -9,12 +9,12 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="4.3.0" />
 
-Tools answer when a client asks. Events cover the other direction: an alert fired, a build finished, an email arrived, and a client that is not in the middle of a request should find out. The MCP Events extension ([SEP-3415](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415)) defines event types a client can subscribe to, and FastMCP implements its poll delivery mode.
+Tools answer when a client asks. Events cover the other direction: an alert fired, a build finished, an email arrived, and a client that is not in the middle of a request should find out. The MCP Events extension ([SEP-3415](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415)) defines event types a client can subscribe to, and FastMCP implements two of its delivery modes from one function you write.
 
-In poll delivery the client asks "what happened since this cursor?" on an interval. Every request carries the event name, the subscription's arguments and the cursor, so your server holds no subscription state. That makes it the delivery mode that works behind stateless and serverless hosting, where a server cannot keep a stream open or run work between requests.
+In poll delivery the client asks "what happened since this cursor?" on an interval. Every request carries the event name, the subscription's arguments and the cursor, so your server holds no subscription state. In push delivery the client opens one long-lived request per subscription and your server writes events to it as they happen.
 
 <Warning>
-SEP-3415 is accepted but not merged, and its error codes are provisional. Push (`events/stream`) and webhook (`events/subscribe`) delivery are not implemented.
+SEP-3415 is accepted but not merged, and its error codes are provisional. Webhook delivery (`events/subscribe`) is not implemented.
 </Warning>
 
 ## Defining an event type
@@ -84,9 +84,25 @@ Every poll result tells the client how long to wait before the next one. The def
 
 A client may cap a poll with `poll.max_events`. When more events remain than you return, set `has_more=True` and return the cursor after the last event you included, and the client polls again without waiting. When you had to start later than the cursor asked for, because it fell out of your retention window or `poll.max_age_ms` excluded older events, set `truncated=True` so the client knows it missed events.
 
+## Push delivery and hosting
+
+FastMCP serves push from the same check function: while a client holds an `events/stream` request open, the server runs the function on the poll interval and writes each event to the stream, with a heartbeat when nothing else has been sent. You write nothing extra, and every event type lists both `poll` and `push`.
+
+Push needs a server that can keep a response stream open. Stateless and serverless hosts that buffer responses or end them after a time limit cannot carry it, and neither can a host that runs no work between requests. On those, turn push off so clients are told to poll:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.events import EventsExtension
+
+mcp = FastMCP("Alerts")
+mcp.add_extension(EventsExtension(push=False))
+```
+
+Poll works everywhere, because each poll is an ordinary request.
+
 ## Subscribing from a client
 
-A client opts into the extension with `EventsClientExtension`. `list_events()` returns the event types the server offers, and `subscribe_events()` runs the poll loop for one of them: it waits the interval the server recommends, drains a backlog without waiting, and skips events it has already yielded.
+A client opts into the extension with `EventsClientExtension`. `list_events()` returns the event types the server offers, and `subscribe_events()` subscribes to one of them. It uses push when the event type offers it and polls otherwise, and either way it skips events it has already yielded. Pass `delivery="poll"` or `delivery="push"` to choose.
 
 ```python
 import asyncio
@@ -109,6 +125,6 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-The subscription lasts as long as the `async for` does. Its `cursor` attribute is the position after the last poll: store it, and pass it back as `subscribe_events(..., cursor=...)` to resume after a restart without missing events. `poll_events_mcp()` sends a single `events/poll` request when you want to run the loop yourself.
+The subscription lasts as long as the `async for` does. Its `cursor` attribute is the position after the last event or poll: store it, and pass it back as `subscribe_events(..., cursor=...)` to resume after a restart without missing events. `poll_events_mcp()` sends a single `events/poll` request when you want to run the loop yourself.
 
 What happens when an event arrives is up to your application. The extension delivers events to the client; it does not decide whether an event starts an agent turn.

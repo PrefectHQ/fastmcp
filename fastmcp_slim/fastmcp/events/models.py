@@ -1,4 +1,4 @@
-"""Wire models for the MCP Events extension (SEP-3415), poll delivery."""
+"""Wire models for the MCP Events extension (SEP-3415), poll and push delivery."""
 
 from __future__ import annotations
 
@@ -79,3 +79,54 @@ class PollEventsRequest(mcp_types.Request[PollEventsParams, Literal["events/poll
     params: PollEventsParams
 
     name_param = "name"
+
+
+class StreamEventsParams(mcp_types.RequestParams):
+    """Parameters for `events/stream`: one subscription per request."""
+
+    name: str
+    arguments: dict[str, Any] | None = None
+    cursor: str | None = None
+    max_age_ms: int | None = Field(default=None, ge=0)
+    heartbeat_ms: int | None = Field(default=None, ge=1)
+
+
+class StreamEventsResult(mcp_types.Result):
+    """The empty result that closes an `events/stream` request."""
+
+    result_type: Literal["complete"] = "complete"
+
+
+class StreamEventsRequest(
+    mcp_types.Request[StreamEventsParams, Literal["events/stream"]]
+):
+    """Request for `events/stream`."""
+
+    method: Literal["events/stream"] = "events/stream"
+    params: StreamEventsParams
+
+    name_param = "name"
+
+
+class StreamFrame(BaseModel):
+    """Params of any `notifications/events/*` message on a push stream.
+
+    `_meta` carries the stream's subscription ID. The other fields depend on
+    the notification: `active` and `heartbeat` carry a cursor, `event` carries
+    an occurrence and the cursor after it, `error` and `terminated` an error.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    meta: dict[str, Any] = Field(alias="_meta")
+    cursor: str | None = None
+    truncated: bool | None = None
+    heartbeat_ms: int | None = Field(default=None, alias="heartbeatMs")
+    error: dict[str, Any] | None = None
+
+
+class StreamNotification(BaseModel):
+    """A `notifications/events/*` message."""
+
+    method: str
+    params: StreamFrame
