@@ -1620,3 +1620,29 @@ async def test_single_server_transform_added_tags_filtering_in_memory():
         tool_names = {tool.name for tool in await client.list_tools()}
 
     assert tool_names == {"add"}
+
+
+async def test_single_server_get_session_id_delegates_to_inner_transport():
+    """Single-server MCPConfigTransport delegates get_session_id() to its transport."""
+    from fastmcp.utilities.tests import run_server_async
+
+    server = _make_ping_server()
+    async with run_server_async(server) as url:
+        async with Client({"mcpServers": {"only": {"url": url}}}, mode="legacy") as client:
+            assert isinstance(client.transport, MCPConfigTransport)
+            session_id = client.transport.get_session_id()
+            assert session_id is not None
+            assert session_id == client.transport.transport.get_session_id()
+
+
+async def test_multi_server_get_session_id_returns_none():
+    """Multi-server MCPConfigTransport has no single session ID and returns None."""
+    from fastmcp.utilities.tests import run_server_async
+
+    server_a = _make_ping_server()
+    server_b = _make_ping_server()
+    async with run_server_async(server_a) as url_a, run_server_async(server_b) as url_b:
+        config = {"mcpServers": {"a": {"url": url_a}, "b": {"url": url_b}}}
+        async with Client(config, mode="legacy") as client:
+            assert isinstance(client.transport, MCPConfigTransport)
+            assert client.transport.get_session_id() is None
