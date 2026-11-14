@@ -1,0 +1,130 @@
+---
+title: Events
+sidebarTitle: Events
+description: Let clients learn that something happened on your server by subscribing to event types.
+icon: bell
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="4.3.0" />
+
+Tools answer when a client asks. Events cover the other direction: an alert fired, a build finished, an email arrived, and a client that is not in the middle of a request should find out. The MCP Events extension ([SEP-3415](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415)) defines event types a client can subscribe to, and FastMCP implements two of its delivery modes from one function you write.
+
+In poll delivery the client asks "what happened since this cursor?" on an interval. Every request carries the event name, the subscription's arguments and the cursor, so your server holds no subscription state. In push delivery the client opens one long-lived request per subscription and your server writes events to it as they happen.
+
+<Warning>
+SEP-3415 is accepted but not merged, and its error codes are provisional. Webhook delivery (`events/subscribe`) is not implemented.
+</Warning>
+
+## Defining an event type
+
+Register an `EventsExtension`, then decorate one check function per event type. The function receives an `EventPoll` and returns an `EventBatch`: the events after the poll's cursor, and the cursor that follows them. A cursor of `None` means the client is subscribing now, so return no events and the current position.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.events import Event, EventBatch, EventPoll, EventsExtension
+
+mcp = FastMCP("Alerts")
+events = EventsExtension()
+mcp.add_extension(events)
+
+ALERTS: list[dict[str, str]] = []
+
+
+@events.event(name="alert.fired", description="An alert fired")
+def alert_fired(poll: EventPoll) -> EventBatch:
+    if poll.cursor is None:
+        return EventBatch(cursor=str(len(ALERTS)))
+    new_alerts = ALERTS[int(poll.cursor) :]
+    fired = [Event(data=alert, event_id=alert["id"]) for alert in new_alerts]
+    return EventBatch(events=fired, cursor=str(len(ALERTS)))
+```
+
+The cursor is opaque to the client and means whatever your upstream needs: a row ID, a timestamp, a history token. Derive it from durable state. A cursor that only makes sense inside one process breaks as soon as a second replica answers the next poll.
+
+Give each `Event` the upstream's stable identifier as `event_id`. Clients drop events whose ID they have already seen, and an ID FastMCP generates for you is different on every poll.
+
+## Subscription arguments
+
+`input_schema` is a JSON Schema for the arguments a client subscribes with, and `payload_schema` describes each event's `data`. FastMCP rejects a poll whose arguments do not match `input_schema` before your function runs, and passes valid ones as `poll.arguments`.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.events import Event, EventBatch, EventPoll, EventsExtension
+
+mcp = FastMCP("Alerts")
+events = EventsExtension()
+mcp.add_extension(events)
+
+ALERTS: list[dict[str, str]] = []
+SEVERITY_FILTER = {
+    "type": "object",
+    "properties": {"severity": {"type": "string", "enum": ["low", "high"]}},
+}
+
+
+@events.event(name="alert.fired", input_schema=SEVERITY_FILTER)
+def alert_fired(poll: EventPoll) -> EventBatch:
+    if poll.cursor is None:
+        return EventBatch(cursor=str(len(ALERTS)))
+    severity = poll.arguments.get("severity")
+    new_alerts = ALERTS[int(poll.cursor) :]
+    fired = [
+        Event(data=alert, event_id=alert["id"])
+        for alert in new_alerts
+        if severity is None or alert["severity"] == severity
+    ]
+    return EventBatch(events=fired, cursor=str(len(ALERTS)))
+```
+
+## Pacing and backlogs
+
+Every poll result tells the client how long to wait before the next one. The default is 30 seconds; set `EventsExtension(poll_interval_ms=...)` to change it for every event type, or `EventBatch(next_poll_ms=...)` to change it for one response.
+
+A client may cap a poll with `poll.max_events`. When more events remain than you return, set `has_more=True` and return the cursor after the last event you included, and the client polls again without waiting. When you had to start later than the cursor asked for, because it fell out of your retention window or `poll.max_age_ms` excluded older events, set `truncated=True` so the client knows it missed events.
+
+## Push delivery and hosting
+
+FastMCP serves push from the same check function: while a client holds an `events/stream` request open, the server runs the function on the poll interval and writes each event to the stream, with a heartbeat when nothing else has been sent. You write nothing extra, and every event type lists both `poll` and `push`.
+
+Push needs a server that can keep a response stream open. Stateless and serverless hosts that buffer responses or end them after a time limit cannot carry it, and neither can a host that runs no work between requests. An HTTP app created with `json_response=True` cannot either: FastMCP refuses the stream there and the client falls back to polling. On hosts like those, turn push off so clients are told to poll from the start:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.events import EventsExtension
+
+mcp = FastMCP("Alerts")
+mcp.add_extension(EventsExtension(push=False))
+```
+
+Poll works everywhere, because each poll is an ordinary request.
+
+## Subscribing from a client
+
+A client opts into the extension with `EventsClientExtension`. `list_events()` returns the event types the server offers, and `subscribe_events()` subscribes to one of them. It uses push when the event type offers it and polls otherwise, and either way it skips events it has already yielded. Pass `delivery="poll"` or `delivery="push"` to choose.
+
+```python
+import asyncio
+
+from fastmcp import Client
+from fastmcp.events import EventsClientExtension
+
+
+async def main() -> None:
+    extensions = [EventsClientExtension()]
+    async with Client("https://example.com/mcp", extensions=extensions) as client:
+        for event_type in await client.list_events():
+            print(event_type.name, event_type.description)
+
+        subscription = client.subscribe_events("alert.fired", {"severity": "high"})
+        async for event in subscription:
+            print(event.event_id, event.data)
+
+
+asyncio.run(main())
+```
+
+The subscription lasts as long as the `async for` does. Its `cursor` attribute is the position after the last event or poll: store it, and pass it back as `subscribe_events(..., cursor=...)` to resume after a restart without missing events. `poll_events_mcp()` sends a single `events/poll` request when you want to run the loop yourself.
+
+What happens when an event arrives is up to your application. The extension delivers events to the client; it does not decide whether an event starts an agent turn.
