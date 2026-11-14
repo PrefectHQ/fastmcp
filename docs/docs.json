@@ -169,6 +169,7 @@
                       "servers/storage-backends",
                       "servers/sessions",
                       "servers/extensions",
+                      "servers/events",
                       "servers/tasks",
                       "servers/versioning"
                     ]
