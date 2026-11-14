@@ -1,4 +1,4 @@
-"""Protocol support for the MCP Events extension (SEP-3415), poll delivery."""
+"""Protocol support for the MCP Events extension (SEP-3415)."""
 
 from typing import TYPE_CHECKING
 

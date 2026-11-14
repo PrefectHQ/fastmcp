@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import anyio
 import pytest
 from mcp.shared.exceptions import MCPError
 from mcp_types import HEADER_MISMATCH, INVALID_PARAMS, METHOD_NOT_FOUND
@@ -15,12 +16,14 @@ from fastmcp.events import (
     EventsClientExtension,
     EventsExtension,
 )
-from fastmcp.events._constants import EVENTS_EXTENSION_ID, NOT_FOUND
+from fastmcp.events._constants import EVENTS_EXTENSION_ID, NOT_FOUND, UNSUPPORTED
 from fastmcp.events.models import (
+    EventOccurrence,
     PollEventsParams,
     PollEventsRequest,
     PollEventsResult,
 )
+from fastmcp.utilities.tests import run_server_async
 
 FIRED_AT = datetime(2026, 11, 14, 2, 17, 30, tzinfo=UTC)
 
@@ -75,13 +78,13 @@ async def test_advertises_events_capability() -> None:
         assert client.server_capabilities.extensions[EVENTS_EXTENSION_ID] == {}
 
 
-async def test_list_events_describes_poll_delivery_and_schemas() -> None:
+async def test_list_events_describes_delivery_and_schemas() -> None:
     async with events_client(make_server()) as client:
         (event,) = await client.list_events()
 
     assert event.name == "alert.fired"
     assert event.description == "An alert fired"
-    assert event.delivery == ["poll"]
+    assert event.delivery == ["poll", "push"]
     assert event.input_schema is not None
     assert event.input_schema["properties"] == {"severity": {"type": "string"}}
     assert event.payload_schema is not None
@@ -192,7 +195,11 @@ async def test_subscription_drains_backlog_resumes_and_drops_repeats() -> None:
 
     async with events_client(server) as client:
         subscription = client.subscribe_events(
-            "alert.fired", cursor="0", max_events=2, min_poll_interval=0
+            "alert.fired",
+            cursor="0",
+            max_events=2,
+            min_poll_interval=0,
+            delivery="poll",
         )
         seen = []
         async for event in subscription:
@@ -223,13 +230,136 @@ async def test_subscription_reports_a_gap() -> None:
 
     async with events_client(server) as client:
         subscription = client.subscribe_events(
-            "tick", cursor="expired", min_poll_interval=0
+            "tick", cursor="expired", min_poll_interval=0, delivery="poll"
         )
         async for _ in subscription:
             break
 
     assert subscription.truncated is True
     assert subscription.cursor == "fresh"
+
+
+async def collect(subscription, count: int) -> list[EventOccurrence]:
+    events = []
+    async for event in subscription:
+        events.append(event)
+        if len(events) == count:
+            break
+    return events
+
+
+async def test_push_delivers_events_as_the_log_grows() -> None:
+    log = [{"key": "old", "severity": "low"}]
+    server = make_server(log, poll_interval_ms=10)
+
+    async with events_client(server) as client:
+        subscription = client.subscribe_events("alert.fired", {"severity": "high"})
+
+        async def grow() -> None:
+            await anyio.sleep(0.05)
+            log.append({"key": "slow-query", "severity": "low"})
+            log.append({"key": "disk-full", "severity": "high"})
+            await anyio.sleep(0.05)
+            log.append({"key": "oom", "severity": "high"})
+
+        events: list[EventOccurrence] = []
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(grow)
+            with anyio.fail_after(10):
+                events = await collect(subscription, 2)
+
+    assert [event.event_id for event in events] == ["disk-full", "oom"]
+    assert events[0].name == "alert.fired"
+    assert events[0].data == {"key": "disk-full", "severity": "high"}
+    assert subscription.cursor == "4"
+
+
+async def test_push_resumes_from_a_cursor_and_drains_the_backlog() -> None:
+    log = [{"key": str(n), "severity": "low"} for n in range(3)]
+
+    async with events_client(make_server(log, poll_interval_ms=10)) as client:
+        subscription = client.subscribe_events("alert.fired", cursor="1")
+        with anyio.fail_after(10):
+            events = await collect(subscription, 2)
+
+    assert [event.event_id for event in events] == ["1", "2"]
+    assert subscription.cursor == "3"
+
+
+async def test_push_reports_a_gap_and_keeps_the_stream_through_a_failed_check() -> None:
+    server = FastMCP("flaky")
+    events = EventsExtension(poll_interval_ms=10)
+    server.add_extension(events)
+    checks = 0
+
+    @events.event(name="tick")
+    def tick(poll: EventPoll) -> EventBatch:
+        nonlocal checks
+        checks += 1
+        if checks == 1:
+            return EventBatch(cursor="fresh", truncated=True)
+        if checks == 2:
+            raise RuntimeError("upstream is down")
+        return EventBatch(events=[Event(data={}, event_id="recovered")], cursor="next")
+
+    async with events_client(server) as client:
+        subscription = client.subscribe_events("tick", cursor="expired")
+        with anyio.fail_after(10):
+            (event,) = await collect(subscription, 1)
+
+    assert event.event_id == "recovered"
+    assert subscription.truncated is True
+    assert subscription.cursor == "next"
+
+
+async def test_push_rejects_an_unknown_event_before_any_stream_opens() -> None:
+    async with events_client(make_server()) as client:
+        with pytest.raises(MCPError) as exc_info:
+            async for _ in client.subscribe_events("missing", delivery="push"):
+                pass
+
+    assert exc_info.value.error.code == NOT_FOUND
+
+
+async def test_a_server_without_push_is_polled_and_refuses_a_stream() -> None:
+    log = [{"key": "0", "severity": "low"}]
+    server = make_server(log, poll_interval_ms=0, push=False)
+
+    async with events_client(server) as client:
+        (listed,) = await client.list_events()
+        polled = await collect(
+            client.subscribe_events("alert.fired", cursor="0", min_poll_interval=0), 1
+        )
+        with pytest.raises(MCPError) as exc_info:
+            async for _ in client.subscribe_events("alert.fired", delivery="push"):
+                pass
+
+    assert listed.delivery == ["poll"]
+    assert [event.event_id for event in polled] == ["0"]
+    assert exc_info.value.error.code == UNSUPPORTED
+    assert exc_info.value.error.data == {"feature": "deliveryMode", "value": "push"}
+
+
+async def test_push_is_delivered_over_streamable_http() -> None:
+    log: list[dict] = []
+    server = make_server(log, poll_interval_ms=10)
+
+    async with run_server_async(server) as url:
+        async with Client(url, extensions=[EventsClientExtension()]) as client:
+            subscription = client.subscribe_events("alert.fired")
+
+            async def grow() -> None:
+                await anyio.sleep(0.2)
+                log.append({"key": "disk-full", "severity": "high"})
+
+            events: list[EventOccurrence] = []
+            async with anyio.create_task_group() as tasks:
+                tasks.start_soon(grow)
+                with anyio.fail_after(15):
+                    events = await collect(subscription, 1)
+
+    assert [event.event_id for event in events] == ["disk-full"]
+    assert subscription.cursor == "1"
 
 
 async def test_duplicate_event_name_is_rejected() -> None:
