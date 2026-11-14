@@ -8,6 +8,7 @@ on that card instead of failing the assessment.
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
@@ -18,8 +19,18 @@ MAX_PEOPLE = 7
 ELSEWHERE_DAYS = 182
 
 
+LOOKUP_ERRORS = (
+    RuntimeError,
+    ValueError,
+    KeyError,
+    OSError,
+    subprocess.SubprocessError,
+)
+
+
 def _count(read: Read, query: str, per_page: int = 1) -> dict:
-    return read("search/issues?" + urlencode({"q": query, "per_page": per_page}))
+    parameters = {"q": query, "per_page": per_page, "sort": "created", "order": "desc"}
+    return read("search/issues?" + urlencode(parameters))
 
 
 def card(login: str, read: Read, now: datetime) -> dict:
@@ -33,7 +44,7 @@ def card(login: str, read: Read, now: datetime) -> dict:
         elsewhere = _count(
             read, f"is:pr author:{login} -repo:{REPO} created:>={since}", 100
         )
-    except (RuntimeError, ValueError, KeyError, OSError) as error:
+    except LOOKUP_ERRORS as error:
         return {"login": login, "unavailable": type(error).__name__}
     repos = {item["repository_url"] for item in elsewhere.get("items", [])}
     return {
@@ -75,7 +86,7 @@ def people(evidence: dict, read: Read, now: datetime) -> dict:
             for pr in evidence["prs"]
             if reporter and pr["author"].get("login") == reporter
         }
-    except (RuntimeError, ValueError, KeyError, OSError):
+    except LOOKUP_ERRORS:
         opened, timing = None, {}
     return {
         "issue_author": reporter,
