@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+import anyio
 import psutil
 import pytest
 from mcp_types import TextContent
@@ -41,8 +42,10 @@ from fastmcp.mcp_config import (
     TransformingStdioMCPServer,
 )
 from fastmcp.server.elicitation import AcceptedElicitation
+from fastmcp.server.middleware import Middleware
 from fastmcp.server.providers.proxy import ProxyClient
 from fastmcp.tools.base import Tool as FastMCPTool
+from fastmcp.utilities.tests import temporary_settings
 
 # Some tests in this module spawn subprocess servers via stdio, each paying a
 # full interpreter startup plus `import fastmcp` (~0.7s). They take 3-6s idle,
@@ -1290,6 +1293,65 @@ async def test_multi_server_timeout_propagation():
         assert call_timeout == timeout, (
             f"Expected timeout {timeout}, got {call_timeout}"
         )
+
+
+class HangingHandshakeMiddleware(Middleware):
+    """Never answers, so a client connecting to this server never finishes negotiating."""
+
+    async def on_message(self, context, call_next):
+        await anyio.sleep_forever()
+
+
+async def test_multi_server_init_timeout_bounds_backend_connect():
+    """`init_timeout` also bounds each backend's connect in a multi-server config.
+
+    Backends connect before the outer client's own init timeout starts, so a
+    backend that never completes the handshake would otherwise block the whole
+    connect instead of being skipped.
+    """
+    stuck_server = FastMCP()
+    stuck_server.add_middleware(HangingHandshakeMiddleware())
+    config = MCPConfig(
+        mcpServers={
+            "stuck": InMemoryStdioMCPServer(mcp=stuck_server),
+            "good": InMemoryStdioMCPServer(mcp=_make_greet_server()),
+        }
+    )
+
+    # The outer deadline only turns an unbounded wait into a fast failure.
+    with anyio.fail_after(10):
+        async with Client(config, init_timeout=0.5) as client:
+            tools = await client.list_tools()
+
+    assert [tool.name for tool in tools] == ["good_greet"]
+
+
+async def test_multi_server_disabled_init_timeout_overrides_global_setting():
+    """An explicit `init_timeout=0` reaches the backends as disabled, not as None.
+
+    A `None` would make each backend client reload the global setting.
+    """
+    config = MCPConfig(
+        mcpServers={
+            "a": InMemoryStdioMCPServer(mcp=_make_greet_server()),
+            "b": InMemoryStdioMCPServer(mcp=_make_greet_server()),
+        }
+    )
+    seen: list[Any] = []
+    from fastmcp.server.providers.proxy import StatefulProxyClient as real
+
+    def capture(*args: Any, **kwargs: Any):
+        seen.append(kwargs.get("init_timeout", "missing"))
+        return real(*args, **kwargs)
+
+    with (
+        temporary_settings(client_init_timeout=5),
+        patch("fastmcp.server.providers.proxy.StatefulProxyClient", capture),
+    ):
+        async with Client(config, init_timeout=0):
+            pass
+
+    assert seen == [0, 0]
 
 
 def _make_session_server() -> FastMCP:

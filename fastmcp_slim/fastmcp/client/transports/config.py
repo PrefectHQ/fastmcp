@@ -361,6 +361,7 @@ class MCPConfigTransport(ClientTransport):
             client_kwargs["forward_incoming_headers"] = (
                 transport_options.forward_incoming_headers
             )
+            client_kwargs["init_timeout"] = transport_options.backend_init_timeout
         if config.timeout is not None:
             timeout = config.timeout / 1000
         client = StatefulProxyClient(
