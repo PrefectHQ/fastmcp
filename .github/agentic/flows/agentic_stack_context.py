@@ -5,7 +5,9 @@ import re
 from collections import Counter
 from collections.abc import Callable
 from copy import deepcopy
+from datetime import UTC, datetime
 
+from flows.agentic_people import people
 from flows.agentic_stack import digest
 
 Read = Callable[[str], dict]
@@ -175,7 +177,7 @@ def contributions(prs: list[dict], evidence: dict) -> list[dict]:
     return sorted(linked + matches[:room], key=lambda pr: pr["number"])
 
 
-def assessment_context(item: dict, read: Read) -> dict:
+def assessment_context(item: dict, read: Read, now: datetime | None = None) -> dict:
     raw = item["evidence"]
     if raw.get("complete") is not True:
         raise ValueError("Assessment requires complete retained intake")
@@ -203,6 +205,7 @@ def assessment_context(item: dict, read: Read) -> dict:
         "route": item["route"],
         "group_rationale": item["group_rationale"],
         "retained_intake_sha256": digest(raw),
+        "people": people(evidence, read, now or datetime.now(UTC)),
         "context_policy": "Full discussion text is preserved. Timelines contain event and source identities rather than repeated issue bodies; successful checks are counted. The complete original intake is retained separately. Revision evidence covers open and closed unmerged contributions; closure does not supersede current-head review. Missing or bounded patches are explicit. Verification work belongs to agents, not maintainer questions.",
     }
     if len(json.dumps(projected).encode()) > 160000:
