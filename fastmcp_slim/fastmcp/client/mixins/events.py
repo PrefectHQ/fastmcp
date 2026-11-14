@@ -17,7 +17,7 @@ from mcp.shared.inbound import MCP_NAME_HEADER, encode_header_value
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from fastmcp.client.telemetry import client_span
-from fastmcp.events._constants import EVENTS_EXTENSION_ID
+from fastmcp.events._constants import EVENTS_EXTENSION_ID, UNSUPPORTED
 from fastmcp.events.client import EventsClientExtension
 from fastmcp.events.models import (
     EventOccurrence,
@@ -107,8 +107,18 @@ class EventSubscription:
 
     async def __aiter__(self) -> AsyncIterator[EventOccurrence]:
         delivery = self._delivery or await self._choose_delivery()
-        events = self._poll() if delivery == "poll" else self._push()
-        async with aclosing(events):
+        if delivery == "push":
+            try:
+                async with aclosing(self._push()) as events:
+                    async for event in events:
+                        yield event
+                return
+            except MCPError as error:
+                # An event type can list push on a server whose transport
+                # cannot carry it; fall back unless the caller insisted.
+                if self._delivery == "push" or error.error.code != UNSUPPORTED:
+                    raise
+        async with aclosing(self._poll()) as events:
             async for event in events:
                 yield event
 

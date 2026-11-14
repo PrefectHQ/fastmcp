@@ -9,6 +9,7 @@ from mcp_types import HEADER_MISMATCH, INVALID_PARAMS, METHOD_NOT_FOUND
 from starlette.testclient import TestClient
 
 from fastmcp import Client, FastMCP
+from fastmcp.client.mixins.events import EventSubscription
 from fastmcp.events import (
     Event,
     EventBatch,
@@ -362,6 +363,35 @@ async def test_push_is_delivered_over_streamable_http() -> None:
     assert subscription.cursor == "1"
 
 
+def test_a_json_response_app_refuses_a_stream_it_cannot_carry() -> None:
+    app = make_server().http_app(stateless_http=True, json_response=True)
+
+    with TestClient(app) as http:
+        response = post_poll(http, "alert.fired", "alert.fired", "events/stream")
+
+    assert response.json()["error"]["code"] == UNSUPPORTED
+
+
+async def test_a_refused_stream_falls_back_to_poll_unless_push_was_asked_for(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log = [{"key": "0", "severity": "low"}]
+    server = make_server(log, poll_interval_ms=0, push=False)
+
+    async def offered_push(self: EventSubscription) -> str:
+        return "push"
+
+    monkeypatch.setattr(EventSubscription, "_choose_delivery", offered_push)
+
+    async with events_client(server) as client:
+        subscription = client.subscribe_events(
+            "alert.fired", cursor="0", min_poll_interval=0
+        )
+        polled = await collect(subscription, 1)
+
+    assert [event.event_id for event in polled] == ["0"]
+
+
 async def test_duplicate_event_name_is_rejected() -> None:
     events = EventsExtension()
     events.event(name="tick")(lambda poll: EventBatch())
@@ -400,11 +430,13 @@ async def test_server_rejects_events_method_on_legacy_protocol() -> None:
     assert exc_info.value.error.code == METHOD_NOT_FOUND
 
 
-def post_poll(http: TestClient, name: str, mcp_name: str | None):
+def post_poll(
+    http: TestClient, name: str, mcp_name: str | None, method: str = "events/poll"
+):
     headers = {
         "Accept": "application/json, text/event-stream",
         "MCP-Protocol-Version": "2026-07-28",
-        "Mcp-Method": "events/poll",
+        "Mcp-Method": method,
     }
     if mcp_name is not None:
         headers["Mcp-Name"] = mcp_name
@@ -413,7 +445,7 @@ def post_poll(http: TestClient, name: str, mcp_name: str | None):
         json={
             "jsonrpc": "2.0",
             "id": 1,
-            "method": "events/poll",
+            "method": method,
             "params": {
                 "name": name,
                 "cursor": "0",
