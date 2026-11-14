@@ -66,6 +66,7 @@ from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import MISSING, dataclass, field, fields, is_dataclass, make_dataclass
 from datetime import date, datetime, time, timedelta
+from fractions import Fraction
 from functools import lru_cache
 from types import MappingProxyType
 from typing import (
@@ -703,7 +704,33 @@ def _create_numeric_type(
         if v is not None
     }
 
+    if base is int:
+        constraints = _integer_constraints(constraints)
+
     return Annotated[base, Field(**constraints)] if constraints else base  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
+
+
+def _integer_constraints(constraints: dict[str, Any]) -> dict[str, Any]:
+    """Rewrite numeric constraints so Pydantic accepts them on ``int``.
+
+    JSON Schema lets an ``integer`` carry any number as a bound, but Pydantic
+    requires integers for ``int`` constraints. Each fractional value has an exact
+    integer equivalent: the bounds round inward, and a multiple of p/q (lowest
+    terms) is exactly a multiple of p for an integer.
+    """
+    result = dict(constraints)
+    if "ge" in result:
+        result["ge"] = math.ceil(result["ge"])
+    if "gt" in result:
+        result["gt"] = math.floor(result["gt"])
+    if "le" in result:
+        result["le"] = math.floor(result["le"])
+    if "lt" in result:
+        result["lt"] = math.ceil(result["lt"])
+    if "multiple_of" in result:
+        # str() recovers the decimal the schema wrote (1.5 -> 3/2, 0.1 -> 1/10).
+        result["multiple_of"] = Fraction(str(result["multiple_of"])).numerator
+    return result
 
 
 def _create_enum(name: str, values: list[Any]) -> Any:

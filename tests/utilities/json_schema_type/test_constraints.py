@@ -344,3 +344,26 @@ class TestHugeCounts:
     def test_huge_minimum_still_rejects(self, schema, value):
         with pytest.raises(ValidationError):
             TypeAdapter(json_schema_to_type(schema)).validate_python(value)
+
+
+class TestFractionalIntegerBounds:
+    """Fractional bounds and multipleOf on ``integer`` map to exact int equivalents."""
+
+    @pytest.mark.parametrize(
+        "schema, accepted, rejected",
+        [
+            ({"type": "integer", "minimum": 1.5}, [2, 3], [1, 0]),
+            ({"type": "integer", "exclusiveMinimum": 1.5}, [2], [1]),
+            ({"type": "integer", "maximum": 2.5}, [2, 1], [3]),
+            ({"type": "integer", "exclusiveMaximum": 2.5}, [2], [3]),
+            ({"type": "integer", "multipleOf": 1.5}, [0, 3, 6], [1, 2, 4]),
+            ({"type": "integer", "multipleOf": 0.5}, [1, 2, 7], []),
+        ],
+    )
+    def test_fractional_bound_accepts_exact_integers(self, schema, accepted, rejected):
+        validator = TypeAdapter(json_schema_to_type(schema))
+        for value in accepted:
+            assert validator.validate_python(value) == value
+        for value in rejected:
+            with pytest.raises(ValidationError):
+                validator.validate_python(value)
