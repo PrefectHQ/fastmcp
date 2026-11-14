@@ -95,6 +95,17 @@ def create_elicitation_callback(
                         "Elicitation responses must be serializable as a JSON object (dict). Received: "
                         f"{result.content!r}"
                     )
+            if isinstance(content, dict) and isinstance(
+                params, ElicitRequestFormParams
+            ):
+                # Elicitation properties have no null type: an optional field
+                # without a value is omitted rather than sent as null.
+                required = set(params.requested_schema.get("required", []))
+                content = {
+                    key: value
+                    for key, value in content.items()
+                    if value is not None or key in required
+                }
             if (
                 result.action == "accept"
                 and content is not None
