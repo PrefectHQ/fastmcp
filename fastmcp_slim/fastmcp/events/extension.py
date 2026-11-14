@@ -301,6 +301,16 @@ class EventsExtension(ServerExtension):
                 message="Push delivery is not offered by this server",
                 data={"feature": "deliveryMode", "value": "push"},
             )
+        # An HTTP app built with json_response=True answers each request with
+        # one JSON body: notifications are dropped and this handler would
+        # never return. The SDK exposes that only as an absent stream sink.
+        outbound = getattr(context.session, "_request_outbound", None)
+        if getattr(outbound, "sink", outbound) is None:
+            raise MCPError(
+                code=UNSUPPORTED,
+                message="This server's HTTP responses cannot carry a stream",
+                data={"feature": "deliveryMode", "value": "push"},
+            )
         registration, arguments = self._subscription(params.name, params.arguments)
         subscription_id = context.request_id
         if subscription_id is None:

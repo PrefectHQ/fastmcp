@@ -88,7 +88,7 @@ A client may cap a poll with `poll.max_events`. When more events remain than you
 
 FastMCP serves push from the same check function: while a client holds an `events/stream` request open, the server runs the function on the poll interval and writes each event to the stream, with a heartbeat when nothing else has been sent. You write nothing extra, and every event type lists both `poll` and `push`.
 
-Push needs a server that can keep a response stream open. Stateless and serverless hosts that buffer responses or end them after a time limit cannot carry it, and neither can a host that runs no work between requests. On those, turn push off so clients are told to poll:
+Push needs a server that can keep a response stream open. Stateless and serverless hosts that buffer responses or end them after a time limit cannot carry it, and neither can a host that runs no work between requests. An HTTP app created with `json_response=True` cannot either: FastMCP refuses the stream there and the client falls back to polling. On hosts like those, turn push off so clients are told to poll from the start:
 
 ```python
 from fastmcp import FastMCP
