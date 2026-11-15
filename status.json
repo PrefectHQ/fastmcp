@@ -1,7 +1,7 @@
 {
   "schema": "fastmcp-maintenance/1",
   "publisher": "fastmcp-actions",
-  "as_of": "2026-11-15T13:03:05Z",
+  "as_of": "2026-11-15T21:03:18Z",
   "automations": [
     {
       "id": "issue-link-gate",
@@ -540,7 +540,7 @@
           "number": 5195,
           "title": "Fix TokenCache handling for expired access tokens",
           "url": "https://github.com/PrefectHQ/fastmcp/pull/5195",
-          "age_days": 54
+          "age_days": 55
         },
         {
           "number": 5333,
@@ -552,7 +552,7 @@
           "number": 5380,
           "title": "Allow per-read cache hint overrides on ResourceResult ",
           "url": "https://github.com/PrefectHQ/fastmcp/pull/5380",
-          "age_days": 44
+          "age_days": 45
         },
         {
           "number": 5556,
@@ -570,13 +570,13 @@
           "number": 5578,
           "title": "Fix #5571: `fastmcp dev apps file.py` does not recognize app.ui() tools",
           "url": "https://github.com/PrefectHQ/fastmcp/pull/5578",
-          "age_days": 38
+          "age_days": 39
         },
         {
           "number": 5646,
           "title": "feat(auth): allow custom Azure token verifiers",
           "url": "https://github.com/PrefectHQ/fastmcp/pull/5646",
-          "age_days": 36
+          "age_days": 37
         },
         {
           "number": 5773,
@@ -588,7 +588,7 @@
           "number": 5794,
           "title": "fix(openapi): support non-JSON successful responses in OpenAPI tools",
           "url": "https://github.com/PrefectHQ/fastmcp/pull/5794",
-          "age_days": 28
+          "age_days": 29
         },
         {
           "number": 5829,
@@ -608,7 +608,7 @@
       "window": "now",
       "counts": {
         "waiting": 19,
-        "oldest_days": 54,
+        "oldest_days": 55,
         "waiting_over_7_days": 19
       }
     }
@@ -648,7 +648,7 @@
   "attention": {
     "schema": "fastmcp-attention/1",
     "repo": "PrefectHQ/fastmcp",
-    "as_of": "2026-11-15T13:01:31.629185+00:00",
+    "as_of": "2026-11-15T21:01:50.294756+00:00",
     "profile": "public-issue-signals",
     "judge": "jev",
     "assessment_model": "jev:jev-latest",
