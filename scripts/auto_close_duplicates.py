@@ -12,11 +12,19 @@ This script runs on a schedule to automatically close issues that have been
 marked as duplicates and haven't received any preventing activity.
 """
 
+import json
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import httpx
+
+MARVIN_BOT_ID = 225465937
+CLOSURE_NOTICE = (
+    "Closing this issue as a duplicate based on the automated analysis above."
+)
+ESTABLISHED_ASSOCIATIONS = {"CONTRIBUTOR", "COLLABORATOR", "MEMBER", "OWNER"}
 
 
 @dataclass
@@ -153,6 +161,21 @@ class GitHubClient:
             for reaction in self._read_all(f"issues/comments/{comment_id}/reactions")
         ]
 
+    def get_issue_timeline(self, issue_number: int) -> list[dict]:
+        return self._read_all(f"issues/{issue_number}/timeline")
+
+    def reopen_duplicate(self, issue_number: int, closed_at: str) -> bool:
+        url = f"{self.base_url}/issues/{issue_number}"
+        with httpx.Client() as client:
+            response = client.get(url, headers=self.headers)
+            response.raise_for_status()
+            issue = response.json()
+            if not is_closed_duplicate(issue) or issue["closed_at"] != closed_at:
+                return False
+            response = client.patch(url, headers=self.headers, json={"state": "open"})
+            response.raise_for_status()
+            return response.json()["state"] == "open"
+
     def remove_label(self, issue_number: int, label: str) -> bool:
         """Remove a label from an issue."""
         url = f"{self.base_url}/issues/{issue_number}/labels/{label}"
@@ -262,6 +285,60 @@ def has_human_activity(
     return False
 
 
+def is_closed_duplicate(issue: dict) -> bool:
+    return (
+        issue["state"] == "closed"
+        and "pull_request" not in issue
+        and any(label["name"] == "duplicate" for label in issue["labels"])
+    )
+
+
+def reconsider_duplicate(client: GitHubClient, event: dict) -> None:
+    issue = event["issue"]
+    comment = event["comment"]
+    author = comment["user"]
+    if not is_closed_duplicate(issue) or author["type"] != "User":
+        return
+    if (
+        author["id"] != issue["user"]["id"]
+        and comment["author_association"] not in ESTABLISHED_ASSOCIATIONS
+    ):
+        return
+
+    closed_at = issue["closed_at"]
+    if not closed_at or comment["created_at"] < closed_at:
+        return
+    number = issue["number"]
+    closed_time = datetime.fromisoformat(closed_at)
+    found_close = False
+    for entry in reversed(client.get_issue_timeline(number)):
+        kind, created_at = entry["event"], entry.get("created_at")
+        if kind in {"closed", "reopened"}:
+            if (
+                found_close
+                or kind != "closed"
+                or created_at != closed_at
+                or (entry.get("actor") or {}).get("id") != MARVIN_BOT_ID
+            ):
+                return
+            found_close = True
+        elif (
+            found_close
+            and kind == "commented"
+            and (entry.get("user") or {}).get("id") == MARVIN_BOT_ID
+            and (entry.get("body") or "").startswith(CLOSURE_NOTICE)
+            and created_at
+            and timedelta(0)
+            <= closed_time - datetime.fromisoformat(created_at)
+            <= timedelta(minutes=5)
+        ):
+            if client.reopen_duplicate(number, closed_at):
+                print(
+                    f"Reopened #{number} for maintainer review after comment {comment['id']}"
+                )
+            return
+
+
 def main():
     """Main entry point for auto-closing duplicate issues."""
     print("[DEBUG] Starting auto-close duplicates script")
@@ -278,6 +355,10 @@ def main():
 
     # Initialize client
     client = GitHubClient(token, owner, repo)
+    if os.environ.get("GITHUB_EVENT_NAME") == "issue_comment":
+        event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+        reconsider_duplicate(client, event)
+        return
 
     # Only fetch issues with the potential-duplicate label
     all_issues = client.get_potential_duplicate_issues()
@@ -337,7 +418,7 @@ def main():
 
         # No human activity after cooldown - close as duplicate
         close_message = (
-            "Closing this issue as a duplicate based on the automated analysis above.\n\n"
+            f"{CLOSURE_NOTICE}\n\n"
             "The duplicate issues identified contain existing discussions and potential solutions. "
             "Please add your 👍 to those issues if they match your use case.\n\n"
             "If this was closed in error, please leave a comment explaining why this is not "
