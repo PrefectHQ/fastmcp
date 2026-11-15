@@ -903,10 +903,10 @@ class FastMCP(
     async def get_tasks(self) -> Sequence[FastMCPComponent]:
         """Get task-eligible components with server-level transforms applied.
 
-        Overrides AggregateProvider.get_tasks() to apply server-level transforms
-        after aggregation. AggregateProvider handles provider-level namespacing.
+        AggregateProvider.get_tasks() aggregates the providers' components and
+        applies this server's transforms, since the server is itself an
+        aggregate. This override only layers injected tools on top.
         """
-        # Get tasks from AggregateProvider (handles aggregation and namespacing)
         components = list(await super().get_tasks())
 
         # An injected tool owns its name, as in `list_tools()` and
@@ -917,12 +917,7 @@ class FastMCP(
 
         return [
             *[t for t in injected if t.task_config.supports_tasks()],
-            *[
-                c
-                for c in await self._apply_task_transforms(components)
-                if c.task_config.supports_tasks()
-                and not (isinstance(c, Tool) and c.name in claimed)
-            ],
+            *[c for c in components if not (isinstance(c, Tool) and c.name in claimed)],
         ]
 
     def add_transform(self, transform: Transform) -> None:

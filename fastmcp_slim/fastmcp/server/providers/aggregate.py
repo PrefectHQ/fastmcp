@@ -416,7 +416,14 @@ class AggregateProvider(Provider):
             (p.get_tasks() for p in self.providers),
             return_exceptions=True,
         )
-        return self._collect_list_results(results, "get_tasks")
+        components = self._collect_list_results(results, "get_tasks")
+        # Registration needs the names components are called by, so this
+        # aggregate's own transforms apply, as they do for any other provider.
+        return [
+            c
+            for c in await self._apply_task_transforms(components)
+            if c.task_config.supports_tasks()
+        ]
 
     # -------------------------------------------------------------------------
     # Lifecycle
