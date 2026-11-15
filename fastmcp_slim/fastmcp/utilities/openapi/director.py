@@ -186,6 +186,34 @@ def _form_property_schemas(
     return properties, additional_properties
 
 
+def _form_value_is_json_encoded(
+    name: str,
+    value: Any,
+    properties: dict[str, Any],
+    additional_properties: dict[str, Any] | None,
+    encoding: dict[str, dict[str, Any]],
+    definitions: dict[str, Any],
+) -> bool:
+    """Return whether a form property is sent as JSON per the OAS Encoding Object.
+
+    An explicit encoding `contentType` decides. Otherwise object properties
+    (and arrays of objects) default to `application/json`, while scalars and
+    arrays of scalars keep the form encoding.
+    """
+    content_type = encoding.get(name, {}).get("contentType")
+    if content_type is not None:
+        return _is_json_media_type(content_type)
+    prop_schema = properties.get(name, additional_properties or {})
+    return (
+        (isinstance(value, dict) and _schema_is_object(prop_schema, definitions))
+        or (
+            isinstance(value, list)
+            and _schema_is_array_of_objects(prop_schema, definitions, value)
+        )
+        or (value is None and _schema_is_object(prop_schema, definitions))
+    )
+
+
 def _build_form_urlencoded_data(
     body: dict[str, Any],
     body_schema: dict[str, Any],
@@ -202,22 +230,9 @@ def _build_form_urlencoded_data(
     properties, additional_properties = _form_property_schemas(body_schema, definitions)
     data: dict[str, Any] = {}
     for name, value in body.items():
-        content_type = encoding.get(name, {}).get("contentType")
-        if content_type is not None:
-            json_encode = _is_json_media_type(content_type)
-        else:
-            prop_schema = properties.get(name, additional_properties or {})
-            json_encode = (
-                (
-                    isinstance(value, dict)
-                    and _schema_is_object(prop_schema, definitions)
-                )
-                or (
-                    isinstance(value, list)
-                    and _schema_is_array_of_objects(prop_schema, definitions, value)
-                )
-                or (value is None and _schema_is_object(prop_schema, definitions))
-            )
+        json_encode = _form_value_is_json_encoded(
+            name, value, properties, additional_properties, encoding, definitions
+        )
         data[name] = _json.dumps(value, allow_nan=False) if json_encode else value
     return data
 
@@ -388,6 +403,17 @@ class RequestDirector:
                     if route.request_body and raw_content_type is not None
                     else {}
                 )
+                multipart_schema = (
+                    route.request_body.content_schema.get(raw_content_type, {})
+                    if route.request_body and raw_content_type is not None
+                    else {}
+                )
+                multipart_definitions = dict(route.request_schemas)
+                if isinstance(multipart_schema.get("$defs"), dict):
+                    multipart_definitions.update(multipart_schema["$defs"])
+                multipart_properties, multipart_additional_properties = (
+                    _form_property_schemas(multipart_schema, multipart_definitions)
+                )
                 for k, v in body.items():
                     if (
                         isinstance(v, list)
@@ -403,6 +429,30 @@ class RequestDirector:
                         # httpx can transmit them as binary parts without
                         # stringifying to their Python repr.
                         files.append((k, (None, v)))
+                    elif (
+                        isinstance(v, dict) or "contentType" not in encoding.get(k, {})
+                    ) and _form_value_is_json_encoded(
+                        k,
+                        v,
+                        multipart_properties,
+                        multipart_additional_properties,
+                        encoding,
+                        multipart_definitions,
+                    ):
+                        # Object properties default to application/json, so
+                        # send JSON rather than the Python repr. Other values
+                        # with an explicit encoding contentType keep their
+                        # existing wire format.
+                        files.append(
+                            (
+                                k,
+                                (
+                                    None,
+                                    _json.dumps(v, allow_nan=False),
+                                    "application/json",
+                                ),
+                            )
+                        )
                     else:
                         files.append((k, (None, _query_scalar_to_str(v))))
             elif (
