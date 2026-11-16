@@ -640,7 +640,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28,<0.29" },
-    { name = "prefect", specifier = "==3.9.1" },
+    { name = "prefect", specifier = "==3.9.2" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10,<3" },
 ]
 
@@ -1266,7 +1266,7 @@ wheels = [
 
 [[package]]
 name = "prefect"
-version = "3.9.1"
+version = "3.9.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiosqlite" },
@@ -1327,9 +1327,9 @@ dependencies = [
     { name = "websockets" },
     { name = "whenever" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e8/e9/cccc6b9cdc16e55edaf8ce2bd0850d713b6591cfbf9777cbfcff42fbcf02/prefect-3.9.1.tar.gz", hash = "sha256:56f091cd49a06e6c3f98eea93648208f6750361d1dd0aeb60b5faa0e9cb5c458", size = 6340922, upload-time = "2026-10-30T19:29:12.377Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/12/f5e0934a06663a784741b149f04f5fe8de6f405a9c578d51aa574acf4436/prefect-3.9.2.tar.gz", hash = "sha256:7f394f40d1d170909023e408cb6207aa11607f075d275ebab4ee472cd7d90a5a", size = 6350868, upload-time = "2026-11-06T21:44:37.694Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8f/da/3c44e2775a24ed354787f98cbba3a53d7697ca94094f2413a331e1ca1aa2/prefect-3.9.1-py3-none-any.whl", hash = "sha256:0c662e26e971b617993eed1f3d02fb8bc3c2dd47bee521b495f6e4dfeb38ae74", size = 6987710, upload-time = "2026-10-30T19:29:09.646Z" },
+    { url = "https://files.pythonhosted.org/packages/9b/15/8aa41eff42f601f820fd967f933f1b528aa39b4cc8cb09dc3aefa81ade12/prefect-3.9.2-py3-none-any.whl", hash = "sha256:0ad0c16a4ef1c9270d8449c97a3ece28a47e24e497db94cc752814c6c7869954", size = 6997352, upload-time = "2026-11-06T21:44:34.86Z" },
 ]
 
 [[package]]
@@ -1522,7 +1522,7 @@ wheels = [
 
 [[package]]
 name = "pydocket"
-version = "0.27.0"
+version = "0.28.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "burner-redis" },
@@ -1539,9 +1539,9 @@ dependencies = [
     { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "uncalled-for" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/75/42/9c3346650a2c1fcf74e717e94d68ef88e18d0a0a5159fb68ccc1b56e046e/pydocket-0.27.0.tar.gz", hash = "sha256:4969f6b22deaa72b1b8463e5efaaf0acfed538d007ab1ef8a4f997b61dbfe85b", size = 330815, upload-time = "2026-10-09T15:20:53.159Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/00/9c/a229c6d6297b6b003131a352ca6961d40e245910a4d7717f821271fd1735/pydocket-0.28.0.tar.gz", hash = "sha256:4ef59cf5fb11ddee91af6560776c947fae721a8329c6b90c8fe0a35458528927", size = 338292, upload-time = "2026-11-06T02:13:32.378Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d5/ac/19236a0ff84a0683d880290e5352a105e626f9510b3a80fcf6453f3e67e0/pydocket-0.27.0-py3-none-any.whl", hash = "sha256:49504936f568bc09861afe2c880e2ca1c0bc191898efc56eaf56e3f7e1ab6a85", size = 155557, upload-time = "2026-10-09T15:20:51.646Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/56/6d8138bc17f646ca2ba6274440edb0395c01f41fd8fb192faac55f7c7b3e/pydocket-0.28.0-py3-none-any.whl", hash = "sha256:9663e83a07234dd8b4e8e682e6fd30132f7538eca9ae27c992a9c6fa39d2b67f", size = 156334, upload-time = "2026-11-06T02:13:30.867Z" },
 ]
 
 [[package]]
@@ -2271,11 +2271,11 @@ wheels = [
 
 [[package]]
 name = "uncalled-for"
-version = "0.4.1"
+version = "0.6.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6c/54/4651e4c5fe84300f8e03c0390aaad41bcb9c7b81d7783542a3ee690b40ee/uncalled_for-0.4.1.tar.gz", hash = "sha256:6412b19d1b1e7d431981fee01f8b47be7802f48328a48cbe9603acee757ec553", size = 56971, upload-time = "2026-10-09T12:54:34.941Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/e9/056b74ca4559f93cd38080c110696ae9a8f6d1976b162eb3638895f829e7/uncalled_for-0.6.1.tar.gz", hash = "sha256:49d9a55a806529dbb844f64a2e3adc8f44ad0b0802f5d91381a09c088c44e144", size = 71850, upload-time = "2026-11-10T21:53:02.565Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bf/a6/ba763e3812e572de7291676c3a41adfac1ef1209a6acda6bae055970f127/uncalled_for-0.4.1-py3-none-any.whl", hash = "sha256:b611b38879d9fe5088297e7bb28f2ddd12d2d73dad933d93da107fb63eb4058e", size = 14889, upload-time = "2026-10-09T12:54:33.596Z" },
+    { url = "https://files.pythonhosted.org/packages/0c/d0/2db6b2299a07ddc6c6f49a39351a6faab1eb04f1c1b248a8270f1380276a/uncalled_for-0.6.1-py3-none-any.whl", hash = "sha256:1e8f86f972684db50f2888f07caa87d81a431584fa77856660e0c5e89f1cc778", size = 18957, upload-time = "2026-11-10T21:53:01.489Z" },
 ]
 
 [[package]]
