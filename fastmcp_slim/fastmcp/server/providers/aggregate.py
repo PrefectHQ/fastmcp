@@ -412,6 +412,14 @@ class AggregateProvider(Provider):
 
     async def get_tasks(self) -> Sequence[FastMCPComponent]:
         """Get all task-eligible components from all providers."""
+        components = await self._get_child_tasks()
+        return [
+            c
+            for c in await self._apply_task_transforms(components)
+            if c.task_config.supports_tasks()
+        ]
+
+    async def _get_child_tasks(self) -> list[FastMCPComponent]:
         results = await gather(
             (p.get_tasks() for p in self.providers),
             return_exceptions=True,

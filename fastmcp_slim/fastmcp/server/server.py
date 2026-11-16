@@ -906,8 +906,8 @@ class FastMCP(
         Overrides AggregateProvider.get_tasks() to apply server-level transforms
         after aggregation. AggregateProvider handles provider-level namespacing.
         """
-        # Get tasks from AggregateProvider (handles aggregation and namespacing)
-        components = list(await super().get_tasks())
+        # Get tasks from child providers (handles aggregation and namespacing)
+        components = await self._get_child_tasks()
 
         # An injected tool owns its name, as in `list_tools()` and
         # `get_tool()`: tools with that name are not registered, so the

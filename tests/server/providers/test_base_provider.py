@@ -4,6 +4,8 @@ from typing import Any
 
 import pytest
 
+from fastmcp import FastMCP
+from fastmcp.server.providers import LocalProvider
 from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.transforms import Namespace
@@ -97,6 +99,51 @@ class TestBaseProviderGetTasks:
 
         assert len(tasks) == 1
         assert tasks[0].name == "api_my_tool"
+
+
+class TestAggregateProviderGetTasks:
+    async def test_get_tasks_applies_aggregate_transforms(self):
+        local = LocalProvider()
+
+        @local.tool(task=True)
+        async def square(n: int) -> int:
+            return n * n
+
+        aggregate = AggregateProvider([local])
+        aggregate.add_transform(Namespace("math"))
+
+        tasks = await aggregate.get_tasks()
+
+        assert [c.key for c in tasks] == ["tool:math_square@"]
+
+    async def test_server_transforms_apply_once(self):
+        local = LocalProvider()
+
+        @local.tool(task=True)
+        async def square(n: int) -> int:
+            return n * n
+
+        aggregate = AggregateProvider([local])
+        aggregate.add_transform(Namespace("math"))
+        server = FastMCP("Test", providers=[aggregate])
+        server.add_transform(Namespace("srv"))
+
+        tasks = await server.get_tasks()
+
+        assert [c.key for c in tasks] == ["tool:srv_math_square@"]
+
+    async def test_get_tasks_without_transforms(self):
+        local = LocalProvider()
+
+        @local.tool(task=True)
+        async def square(n: int) -> int:
+            return n * n
+
+        aggregate = AggregateProvider([local])
+
+        tasks = await aggregate.get_tasks()
+
+        assert [c.key for c in tasks] == ["tool:square@"]
 
 
 class TestAggregateProviderErrors:
