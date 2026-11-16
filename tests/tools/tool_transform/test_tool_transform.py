@@ -10,7 +10,7 @@ from typing import Annotated, Any, Literal
 import jsonschema
 import pytest
 from mcp_types import Icon, TextContent
-from pydantic import BaseModel, ConfigDict, Field, with_config
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, with_config
 
 from fastmcp import FastMCP
 from fastmcp.client.client import Client
@@ -156,6 +156,29 @@ async def test_tool_defaults_are_maintained_on_mapped_args(add_tool):
     result = await new_tool.run(arguments={"old_x": 1})
     # The parent tool returns int which gets wrapped as structured output
     assert result.structured_content == {"result": 11}
+
+
+async def test_omitted_arg_uses_parent_python_default():
+    @Tool.from_function
+    def connect(token: SecretStr = SecretStr("s3cr3t")) -> str:
+        return token.get_secret_value()
+
+    renamed = Tool.from_tool(connect, name="connect_renamed")
+    result = await renamed.run(arguments={})
+    assert result.structured_content == {"result": "s3cr3t"}
+
+
+async def test_omitted_arg_uses_transform_fn_python_default():
+    @Tool.from_function
+    def parent(token: str) -> str:
+        return token
+
+    async def child(token: SecretStr = SecretStr("s3cr3t")) -> ToolResult:
+        return await forward(token=token.get_secret_value())
+
+    tool = Tool.from_tool(parent, transform_fn=child)
+    result = await tool.run(arguments={})
+    assert result.structured_content == {"result": "s3cr3t"}
 
 
 def test_tool_change_arg_name(add_tool):
