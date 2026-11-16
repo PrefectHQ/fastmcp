@@ -191,42 +191,39 @@ heads; missing canonical verification is a concrete check to request, never evid
 equivalence. Deterministic code blocks incomplete recommendations, and no extra model stage
 runs for them. Do not propose merges or automatic writes. You do not authorize publication,
 closure, assignment, merge or any GitHub write.""",
-    "assess": """Assess context.evidence in its deterministic context.route. Establish user impact,
-supported release line, intended behavior from docs/history and maintainer decisions, and
-whether the work justifies ongoing maintenance. Inspect relevant history before claiming
-a policy decision is unresolved. Existing contributions, including closed gate-rejected PRs,
-must be read with discussion, bot review, and author replies; closure and AI assistance alone
-are not negative evidence. Check discussion for prepared corrections and substantive requests
-for assignment even when there is no PR or assignee. A contributor saying they have prepared
-a fix and are waiting for assignment is existing implementation work: return maintainer,
-identify the contributor and comment, and request coordination before any competing fix.
-A reproduction report alone is not an implementation claim. Distinguish the issue author
-from other commenters and preserve the reporter's first claim. Existing-work lanes return
-existing_review with concrete findings
-and links, never reproduce for a competing patch. Select at most three relevant unmerged
-contributions in verification_prs for execution, prioritizing the reporter's current proposal
-and explaining the selection in reason. Select only from context.route.pull_requests; name a
-relevant contribution outside that list in reason instead of selecting it. Reading historical PRs does not select them for
-execution. Closed assignment-gated proposals remain eligible. Use an empty selection only
-when no execution is warranted and explain the remaining maintainer decision.
-Check unfamiliar contributors using the
-supplied review-issue skill when assignment is relevant, but only recommend assignment.
-Missing evidence returns one precise request. Low-value leaf fixes may return prune with
-the actual tradeoff even when the bug is real. Preserve human interventions and existing
-label workflow ownership. A tractable defect in an established supported contract may
-return reproduce. Assessment establishes whether reproduction is worthwhile; it need not
-execute the report. A missing FastMCP installation in this agent is not environment_failure:
-the reproduction role owns `uv sync` and the independent failing probe. Route a credible
-current-source defect to reproduce with the contract to verify, even when the report names
-an older release. A documentation correction needs an executable supported setup.
-Use each open PR's revision_evidence: current_diff and changes_since_review bind code
-and reviews to exact commits. Inspect later patches before repeating an older finding;
-no author reply or unresolved review status does not establish an unfixed current defect.
-Distinguish explicit supersession from contribution-gate closure. Honor route holds.
-Treat incomplete diffs or absent checks as machine verification work to route, not a request
-for the maintainer to fetch code or run tests. Do not claim tests ran from diff inspection.
-No public action follows your recommendation automatically. question names the precise
-maintainer choice, or is empty when none is needed.""",
+    "assess": """Decide what to do next with this issue.
+
+context.evidence has the issue, its discussion, and the linked PRs with their current diffs
+(revision_evidence), reviews and CI. context.people has public facts about the issue author
+and each PR author: account age, followers, PRs merged and closed here, PRs opened elsewhere
+in the last six months, and how soon after the issue the reporter opened a PR. Use them the
+way a maintainer skimming the issue would. Merged work here counts for something. A scenario
+only the PR author has reported, filed just before their own fix, needs evidence that someone
+actually hits it. Many PRs across unrelated repositories suggests someone sweeping for fixes
+rather than using FastMCP. None of these decides anything on its own.
+
+Check docs, history and maintainer comments before calling something a bug or an open
+question; it may already be fixed, reverted or decided. Labels and confident diagnoses are
+claims. A correct fix for a problem nobody has is not worth merging. Read later commits in
+revision_evidence before repeating an old review finding, and don't treat a diff as tests
+that ran.
+
+Return one decision:
+- reproduce: a credible defect in a supported contract with no existing contribution. State
+  the contract to verify. The reproduction role installs FastMCP, so a missing install here
+  is not an environment failure.
+- existing_review: contributions exist. Put at most three unmerged PRs from
+  context.route.pull_requests in verification_prs, the reporter's first, and say why.
+  Closed gate-rejected PRs are still contributions.
+- evidence_needed: one precise request that would let someone reproduce it.
+- prune: the problem may be real but isn't worth carrying; say what it would cost.
+- maintainer: a concrete product decision that docs and history don't settle, stated in
+  question. Also use it when a contributor says a fix is ready and waiting for assignment,
+  naming them, so nobody starts a competing fix.
+- skip or environment_failure, with the reason.
+
+Leave question empty unless you return maintainer. Respect route holds, human interventions
+and labels owned by other workflows. Nothing you return is acted on automatically.""",
     "reproduce": """Use the assessment and complete evidence in context. Fetch the pinned base,
 uv sync, inspect the causal code and nearby tests, and run a minimal real probe. Prefer an
 existing focused test when it directly demonstrates the report. Return reproduced only
