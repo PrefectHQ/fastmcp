@@ -834,8 +834,16 @@ class FunctionResourceTemplate(ResourceTemplate):
         # and `Annotated[...]` wrappers hide the underlying type.
         from fastmcp.tools.function_tool import _resolve_param_hints
 
+        # A callable instance is invoked through its `__call__`, so resolve the
+        # hints there; the instance itself carries no parameter annotations.
+        hint_target = fn
+        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
+            hint_target = fn.__call__
+        if isinstance(hint_target, staticmethod):
+            hint_target = hint_target.__func__
+
         try:
-            hints = _resolve_param_hints(fn)
+            hints = _resolve_param_hints(hint_target)
         except NameError:
             # Pydantic resolves annotations against namespaces this doesn't
             # see, so a name we can't resolve may still be valid. Fall back
