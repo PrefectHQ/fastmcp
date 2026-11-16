@@ -3,7 +3,7 @@
 FastMCP's spans already carry the user, tool, latency and error for every
 request, but traces are often sampled, which makes them a poor source for
 usage counts. `UsageMiddleware` records the same facts as an OpenTelemetry
-metric, so counts stay exact regardless of trace sampling.
+metric, independently of trace sampling.
 """
 
 import hashlib
@@ -16,6 +16,7 @@ import mcp_types as mt
 from opentelemetry import metrics
 from opentelemetry.metrics import Histogram, MeterProvider
 
+from fastmcp.exceptions import AuthorizationError, DisabledError, NotFoundError
 from fastmcp.prompts.base import PromptResult
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.telemetry import INSTRUMENTATION_NAME, error_span_attributes
@@ -41,7 +42,9 @@ class UsageMiddleware(Middleware):
 
     - `mcp.method.name`: `tools/call` or `prompts/get`
     - `gen_ai.tool.name` or `gen_ai.prompt.name`: the component name the
-      client asked for
+      client asked for, omitted for routing and access failures
+    - `fastmcp.client.name` and `fastmcp.client.version`: the client-reported
+      application identity, when supplied
     - `fastmcp.server.name`: the server handling the request
     - `enduser.pseudo.id` (default) or `enduser.id`: the authenticated
       user, when the server has auth (see `user_id`)
@@ -50,6 +53,10 @@ class UsageMiddleware(Middleware):
     FastMCP depends only on the OpenTelemetry API, so this middleware records
     nothing until you configure an OpenTelemetry SDK `MeterProvider` with an
     exporter.
+
+    Background tasks measure submission, not eventual execution or failure.
+    Guard continuations count as separate requests. Add this middleware before
+    middleware that can return a response without calling the next handler.
 
     Args:
         user_id: How to report the authenticated user. `"hashed"` (default)
@@ -100,10 +107,7 @@ class UsageMiddleware(Middleware):
         self._duration: Histogram = meter.create_histogram(
             name=OPERATION_DURATION_METRIC,
             unit="s",
-            description=(
-                "MCP request duration as observed on the server, from receipt "
-                "until the result is sent."
-            ),
+            description=("MCP request duration as observed by the usage middleware."),
         )
 
     async def on_call_tool(
@@ -146,16 +150,32 @@ class UsageMiddleware(Middleware):
             name_attribute: name,
             **self._server_attributes(context),
             **self._user_attributes(),
+            **self._client_attributes(context),
         }
         start = time.perf_counter()
         try:
             result = await call_next(context)
         except Exception as e:
+            if isinstance(e, (NotFoundError, DisabledError, AuthorizationError)):
+                attributes.pop(name_attribute, None)
             attributes["error.type"] = error_span_attributes(e)["error.type"]
             self._duration.record(time.perf_counter() - start, attributes)
             raise
         self._duration.record(time.perf_counter() - start, attributes)
         return result
+
+    @staticmethod
+    def _client_attributes(context: MiddlewareContext[Any]) -> dict[str, str]:
+        ctx = context.fastmcp_context
+        if ctx is None or ctx.request_context is None:
+            return {}
+        params = ctx.request_context.session.client_params
+        if params is None:
+            return {}
+        return {
+            "fastmcp.client.name": params.client_info.name,
+            "fastmcp.client.version": params.client_info.version,
+        }
 
     @staticmethod
     def _server_attributes(context: MiddlewareContext[Any]) -> dict[str, str]:
