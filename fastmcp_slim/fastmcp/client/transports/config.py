@@ -405,5 +405,10 @@ class MCPConfigTransport(ClientTransport):
         for transport in self._transports:
             await transport.close()
 
+    def get_session_id(self) -> str | None:
+        if len(self.config.mcpServers) == 1:
+            return self.transport.get_session_id()
+        return None
+
     def __repr__(self) -> str:
         return f"<MCPConfigTransport(config='{self.config}')>"

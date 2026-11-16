@@ -1620,3 +1620,27 @@ async def test_single_server_transform_added_tags_filtering_in_memory():
         tool_names = {tool.name for tool in await client.list_tools()}
 
     assert tool_names == {"add"}
+
+
+class TestMCPConfigTransportGetSessionId:
+    def test_single_server_delegates_to_inner_transport(self):
+        transport = MCPConfigTransport(
+            {"mcpServers": {"only": {"url": "http://example.com/mcp"}}}
+        )
+
+        with patch.object(
+            transport.transport, "get_session_id", return_value="session-123"
+        ):
+            assert transport.get_session_id() == "session-123"
+
+    def test_multi_server_returns_none(self):
+        transport = MCPConfigTransport(
+            {
+                "mcpServers": {
+                    "one": {"url": "http://example.com/one"},
+                    "two": {"url": "http://example.com/two"},
+                }
+            }
+        )
+
+        assert transport.get_session_id() is None
