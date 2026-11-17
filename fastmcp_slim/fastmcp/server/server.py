@@ -2458,6 +2458,40 @@ class FastMCP(
             return register
         return register(handler)
 
+    def _find_mount_cycle(self, server: FastMCP[Any]) -> list[str] | None:
+        """Return the names along a mount path from ``server`` back to this server.
+
+        ``mount()`` rejects direct self-mounts, but indirect cycles (A mounts B,
+        B mounts A) would otherwise be accepted here and only fail later, when a
+        client connects and component lookups recurse without bound.
+        """
+        from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
+        from fastmcp.server.providers.wrapped_provider import _WrappedProvider
+
+        def mounted_server(provider: Provider) -> FastMCP[Any] | None:
+            while isinstance(provider, _WrappedProvider):
+                provider = provider._inner
+            if isinstance(provider, FastMCPProvider):
+                return provider.server
+            return None
+
+        # Iterative DFS: a mount graph is normally small, but this check must
+        # never recurse on its own when it is inspecting a broken graph.
+        seen: set[int] = set()
+        stack: list[tuple[FastMCP[Any], list[str]]] = [(server, [server.name])]
+        while stack:
+            current, path = stack.pop()
+            if current is self:
+                return path
+            if id(current) in seen:
+                continue
+            seen.add(id(current))
+            for provider in current.providers:
+                child = mounted_server(provider)
+                if child is not None:
+                    stack.append((child, [*path, child.name]))
+        return None
+
     def mount(
         self,
         server: FastMCP[LifespanResultT],
@@ -2498,11 +2532,23 @@ class FastMCP(
             tool_names: Optional mapping of original tool names to custom names. Use this
                 to override namespaced names. Keys are the original tool names from the
                 mounted server.
+
+        Raises:
+            ValueError: If ``server`` is this server, or if mounting it would
+                create a mount cycle through servers already mounted on it.
         """
         from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
 
         if server is self:
             raise ValueError("Cannot mount a server onto itself")
+
+        cycle = self._find_mount_cycle(server)
+        if cycle is not None:
+            path = " -> ".join([*cycle, server.name])
+            raise ValueError(
+                f"Cannot mount server {server.name!r} onto {self.name!r}: "
+                f"this would create a mount cycle ({path})"
+            )
 
         # Warn if parent masks errors but child doesn't (or vice versa)
         if self._mask_error_details and not server._mask_error_details:
