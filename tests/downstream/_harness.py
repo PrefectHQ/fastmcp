@@ -198,7 +198,17 @@ class Report:
             error = None
         except Exception as exc:
             error = exc
-        seconds = time.monotonic() - start
+        self.record(name, error, time.monotonic() - start, known_gap=known_gap)
+
+    def record(
+        self,
+        name: str,
+        error: BaseException | None,
+        seconds: float,
+        *,
+        known_gap: str | None = None,
+    ) -> None:
+        """Record a check that already ran, such as one run in another process."""
         if known_gap is None:
             self._record(name, error, seconds)
         elif error is None:

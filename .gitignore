@@ -78,3 +78,6 @@ plans/
 /server.py
 /client.py
 /test.json
+
+# Downstream smoke: the AI SDK is installed next to its script
+tests/downstream/ai_sdk/node_modules/

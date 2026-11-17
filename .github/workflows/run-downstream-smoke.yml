@@ -19,6 +19,8 @@ env:
   AGNO_VERSION: "3.1.12"
   AGENT_FRAMEWORK_VERSION: "1.24.0"
   OPENAI_AGENTS_VERSION: "0.24.0"
+  AI_SDK_MCP_VERSION: "2.0.100"
+  AI_SDK_VERSION: "7.0.174"
 
 on:
   push:
@@ -73,6 +75,8 @@ jobs:
       agno: ${{ steps.versions.outputs.agno }}
       agent-framework: ${{ steps.versions.outputs.agent-framework }}
       openai-agents: ${{ steps.versions.outputs.openai-agents }}
+      ai-sdk-mcp: ${{ steps.versions.outputs.ai-sdk-mcp }}
+      ai-sdk: ${{ steps.versions.outputs.ai-sdk }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -105,7 +109,11 @@ jobs:
           pick() {
             local version="$2"
             if [ "$LATEST" = true ]; then
-              version=$(curl -fsS --retry 5 --retry-all-errors "https://pypi.org/pypi/$1/json" | jq -r .info.version)
+              if [ "${3:-}" = npm ]; then
+                version=$(curl -fsS --retry 5 --retry-all-errors "https://registry.npmjs.org/$1/latest" | jq -r .version)
+              else
+                version=$(curl -fsS --retry 5 --retry-all-errors "https://pypi.org/pypi/$1/json" | jq -r .info.version)
+              fi
             fi
             if [ -z "$version" ] || [ "$version" = null ]; then
               echo "::error::could not resolve a version for $1" >&2
@@ -122,6 +130,8 @@ jobs:
           agno=$(pick agno "$AGNO_VERSION")
           agent_framework=$(pick agent-framework-core "$AGENT_FRAMEWORK_VERSION")
           openai_agents=$(pick openai-agents "$OPENAI_AGENTS_VERSION")
+          ai_sdk_mcp=$(pick @ai-sdk/mcp "$AI_SDK_MCP_VERSION" npm)
+          ai_sdk=$(pick ai "$AI_SDK_VERSION" npm)
           {
             echo "pydantic-ai=$pydantic_ai"
             echo "langchain-mcp-adapters=$adapters"
@@ -132,6 +142,8 @@ jobs:
             echo "agno=$agno"
             echo "agent-framework=$agent_framework"
             echo "openai-agents=$openai_agents"
+            echo "ai-sdk-mcp=$ai_sdk_mcp"
+            echo "ai-sdk=$ai_sdk"
           } | tee -a "$GITHUB_OUTPUT" > versions.txt
           {
             echo "### Downstream smoke plan"
@@ -374,6 +386,14 @@ jobs:
             script: smoke_openai_agents.py
             with: >-
               --with "openai-agents==${{ needs.plan.outputs.openai-agents }}"
+          # The Vercel AI SDK's MCP client is its own TypeScript implementation of
+          # both protocol eras, so it checks FastMCP's wire format against code
+          # that shares nothing with the `mcp` Python SDK. smoke_ai_sdk.py starts
+          # the servers and runs ai_sdk/smoke.mjs against each one.
+          - consumer: ai-sdk
+            script: smoke_ai_sdk.py
+            node: true
+            with: ""
           # The adapters pin mcp<2, so they reach FastMCP over the wire.
           - consumer: langchain-mcp-adapters
             script: smoke_langchain_mcp_adapters.py
@@ -407,6 +427,20 @@ jobs:
         with:
           name: fastmcp-wheels
           path: dist
+
+      - name: Setup Node.js
+        if: matrix.node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "24"
+
+      - name: Install the AI SDK
+        if: matrix.node
+        run: >-
+          npm install --prefix tests/downstream/ai_sdk --no-save --no-audit --no-fund
+          "@ai-sdk/mcp@${{ needs.plan.outputs.ai-sdk-mcp }}"
+          "ai@${{ needs.plan.outputs.ai-sdk }}"
+          "zod@4.6.7"
 
       - name: Install redis-server
         if: matrix.redis

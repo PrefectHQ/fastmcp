@@ -15,6 +15,7 @@ against servers started from the checkout.
 | agno smoke | `smoke_agno.py`, in both protocol eras over stdio | `fastmcp`, as `agno[mcp]` installs it |
 | Microsoft Agent Framework smoke | `smoke_agent_framework.py` (no SSE: Agent Framework has no SSE client) | none: it connects with the `mcp` SDK's client, so it reaches FastMCP over the wire |
 | OpenAI Agents SDK smoke | `smoke_openai_agents.py` | none: it connects with the `mcp` SDK's client, so it reaches FastMCP over the wire |
+| Vercel AI SDK smoke | `smoke_ai_sdk.py`, which runs `ai_sdk/smoke.mjs` in both protocol eras over stdio, streamable HTTP, and the proxy, and over SSE in the handshake era | none: `@ai-sdk/mcp` is a TypeScript client of its own, so it checks FastMCP's wire format against an implementation that shares no code with the `mcp` Python SDK |
 | langchain-mcp-adapters smoke | `smoke_langchain_mcp_adapters.py` | none: the adapters pin `mcp<2`, so they reach FastMCP over the wire |
 | redis credential providers smoke | `smoke_redis_credentials.py`: `TasksExtension` tasks through rotating credentials from AWS's ElastiCache IAM provider (botocore) and redis-entraid's streaming Entra ID provider, against a local `redis-server` | `fastmcp`, `fastmcp-slim`, and `fastmcp-tasks` wheels |
 
@@ -54,6 +55,9 @@ uv run --isolated --no-project --no-config \
 uv run --isolated --no-project --no-config \
     --with langchain-mcp-adapters --with langchain \
     python tests/downstream/smoke_langchain_mcp_adapters.py
+
+npm install --prefix tests/downstream/ai_sdk --no-save @ai-sdk/mcp ai zod
+uv run python tests/downstream/smoke_ai_sdk.py
 
 uv run --isolated --no-project --no-config \
     --with 'agno[mcp]' --with "$full" --with "$slim" \
