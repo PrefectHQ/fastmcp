@@ -8,7 +8,7 @@ tag: NEW
 
 <Update label="v4.2.1" description="2026-11-17">
 
-**[v4.2.1: Full Leather Jacket](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.1)**
+**[v4.2.1: 4, 2, 1... Liftoff](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.1)**
 
 FastMCP 4.2.1 is a security and correctness patch on top of 4.2.0. It tightens OAuth and token handling: JWTs aren't accepted before their `nbf`, provider `required_scopes` survive a custom verifier, pre-registered OAuth clients can be pinned to their issuer, and consent, metadata forwarding and upstream claims in the OAuth proxy are hardened. It also raises the `opentelemetry-api` floor past a traceparent ReDoS. If you install with pip and also have `opentelemetry-sdk`, upgrade it alongside FastMCP (`pip install -U fastmcp opentelemetry-sdk`). In `require_authorization_consent="remember"` mode, users are asked for consent once more per client after upgrading. Thanks to our 5 contributors, including 2 first-time contributors.
 
