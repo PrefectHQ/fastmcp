@@ -6,6 +6,18 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 4.2.0" description="November 13, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.2.0: Mad Skills"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0"
+cta="Read the release notes"
+>
+FastMCP 4.2 makes skills something a server can serve. A `Skill` is now a plain value — a name, a description, instructions and files, validated once when you build it — and you can load one from a directory or a package, or build it in code. Put skills on a server with `SkillCatalogProvider` or `SkillsDirectoryProvider` and they're served as ordinary resources; clients that speak the experimental [Skills extension](https://modelcontextprotocol.io/seps/2640-skills-extension) also get `skills/list` with a hashed manifest per skill. Client support is still uneven, so FastMCP's own client covers the gap: `Client.read_skill()` verifies every file's size and digest, and `to_directory()` installs a skill into any agent's skills folder. Skills follow the rest of FastMCP's composition: they namespace under mounts, pass through proxies with `skills=True`, list across a `ClientGroup`, and respect `AuthMiddleware`.
+
+Thanks to our 129 contributors, including 55 first-time contributors.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.2.0a5" description="November 12, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.2.0a5: Skillium Fancyson"

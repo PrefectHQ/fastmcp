@@ -594,9 +594,6 @@ class TestBuildClient:
                     message=r"<class 'key_value\.aio\.protocols\.key_value\.AsyncKeyValue'> isn't explicitly decorated",
                     category=DeprecationWarning,
                 )
-                # Garbage collection can finalize sockets leaked by earlier tests
-                # inside this block; those warnings aren't about token storage.
-                warnings.filterwarnings("ignore", category=ResourceWarning)
                 first = _build_client(resolved, auth=auth).transport.auth
                 assert isinstance(first, OAuth)
                 await first.token_storage_adapter.set_tokens(tokens)
@@ -613,7 +610,7 @@ class TestBuildClient:
             assert isinstance(other, OAuth)
             assert await other.token_storage_adapter.get_tokens() is None
 
-        assert not emitted
+        assert not _ignoring_gc_noise(emitted)
         files = [path for path in tmp_path.rglob("*") if path.is_file()]
         assert files
         for path in files:
@@ -641,10 +638,9 @@ class TestBuildClient:
         with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
             with warnings.catch_warnings(record=True) as emitted:
                 warnings.simplefilter("always")
-                warnings.filterwarnings("ignore", category=ResourceWarning)
                 first = _build_client("https://example.com/mcp").transport.auth
                 second = _build_client("https://example.com/mcp").transport.auth
-            assert not emitted
+            assert not _ignoring_gc_noise(emitted)
             assert isinstance(first, OAuth) and isinstance(second, OAuth)
             await first.token_storage_adapter.set_tokens(
                 OAuthToken(access_token="ephemeral-token", token_type="Bearer")
@@ -737,6 +733,18 @@ async def test_invalid_oauth_key_is_a_cli_error(
     assert "Traceback" not in output.out + output.err
 
 
+def _ignoring_gc_noise(
+    emitted: list[warnings.WarningMessage],
+) -> list[warnings.WarningMessage]:
+    """Drop ResourceWarnings from sockets other tests leaked.
+
+    Garbage collection can finalize them at any allocation inside a
+    `catch_warnings` block, including while filters are being installed, so
+    they have to be removed after recording rather than filtered out.
+    """
+    return [w for w in emitted if not issubclass(w.category, ResourceWarning)]
+
+
 def test_named_oauth_server_is_quiet(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -753,9 +761,8 @@ def test_named_oauth_server_is_quiet(
     with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
         with warnings.catch_warnings(record=True) as emitted:
             warnings.simplefilter("always")
-            warnings.filterwarnings("ignore", category=ResourceWarning)
             _build_client(resolve_server_spec("weather"))
-    assert not emitted
+    assert not _ignoring_gc_noise(emitted)
 
 
 # ---------------------------------------------------------------------------
