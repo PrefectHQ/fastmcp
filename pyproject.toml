@@ -88,6 +88,11 @@ dev = [
     "fastmcp[anthropic,apps,azure,code-mode,gemini,jev,openai,tasks]",
     "fastapi>=0.115.12",
     "fastmcp-remote",
+    # FastMCP itself is httpx2-only, but the PEP 723 scripts in scripts/ (and
+    # their tests) and the Anthropic 0.x compatibility test use plain httpx.
+    # Declare it: SDKs that used to pull it in (openai, google-genai) moved to
+    # httpx2.
+    "httpx>=0.28.1",
     "opentelemetry-sdk>=1.20.0",
     "inline-snapshot[dirty-equals]>=0.27.2",
     "ipython>=8.12.3",
@@ -105,7 +110,7 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6.1",
     "ruff>=0.12.8",
-    "ty>=0.0.89",
+    "ty>=0.0.100",
     "prek>=0.2.12",
     "loq>=0.1.0a3",
     "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",
@@ -165,6 +170,7 @@ exclude = [
     "examples/screenshot.py",           # needs pyautogui, Pillow
     "examples/memory.py",               # needs asyncpg, numpy, pydantic_ai, pgvector
     "examples/get_file.py",             # needs aiohttp
+    "examples/text_me.py",              # PEP 723 script, ty resolves its inline deps instead
     "tests/downstream/smoke_*.py",      # needs langchain / pydantic_ai, installed per-job in CI
 ]
 

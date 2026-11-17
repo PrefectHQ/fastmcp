@@ -25,7 +25,7 @@ class Reading(BaseModel):
 
 class Counters(BaseModel):
     model_config = ConfigDict(extra="allow")
-    __pydantic_extra__: dict[str, int] = Field(init=False)  # ty:ignore[invalid-mutable-override]
+    __pydantic_extra__: dict[str, int] = Field(init=False)  # ty:ignore[incompatible-mutable-override]
     name: str
 
 

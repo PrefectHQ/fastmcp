@@ -1228,7 +1228,7 @@ class TestInsufficientScopeSignal:
         finally:
             auth_context_var.reset(tok)
 
-        assert result.content[0].text == "ok"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "ok"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_shortfall_names_only_unmet_scopes(self):
         # The token already carries "read"; only the missing "api" is named, so a
@@ -1704,7 +1704,7 @@ class TestAuthMiddlewareHashedBackendNames:
         finally:
             auth_context_var.reset(tok)
 
-        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         assert calls == ["alice"]
 
     async def test_hashed_name_call_with_insufficient_scope_is_denied(self):
@@ -1747,7 +1747,7 @@ class TestAuthMiddlewareHashedBackendNames:
         finally:
             auth_context_var.reset(tok)
 
-        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         assert calls == ["alice"]
 
     async def test_transform_refused_tool_stays_denied_under_hashed_name(self):
