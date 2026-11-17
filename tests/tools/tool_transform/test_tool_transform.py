@@ -181,6 +181,45 @@ async def test_omitted_arg_uses_transform_fn_python_default():
     assert result.structured_content == {"result": "s3cr3t"}
 
 
+async def test_omitted_arg_gets_parent_default_advertised_over_transform_fn():
+    @Tool.from_function
+    def parent(x: int = 1) -> int:
+        return x
+
+    async def child(x: int = 2) -> ToolResult:
+        return await forward(x=x)
+
+    tool = Tool.from_tool(parent, transform_fn=child)
+    assert tool.parameters["properties"]["x"]["default"] == 1
+    result = await tool.run(arguments={})
+    assert result.structured_content == {"result": 1}
+
+
+async def test_omitted_arg_default_reaches_kwargs_transform_fn():
+    @Tool.from_function
+    def parent(x: int = 1) -> int:
+        return x
+
+    async def child(**kwargs: Any) -> int:
+        return kwargs["x"]
+
+    tool = Tool.from_tool(parent, transform_fn=child)
+    result = await tool.run(arguments={})
+    assert result.structured_content == {"result": 1}
+
+
+async def test_renamed_arg_uses_arg_transform_default():
+    @Tool.from_function
+    def parent(x: int = 1) -> int:
+        return x
+
+    tool = Tool.from_tool(
+        parent, transform_args={"x": ArgTransform(name="y", default=5)}
+    )
+    result = await tool.run(arguments={})
+    assert result.structured_content == {"result": 5}
+
+
 def test_tool_change_arg_name(add_tool):
     new_tool = Tool.from_tool(
         add_tool, transform_args={"old_x": ArgTransform(name="new_x")}

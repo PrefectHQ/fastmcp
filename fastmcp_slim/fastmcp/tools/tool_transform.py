@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 from collections.abc import Callable
 from contextvars import ContextVar
 from copy import deepcopy
@@ -9,7 +10,7 @@ from typing import Annotated, Any, Literal, LiteralString, cast
 
 import mcp_types
 from mcp_types import ToolAnnotations
-from pydantic import ConfigDict
+from pydantic import ConfigDict, PrivateAttr
 from pydantic import ValidationError as PydanticValidationError
 from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator
@@ -397,6 +398,11 @@ def _apply_meta_override(
     return merged
 
 
+def _same_json(a: Any, b: Any) -> bool:
+    """Compare JSON values without treating True as 1."""
+    return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+
+
 class TransformedTool(Tool):
     """A tool that is transformed from another tool.
 
@@ -425,6 +431,10 @@ class TransformedTool(Tool):
         Callable[..., Any]
     ]  # Always present, handles arg transformation
     transform_args: dict[str, ArgTransform]
+    # Schema defaults (by argument name) that `fn` applies itself when the
+    # argument is omitted. None means unknown, so every schema default is
+    # filled in.
+    _own_defaults: dict[str, Any] | None = PrivateAttr(default=None)
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Run the tool with context set for forward() functions.
@@ -440,41 +450,24 @@ class TransformedTool(Tool):
             ToolResult object containing content and optional structured output.
         """
 
-        # Fill in missing arguments with schema defaults to ensure
-        # ArgTransform defaults take precedence over function defaults
+        # A schema default is the JSON form of a Python default (a SecretStr
+        # default is "**********"), so fill in only defaults the receiving
+        # function doesn't apply itself, such as ArgTransform defaults.
         arguments = arguments.copy()
         properties = self.parameters.get("properties", {})
+        own_defaults = self._own_defaults
 
         for param_name, param_schema in properties.items():
-            if param_name not in arguments and "default" in param_schema:
-                # Check if this parameter has a default_factory from transform_args
-                # We need to call the factory for each run, not use the cached schema value
-                has_factory_default = False
-                if self.transform_args:
-                    # Find the original parameter name that maps to this param_name
-                    for orig_name, transform in self.transform_args.items():
-                        if transform.hide:
-                            # Hidden parameters are not part of the schema and
-                            # their factory defaults are applied when forwarding
-                            # to the parent, so they must not fill visible ones.
-                            continue
-                        transform_name = (
-                            transform.name
-                            if transform.name is not NotSet
-                            else orig_name
-                        )
-                        if (
-                            transform_name == param_name
-                            and transform.default_factory is not NotSet
-                        ):
-                            # Type check to ensure default_factory is callable
-                            if callable(transform.default_factory):
-                                arguments[param_name] = transform.default_factory()
-                                has_factory_default = True
-                                break
-
-                if not has_factory_default:
-                    arguments[param_name] = deepcopy(param_schema["default"])
+            if param_name in arguments or "default" not in param_schema:
+                continue
+            default = param_schema["default"]
+            if (
+                own_defaults is not None
+                and param_name in own_defaults
+                and _same_json(own_defaults[param_name], default)
+            ):
+                continue
+            arguments[param_name] = deepcopy(default)
 
         token = _current_tool.set(self)
         try:
@@ -633,7 +626,9 @@ class TransformedTool(Tool):
             )
 
         # Always create the forwarding transform
-        schema, forwarding_fn = cls._create_forwarding_transform(tool, transform_args)
+        schema, forwarding_fn, inherited_defaults = cls._create_forwarding_transform(
+            tool, transform_args
+        )
 
         # Handle output schema
         if output_schema is NotSet:
@@ -770,6 +765,15 @@ class TransformedTool(Tool):
             task_config=tool.task_config,
             execution=tool.execution,
         )
+        if parsed_fn is None:
+            # The parent applies its own defaults to arguments forwarded without them.
+            transformed_tool._own_defaults = inherited_defaults
+        else:
+            transformed_tool._own_defaults = {
+                name: prop["default"]
+                for name, prop in parsed_fn.input_schema.get("properties", {}).items()
+                if "default" in prop
+            }
 
         return transformed_tool
 
@@ -778,7 +782,7 @@ class TransformedTool(Tool):
         cls,
         parent_tool: Tool,
         transform_args: dict[str, ArgTransform] | None,
-    ) -> tuple[dict[str, Any], Callable[..., Any]]:
+    ) -> tuple[dict[str, Any], Callable[..., Any], dict[str, Any]]:
         """Create schema and forwarding function that encapsulates all transformation logic.
 
         This method builds a new JSON schema for the transformed tool and creates a
@@ -793,6 +797,7 @@ class TransformedTool(Tool):
             A tuple containing:
             - The new JSON schema for the transformed tool as a dictionary
             - Async function that validates and forwards calls to the parent tool
+            - Schema defaults the parent applies itself, by new argument name
         """
 
         # Build transformed schema and mapping
@@ -805,6 +810,7 @@ class TransformedTool(Tool):
         new_required = set()
         new_to_old = {}
         hidden_defaults = {}  # Track hidden parameters with constant values
+        inherited_defaults: dict[str, Any] = {}
 
         for old_name, old_schema in parent_props.items():
             # Check if parameter is in transform_args
@@ -844,6 +850,8 @@ class TransformedTool(Tool):
                 new_name, new_schema, is_required, extracted_defs = transform_result
                 new_props[new_name] = new_schema
                 new_to_old[new_name] = old_name
+                if transform.default is NotSet and "default" in old_schema:
+                    inherited_defaults[new_name] = old_schema["default"]
                 if is_required:
                     new_required.add(new_name)
                 # Hoist any $defs introduced by an ArgTransform(type=...) so that
@@ -923,7 +931,7 @@ class TransformedTool(Tool):
                     str(renamed), log_level=exc.log_level
                 ) from renamed
 
-        return schema, _forward
+        return schema, _forward, inherited_defaults
 
     @staticmethod
     def _apply_single_transform(
