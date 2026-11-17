@@ -82,10 +82,10 @@ def main() -> None:
         {"@ai-sdk/mcp": installed("@ai-sdk/mcp"), "ai": installed("ai")},
     )
     command, args = stdio_command()
-    # The Node process inherits nothing it does not need; the server keeps the
-    # environment it would get from any other smoke.
+    # The AI SDK's stdio transport passes the server only a short default list
+    # of variables plus the ones it is given, so give it the smoke server env.
     stdio = {"transport": "stdio", "command": command, "args": args}
-    stdio["env"] = {k: v for k, v in server_env().items() if isinstance(v, str)}
+    stdio["env"] = server_env()
 
     for era in ("legacy", "modern"):
         with report.transport(f"stdio, {era} era"):

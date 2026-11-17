@@ -66,6 +66,7 @@ async function connect(headers) {
   });
   client.onElicitationRequest(ElicitationRequestSchema, async (request) => {
     assert(String(request.params.message).startsWith("approve"), request);
+    elicited += 1;
     return { action: "accept", content: { approved: true } };
   });
   return client;
@@ -111,6 +112,7 @@ function scriptedModel() {
   });
 }
 
+let elicited = 0;
 const textOf = (result) => result.content.find((b) => b.type === "text")?.text;
 
 async function main() {
@@ -120,7 +122,9 @@ async function main() {
       try {
         client = await connect({});
         await client.listTools();
-      } catch {
+      } catch (e) {
+        const text = `${e?.statusCode ?? ""} ${e?.message ?? e}`;
+        assert(/401|unauthorized/i.test(text), text);
         return;
       } finally {
         await client?.close().catch(() => {});
@@ -215,8 +219,10 @@ async function main() {
     });
 
     await check("elicitation", async () => {
+      const before = elicited;
       const result = await client.callTool({ name: "confirm", arguments: { action: "deploy" } });
       assert(textOf(result) === "deploy: approved", result);
+      assert(elicited === before + 1, "the elicitation handler did not run");
     });
 
     await check("prompt", async () => {
