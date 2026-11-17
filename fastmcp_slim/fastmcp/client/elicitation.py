@@ -13,6 +13,7 @@ from typing_extensions import TypeVar
 
 from fastmcp.client._sdk_context_shim import LifespanContextT, RequestContext
 from fastmcp.utilities.json_schema_type import json_schema_to_type
+from fastmcp.utilities.types import get_cached_typeadapter
 
 __all__ = ["ElicitRequestParams", "ElicitResult", "ElicitationHandler"]
 
@@ -81,7 +82,17 @@ def create_elicitation_callback(
             # An ElicitResult, including the SDK's own, carries an explicit action.
             if not isinstance(result, MCPElicitResult):
                 result = ElicitResult(action="accept", content=result)
-            content = to_jsonable_python(result.content)
+            if isinstance(response_type, type) and isinstance(
+                result.content, response_type
+            ):
+                # Its fields carry the schema's property names as aliases,
+                # since names like "first-name" or "class" are sanitized into
+                # Python identifiers; dump by alias to send the wire names.
+                content = get_cached_typeadapter(response_type).dump_python(
+                    result.content, mode="json", by_alias=True
+                )
+            else:
+                content = to_jsonable_python(result.content)
             if not isinstance(content, dict | None):
                 # Auto-wrap scalar values for ScalarElicitationType schemas
                 # (single "value" property). This lets handlers return T directly

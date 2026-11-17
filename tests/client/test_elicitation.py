@@ -854,6 +854,29 @@ class TestAcceptedContentValidation:
         assert isinstance(result, mcp_types.ElicitResult)
         assert result.action == "accept"
 
+    async def test_response_type_instance_uses_schema_property_names(self):
+        """Property names that are not Python identifiers are sanitized into
+        field names; an instance of response_type must still be sent under the
+        schema's names."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "first-name": {"type": "string"},
+                "class": {"type": "string"},
+            },
+            "required": ["first-name", "class"],
+        }
+
+        async def handler(message, response_type, params, ctx):
+            return response_type(first_name="Ada", class_="admin")
+
+        callback = create_elicitation_callback(handler)
+        params = mcp_types.ElicitRequestFormParams(message="?", requested_schema=schema)
+        result = await callback(cast(Any, None), params)
+        assert isinstance(result, mcp_types.ElicitResult)
+        assert result.action == "accept"
+        assert result.content == {"first-name": "Ada", "class": "admin"}
+
     async def test_date_time_string_is_accepted(self):
         schema = {
             "type": "object",
