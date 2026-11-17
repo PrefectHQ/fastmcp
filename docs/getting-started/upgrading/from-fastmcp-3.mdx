@@ -219,10 +219,10 @@ transport = StreamableHttpTransport(
 
 The `client` you pass to `FastMCP.from_openapi(client=...)` (and `OpenAPIProvider(client=...)`) should now be an `httpx2.AsyncClient`. Existing `httpx.AsyncClient` instances remain temporarily accepted via duck typing, but emit a `FastMCPDeprecationWarning` and will be rejected in a future release. HTTP made inside your own tools is entirely yours and is unaffected.
 
-**The subtlest break is exception handlers, and no type checker will catch it.** `httpx` very likely remains installed in your environment (the Anthropic, OpenAI, and Google SDKs all depend on it), so code that catches old-httpx exceptions around FastMCP calls still imports and still type-checks — it just never matches, because FastMCP now raises `httpx2` exceptions. The handler silently becomes dead code:
+**The subtlest break is exception handlers, and no type checker will catch it.** `httpx` may well remain installed in your environment (older releases of the Anthropic, OpenAI, and Google SDKs depend on it, as do many other libraries), so code that catches old-httpx exceptions around FastMCP calls still imports and still type-checks — it just never matches, because FastMCP now raises `httpx2` exceptions. The handler silently becomes dead code:
 
 ```python
-import httpx  # still installed transitively — this import works
+import httpx  # if httpx is still installed, this import works
 
 
 async def fetch(client, url):
