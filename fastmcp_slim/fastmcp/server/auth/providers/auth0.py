@@ -39,10 +39,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
-from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
@@ -314,19 +312,9 @@ class Auth0MCPProvider(RemoteAuthProvider):
         metadata_url = f"{self.issuer}/.well-known/oauth-authorization-server"
 
         async def oauth_authorization_server_metadata(request):
-            try:
-                async with httpx2.AsyncClient() as client:
-                    response = await client.get(metadata_url)
-                    response.raise_for_status()
-                    return JSONResponse(response.json())
-            except Exception as e:
-                return JSONResponse(
-                    {
-                        "error": "server_error",
-                        "error_description": f"Failed to fetch Auth0 metadata: {e}",
-                    },
-                    status_code=500,
-                )
+            return await self._forward_authorization_server_metadata(
+                [metadata_url], "Auth0"
+            )
 
         routes.append(
             Route(
