@@ -2220,7 +2220,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         return upstream_token_set
 
-    async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]  # ty:ignore[invalid-method-override]
+    async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]  # ty:ignore[incompatible-method-override]
         """Validate FastMCP JWT by swapping for upstream token.
 
         This implements the token swap pattern:

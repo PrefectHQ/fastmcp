@@ -113,7 +113,7 @@ class MCPConfigTransport(ClientTransport):
             self._request_state_security = _RequestStateSecurity.ephemeral()
 
     @property
-    def legacy_only(self) -> bool:  # ty:ignore[invalid-property-type-override]
+    def legacy_only(self) -> bool:  # ty:ignore[incompatible-property-override]
         """Whether the connected composite resolved to the legacy protocol era.
 
         A single-server config delegates directly to the underlying transport

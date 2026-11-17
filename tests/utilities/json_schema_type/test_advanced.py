@@ -16,7 +16,7 @@ from fastmcp.utilities.json_schema_type import (
 
 
 def get_dataclass_field(type: type, field_name: str) -> Field:
-    return type.__dataclass_fields__[field_name]  # ty: ignore[unresolved-attribute]
+    return type.__dataclass_fields__[field_name]  # ty: ignore[missing-attribute]
 
 
 def unwrap_optional(field: Field) -> Any:
@@ -1129,9 +1129,9 @@ class TestNameHandling:
         Type = json_schema_to_type(schema)
         assert Type.__name__ == "Parent"
         child_field_type = get_dataclass_field(Type, "child").type
-        assert child_field_type.__origin__ is Union  # ty: ignore[unresolved-attribute]
-        assert child_field_type.__args__[0].__name__ == "Child"  # ty: ignore[unresolved-attribute]
-        assert child_field_type.__args__[1] is type(None)  # ty: ignore[unresolved-attribute]
+        assert child_field_type.__origin__ is Union  # ty: ignore[missing-union-attribute]
+        assert child_field_type.__args__[0].__name__ == "Child"  # ty: ignore[missing-union-attribute]
+        assert child_field_type.__args__[1] is type(None)  # ty: ignore[missing-union-attribute]
 
     def test_recursive_schema_naming(self):
         schema = {
@@ -1144,9 +1144,9 @@ class TestNameHandling:
 
         next_field_type = get_dataclass_field(Type, "next").type
 
-        assert next_field_type.__origin__ is Union  # ty: ignore[unresolved-attribute]
-        assert next_field_type.__args__[0].__forward_arg__ == "Node"  # ty: ignore[unresolved-attribute]
-        assert next_field_type.__args__[1] is type(None)  # ty: ignore[unresolved-attribute]
+        assert next_field_type.__origin__ is Union  # ty: ignore[missing-union-attribute]
+        assert next_field_type.__args__[0].__forward_arg__ == "Node"  # ty: ignore[missing-union-attribute]
+        assert next_field_type.__args__[1] is type(None)  # ty: ignore[missing-union-attribute]
 
     def test_name_caching_with_different_titles(self):
         """Ensure schemas with different titles create different cached classes"""

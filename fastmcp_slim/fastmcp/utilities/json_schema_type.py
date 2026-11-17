@@ -469,7 +469,7 @@ def _resolve_recursive_types(conversion: _Conversion) -> None:
                 field_info.validate_default = True
                 rechecked.add(cls)
             continue
-        dataclass_field = cls.__dataclass_fields__[field_name]  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        dataclass_field = cls.__dataclass_fields__[field_name]  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
         factory = dataclass_field.default_factory
         default = factory() if callable(factory) else dataclass_field.default
         # A `"#"` reference in a nested dataclass stays a forward reference
@@ -942,7 +942,7 @@ def _create_array_type(
         base = _create_prefix_items_type(prefix_types, item_type, schema)
         if schema.get("uniqueItems") is True:
             return Annotated[
-                base,
+                base,  # ty:ignore[invalid-type-form]
                 BeforeValidator(_validate_unique_items),
                 Field(json_schema_extra={"uniqueItems": True}),
             ]
@@ -1551,7 +1551,7 @@ def _build_dataclass(
             return _merge_defaults(data, original_schema, apply_property_defaults=False)
         return data
 
-    cls._apply_defaults = _apply_defaults  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    cls._apply_defaults = _apply_defaults  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
     _conversion.get().unchecked_defaults.extend((cls, f) for f in unchecked)
     return cls
 

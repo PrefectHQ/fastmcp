@@ -198,7 +198,7 @@ class PromptDecoratorMixin:
                 enabled=enabled,
             )
             target = fn.__func__ if hasattr(fn, "__func__") else fn
-            target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
             self.add_prompt(fn)
             return fn
 
