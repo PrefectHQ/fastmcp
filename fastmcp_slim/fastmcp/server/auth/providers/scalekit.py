@@ -156,6 +156,7 @@ class ScalekitProvider(RemoteAuthProvider):
             scopes_supported=scopes_supported,
             resource_name=resource_name,
             resource_documentation=resource_documentation,
+            required_scopes=parsed_scopes if required_scopes is not None else None,
         )
 
     def get_routes(

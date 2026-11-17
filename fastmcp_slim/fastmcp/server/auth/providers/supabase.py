@@ -130,6 +130,7 @@ class SupabaseProvider(RemoteAuthProvider):
             scopes_supported=scopes_supported,
             resource_name=resource_name,
             resource_documentation=resource_documentation,
+            required_scopes=parsed_scopes,
         )
 
     def get_routes(
