@@ -242,6 +242,39 @@ def test_list_result_uses_protocol_wire_names() -> None:
     assert wire["cacheScope"] == "private"
 
 
+def test_list_result_rejects_duplicate_uris() -> None:
+    skill = make_skill()
+
+    with pytest.raises(ValidationError, match="more than once"):
+        ListSkillsResult(skills=[skill, skill])
+
+
+def test_list_result_rejects_duplicate_uris_when_parsing_wire_payload() -> None:
+    payload = ListSkillsResult(skills=[make_skill()]).model_dump(
+        by_alias=True, mode="json", exclude_none=True
+    )
+    payload["skills"].append(payload["skills"][0])
+
+    with pytest.raises(ValidationError, match="more than once"):
+        ListSkillsResult.model_validate(payload)
+
+
+def test_list_result_accepts_distinct_uris() -> None:
+    review = make_skill()
+    audit = make_skill(
+        uri="skill://acme/audit/SKILL.md",
+        frontmatter={"name": "audit", "description": "Audit a change"},
+        resources=[{"uri": "skill://acme/audit/SKILL.md", "digest": DIGEST, "size": 1}],
+    )
+
+    result = ListSkillsResult(skills=[review, audit])
+
+    assert [skill.uri for skill in result.skills] == [
+        "skill://acme/review/SKILL.md",
+        "skill://acme/audit/SKILL.md",
+    ]
+
+
 def test_get_result_uses_protocol_cache_fields() -> None:
     wire = GetSkillResult(skill=make_skill()).model_dump(
         by_alias=True, mode="json", exclude_none=True
