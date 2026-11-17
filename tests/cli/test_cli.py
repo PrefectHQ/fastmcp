@@ -41,7 +41,7 @@ class TestMainCLI:
     def test_horizon_account_commands_are_top_level(self, name: str):
         command, bound, _ = app.parse_args([name, "--json"])
 
-        assert command.__name__ == name  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert command.__name__ == name  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
         assert bound.arguments == {"json_output": True}
 
     def test_login_accepts_a_horizon_host(self):
@@ -66,7 +66,7 @@ class TestVersionCommand:
         """Test that the version command parses arguments correctly."""
         command, bound, _ = app.parse_args(["version"])
         assert callable(command)
-        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
         # Default arguments aren't included in bound.arguments
         assert bound.arguments == {}
 
@@ -74,7 +74,7 @@ class TestVersionCommand:
         """Test that the version command parses --copy flag correctly."""
         command, bound, _ = app.parse_args(["version", "--copy"])
         assert callable(command)
-        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
         assert bound.arguments == {"copy": True}
 
     @patch("fastmcp.cli.cli.pyperclip.copy")

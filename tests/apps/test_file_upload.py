@@ -56,11 +56,11 @@ class TestFileUploadProvider:
         result = await server.call_tool(
             hashed_backend_name("Files", "store_files"), {"files": files}
         )
-        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         assert "test.txt" in text
 
         result = await server.call_tool("list_files", {})
-        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         assert "test.txt" in text
 
     async def test_read_text_file(self):
@@ -72,7 +72,7 @@ class TestFileUploadProvider:
         )
 
         result = await server.call_tool("read_file", {"name": "test.txt"})
-        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         assert "DON'T PANIC" in text
 
     async def test_read_binary_file(self):
@@ -85,7 +85,7 @@ class TestFileUploadProvider:
         )
 
         result = await server.call_tool("read_file", {"name": "image.png"})
-        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         assert "content_base64" in text
 
     async def test_read_missing_file_raises(self):
@@ -106,7 +106,7 @@ class TestFileUploadProvider:
         )
 
         result = await server.call_tool("list_files", {})
-        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         assert "a.txt" in text
         assert "b.txt" in text
 
@@ -123,7 +123,7 @@ class TestFileUploadProvider:
         )
 
         result = await server.call_tool("read_file", {"name": "test.txt"})
-        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         assert "version 2" in text
 
     async def test_custom_name(self):
@@ -138,7 +138,7 @@ class TestFileUploadProvider:
         result = await server.call_tool(
             hashed_backend_name("Uploads", "store_files"), {"files": files}
         )
-        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         assert "test.txt" in text
 
     async def test_backend_tool_listed_as_app_only(self):
@@ -235,5 +235,5 @@ class TestFileUploadSubclass:
         assert "test.txt" in stored
 
         result = await server.call_tool("read_file", {"name": "test.txt"})
-        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         assert "custom read" in text

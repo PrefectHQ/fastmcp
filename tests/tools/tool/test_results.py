@@ -3,10 +3,11 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 
 import pytest
-from mcp_types import CallToolResult, TextContent
+from mcp_types import CallToolRequestParams, CallToolResult, TextContent
 from pydantic import BaseModel, ConfigDict, Field, with_config
 
 from fastmcp import Client, FastMCP
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import Tool, ToolResult
 from tests.conftest import user_meta
 
@@ -135,7 +136,7 @@ class TestToolResultIsError:
 
         result = tool.convert_result(raw_result)
 
-        assert result.to_mcp_result() is raw_result
+        assert result.to_mcp_result() == raw_result
 
     async def test_raw_call_tool_result_preserves_protocol_fields(self):
         mcp = FastMCP()
@@ -160,6 +161,63 @@ class TestToolResultIsError:
         # the tool itself set, which is what FastMCP is responsible for.
         received["_meta"] = user_meta(received["_meta"])
         assert received == raw_result.model_dump(by_alias=True)
+
+    async def test_raw_call_tool_result_serializes_nested_models_like_the_wire(self):
+        class Usage(BaseModel):
+            token_count: int = Field(serialization_alias="tokenCount")
+            note: str | None = None
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def report() -> CallToolResult:
+            return CallToolResult(
+                content=[TextContent(type="text", text="ok")],
+                structured_content={"usage": Usage(token_count=3)},
+            )
+
+        async with Client(mcp) as client:
+            result = await client.call_tool_mcp("report", {})
+
+        assert result.structured_content == {"usage": {"tokenCount": 3}}
+
+    @pytest.mark.parametrize("edit", ["in_place", "model_copy"])
+    async def test_raw_call_tool_result_carries_middleware_edits(self, edit: str):
+        class EditResult(Middleware):
+            async def on_call_tool(
+                self,
+                context: MiddlewareContext[CallToolRequestParams],
+                call_next: CallNext[CallToolRequestParams, ToolResult],
+            ) -> ToolResult:
+                result = await call_next(context)
+                update = {
+                    "content": [TextContent(type="text", text="redacted")],
+                    "structured_content": {"secret": "redacted"},
+                    "meta": {"audited": True},
+                    "is_error": True,
+                }
+                if edit == "model_copy":
+                    return result.model_copy(update=update)
+                for field, value in update.items():
+                    setattr(result, field, value)
+                return result
+
+        mcp = FastMCP(middleware=[EditResult()])
+
+        @mcp.tool
+        def lookup() -> CallToolResult:
+            return CallToolResult(
+                content=[TextContent(type="text", text="secret: s3cr3t")],
+                structured_content={"secret": "s3cr3t"},
+            )
+
+        async with Client(mcp) as client:
+            result = await client.call_tool_mcp("lookup", {})
+
+        assert result.content == [TextContent(type="text", text="redacted")]
+        assert result.structured_content == {"secret": "redacted"}
+        assert user_meta(result.meta) == {"audited": True}
+        assert result.is_error is True
 
 
 class TestUnionReturnTypes:

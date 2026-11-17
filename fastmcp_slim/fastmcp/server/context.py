@@ -518,7 +518,7 @@ class Context:
             delta = current - last
             if delta > 0:
                 await execution.progress.increment(delta)
-            execution._fastmcp_last_progress = current  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            execution._fastmcp_last_progress = current  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
 
             if message is not None:
                 await execution.progress.set_message(message)
@@ -800,7 +800,7 @@ class Context:
         if connection is not None:
             connection.state["_fastmcp_state_prefix"] = session_id
         else:
-            session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
         return session_id
 
     def _session_scope_key(self) -> str | None:

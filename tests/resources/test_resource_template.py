@@ -2001,6 +2001,22 @@ class TestNonIdentifierTemplateVariableNames:
             "resource://dollar/a/b", "resource://dollar/{$top*}"
         ) == {"_top": "a/b"}
 
+    def test_literal_query_value_with_non_identifier_name(self):
+        assert match_uri_template(
+            "search://items?top=5", "search://items?top={$top}"
+        ) == {"_top": "5"}
+
+    def test_literal_query_name_cannot_inject_pattern(self):
+        # A proxied backend controls placeholder names; one carrying pattern
+        # text must not compile into the regex (here a nested quantifier).
+        template = "remote://x?q={a>(a+)+)(?P<b}"
+        regex = build_regex(template)
+        assert regex is not None
+        assert "(a+)+" not in regex.pattern
+        assert match_uri_template("remote://x?q=" + "a" * 30 + "!", template) == {
+            "a__a______P_b": "a" * 30 + "!"
+        }
+
 
 class TestExpandNonIdentifierNames:
     """Forwarding (mount/proxy) expands placeholders from sanitized param

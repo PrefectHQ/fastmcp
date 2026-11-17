@@ -65,7 +65,7 @@ class ElicitationJsonSchema(GenerateJsonSchema):
             return self.enum_schema(enum_definition)
         return super().definition_ref_schema(schema)
 
-    def generate_inner(self, schema: core_schema.CoreSchema) -> JsonSchemaValue:  # type: ignore[override]  # ty:ignore[invalid-method-override]
+    def generate_inner(self, schema: core_schema.CoreSchema) -> JsonSchemaValue:  # type: ignore[override]  # ty:ignore[incompatible-method-override]
         """Override to prevent ref generation for enums and handle list schemas."""
         # For enum schemas, bypass the ref mechanism entirely
         if schema["type"] == "enum":

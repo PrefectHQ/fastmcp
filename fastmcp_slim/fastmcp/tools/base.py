@@ -214,9 +214,14 @@ class ToolResult(BaseModel):
     @classmethod
     def from_mcp_result(cls, result: CallToolResult) -> ToolResult:
         """Wrap a protocol result while preserving its exact wire representation."""
+        # Dump nested models with the options the SDK uses to serialize a
+        # result, so aliases and omitted None fields match the wire.
+        structured_content = result.model_dump(
+            by_alias=True, exclude_none=True, include={"structured_content"}
+        ).get("structuredContent")
         tool_result = cls(
             content=result.content,
-            structured_content=result.structured_content,
+            structured_content=structured_content,
             meta=result.meta,
             is_error=result.is_error,
         )
@@ -229,7 +234,17 @@ class ToolResult(BaseModel):
         list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]] | CallToolResult
     ):
         if self._raw_mcp_result is not None:
-            return self._raw_mcp_result
+            # Keep the protocol object's other fields, but take the public ones
+            # from self so response middleware edits reach the wire, including
+            # when it uses model_copy().
+            return self._raw_mcp_result.model_copy(
+                update={
+                    "content": self.content,
+                    "structured_content": self.structured_content,
+                    "meta": self.meta,
+                    "is_error": self.is_error,
+                }
+            )
 
         # An error result must round-trip through CallToolResult so isError
         # reaches the client; the plain content/tuple returns can't carry it.
