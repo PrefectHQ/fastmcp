@@ -220,6 +220,41 @@ async def test_renamed_arg_uses_arg_transform_default():
     assert result.structured_content == {"result": 5}
 
 
+async def test_omitted_arg_uses_python_default_through_client():
+    mcp = FastMCP("demo")
+
+    @mcp.tool
+    def connect(token: SecretStr = SecretStr("s3cr3t")) -> str:
+        return token.get_secret_value()
+
+    parent = await mcp.get_tool("connect")
+    assert parent is not None
+    mcp.add_tool(Tool.from_tool(parent, name="connect_renamed"))
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("connect_renamed", {})
+    assert result.data == "s3cr3t"
+
+
+async def test_omitted_arg_with_field_default_on_transform_fn():
+    @Tool.from_function
+    def parent(limit: int = 10) -> int:
+        return limit
+
+    async def child(limit: int = Field(10, description="Max results")) -> ToolResult:
+        return await forward(limit=limit)
+
+    async def annotated_child(
+        limit: Annotated[int, Field(default=10, description="Max results")],
+    ) -> ToolResult:
+        return await forward(limit=limit)
+
+    for fn in (child, annotated_child):
+        tool = Tool.from_tool(parent, transform_fn=fn)
+        result = await tool.run(arguments={})
+        assert result.structured_content == {"result": 10}
+
+
 def test_tool_change_arg_name(add_tool):
     new_tool = Tool.from_tool(
         add_tool, transform_args={"old_x": ArgTransform(name="new_x")}

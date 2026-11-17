@@ -12,7 +12,7 @@ import mcp_types
 from mcp_types import ToolAnnotations
 from pydantic import ConfigDict, PrivateAttr
 from pydantic import ValidationError as PydanticValidationError
-from pydantic.fields import Field
+from pydantic.fields import Field, FieldInfo
 from pydantic.functional_validators import BeforeValidator
 from pydantic.json_schema import SkipJsonSchema
 from pydantic_core import InitErrorDetails, PydanticCustomError
@@ -765,14 +765,20 @@ class TransformedTool(Tool):
             task_config=tool.task_config,
             execution=tool.execution,
         )
-        if parsed_fn is None:
+        if transform_fn is None:
             # The parent applies its own defaults to arguments forwarded without them.
             transformed_tool._own_defaults = inherited_defaults
         else:
+            # Only plain Python defaults: a Field(...) default is a FieldInfo
+            # that `run` would pass through unvalidated.
+            fn_schema = cast(ParsedFunction, parsed_fn).input_schema
+            fn_properties = fn_schema.get("properties", {})
             transformed_tool._own_defaults = {
-                name: prop["default"]
-                for name, prop in parsed_fn.input_schema.get("properties", {}).items()
-                if "default" in prop
+                name: fn_properties[name]["default"]
+                for name, param in inspect.signature(transform_fn).parameters.items()
+                if param.default is not inspect.Parameter.empty
+                and not isinstance(param.default, FieldInfo)
+                and "default" in fn_properties.get(name, {})
             }
 
         return transformed_tool
