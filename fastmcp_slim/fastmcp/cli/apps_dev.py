@@ -1801,7 +1801,7 @@ async def run_dev_apps(
         server = uvicorn.Server(config)
         # Suppress uvicorn's own signal handlers — they use signal.signal() which
         # conflicts with asyncio and causes hangs.  We cancel the task instead.
-        server.install_signal_handlers = lambda: None  # type: ignore[method-assign]  # ty:ignore[unresolved-attribute]
+        server.install_signal_handlers = lambda: None  # type: ignore[method-assign]  # ty:ignore[missing-attribute]
 
         async def _open_browser() -> None:
             await asyncio.sleep(0.8)

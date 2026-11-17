@@ -686,7 +686,7 @@ class ProxyTemplate(ResourceTemplate):
         mcp_template: mcp_types.ResourceTemplate,
         *,
         identity: ProxyIdentity = "proxy",
-    ) -> ProxyTemplate:  # ty:ignore[invalid-method-override]
+    ) -> ProxyTemplate:  # ty:ignore[incompatible-method-override]
         """Factory method to create a ProxyTemplate from a raw MCP template schema."""
 
         return cls(
@@ -863,7 +863,7 @@ class ProxyPrompt(Prompt):
             task_config=TaskConfig(mode="forbidden"),
         )
 
-    async def render(self, arguments: dict[str, Any]) -> PromptResult:  # type: ignore[override]  # ty:ignore[invalid-method-override]
+    async def render(self, arguments: dict[str, Any]) -> PromptResult:  # type: ignore[override]  # ty:ignore[incompatible-method-override]
         """Render the prompt by making a call through the client."""
         backend_name = self._backend_name or self.name
         with client_span(
@@ -2018,7 +2018,7 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
     def new(self) -> StatefulProxyClient[ClientTransportT]:
         return cast(StatefulProxyClient[ClientTransportT], super().new())
 
-    async def __aexit__(self, exc_type, exc_value, traceback) -> None:  # type: ignore[override]  # ty:ignore[invalid-method-override]
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:  # type: ignore[override]
         """Release this context without disconnecting the persistent session."""
         with anyio.CancelScope(shield=True):
             async with self._session_state.lock:

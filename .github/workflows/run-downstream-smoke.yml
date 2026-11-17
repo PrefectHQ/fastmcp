@@ -174,14 +174,19 @@ jobs:
 
       # Mirrors pydantic-ai's own "test FastMCP 4 compatibility" job: their locked
       # environment, with FastMCP overlaid from the wheels under test.
+      # The OpenTelemetry packages release in lockstep and pin each other exactly,
+      # so fastmcp's opentelemetry-api floor drags the whole family along, as a
+      # real resolve would.
       - name: Resolve environment
         working-directory: pydantic-ai
         run: |
+          otel_with=$(sed -n 's/^name = "\(opentelemetry-[^"]*\)"$/--with \1/p' uv.lock | tr '\n' ' ')
           echo "UV_RUN=uv run --all-extras --no-extra mcp-tasks --all-packages \
             --exclude-newer-package authlib=false \
             --exclude-newer-package certifi=false \
             --exclude-newer-package pydocket=2026-10-06T00:00:00Z \
             --exclude-newer-package uncalled-for=false \
+            $otel_with \
             --with fastmcp@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp-4*.whl) \
             --with fastmcp-slim@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_slim-*.whl) \
             --with fastmcp-tasks@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_tasks-*.whl)" >> "$GITHUB_ENV"

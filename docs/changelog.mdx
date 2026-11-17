@@ -6,6 +6,44 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.2.1" description="2026-11-17">
+
+**[v4.2.1: Full Leather Jacket](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.1)**
+
+FastMCP 4.2.1 is a security and correctness patch on top of 4.2.0. It tightens OAuth and token handling: JWTs aren't accepted before their `nbf`, provider `required_scopes` survive a custom verifier, pre-registered OAuth clients can be pinned to their issuer, and consent, metadata forwarding and upstream claims in the OAuth proxy are hardened. It also raises the `opentelemetry-api` floor past a traceparent ReDoS. If you install with pip and also have `opentelemetry-sdk`, upgrade it alongside FastMCP (`pip install -U fastmcp opentelemetry-sdk`). In `require_authorization_consent="remember"` mode, users are asked for consent once more per client after upgrading. Thanks to our 5 contributors, including 2 first-time contributors.
+
+### Security 🔒
+* Reject JWTs whose nbf is in the future by [@zzstoatzz](https://github.com/zzstoatzz) and [@ratomirjovanovic](https://github.com/ratomirjovanovic) in [#6512](https://github.com/PrefectHQ/fastmcp/pull/6512)
+* Raise opentelemetry-api floor past traceparent ReDoS by [@zzstoatzz](https://github.com/zzstoatzz) in [#6513](https://github.com/PrefectHQ/fastmcp/pull/6513)
+* Remember OAuth consent per redirect URI and scope set by [@zzstoatzz](https://github.com/zzstoatzz) in [#6530](https://github.com/PrefectHQ/fastmcp/pull/6530)
+* Cache forwarded authorization server metadata in remote auth providers by [@zzstoatzz](https://github.com/zzstoatzz) in [#6531](https://github.com/PrefectHQ/fastmcp/pull/6531)
+* Refresh upstream_claims when the OAuth proxy transparently refreshes by [@zzstoatzz](https://github.com/zzstoatzz) in [#6532](https://github.com/PrefectHQ/fastmcp/pull/6532)
+* Normalize literal-query placeholder names in URI templates by [@zzstoatzz](https://github.com/zzstoatzz) in [#6533](https://github.com/PrefectHQ/fastmcp/pull/6533)
+* Quote tool names in generated SKILL.md invocations by [@zzstoatzz](https://github.com/zzstoatzz) in [#6534](https://github.com/PrefectHQ/fastmcp/pull/6534)
+* Keep provider required_scopes when a custom token_verifier is passed by [@zzstoatzz](https://github.com/zzstoatzz) in [#6535](https://github.com/PrefectHQ/fastmcp/pull/6535)
+* Add issuer binding to OAuth pre-registered clients by [@zzstoatzz](https://github.com/zzstoatzz) in [#6536](https://github.com/PrefectHQ/fastmcp/pull/6536)
+### Fixes 🐞
+* Keep middleware edits to a returned CallToolResult by [@Max17190](https://github.com/Max17190) in [#6520](https://github.com/PrefectHQ/fastmcp/pull/6520)
+* fix(resources): coerce template parameters from resolved hints by [@67-luck](https://github.com/67-luck) in [#6471](https://github.com/PrefectHQ/fastmcp/pull/6471)
+### Enhancements ✨
+* Allow py-key-value-aio 0.5.x by [@strawgate](https://github.com/strawgate) in [#6521](https://github.com/PrefectHQ/fastmcp/pull/6521)
+### Docs 📚
+* Add 4.2 to the what's new page and match the 4.2.0 changelog to the release by [@zzstoatzz](https://github.com/zzstoatzz) in [#6493](https://github.com/PrefectHQ/fastmcp/pull/6493)
+### Other Changes 🦾
+* Fix nightly upgrade checks: declare httpx, adopt ty 0.0.100 by [@zzstoatzz](https://github.com/zzstoatzz) in [#6517](https://github.com/PrefectHQ/fastmcp/pull/6517)
+* Give triage's assess agent public facts about the people on an issue by [@zzstoatzz](https://github.com/zzstoatzz) in [#6486](https://github.com/PrefectHQ/fastmcp/pull/6486)
+* Restore Marvin labeling and reopen disputed duplicates by [@zzstoatzz](https://github.com/zzstoatzz) in [#6495](https://github.com/PrefectHQ/fastmcp/pull/6495)
+* chore(deps): Update dependency opentelemetry-api to v1.45.2 [SECURITY] by @prefect-renovate[bot] in https://github.com/PrefectHQ/fastmcp/pull/6505
+* chore(deps): Update dependency dnspython to v2.9.2 [SECURITY] by @prefect-renovate[bot] in https://github.com/PrefectHQ/fastmcp/pull/6506
+
+## New Contributors
+* @Max17190 made their first contribution in [#6520](https://github.com/PrefectHQ/fastmcp/pull/6520)
+* @ratomirjovanovic made their first contribution in [#6512](https://github.com/PrefectHQ/fastmcp/pull/6512)
+
+**Full Changelog**: [v4.2.0...v4.2.1](https://github.com/PrefectHQ/fastmcp/compare/v4.2.0...v4.2.1)
+
+</Update>
+
 <Update label="v4.2.0" description="2026-11-13">
 
 **[v4.2.0: Mad Skills](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0)**

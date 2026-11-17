@@ -474,7 +474,7 @@ class TestCallToolAppRouting:
         result = await server.call_tool(
             hashed_backend_name("contacts", "save"), {"name": "alice"}
         )
-        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_call_tool_model_visible_uses_display_name(self):
         """Tools with visibility=['app','model'] are callable by display name."""
@@ -488,7 +488,7 @@ class TestCallToolAppRouting:
         server.add_provider(app)
 
         result = await server.call_tool("save", {"name": "bob"})
-        assert result.content[0].text == "saved bob"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "saved bob"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_hashed_name_survives_namespace_mount(self):
         """The hash identifies a tool independently of its name. A FastMCPApp
@@ -508,7 +508,7 @@ class TestCallToolAppRouting:
         result = await server.call_tool(
             hashed_backend_name("crm", "save_contact"), {"name": "alice"}
         )
-        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_namespaced_display_name_also_works(self):
         """Model-visible tools still resolve through Namespace as before."""
@@ -522,7 +522,7 @@ class TestCallToolAppRouting:
         server.add_provider(app, namespace="crm")
 
         result = await server.call_tool("crm_save_contact", {"name": "bob"})
-        assert result.content[0].text == "saved bob"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "saved bob"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_hashed_name_auth_blocks_unauthorized(self):
         """Auth checks run on the hashed-name dispatch path too."""
@@ -567,7 +567,7 @@ class TestCallToolAppRouting:
             return "display"
 
         result = await server.call_tool(address, {})
-        assert result.content[0].text == "display"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "display"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_two_apps_same_tool_name_routed_by_address(self):
         """Two FastMCPApps each with a `save` tool live at distinct
@@ -597,8 +597,8 @@ class TestCallToolAppRouting:
             hashed_backend_name("billing", "save"), {"amount": "100"}
         )
 
-        assert r1.content[0].text == "contact: alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
-        assert r2.content[0].text == "invoice: 100"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert r1.content[0].text == "contact: alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
+        assert r2.content[0].text == "invoice: 100"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
 
 # ---------------------------------------------------------------------------
@@ -699,7 +699,7 @@ class TestAppOnlyToolVisibility:
         result = await server.call_tool(
             hashed_backend_name("contacts", "save"), {"name": "alice"}
         )
-        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_app_only_tool_callable_by_display_name(self):
         """App-only tools resolve normally; the host decides who may call them."""
@@ -716,7 +716,7 @@ class TestAppOnlyToolVisibility:
         assert tool is not None
 
         result = await server.call_tool("save", {"name": "alice"})
-        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_app_only_tool_namespaced_in_list_tools(self):
         """Namespacing renames app-only tools like any other tool."""
@@ -878,8 +878,8 @@ class TestComposition:
             hashed_backend_name("Billing", "create_invoice"), {"amount": 100}
         )
 
-        assert r1.content[0].text == "alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
-        assert r2.content[0].text == "100"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert r1.content[0].text == "alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
+        assert r2.content[0].text == "100"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_ui_and_tool_on_same_app(self):
         app = FastMCPApp("test")
@@ -961,6 +961,6 @@ class TestAppIntegration:
             hashed_backend_name("contacts", "save_contact"),
             {"name": "Alice", "email": "alice@example.com"},
         )
-        result_text = backend_result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        result_text = backend_result.content[0].text  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         assert "Alice" in result_text
         assert "alice@example.com" in result_text

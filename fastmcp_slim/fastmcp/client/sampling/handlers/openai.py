@@ -485,18 +485,18 @@ class OpenAISamplingHandler:
                 func = tool_call.function
                 # Parse the arguments JSON string
                 try:
-                    arguments = json.loads(func.arguments)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+                    arguments = json.loads(func.arguments)  # type: ignore[union-attr]  # ty:ignore[missing-attribute]
                 except json.JSONDecodeError as e:
                     raise ValueError(
                         f"Invalid JSON in tool arguments for "
-                        f"'{func.name}': {func.arguments}"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+                        f"'{func.name}': {func.arguments}"  # type: ignore[union-attr]  # ty:ignore[missing-attribute]
                     ) from e
 
                 content.append(
                     ToolUseContent(
                         type="tool_use",
                         id=tool_call.id,
-                        name=func.name,  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+                        name=func.name,  # type: ignore[union-attr]  # ty:ignore[missing-attribute]
                         input=arguments,
                     )
                 )

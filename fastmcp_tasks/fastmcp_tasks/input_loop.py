@@ -215,5 +215,5 @@ def reentrant_task_fn(
     # unwraps to `fn`; set it explicitly too, so a dependency injector reading
     # `__signature__` directly (rather than following `__wrapped__`) still sees
     # the tool's real parameters.
-    wrapper.__signature__ = inspect.signature(fn)  # ty: ignore[unresolved-attribute]
+    wrapper.__signature__ = inspect.signature(fn)  # ty: ignore[missing-attribute]
     return wrapper
