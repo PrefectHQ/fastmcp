@@ -122,6 +122,9 @@ class UpstreamTokenSet(BaseModel):
     client_id: str  # MCP client this is bound to
     created_at: float  # Unix timestamp
     raw_token_data: dict[str, Any] = Field(default_factory=dict)  # Full token response
+    # Claims re-extracted at the most recent upstream refresh. None until a
+    # refresh happens; an empty dict means the refresh yielded no claims.
+    upstream_claims: dict[str, Any] | None = None
 
 
 class JTIMapping(BaseModel):
