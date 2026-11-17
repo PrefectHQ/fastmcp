@@ -337,7 +337,7 @@ jobs:
         run: python3 fastmcp/tests/downstream/_harness.py junit.xml "agno ${{ needs.plan.outputs.agno }} MCP test suite"
 
   phoenix-suite:
-    name: phoenix test suite
+    name: Phoenix test suite
     needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -400,7 +400,7 @@ jobs:
         env:
           PHOENIX_MASK_INTERNAL_SERVER_ERRORS: "false"
         run: >-
-          $UV_RUN --quiet pytest -q -n 4
+          $UV_RUN --quiet pytest -q -n 4 --timeout 360
           --junitxml=$GITHUB_WORKSPACE/junit.xml
           unit/server/test_app_mcp_mount.py
           unit/server/test_mcp_code_mode.py
@@ -413,6 +413,9 @@ jobs:
           unit/server/test_app_docs_mcp_lifespan.py
           unit/server/test_bearer_auth.py
           unit/server/test_well_known_path_inserted.py
+          unit/server/test_anonymous_cors.py
+          unit/server/agents/test_agents_router.py::test_chat_turn_hands_the_agent_the_phoenix_mcp_server
+          unit/pxi/evals/test_agent_backend.py::test_shared_mcp_server_supports_concurrent_examples
 
       - name: Summarize
         if: always() && hashFiles('junit.xml') != ''
