@@ -229,7 +229,17 @@ class ToolResult(BaseModel):
         list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]] | CallToolResult
     ):
         if self._raw_mcp_result is not None:
-            return self._raw_mcp_result
+            # Keep the protocol object's other fields, but take the public ones
+            # from self so response middleware edits reach the wire, including
+            # when it uses model_copy().
+            return self._raw_mcp_result.model_copy(
+                update={
+                    "content": self.content,
+                    "structured_content": self.structured_content,
+                    "meta": self.meta,
+                    "is_error": self.is_error,
+                }
+            )
 
         # An error result must round-trip through CallToolResult so isError
         # reaches the client; the plain content/tuple returns can't carry it.
