@@ -267,6 +267,7 @@ class DescopeProvider(RemoteAuthProvider):
             scopes_supported=parsed_scopes_supported,
             resource_name=resource_name,
             resource_documentation=resource_documentation,
+            required_scopes=parsed_required_scopes,
         )
 
     async def _get_scopes_supported(self) -> list[str] | None:

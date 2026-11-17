@@ -579,6 +579,7 @@ class RemoteAuthProvider(AuthProvider):
         resource_name: str | None = None,
         resource_documentation: AnyHttpUrl | None = None,
         challenge_scopes: list[str] | None = None,
+        required_scopes: list[str] | None = None,
     ):
         """Initialize the remote auth provider.
 
@@ -600,11 +601,18 @@ class RemoteAuthProvider(AuthProvider):
                 When omitted, scope translation delegates to the token verifier.
             resource_name: Optional name for the protected resource
             resource_documentation: Optional documentation URL for the protected resource
+            required_scopes: Scopes required for all requests. If None, uses the
+                token verifier's required_scopes. Pass this when the verifier was
+                built separately, so the server-wide scope check still applies.
         """
         super().__init__(
             base_url=base_url,
             resource_base_url=resource_base_url,
-            required_scopes=token_verifier.required_scopes,
+            required_scopes=(
+                required_scopes
+                if required_scopes is not None
+                else token_verifier.required_scopes
+            ),
         )
         self.token_verifier = token_verifier
         self.authorization_servers = authorization_servers

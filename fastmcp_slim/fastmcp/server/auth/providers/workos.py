@@ -421,6 +421,7 @@ class AuthKitProvider(RemoteAuthProvider):
             scopes_supported=scopes_supported,
             resource_name=resource_name,
             resource_documentation=resource_documentation,
+            required_scopes=parsed_scopes,
         )
 
     def set_mcp_path(self, mcp_path: str | None) -> None:
