@@ -216,7 +216,7 @@ def build_regex(template: str) -> re.Pattern[str] | None:
         if part.startswith("{") and part.endswith("}"):
             name = part[1:-1]
             if in_query:
-                group = name.removesuffix("*").replace("-", "_")
+                group = template_param_key(name.removesuffix("*"))
                 pattern += f"(?P<{group}>[^&]*)"
             elif name.endswith("*"):
                 name = name[:-1]
