@@ -376,6 +376,22 @@ class OAuth(OAuthClientProvider):
             self.context.client_info = self._static_client_info
             await self.token_storage_adapter.set_client_info(self._static_client_info)
 
+        # Authorization server metadata isn't persisted, so refreshing a
+        # reloaded token would fall back to the MCP server's own /token
+        # endpoint and send the issuer-bound secret there unchecked. Drop the
+        # refresh token so the next 401 rediscovers and checks the issuer.
+        tokens = self.context.current_tokens
+        if (
+            self._issuer is not None
+            and self._static_client_info is not None
+            and self.context.oauth_metadata is None
+            and tokens is not None
+            and tokens.refresh_token is not None
+        ):
+            self.context.current_tokens = tokens.model_copy(
+                update={"refresh_token": None}
+            )
+
         if self.context.current_tokens and self.context.current_tokens.expires_in:
             stored_expiry = await self.token_storage_adapter.get_token_expiry()
             if stored_expiry is not None:

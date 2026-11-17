@@ -77,3 +77,41 @@ async def test_without_issuer_behavior_is_unchanged():
     oauth = OAuth(mcp_url=MCP_URL, client_id="pre-registered", client_secret="S3CRET")
     requested = await drive_until_metadata(oauth, "https://other.example")
     assert requested[-1].startswith("https://other.example/.well-known/")
+
+
+async def test_reloaded_refresh_token_is_not_sent_before_issuer_check():
+    from key_value.aio.stores.memory import MemoryStore
+    from mcp.shared.auth import OAuthToken
+
+    storage = MemoryStore()
+    seed = OAuth(
+        mcp_url=MCP_URL,
+        client_id="pre-registered",
+        client_secret="S3CRET",
+        issuer=LEGIT_ISSUER,
+        token_storage=storage,
+    )
+    adapter = seed.token_storage_adapter
+    await adapter.set_tokens(
+        OAuthToken(access_token="old", expires_in=60, refresh_token="refresh-me")
+    )
+    # Persisted access token has since expired.
+    await storage.put(
+        key=adapter._get_token_expiry_cache_key(),
+        value={"expires_at": 1.0},
+        collection="mcp-oauth-token-expiry",
+    )
+
+    oauth = OAuth(
+        mcp_url=MCP_URL,
+        client_id="pre-registered",
+        client_secret="S3CRET",
+        issuer=LEGIT_ISSUER,
+        token_storage=storage,
+    )
+    flow = oauth.async_auth_flow(httpx2.Request("POST", MCP_URL))
+    first = await flow.__anext__()
+    await flow.aclose()
+    # No refresh request to the MCP origin's fallback /token endpoint.
+    assert str(first.url) == MCP_URL
+    assert b"S3CRET" not in first.content
