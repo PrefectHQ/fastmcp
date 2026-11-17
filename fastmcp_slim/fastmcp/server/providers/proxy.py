@@ -13,6 +13,8 @@ import json
 import time
 import warnings
 from collections.abc import Awaitable, Callable, Coroutine, Sequence
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast
@@ -1468,12 +1470,16 @@ class ProxyMetadataMiddleware(Middleware):
         result = await call_next(context)
         if result is None:
             return None
-        if isinstance(client, ProxyClient) and context.message is not None:
-            # The front connection commits its capabilities only after this
-            # handshake, so read them from the request. A stateful client opened
-            # here is kept for the whole connection.
-            client._mirror_front_capabilities(context.message.params.capabilities)
-        upstream = await self._read_upstream(client, context.fastmcp_context)
+        # The front connection commits its capabilities only after this
+        # handshake, so a backend session opened here reads them from the
+        # request. A stateful client opened here is kept for the whole connection.
+        token = _initializing_front_capabilities.set(
+            context.message.params.capabilities if context.message else None
+        )
+        try:
+            upstream = await self._read_upstream(client, context.fastmcp_context)
+        finally:
+            _initializing_front_capabilities.reset(token)
         if upstream is None:
             return result
         return result.model_copy(update=self._updates(result, upstream))
@@ -1499,6 +1505,12 @@ class ProxyMetadataMiddleware(Middleware):
 # -----------------------------------------------------------------------------
 # Factory Functions
 # -----------------------------------------------------------------------------
+
+
+_initializing_front_capabilities: ContextVar[mcp_types.ClientCapabilities | None] = (
+    ContextVar("_initializing_front_capabilities", default=None)
+)
+"""Capabilities from a front `initialize` request, before the connection commits them."""
 
 
 def _front_request_context() -> FastMCPRequestContext | None:
@@ -2012,27 +2024,32 @@ class ProxyClient(Client[ClientTransportT]):
             _with_proxy_transport_options(self._transport_options),
             forward_incoming_headers=forward_incoming_headers,
         )
-        self._mirror_active_front_capabilities()
 
-    def _mirror_active_front_capabilities(self) -> None:
-        """Mirror the capabilities of the front request this client is built in."""
-        rc = _front_request_context()
-        if rc is not None:
-            self._mirror_front_capabilities(rc.session.client_capabilities)
+    @asynccontextmanager
+    async def _context_manager(self):
+        # Each backend session declares the relays of the front request that
+        # opens it, including on a client shared between front connections.
+        self._mirror_front_capabilities()
+        async with super()._context_manager():
+            yield
 
-    def _mirror_front_capabilities(
-        self, capabilities: mcp_types.ClientCapabilities | None
-    ) -> None:
+    def _mirror_front_capabilities(self) -> None:
         """Declare to the backend only the relayed features the front client declared.
 
         The default relays forward roots, sampling, and elicitation requests to
         the front client. Declaring one the front client lacks hides that from
         the backend, so a backend that falls back for such clients sends a
         request the front client can only reject. Handlers passed explicitly
-        answer on the proxy itself and stay declared. Applies to the next
-        connection this client opens.
+        answer on the proxy itself and stay declared. Outside a front request
+        every relay stays declared.
         """
         self._bind_restoring_handlers()
+        capabilities = _initializing_front_capabilities.get()
+        if capabilities is None:
+            rc = _front_request_context()
+            if rc is None:
+                return
+            capabilities = rc.session.client_capabilities
         capabilities = capabilities or mcp_types.ClientCapabilities()
         keys = self._proxy_restoring_handler_keys
         if "roots" in keys and capabilities.roots is None:
@@ -2086,7 +2103,6 @@ class ProxyClient(Client[ClientTransportT]):
             self._proxy_restoring_handler_keys
         )
         new_client._bind_restoring_handlers()
-        new_client._mirror_active_front_capabilities()
         return new_client
 
 

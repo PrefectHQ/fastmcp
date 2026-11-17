@@ -81,6 +81,10 @@ def backend() -> FastMCP:
     async def confirm_resource(ctx: Context) -> str | InputRequiredResult:
         return await _confirm(ctx)
 
+    @mcp.resource("data://confirm/{item}")
+    async def confirm_template(item: str, ctx: Context) -> str | InputRequiredResult:
+        return await _confirm(ctx)
+
     @mcp.prompt
     async def confirm_prompt(ctx: Context) -> str | InputRequiredResult:
         return await _confirm(ctx)
@@ -138,8 +142,10 @@ async def test_resource_and_prompt_input_through_pinned_backend(
     proxy = create_proxy(backend, mode="auto")
     async with _front_client(proxy, "legacy", elicit) as client:
         contents = await client.read_resource("data://confirm")
+        templated = await client.read_resource("data://confirm/files")
         prompt = await client.get_prompt("confirm_prompt")
     assert contents[0].text == expected
+    assert templated[0].text == expected
     assert prompt.messages[0].content.text == expected
 
 
@@ -178,3 +184,15 @@ async def test_stateful_proxy_mirrors_initialize_capabilities(
     finally:
         await stateful.clear()
     assert first.data == second.data == expected
+
+
+async def test_shared_client_declares_each_callers_capabilities(backend: FastMCP):
+    """A client shared across front connections follows the request that connects it."""
+    shared = ProxyClient(backend).new()
+    proxy = FastMCPProxy(client_factory=lambda: shared)
+    async with _front_client(proxy, "legacy", elicit=True) as eliciting:
+        async with _front_client(proxy, "legacy", elicit=False) as plain:
+            fallback = await plain.call_tool("confirm_delete", {})
+        confirmed = await eliciting.call_tool("confirm_delete", {})
+    assert fallback.data == FALLBACK
+    assert confirmed.data == "confirmed: accept"
