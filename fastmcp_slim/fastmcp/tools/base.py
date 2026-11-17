@@ -214,9 +214,14 @@ class ToolResult(BaseModel):
     @classmethod
     def from_mcp_result(cls, result: CallToolResult) -> ToolResult:
         """Wrap a protocol result while preserving its exact wire representation."""
+        # Dump nested models with the options the SDK uses to serialize a
+        # result, so aliases and omitted None fields match the wire.
+        structured_content = result.model_dump(
+            by_alias=True, exclude_none=True, include={"structured_content"}
+        ).get("structuredContent")
         tool_result = cls(
             content=result.content,
-            structured_content=result.structured_content,
+            structured_content=structured_content,
             meta=result.meta,
             is_error=result.is_error,
         )

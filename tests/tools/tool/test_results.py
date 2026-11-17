@@ -162,6 +162,25 @@ class TestToolResultIsError:
         received["_meta"] = user_meta(received["_meta"])
         assert received == raw_result.model_dump(by_alias=True)
 
+    async def test_raw_call_tool_result_serializes_nested_models_like_the_wire(self):
+        class Usage(BaseModel):
+            token_count: int = Field(serialization_alias="tokenCount")
+            note: str | None = None
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def report() -> CallToolResult:
+            return CallToolResult(
+                content=[TextContent(type="text", text="ok")],
+                structured_content={"usage": Usage(token_count=3)},
+            )
+
+        async with Client(mcp) as client:
+            result = await client.call_tool_mcp("report", {})
+
+        assert result.structured_content == {"usage": {"tokenCount": 3}}
+
     @pytest.mark.parametrize("edit", ["in_place", "model_copy"])
     async def test_raw_call_tool_result_carries_middleware_edits(self, edit: str):
         class EditResult(Middleware):
