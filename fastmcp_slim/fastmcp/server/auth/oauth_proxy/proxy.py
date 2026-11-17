@@ -1996,18 +1996,25 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Guard against past expiry (e.g. existing upstream refresh has already
         # ticked past its recorded expiry). Storage TTL must be > 0.
         refresh_ttl = max(refresh_ttl, 1)
-        await self._upstream_token_store.put(
-            key=upstream_token_set.upstream_token_id,
-            value=upstream_token_set,
-            ttl=max(
-                refresh_ttl, new_expires_in, fastmcp_access_expires_in, 1
-            ),  # Keep until longest-lived token expires (min 1s for safety)
-        )
 
-        # Re-extract upstream claims from refreshed token response
-        upstream_claims = await self._extract_upstream_claims(
-            upstream_token_set.raw_token_data
-        )
+        # Re-extract upstream claims from refreshed token response. Record them
+        # on the token set as well, so load_access_token serves them for every
+        # FastMCP token that points at this upstream session. The refreshed
+        # (possibly rotated) upstream tokens are persisted even if the
+        # extraction raises.
+        try:
+            upstream_claims = await self._extract_upstream_claims(
+                upstream_token_set.raw_token_data
+            )
+            upstream_token_set.upstream_claims = upstream_claims or {}
+        finally:
+            await self._upstream_token_store.put(
+                key=upstream_token_set.upstream_token_id,
+                value=upstream_token_set,
+                ttl=max(
+                    refresh_ttl, new_expires_in, fastmcp_access_expires_in, 1
+                ),  # Keep until longest-lived token expires (min 1s for safety)
+            )
 
         # Issue new minimal FastMCP access token (just a reference via JTI)
         if client.client_id is None:
@@ -2199,6 +2206,21 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             **upstream_token_set.raw_token_data,
             **token_response,
         }
+
+        # Re-extract upstream claims from the refreshed token response, as the
+        # refresh grant does. The FastMCP JWT cannot be re-issued here, so the
+        # claims are recorded on the token set and load_access_token prefers
+        # them over the copy embedded in the JWT at issuance. A failed
+        # extraction must not lose the (possibly rotated) upstream tokens, so
+        # it drops the claims instead of raising.
+        try:
+            refreshed_claims = await self._extract_upstream_claims(
+                upstream_token_set.raw_token_data
+            )
+        except Exception as e:
+            logger.debug("Upstream claim extraction failed after refresh: %s", e)
+            refreshed_claims = None
+        upstream_token_set.upstream_claims = refreshed_claims or {}
 
         refresh_ttl = new_refresh_expires_in or (
             int(upstream_token_set.refresh_token_expires_at - time.time())
@@ -2409,9 +2431,16 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     )
                     return None
 
-            # Propagate upstream claims from the verified FastMCP JWT into the
+            # The upstream session may have been refreshed since this JWT was
+            # issued. The claims extracted at that refresh are the current ones;
+            # the copy embedded in the JWT dates from issuance.
+            if upstream_token_set.upstream_claims is not None:
+                upstream_claims = upstream_token_set.upstream_claims
+
+            # Propagate upstream claims (recorded at the latest refresh, or
+            # else embedded in the verified FastMCP JWT at issuance) into the
             # final AccessToken object. This allows subclasses to access custom
-            # identity data extracted during the initial authorization flow.
+            # identity data extracted from the upstream token response.
             # We perform a model copy to avoid mutating a potentially cached
             # reference shared across concurrent requests.
             if validated and upstream_claims:
