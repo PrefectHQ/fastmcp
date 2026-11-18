@@ -238,6 +238,36 @@ class TestBooleanSchemas:
         assert result.name is None  # type: ignore[attr-defined]
         assert result.count == 0  # type: ignore[attr-defined]
 
+    @pytest.mark.parametrize("default", [None, True, 0, "x", ["a"]])
+    @pytest.mark.parametrize("value", [{}, {"key": None}])
+    def test_non_object_default_on_object_property(self, default, value):
+        """A non-object default on an object property does not break validation.
+
+        `default` is an annotation, so a provided object validates whatever
+        the default holds; there is nothing to merge into it.
+        """
+        schema = {
+            "type": "object",
+            "properties": {"meta": {"type": "object", "default": default}},
+        }
+        validator = TypeAdapter(json_schema_to_type(schema))
+        result = validator.validate_python({"meta": value})
+        assert result.meta == value  # type: ignore[attr-defined]
+
+    def test_object_default_still_merges_into_provided_object(self):
+        """The fix above leaves fastmcp's existing object-default merge unchanged."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "meta": {"type": "object", "default": {"region": "us", "tier": 1}}
+            },
+        }
+        validator = TypeAdapter(json_schema_to_type(schema))
+        result = validator.validate_python({"meta": {}})
+        assert result.meta == {"region": "us", "tier": 1}  # type: ignore[attr-defined]
+        result = validator.validate_python({"meta": {"tier": 2}})
+        assert result.meta == {"region": "us", "tier": 2}  # type: ignore[attr-defined]
+
 
 class TestConstrainedTypes:
     def test_constant(self):

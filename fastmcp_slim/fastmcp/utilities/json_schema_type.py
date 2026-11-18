@@ -1569,8 +1569,8 @@ def _merge_defaults(
         # Start with parent default if available
         if parent_default:
             result = dict(parent_default)
-        # Otherwise use schema default if available
-        elif "default" in schema:
+        # Otherwise use schema default if it is an object to merge
+        elif isinstance(schema.get("default"), Mapping):
             result = dict(schema["default"])
         # Otherwise start empty
         else:
@@ -1617,6 +1617,10 @@ def _merge_defaults(
                 nested_default = parent_default[prop_name]
             elif "default" in prop_schema:
                 nested_default = prop_schema["default"]
+            # `default` is an annotation and need not match the property's
+            # type; only an object default has keys to merge.
+            if not isinstance(nested_default, Mapping):
+                nested_default = None
 
             result[prop_name] = _merge_defaults(
                 result[prop_name],
