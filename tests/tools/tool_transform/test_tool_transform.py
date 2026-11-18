@@ -157,6 +157,41 @@ async def test_tool_defaults_are_maintained_on_mapped_args(add_tool):
     assert result.structured_content == {"result": 11}
 
 
+async def test_copied_tool_does_not_forward_serialized_schema_default():
+    """Regression test for #6499: a copied tool must not replace the parent's
+    Python-level default with the serialized JSON schema default.
+
+    Pydantic serializes a SecretStr default as "**********" in the JSON
+    schema; forwarding that string would shadow the real default.
+    """
+    from pydantic import SecretStr
+
+    @Tool.from_function
+    def connect(token: SecretStr = SecretStr("s3cr3t")) -> str:
+        return f"using token {token.get_secret_value()}"
+
+    copied = Tool.from_tool(connect, name="connect_renamed")
+    result = await copied.run(arguments={})
+    assert result.structured_content == {"result": "using token s3cr3t"}
+
+
+async def test_transform_fn_default_is_not_replaced_by_serialized_schema_default():
+    """Regression test for #6499: a default declared on a transform_fn must
+    reach the function as its Python value, not its JSON schema serialization."""
+    from pydantic import SecretStr
+
+    @Tool.from_function
+    def connect(token: str = "parent-default") -> str:
+        return token
+
+    async def custom(token: SecretStr = SecretStr("s3cr3t")) -> str:
+        return f"using token {token.get_secret_value()}"
+
+    transformed = Tool.from_tool(connect, transform_fn=custom)
+    result = await transformed.run(arguments={})
+    assert result.structured_content == {"result": "using token s3cr3t"}
+
+
 def test_tool_change_arg_name(add_tool):
     new_tool = Tool.from_tool(
         add_tool, transform_args={"old_x": ArgTransform(name="new_x")}

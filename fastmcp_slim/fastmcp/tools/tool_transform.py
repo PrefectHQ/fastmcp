@@ -328,36 +328,29 @@ class TransformedTool(Tool):
             ToolResult object containing content and optional structured output.
         """
 
-        # Fill in missing arguments with schema defaults to ensure
-        # ArgTransform defaults take precedence over function defaults
+        # Fill in missing arguments only for defaults the transform itself
+        # introduced via ArgTransform. Defaults inherited from the parent's
+        # schema are serialized snapshots (e.g. "**********" for a SecretStr);
+        # forwarding one would override the parent's own Python-level default
+        # with that lossy value, so those parameters are left unset for the
+        # parent (or the transform_fn signature) to fill in.
         arguments = arguments.copy()
         properties = self.parameters.get("properties", {})
 
-        for param_name, param_schema in properties.items():
-            if param_name not in arguments and "default" in param_schema:
-                # Check if this parameter has a default_factory from transform_args
-                # We need to call the factory for each run, not use the cached schema value
-                has_factory_default = False
-                if self.transform_args:
-                    # Find the original parameter name that maps to this param_name
-                    for orig_name, transform in self.transform_args.items():
-                        transform_name = (
-                            transform.name
-                            if transform.name is not NotSet
-                            else orig_name
-                        )
-                        if (
-                            transform_name == param_name
-                            and transform.default_factory is not NotSet
-                        ):
-                            # Type check to ensure default_factory is callable
-                            if callable(transform.default_factory):
-                                arguments[param_name] = transform.default_factory()
-                                has_factory_default = True
-                                break
+        for orig_name, transform in (self.transform_args or {}).items():
+            if transform.default is NotSet:
+                continue
 
-                if not has_factory_default:
-                    arguments[param_name] = param_schema["default"]
+            new_name = transform.name if transform.name is not NotSet else orig_name
+            if not isinstance(new_name, str):
+                new_name = orig_name
+
+            # Hidden parameters aren't in the schema; the forwarding function
+            # injects their defaults instead.
+            if new_name not in properties or new_name in arguments:
+                continue
+
+            arguments[new_name] = transform.default
 
         token = _current_tool.set(self)
         try:
