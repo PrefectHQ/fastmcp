@@ -6,6 +6,26 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.2.2" description="2026-11-18">
+
+**[v4.2.2: Tea for Two (Too)](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.2)**
+
+FastMCP 4.2.2 fixes skills discovery for tool-only clients. Adding a server transform such as `ResourcesAsTools` made `skills/list` come back empty even though the `skill://` files stayed readable; skills are now listed whenever their files are actually served. Thanks to our 2 contributors, including 1 first-time contributor.
+
+### Fixes 🐞
+* Keep skills discovery on with tool-only server transforms by [@zzstoatzz](https://github.com/zzstoatzz) and [@anchapin](https://github.com/anchapin) in [#6548](https://github.com/PrefectHQ/fastmcp/pull/6548)
+### Docs 📚
+* docs: rename v4.2.1 to 4, 2, 1... Liftoff by [@zzstoatzz](https://github.com/zzstoatzz) in [#6540](https://github.com/PrefectHQ/fastmcp/pull/6540)
+### Other Changes 🦾
+* Run Arize Phoenix's MCP tests in the downstream smoke by [@zzstoatzz](https://github.com/zzstoatzz) in [#6542](https://github.com/PrefectHQ/fastmcp/pull/6542)
+
+## New Contributors
+* @anchapin made their first contribution in [#6548](https://github.com/PrefectHQ/fastmcp/pull/6548)
+
+**Full Changelog**: [v4.2.1...v4.2.2](https://github.com/PrefectHQ/fastmcp/compare/v4.2.1...v4.2.2)
+
+</Update>
+
 <Update label="v4.2.1" description="2026-11-17">
 
 **[v4.2.1: 4, 2, 1... Liftoff](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.1)**
