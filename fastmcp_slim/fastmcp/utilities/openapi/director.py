@@ -276,6 +276,34 @@ def _prepare_parameter_map(
     return prepared, parameter_map
 
 
+def _missing_path_arguments(
+    route: HTTPRoute,
+    parameter_map: dict[str, dict[str, str]],
+    arguments: dict[str, Any],
+) -> list[str]:
+    """Name the arguments for declared path parameters that have no value.
+
+    A path parameter is satisfied when any argument mapped to it is present and
+    not None; `build` drops None path values, so null counts as missing. Only
+    parameters that appear in the path template and that the caller can supply
+    through the parameter map are checked. A template placeholder with no
+    declared parameter is a spec fault, which `build` still reports.
+    """
+    template_names = set(_PATH_TEMPLATE_PARAM.findall(route.path))
+    aliases: dict[str, list[str]] = {}
+    for arg_name, mapping in parameter_map.items():
+        if mapping["location"] == "path":
+            aliases.setdefault(mapping["openapi_name"], []).append(arg_name)
+    missing = []
+    for param in route.parameters:
+        if param.location != "path" or param.name not in template_names:
+            continue
+        names = aliases.get(param.name)
+        if names and all(arguments.get(name) is None for name in names):
+            missing.append(names[0])
+    return missing
+
+
 class RequestDirector:
     """Builds httpx2.Request objects from HTTPRoute and arguments using openapi-core."""
 
