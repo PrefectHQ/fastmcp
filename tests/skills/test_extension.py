@@ -20,7 +20,7 @@ from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from fastmcp.server.providers import Provider
-from fastmcp.server.transforms import Namespace, ResourcesAsTools
+from fastmcp.server.transforms import Namespace, ResourcesAsTools, Transform
 from fastmcp.skills import MCPSkill, SkillsClientExtension
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
 from fastmcp.skills.extension import SkillsExtension
@@ -411,6 +411,18 @@ async def test_extension_accepts_tool_only_server_transform() -> None:
         assert [entry.uri for entry in await client.list_skills()] == [
             "skill://review/SKILL.md"
         ]
+
+
+def test_extension_rejects_server_transform_that_changes_resources() -> None:
+    class HideResources(Transform):
+        async def list_resources(self, resources):
+            return []
+
+    provider = MemorySkillProvider(listed=[])
+    server = FastMCP("skills", providers=[provider], transforms=[HideResources()])
+
+    with pytest.raises(ValueError, match="server-level transforms"):
+        server.add_extension(SkillsExtension(providers=[provider]))
 
 
 async def test_extension_rejects_transform_added_after_registration() -> None:

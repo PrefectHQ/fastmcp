@@ -50,10 +50,13 @@ def _changes_resources(transform: Transform) -> bool:
 
     Skill entries name the resource URIs a client reads, and this extension
     doesn't map them through server transforms. A transform that only adds
-    tools, like `ResourcesAsTools`, leaves those URIs alone.
+    tools, like `ResourcesAsTools`, leaves those URIs alone. Resources only
+    pass through these hooks, so any override, on the class or the instance,
+    counts as a change.
     """
     return any(
-        getattr(type(transform), hook) is not getattr(Transform, hook)
+        getattr(getattr(transform, hook), "__func__", None)
+        is not getattr(Transform, hook)
         for hook in _RESOURCE_HOOKS
     )
 
