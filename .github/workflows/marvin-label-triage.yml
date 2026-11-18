@@ -112,6 +112,7 @@ jobs:
 
           SPECIAL CATEGORY (can be combined with above):
           - breaking change: Changes that break backward compatibility (in addition to core category)
+          - found-by-pbt: Apply when the issue or PR says the bug was found by property-based testing (e.g. hypothesis, "found by property-based testing")
 
           PRIORITY (apply if clearly evident):
           - high-priority: Critical bugs affecting many users, security issues, or blocking core functionality
