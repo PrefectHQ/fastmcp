@@ -2499,10 +2499,35 @@ class FastMCP(
                 to override namespaced names. Keys are the original tool names from the
                 mounted server.
         """
+        from fastmcp.server.providers.aggregate import AggregateProvider
         from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
+        from fastmcp.server.providers.wrapped_provider import _WrappedProvider
 
         if server is self:
             raise ValueError("Cannot mount a server onto itself")
+
+        # Reject indirect cycles (e.g. A -> B -> A) before client connect hits RecursionError.
+        visited_providers: set[int] = set()
+        visited_servers: set[int] = {id(server)}
+        stack: list[Provider] = list(server.providers)
+        while stack:
+            p = stack.pop()
+            if id(p) in visited_providers:
+                continue
+            visited_providers.add(id(p))
+            if isinstance(p, FastMCPProvider):
+                if p.server is self:
+                    raise ValueError(
+                        f"Cannot mount server {server.name!r} onto {self.name!r}: "
+                        "would create a mount cycle"
+                    )
+                if id(p.server) not in visited_servers:
+                    visited_servers.add(id(p.server))
+                    stack.extend(p.server.providers)
+            elif isinstance(p, _WrappedProvider):
+                stack.append(p._inner)
+            elif isinstance(p, AggregateProvider):
+                stack.extend(p.providers)
 
         # Warn if parent masks errors but child doesn't (or vice versa)
         if self._mask_error_details and not server._mask_error_details:
