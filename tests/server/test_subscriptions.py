@@ -162,6 +162,30 @@ async def test_every_open_stream_receives_a_broadcast(server: FastMCP):
             assert await _next_event(sub_b) == ToolsListChanged()
 
 
+@pytest.mark.parametrize("namespace", [None, "child"])
+async def test_mounted_server_notify_reaches_parent_listeners(
+    server: FastMCP, namespace: str | None
+):
+    child = FastMCP("child")
+
+    @child.tool
+    async def grow(ctx: Context) -> str:
+        ctx.fastmcp.add_tool(Tool.from_function(lambda: "x", name="grown"))
+        await ctx.fastmcp.notify_tools_changed()
+        return "ok"
+
+    server.mount(child, namespace=namespace)
+    grow_name = "child_grow" if namespace else "grow"
+
+    async with Client(server) as client:
+        async with client.listen(tools_list_changed=True) as subscription:
+            await client.call_tool(grow_name)
+            assert await _next_event(subscription) == ToolsListChanged()
+
+            await child.notify_tools_changed()
+            assert await _next_event(subscription) == ToolsListChanged()
+
+
 async def test_notify_without_listeners_is_a_noop(server: FastMCP):
     await server.notify_tools_changed()
     await server.notify_prompts_changed()

@@ -465,8 +465,8 @@ class LowLevelServer(_Server[LifespanResultT]):
         # supplied (and answers METHOD_NOT_FOUND without one); with it, the
         # modern-era `listChanged`/`subscribe` capabilities are advertised.
         # `FastMCP.notify_*` publishes to this bus.
-        self._subscriptions: SubscriptionBus = InMemorySubscriptionBus()
-        kwargs.setdefault("on_subscriptions_listen", ListenHandler(self._subscriptions))
+        self.subscriptions: SubscriptionBus = InMemorySubscriptionBus()
+        kwargs.setdefault("on_subscriptions_listen", ListenHandler(self.subscriptions))
         super().__init__(*args, **kwargs)
         # Store a weak reference to FastMCP to avoid circular references
         self._fastmcp_ref: weakref.ref[FastMCP] = weakref.ref(fastmcp)
