@@ -172,6 +172,14 @@ Background task traces have two parts:
 
 Span links preserve the causal relationship without forcing worker sampling to inherit the submit trace's sampling decision. Some tracing backends do not display links prominently, so the worker trace may look disconnected even though the link is present.
 
+To keep the whole request in one trace, make the worker span a child of the submission instead:
+
+```python
+mcp.add_extension(TasksExtension(parent_task_spans=True))
+```
+
+Or set `FASTMCP_DOCKET_PARENT_TASK_SPANS=true`. The span link is still recorded. With a `ParentBased` sampler, the execution now follows the submit trace's sampling decision, so a task submitted from an unsampled trace is not recorded.
+
 Frequent status polling can produce more detail than you need. You can drop those client and server spans with a sampler that checks the span name before delegating to `ParentBased`:
 
 ```python

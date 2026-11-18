@@ -1076,7 +1076,7 @@ dependencies = [
 requires-dist = [
     { name = "cryptography", specifier = ">=43.0.0" },
     { name = "fastmcp-slim", extras = ["server"], editable = "fastmcp_slim" },
-    { name = "pydocket", specifier = ">=0.26.1" },
+    { name = "pydocket", specifier = ">=0.29.1" },
     { name = "redis", specifier = "!=8.1.0" },
 ]
 
@@ -2358,7 +2358,7 @@ wheels = [
 
 [[package]]
 name = "pydocket"
-version = "0.26.1"
+version = "0.29.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "burner-redis" },
@@ -2375,9 +2375,9 @@ dependencies = [
     { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "uncalled-for" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/77/36/97b4b18fe41a6814cdb58cd8b40b41df1618b3f9104043dd3fb3e7cc2317/pydocket-0.26.1.tar.gz", hash = "sha256:1032d3a3c1442a648761b1a23590bb8baee35f5b381002c1149b117decf20cec", size = 320084, upload-time = "2026-10-05T17:39:37.534Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b4/e0/9c582614ceb099d15b23829c1499059312d9846ad4b405f1132c64cd768d/pydocket-0.29.1.tar.gz", hash = "sha256:d02ab943d9616aea44295011f5a21345f78f08c11ef5c819ab19fe8224f62791", size = 342486, upload-time = "2026-11-18T23:38:25.332Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f2/3b/97dc5b1011a4768414a8549fac4085530cb5c48c4f29b921aedae12210e2/pydocket-0.26.1-py3-none-any.whl", hash = "sha256:250d1ab13c1f9baf338902d3e05ca1b1bb69247e7332033b6eff6eb41c820c4b", size = 152056, upload-time = "2026-10-05T17:39:36.184Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/37/5bf4de96fd7a2effd9cdd3e68f6a372f49d398940982063060ae24871d8b/pydocket-0.29.1-py3-none-any.whl", hash = "sha256:aac1b26d3e993314f6b92c9957b09c3dd9bfa1d942ef46dbe6c906757b2cc94d", size = 157757, upload-time = "2026-11-18T23:38:23.204Z" },
 ]
 
 [[package]]
