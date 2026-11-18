@@ -71,4 +71,9 @@ class KeycloakAuthProvider(RemoteAuthProvider):
             token_verifier=token_verifier,
             authorization_servers=[AnyHttpUrl(self.realm_url)],
             base_url=AnyHttpUrl(str(base_url).rstrip("/")),
+            # Only an explicit list applies to a custom verifier; the implicit
+            # ["openid"] default belongs to the default verifier above.
+            required_scopes=(
+                parse_scopes(required_scopes) if required_scopes is not None else None
+            ),
         )

@@ -9,9 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-import httpx2
 from pydantic import AnyHttpUrl
-from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
@@ -132,6 +130,7 @@ class SupabaseProvider(RemoteAuthProvider):
             scopes_supported=scopes_supported,
             resource_name=resource_name,
             resource_documentation=resource_documentation,
+            required_scopes=parsed_scopes,
         )
 
     def get_routes(
@@ -151,23 +150,13 @@ class SupabaseProvider(RemoteAuthProvider):
         routes = super().get_routes(mcp_path)
 
         async def oauth_authorization_server_metadata(request):
-            """Forward Supabase OAuth authorization server metadata with FastMCP customizations."""
-            try:
-                async with httpx2.AsyncClient() as client:
-                    response = await client.get(
-                        f"{self.project_url}/{self.auth_route}/.well-known/oauth-authorization-server"
-                    )
-                    response.raise_for_status()
-                    metadata = response.json()
-                    return JSONResponse(metadata)
-            except Exception as e:
-                return JSONResponse(
-                    {
-                        "error": "server_error",
-                        "error_description": f"Failed to fetch Supabase metadata: {e}",
-                    },
-                    status_code=500,
-                )
+            """Forward Supabase OAuth authorization server metadata (cached)."""
+            return await self._forward_authorization_server_metadata(
+                [
+                    f"{self.project_url}/{self.auth_route}/.well-known/oauth-authorization-server"
+                ],
+                "Supabase",
+            )
 
         # Add Supabase authorization server metadata forwarding
         routes.append(
