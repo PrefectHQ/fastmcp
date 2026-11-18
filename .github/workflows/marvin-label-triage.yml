@@ -206,7 +206,7 @@ jobs:
             | ($core + [
                 "breaking change", "high-priority", "low-priority", "needs more info",
                 "invalid", "too-long", "cli", "client", "server", "auth", "openapi",
-                "http", "contrib", "tests", "security", "dependencies", "DON\u0027T MERGE"
+                "http", "contrib", "tests", "security", "found-by-pbt", "dependencies", "DON\u0027T MERGE"
               ]) as $allowed
             | .labels
             | if type != "array" then error("Expected a labels array") else unique end
