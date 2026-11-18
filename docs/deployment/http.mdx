@@ -368,7 +368,15 @@ The `retry_interval` parameter (in milliseconds) controls how long clients wait 
 
 #### Custom Storage Backends
 
-By default, `EventStore` uses in-memory storage. For production deployments with multiple server instances, you can provide a custom storage backend using the `key_value` package:
+By default, `EventStore` uses in-memory storage. For production deployments with multiple server instances, you can provide a custom storage backend using the `key_value` package.
+
+The Redis example requires an optional dependency. Install it before running the example:
+
+```bash
+pip install "py-key-value-aio[redis]"
+```
+
+See [Redis storage](/servers/storage-backends#redis) for more configuration options.
 
 ```python
 from fastmcp import FastMCP
@@ -821,6 +829,14 @@ Production requires explicit key management to ensure tokens survive restarts an
 2. **Persistent network-accessible storage** for upstream tokens (wrapped in `FernetEncryptionWrapper` to encrypt sensitive data at rest)
 
 **Configuration:**
+
+The Redis example below requires the optional Redis dependency:
+
+```bash
+pip install "py-key-value-aio[redis]"
+```
+
+See [Redis storage](/servers/storage-backends#redis) for more configuration options.
 
 Add two parameters to your auth provider:
 
