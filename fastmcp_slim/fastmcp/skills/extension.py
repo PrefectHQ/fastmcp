@@ -71,11 +71,6 @@ class SkillsExtension(ServerExtension):
     def _validate_configuration(
         self, server: FastMCP, providers: Sequence[Provider]
     ) -> None:
-        if server.transforms:
-            raise ValueError(
-                "SkillsExtension does not yet support server-level transforms"
-            )
-
         for provider in providers:
             if not any(registered is provider for registered in server.providers):
                 raise ValueError(
@@ -106,8 +101,6 @@ class SkillsExtension(ServerExtension):
                 for provider in self._providers
                 if isinstance(provider, _SkillSource)
             )
-        if server.transforms:
-            return ()
         # Deferred so that registering Skills doesn't load the client stack.
         from fastmcp.skills._proxy import _proxied_source
 

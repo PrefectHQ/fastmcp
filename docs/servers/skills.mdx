@@ -206,6 +206,7 @@ A server without the Skills extension, such as one on FastMCP 4.1, has no `skill
 ## Current limits
 
 - A provider added with a namespace or other transforms isn't discoverable; mount a server instead.
+- A server-level transform that renames or hides a skill's files, like `Namespace`, leaves that skill out, since its entry would name URIs the server no longer serves; mount a server instead. Transforms that only add tools, like `ResourcesAsTools`, are fine.
 - A proxied skill whose manifest is `"dynamic"` is left out, since the gateway can't check its files.
 - `directoryRead` isn't implemented.
 

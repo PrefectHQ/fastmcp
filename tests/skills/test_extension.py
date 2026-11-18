@@ -393,14 +393,6 @@ def test_extension_rejects_transformed_provider() -> None:
         server.add_extension(SkillsExtension(providers=[provider]))
 
 
-def test_extension_rejects_server_level_transform() -> None:
-    provider = MemorySkillProvider(listed=[])
-    server = FastMCP("skills", providers=[provider], transforms=[Namespace("docs")])
-
-    with pytest.raises(ValueError, match="server-level transforms"):
-        server.add_extension(SkillsExtension(providers=[provider]))
-
-
 async def test_extension_rejects_transform_added_after_registration() -> None:
     provider = MemorySkillProvider(listed=[])
     server = make_server(provider)
