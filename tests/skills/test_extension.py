@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -20,7 +21,7 @@ from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from fastmcp.server.providers import Provider
-from fastmcp.server.transforms import Namespace
+from fastmcp.server.transforms import Namespace, ResourcesAsTools
 from fastmcp.skills import MCPSkill, SkillsClientExtension
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
 from fastmcp.skills.extension import SkillsExtension
@@ -31,6 +32,7 @@ from fastmcp.skills.models import (
     ListSkillsParams,
     ListSkillsResult,
 )
+from fastmcp.skills.provider import SkillsDirectoryProvider
 from fastmcp.utilities.versions import VersionSpec
 
 SKILL_CONTENT = "# Review\n"
@@ -399,6 +401,43 @@ def test_extension_rejects_server_level_transform() -> None:
 
     with pytest.raises(ValueError, match="server-level transforms"):
         server.add_extension(SkillsExtension(providers=[provider]))
+
+
+async def test_resources_as_tools_keeps_directory_skills_discoverable(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "review"
+    folder.mkdir()
+    (folder / "SKILL.md").write_bytes(
+        b"---\nname: review\ndescription: Review changes\n---\n# Review\n"
+    )
+    server = FastMCP(
+        "Team Skills",
+        providers=[SkillsDirectoryProvider(tmp_path)],
+    )
+
+    async with skills_client(server) as client:
+        assert [entry.uri for entry in await client.list_skills()] == [
+            "skill://review/SKILL.md"
+        ]
+
+    server.add_transform(ResourcesAsTools(server))
+
+    async with skills_client(server) as client:
+        assert [entry.uri for entry in await client.list_skills()] == [
+            "skill://review/SKILL.md"
+        ]
+
+
+async def test_explicit_extension_allows_resources_as_tools() -> None:
+    skill = make_skill("review")
+    provider = MemorySkillProvider(listed=[skill])
+    server = FastMCP("skills", providers=[provider])
+    server.add_transform(ResourcesAsTools(server))
+    server.add_extension(SkillsExtension(providers=[provider]))
+
+    async with skills_client(server) as client:
+        assert [entry.uri for entry in await client.list_skills()] == [skill.uri]
 
 
 async def test_extension_rejects_transform_added_after_registration() -> None:

@@ -15,6 +15,7 @@ from fastmcp.server.context import Context
 from fastmcp.server.extensions import MethodBinding, ServerExtension
 from fastmcp.server.mixins.mcp_operations import _apply_pagination
 from fastmcp.server.providers.base import Provider
+from fastmcp.server.transforms import Transform
 from fastmcp.skills._composition import _mounted_source
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
 from fastmcp.skills._source import _SkillSource
@@ -35,6 +36,26 @@ logger = get_logger(__name__)
 
 _SKILLS_METHOD_VERSIONS = frozenset(MODERN_PROTOCOL_VERSIONS)
 _T = TypeVar("_T")
+_RESOURCE_METHODS = (
+    "list_resources",
+    "get_resource",
+    "list_resource_templates",
+    "get_resource_template",
+)
+
+
+def _changes_served_resources(transform: Transform) -> bool:
+    """Whether `transform` overrides resource listing or lookup.
+
+    Skill entries name the URIs a client reads. Tool-only transforms such as
+    `ResourcesAsTools` leave those URIs alone, so discovery can keep serving
+    them. A transform that rewrites or filters resources can disagree with
+    `resources/read`, and this extension does not remap skill URIs through it.
+    """
+    cls = type(transform)
+    return any(
+        getattr(cls, name) is not getattr(Transform, name) for name in _RESOURCE_METHODS
+    )
 
 
 class SkillsExtension(ServerExtension):
@@ -46,6 +67,10 @@ class SkillsExtension(ServerExtension):
     `ProxyProvider(..., skills=True)`, and the skills of mounted servers,
     rewritten to the URIs the parent serves them at. Pass `providers` to limit
     discovery to an explicit list of directly registered skill providers.
+    Server transforms that only add tools, such as `ResourcesAsTools`, leave
+    that discovery in place. Transforms that override resource listing or
+    lookup are still unsupported, because skill URIs are not remapped through
+    them.
     """
 
     identifier = SKILLS_EXTENSION_ID
@@ -71,7 +96,7 @@ class SkillsExtension(ServerExtension):
     def _validate_configuration(
         self, server: FastMCP, providers: Sequence[Provider]
     ) -> None:
-        if server.transforms:
+        if any(_changes_served_resources(transform) for transform in server.transforms):
             raise ValueError(
                 "SkillsExtension does not yet support server-level transforms"
             )
@@ -106,7 +131,7 @@ class SkillsExtension(ServerExtension):
                 for provider in self._providers
                 if isinstance(provider, _SkillSource)
             )
-        if server.transforms:
+        if any(_changes_served_resources(transform) for transform in server.transforms):
             return ()
         # Deferred so that registering Skills doesn't load the client stack.
         from fastmcp.skills._proxy import _proxied_source
