@@ -4,6 +4,7 @@ import io
 import json as _json
 import re
 from email.message import Message
+from http.cookiejar import CookieJar
 from typing import Any, ClassVar
 from urllib.parse import quote, unquote
 
@@ -288,6 +289,8 @@ class RequestDirector:
         route: HTTPRoute,
         flat_args: dict[str, Any],
         base_url: str = "http://localhost",
+        *,
+        cookie_jar: CookieJar | None = None,
     ) -> httpx2.Request:
         """
         Constructs a final httpx2.Request object, handling all OpenAPI serialization.
@@ -296,6 +299,7 @@ class RequestDirector:
             route: HTTPRoute containing OpenAPI operation details
             flat_args: Flattened arguments from LLM (may include suffixed parameters)
             base_url: Base URL for the request
+            cookie_jar: Client cookies to merge with declared cookie parameters
 
         Returns:
             httpx2.Request: Properly formatted HTTP request
@@ -363,11 +367,14 @@ class RequestDirector:
 
         # httpx requires cookie values to be strings; use OpenAPI-style
         # serialization (e.g. true/false for booleans, not True/False)
-        cookies = (
-            {k: _query_scalar_to_str(v) for k, v in cookie_params.items()}
-            if cookie_params
-            else None
-        )
+        cookies = None
+        if cookie_params:
+            # Preserve client cookie scopes and leave the shared jar untouched.
+            cookies = httpx2.Cookies()
+            cookies.update(cookie_jar)
+            cookies.update(
+                {k: _query_scalar_to_str(v) for k, v in cookie_params.items()}
+            )
 
         # Step 6: Handle request body — dispatch on declared content type.
         # httpx body kwargs (json, content, data, files) are mutually exclusive
