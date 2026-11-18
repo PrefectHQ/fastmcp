@@ -226,6 +226,8 @@ def build_regex(template: str) -> re.Pattern[str] | None:
         else:
             pattern += _literal_pattern(part)
             in_query = in_query or "?" in part
+    if _has_literal_query(template) and extract_query_params(template):
+        pattern += r"(?:&(.*))?"
     try:
         return re.compile(f"^{pattern}$")
     except re.error:
@@ -260,7 +262,8 @@ def match_uri_template(
         uri = uri.partition("#")[0]
     # Likewise a template that spells out a literal `?` (`search://items?q={q}`)
     # carries its query in the path pattern, so there is nothing to split off.
-    if _has_literal_query(uri_template):
+    has_literal_query = _has_literal_query(uri_template)
+    if has_literal_query:
         uri_path, query_string = uri, ""
     else:
         uri_path, _, query_string = uri.partition("?")
@@ -275,6 +278,8 @@ def match_uri_template(
         return None
 
     params: dict[str, Any] = {k: unquote(v) for k, v in match.groupdict().items()}
+    if has_literal_query and extract_query_params(uri_template) and match.groups():
+        query_string = match.groups()[-1] or ""
 
     # Extract query parameters if present in URI and template
     if query_string:
@@ -414,7 +419,16 @@ def forward_uri(uri_template: str, params: dict[str, Any], uri: str) -> str:
     path_template = re.sub(r"\{[?&][^}]+\}", "", uri_template)
     forwarded = expand_uri_template(path_template, params)
     if _has_literal_query(uri_template):
-        # The query is literal template text, so the expansion already has it.
+        # The literal query is already expanded; preserve any `{&...}`
+        # continuation tail from the incoming URI byte for byte.
+        if extract_query_params(uri_template):
+            clean_uri = uri.partition("#")[0] if "#" not in uri_template else uri
+            _, _, incoming_query = clean_uri.partition("?")
+            _, _, literal_query = forwarded.partition("?")
+            literal_parts = literal_query.count("&") + 1 if literal_query else 0
+            incoming_parts = incoming_query.split("&", literal_parts)
+            if len(incoming_parts) > literal_parts and incoming_parts[literal_parts]:
+                return f"{forwarded}&{incoming_parts[literal_parts]}"
         return forwarded
     _, _, query = uri.partition("?")
     return f"{forwarded}?{query}" if query else forwarded
