@@ -10,7 +10,7 @@ from mcp_types import BlobResourceContents, TextResourceContents
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.middleware.authorization import AuthMiddleware
-from fastmcp.server.transforms import Namespace
+from fastmcp.server.transforms import Namespace, ResourcesAsTools
 from fastmcp.skills import MCPSkill, Skill, SkillsClientExtension
 from fastmcp.skills.provider import SkillCatalogProvider, SkillsDirectoryProvider
 
@@ -139,6 +139,34 @@ async def test_server_transforms_disable_discovery_without_failing_mount():
     async with skills_client(parent) as client:
         assert await client.list_skills() == []
         assert len(await client.list_resources()) == 3
+
+
+async def test_tool_only_server_transform_keeps_discovery(tmp_path: Path):
+    """The 4.2 recipe: a skills directory plus ResourcesAsTools for tool-only clients."""
+    folder = tmp_path / "review"
+    folder.mkdir()
+    (folder / "SKILL.md").write_bytes(
+        b"---\nname: review\ndescription: Review a PR\n---\n# Review\n"
+    )
+    server = FastMCP("Team Skills", providers=[SkillsDirectoryProvider(tmp_path)])
+    server.add_transform(ResourcesAsTools(server))
+    async with skills_client(server) as client:
+        (entry,) = await client.list_skills()
+        assert entry.uri == "skill://review/SKILL.md"
+        assert await client.get_skill(entry.uri) == entry
+        await assert_files_match(client, entry)
+        tools = {tool.name for tool in await client.list_tools()}
+        assert tools == {"list_resources", "read_resource"}
+
+
+async def test_tool_only_server_transform_keeps_mounted_skills():
+    parent = FastMCP("Parent")
+    parent.add_transform(ResourcesAsTools(parent))
+    parent.mount(child())
+    async with skills_client(parent) as client:
+        (entry,) = await client.list_skills()
+        assert entry.uri == "skill://review/SKILL.md"
+        await assert_files_match(client, entry)
 
 
 async def test_hidden_parent_resource_hides_mounted_folder_file(tmp_path: Path):
