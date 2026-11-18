@@ -12,6 +12,7 @@ from fastmcp import Client, FastMCP
 from fastmcp.server.middleware.authorization import AuthMiddleware
 from fastmcp.server.transforms import Namespace, ResourcesAsTools
 from fastmcp.skills import MCPSkill, Skill, SkillsClientExtension
+from fastmcp.skills.extension import SkillsExtension
 from fastmcp.skills.provider import SkillCatalogProvider, SkillsDirectoryProvider
 
 REVIEW = Skill(
@@ -167,6 +168,26 @@ async def test_tool_only_server_transform_keeps_mounted_skills():
         (entry,) = await client.list_skills()
         assert entry.uri == "skill://review/SKILL.md"
         await assert_files_match(client, entry)
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+async def test_server_transform_that_moves_files_leaves_skill_out(
+    tmp_path: Path, explicit: bool
+):
+    folder = tmp_path / "review"
+    folder.mkdir()
+    (folder / "SKILL.md").write_bytes(
+        b"---\nname: review\ndescription: Review a PR\n---\n# Review\n"
+    )
+    provider = SkillsDirectoryProvider(tmp_path)
+    server = FastMCP("Team Skills", providers=[provider])
+    server.add_transform(Namespace("docs"))
+    if explicit:
+        server.add_extension(SkillsExtension(providers=[provider]))
+    async with skills_client(server) as client:
+        assert await client.list_skills() == []
+        with pytest.raises(MCPError):
+            await client.get_skill("skill://review/SKILL.md")
 
 
 async def test_hidden_parent_resource_hides_mounted_folder_file(tmp_path: Path):
