@@ -166,6 +166,32 @@ class ToolCacheHandler(MessageHandler):
 client = Client(Path("server.py"), message_handler=ToolCacheHandler())
 ```
 
+## Listening for Changes
+
+<VersionBadge version="4.3.0" />
+
+On the `2026-07-28` protocol, the server has no standing channel to the client, so list change and resource update notifications arrive only on a stream the client opens with `listen()`. Pass the kinds of change you want; each event means "this changed, refetch if you care":
+
+```python
+from pathlib import Path
+
+from fastmcp import Client
+
+client = Client(Path("my_mcp_server.py"))
+
+
+async def watch_tools() -> None:
+    async with client:
+        async with client.listen(tools_list_changed=True) as subscription:
+            async for event in subscription:
+                tools = await client.list_tools()
+                print(f"Tools changed: {[tool.name for tool in tools]}")
+```
+
+`listen()` also accepts `prompts_list_changed`, `resources_list_changed`, and `resource_subscriptions` (a list of resource URIs). While a stream is open, its events also reach the message handler. With [response caching](/clients/client#response-caching) enabled, the matching cached list is cleared before each event is yielded, so refetching right away returns the new list.
+
+A stream ends when the server closes it or the connection drops. Events are not replayed, so open a new stream and refetch after reconnecting. On a handshake-era connection `listen()` raises `ListenNotSupportedError`, and notifications reach the message handler without one.
+
 ## Server Requests
 
 The message handler receives only notifications and transport exceptions; server-initiated requests never reach it. Answer those through the client's dedicated parameters:

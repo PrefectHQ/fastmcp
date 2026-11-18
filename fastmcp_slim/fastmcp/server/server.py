@@ -35,6 +35,12 @@ import pydantic_core
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.request_state import RequestStateSecurity
 from mcp.shared.exceptions import MCPError
+from mcp.shared.subscriptions import (
+    PromptsListChanged,
+    ResourcesListChanged,
+    ResourceUpdated,
+    ToolsListChanged,
+)
 from mcp_types import (
     Annotations,
     CallToolRequestParams,
@@ -1942,6 +1948,40 @@ class FastMCP(
             The tool instance that was added to the server.
         """
         return self._local_provider.add_tool(tool)
+
+    async def notify_tools_changed(self) -> None:
+        """Tell listening clients that this server's tool list changed.
+
+        Publishes to every open `subscriptions/listen` stream that asked for
+        tool changes, so it works from background tasks with no request in
+        flight. Reaches clients on the 2026-07-28 protocol only; on handshake-era
+        connections, send `notifications/tools/list_changed` from a request with
+        `Context.send_notification`. Adding or removing tools never calls this
+        automatically.
+        """
+        await self._mcp_server._subscriptions.publish(ToolsListChanged())
+
+    async def notify_prompts_changed(self) -> None:
+        """Tell listening clients that this server's prompt list changed.
+
+        See `notify_tools_changed` for delivery semantics.
+        """
+        await self._mcp_server._subscriptions.publish(PromptsListChanged())
+
+    async def notify_resources_changed(self) -> None:
+        """Tell listening clients that this server's resource list changed.
+
+        See `notify_tools_changed` for delivery semantics.
+        """
+        await self._mcp_server._subscriptions.publish(ResourcesListChanged())
+
+    async def notify_resource_updated(self, uri: str | AnyUrl) -> None:
+        """Tell clients listening to `uri` that the resource changed.
+
+        Matches `uri` exactly against the URIs each stream subscribed to. See
+        `notify_tools_changed` for delivery semantics.
+        """
+        await self._mcp_server._subscriptions.publish(ResourceUpdated(uri=str(uri)))
 
     def _get_tool_input_schema(self, name: str) -> dict[str, Any] | None:
         """Synchronous lookup served to the SDK's `get_tool_input_schema` hook
