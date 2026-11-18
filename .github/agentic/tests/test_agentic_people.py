@@ -83,7 +83,7 @@ def test_cards_give_the_agent_what_a_maintainer_would_glance_at():
         "prs_elsewhere_last_6_months": 214,
         "repos_in_newest_100_of_those": 40,
     }
-    assert result["reporter_prs_opened_hours_after_issue"] == {8: 1.5}
+    assert result["reporter_prs_opened_hours_after_issue"] == {"8": 1.5}
 
 
 def test_a_failed_lookup_leaves_a_gap_instead_of_failing_the_assessment():

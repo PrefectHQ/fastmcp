@@ -68,8 +68,10 @@ def people(evidence: dict, read: Read, now: datetime) -> dict:
     cards = {login: card(login, read, now) for login in logins}
     try:
         opened = read(f"repos/{REPO}/issues/{issue['number']}")["created_at"]
+        # String keys: this lands in flow run parameters, which round-trip
+        # through JSON, and int keys would come back as strings.
         timing = {
-            pr["number"]: _hours(
+            str(pr["number"]): _hours(
                 opened, read(f"repos/{REPO}/pulls/{pr['number']}")["created_at"]
             )
             for pr in evidence["prs"]

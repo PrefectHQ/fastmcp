@@ -465,13 +465,22 @@ def announce(owner: UUID, state: dict) -> None:
     """Emit the Slack outcome when any admitted issue now waits on a maintainer."""
     if not state["review"]:
         return
-    lines = outcome_lines(state["review"], state.get("issues", []))
+    lines = outcome_lines(state["review"], state.get("issues", []), live_item)
     if lines:
         emit_event(
             event="fastmcp.triage.outcome",
             resource={"prefect.resource.id": f"fastmcp.triage.intake.{owner}"},
             payload={"text": "\n".join(lines)},
         )
+
+
+def live_item(number: int) -> dict | None:
+    """Current GitHub state of an issue or PR; None when it can't be read."""
+    try:
+        current = github(f"repos/PrefectHQ/fastmcp/issues/{number}")
+    except (RuntimeError, ValueError, OSError, subprocess.SubprocessError):
+        return None
+    return current if isinstance(current, dict) else None
 
 
 # Evidence that moved during the run is requeued by `settle`, and the GitHub
