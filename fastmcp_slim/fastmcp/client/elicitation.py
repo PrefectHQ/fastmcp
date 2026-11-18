@@ -20,7 +20,7 @@ T = TypeVar("T", default=Any)
 
 
 class ElicitResult(MCPElicitResult, Generic[T]):
-    content: T | None = None  # ty:ignore[invalid-attribute-override]
+    content: T | None = None  # ty:ignore[incompatible-attribute-override]
 
 
 ElicitationHandler: TypeAlias = Callable[

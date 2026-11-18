@@ -57,6 +57,7 @@ You don't need to pass `mcp_url` when using `OAuth` with `Client(auth=...)` — 
 - **`client_name`** (`str`, optional): Client name for dynamic registration. Defaults to `"FastMCP Client"`
 - **`client_id`** (`str`, optional): Pre-registered OAuth client ID. When provided, skips Dynamic Client Registration entirely. See [Pre-Registered Clients](#pre-registered-clients)
 - **`client_secret`** (`str`, optional): OAuth client secret for pre-registered clients, sent to the token endpoint with `client_secret_post` unless `additional_client_metadata` sets `token_endpoint_auth_method`. Public clients that rely on PKCE can omit it
+- **`issuer`** (`str`, optional): Issuer of the authorization server that registered `client_id`. When set, the credentials are only sent to that server, and the flow fails if the MCP server advertises a different one. Pass it whenever you pass a `client_secret`
 - **`client_metadata_url`** (`str`, optional): URL-based client identity (CIMD). See [CIMD Authentication](/clients/auth/cimd) for details
 - **`token_storage`** (`AsyncKeyValue`, optional): Storage backend for persisting OAuth tokens. Defaults to in-memory storage, which loses tokens on restart and emits a warning. See [Token Storage](#token-storage) for encrypted storage options
 - **`additional_client_metadata`** (`dict[str, Any]`, optional): Extra metadata for client registration
@@ -186,10 +187,13 @@ async with Client(
     auth=OAuth(
         client_id="my-registered-client-id",
         client_secret="my-client-secret",
+        issuer="https://auth.example.com",
     ),
 ) as client:
     await client.list_tools()
 ```
+
+The MCP server tells the client which authorization server to use, so without `issuer` the client sends the secret to whichever one the server names. A malicious or compromised server could name its own and collect the secret. With `issuer` set, the client checks the advertised authorization server first and raises `OAuthFlowError` on a mismatch, before any credentials leave the client.
 
 Public clients that rely on PKCE for security can omit `client_secret`:
 

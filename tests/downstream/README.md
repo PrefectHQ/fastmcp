@@ -9,6 +9,7 @@ against servers started from the checkout.
 |---|---|---|
 | pydantic-ai test suite | pydantic-ai's own MCP tests at a pinned tag | wheels overlaid on pydantic-ai's locked environment, as their FastMCP 4 job does |
 | langchain test suite | `langchain.mcp`'s own unit and integration tests at a pinned tag | wheels overlaid on langchain's locked test environment |
+| Phoenix test suite | Arize Phoenix's own MCP tests at a pinned tag: its `/mcp` server built with `FastMCP.from_openapi` behind a subclassed code-mode transform and mounted through `http_app`, and its agent's FastMCP client | wheels overlaid on Phoenix's locked environment |
 | pydantic-ai smoke | `smoke_pydantic_ai.py` | client-only `fastmcp-slim[client]`, as `pydantic-ai-slim[mcp]` installs it |
 | langchain.mcp smoke | `smoke_langchain_mcp.py`, including a `ClientGroup` of a legacy HTTP server and a modern stdio server | `fastmcp`, as `langchain[mcp]` installs it |
 | agno test suite | agno's own `MCPTools` and AgentOS MCP tests at a pinned tag | wheels installed with agno the way agno's CI installs it |

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+import anyio
+import httpx2
 from joserfc.errors import JoseError
 from joserfc.jws import extract_compact
 from mcp.server.auth.handlers.metadata import MetadataHandler
@@ -51,6 +54,7 @@ from starlette.datastructures import FormData
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from fastmcp.utilities.logging import get_logger
@@ -64,7 +68,7 @@ logger = get_logger(__name__)
 class AccessToken(_SDKAccessToken):
     """AccessToken that includes all JWT claims."""
 
-    claims: dict[str, Any] = Field(default_factory=dict)  # ty:ignore[invalid-mutable-override]
+    claims: dict[str, Any] = Field(default_factory=dict)  # ty:ignore[incompatible-mutable-override]
     original_client_id: str | None = None
     """Client ID before MultiAuth qualified it with its configured source."""
 
@@ -579,6 +583,7 @@ class RemoteAuthProvider(AuthProvider):
         resource_name: str | None = None,
         resource_documentation: AnyHttpUrl | None = None,
         challenge_scopes: list[str] | None = None,
+        required_scopes: list[str] | None = None,
     ):
         """Initialize the remote auth provider.
 
@@ -600,14 +605,27 @@ class RemoteAuthProvider(AuthProvider):
                 When omitted, scope translation delegates to the token verifier.
             resource_name: Optional name for the protected resource
             resource_documentation: Optional documentation URL for the protected resource
+            required_scopes: Scopes required for all requests. If None, uses the
+                token verifier's required_scopes. Pass this when the verifier was
+                built separately, so the server-wide scope check still applies.
         """
         super().__init__(
             base_url=base_url,
             resource_base_url=resource_base_url,
-            required_scopes=token_verifier.required_scopes,
+            required_scopes=(
+                required_scopes
+                if required_scopes is not None
+                else token_verifier.required_scopes
+            ),
         )
         self.token_verifier = token_verifier
         self.authorization_servers = authorization_servers
+        # State of the forwarded authorization-server metadata cache; see
+        # _forward_authorization_server_metadata().
+        self._forwarded_metadata_lock: anyio.Lock | None = None
+        self._forwarded_metadata: Any = None
+        self._forwarded_metadata_expires_at = 0.0
+        self._forwarded_metadata_retry_at = 0.0
         self._scopes_supported = scopes_supported
         self._challenge_scopes = challenge_scopes
         self.resource_name = resource_name
@@ -640,6 +658,83 @@ class RemoteAuthProvider(AuthProvider):
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify token using the configured token verifier."""
         return await self.token_verifier.verify_token(token)
+
+    # Upstream authorization-server metadata forwarded by provider subclasses is
+    # served from a short-lived cache with a single in-flight refresh, so that an
+    # unauthenticated GET on the public /.well-known route is not turned into one
+    # upstream fetch per request.
+    FORWARDED_METADATA_TTL_SECONDS: float = 300.0
+    FORWARDED_METADATA_ERROR_TTL_SECONDS: float = 5.0
+
+    async def _forward_authorization_server_metadata(
+        self, metadata_urls: Sequence[str], provider_name: str
+    ) -> Response:
+        """Return the upstream authorization server metadata, cached per provider.
+
+        The first URL in ``metadata_urls`` that answers 2xx with a JSON body is
+        used. A document is served for ``FORWARDED_METADATA_TTL_SECONDS``; after
+        a failed refresh the previous document (if any) is served and no upstream
+        request is made for ``FORWARDED_METADATA_ERROR_TTL_SECONDS``. Refreshes
+        are serialised, so a burst arriving on a cold cache costs one request.
+        """
+        if self._forwarded_metadata_lock is None:
+            self._forwarded_metadata_lock = anyio.Lock()
+
+        def cached() -> Response | None:
+            if (
+                self._forwarded_metadata is not None
+                and time.monotonic() < self._forwarded_metadata_expires_at
+            ):
+                return JSONResponse(self._forwarded_metadata)
+            return None
+
+        if (response := cached()) is not None:
+            return response
+
+        async with self._forwarded_metadata_lock:
+            if (response := cached()) is not None:
+                return response
+
+            if time.monotonic() < self._forwarded_metadata_retry_at:
+                error = "upstream temporarily unavailable"
+            else:
+                last_error: Exception | None = None
+                try:
+                    async with httpx2.AsyncClient() as client:
+                        for metadata_url in metadata_urls:
+                            try:
+                                upstream = await client.get(metadata_url)
+                                upstream.raise_for_status()
+                                document = upstream.json()
+                            except Exception as e:
+                                last_error = e
+                                continue
+                            self._forwarded_metadata = document
+                            self._forwarded_metadata_expires_at = (
+                                time.monotonic() + self.FORWARDED_METADATA_TTL_SECONDS
+                            )
+                            return JSONResponse(document)
+                except Exception as e:
+                    last_error = e
+                self._forwarded_metadata_retry_at = (
+                    time.monotonic() + self.FORWARDED_METADATA_ERROR_TTL_SECONDS
+                )
+                logger.debug(
+                    "Failed to fetch %s metadata: %s", provider_name, last_error
+                )
+                error = str(last_error)
+
+            if self._forwarded_metadata is not None:
+                return JSONResponse(self._forwarded_metadata)
+            return JSONResponse(
+                {
+                    "error": "server_error",
+                    "error_description": (
+                        f"Failed to fetch {provider_name} metadata: {error}"
+                    ),
+                },
+                status_code=500,
+            )
 
     def get_routes(
         self,

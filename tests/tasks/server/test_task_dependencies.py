@@ -65,7 +65,7 @@ def dependency_server() -> FastMCP:
         injected_values.append(("multi_server", server))
         return f"{name} on {server.name}"
 
-    mcp._injected_values = injected_values  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    mcp._injected_values = injected_values  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
 
     return mcp
 
