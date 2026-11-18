@@ -30,6 +30,7 @@ from flows.agentic_freshness import revalidate
 from flows.agentic_github import can_write
 from flows.agentic_intake import evidence_revision, upgrade_policy_outcomes
 from flows.agentic_outcome import outcome_lines, subjects
+from flows.agentic_stack import same_json
 from flows.agentic_stack_policy import Batch
 from flows.agentic_stack_runtime import (
     Runtime,
@@ -54,7 +55,7 @@ def latest(key: str, owner: UUID | None = None) -> dict | None:
 def retain(owner: UUID, key: str, data: dict) -> None:
     previous = latest(key, owner)
     if previous is not None:
-        if previous != data:
+        if not same_json(previous, data):
             raise ValueError("Conflicting intake progress record")
         return
     with get_client(sync_client=True) as client:
@@ -209,7 +210,7 @@ def dispatch(plan: dict) -> UUID:
             if (
                 len(matches) != 1
                 or matches[0].idempotency_key != name
-                or matches[0].parameters != parameters
+                or not same_json(matches[0].parameters, parameters)
                 or matches[0].deployment_version != runtime.source_sha
             ):
                 raise ValueError("Controller identity or inputs changed")
