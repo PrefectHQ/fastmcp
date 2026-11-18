@@ -845,3 +845,36 @@ async def test_tool_argument_validation_maps_to_invalid_params(
 
     assert exc_info.value.error.code == -32602
     assert exc_info.value.error.message.startswith("Invalid params:")
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("mask_error_details", [False, True])
+@pytest.mark.parametrize("transform_errors", [False, True])
+async def test_unconvertible_arguments_preserve_invalid_params(
+    mode: Literal["auto", "legacy"], mask_error_details: bool, transform_errors: bool
+) -> None:
+    server = FastMCP(mask_error_details=mask_error_details)
+    server.add_middleware(
+        ErrorHandlingMiddleware()
+        if transform_errors
+        else ErrorHandlingMiddleware(transform_errors=False)
+    )
+
+    @server.prompt
+    def summarize(count: int) -> str:
+        return str(count)
+
+    @server.resource("data://{count}")
+    def get_data(count: int) -> str:
+        return str(count)
+
+    async with Client(server, mode=mode) as client:
+        with pytest.raises(MCPError) as prompt_exc:
+            await client.get_prompt("summarize", {"count": "zz"})
+        with pytest.raises(MCPError) as resource_exc:
+            await client.read_resource("data://zz")
+
+    assert prompt_exc.value.error.code == -32602
+    assert "Could not convert argument 'count'" in prompt_exc.value.error.message
+    assert resource_exc.value.error.code == -32602
+    assert "Invalid int value for count: 'zz'" in resource_exc.value.error.message
