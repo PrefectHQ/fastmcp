@@ -261,3 +261,52 @@ def test_native_stage_keeps_a_run_whose_parameters_round_trip_through_json(
 
     destination, result, _ = native.run_native_stage(uuid4(), pinned, "initial")
     assert (destination, result) == ("evidence", {"issue_number": 1})
+
+
+@pytest.mark.parametrize(
+    "decision,destination",
+    [
+        ("reproduced", "evidence"),
+        ("not_reproduced", "evidence"),
+        ("evidence_needed", "evidence"),
+        ("maintainer", "decisions"),
+        ("environment_failure", "operational"),
+    ],
+)
+def test_reproduction_outcomes_land_in_the_bin_a_maintainer_acts_on(
+    decision, destination
+):
+    from flows.agentic_triage_nodes import reproduction_destination
+
+    assert reproduction_destination(decision) == destination
+
+
+def test_durable_records_compare_as_json(monkeypatch):
+    """A rerun re-recording the same value must not conflict after a JSON trip."""
+    import flows.agentic_stack_runtime as runtime
+    from flows.agentic_stack import same_json
+
+    assert same_json({"6477": 1.5}, {6477: 1.5})
+    assert same_json([1, 2], (1, 2))
+    assert not same_json({"a": 1}, {"a": 2})
+
+    stored = SimpleNamespaceArtifact({"hours": {"6477": 1.5}})
+
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read_artifacts(self, **_):
+            return [stored]
+
+    monkeypatch.setattr(runtime, "get_client", lambda **_: Client())
+    assert runtime.record.fn(uuid4(), "key", {"hours": {6477: 1.5}}) == "stored-id"
+
+
+class SimpleNamespaceArtifact:
+    def __init__(self, data):
+        self.data = data
+        self.id = "stored-id"
