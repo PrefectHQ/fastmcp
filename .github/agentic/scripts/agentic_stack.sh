@@ -17,7 +17,7 @@ upsert() {
   else api POST "/$kind/" --data "@$body" | jq -er .id; fi
 }
 
-DEPLOYMENTS=(cloud-stack-batch cloud-contribution-verification cloud-triage-intake cloud-triage-verify cloud-triage-finalize)
+DEPLOYMENTS=(cloud-stack-batch cloud-contribution-verification cloud-triage-intake cloud-triage-verify cloud-triage-finalize cloud-triage-sweep)
 TRIGGERS=(fastmcp-triage-on-github-issue fastmcp-triage-on-github-pr)
 json_list() { printf '%s\n' "$@" | jq -R . | jq -sc .; }
 

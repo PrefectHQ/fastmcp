@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
-from prefect import flow, task
+from prefect import flow, get_run_logger, task
 from prefect.client.orchestration import get_client
 from prefect.client.schemas.actions import ArtifactCreate
 from prefect.client.schemas.filters import (
@@ -22,6 +22,7 @@ from prefect.client.schemas.sorting import ArtifactSort
 from prefect.context import FlowRunContext
 from prefect.events import emit_event
 from prefect.states import Completed
+from prefect.variables import Variable
 
 from flows.agentic_artifacts import plain, published_reviews, retain_markdown
 from flows.agentic_backlog import Intake, due, inventory, settle
@@ -29,7 +30,15 @@ from flows.agentic_claims import claim_work
 from flows.agentic_freshness import revalidate
 from flows.agentic_github import can_write
 from flows.agentic_intake import evidence_revision, upgrade_policy_outcomes
+from flows.agentic_labels import (
+    CONFIG_VARIABLE,
+    apply_writes,
+    mode,
+    planned_writes,
+    summary,
+)
 from flows.agentic_outcome import outcome_lines, subjects
+from flows.agentic_review_app import LABEL_PERMISSIONS, review_client
 from flows.agentic_stack import same_json
 from flows.agentic_stack_policy import Batch
 from flows.agentic_stack_runtime import (
@@ -454,6 +463,7 @@ def triage(
         time.sleep(5)
     result = finish(plan, owner, config.scope(), run_id)
     announce(owner, result)
+    write_labels(owner, config.scope(), runtime, result)
     reasons = attention(result["review"]) if result["review"] else []
     if reasons:
         return Completed(
@@ -472,6 +482,40 @@ def announce(owner: UUID, state: dict) -> None:
             event="fastmcp.triage.outcome",
             resource={"prefect.resource.id": f"fastmcp.triage.intake.{owner}"},
             payload={"text": "\n".join(lines)},
+        )
+
+
+def write_labels(owner: UUID, scope: str, runtime: Runtime, state: dict) -> None:
+    """Label reviewed outcomes so the repository's closers act on them.
+
+    A failure here is reported on the run but never fails the intake: the
+    outcome is already retained and announced.
+    """
+    if not state["review"]:
+        return
+    try:
+        current_mode = mode(Variable.get(CONFIG_VARIABLE, default={}))
+        if current_mode == "off":
+            return
+        writes = planned_writes(state["review"], live_item)
+        if writes and current_mode == "on":
+            app = runtime.reviewer_app
+            if app is None:
+                raise ValueError("Label writes require the triage GitHub App")
+            with review_client(
+                app, secret_sync(app.private_key_block), permissions=LABEL_PERMISSIONS
+            ) as client:
+                apply_writes(writes, client.request)
+        if writes:
+            retain_markdown(
+                owner, scope + "-github-writes", summary(writes, current_mode)
+            )
+    except Exception as error:  # noqa: BLE001 - reported, never fatal to intake
+        get_run_logger().warning("Label writes failed: %s", error)
+        emit_event(
+            event="fastmcp.triage.outcome",
+            resource={"prefect.resource.id": f"fastmcp.triage.intake.{owner}"},
+            payload={"text": f"Triage label writes failed: {str(error)[:300]}"},
         )
 
 
