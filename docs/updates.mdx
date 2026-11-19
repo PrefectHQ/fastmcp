@@ -75,6 +75,26 @@ Component authorization now applies after transforms, denied resources cannot fa
 </Card>
 </Update>
 
+<Update label="FastMCP 3.4.11" description="October 20, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.4.11: Trust Issues"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.11"
+cta="Read the release notes"
+>
+This release requires certifi 2026.10.19 or later for FastMCP's HTTP stack and certifi-backed integrations following the eMudhra CA compromise. Follow the [security notice](https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026) to update custom, system, and installer trust stores too; upgrading FastMCP alone is insufficient. Thanks to our 1 contributor, with no first-time contributors in this release.
+</Card>
+</Update>
+
+<Update label="FastMCP 3.4.10" description="October 20, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.4.10: Back in Check"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.10"
+cta="Read the release notes"
+>
+This release backports component authorization checks after transforms and prevents denied concrete resources from being served by matching templates. All 3.x users are encouraged to upgrade. Thanks to our 2 contributors, including 1 first-time contributor.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.1.1" description="October 17, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.1.1: Regex Marks the Spot"
@@ -82,6 +102,16 @@ href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.1"
 cta="Read the release notes"
 >
 Regex tool search now rejects patterns over 1,000 characters and stops after about a second, and `SkillsDirectoryProvider` discovers skill folders that are links again, including links to folders outside the skills root; a skill's own files must still resolve inside the folder it links to. All 4.x users are encouraged to upgrade. Thanks to our 4 contributors, including 1 first-time contributor.
+</Card>
+</Update>
+
+<Update label="FastMCP 3.4.9" description="October 16, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.4.9: Contain Yourself"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.9"
+cta="Read the release notes"
+>
+This release backports security fixes from 4.1: OpenAPI path parameters reject `.` and `..` segments, a skill's `SKILL.md` must stay inside its skill folder, regex tool search is bounded in time and pattern length, and JWT verifiers share JWKS refreshes instead of fetching on every unknown key ID. All 3.x users are encouraged to upgrade. Thanks to our 6 contributors, including 3 first-time contributors.
 </Card>
 </Update>
 
@@ -104,6 +134,16 @@ href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.11"
 cta="Read the release notes"
 >
 This release contains important security and bug fixes. All users are encouraged to upgrade. Thanks to our 10 contributors, including 6 first-time contributors.
+</Card>
+</Update>
+
+<Update label="FastMCP 3.4.8" description="October 4, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.4.8: Long Arm of the Patch"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.8"
+cta="Read the release notes"
+>
+This release contains important security and bug fixes. All users are encouraged to upgrade. Thanks to our 2 contributors.
 </Card>
 </Update>
 
