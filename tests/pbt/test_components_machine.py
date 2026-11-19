@@ -374,6 +374,11 @@ class ComponentMachine(RuleBasedStateMachine):
         versions = view.get(name, [])
         if version is None:
             want = f"{owner}:{ident}@{versions[0]}" if versions else None
+        elif versions == [None]:
+            # Documented: an unversioned component matches any requested
+            # version (docs/servers/versioning.mdx, F4 in FINDINGS.md).
+            want = f"{owner}:{ident}@None"
+            event(f"explicit version on unversioned {kind}")
         else:
             want = f"{owner}:{ident}@{version}" if version in versions else None
         try:
@@ -381,13 +386,6 @@ class ComponentMachine(RuleBasedStateMachine):
         except Exception as e:
             note(f"call {kind} {name}@{version} raised {e!r}"[:300])
             got = None
-        if (
-            version is not None
-            and versions == [None]
-            and got == f"{owner}:{ident}@None"
-        ):
-            event(f"known: F4 explicit version runs unversioned {kind}")
-            return
         event(f"call {kind}: {'ok' if want else 'error'} expected")
         note(f"call {kind} {name} version={version}: got {got!r}, want {want!r}")
         assert got == want, "a call ran a different component than the model"

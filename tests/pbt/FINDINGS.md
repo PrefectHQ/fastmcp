@@ -18,9 +18,10 @@ Mutant catch rates: `uv run python -m tests.pbt.mutants`.
 | json_schema adapter accepts valid | 10k | `schema_fixes`, 4 undo mutants at 10/10 (below) | F1, F2, F3, F5 |
 | component machine (tools, prompts, resources, mount, versions, visibility, pagination) | 3k histories | 4/4 at 10/10 | F4 |
 
-F1, F3 and F5 have fix PRs (#6552, #6553, #6572); F2 and F4 wait on a
-maintainer decision. All five are open on `main` until those merge, and the
-harness skips them by name until then.
+F1, F3 and F5 are fixed on `main` (#6552, #6553, #6572), so their probes
+report fixed and the harness checks those shapes again. F2 is fixed by keeping
+the merge and falling back to the provided object when the merged one is
+invalid. F4 is the documented behaviour: the docs now describe the fallback.
 
 Findings, most to least serious: F1 (crash on a non-object default for an
 object property, reachable end to end), F4 (explicit version silently runs an
@@ -151,8 +152,9 @@ the schemas that would catch it (`PBT_ASSUME_FIXED`, set per mutant).
   `test_object_default_still_merges_into_provided_object` in #6552 keep it),
   so changing it is a behaviour change for hydration, not just a crash fix.
   The rejection case is narrow (an invalid object default plus typed extras).
-  Kept as a finding; the fix direction (stop merging into a provided object,
-  or skip invalid defaults) is a maintainer decision, like F4.
+  Decision (nate, 2026-11-19): keep the merge, but when the merged object
+  fails validation, validate the provided object instead. Valid defaults
+  hydrate exactly as before; `{}` is never rejected because of a default.
 
 ### F3. a recursive `$ref` through `prefixItems` builds an adapter that rejects everything
 

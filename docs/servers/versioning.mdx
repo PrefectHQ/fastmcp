@@ -207,7 +207,9 @@ async with Client(server) as client:
     prompt = await client.get_prompt("summarize", {"text": "..."}, version="1.0")
 ```
 
-If the requested version doesn't exist, the server raises a `NotFoundError` and the client call fails (for tools, `call_tool` raises a `ToolError`). This ensures you get exactly what you asked for rather than silently falling back to a different version.
+If a component is versioned and the requested version doesn't exist, the server raises a `NotFoundError` and the client call fails (for tools, `call_tool` raises a `ToolError`). You get exactly the version you asked for, never a different version of the same component.
+
+Unversioned components are the exception: they match any requested version, the same way they are exempt from version filtering. A client that pins `version="1.0"` against a server whose `calculate` tool has no version runs that tool. Because a name can't be both versioned and unversioned, this never picks an unversioned implementation over a versioned one; it only keeps pinned clients working against servers that haven't adopted versioning.
 
 ### MCP Protocol
 
