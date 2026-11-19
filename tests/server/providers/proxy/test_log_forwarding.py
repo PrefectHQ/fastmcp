@@ -7,7 +7,6 @@ import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.client.logging import LogMessage
 from fastmcp.client.transports import ClientTransport, StdioTransport
-from fastmcp.server import create_proxy
 
 pytestmark = [pytest.mark.client_process, pytest.mark.timeout(30)]
 
@@ -61,4 +60,3 @@ async def collect_logs(target: ClientTransport | FastMCP) -> list:
 async def test_proxy_served_over_stdio_forwards_every_log(server_script: Path):
     transport = StdioTransport(sys.executable, [str(server_script), "proxy"])
     assert await collect_logs(transport) == EXPECTED
-
