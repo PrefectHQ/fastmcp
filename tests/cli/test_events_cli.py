@@ -17,7 +17,9 @@ from fastmcp.events import (
 )
 
 
-def make_server(log: list[dict[str, Any]]) -> FastMCP:
+def make_server(
+    log: list[dict[str, Any]], subscribed: anyio.Event | None = None
+) -> FastMCP:
     server = FastMCP("alerts")
     events = EventsExtension(poll_interval_ms=10)
     server.add_extension(events)
@@ -32,6 +34,8 @@ def make_server(log: list[dict[str, Any]]) -> FastMCP:
     )
     def alert_fired(poll: EventPoll) -> EventBatch:
         if poll.cursor is None:
+            if subscribed is not None:
+                subscribed.set()
             return EventBatch(cursor=str(len(log)))
         floor = poll.arguments.get("min_level", 0)
         fired = [
@@ -79,10 +83,13 @@ async def test_watch_prints_events_and_the_cursor_to_resume_from(
     delivery: Literal["poll", "push"], capsys: pytest.CaptureFixture[str]
 ):
     log = [{"key": "old", "level": 9}]
-    resolve, build = patch_client(make_server(log))
+    subscribed = anyio.Event()
+    resolve, build = patch_client(make_server(log, subscribed))
 
     async def fire() -> None:
-        await anyio.sleep(0.1)
+        # Only after the watch has taken its starting cursor, or these would
+        # count as history and never be delivered.
+        await subscribed.wait()
         log.append({"key": "quiet", "level": 1})
         log.append({"key": "loud", "level": 5})
 
