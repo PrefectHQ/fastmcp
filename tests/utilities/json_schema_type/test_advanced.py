@@ -87,6 +87,43 @@ class TestDefaultValues:
         with pytest.raises(ValidationError):
             validator.validate_python({"meta": {"a": 1}})
 
+    def test_broken_default_does_not_cancel_sibling_merges(self) -> None:
+        typed_extras = {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {"type": "string"},
+        }
+        schema = {
+            "type": "object",
+            "properties": {
+                "meta": {**typed_extras, "default": {"k": None}},
+                "cfg": {**typed_extras, "default": {"z": "d"}},
+            },
+        }
+        validator: TypeAdapter[Any] = TypeAdapter(json_schema_to_type(schema))
+
+        result = validator.validate_python({"meta": {}, "cfg": {}})
+        assert result.meta == {}
+        assert result.cfg == {"z": "d"}
+
+    def test_invalid_data_error_names_only_sent_keys(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "meta": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": {"type": "string"},
+                    "default": {"k": None},
+                }
+            },
+        }
+        validator: TypeAdapter[Any] = TypeAdapter(json_schema_to_type(schema))
+
+        with pytest.raises(ValidationError) as exc_info:
+            validator.validate_python({"meta": {"a": 1}})
+        assert [e["loc"] for e in exc_info.value.errors()] == [("meta", "a")]
+
     def test_valid_object_default_still_merges_into_provided_object(self) -> None:
         schema = {
             "type": "object",

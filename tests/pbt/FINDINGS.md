@@ -24,12 +24,13 @@ the merge and falling back to the provided object when the merged one is
 invalid. F4 is the documented behaviour: the docs now describe the fallback.
 
 Findings, most to least serious: F1 (crash on a non-object default for an
-object property, reachable end to end), F4 (explicit version silently runs an
-unversioned component, contradicting the versioning docs), F3 (recursive
-`prefixItems` tail makes output validation always fail; foreign schemas only).
-F2 (found on the fixed tree) turns the object-default merge into a real
-rejection when typed `additionalProperties` validate the merged keys; its fix
-is a hydration design decision.
+object property, reachable end to end), F4 (explicit version ran an
+unversioned component while the versioning docs said it would fail; the docs
+now match the code), F3 (recursive `prefixItems` tail made output validation
+always fail; foreign schemas only). F2 (found on the fixed tree) turned the
+object-default merge into a real rejection when typed `additionalProperties`
+validate the merged keys; a merged default that breaks the provided object is
+now dropped for that property only.
 
 ## fixes and the mutants that undo them
 
@@ -38,6 +39,8 @@ is a hydration design decision.
 | F1 | #6552 | nested guard removed: 10/10; root guard removed: 10/10 |
 | F3 | #6553 | positions read from the closure again: 10/10 |
 | F5 | #6572 | placeholders inherit `validate_default` again: 10/10 (3/10 before drawing the shape directly) |
+| F2 | this branch | a broken merged default is never dropped: 5/5 (1/5 before drawing a typed `additionalProperties` beside the default) |
+| F4 | docs only | unversioned never matches a requested version: 5/5 (the machine now models the fallback) |
 
 Getting there took three harness fixes, each one a reason the first
 measurement (1/10, 2/10, 1/10) was low: random JSON instances rarely reached

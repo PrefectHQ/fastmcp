@@ -99,6 +99,14 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "new": "default=None,",
             "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
         },
+        {
+            "name": "F2 undone: a broken merged default is never dropped",
+            "fixes": "F2",
+            "file": SCHEMA_TYPE,
+            "old": "            if not broken:\n                raise\n",
+            "new": "            raise\n",
+            "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
+        },
     ],
     "components": [
         {
@@ -106,6 +114,13 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "file": "fastmcp_slim/fastmcp/utilities/pagination.py",
             "old": "next_cursor = CursorState(offset=end).encode()",
             "new": "next_cursor = CursorState(offset=end + 1).encode()",
+            "test": MACHINE,
+        },
+        {
+            "name": "F4 undone: unversioned never matches a requested version",
+            "file": "fastmcp_slim/fastmcp/utilities/versions.py",
+            "old": "        if version is None:\n            return match_none\n",
+            "new": "        if version is None:\n            return False\n",
             "test": MACHINE,
         },
         {
