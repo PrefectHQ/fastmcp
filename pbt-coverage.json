@@ -1,0 +1,4852 @@
+{
+ "schema": "fastmcp-pbt-coverage/1",
+ "generated_at": "2026-11-19T08:22:52+00:00",
+ "source_commit": "e9916abda3b84f896c1ee22871eb9e453223a82e",
+ "suite": {
+  "status": "passed",
+  "pytest_exit_code": 0,
+  "test_files": [
+   "tests/pbt/test_components_machine.py",
+   "tests/pbt/test_json_schema.py",
+   "tests/pbt/test_resource_read.py",
+   "tests/pbt/test_uri_template.py"
+  ],
+  "tests_reaching_fastmcp": 8
+ },
+ "modules": [
+  {
+   "module": "fastmcp",
+   "path": "fastmcp_slim/fastmcp/__init__.py",
+   "public": true,
+   "statements": 44,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp._compat",
+   "path": "fastmcp_slim/fastmcp/_compat.py",
+   "public": false,
+   "statements": 19,
+   "hit": 0,
+   "functions": 3,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp._install_hints",
+   "path": "fastmcp_slim/fastmcp/_install_hints.py",
+   "public": false,
+   "statements": 1,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp._warnings",
+   "path": "fastmcp_slim/fastmcp/_warnings.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.apps",
+   "path": "fastmcp_slim/fastmcp/apps/__init__.py",
+   "public": true,
+   "statements": 4,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "UI_EXTENSION_ID",
+     "kind": "value",
+     "statements": 0,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.apps.app",
+   "path": "fastmcp_slim/fastmcp/apps/app.py",
+   "public": true,
+   "statements": 103,
+   "hit": 0,
+   "functions": 23,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "FastMCPApp",
+     "kind": "class",
+     "statements": 62,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.apps.approval",
+   "path": "fastmcp_slim/fastmcp/apps/approval.py",
+   "public": true,
+   "statements": 33,
+   "hit": 0,
+   "functions": 4,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "Approval",
+     "kind": "class",
+     "statements": 33,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.apps.choice",
+   "path": "fastmcp_slim/fastmcp/apps/choice.py",
+   "public": true,
+   "statements": 22,
+   "hit": 0,
+   "functions": 4,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "Choice",
+     "kind": "class",
+     "statements": 22,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.apps.config",
+   "path": "fastmcp_slim/fastmcp/apps/config.py",
+   "public": true,
+   "statements": 33,
+   "hit": 0,
+   "functions": 4,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "AppConfig",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "PrefabAppConfig",
+     "kind": "class",
+     "statements": 13,
+     "hit": 0
+    },
+    {
+     "name": "ResourceCSP",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "ResourcePermissions",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.apps.file_upload",
+   "path": "fastmcp_slim/fastmcp/apps/file_upload.py",
+   "public": true,
+   "statements": 130,
+   "hit": 0,
+   "functions": 15,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "FileUpload",
+     "kind": "class",
+     "statements": 119,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.apps.form",
+   "path": "fastmcp_slim/fastmcp/apps/form.py",
+   "public": true,
+   "statements": 48,
+   "hit": 0,
+   "functions": 6,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "FormInput",
+     "kind": "class",
+     "statements": 40,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.apps.generative",
+   "path": "fastmcp_slim/fastmcp/apps/generative.py",
+   "public": true,
+   "statements": 50,
+   "hit": 0,
+   "functions": 15,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "GenerativeUI",
+     "kind": "class",
+     "statements": 48,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli",
+   "path": "fastmcp_slim/fastmcp/cli/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.__main__",
+   "path": "fastmcp_slim/fastmcp/cli/__main__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.apps_dev",
+   "path": "fastmcp_slim/fastmcp/cli/apps_dev.py",
+   "public": false,
+   "statements": 411,
+   "hit": 0,
+   "functions": 30,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.apps_dev_log",
+   "path": "fastmcp_slim/fastmcp/cli/apps_dev_log.py",
+   "public": false,
+   "statements": 85,
+   "hit": 0,
+   "functions": 11,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.apps_dev_security",
+   "path": "fastmcp_slim/fastmcp/cli/apps_dev_security.py",
+   "public": false,
+   "statements": 77,
+   "hit": 0,
+   "functions": 6,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.auth",
+   "path": "fastmcp_slim/fastmcp/cli/auth.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.cimd",
+   "path": "fastmcp_slim/fastmcp/cli/cimd.py",
+   "public": false,
+   "statements": 58,
+   "hit": 0,
+   "functions": 3,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.cli",
+   "path": "fastmcp_slim/fastmcp/cli/cli.py",
+   "public": false,
+   "statements": 312,
+   "hit": 0,
+   "functions": 8,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.client",
+   "path": "fastmcp_slim/fastmcp/cli/client.py",
+   "public": false,
+   "statements": 467,
+   "hit": 0,
+   "functions": 26,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.deploy",
+   "path": "fastmcp_slim/fastmcp/cli/deploy/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.deploy.authentication",
+   "path": "fastmcp_slim/fastmcp/cli/deploy/authentication.py",
+   "public": false,
+   "statements": 30,
+   "hit": 0,
+   "functions": 2,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.deploy.command",
+   "path": "fastmcp_slim/fastmcp/cli/deploy/command.py",
+   "public": false,
+   "statements": 114,
+   "hit": 0,
+   "functions": 12,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.deploy.configuration",
+   "path": "fastmcp_slim/fastmcp/cli/deploy/configuration.py",
+   "public": false,
+   "statements": 17,
+   "hit": 0,
+   "functions": 5,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.deploy.credentials",
+   "path": "fastmcp_slim/fastmcp/cli/deploy/credentials.py",
+   "public": false,
+   "statements": 47,
+   "hit": 0,
+   "functions": 9,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.deploy.horizon_client",
+   "path": "fastmcp_slim/fastmcp/cli/deploy/horizon_client.py",
+   "public": false,
+   "statements": 77,
+   "hit": 0,
+   "functions": 16,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.deploy.output",
+   "path": "fastmcp_slim/fastmcp/cli/deploy/output.py",
+   "public": false,
+   "statements": 84,
+   "hit": 0,
+   "functions": 11,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.deploy.state",
+   "path": "fastmcp_slim/fastmcp/cli/deploy/state.py",
+   "public": false,
+   "statements": 106,
+   "hit": 0,
+   "functions": 7,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.discovery",
+   "path": "fastmcp_slim/fastmcp/cli/discovery.py",
+   "public": false,
+   "statements": 167,
+   "hit": 0,
+   "functions": 14,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.generate",
+   "path": "fastmcp_slim/fastmcp/cli/generate.py",
+   "public": false,
+   "statements": 346,
+   "hit": 0,
+   "functions": 20,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.install",
+   "path": "fastmcp_slim/fastmcp/cli/install/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.install.claude_code",
+   "path": "fastmcp_slim/fastmcp/cli/install/claude_code.py",
+   "public": false,
+   "statements": 52,
+   "hit": 0,
+   "functions": 4,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.install.claude_desktop",
+   "path": "fastmcp_slim/fastmcp/cli/install/claude_desktop.py",
+   "public": false,
+   "statements": 52,
+   "hit": 0,
+   "functions": 3,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.install.cursor",
+   "path": "fastmcp_slim/fastmcp/cli/install/cursor.py",
+   "public": false,
+   "statements": 53,
+   "hit": 0,
+   "functions": 5,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.install.gemini_cli",
+   "path": "fastmcp_slim/fastmcp/cli/install/gemini_cli.py",
+   "public": false,
+   "statements": 50,
+   "hit": 0,
+   "functions": 4,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.install.goose",
+   "path": "fastmcp_slim/fastmcp/cli/install/goose.py",
+   "public": false,
+   "statements": 37,
+   "hit": 0,
+   "functions": 5,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.install.mcp_json",
+   "path": "fastmcp_slim/fastmcp/cli/install/mcp_json.py",
+   "public": false,
+   "statements": 26,
+   "hit": 0,
+   "functions": 2,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.install.shared",
+   "path": "fastmcp_slim/fastmcp/cli/install/shared.py",
+   "public": false,
+   "statements": 122,
+   "hit": 0,
+   "functions": 9,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.install.stdio",
+   "path": "fastmcp_slim/fastmcp/cli/install/stdio.py",
+   "public": false,
+   "statements": 21,
+   "hit": 0,
+   "functions": 2,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.run",
+   "path": "fastmcp_slim/fastmcp/cli/run.py",
+   "public": false,
+   "statements": 172,
+   "hit": 0,
+   "functions": 11,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client",
+   "path": "fastmcp_slim/fastmcp/client/__init__.py",
+   "public": true,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client._sdk_context_shim",
+   "path": "fastmcp_slim/fastmcp/client/_sdk_context_shim.py",
+   "public": true,
+   "statements": 0,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "RequestContext",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client._version_pin",
+   "path": "fastmcp_slim/fastmcp/client/_version_pin.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.auth",
+   "path": "fastmcp_slim/fastmcp/client/auth/__init__.py",
+   "public": true,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "SignedJWTParameters",
+     "kind": "value",
+     "statements": 0,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.auth.bearer",
+   "path": "fastmcp_slim/fastmcp/client/auth/bearer.py",
+   "public": true,
+   "statements": 3,
+   "hit": 0,
+   "functions": 2,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "BearerAuth",
+     "kind": "class",
+     "statements": 3,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.auth.client_credentials",
+   "path": "fastmcp_slim/fastmcp/client/auth/client_credentials.py",
+   "public": true,
+   "statements": 83,
+   "hit": 0,
+   "functions": 16,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "ClientCredentialsOAuthProvider",
+     "kind": "class",
+     "statements": 22,
+     "hit": 0
+    },
+    {
+     "name": "PrivateKeyJWTOAuthProvider",
+     "kind": "class",
+     "statements": 21,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.auth.oauth",
+   "path": "fastmcp_slim/fastmcp/client/auth/oauth.py",
+   "public": true,
+   "statements": 167,
+   "hit": 0,
+   "functions": 23,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "OAuth",
+     "kind": "class",
+     "statements": 120,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.caching",
+   "path": "fastmcp_slim/fastmcp/client/caching.py",
+   "public": true,
+   "statements": 51,
+   "hit": 0,
+   "functions": 8,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "KeyValueResponseCacheStore",
+     "kind": "class",
+     "statements": 42,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.client",
+   "path": "fastmcp_slim/fastmcp/client/client.py",
+   "public": true,
+   "statements": 396,
+   "hit": 167,
+   "functions": 45,
+   "functions_hit": 20,
+   "symbols": [
+    {
+     "name": "Client",
+     "kind": "class",
+     "statements": 375,
+     "hit": 155
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.client.dependencies",
+   "path": "fastmcp_slim/fastmcp/client/dependencies.py",
+   "public": false,
+   "statements": 9,
+   "hit": 0,
+   "functions": 3,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.elicitation",
+   "path": "fastmcp_slim/fastmcp/client/elicitation.py",
+   "public": true,
+   "statements": 24,
+   "hit": 0,
+   "functions": 3,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "ElicitRequestParams",
+     "kind": "value",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "ElicitResult",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.extension_hooks",
+   "path": "fastmcp_slim/fastmcp/client/extension_hooks.py",
+   "public": false,
+   "statements": 8,
+   "hit": 3,
+   "functions": 2,
+   "functions_hit": 1,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.client.group",
+   "path": "fastmcp_slim/fastmcp/client/group.py",
+   "public": true,
+   "statements": 120,
+   "hit": 0,
+   "functions": 22,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "ClientGroup",
+     "kind": "class",
+     "statements": 115,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.logging",
+   "path": "fastmcp_slim/fastmcp/client/logging.py",
+   "public": true,
+   "statements": 12,
+   "hit": 3,
+   "functions": 3,
+   "functions_hit": 1,
+   "symbols": [
+    {
+     "name": "LogMessage",
+     "kind": "value",
+     "statements": 0,
+     "hit": 0
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.client.messages",
+   "path": "fastmcp_slim/fastmcp/client/messages.py",
+   "public": true,
+   "statements": 30,
+   "hit": 0,
+   "functions": 12,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "MessageHandler",
+     "kind": "class",
+     "statements": 30,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.mixins",
+   "path": "fastmcp_slim/fastmcp/client/mixins/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.mixins.prompts",
+   "path": "fastmcp_slim/fastmcp/client/mixins/prompts.py",
+   "public": false,
+   "statements": 42,
+   "hit": 34,
+   "functions": 6,
+   "functions_hit": 6,
+   "symbols": [],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.client.mixins.resources",
+   "path": "fastmcp_slim/fastmcp/client/mixins/resources.py",
+   "public": false,
+   "statements": 69,
+   "hit": 41,
+   "functions": 9,
+   "functions_hit": 6,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.client.mixins.skills",
+   "path": "fastmcp_slim/fastmcp/client/mixins/skills.py",
+   "public": false,
+   "statements": 128,
+   "hit": 0,
+   "functions": 15,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.mixins.tools",
+   "path": "fastmcp_slim/fastmcp/client/mixins/tools.py",
+   "public": false,
+   "statements": 95,
+   "hit": 77,
+   "functions": 9,
+   "functions_hit": 9,
+   "symbols": [],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.client.oauth_callback",
+   "path": "fastmcp_slim/fastmcp/client/oauth_callback.py",
+   "public": false,
+   "statements": 41,
+   "hit": 0,
+   "functions": 6,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.progress",
+   "path": "fastmcp_slim/fastmcp/client/progress.py",
+   "public": false,
+   "statements": 10,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.roots",
+   "path": "fastmcp_slim/fastmcp/client/roots.py",
+   "public": true,
+   "statements": 28,
+   "hit": 0,
+   "functions": 6,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.sampling",
+   "path": "fastmcp_slim/fastmcp/client/sampling/__init__.py",
+   "public": true,
+   "statements": 12,
+   "hit": 0,
+   "functions": 2,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "SamplingMessage",
+     "kind": "value",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "SamplingParams",
+     "kind": "value",
+     "statements": 0,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.sampling.handlers",
+   "path": "fastmcp_slim/fastmcp/client/sampling/handlers/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.sampling.handlers.anthropic",
+   "path": "fastmcp_slim/fastmcp/client/sampling/handlers/anthropic.py",
+   "public": true,
+   "statements": 140,
+   "hit": 0,
+   "functions": 12,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "AnthropicSamplingHandler",
+     "kind": "class",
+     "statements": 119,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.sampling.handlers.google_genai",
+   "path": "fastmcp_slim/fastmcp/client/sampling/handlers/google_genai.py",
+   "public": true,
+   "statements": 141,
+   "hit": 0,
+   "functions": 12,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "GoogleGenaiSamplingHandler",
+     "kind": "class",
+     "statements": 20,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.sampling.handlers.openai",
+   "path": "fastmcp_slim/fastmcp/client/sampling/handlers/openai.py",
+   "public": true,
+   "statements": 171,
+   "hit": 0,
+   "functions": 13,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "OpenAISamplingHandler",
+     "kind": "class",
+     "statements": 150,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.telemetry",
+   "path": "fastmcp_slim/fastmcp/client/telemetry.py",
+   "public": false,
+   "statements": 22,
+   "hit": 17,
+   "functions": 1,
+   "functions_hit": 1,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.client.transports",
+   "path": "fastmcp_slim/fastmcp/client/transports/__init__.py",
+   "public": true,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.transports.base",
+   "path": "fastmcp_slim/fastmcp/client/transports/base.py",
+   "public": false,
+   "statements": 27,
+   "hit": 18,
+   "functions": 10,
+   "functions_hit": 4,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.client.transports.config",
+   "path": "fastmcp_slim/fastmcp/client/transports/config.py",
+   "public": false,
+   "statements": 121,
+   "hit": 0,
+   "functions": 9,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.transports.http",
+   "path": "fastmcp_slim/fastmcp/client/transports/http.py",
+   "public": true,
+   "statements": 67,
+   "hit": 0,
+   "functions": 9,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "StreamableHttpTransport",
+     "kind": "class",
+     "statements": 67,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.transports.inference",
+   "path": "fastmcp_slim/fastmcp/client/transports/inference.py",
+   "public": false,
+   "statements": 38,
+   "hit": 9,
+   "functions": 3,
+   "functions_hit": 2,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.client.transports.memory",
+   "path": "fastmcp_slim/fastmcp/client/transports/memory.py",
+   "public": true,
+   "statements": 33,
+   "hit": 25,
+   "functions": 5,
+   "functions_hit": 5,
+   "symbols": [
+    {
+     "name": "FastMCPTransport",
+     "kind": "class",
+     "statements": 20,
+     "hit": 17
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.client.transports.sse",
+   "path": "fastmcp_slim/fastmcp/client/transports/sse.py",
+   "public": true,
+   "statements": 62,
+   "hit": 0,
+   "functions": 6,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "SSETransport",
+     "kind": "class",
+     "statements": 62,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.client.transports.stdio",
+   "path": "fastmcp_slim/fastmcp/client/transports/stdio.py",
+   "public": true,
+   "statements": 223,
+   "hit": 0,
+   "functions": 18,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "NpxStdioTransport",
+     "kind": "class",
+     "statements": 16,
+     "hit": 0
+    },
+    {
+     "name": "PythonStdioTransport",
+     "kind": "class",
+     "statements": 11,
+     "hit": 0
+    },
+    {
+     "name": "StdioTransport",
+     "kind": "class",
+     "statements": 111,
+     "hit": 0
+    },
+    {
+     "name": "UvxStdioTransport",
+     "kind": "class",
+     "statements": 18,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.contrib.bulk_tool_caller",
+   "path": "fastmcp_slim/fastmcp/contrib/bulk_tool_caller/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.contrib.bulk_tool_caller.bulk_tool_caller",
+   "path": "fastmcp_slim/fastmcp/contrib/bulk_tool_caller/bulk_tool_caller.py",
+   "public": false,
+   "statements": 27,
+   "hit": 0,
+   "functions": 6,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.contrib.bulk_tool_caller.example",
+   "path": "fastmcp_slim/fastmcp/contrib/bulk_tool_caller/example.py",
+   "public": false,
+   "statements": 1,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.contrib.component_manager",
+   "path": "fastmcp_slim/fastmcp/contrib/component_manager/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.contrib.component_manager.component_manager",
+   "path": "fastmcp_slim/fastmcp/contrib/component_manager/component_manager.py",
+   "public": false,
+   "statements": 42,
+   "hit": 0,
+   "functions": 8,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.contrib.component_manager.example",
+   "path": "fastmcp_slim/fastmcp/contrib/component_manager/example.py",
+   "public": false,
+   "statements": 2,
+   "hit": 0,
+   "functions": 2,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.contrib.mcp_mixin",
+   "path": "fastmcp_slim/fastmcp/contrib/mcp_mixin/__init__.py",
+   "public": true,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.contrib.mcp_mixin.example",
+   "path": "fastmcp_slim/fastmcp/contrib/mcp_mixin/example.py",
+   "public": false,
+   "statements": 8,
+   "hit": 0,
+   "functions": 5,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.contrib.mcp_mixin.mcp_mixin",
+   "path": "fastmcp_slim/fastmcp/contrib/mcp_mixin/mcp_mixin.py",
+   "public": true,
+   "statements": 72,
+   "hit": 0,
+   "functions": 11,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "MCPMixin",
+     "kind": "class",
+     "statements": 42,
+     "hit": 0
+    },
+    {
+     "name": "mcp_tool",
+     "kind": "function",
+     "statements": 10,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.decorators",
+   "path": "fastmcp_slim/fastmcp/decorators.py",
+   "public": false,
+   "statements": 12,
+   "hit": 2,
+   "functions": 2,
+   "functions_hit": 1,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.dependencies",
+   "path": "fastmcp_slim/fastmcp/dependencies.py",
+   "public": true,
+   "statements": 3,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "CallArgument",
+     "kind": "value",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "Depends",
+     "kind": "value",
+     "statements": 0,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.exceptions",
+   "path": "fastmcp_slim/fastmcp/exceptions.py",
+   "public": true,
+   "statements": 17,
+   "hit": 6,
+   "functions": 4,
+   "functions_hit": 2,
+   "symbols": [
+    {
+     "name": "AuthorizationError",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "InsufficientScopeError",
+     "kind": "class",
+     "statements": 5,
+     "hit": 0
+    },
+    {
+     "name": "McpError",
+     "kind": "value",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "ResourceError",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "ToolError",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    }
+   ],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.experimental",
+   "path": "fastmcp_slim/fastmcp/experimental/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.experimental.transforms",
+   "path": "fastmcp_slim/fastmcp/experimental/transforms/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.experimental.transforms.code_mode",
+   "path": "fastmcp_slim/fastmcp/experimental/transforms/code_mode.py",
+   "public": true,
+   "statements": 233,
+   "hit": 0,
+   "functions": 35,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "CodeMode",
+     "kind": "class",
+     "statements": 64,
+     "hit": 0
+    },
+    {
+     "name": "GetSchemas",
+     "kind": "class",
+     "statements": 20,
+     "hit": 0
+    },
+    {
+     "name": "GetTags",
+     "kind": "class",
+     "statements": 25,
+     "hit": 0
+    },
+    {
+     "name": "GetToolCatalog",
+     "kind": "value",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "ListTools",
+     "kind": "class",
+     "statements": 7,
+     "hit": 0
+    },
+    {
+     "name": "MontySandboxProvider",
+     "kind": "class",
+     "statements": 42,
+     "hit": 0
+    },
+    {
+     "name": "Search",
+     "kind": "class",
+     "statements": 29,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.experimental.transforms.jev_search",
+   "path": "fastmcp_slim/fastmcp/experimental/transforms/jev_search.py",
+   "public": true,
+   "statements": 115,
+   "hit": 0,
+   "functions": 16,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "JevSearchTransform",
+     "kind": "class",
+     "statements": 107,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.mcp_config",
+   "path": "fastmcp_slim/fastmcp/mcp_config.py",
+   "public": false,
+   "statements": 82,
+   "hit": 0,
+   "functions": 16,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.prompts",
+   "path": "fastmcp_slim/fastmcp/prompts/__init__.py",
+   "public": true,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.prompts.base",
+   "path": "fastmcp_slim/fastmcp/prompts/base.py",
+   "public": true,
+   "statements": 45,
+   "hit": 23,
+   "functions": 12,
+   "functions_hit": 10,
+   "symbols": [
+    {
+     "name": "Message",
+     "kind": "class",
+     "statements": 8,
+     "hit": 5
+    },
+    {
+     "name": "Prompt",
+     "kind": "class",
+     "statements": 24,
+     "hit": 12
+    },
+    {
+     "name": "PromptResult",
+     "kind": "class",
+     "statements": 12,
+     "hit": 6
+    }
+   ],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.prompts.function_prompt",
+   "path": "fastmcp_slim/fastmcp/prompts/function_prompt.py",
+   "public": true,
+   "statements": 138,
+   "hit": 50,
+   "functions": 8,
+   "functions_hit": 4,
+   "symbols": [
+    {
+     "name": "prompt",
+     "kind": "function",
+     "statements": 21,
+     "hit": 0
+    }
+   ],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.resources",
+   "path": "fastmcp_slim/fastmcp/resources/__init__.py",
+   "public": true,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.resources.base",
+   "path": "fastmcp_slim/fastmcp/resources/base.py",
+   "public": true,
+   "statements": 64,
+   "hit": 35,
+   "functions": 17,
+   "functions_hit": 14,
+   "symbols": [
+    {
+     "name": "Resource",
+     "kind": "class",
+     "statements": 20,
+     "hit": 14
+    },
+    {
+     "name": "ResourceContent",
+     "kind": "class",
+     "statements": 12,
+     "hit": 6
+    },
+    {
+     "name": "ResourceResult",
+     "kind": "class",
+     "statements": 16,
+     "hit": 10
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.resources.function_resource",
+   "path": "fastmcp_slim/fastmcp/resources/function_resource.py",
+   "public": true,
+   "statements": 38,
+   "hit": 19,
+   "functions": 5,
+   "functions_hit": 2,
+   "symbols": [
+    {
+     "name": "resource",
+     "kind": "function",
+     "statements": 12,
+     "hit": 0
+    }
+   ],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.resources.security",
+   "path": "fastmcp_slim/fastmcp/resources/security.py",
+   "public": true,
+   "statements": 23,
+   "hit": 0,
+   "functions": 5,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "ResourceSecurity",
+     "kind": "class",
+     "statements": 20,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.resources.template",
+   "path": "fastmcp_slim/fastmcp/resources/template.py",
+   "public": true,
+   "statements": 314,
+   "hit": 237,
+   "functions": 34,
+   "functions_hit": 25,
+   "symbols": [
+    {
+     "name": "ResourceTemplate",
+     "kind": "class",
+     "statements": 30,
+     "hit": 19
+    }
+   ],
+   "tests": 3,
+   "test_ids": [
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_uri_template.py::test_reexpand",
+    "tests/pbt/test_uri_template.py::test_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.resources.types",
+   "path": "fastmcp_slim/fastmcp/resources/types.py",
+   "public": true,
+   "statements": 41,
+   "hit": 0,
+   "functions": 11,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "DirectoryResource",
+     "kind": "class",
+     "statements": 21,
+     "hit": 0
+    },
+    {
+     "name": "FileResource",
+     "kind": "class",
+     "statements": 14,
+     "hit": 0
+    },
+    {
+     "name": "HttpResource",
+     "kind": "class",
+     "statements": 4,
+     "hit": 0
+    },
+    {
+     "name": "TextResource",
+     "kind": "class",
+     "statements": 1,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server",
+   "path": "fastmcp_slim/fastmcp/server/__init__.py",
+   "public": true,
+   "statements": 15,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth",
+   "path": "fastmcp_slim/fastmcp/server/auth/__init__.py",
+   "public": true,
+   "statements": 19,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "AuthCheck",
+     "kind": "value",
+     "statements": 0,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.auth",
+   "path": "fastmcp_slim/fastmcp/server/auth/auth.py",
+   "public": true,
+   "statements": 330,
+   "hit": 0,
+   "functions": 36,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "AccessToken",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "MultiAuth",
+     "kind": "class",
+     "statements": 101,
+     "hit": 0
+    },
+    {
+     "name": "OAuthProvider",
+     "kind": "class",
+     "statements": 54,
+     "hit": 0
+    },
+    {
+     "name": "RemoteAuthProvider",
+     "kind": "class",
+     "statements": 63,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.cimd",
+   "path": "fastmcp_slim/fastmcp/server/auth/cimd.py",
+   "public": false,
+   "statements": 251,
+   "hit": 0,
+   "functions": 20,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.handlers",
+   "path": "fastmcp_slim/fastmcp/server/auth/handlers/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.handlers.authorize",
+   "path": "fastmcp_slim/fastmcp/server/auth/handlers/authorize.py",
+   "public": false,
+   "statements": 61,
+   "hit": 0,
+   "functions": 4,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.identity_assertion",
+   "path": "fastmcp_slim/fastmcp/server/auth/identity_assertion.py",
+   "public": true,
+   "statements": 166,
+   "hit": 0,
+   "functions": 15,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "IdentityAssertion",
+     "kind": "class",
+     "statements": 16,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.jwt_issuer",
+   "path": "fastmcp_slim/fastmcp/server/auth/jwt_issuer.py",
+   "public": false,
+   "statements": 55,
+   "hit": 0,
+   "functions": 5,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.middleware",
+   "path": "fastmcp_slim/fastmcp/server/auth/middleware.py",
+   "public": false,
+   "statements": 36,
+   "hit": 0,
+   "functions": 5,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.oauth_proxy",
+   "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.oauth_proxy.consent",
+   "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/consent.py",
+   "public": false,
+   "statements": 244,
+   "hit": 0,
+   "functions": 23,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.oauth_proxy.models",
+   "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/models.py",
+   "public": false,
+   "statements": 63,
+   "hit": 0,
+   "functions": 6,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.oauth_proxy.proxy",
+   "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py",
+   "public": true,
+   "statements": 712,
+   "hit": 0,
+   "functions": 34,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "OAuthProxy",
+     "kind": "class",
+     "statements": 690,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.oauth_proxy.revocation",
+   "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/revocation.py",
+   "public": false,
+   "statements": 21,
+   "hit": 0,
+   "functions": 11,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.oauth_proxy.ui",
+   "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/ui.py",
+   "public": false,
+   "statements": 36,
+   "hit": 0,
+   "functions": 2,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.oauth_proxy.upstream",
+   "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/upstream.py",
+   "public": false,
+   "statements": 44,
+   "hit": 0,
+   "functions": 6,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.oidc_proxy",
+   "path": "fastmcp_slim/fastmcp/server/auth/oidc_proxy.py",
+   "public": true,
+   "statements": 117,
+   "hit": 0,
+   "functions": 9,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "OIDCProxy",
+     "kind": "class",
+     "statements": 57,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.auth0",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/auth0.py",
+   "public": true,
+   "statements": 29,
+   "hit": 0,
+   "functions": 6,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "Auth0MCPProvider",
+     "kind": "class",
+     "statements": 19,
+     "hit": 0
+    },
+    {
+     "name": "Auth0Provider",
+     "kind": "class",
+     "statements": 3,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.aws",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/aws.py",
+   "public": true,
+   "statements": 23,
+   "hit": 0,
+   "functions": 4,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "AWSCognitoProvider",
+     "kind": "class",
+     "statements": 8,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.azure",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/azure.py",
+   "public": true,
+   "statements": 160,
+   "hit": 0,
+   "functions": 19,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "AzureJWTVerifier",
+     "kind": "class",
+     "statements": 14,
+     "hit": 0
+    },
+    {
+     "name": "AzureProvider",
+     "kind": "class",
+     "statements": 123,
+     "hit": 0
+    },
+    {
+     "name": "EntraOBOToken",
+     "kind": "function",
+     "statements": 1,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.clerk",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/clerk.py",
+   "public": false,
+   "statements": 74,
+   "hit": 0,
+   "functions": 4,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.debug",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/debug.py",
+   "public": true,
+   "statements": 19,
+   "hit": 0,
+   "functions": 2,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "DebugTokenVerifier",
+     "kind": "class",
+     "statements": 19,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.descope",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/descope.py",
+   "public": true,
+   "statements": 100,
+   "hit": 0,
+   "functions": 10,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "DescopeProvider",
+     "kind": "class",
+     "statements": 56,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.discord",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/discord.py",
+   "public": true,
+   "statements": 46,
+   "hit": 0,
+   "functions": 3,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "DiscordProvider",
+     "kind": "class",
+     "statements": 4,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.github",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/github.py",
+   "public": true,
+   "statements": 85,
+   "hit": 0,
+   "functions": 4,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "GitHubProvider",
+     "kind": "class",
+     "statements": 4,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.google",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/google.py",
+   "public": true,
+   "statements": 71,
+   "hit": 0,
+   "functions": 4,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "GoogleProvider",
+     "kind": "class",
+     "statements": 10,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.huggingface",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/huggingface.py",
+   "public": true,
+   "statements": 63,
+   "hit": 0,
+   "functions": 6,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "HuggingFaceProvider",
+     "kind": "class",
+     "statements": 8,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.in_memory",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/in_memory.py",
+   "public": false,
+   "statements": 127,
+   "hit": 0,
+   "functions": 12,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.introspection",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/introspection.py",
+   "public": true,
+   "statements": 83,
+   "hit": 0,
+   "functions": 4,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "IntrospectionTokenVerifier",
+     "kind": "class",
+     "statements": 83,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.jwt",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/jwt.py",
+   "public": true,
+   "statements": 241,
+   "hit": 0,
+   "functions": 18,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "JWTVerifier",
+     "kind": "class",
+     "statements": 179,
+     "hit": 0
+    },
+    {
+     "name": "RSAKeyPair",
+     "kind": "class",
+     "statements": 17,
+     "hit": 0
+    },
+    {
+     "name": "StaticTokenVerifier",
+     "kind": "class",
+     "statements": 16,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.keycloak",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/keycloak.py",
+   "public": true,
+   "statements": 5,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "KeycloakAuthProvider",
+     "kind": "class",
+     "statements": 5,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.oci",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/oci.py",
+   "public": true,
+   "statements": 5,
+   "hit": 0,
+   "functions": 2,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "OCIProvider",
+     "kind": "class",
+     "statements": 5,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.propelauth",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/propelauth.py",
+   "public": true,
+   "statements": 34,
+   "hit": 0,
+   "functions": 5,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "PropelAuthProvider",
+     "kind": "class",
+     "statements": 34,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.scalekit",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/scalekit.py",
+   "public": true,
+   "statements": 26,
+   "hit": 0,
+   "functions": 3,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "ScalekitProvider",
+     "kind": "class",
+     "statements": 26,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.supabase",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/supabase.py",
+   "public": true,
+   "statements": 13,
+   "hit": 0,
+   "functions": 3,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "SupabaseProvider",
+     "kind": "class",
+     "statements": 13,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.providers.workos",
+   "path": "fastmcp_slim/fastmcp/server/auth/providers/workos.py",
+   "public": true,
+   "statements": 51,
+   "hit": 0,
+   "functions": 8,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "AuthKitProvider",
+     "kind": "class",
+     "statements": 17,
+     "hit": 0
+    },
+    {
+     "name": "WorkOSProvider",
+     "kind": "class",
+     "statements": 12,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.redirect_validation",
+   "path": "fastmcp_slim/fastmcp/server/auth/redirect_validation.py",
+   "public": false,
+   "statements": 159,
+   "hit": 0,
+   "functions": 16,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.auth.ssrf",
+   "path": "fastmcp_slim/fastmcp/server/auth/ssrf.py",
+   "public": false,
+   "statements": 132,
+   "hit": 0,
+   "functions": 11,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.caching",
+   "path": "fastmcp_slim/fastmcp/server/caching.py",
+   "public": false,
+   "statements": 8,
+   "hit": 3,
+   "functions": 1,
+   "functions_hit": 1,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.completions",
+   "path": "fastmcp_slim/fastmcp/server/completions.py",
+   "public": false,
+   "statements": 11,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.context",
+   "path": "fastmcp_slim/fastmcp/server/context.py",
+   "public": true,
+   "statements": 272,
+   "hit": 75,
+   "functions": 51,
+   "functions_hit": 12,
+   "symbols": [
+    {
+     "name": "Context",
+     "kind": "class",
+     "statements": 249,
+     "hit": 75
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.dependencies",
+   "path": "fastmcp_slim/fastmcp/server/dependencies.py",
+   "public": true,
+   "statements": 368,
+   "hit": 81,
+   "functions": 61,
+   "functions_hit": 11,
+   "symbols": [
+    {
+     "name": "CurrentAccessToken",
+     "kind": "function",
+     "statements": 1,
+     "hit": 0
+    },
+    {
+     "name": "CurrentContext",
+     "kind": "function",
+     "statements": 1,
+     "hit": 0
+    },
+    {
+     "name": "CurrentFastMCP",
+     "kind": "function",
+     "statements": 2,
+     "hit": 0
+    },
+    {
+     "name": "CurrentHeaders",
+     "kind": "function",
+     "statements": 1,
+     "hit": 0
+    },
+    {
+     "name": "CurrentRequest",
+     "kind": "function",
+     "statements": 1,
+     "hit": 0
+    },
+    {
+     "name": "Progress",
+     "kind": "class",
+     "statements": 26,
+     "hit": 0
+    },
+    {
+     "name": "TokenClaim",
+     "kind": "function",
+     "statements": 1,
+     "hit": 0
+    },
+    {
+     "name": "get_access_token",
+     "kind": "function",
+     "statements": 17,
+     "hit": 9
+    },
+    {
+     "name": "get_context",
+     "kind": "function",
+     "statements": 5,
+     "hit": 5
+    },
+    {
+     "name": "get_http_headers",
+     "kind": "function",
+     "statements": 20,
+     "hit": 0
+    },
+    {
+     "name": "get_http_request",
+     "kind": "function",
+     "statements": 9,
+     "hit": 8
+    },
+    {
+     "name": "get_server",
+     "kind": "function",
+     "statements": 12,
+     "hit": 0
+    },
+    {
+     "name": "get_session",
+     "kind": "function",
+     "statements": 6,
+     "hit": 0
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.elicitation",
+   "path": "fastmcp_slim/fastmcp/server/elicitation.py",
+   "public": true,
+   "statements": 157,
+   "hit": 0,
+   "functions": 18,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "AcceptedElicitation",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "CancelledElicitation",
+     "kind": "value",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "DeclinedElicitation",
+     "kind": "value",
+     "statements": 0,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.event_store",
+   "path": "fastmcp_slim/fastmcp/server/event_store.py",
+   "public": true,
+   "statements": 42,
+   "hit": 0,
+   "functions": 3,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "EventStore",
+     "kind": "class",
+     "statements": 42,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.extensions",
+   "path": "fastmcp_slim/fastmcp/server/extensions.py",
+   "public": true,
+   "statements": 69,
+   "hit": 18,
+   "functions": 20,
+   "functions_hit": 2,
+   "symbols": [
+    {
+     "name": "MethodBinding",
+     "kind": "class",
+     "statements": 4,
+     "hit": 0
+    },
+    {
+     "name": "ServerExtension",
+     "kind": "class",
+     "statements": 20,
+     "hit": 0
+    }
+   ],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.server.http",
+   "path": "fastmcp_slim/fastmcp/server/http.py",
+   "public": false,
+   "statements": 248,
+   "hit": 0,
+   "functions": 36,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.lifespan",
+   "path": "fastmcp_slim/fastmcp/server/lifespan.py",
+   "public": true,
+   "statements": 15,
+   "hit": 0,
+   "functions": 8,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "ContextManagerLifespan",
+     "kind": "class",
+     "statements": 3,
+     "hit": 0
+    },
+    {
+     "name": "lifespan",
+     "kind": "function",
+     "statements": 1,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.low_level",
+   "path": "fastmcp_slim/fastmcp/server/low_level.py",
+   "public": false,
+   "statements": 144,
+   "hit": 63,
+   "functions": 19,
+   "functions_hit": 11,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.middleware",
+   "path": "fastmcp_slim/fastmcp/server/middleware/__init__.py",
+   "public": true,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.middleware.authorization",
+   "path": "fastmcp_slim/fastmcp/server/middleware/authorization.py",
+   "public": true,
+   "statements": 182,
+   "hit": 0,
+   "functions": 12,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "AuthMiddleware",
+     "kind": "class",
+     "statements": 166,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.middleware.caching",
+   "path": "fastmcp_slim/fastmcp/server/middleware/caching.py",
+   "public": true,
+   "statements": 138,
+   "hit": 0,
+   "functions": 26,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "CallToolSettings",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "ListToolsSettings",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "ReadResourceSettings",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "ResponseCachingMiddleware",
+     "kind": "class",
+     "statements": 99,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.middleware.dereference",
+   "path": "fastmcp_slim/fastmcp/server/middleware/dereference.py",
+   "public": false,
+   "statements": 25,
+   "hit": 16,
+   "functions": 5,
+   "functions_hit": 4,
+   "symbols": [],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.server.middleware.error_handling",
+   "path": "fastmcp_slim/fastmcp/server/middleware/error_handling.py",
+   "public": true,
+   "statements": 73,
+   "hit": 0,
+   "functions": 9,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "ErrorHandlingMiddleware",
+     "kind": "class",
+     "statements": 48,
+     "hit": 0
+    },
+    {
+     "name": "RetryMiddleware",
+     "kind": "class",
+     "statements": 25,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.middleware.logging",
+   "path": "fastmcp_slim/fastmcp/server/middleware/logging.py",
+   "public": true,
+   "statements": 65,
+   "hit": 0,
+   "functions": 11,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "LoggingMiddleware",
+     "kind": "class",
+     "statements": 9,
+     "hit": 0
+    },
+    {
+     "name": "StructuredLoggingMiddleware",
+     "kind": "class",
+     "statements": 9,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.middleware.middleware",
+   "path": "fastmcp_slim/fastmcp/server/middleware/middleware.py",
+   "public": true,
+   "statements": 52,
+   "hit": 41,
+   "functions": 21,
+   "functions_hit": 13,
+   "symbols": [
+    {
+     "name": "Middleware",
+     "kind": "class",
+     "statements": 44,
+     "hit": 37
+    },
+    {
+     "name": "MiddlewareContext",
+     "kind": "class",
+     "statements": 1,
+     "hit": 0
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.middleware.ping",
+   "path": "fastmcp_slim/fastmcp/server/middleware/ping.py",
+   "public": true,
+   "statements": 30,
+   "hit": 0,
+   "functions": 4,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "PingMiddleware",
+     "kind": "class",
+     "statements": 30,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.middleware.rate_limiting",
+   "path": "fastmcp_slim/fastmcp/server/middleware/rate_limiting.py",
+   "public": true,
+   "statements": 126,
+   "hit": 0,
+   "functions": 15,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "RateLimitingMiddleware",
+     "kind": "class",
+     "statements": 39,
+     "hit": 0
+    },
+    {
+     "name": "SlidingWindowRateLimitingMiddleware",
+     "kind": "class",
+     "statements": 19,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.middleware.response_limiting",
+   "path": "fastmcp_slim/fastmcp/server/middleware/response_limiting.py",
+   "public": true,
+   "statements": 32,
+   "hit": 0,
+   "functions": 5,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "ResponseLimitingMiddleware",
+     "kind": "class",
+     "statements": 32,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.middleware.timing",
+   "path": "fastmcp_slim/fastmcp/server/middleware/timing.py",
+   "public": true,
+   "statements": 35,
+   "hit": 0,
+   "functions": 11,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "DetailedTimingMiddleware",
+     "kind": "class",
+     "statements": 22,
+     "hit": 0
+    },
+    {
+     "name": "TimingMiddleware",
+     "kind": "class",
+     "statements": 13,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.middleware.tool_injection",
+   "path": "fastmcp_slim/fastmcp/server/middleware/tool_injection.py",
+   "public": false,
+   "statements": 4,
+   "hit": 0,
+   "functions": 3,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.mixins",
+   "path": "fastmcp_slim/fastmcp/server/mixins/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.mixins.extensions",
+   "path": "fastmcp_slim/fastmcp/server/mixins/extensions.py",
+   "public": false,
+   "statements": 90,
+   "hit": 21,
+   "functions": 7,
+   "functions_hit": 4,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.mixins.lifespan",
+   "path": "fastmcp_slim/fastmcp/server/mixins/lifespan.py",
+   "public": false,
+   "statements": 77,
+   "hit": 70,
+   "functions": 6,
+   "functions_hit": 5,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.mixins.mcp_operations",
+   "path": "fastmcp_slim/fastmcp/server/mixins/mcp_operations.py",
+   "public": false,
+   "statements": 146,
+   "hit": 78,
+   "functions": 15,
+   "functions_hit": 10,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.mixins.transport",
+   "path": "fastmcp_slim/fastmcp/server/mixins/transport.py",
+   "public": false,
+   "statements": 83,
+   "hit": 0,
+   "functions": 11,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers",
+   "path": "fastmcp_slim/fastmcp/server/providers/__init__.py",
+   "public": true,
+   "statements": 10,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.addressing",
+   "path": "fastmcp_slim/fastmcp/server/providers/addressing.py",
+   "public": false,
+   "statements": 35,
+   "hit": 6,
+   "functions": 7,
+   "functions_hit": 2,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.providers.aggregate",
+   "path": "fastmcp_slim/fastmcp/server/providers/aggregate.py",
+   "public": false,
+   "statements": 123,
+   "hit": 66,
+   "functions": 21,
+   "functions_hit": 15,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.providers.base",
+   "path": "fastmcp_slim/fastmcp/server/providers/base.py",
+   "public": true,
+   "statements": 162,
+   "hit": 75,
+   "functions": 40,
+   "functions_hit": 23,
+   "symbols": [
+    {
+     "name": "Provider",
+     "kind": "class",
+     "statements": 143,
+     "hit": 71
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.providers.fastmcp_provider",
+   "path": "fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py",
+   "public": true,
+   "statements": 112,
+   "hit": 71,
+   "functions": 34,
+   "functions_hit": 25,
+   "symbols": [
+    {
+     "name": "FastMCPProvider",
+     "kind": "class",
+     "statements": 66,
+     "hit": 47
+    }
+   ],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.server.providers.filesystem",
+   "path": "fastmcp_slim/fastmcp/server/providers/filesystem.py",
+   "public": true,
+   "statements": 64,
+   "hit": 0,
+   "functions": 14,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "FileSystemProvider",
+     "kind": "class",
+     "statements": 64,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.filesystem_discovery",
+   "path": "fastmcp_slim/fastmcp/server/providers/filesystem_discovery.py",
+   "public": false,
+   "statements": 157,
+   "hit": 0,
+   "functions": 9,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.local_provider",
+   "path": "fastmcp_slim/fastmcp/server/providers/local_provider/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.local_provider.decorators",
+   "path": "fastmcp_slim/fastmcp/server/providers/local_provider/decorators/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.local_provider.decorators.prompts",
+   "path": "fastmcp_slim/fastmcp/server/providers/local_provider/decorators/prompts.py",
+   "public": false,
+   "statements": 41,
+   "hit": 29,
+   "functions": 3,
+   "functions_hit": 3,
+   "symbols": [],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.server.providers.local_provider.decorators.resources",
+   "path": "fastmcp_slim/fastmcp/server/providers/local_provider/decorators/resources.py",
+   "public": false,
+   "statements": 41,
+   "hit": 31,
+   "functions": 4,
+   "functions_hit": 3,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.providers.local_provider.decorators.tools",
+   "path": "fastmcp_slim/fastmcp/server/providers/local_provider/decorators/tools.py",
+   "public": false,
+   "statements": 75,
+   "hit": 46,
+   "functions": 7,
+   "functions_hit": 6,
+   "symbols": [],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.server.providers.local_provider.local_provider",
+   "path": "fastmcp_slim/fastmcp/server/providers/local_provider/local_provider.py",
+   "public": true,
+   "statements": 113,
+   "hit": 95,
+   "functions": 18,
+   "functions_hit": 17,
+   "symbols": [
+    {
+     "name": "LocalProvider",
+     "kind": "class",
+     "statements": 113,
+     "hit": 95
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.providers.openapi",
+   "path": "fastmcp_slim/fastmcp/server/providers/openapi/__init__.py",
+   "public": true,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.openapi.components",
+   "path": "fastmcp_slim/fastmcp/server/providers/openapi/components.py",
+   "public": true,
+   "statements": 151,
+   "hit": 0,
+   "functions": 16,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "OpenAPIResource",
+     "kind": "class",
+     "statements": 24,
+     "hit": 0
+    },
+    {
+     "name": "OpenAPIResourceTemplate",
+     "kind": "class",
+     "statements": 18,
+     "hit": 0
+    },
+    {
+     "name": "OpenAPITool",
+     "kind": "class",
+     "statements": 42,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.openapi.provider",
+   "path": "fastmcp_slim/fastmcp/server/providers/openapi/provider.py",
+   "public": true,
+   "statements": 148,
+   "hit": 0,
+   "functions": 17,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "OpenAPIProvider",
+     "kind": "class",
+     "statements": 147,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.openapi.routing",
+   "path": "fastmcp_slim/fastmcp/server/providers/openapi/routing.py",
+   "public": true,
+   "statements": 13,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "MCPType",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "RouteMap",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.prefab_payload",
+   "path": "fastmcp_slim/fastmcp/server/providers/prefab_payload.py",
+   "public": false,
+   "statements": 61,
+   "hit": 4,
+   "functions": 6,
+   "functions_hit": 2,
+   "symbols": [],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.server.providers.prefab_synthesis",
+   "path": "fastmcp_slim/fastmcp/server/providers/prefab_synthesis.py",
+   "public": false,
+   "statements": 150,
+   "hit": 25,
+   "functions": 11,
+   "functions_hit": 4,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.providers.proxy",
+   "path": "fastmcp_slim/fastmcp/server/providers/proxy.py",
+   "public": true,
+   "statements": 567,
+   "hit": 0,
+   "functions": 89,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "FastMCPProxy",
+     "kind": "class",
+     "statements": 17,
+     "hit": 0
+    },
+    {
+     "name": "ProxyClient",
+     "kind": "class",
+     "statements": 30,
+     "hit": 0
+    },
+    {
+     "name": "ProxyMetadataMiddleware",
+     "kind": "class",
+     "statements": 58,
+     "hit": 0
+    },
+    {
+     "name": "ProxyProvider",
+     "kind": "class",
+     "statements": 148,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.skills",
+   "path": "fastmcp_slim/fastmcp/server/providers/skills/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.skills._common",
+   "path": "fastmcp_slim/fastmcp/server/providers/skills/_common.py",
+   "public": false,
+   "statements": 49,
+   "hit": 0,
+   "functions": 6,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.skills._deprecation",
+   "path": "fastmcp_slim/fastmcp/server/providers/skills/_deprecation.py",
+   "public": false,
+   "statements": 29,
+   "hit": 0,
+   "functions": 3,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.skills.claude_provider",
+   "path": "fastmcp_slim/fastmcp/server/providers/skills/claude_provider.py",
+   "public": false,
+   "statements": 2,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.skills.directory_provider",
+   "path": "fastmcp_slim/fastmcp/server/providers/skills/directory_provider.py",
+   "public": false,
+   "statements": 65,
+   "hit": 0,
+   "functions": 10,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.skills.skill_provider",
+   "path": "fastmcp_slim/fastmcp/server/providers/skills/skill_provider.py",
+   "public": false,
+   "statements": 113,
+   "hit": 0,
+   "functions": 18,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.skills.vendor_providers",
+   "path": "fastmcp_slim/fastmcp/server/providers/skills/vendor_providers.py",
+   "public": false,
+   "statements": 16,
+   "hit": 0,
+   "functions": 7,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.providers.wrapped_provider",
+   "path": "fastmcp_slim/fastmcp/server/providers/wrapped_provider.py",
+   "public": false,
+   "statements": 21,
+   "hit": 18,
+   "functions": 16,
+   "functions_hit": 13,
+   "symbols": [],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.server.server",
+   "path": "fastmcp_slim/fastmcp/server/server.py",
+   "public": true,
+   "statements": 568,
+   "hit": 328,
+   "functions": 72,
+   "functions_hit": 46,
+   "symbols": [
+    {
+     "name": "FastMCP",
+     "kind": "class",
+     "statements": 494,
+     "hit": 279
+    },
+    {
+     "name": "create_proxy",
+     "kind": "function",
+     "statements": 3,
+     "hit": 0
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.session_scoped_event_store",
+   "path": "fastmcp_slim/fastmcp/server/session_scoped_event_store.py",
+   "public": false,
+   "statements": 20,
+   "hit": 0,
+   "functions": 6,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.sessions",
+   "path": "fastmcp_slim/fastmcp/server/sessions.py",
+   "public": true,
+   "statements": 102,
+   "hit": 15,
+   "functions": 29,
+   "functions_hit": 2,
+   "symbols": [
+    {
+     "name": "SessionId",
+     "kind": "value",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "SessionProvider",
+     "kind": "class",
+     "statements": 6,
+     "hit": 0
+    },
+    {
+     "name": "UserSession",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.telemetry",
+   "path": "fastmcp_slim/fastmcp/server/telemetry.py",
+   "public": false,
+   "statements": 130,
+   "hit": 83,
+   "functions": 10,
+   "functions_hit": 9,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.server.transforms",
+   "path": "fastmcp_slim/fastmcp/server/transforms/__init__.py",
+   "public": true,
+   "statements": 9,
+   "hit": 0,
+   "functions": 9,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "GetToolNext",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "Transform",
+     "kind": "class",
+     "statements": 9,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.transforms.catalog",
+   "path": "fastmcp_slim/fastmcp/server/transforms/catalog.py",
+   "public": false,
+   "statements": 36,
+   "hit": 0,
+   "functions": 13,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.transforms.namespace",
+   "path": "fastmcp_slim/fastmcp/server/transforms/namespace.py",
+   "public": true,
+   "statements": 52,
+   "hit": 48,
+   "functions": 14,
+   "functions_hit": 13,
+   "symbols": [
+    {
+     "name": "Namespace",
+     "kind": "class",
+     "statements": 52,
+     "hit": 48
+    }
+   ],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.server.transforms.prompts_as_tools",
+   "path": "fastmcp_slim/fastmcp/server/transforms/prompts_as_tools.py",
+   "public": true,
+   "statements": 33,
+   "hit": 0,
+   "functions": 9,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "PromptsAsTools",
+     "kind": "class",
+     "statements": 26,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.transforms.resources_as_tools",
+   "path": "fastmcp_slim/fastmcp/server/transforms/resources_as_tools.py",
+   "public": true,
+   "statements": 35,
+   "hit": 0,
+   "functions": 9,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "ResourcesAsTools",
+     "kind": "class",
+     "statements": 29,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.transforms.search",
+   "path": "fastmcp_slim/fastmcp/server/transforms/search/__init__.py",
+   "public": true,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.transforms.search.base",
+   "path": "fastmcp_slim/fastmcp/server/transforms/search/base.py",
+   "public": true,
+   "statements": 164,
+   "hit": 0,
+   "functions": 21,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "serialize_tools_for_output_markdown",
+     "kind": "function",
+     "statements": 12,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.transforms.search.bm25",
+   "path": "fastmcp_slim/fastmcp/server/transforms/search/bm25.py",
+   "public": true,
+   "statements": 64,
+   "hit": 0,
+   "functions": 9,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "BM25SearchTransform",
+     "kind": "class",
+     "statements": 19,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.transforms.search.regex",
+   "path": "fastmcp_slim/fastmcp/server/transforms/search/regex.py",
+   "public": true,
+   "statements": 27,
+   "hit": 0,
+   "functions": 3,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "RegexSearchTransform",
+     "kind": "class",
+     "statements": 27,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.transforms.tool_transform",
+   "path": "fastmcp_slim/fastmcp/server/transforms/tool_transform.py",
+   "public": true,
+   "statements": 38,
+   "hit": 0,
+   "functions": 4,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "ToolTransform",
+     "kind": "class",
+     "statements": 38,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.transforms.version_filter",
+   "path": "fastmcp_slim/fastmcp/server/transforms/version_filter.py",
+   "public": true,
+   "statements": 34,
+   "hit": 0,
+   "functions": 10,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "VersionFilter",
+     "kind": "class",
+     "statements": 34,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.server.transforms.visibility",
+   "path": "fastmcp_slim/fastmcp/server/transforms/visibility.py",
+   "public": true,
+   "statements": 140,
+   "hit": 77,
+   "functions": 22,
+   "functions_hit": 17,
+   "symbols": [
+    {
+     "name": "Visibility",
+     "kind": "class",
+     "statements": 81,
+     "hit": 54
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.settings",
+   "path": "fastmcp_slim/fastmcp/settings.py",
+   "public": false,
+   "statements": 20,
+   "hit": 6,
+   "functions": 4,
+   "functions_hit": 2,
+   "symbols": [],
+   "tests": 8,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
+    "tests/pbt/test_json_schema.py::test_compress_preserves_validation",
+    "tests/pbt/test_json_schema.py::test_dereference_preserves_validation",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_uri_template.py::test_async_given_runs",
+    "tests/pbt/test_uri_template.py::test_reexpand",
+    "tests/pbt/test_uri_template.py::test_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.skills",
+   "path": "fastmcp_slim/fastmcp/skills/__init__.py",
+   "public": true,
+   "statements": 4,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.skills._composition",
+   "path": "fastmcp_slim/fastmcp/skills/_composition.py",
+   "public": false,
+   "statements": 66,
+   "hit": 0,
+   "functions": 11,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.skills._constants",
+   "path": "fastmcp_slim/fastmcp/skills/_constants.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.skills._proxy",
+   "path": "fastmcp_slim/fastmcp/skills/_proxy.py",
+   "public": false,
+   "statements": 67,
+   "hit": 0,
+   "functions": 12,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.skills._routing",
+   "path": "fastmcp_slim/fastmcp/skills/_routing.py",
+   "public": false,
+   "statements": 9,
+   "hit": 0,
+   "functions": 2,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.skills._snapshot",
+   "path": "fastmcp_slim/fastmcp/skills/_snapshot.py",
+   "public": false,
+   "statements": 54,
+   "hit": 0,
+   "functions": 5,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.skills._source",
+   "path": "fastmcp_slim/fastmcp/skills/_source.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.skills.client",
+   "path": "fastmcp_slim/fastmcp/skills/client.py",
+   "public": true,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "SkillsClientExtension",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.skills.extension",
+   "path": "fastmcp_slim/fastmcp/skills/extension.py",
+   "public": false,
+   "statements": 69,
+   "hit": 0,
+   "functions": 14,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.skills.models",
+   "path": "fastmcp_slim/fastmcp/skills/models.py",
+   "public": false,
+   "statements": 75,
+   "hit": 0,
+   "functions": 12,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.skills.provider",
+   "path": "fastmcp_slim/fastmcp/skills/provider.py",
+   "public": true,
+   "statements": 182,
+   "hit": 0,
+   "functions": 40,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "SkillCatalogProvider",
+     "kind": "class",
+     "statements": 11,
+     "hit": 0
+    },
+    {
+     "name": "SkillFileResource",
+     "kind": "class",
+     "statements": 6,
+     "hit": 0
+    },
+    {
+     "name": "SkillManifestProvider",
+     "kind": "class",
+     "statements": 40,
+     "hit": 0
+    },
+    {
+     "name": "SkillsDirectoryProvider",
+     "kind": "class",
+     "statements": 21,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.skills.skill",
+   "path": "fastmcp_slim/fastmcp/skills/skill.py",
+   "public": true,
+   "statements": 138,
+   "hit": 0,
+   "functions": 30,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "Skill",
+     "kind": "class",
+     "statements": 105,
+     "hit": 0
+    },
+    {
+     "name": "SkillManifest",
+     "kind": "class",
+     "statements": 5,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.telemetry",
+   "path": "fastmcp_slim/fastmcp/telemetry.py",
+   "public": true,
+   "statements": 57,
+   "hit": 24,
+   "functions": 10,
+   "functions_hit": 5,
+   "symbols": [
+    {
+     "name": "get_tracer",
+     "kind": "function",
+     "statements": 3,
+     "hit": 2
+    },
+    {
+     "name": "suppress_fastmcp_telemetry",
+     "kind": "function",
+     "statements": 4,
+     "hit": 0
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.tools",
+   "path": "fastmcp_slim/fastmcp/tools/__init__.py",
+   "public": true,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.tools.base",
+   "path": "fastmcp_slim/fastmcp/tools/base.py",
+   "public": true,
+   "statements": 164,
+   "hit": 64,
+   "functions": 27,
+   "functions_hit": 14,
+   "symbols": [
+    {
+     "name": "InputRequiredToolResult",
+     "kind": "class",
+     "statements": 1,
+     "hit": 0
+    },
+    {
+     "name": "Tool",
+     "kind": "class",
+     "statements": 66,
+     "hit": 31
+    },
+    {
+     "name": "ToolResult",
+     "kind": "class",
+     "statements": 29,
+     "hit": 13
+    }
+   ],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.tools.function_parsing",
+   "path": "fastmcp_slim/fastmcp/tools/function_parsing.py",
+   "public": false,
+   "statements": 178,
+   "hit": 86,
+   "functions": 11,
+   "functions_hit": 9,
+   "symbols": [],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.tools.function_tool",
+   "path": "fastmcp_slim/fastmcp/tools/function_tool.py",
+   "public": true,
+   "statements": 158,
+   "hit": 75,
+   "functions": 17,
+   "functions_hit": 11,
+   "symbols": [
+    {
+     "name": "tool",
+     "kind": "function",
+     "statements": 23,
+     "hit": 0
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.tools.tool_transform",
+   "path": "fastmcp_slim/fastmcp/tools/tool_transform.py",
+   "public": true,
+   "statements": 363,
+   "hit": 0,
+   "functions": 22,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "ArgTransform",
+     "kind": "class",
+     "statements": 12,
+     "hit": 0
+    },
+    {
+     "name": "ToolTransformConfig",
+     "kind": "class",
+     "statements": 5,
+     "hit": 0
+    },
+    {
+     "name": "forward",
+     "kind": "function",
+     "statements": 4,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.types",
+   "path": "fastmcp_slim/fastmcp/types.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities",
+   "path": "fastmcp_slim/fastmcp/utilities/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.asgi_transport",
+   "path": "fastmcp_slim/fastmcp/utilities/asgi_transport.py",
+   "public": true,
+   "statements": 118,
+   "hit": 0,
+   "functions": 14,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "StreamingASGITransport",
+     "kind": "class",
+     "statements": 57,
+     "hit": 0
+    },
+    {
+     "name": "run_asgi_lifespan",
+     "kind": "function",
+     "statements": 55,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.async_utils",
+   "path": "fastmcp_slim/fastmcp/utilities/async_utils.py",
+   "public": false,
+   "statements": 31,
+   "hit": 16,
+   "functions": 4,
+   "functions_hit": 4,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.utilities.auth",
+   "path": "fastmcp_slim/fastmcp/utilities/auth.py",
+   "public": true,
+   "statements": 25,
+   "hit": 0,
+   "functions": 4,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "parse_scopes",
+     "kind": "function",
+     "statements": 17,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.authorization",
+   "path": "fastmcp_slim/fastmcp/utilities/authorization.py",
+   "public": true,
+   "statements": 77,
+   "hit": 0,
+   "functions": 17,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "AuthContext",
+     "kind": "class",
+     "statements": 2,
+     "hit": 0
+    },
+    {
+     "name": "require_roles",
+     "kind": "function",
+     "statements": 3,
+     "hit": 0
+    },
+    {
+     "name": "require_scopes",
+     "kind": "function",
+     "statements": 1,
+     "hit": 0
+    },
+    {
+     "name": "restrict_tag",
+     "kind": "function",
+     "statements": 1,
+     "hit": 0
+    },
+    {
+     "name": "run_auth_checks",
+     "kind": "function",
+     "statements": 6,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.cli",
+   "path": "fastmcp_slim/fastmcp/utilities/cli.py",
+   "public": false,
+   "statements": 87,
+   "hit": 0,
+   "functions": 3,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.components",
+   "path": "fastmcp_slim/fastmcp/utilities/components.py",
+   "public": false,
+   "statements": 66,
+   "hit": 34,
+   "functions": 14,
+   "functions_hit": 7,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.utilities.docstring_parsing",
+   "path": "fastmcp_slim/fastmcp/utilities/docstring_parsing.py",
+   "public": false,
+   "statements": 25,
+   "hit": 3,
+   "functions": 1,
+   "functions_hit": 1,
+   "symbols": [],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.utilities.exceptions",
+   "path": "fastmcp_slim/fastmcp/utilities/exceptions.py",
+   "public": false,
+   "statements": 19,
+   "hit": 2,
+   "functions": 8,
+   "functions_hit": 1,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.utilities.http",
+   "path": "fastmcp_slim/fastmcp/utilities/http.py",
+   "public": false,
+   "statements": 4,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.inspect",
+   "path": "fastmcp_slim/fastmcp/utilities/inspect.py",
+   "public": false,
+   "statements": 71,
+   "hit": 0,
+   "functions": 6,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.json_schema",
+   "path": "fastmcp_slim/fastmcp/utilities/json_schema.py",
+   "public": false,
+   "statements": 346,
+   "hit": 235,
+   "functions": 21,
+   "functions_hit": 18,
+   "symbols": [],
+   "tests": 4,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_json_schema.py::test_compress_preserves_validation",
+    "tests/pbt/test_json_schema.py::test_dereference_preserves_validation",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.utilities.json_schema_type",
+   "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
+   "public": false,
+   "statements": 594,
+   "hit": 262,
+   "functions": 56,
+   "functions_hit": 34,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances"
+   ]
+  },
+  {
+   "module": "fastmcp.utilities.lifespan",
+   "path": "fastmcp_slim/fastmcp/utilities/lifespan.py",
+   "public": true,
+   "statements": 10,
+   "hit": 0,
+   "functions": 2,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "combine_lifespans",
+     "kind": "function",
+     "statements": 10,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.logging",
+   "path": "fastmcp_slim/fastmcp/utilities/logging.py",
+   "public": true,
+   "statements": 71,
+   "hit": 14,
+   "functions": 8,
+   "functions_hit": 5,
+   "symbols": [
+    {
+     "name": "get_logger",
+     "kind": "function",
+     "statements": 3,
+     "hit": 2
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.utilities.mcp_server_config",
+   "path": "fastmcp_slim/fastmcp/utilities/mcp_server_config/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.mcp_server_config.v1",
+   "path": "fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.mcp_server_config.v1.environments",
+   "path": "fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/environments/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.mcp_server_config.v1.environments.base",
+   "path": "fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/environments/base.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 2,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.mcp_server_config.v1.environments.uv",
+   "path": "fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/environments/uv.py",
+   "public": false,
+   "statements": 74,
+   "hit": 0,
+   "functions": 3,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.mcp_server_config.v1.mcp_server_config",
+   "path": "fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py",
+   "public": false,
+   "statements": 93,
+   "hit": 0,
+   "functions": 15,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.mcp_server_config.v1.sources",
+   "path": "fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/sources/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.mcp_server_config.v1.sources.base",
+   "path": "fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/sources/base.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.mcp_server_config.v1.sources.filesystem",
+   "path": "fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/sources/filesystem.py",
+   "public": false,
+   "statements": 76,
+   "hit": 0,
+   "functions": 6,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.mime",
+   "path": "fastmcp_slim/fastmcp/utilities/mime.py",
+   "public": false,
+   "statements": 5,
+   "hit": 3,
+   "functions": 1,
+   "functions_hit": 1,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.utilities.openapi",
+   "path": "fastmcp_slim/fastmcp/utilities/openapi/__init__.py",
+   "public": true,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.openapi.director",
+   "path": "fastmcp_slim/fastmcp/utilities/openapi/director.py",
+   "public": false,
+   "statements": 319,
+   "hit": 0,
+   "functions": 22,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.openapi.formatters",
+   "path": "fastmcp_slim/fastmcp/utilities/openapi/formatters.py",
+   "public": false,
+   "statements": 154,
+   "hit": 0,
+   "functions": 5,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.openapi.json_schema_converter",
+   "path": "fastmcp_slim/fastmcp/utilities/openapi/json_schema_converter.py",
+   "public": false,
+   "statements": 140,
+   "hit": 0,
+   "functions": 13,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.openapi.models",
+   "path": "fastmcp_slim/fastmcp/utilities/openapi/models.py",
+   "public": true,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "HTTPRoute",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.openapi.parser",
+   "path": "fastmcp_slim/fastmcp/utilities/openapi/parser.py",
+   "public": false,
+   "statements": 350,
+   "hit": 0,
+   "functions": 17,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.openapi.schemas",
+   "path": "fastmcp_slim/fastmcp/utilities/openapi/schemas.py",
+   "public": false,
+   "statements": 425,
+   "hit": 0,
+   "functions": 17,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.pagination",
+   "path": "fastmcp_slim/fastmcp/utilities/pagination.py",
+   "public": false,
+   "statements": 20,
+   "hit": 17,
+   "functions": 3,
+   "functions_hit": 3,
+   "symbols": [],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.utilities.prefab",
+   "path": "fastmcp_slim/fastmcp/utilities/prefab.py",
+   "public": false,
+   "statements": 25,
+   "hit": 9,
+   "functions": 7,
+   "functions_hit": 4,
+   "symbols": [],
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
+  },
+  {
+   "module": "fastmcp.utilities.skills",
+   "path": "fastmcp_slim/fastmcp/utilities/skills.py",
+   "public": false,
+   "statements": 66,
+   "hit": 0,
+   "functions": 8,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.tasks",
+   "path": "fastmcp_slim/fastmcp/utilities/tasks.py",
+   "public": true,
+   "statements": 11,
+   "hit": 4,
+   "functions": 3,
+   "functions_hit": 3,
+   "symbols": [
+    {
+     "name": "TaskConfig",
+     "kind": "class",
+     "statements": 11,
+     "hit": 4
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.utilities.tests",
+   "path": "fastmcp_slim/fastmcp/utilities/tests.py",
+   "public": true,
+   "statements": 114,
+   "hit": 7,
+   "functions": 14,
+   "functions_hit": 1,
+   "symbols": [
+    {
+     "name": "asgi_client",
+     "kind": "function",
+     "statements": 2,
+     "hit": 0
+    },
+    {
+     "name": "asgi_server",
+     "kind": "function",
+     "statements": 6,
+     "hit": 0
+    },
+    {
+     "name": "run_server_async",
+     "kind": "function",
+     "statements": 10,
+     "hit": 0
+    }
+   ],
+   "tests": 8,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
+    "tests/pbt/test_json_schema.py::test_compress_preserves_validation",
+    "tests/pbt/test_json_schema.py::test_dereference_preserves_validation",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_uri_template.py::test_async_given_runs",
+    "tests/pbt/test_uri_template.py::test_reexpand",
+    "tests/pbt/test_uri_template.py::test_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.utilities.timeout",
+   "path": "fastmcp_slim/fastmcp/utilities/timeout.py",
+   "public": false,
+   "statements": 15,
+   "hit": 2,
+   "functions": 2,
+   "functions_hit": 1,
+   "symbols": [],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.utilities.token_cache",
+   "path": "fastmcp_slim/fastmcp/utilities/token_cache.py",
+   "public": false,
+   "statements": 46,
+   "hit": 0,
+   "functions": 8,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.types",
+   "path": "fastmcp_slim/fastmcp/utilities/types.py",
+   "public": true,
+   "statements": 202,
+   "hit": 31,
+   "functions": 20,
+   "functions_hit": 6,
+   "symbols": [
+    {
+     "name": "Audio",
+     "kind": "class",
+     "statements": 22,
+     "hit": 0
+    },
+    {
+     "name": "File",
+     "kind": "class",
+     "statements": 44,
+     "hit": 0
+    },
+    {
+     "name": "Image",
+     "kind": "class",
+     "statements": 31,
+     "hit": 0
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  },
+  {
+   "module": "fastmcp.utilities.ui",
+   "path": "fastmcp_slim/fastmcp/utilities/ui.py",
+   "public": false,
+   "statements": 24,
+   "hit": 0,
+   "functions": 7,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.version_check",
+   "path": "fastmcp_slim/fastmcp/utilities/version_check.py",
+   "public": false,
+   "statements": 67,
+   "hit": 0,
+   "functions": 6,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.utilities.versions",
+   "path": "fastmcp_slim/fastmcp/utilities/versions.py",
+   "public": true,
+   "statements": 93,
+   "hit": 40,
+   "functions": 13,
+   "functions_hit": 7,
+   "symbols": [
+    {
+     "name": "VersionSpec",
+     "kind": "class",
+     "statements": 25,
+     "hit": 4
+    }
+   ],
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+   ]
+  }
+ ]
+}
