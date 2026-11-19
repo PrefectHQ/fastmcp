@@ -286,6 +286,7 @@ class OpenAPIParser(
 
                 # Extract schema
                 param_schema_dict = {}
+                content_type = None
                 if param_schema_obj:
                     # Process schema object
                     param_schema_dict = self._extract_schema_as_dict(param_schema_obj)
@@ -301,6 +302,7 @@ class OpenAPIParser(
 
                 elif hasattr(parameter, "content") and parameter.content:
                     # Handle content-based parameters
+                    content_type = next(iter(parameter.content))
                     first_media_type = next(iter(parameter.content.values()), None)
                     if (
                         first_media_type
@@ -338,6 +340,7 @@ class OpenAPIParser(
                     description=parameter.description,
                     explode=explode,
                     style=style,
+                    content_type=content_type,
                 )
                 extracted_params.append(param_info)
             except Exception as e:
