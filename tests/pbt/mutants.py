@@ -147,6 +147,7 @@ def run(test: str, seed: int, extra_env: dict[str, str] | None = None) -> bool:
 
 def main(targets: list[str], seeds: int = 10) -> int:
     missed = 0
+    ran = 0
     for target in targets or list(MUTANTS):
         for m in MUTANTS[target]:
             path = ROOT / m["file"]
@@ -164,8 +165,12 @@ def main(targets: list[str], seeds: int = 10) -> int:
                 caught = sum(not run(m["test"], seed, env) for seed in range(seeds))
             finally:
                 path.write_text(original)
+            ran += 1
             missed += caught < seeds
             print(f"{target}: {m['name']}: caught {caught}/{seeds}")
+    if not ran:
+        print("no mutant applied to this tree; nothing was measured")
+        return 1
     return 1 if missed else 0
 
 

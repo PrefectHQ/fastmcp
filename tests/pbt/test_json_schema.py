@@ -21,6 +21,7 @@ from hypothesis import assume, event, given, note, reject
 from hypothesis import strategies as st
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
+from pydantic import PydanticUserError, ValidationError
 
 from fastmcp.utilities.json_schema import compress_schema, dereference_refs
 from fastmcp.utilities.json_schema_type import json_schema_to_type_adapter
@@ -28,19 +29,28 @@ from fastmcp.utilities.json_schema_type import json_schema_to_type_adapter
 from .schema_strategies import json_values, schemas, shaped_instances
 
 
-def oracle(schema: dict[str, Any]):
+def oracle(schema: dict[str, Any], *, drawn: bool = True):
+    """Validity under Draft 2020-12.
+
+    A drawn schema the oracle cannot judge (malformed, or an unguarded `$ref`
+    cycle) is rejected as an example. A rewritten schema gets no such pass:
+    if a rewrite turns a judgeable schema into one that is not, that is the bug.
+    """
     try:
         Draft202012Validator.check_schema(schema)
     except SchemaError:
-        reject()
+        if drawn:
+            reject()
+        raise
     validator = Draft202012Validator(schema)
 
     def is_valid(instance: Any) -> bool:
         try:
             return validator.is_valid(instance)
         except RecursionError:
-            # An unguarded `$ref` cycle; the oracle cannot answer.
-            reject()
+            if drawn:
+                reject()
+            raise AssertionError("the schema recurses without end") from None
 
     return is_valid
 
@@ -55,12 +65,19 @@ def _walk(node: Any):
             yield from _walk(v)
 
 
-def _reproduces(schema: dict[str, Any], instance: Any) -> bool:
+def _reproduces(
+    schema: dict[str, Any], instance: Any, failure: type[Exception]
+) -> bool:
+    """True while the finding's minimal case still fails the way it was recorded.
+
+    Any other exception propagates, so an unrelated break in the adapter fails
+    the import loudly instead of silently widening every skip.
+    """
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             json_schema_to_type_adapter(schema).validate_python(instance)
-    except Exception:
+    except failure:
         return True
     return False
 
@@ -75,15 +92,18 @@ _F3_NODE = {
         }
     },
 }
+# F1 crashes building the type (TypeError), F3 leaves it unbuildable
+# (PydanticUserError), F2 and F5 reject a valid instance (ValidationError).
 # A finding is skipped only while it still reproduces in this tree; once it is
 # fixed the harness checks it like everything else. A mutant that undoes a fix
 # sets PBT_ASSUME_FIXED so the probe does not mistake it for the open bug.
 F1_OPEN = "F1" not in os.environ.get("PBT_ASSUME_FIXED", "") and _reproduces(
     {"type": "object", "properties": {"a": {"type": "object", "default": None}}},
     {"a": {}},
+    TypeError,
 )
 F3_OPEN = "F3" not in os.environ.get("PBT_ASSUME_FIXED", "") and _reproduces(
-    {**_F3_NODE, "$defs": {"N": _F3_NODE}}, {}
+    {**_F3_NODE, "$defs": {"N": _F3_NODE}}, {}, PydanticUserError
 )
 F2_OPEN = "F2" not in os.environ.get("PBT_ASSUME_FIXED", "") and _reproduces(
     {
@@ -98,6 +118,7 @@ F2_OPEN = "F2" not in os.environ.get("PBT_ASSUME_FIXED", "") and _reproduces(
         },
     },
     {"a": {}},
+    ValidationError,
 )
 F5_OPEN = "F5" not in os.environ.get("PBT_ASSUME_FIXED", "") and _reproduces(
     {
@@ -113,6 +134,7 @@ F5_OPEN = "F5" not in os.environ.get("PBT_ASSUME_FIXED", "") and _reproduces(
         },
     },
     {"x": {"a": []}},
+    ValidationError,
 )
 
 
@@ -126,8 +148,14 @@ def adapter_known_divergence(schema: dict[str, Any]) -> str | None:
         for node in nodes
     ):
         return "F1-object-non-dict-default"
-    if F3_OPEN and any("prefixItems" in node and "$ref" in str(node) for node in nodes):
-        return "F3-ref-in-prefix-array"
+    # F3 is a `$ref` cycle through a positional array, in a prefix position or
+    # in the `items` tail; #6553 fixes both.
+    if F3_OPEN and any(
+        "prefixItems" in node
+        and "$ref" in str(node["prefixItems"]) + str(node.get("items"))
+        for node in nodes
+    ):
+        return "F3-ref-in-positional-array"
     if F2_OPEN and any(
         isinstance(n.get("default"), dict)
         and n["default"]
@@ -183,6 +211,12 @@ def shape_events(schema: dict[str, Any], valid: list[Any]) -> None:
     event(f"valid instances: {min(len(valid), 3)}+")
 
 
+# The adapter's documented refusals; any other ValueError is a bug.
+REFUSALS = (
+    "JSON schema is too deeply nested to convert",
+    "JSON schema is too large to convert",
+)
+
 INSTANCES = st.lists(json_values(), min_size=1, max_size=8)
 
 
@@ -198,7 +232,7 @@ def _rewrite_preserves(rewrite, schema: dict[str, Any], instances: list[Any]) ->
     note(f"schema: {schema}")
     note(f"rewritten: {rewritten}")
     event("rewrite changed schema" if rewritten != schema else "rewrite no-op")
-    after = oracle(rewritten)
+    after = oracle(rewritten, drawn=False)
     for instance, verdict in zip(instances, verdicts):
         note(f"instance: {instance!r} original says {verdict}")
         assert after(instance) == verdict, "the rewrite changed what validates"
@@ -242,8 +276,9 @@ def test_adapter_accepts_valid_instances(drawn):
             warnings.simplefilter("ignore")
             adapter = json_schema_to_type_adapter(schema)
     except ValueError as e:
-        # Documented refusals: too deep, too large.
-        event(f"refused: {str(e)[:40]}")
+        if not str(e).startswith(REFUSALS):
+            raise
+        event(f"refused: {e}")
         return
     assert sys.getrecursionlimit() == limit
     for instance in valid:

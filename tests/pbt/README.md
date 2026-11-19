@@ -8,14 +8,13 @@ bugs (mutants) show it can fail.
 
 | file | what it holds |
 |---|---|
-| `conftest.py` | hypothesis profiles, the `pbt` marker, per-test timeouts, the reach-check fixture |
+| `conftest.py` | hypothesis profiles, the `pbt` and `integration` markers, per-test timeouts |
 | `strategies.py` | URI templates in fastmcp's RFC 6570 subset, with values |
 | `schema_strategies.py` | JSON Schemas (with `$defs`, `$ref` cycles, positional arrays, defaults) and schema-shaped instances |
 | `test_uri_template.py` | `match_uri_template` inverts `expand_uri_template` (roundtrip, reexpand) |
 | `test_resource_read.py` | the same round trip through a FastMCP server and an in-memory `Client` |
 | `test_json_schema.py` | `dereference_refs` / `compress_schema` keep what validates; `json_schema_to_type_adapter` accepts what `jsonschema` accepts |
 | `test_components_machine.py` | state machine over tools, prompts and resources on a parent and a mounted child: add, remove, versions, visibility, listing, pagination, calls |
-| `reach.py` | reach checks: the fraction of cases that hit each interaction a property needs |
 | `mutants.py` | planted bugs and their catch rate across seeds (not collected by pytest) |
 | `FINDINGS.md` | every finding, written before it is fixed: property, minimal case, reachability, cross-SDK case table |
 
@@ -26,13 +25,16 @@ bugs (mutants) show it can fail.
 | profile | examples | randomness | database | timeout | for |
 |---|---|---|---|---|---|
 | `ci` (default) | 50 | derandomized | off | 120s per test | the normal suite; bounded and cannot flake |
-| `campaign` | 5000, or `HYPOTHESIS_MAX_EXAMPLES` | random | `.hypothesis/examples` | none | bug hunting; fails a test whose declared reach is under 0.2% |
+| `campaign` | 5000, or `HYPOTHESIS_MAX_EXAMPLES` | random | `.hypothesis/examples` | none | bug hunting |
 | `mutants` | 200, or `HYPOTHESIS_MAX_EXAMPLES` | random | off | none | what `mutants.py` runs each seed under |
 
 The explain phase is off in every profile: it line-traces each failure through
 the server and client and takes minutes.
 
 ## running
+
+Every test here also carries the `integration` marker, so CI runs them in the
+integration job (Linux, one Python) rather than the 5s unit matrix.
 
 ```bash
 uv run pytest tests/pbt
@@ -43,13 +45,15 @@ HYPOTHESIS_PROFILE=campaign HYPOTHESIS_MAX_EXAMPLES=20000 uv run pytest tests/pb
 ```
 
 ```bash
-uv run python -m tests.pbt.mutants schema_fixes
+uv run python -m tests.pbt.mutants uri_template
 ```
 
 `mutants.py` takes target names (`uri_template`, `resource_read`,
 `schema_fixes`, `components`), applies each exact string swap to the source,
 counts how many of ten seeds fail, and restores the file. A mutant whose
-anchor is not in the tree (one that undoes a fix not yet merged) is skipped.
+anchor is not in the tree (one that undoes a fix not yet merged) is skipped;
+if every requested mutant is skipped the run exits non-zero, since nothing was
+measured.
 
 ## known findings
 

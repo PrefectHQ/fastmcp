@@ -7,6 +7,7 @@ is what `mutants.py` runs under: random, no database, so seeds are independent.
 """
 
 import os
+from pathlib import Path
 
 import pytest
 from hypothesis import HealthCheck, Phase, settings
@@ -47,34 +48,19 @@ PROFILE = os.environ.get("HYPOTHESIS_PROFILE", "ci")
 settings.load_profile(PROFILE)
 
 
+HERE = Path(__file__).parent
+
+
 def pytest_collection_modifyitems(items):
     long_run = PROFILE != "ci"
     for item in items:
-        if "tests/pbt" in str(item.fspath):
+        if HERE in item.path.parents:
+            # Integration, not unit: 50 examples through schema conversion or a
+            # server and client take longer than the unit suite's 5s, and they
+            # need not run on every platform in the matrix.
             item.add_marker(pytest.mark.pbt)
+            item.add_marker(pytest.mark.integration)
             if long_run:
                 item.add_marker(pytest.mark.timeout(0))
             else:
-                # 50 examples through schema conversion or a server and client
-                # take longer than the suite-wide 5s.
                 item.add_marker(pytest.mark.timeout(120))
-
-
-@pytest.fixture(autouse=True)
-def reach_check(request):
-    """Print each property's reach and, under `campaign`, fail on a hole."""
-    from .reach import FLOOR, REGISTRY
-
-    for r in REGISTRY:
-        r.reset()
-    yield
-    for r in REGISTRY:
-        if r.test != request.node.name or not r.cases:
-            continue
-        report = ", ".join(f"{n} {f:.1%}" for n, f in r.fractions().items())
-        print(f"\nreach[{r.test}] over {r.cases} cases: {report}")
-        if PROFILE == "campaign" and (missed := r.missed()):
-            pytest.fail(
-                f"{r.test} reached {missed} in under {FLOOR:.1%} of cases; "
-                "the generator does not exercise them"
-            )

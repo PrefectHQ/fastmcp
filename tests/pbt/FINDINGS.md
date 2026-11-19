@@ -8,15 +8,19 @@ Run a property: `uv run pytest tests/pbt -m pbt --hypothesis-show-statistics`.
 Hunt: `HYPOTHESIS_PROFILE=campaign HYPOTHESIS_MAX_EXAMPLES=20000 uv run pytest tests/pbt`.
 Mutant catch rates: `uv run python -m tests.pbt.mutants`.
 
-## summary (campaign of 2026-11-18, nothing fixed yet)
+## summary (campaigns of 2026-11-18)
 
 | property | cases | mutants caught | result |
 |---|---|---|---|
 | uri_template roundtrip, reexpand | 20k each | 4/4 at 10/10 seeds | clean (K1) |
 | resource_read through Client | 10k | 2/2 at 10/10 | clean (K2, K3) |
-| json_schema dereference, compress | 10k each | none planted yet | clean |
-| json_schema adapter accepts valid | 10k | none planted yet | F1, F3 |
+| json_schema dereference, compress | 10k each | none planted | clean |
+| json_schema adapter accepts valid | 10k | `schema_fixes`, 4 undo mutants at 10/10 (below) | F1, F2, F3, F5 |
 | component machine (tools, prompts, resources, mount, versions, visibility, pagination) | 3k histories | 4/4 at 10/10 | F4 |
+
+F1, F3 and F5 have fix PRs (#6552, #6553, #6572); F2 and F4 wait on a
+maintainer decision. All five are open on `main` until those merge, and the
+harness skips them by name until then.
 
 Findings, most to least serious: F1 (crash on a non-object default for an
 object property, reachable end to end), F4 (explicit version silently runs an
@@ -32,7 +36,7 @@ is a hydration design decision.
 |---|---|---|
 | F1 | #6552 | nested guard removed: 10/10; root guard removed: 10/10 |
 | F3 | #6553 | positions read from the closure again: 10/10 |
-| F5 | branch `fix/prefixitems-short-arrays-typed-extras` (85a4c3374), PR pending | placeholders inherit `validate_default` again: 10/10 (3/10 before drawing the shape directly) |
+| F5 | #6572 | placeholders inherit `validate_default` again: 10/10 (3/10 before drawing the shape directly) |
 
 Getting there took three harness fixes, each one a reason the first
 measurement (1/10, 2/10, 1/10) was low: random JSON instances rarely reached
@@ -166,7 +170,9 @@ the schemas that would catch it (`PBT_ASSUME_FIXED`, set per mutant).
   is not fully defined`. The same with `{"r": []}`. Dropping `prefixItems`
   makes it work, so the positional-array type built by
   `_create_prefix_items_type` does not take part in recursive-type
-  resolution (`_resolve_recursive_types`).
+  resolution (`_resolve_recursive_types`). A cycle through a prefix position
+  (`"prefixItems": [{"type": "string"}, {"$ref": "#/$defs/A"}]`) fails the
+  same way; the #6553 branch accepts both (checked 2026-11-19).
 - blob: shrunk case from the 10k campaign
   (`{'type': 'array', 'prefixItems': [{'type': 'string'}], 'items': {...'$ref': '#/$defs/A'}}`);
   reproduce from `.hypothesis/examples` with the campaign profile

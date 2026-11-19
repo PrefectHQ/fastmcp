@@ -104,8 +104,9 @@ class ComponentMachine(RuleBasedStateMachine):
         self.child = FastMCP("child")
         self.parent.mount(self.child, namespace="c")
         self.servers = {"parent": self.parent, "child": self.child}
-        self.client = Client(self.parent)
-        self.run(self.client.__aenter__())
+        client = Client(self.parent)
+        self.run(client.__aenter__())
+        self.client = client
         # A drawn starting state: several identifiers, each versioned or not,
         # so multi-version and mounted reads happen from the first step.
         for kind in KINDS:
