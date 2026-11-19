@@ -54,6 +54,13 @@ AUTOMATIONS = [
         "workflows": ["marvin-label-triage.yml"],
     },
     {
+        "id": "pr-type-label",
+        "name": "PR type labels",
+        "what": "copies the linked issue's bug/feature/enhancement/documentation label onto the PR, for release notes",
+        "cadence": "on each new or edited PR",
+        "workflows": ["label-pr-type.yml"],
+    },
+    {
         "id": "dedupe",
         "name": "duplicate detection",
         "what": "points out when a new issue duplicates an existing one",
