@@ -46,11 +46,12 @@ publishes to the `status` branch daily.
 uv run scripts/pbt_coverage.py --output status-site/pbt-coverage.json
 ```
 
-A test is property-based when its file imports hypothesis; only those files
-run. Coverage uses per-test contexts, and only statements inside function
-bodies count, so lines that ran at import or collection time never do. The
-default view is the public API: modules the docs (excluding the generated SDK
-reference) import from, plus the modules that define a name the docs import.
+A test is property-based when its `test_*.py` file imports hypothesis; only
+those files run, with pytest's per-test timeout off. Coverage uses per-test contexts, and only statements inside function
+bodies count, so lines that ran at import or collection time never do.
+Overload stubs, `...` bodies and `if TYPE_CHECKING:` blocks are left out. The
+default view is the public API: modules the current docs (excluding the
+generated SDK reference and the archived v2/v3 trees) import from, plus the modules that define a name the docs import.
 "All modules" shows everything else. With no property-based tests on the
 commit, the report says so and every module reads as unreached.
 

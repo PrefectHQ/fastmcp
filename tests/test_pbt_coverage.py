@@ -39,21 +39,44 @@ def test_function_spans_cover_bodies_not_headers(pbt):
     assert spans == [("f", 4, 4), ("C.g", 9, 11), ("C.g.h", 10, 10)]
 
 
-def test_doc_imports_handle_parens_aliases_and_skip_sdk_reference(pbt, tmp_path):
+def test_function_spans_skip_bodies_that_never_run(pbt):
+    source = (
+        "from typing import TYPE_CHECKING, overload\n"
+        "if TYPE_CHECKING:\n"
+        "    def hint():\n"
+        "        return 1\n"
+        "else:\n"
+        "    def real():\n"
+        "        return 2\n"
+        "@overload\n"
+        "def f(x: int) -> int: ...\n"
+        "def f(x):\n"
+        "    return x\n"
+        "class P:\n"
+        "    def method(self):\n"
+        '        """Protocol stub."""\n'
+        "        ...\n"
+    )
+    spans = pbt.function_spans(ast.parse(source))
+    assert [name for name, _, _ in spans] == ["real", "f"]
+
+
+def test_doc_imports_handle_comments_aliases_and_skip_archived_docs(pbt, tmp_path):
     (tmp_path / "guide.mdx").write_text(
         "```python\n"
         "from fastmcp import FastMCP, Context as Ctx  # comment\n"
         "from fastmcp.server.auth import (\n"
-        "    JWTVerifier,\n"
+        "    JWTVerifier,  # verifies tokens\n"
         "    RemoteAuthProvider,\n"
         ")\n"
         "from fastmcp.tools import *\n"
         "```\n"
     )
-    (tmp_path / "python-sdk").mkdir()
-    (tmp_path / "python-sdk" / "ref.mdx").write_text(
-        "from fastmcp.utilities.cli import internal\n"
-    )
+    for skipped in ("python-sdk", "v2"):
+        (tmp_path / skipped).mkdir()
+        (tmp_path / skipped / "ref.mdx").write_text(
+            "from fastmcp.utilities.cli import internal\n"
+        )
     assert pbt.parse_doc_imports(tmp_path) == {
         "fastmcp": {"FastMCP", "Context"},
         "fastmcp.server.auth": {"JWTVerifier", "RemoteAuthProvider"},
@@ -102,3 +125,12 @@ def test_no_suite_reports_modules_unreached(pbt):
     assert [m["module"] for m in modules] == [pbt.module_name(p) for p in paths]
     assert all(m["hit"] == 0 for m in modules)
     assert sum(m["statements"] for m in modules) > 0
+
+
+def test_only_test_files_that_import_hypothesis_are_suite_files(pbt, tmp_path):
+    (tmp_path / "pbt").mkdir()
+    (tmp_path / "pbt" / "test_props.py").write_text("from hypothesis import given\n")
+    (tmp_path / "pbt" / "strategies.py").write_text("import hypothesis\n")
+    (tmp_path / "pbt" / "conftest.py").write_text("from hypothesis import settings\n")
+    (tmp_path / "test_plain.py").write_text("import pytest\n")
+    assert pbt.discover_pbt_tests(tmp_path) == [tmp_path / "pbt" / "test_props.py"]

@@ -36,6 +36,11 @@ DOC_IMPORT = re.compile(
     r"^[ \t]*from\s+(fastmcp(?:\.\w+)*)\s+import\s+(\([^)]*\)|[^\n]+)", re.MULTILINE
 )
 MAX_TESTS_LISTED = 8
+# The generated SDK reference documents every module, and v2/v3 are archived
+# docs for older releases; neither says what current users are told to import.
+SKIPPED_DOCS = {"python-sdk", "v2", "v3"}
+TEST_FILE = re.compile(r"^(test_.*|.*_test)\.py$")
+NO_TESTS_COLLECTED = 5
 NO_COVER = r"#\s*(pragma|PRAGMA)[:\s]?\s*(no|NO)\s*(cover|COVER)"
 
 
@@ -43,7 +48,8 @@ def discover_pbt_tests(tests_dir: Path) -> list[Path]:
     return sorted(
         path
         for path in tests_dir.rglob("*.py")
-        if HYPOTHESIS_IMPORT.search(path.read_text(encoding="utf-8"))
+        if TEST_FILE.match(path.name)
+        and HYPOTHESIS_IMPORT.search(path.read_text(encoding="utf-8"))
     )
 
 
@@ -60,6 +66,9 @@ def run_suite(test_files: list[Path], data_file: Path) -> int:
         "--cov=fastmcp",
         "--cov-context=test",
         "--cov-report=",
+        # Per-test tracing slows hypothesis down; the repo's 5s cap is for
+        # the regular suite, not for a coverage run.
+        "--timeout=0",
         "-q",
     ]
     return subprocess.run(command, cwd=ROOT, env=env, check=False).returncode
@@ -76,10 +85,10 @@ def parse_doc_imports(docs_dir: Path) -> dict[str, set[str]]:
     """Map each fastmcp module the docs import from to the names they import."""
     imports: dict[str, set[str]] = defaultdict(set)
     for page in docs_dir.rglob("*.mdx"):
-        if "python-sdk" in page.relative_to(docs_dir).parts:
+        if page.relative_to(docs_dir).parts[0] in SKIPPED_DOCS:
             continue
         for match in DOC_IMPORT.finditer(page.read_text(encoding="utf-8")):
-            names = match.group(2).split("#", 1)[0].strip("()\n ")
+            names = re.sub(r"#[^\n]*", "", match.group(2)).strip("()\n ")
             for name in names.replace("\n", ",").split(","):
                 name = name.strip().split(" as ")[0].strip()
                 if name.isidentifier():
@@ -120,13 +129,50 @@ def resolve_public(
     return public
 
 
+def _is_type_checking(node: ast.If) -> bool:
+    test = node.test
+    name = test.attr if isinstance(test, ast.Attribute) else getattr(test, "id", "")
+    return name == "TYPE_CHECKING"
+
+
+def _is_stub(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """`@overload` signatures and `...` bodies can never run real code."""
+    for decorator in node.decorator_list:
+        target = decorator.attr if isinstance(decorator, ast.Attribute) else ""
+        if target == "overload" or getattr(decorator, "id", "") == "overload":
+            return True
+    body = node.body
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+    ):
+        if isinstance(body[0].value.value, str):
+            body = body[1:]
+    return len(body) == 1 and (
+        isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and body[0].value.value is Ellipsis
+    )
+
+
 def function_spans(tree: ast.Module) -> list[tuple[str, int, int]]:
-    """Every function's qualified name and the line span of its body."""
+    """Every function's qualified name and the line span of its body.
+
+    Skips functions that never run: overload stubs, `...` bodies, and anything
+    under `if TYPE_CHECKING:`.
+    """
     spans: list[tuple[str, int, int]] = []
 
     def visit(node: ast.AST, prefix: str) -> None:
         for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.If) and _is_type_checking(child):
+                for orelse in child.orelse:
+                    visit(ast.Module(body=[orelse], type_ignores=[]), prefix)
+                continue
             if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
+                if _is_stub(child):
+                    continue
                 qualname = f"{prefix}{child.name}"
                 start = child.body[0].lineno
                 spans.append((qualname, start, child.end_lineno or start))
@@ -257,7 +303,7 @@ def main() -> None:
     public = resolve_public(parse_doc_imports(ROOT / "docs"), all_modules)
     modules, test_count = analyze(data_file, public)
 
-    if not test_files and args.data is None:
+    if (not test_files and args.data is None) or exit_code == NO_TESTS_COLLECTED:
         status = "no_suite"
     elif exit_code not in (None, 0):
         status = "failed"

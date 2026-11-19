@@ -22,7 +22,7 @@
 
   const share = (m) => (m.statements ? m.hit / m.statements : 0);
   const pct = (n) =>
-    n === 0 ? "0%" : n < 0.01 ? "<1%" : `${Math.round(n * 100)}%`;
+    n === 0 ? "0%" : n < 0.01 ? "<1%" : `${Math.floor(n * 100)}%`;
   const bin = (m) => {
     const s = share(m);
     for (let i = BINS.length - 1; i >= 0; i--) if (s >= BINS[i].min) return i;
@@ -144,7 +144,7 @@
     stat(`${touched}/${modules.length}`, "modules reached");
     stat(
       report.suite.tests_reaching_fastmcp.toLocaleString(),
-      "property tests",
+      "property tests in the suite",
     );
   }
 
@@ -311,7 +311,11 @@
       cursor = order.indexOf(index);
       show(index);
     });
-    graph.addEventListener("focus", () => show(order[Math.max(0, cursor)]));
+    graph.addEventListener("focus", () => {
+      cursor = Math.max(0, cursor);
+      selected = cells[order[cursor]].module.module;
+      show(order[cursor]);
+    });
     graph.addEventListener("keydown", (event) => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
         return;
@@ -397,19 +401,43 @@
       const response = await fetch(PBT_URL, { cache: "no-store" });
       if (!response.ok) throw new Error("unavailable");
       const next = await response.json();
-      if (
-        next.schema !== "fastmcp-pbt-coverage/1" ||
-        !Array.isArray(next.modules)
-      )
-        throw new Error("invalid");
+      if (!valid(next)) throw new Error("invalid");
+      const previous = report;
       report = next;
-      freshness();
-      draw();
+      try {
+        freshness();
+        draw();
+      } catch (error) {
+        report = previous;
+        throw error;
+      }
     } catch {
-      if (report) return;
-      el("pbt-freshness").textContent =
-        "Property-based coverage data is unavailable.";
+      if (!report) {
+        el("pbt-freshness").textContent =
+          "Property-based coverage data is unavailable.";
+        return;
+      }
+      freshness();
+      el("pbt-freshness").append(
+        " Refresh failed; showing the last loaded data.",
+      );
     }
+  }
+  function valid(next) {
+    const moduleOk = (m) =>
+      typeof m.module === "string" &&
+      typeof m.path === "string" &&
+      Number.isFinite(m.statements) &&
+      Number.isFinite(m.hit) &&
+      Array.isArray(m.symbols) &&
+      Array.isArray(m.test_ids);
+    return (
+      next?.schema === "fastmcp-pbt-coverage/1" &&
+      Number.isFinite(Date.parse(next.generated_at)) &&
+      Array.isArray(next.suite?.test_files) &&
+      Array.isArray(next.modules) &&
+      next.modules.every(moduleOk)
+    );
   }
 
   document.querySelectorAll("[data-pbt-scope]").forEach((button) =>
@@ -430,4 +458,7 @@
     pending = setTimeout(() => report && draw(), 100);
   }).observe(el("pbt-map"));
   load();
+  // Follow the page's Refresh button and its five-minute poll.
+  el("refresh").addEventListener("click", load);
+  setInterval(load, 300000);
 })();
