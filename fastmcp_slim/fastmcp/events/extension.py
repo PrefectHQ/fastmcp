@@ -16,7 +16,12 @@ from jsonschema import Draft202012Validator
 from jsonschema.protocols import Validator
 from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
-from mcp.shared.inbound import MCP_NAME_HEADER, decode_header_value
+from mcp.shared.inbound import (
+    MCP_NAME_HEADER,
+    decode_header_value,
+    find_invalid_x_mcp_header,
+    validate_mcp_param_headers,
+)
 from mcp.shared.subscriptions import SUBSCRIPTION_ID_META_KEY
 from mcp_types import HEADER_MISMATCH, INTERNAL_ERROR, INVALID_PARAMS, INVALID_REQUEST
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
@@ -163,6 +168,11 @@ class EventsExtension(ServerExtension):
         if input_schema is not None:
             Draft202012Validator.check_schema(input_schema)
             validator = Draft202012Validator(input_schema)
+            reason = find_invalid_x_mcp_header(input_schema)
+            if reason is not None:
+                raise ValueError(
+                    f"Event {name!r} has an invalid x-mcp-header: {reason}"
+                )
         descriptor = EventType(
             name=name,
             description=description,
@@ -233,6 +243,11 @@ class EventsExtension(ServerExtension):
                 data={"kind": "event"},
             )
         arguments = arguments or {}
+        schema = registration.descriptor.input_schema
+        if headers and schema is not None:
+            rejection = validate_mcp_param_headers(schema, arguments, headers)
+            if rejection is not None:
+                raise MCPError(code=HEADER_MISMATCH, message=rejection.message)
         if registration.validator is not None:
             error = next(iter(registration.validator.iter_errors(arguments)), None)
             if error is not None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 from collections import OrderedDict
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from itertools import count
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -13,7 +13,13 @@ import anyio
 import mcp_types
 from mcp.shared.dispatcher import CallOptions
 from mcp.shared.exceptions import MCPError
-from mcp.shared.inbound import MCP_NAME_HEADER, encode_header_value
+from mcp.shared.inbound import (
+    MCP_NAME_HEADER,
+    encode_header_value,
+    find_invalid_x_mcp_header,
+    mcp_param_headers,
+    x_mcp_header_map,
+)
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from fastmcp.client.telemetry import client_span
@@ -105,7 +111,7 @@ class EventSubscription:
                 return "push"
         return "poll"
 
-    async def __aiter__(self) -> AsyncIterator[EventOccurrence]:
+    async def __aiter__(self) -> AsyncGenerator[EventOccurrence, None]:
         delivery = self._delivery or await self._choose_delivery()
         if delivery == "push":
             try:
@@ -168,6 +174,7 @@ class EventSubscription:
             session._stamp(data, options)
             headers = options.setdefault("headers", {})
             headers[MCP_NAME_HEADER] = encode_header_value(self.name)
+            headers.update(client._event_param_headers(self.name, self.arguments))
 
             frames = extension._open(request_id)
             failures: list[MCPError] = []
@@ -300,9 +307,36 @@ class ClientEventsMixin:
             request = ListEventsRequest(
                 params=ListEventsParams(cursor=cursor, meta=_trace_meta())
             )
-            return await self._await_with_session_monitoring(
+            result = await self._await_with_session_monitoring(
                 self.session.send_request(request, ListEventsResult)
             )
+        usable = []
+        header_maps = self._events_extension()._header_maps
+        for event_type in result.events:
+            # SEP-3415: an event type whose x-mcp-header annotations break the
+            # transport's rules MUST be dropped from the listing.
+            reason = find_invalid_x_mcp_header(event_type.input_schema)
+            if reason is not None:
+                logger.warning(
+                    "[%s] Dropping event %r: invalid x-mcp-header (%s)",
+                    self.name,
+                    event_type.name,
+                    reason,
+                )
+                continue
+            header_maps[event_type.name] = x_mcp_header_map(event_type.input_schema)
+            usable.append(event_type)
+        result.events = usable
+        return result
+
+    def _event_param_headers(
+        self: Client, name: str, arguments: dict[str, Any] | None
+    ) -> dict[str, str]:
+        """`Mcp-Param-*` headers for an event's annotated arguments, once listed."""
+        header_map = self._events_extension()._header_maps.get(name)
+        if not header_map or not arguments:
+            return {}
+        return mcp_param_headers(header_map, arguments)
 
     async def list_events(
         self: Client, max_pages: int = AUTO_PAGINATION_MAX_PAGES
@@ -370,9 +404,32 @@ class ClientEventsMixin:
                     meta=_trace_meta(),
                 )
             )
+            param_headers = self._event_param_headers(name, arguments)
+            if not param_headers:
+                return await self._await_with_session_monitoring(
+                    self.session.send_request(request, PollEventsResult)
+                )
             return await self._await_with_session_monitoring(
-                self.session.send_request(request, PollEventsResult)
+                self._send_with_headers(request, param_headers)
             )
+
+    async def _send_with_headers(
+        self: Client, request: PollEventsRequest, extra_headers: dict[str, str]
+    ) -> PollEventsResult:
+        """Send a poll with `Mcp-Param-*` headers, which `send_request` cannot add."""
+        session = self.session
+        data = request.model_dump(by_alias=True, mode="json", exclude_none=True)
+        options: CallOptions = {}
+        session._stamp(data, options)
+        headers = options.setdefault("headers", {})
+        headers[MCP_NAME_HEADER] = encode_header_value(request.params.name)
+        headers.update(extra_headers)
+        if session._session_read_timeout_seconds is not None:
+            options["timeout"] = session._session_read_timeout_seconds
+        raw = await session._dispatcher.send_raw_request(
+            data["method"], data.get("params"), options
+        )
+        return PollEventsResult.model_validate(raw)
 
     def subscribe_events(
         self: Client,

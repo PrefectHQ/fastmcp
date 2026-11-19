@@ -36,6 +36,8 @@ class EventsClientExtension(ClientExtension):
 
     def __init__(self) -> None:
         self._streams: dict[RequestId, MemoryObjectSendStream[Frame]] = {}
+        # Per event name: argument path -> x-mcp-header token, from events/list.
+        self._header_maps: dict[str, dict[tuple[str, ...], str]] = {}
 
     def notifications(self) -> Sequence[NotificationBinding[Any]]:
         return [
