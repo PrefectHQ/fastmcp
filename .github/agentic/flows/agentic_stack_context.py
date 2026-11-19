@@ -8,6 +8,7 @@ from copy import deepcopy
 from datetime import UTC, datetime
 
 from flows.agentic_people import people
+from flows.agentic_review_publication import EvidenceChanged
 from flows.agentic_stack import digest
 
 Read = Callable[[str], dict]
@@ -141,7 +142,7 @@ def revisions(pr: dict, read: Read) -> dict:
     compared = [comparison(read, sha, head, 12000) for sha in references[:4]]
     latest = read(f"{REPOSITORY}/pulls/{pr['number']}")
     if latest["head"]["sha"] != head or latest["updated_at"] != pr["updated_at"]:
-        raise ValueError("Contribution changed while collecting revision evidence")
+        raise EvidenceChanged("Contribution changed while collecting revision evidence")
     return {
         "current_diff": current,
         "changes_since_review": compared,

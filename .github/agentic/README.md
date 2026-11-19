@@ -15,8 +15,21 @@ assesses each item, verifies existing contributions through
 public-facing outcome through the Sol `triage_review` node, which loads
 `.agents/skills/adversarial-review/SKILL.md` from the pinned revision.
 `cloud-triage-finalize` records the outcome, and accepted reviews are posted as
-COMMENT reviews by the triage review app. Nothing in this path assigns, closes, labels or
-merges.
+COMMENT reviews by the triage review app. Two reviewed outcomes also become GitHub
+labels (`flows/agentic_labels.py`), which the repository's closers act on: a request for a
+reproduction gets `needs MRE` (closed after 7 days without the author) and a duplicate gets
+`potential-duplicate` (closed after a 3-day cooldown). Nothing in this path assigns, closes
+or merges.
+
+`cloud-triage-sweep` (`flows/agentic_sweep.py`, no model) labels inactive outside issues and
+PRs `sweep:close` every Monday and lists them in Slack. Removing the label keeps an item; a
+daily run closes the rest once the label has been on for 48 hours with no comment from a
+person.
+
+The Prefect Variable `fastmcp_triage_config` holds `github_writes` ("off", "dry_run" or "on",
+or per feature: `{"labels": "on", "sweep": "dry_run"}`; default "dry_run") and the sweep
+thresholds under `sweep`. Both are read on every run, so changing them needs no deploy.
+Writes go out as the triage GitHub App, which needs Issues: write.
 
 Intake skips events sent by anyone with write access to the repository, so
 maintainers' own edits and their agents' activity don't start triage. If the

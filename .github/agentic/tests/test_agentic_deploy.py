@@ -157,11 +157,13 @@ def test_deploy_registers_and_repins_both_automations(stack):
     registered = json.loads((state / "deploy.json").read_text())
     assert registered["ref"] == revision
     names = registered["args"][registered["args"].index("prefect.yaml") + 1 :][1::2]
-    assert set(names) == set(
+    drained = set(
         json.loads((state / "active-filter.json").read_text())["deployments"]["name"][
             "any_"
         ]
     )
+    # The sweep always has a scheduled run queued, so deploys don't wait on it.
+    assert set(names) == drained | {"cloud-triage-sweep"}
     puts = sorted(state.glob("put-*.json"))
     assert len(puts) == 2
     for put in puts:

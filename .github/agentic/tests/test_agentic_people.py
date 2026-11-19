@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
@@ -83,7 +84,7 @@ def test_cards_give_the_agent_what_a_maintainer_would_glance_at():
         "prs_elsewhere_last_6_months": 214,
         "repos_in_newest_100_of_those": 40,
     }
-    assert result["reporter_prs_opened_hours_after_issue"] == {8: 1.5}
+    assert result["reporter_prs_opened_hours_after_issue"] == {"8": 1.5}
 
 
 def test_a_failed_lookup_leaves_a_gap_instead_of_failing_the_assessment():
@@ -94,3 +95,36 @@ def test_a_failed_lookup_leaves_a_gap_instead_of_failing_the_assessment():
         {"login": "reporter", "unavailable": "RuntimeError"},
         {"login": "someone", "unavailable": "RuntimeError"},
     ]
+
+
+def test_a_timed_out_lookup_leaves_a_gap_too():
+    def read(endpoint: str) -> dict:
+        raise subprocess.TimeoutExpired(["gh", "api", endpoint], 30)
+
+    result = people(evidence(pr(9, "someone")), read, NOW)
+    assert result["issue_opened_at"] is None
+    assert [card["unavailable"] for card in result["cards"]] == [
+        "TimeoutExpired",
+        "TimeoutExpired",
+    ]
+
+
+def test_the_elsewhere_sample_is_the_newest_prs():
+    seen = []
+
+    def read(endpoint: str) -> dict:
+        seen.append(endpoint)
+        if endpoint.startswith("users/"):
+            return {
+                "created_at": "2020-01-01T00:00:00Z",
+                "followers": 1,
+                "public_repos": 1,
+            }
+        return {"total_count": 0, "items": [], "created_at": "2026-11-01T00:00:00Z"}
+
+    people(evidence(), read, NOW)
+    elsewhere = next(
+        e for e in seen if "-repo" in parse_qs(urlparse(e).query).get("q", [""])[0]
+    )
+    query = parse_qs(urlparse(elsewhere).query)
+    assert query["sort"] == ["created"] and query["order"] == ["desc"]

@@ -53,14 +53,18 @@ def test_prepare_disposition_carries_scope_controls_to_preparation():
         {"route": "triage"},
     )
     assert category == "evidence"
-    with pytest.raises(ValueError, match="reproduced bug"):
-        apply_disposition(
-            "evidence",
-            {"decision": "not_reproduced"},
-            review,
-            "review-run",
-            {"route": "triage"},
-        )
+    # An unconfirmed fix recommendation goes to a maintainer, not to a fix.
+    category, result = apply_disposition(
+        "evidence",
+        {"decision": "not_reproduced"},
+        review,
+        "review-run",
+        {"route": "triage"},
+    )
+    assert category == "decisions"
+    assert result["question"].startswith(
+        "Reviewer recommends a fix, but reproduction was not_reproduced: "
+    )
     with pytest.raises(ValueError, match="existing contribution"):
         apply_disposition(
             "evidence",

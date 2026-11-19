@@ -52,6 +52,17 @@ def triage_verify(ref: AdmissionRef) -> dict:
     return result
 
 
+def reproduction_destination(decision: str) -> str:
+    """Review bin for a reproduction outcome.
+
+    A reproduction that hands the call to a maintainer is a decision, not missing
+    evidence; the Slack outcome labels each evidence item by its decision.
+    """
+    return {"environment_failure": "operational", "maintainer": "decisions"}.get(
+        decision, "evidence"
+    )
+
+
 @flow(name="fastmcp-triage-finalize", timeout_seconds=300)
 def triage_finalize(ref: AdmissionRef) -> dict:
     admission, parent_id, parameters, observation = worker_admission(ref, "finalize")
@@ -86,11 +97,7 @@ def triage_finalize(ref: AdmissionRef) -> dict:
                 )
                 if reproduction["base_sha"] != admission.group.base_sha:
                     raise ValueError("Reproduction used a different baseline")
-                destination = (
-                    "operational"
-                    if reproduction["decision"] == "environment_failure"
-                    else "evidence"
-                )
+                destination = reproduction_destination(reproduction["decision"])
                 result = {
                     "issue_number": number,
                     "assessment": assessment,
