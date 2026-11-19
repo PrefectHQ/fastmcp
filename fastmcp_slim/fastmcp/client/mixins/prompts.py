@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from fastmcp.client.client import Client
 
 from fastmcp.client.tasks import PromptTask
-from fastmcp.client.telemetry import client_span
+from fastmcp.client.telemetry import client_span, paginated_request_params
 from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.logging import get_logger
 
@@ -58,7 +58,7 @@ class ClientPromptsMixin:
             logger.debug(f"[{self.name}] called list_prompts")
 
             result = await self._await_with_session_monitoring(
-                self.session.list_prompts(cursor=cursor)
+                self.session.list_prompts(params=paginated_request_params(cursor))
             )
             return result
 

@@ -2,11 +2,31 @@
 
 from collections.abc import Generator
 from contextlib import contextmanager
+from typing import cast
 
+import mcp.types
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from fastmcp.exceptions import ToolError as _ToolError
-from fastmcp.telemetry import get_tracer
+from fastmcp.telemetry import get_tracer, inject_trace_context
+
+
+def paginated_request_params(
+    cursor: str | None,
+) -> mcp.types.PaginatedRequestParams | None:
+    """Build params for a list request, carrying the current trace context.
+
+    Call inside the request's client span so the propagated `traceparent`
+    names that span as the server span's parent. Returns None when there is
+    neither a cursor nor trace context to send, matching the SDK's default.
+    """
+    meta = cast(mcp.types.RequestParams.Meta | None, inject_trace_context())
+    if cursor is None and meta is None:
+        return None
+    return mcp.types.PaginatedRequestParams(
+        cursor=cursor,
+        _meta=meta,  # type: ignore[unknown-argument]  # pydantic alias
+    )
 
 
 @contextmanager
@@ -54,4 +74,4 @@ def client_span(
             raise
 
 
-__all__ = ["client_span"]
+__all__ = ["client_span", "paginated_request_params"]

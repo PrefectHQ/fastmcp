@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from fastmcp.client.client import CallToolResult, Client
 from fastmcp.client.progress import ProgressHandler
 from fastmcp.client.tasks import ToolTask
-from fastmcp.client.telemetry import client_span
+from fastmcp.client.telemetry import client_span, paginated_request_params
 from fastmcp.exceptions import ToolError
 from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.json_schema_type import json_schema_to_type_adapter
@@ -61,7 +61,7 @@ class ClientToolsMixin:
             logger.debug(f"[{self.name}] called list_tools")
 
             result = await self._await_with_session_monitoring(
-                self.session.list_tools(cursor=cursor)
+                self.session.list_tools(params=paginated_request_params(cursor))
             )
             return result
 

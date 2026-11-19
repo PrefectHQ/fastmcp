@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind
 
@@ -178,3 +179,66 @@ class TestClientListPromptsTracing:
         assert span.kind == SpanKind.CLIENT
         assert span.attributes is not None
         assert span.attributes["mcp.method.name"] == "prompts/list"
+
+
+class TestClientListTraceContextPropagation:
+    """List requests carry trace context in `_meta`, so server spans join the client trace."""
+
+    @pytest.fixture
+    def server(self) -> FastMCP:
+        server = FastMCP("test-server")
+
+        @server.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        @server.resource("data://config")
+        def config() -> str:
+            return "{}"
+
+        @server.resource("users://{user_id}")
+        def user(user_id: str) -> str:
+            return user_id
+
+        @server.prompt()
+        def greeting() -> str:
+            return "Hello!"
+
+        return server
+
+    @pytest.mark.parametrize(
+        ("method", "span_name"),
+        [
+            ("list_tools", "tools/list"),
+            ("list_resources", "resources/list"),
+            ("list_resource_templates", "resources/templates/list"),
+            ("list_prompts", "prompts/list"),
+        ],
+    )
+    async def test_server_span_is_child_of_client_span(
+        self,
+        server: FastMCP,
+        trace_exporter: InMemorySpanExporter,
+        method: str,
+        span_name: str,
+    ):
+        async with Client(server) as client:
+            await getattr(client, method)()
+
+        spans = [s for s in trace_exporter.get_finished_spans() if s.name == span_name]
+        client_span = next(
+            s
+            for s in spans
+            if s.kind == SpanKind.CLIENT
+            and s.attributes is not None
+            and "fastmcp.server.name" not in s.attributes
+        )
+        server_span = next(
+            s
+            for s in spans
+            if s.attributes is not None and "fastmcp.server.name" in s.attributes
+        )
+
+        assert server_span.context.trace_id == client_span.context.trace_id
+        assert server_span.parent is not None
+        assert server_span.parent.span_id == client_span.context.span_id

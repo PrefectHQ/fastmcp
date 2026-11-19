@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from fastmcp.client.client import Client
 
 from fastmcp.client.tasks import ResourceTask
-from fastmcp.client.telemetry import client_span
+from fastmcp.client.telemetry import client_span, paginated_request_params
 from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.logging import get_logger
 
@@ -57,7 +57,7 @@ class ClientResourcesMixin:
             logger.debug(f"[{self.name}] called list_resources")
 
             result = await self._await_with_session_monitoring(
-                self.session.list_resources(cursor=cursor)
+                self.session.list_resources(params=paginated_request_params(cursor))
             )
             return result
 
@@ -133,7 +133,9 @@ class ClientResourcesMixin:
             logger.debug(f"[{self.name}] called list_resource_templates")
 
             result = await self._await_with_session_monitoring(
-                self.session.list_resource_templates(cursor=cursor)
+                self.session.list_resource_templates(
+                    params=paginated_request_params(cursor)
+                )
             )
             return result
 
