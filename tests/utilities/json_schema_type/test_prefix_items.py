@@ -232,3 +232,66 @@ def test_strict_validation_keeps_list_container_semantics() -> None:
         adapter.validate_python(("a", 2), strict=True)
     with pytest.raises(ValidationError):
         adapter.validate_python(["a", "2"], strict=True)
+
+
+TREE = {
+    "type": "object",
+    "properties": {
+        "label": {"type": "string"},
+        "kids": {
+            "type": "array",
+            "prefixItems": [{"type": "string"}],
+            "items": {"$ref": "#/$defs/Node"},
+        },
+    },
+}
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        pytest.param({**TREE, "$defs": {"Node": TREE}}, id="root-is-the-node"),
+        pytest.param(
+            {
+                "type": "object",
+                "properties": {
+                    "nodes": {"type": "array", "items": {"$ref": "#/$defs/Node"}}
+                },
+                "$defs": {"Node": TREE},
+            },
+            id="node-under-object",
+        ),
+    ],
+)
+def test_recursive_reference_in_prefix_items_tail(schema: dict[str, Any]) -> None:
+    """A `$ref` cycle through the tail of a positional array still resolves."""
+    adapter = TypeAdapter(json_schema_to_type(schema))
+    node = {"label": "a", "kids": ["edge", {"label": "b", "kids": ["leaf"]}]}
+    value = node if "label" in schema["properties"] else {"nodes": [node]}
+    assert Draft202012Validator(schema).is_valid(value)
+    result = adapter.dump_python(adapter.validate_python(value), exclude_none=True)
+    assert result == value
+    adapter.validate_python({})
+    with pytest.raises(ValidationError):
+        bad = {"label": "a", "kids": ["edge", {"label": 1}]}
+        adapter.validate_python(
+            bad if "label" in schema["properties"] else {"nodes": [bad]}
+        )
+
+
+def test_recursive_reference_in_prefix_position() -> None:
+    """A `$ref` cycle through a prefix position still resolves."""
+    node = {
+        "type": "object",
+        "properties": {
+            "label": {"type": "string"},
+            "edge": {
+                "type": "array",
+                "prefixItems": [{"type": "string"}, {"$ref": "#/$defs/Node"}],
+            },
+        },
+    }
+    adapter = TypeAdapter(json_schema_to_type({**node, "$defs": {"Node": node}}))
+    value = {"label": "a", "edge": ["e", {"label": "b"}]}
+    result = adapter.dump_python(adapter.validate_python(value), exclude_none=True)
+    assert result == value

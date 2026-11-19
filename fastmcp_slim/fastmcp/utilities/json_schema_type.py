@@ -78,6 +78,7 @@ from typing import (
     TypeVar,
     Union,
     cast,
+    get_args,
     get_type_hints,
     overload,
 )
@@ -843,8 +844,15 @@ def _create_prefix_items_type(
         return list(handler(tuple(value)))
 
     def build_schema(
-        _source: Any, handler: GetCoreSchemaHandler
+        source: Any, handler: GetCoreSchemaHandler
     ) -> core_schema.CoreSchema:
+        # Read the position types back from the annotation rather than this
+        # closure: a recursive `$ref` is a ForwardRef until
+        # `_resolve_recursive_types` evaluates the annotation, and only the
+        # annotation's arguments are evaluated.
+        positions_type, tail_type = get_args(source)
+        resolved_prefix = get_args(positions_type)
+
         def build_positions(json_input: bool) -> core_schema.CoreSchema:
             def item_schema(item: Any) -> core_schema.CoreSchema:
                 converted = handler.generate_schema(item)
@@ -869,9 +877,9 @@ def _create_prefix_items_type(
                     else item_schema(position_type),
                     default=None,
                 )
-                for position_type in prefix_types
+                for position_type in resolved_prefix
             ]
-            positions.append(item_schema(item_type))
+            positions.append(item_schema(tail_type))
             return core_schema.tuple_schema(
                 positions,
                 variadic_item_index=len(prefix_types),
@@ -911,7 +919,10 @@ def _create_prefix_items_type(
             result["items"] = False
         return result
 
-    return Annotated[list[Any], GetPydanticSchema(build_schema, build_json_schema)]
+    # The source type carries the position types so recursive references in
+    # them are resolved; validation and the JSON schema come from build_schema.
+    source = tuple[tuple[prefix_types], item_type]  # ty:ignore[invalid-type-form]
+    return Annotated[source, GetPydanticSchema(build_schema, build_json_schema)]
 
 
 def _create_array_type(
