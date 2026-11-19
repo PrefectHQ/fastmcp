@@ -333,3 +333,74 @@ class TestCheckForNewerVersion:
             result = check_for_newer_version()
             assert result == "2.5.0"
             mock_get.assert_called_once_with(False)
+
+
+class TestFetchLatestVersionYanked:
+    def test_fully_yanked_release_is_not_recommended(self):
+        """A release whose every file is yanked must not be recommended.
+
+        PyPI keeps yanked releases in the ``releases`` map forever, but pip
+        and uv refuse to resolve them (they install only via a direct pin,
+        with a warning). Recommending one would nag users indefinitely about
+        an upgrade they cannot take.
+        """
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "info": {"version": "2.5.0"},
+            "releases": {
+                "2.5.0": [{"yanked": False}],
+                "2.6.0": [
+                    {
+                        "yanked": True,
+                        "url": "https://files.pythonhosted.org/a",
+                    },
+                    {
+                        "yanked": True,
+                        "url": "https://files.pythonhosted.org/b",
+                    },
+                ],
+            },
+        }
+
+        with patch("httpx2.get", return_value=mock_response):
+            assert _fetch_latest_version() == "2.5.0"
+
+    def test_prerelease_mode_also_skips_yanked(self):
+        """The prerelease scan skips yanked candidates too.
+
+        Release candidates are the versions most likely to be yanked, so
+        ``include_prereleases=True`` must filter them the same way.
+        """
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "info": {"version": "2.5.0"},
+            "releases": {
+                "2.5.0": [{"yanked": False}],
+                "2.6.0rc1": [{"yanked": True}],
+            },
+        }
+
+        with patch("httpx2.get", return_value=mock_response):
+            version = _fetch_latest_version(include_prereleases=True)
+            assert version == "2.5.0"
+
+    def test_partially_yanked_release_stays_a_candidate(self):
+        """A release with at least one non-yanked file is still installable.
+
+        pip filters yanked files during resolution; as long as one file of
+        the release survives, the version can be selected.
+        """
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "info": {"version": "2.5.0"},
+            "releases": {
+                "2.5.0": [{"yanked": False}],
+                "2.6.0": [
+                    {"yanked": True, "url": "https://files.pythonhosted.org/a"},
+                    {"yanked": False, "url": "https://files.pythonhosted.org/b"},
+                ],
+            },
+        }
+
+        with patch("httpx2.get", return_value=mock_response):
+            assert _fetch_latest_version() == "2.6.0"

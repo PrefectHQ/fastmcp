@@ -83,11 +83,23 @@ def _fetch_latest_version(include_prereleases: bool = False) -> str | None:
             return None
 
         versions = []
-        for version_str in releases:
+        for version_str, files in releases.items():
             try:
                 v = Version(version_str)
                 # Skip prereleases if not requested
                 if not include_prereleases and v.is_prerelease:
+                    continue
+                # Skip releases pip and uv refuse to resolve: when every file
+                # of a release is yanked it installs only via a direct pin,
+                # and PyPI keeps such releases in this map forever.
+                if (
+                    isinstance(files, list)
+                    and files
+                    and all(
+                        isinstance(file, dict) and file.get("yanked", False)
+                        for file in files
+                    )
+                ):
                     continue
                 versions.append(v)
             except ValueError:
