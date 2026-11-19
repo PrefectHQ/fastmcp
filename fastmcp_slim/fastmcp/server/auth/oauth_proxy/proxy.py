@@ -729,6 +729,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             self._cimd_manager = CIMDClientManager(
                 enable_cimd=True,
                 default_scope=self._default_scope_str,
+                valid_scopes=(
+                    list(default_scopes) if default_scopes is not None else None
+                ),
                 allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
             )
 
@@ -804,7 +807,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         This updates all internal state derived from scopes:
         - The default scope string used for DCR client registration fallback
-        - The CIMD manager's default scope (if CIMD is enabled)
+        - The CIMD manager's default and allowed scopes (if CIMD is enabled)
         - The client registration options default_scopes and valid_scopes (if registration options exist)
 
         Args:
@@ -814,6 +817,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         self._default_scope_str = " ".join(scopes)
         if self._cimd_manager is not None:
             self._cimd_manager.default_scope = self._default_scope_str
+            self._cimd_manager.valid_scopes = list(scopes)
         if self.client_registration_options is not None:
             self.client_registration_options.default_scopes = list(scopes)
             self.client_registration_options.valid_scopes = list(scopes)
@@ -1006,6 +1010,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     await self._client_store.delete(key=client_id)
                 return cimd_client
             if client is not None:
+                # A record persisted by an older version still carries its
+                # verbatim document scope. Constrain it with the same
+                # allowlist as freshly fetched documents before returning it
+                # as a fallback.
+                if client.cimd_document is not None:
+                    client.scope = self._cimd_manager.restrict_scope(client.scope)
                 return client
 
         # Some MCP clients (e.g. claude.ai) skip Dynamic Client Registration and
