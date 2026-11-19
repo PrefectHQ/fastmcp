@@ -135,6 +135,24 @@ fastmcp call server.py summarize --prompt topic=weather
 fastmcp call server.py summarize --prompt --input-json '{"topic": "weather"}'
 ```
 
+## Watching Events
+
+`fastmcp events` subscribes to a server's [events](/servers/events) from the terminal, which is the quickest way to see whether an events server works. `fastmcp events list` shows the event types a server offers, with the delivery modes each supports and its subscription arguments:
+
+```bash
+fastmcp events list server.py
+fastmcp events list http://localhost:8000/mcp --json
+```
+
+`fastmcp events watch` subscribes to one event type and prints each event as it arrives. Subscription arguments use the same `key=value` and `--input-json` forms as tool calls, coerced with the event type's input schema. The watch starts from now; it uses push when the event type offers it and polls otherwise:
+
+```bash
+fastmcp events watch server.py alert.fired severity=high
+fastmcp events watch http://localhost:8000/mcp alert.fired --delivery poll --json
+```
+
+When the watch ends, on Ctrl-C or after `--count` events, it prints the cursor it reached. Pass it back with `--cursor` to pick up where you left off, and add `--max-age` (in seconds) to bound how far back the server replays. With `--json`, each event is one JSON object per line that includes the cursor after it, so the output can be piped to another program.
+
 ## Discovering Configured Servers
 
 `fastmcp discover` scans your machine for MCP servers configured in editors and tools. It checks these sources, listed with the source name you use in `--source` and `source:name`:

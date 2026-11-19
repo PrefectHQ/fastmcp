@@ -14,7 +14,7 @@ Tools answer when a client asks. Events cover the other direction: an alert fire
 In poll delivery the client asks "what happened since this cursor?" on an interval. Every request carries the event name, the subscription's arguments and the cursor, so your server holds no subscription state. In push delivery the client opens one long-lived request per subscription and your server writes events to it as they happen.
 
 <Warning>
-SEP-3415 is accepted but not merged, and its error codes are provisional. Webhook delivery (`events/subscribe`) is not implemented.
+Webhook delivery (`events/subscribe`) is not implemented.
 </Warning>
 
 ## Defining an event type
@@ -78,6 +78,17 @@ def alert_fired(poll: EventPoll) -> EventBatch:
     return EventBatch(events=fired, cursor=str(len(ALERTS)))
 ```
 
+### Routing headers
+
+A property in `input_schema` may carry an `x-mcp-header` annotation, as tool parameters can. Over Streamable HTTP, clients then send that argument as an `Mcp-Param-{Name}` header on every poll and stream, so a load balancer or gateway can route or rate-limit by it without reading the body. FastMCP rejects a request whose header disagrees with its arguments, and refuses to register an annotation the transport does not allow. Header values are visible to intermediaries, so do not annotate arguments that may hold sensitive data.
+
+```python
+REGION_FILTER = {
+    "type": "object",
+    "properties": {"region": {"type": "string", "x-mcp-header": "Region"}},
+}
+```
+
 ## Pacing and backlogs
 
 Every poll result tells the client how long to wait before the next one. The default is 30 seconds; set `EventsExtension(poll_interval_ms=...)` to change it for every event type, or `EventBatch(next_poll_ms=...)` to change it for one response.
@@ -126,5 +137,7 @@ asyncio.run(main())
 ```
 
 The subscription lasts as long as the `async for` does. Its `cursor` attribute is the position after the last event or poll: store it, and pass it back as `subscribe_events(..., cursor=...)` to resume after a restart without missing events. `poll_events_mcp()` sends a single `events/poll` request when you want to run the loop yourself.
+
+To try a server from the terminal, `fastmcp events watch` does the same thing and prints each event; see [the CLI](/cli/client#watching-events).
 
 What happens when an event arrives is up to your application. The extension delivers events to the client; it does not decide whether an event starts an agent turn.
