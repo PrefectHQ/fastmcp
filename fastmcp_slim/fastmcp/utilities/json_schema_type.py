@@ -875,7 +875,11 @@ def _create_prefix_items_type(
                     )
                     if preserve_prefix_values
                     else item_schema(position_type),
+                    # A placeholder for a missing position, sliced off after
+                    # validation; never validate it, whatever the enclosing
+                    # model's validate_default says.
                     default=None,
+                    validate_default=False,
                 )
                 for position_type in resolved_prefix
             ]

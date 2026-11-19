@@ -295,3 +295,50 @@ def test_recursive_reference_in_prefix_position() -> None:
     value = {"label": "a", "edge": ["e", {"label": "b"}]}
     result = adapter.dump_python(adapter.validate_python(value), exclude_none=True)
     assert result == value
+
+
+PAIR = {"type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}]}
+
+
+def _typed_extras(pair: dict[str, Any], **defs: Any) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "x": {
+                "type": "object",
+                "properties": {"pair": pair},
+                "additionalProperties": {"type": "string"},
+            }
+        },
+        **({"$defs": defs} if defs else {}),
+    }
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        pytest.param(_typed_extras(PAIR), id="inline"),
+        pytest.param(_typed_extras({"$ref": "#/$defs/Pair"}, Pair=PAIR), id="ref"),
+    ],
+)
+@pytest.mark.parametrize("pair", [[], ["a"], ["a", 1], ["a", 1, True]])
+def test_short_arrays_under_typed_additional_properties(
+    schema: dict[str, Any], pair: list[Any]
+) -> None:
+    """Missing prefix positions stay optional when the enclosing object
+    validates defaults for its typed additional properties."""
+    value = {"x": {"pair": pair}}
+    assert Draft202012Validator(schema).is_valid(value)
+    adapter = TypeAdapter(json_schema_to_type(schema))
+    assert adapter.dump_python(adapter.validate_python(value))["x"]["pair"] == pair
+
+
+def test_typed_additional_properties_still_validate_positions() -> None:
+    """Present positions, length bounds and extras are still checked."""
+    adapter = TypeAdapter(json_schema_to_type(_typed_extras({**PAIR, "minItems": 1})))
+    for invalid in ({"pair": []}, {"pair": [1]}, {"pair": ["a", "b"]}, {"k": 1}):
+        with pytest.raises(ValidationError):
+            adapter.validate_python({"x": invalid})
+    with pytest.raises(ValidationError) as excinfo:
+        adapter.validate_python({"x": {"pair": [1]}})
+    assert excinfo.value.errors()[0]["loc"][-1] == 0
