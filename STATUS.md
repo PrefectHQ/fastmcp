@@ -1,13 +1,14 @@
 # FastMCP maintenance status
 
-As of 2026-11-19T08:22:56Z. Generated twice a day by [maintenance-status](https://github.com/PrefectHQ/fastmcp/actions/workflows/maintenance-status.yml); machine-readable as [status.json](status.json). How the project is run: [Development guide](https://github.com/PrefectHQ/fastmcp/blob/main/docs/development/contributing.mdx#maintenance-and-automation).
+As of 2026-11-19T13:02:40Z. Generated twice a day by [maintenance-status](https://github.com/PrefectHQ/fastmcp/actions/workflows/maintenance-status.yml); machine-readable as [status.json](status.json). How the project is run: [Development guide](https://github.com/PrefectHQ/fastmcp/blob/main/docs/development/contributing.mdx#maintenance-and-automation).
 
 | automation | state | last ok | runs on | cadence |
 |---|---|---|---|---|
 | [issue-link gate](https://github.com/PrefectHQ/fastmcp/actions/workflows/require-issue-link.yml) | ok | 2026-11-19 | github-actions | on each external PR change and each issue assignment |
 | [labeling](https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-label-triage.yml) | off | 2026-11-18 | github-actions | on each new issue or PR |
+| [PR type labels](https://github.com/PrefectHQ/fastmcp/actions/workflows/label-pr-type.yml) | idle | — | github-actions | on each new or edited PR |
 | [duplicate detection](https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-dedupe-issues.yml) | off | 2026-11-18 | github-actions | on each new issue |
-| [auto-close](https://github.com/PrefectHQ/fastmcp/actions/workflows/auto-close-duplicates.yml) | ok | 2026-11-18 | github-actions | daily |
+| [auto-close](https://github.com/PrefectHQ/fastmcp/actions/workflows/auto-close-duplicates.yml) | ok | 2026-11-19 | github-actions | daily |
 | [CI failure analysis](https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-test-failure.yml) | off | 2026-11-18 | github-actions | after each failed PR run |
 | [maintainer commands](https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-comment-on-issue.yml) | degraded | 2026-11-19 | github-actions | on a maintainer's comment |
 | [upgrade checks](https://github.com/PrefectHQ/fastmcp/actions/workflows/run-upgrade-checks.yml) | ok | 2026-11-19 | github-actions | nightly |
