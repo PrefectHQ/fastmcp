@@ -52,6 +52,7 @@ deployments:
         pip_packages:
           - prefect==3.8.2
           - fastapi==0.141.1
+          - PyJWT[crypto]==2.15.1
         compute_profile: medium
         timeout: 7800
   - name: cloud-contribution-verification
@@ -85,3 +86,33 @@ deployments:
           - PyJWT[crypto]==2.15.1
         compute_profile: medium
         timeout: 7500
+  - name: cloud-triage-sweep
+    version: "{{ $FASTMCP_AGENTIC_REF }}"
+    entrypoint: flows/agentic_sweep.py:sweep
+    concurrency_limit: 1
+    parameters:
+      reviewer_app:
+        app_id: 5514681
+        slug: fastmcp-triage-reviewer
+        private_key_block: fastmcp-triage-reviewer-private-key
+    schedules:
+      # Monday 8am Chicago: label inactive items and list them in Slack.
+      - cron: "0 14 * * 1"
+        timezone: UTC
+        parameters:
+          phase: propose
+      # Daily: close items whose veto window has passed.
+      - cron: "0 15 * * *"
+        timezone: UTC
+        parameters:
+          phase: close
+    work_pool:
+      name: managed
+      job_variables:
+        image: prefecthq/prefect:3-python3.12
+        pip_packages:
+          - prefect==3.8.2
+          - fastapi==0.141.1
+          - PyJWT[crypto]==2.15.1
+        compute_profile: small
+        timeout: 1200

@@ -265,13 +265,15 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                 httpx.HTTPError,
                 OSError,
             ) as error:
-                bins["operational"].append(
-                    {
-                        "issue_number": number,
-                        "error": type(error).__name__,
-                        "detail": str(error)[:1000],
-                    }
-                )
+                failure = {
+                    "issue_number": number,
+                    "error": type(error).__name__,
+                    "detail": str(error)[:1000],
+                }
+                if isinstance(error, EvidenceChanged):
+                    # The change that moved the evidence starts its own triage.
+                    failure["status"] = "stale"
+                bins["operational"].append(failure)
         record(
             owner,
             f"{batch.id}-{group.name}-outcome",

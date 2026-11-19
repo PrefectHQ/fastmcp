@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from flows.agentic_assessment_cache import assessment_candidates, assessment_key
 from flows.agentic_review_app import ReviewApp
-from flows.agentic_stack import digest
+from flows.agentic_stack import digest, same_json
 from flows.agentic_stack_context import assessment_context as project_assessment
 from flows.agentic_stack_plans import OUTPUTS
 
@@ -213,7 +213,7 @@ def record(owner: UUID, key: str, data: dict) -> str:
             limit=2,
         )
         if previous:
-            if len(previous) != 1 or previous[0].data != data:
+            if len(previous) != 1 or not same_json(previous[0].data, data):
                 raise ValueError("Conflicting durable controller record")
             return str(previous[0].id)
         artifact = client.create_artifact(
