@@ -21,7 +21,7 @@ from prefect.events import emit_event
 from prefect.variables import Variable
 from pydantic import BaseModel, ConfigDict, Field
 
-from flows.agentic_github import GitHub
+from flows.agentic_github import GitHub, can_write
 from flows.agentic_labels import CONFIG_VARIABLE, mode
 from flows.agentic_review_app import ReviewApp, review_client
 from flows.agentic_stack_runtime import secret_sync
@@ -61,8 +61,17 @@ def parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def candidates(items: list[dict], config: SweepConfig, now: datetime) -> list[dict]:
-    """Open items from outside contributors that nobody has touched in a while."""
+def candidates(
+    items: list[dict],
+    config: SweepConfig,
+    now: datetime,
+    maintainer: Callable[[str], bool] = lambda login: False,
+) -> list[dict]:
+    """Open items from outside contributors that nobody has touched in a while.
+
+    `author_association` misses maintainers whose org membership is private, so
+    `maintainer` checks effective repository permission for the survivors.
+    """
     protected = set(config.protected_labels) | {SWEEP_LABEL}
     picked = []
     for item in items:
@@ -80,7 +89,13 @@ def candidates(items: list[dict], config: SweepConfig, now: datetime) -> list[di
             continue
         picked.append(item)
     picked.sort(key=lambda item: item["updated_at"])
-    return picked[: config.max_items]
+    kept = []
+    for item in picked:
+        if len(kept) == config.max_items:
+            break
+        if not maintainer((item.get("user") or {}).get("login") or ""):
+            kept.append(item)
+    return kept
 
 
 def labeled_at(timeline: list[dict]) -> datetime | None:
@@ -126,9 +141,18 @@ def slack(text: str) -> None:
     owner = context.flow_run.id if context and context.flow_run else "local"
     emit_event(
         event="fastmcp.triage.outcome",
-        resource={"prefect.resource.id": f"fastmcp.triage.sweep.{owner}"},
+        # The Slack automation (fastmcp-triage-outcome) matches fastmcp.triage.intake.*
+        resource={"prefect.resource.id": f"fastmcp.triage.intake.sweep-{owner}"},
         payload={"text": text},
     )
+
+
+def is_maintainer(read: GitHub, login: str) -> bool:
+    """Unknown or unreadable permission counts as a maintainer, so it is never swept."""
+    try:
+        return can_write(read.request, login)
+    except (ValueError, OSError):
+        return True
 
 
 def ensure_label(request: Callable[..., object]) -> None:
@@ -152,7 +176,7 @@ def propose(
     items = read.pages(
         f"repos/{REPOSITORY}/issues?state=open&sort=updated&direction=asc"
     )
-    picked = candidates(items, config, now)
+    picked = candidates(items, config, now, lambda login: is_maintainer(read, login))
     if write is not None and picked:
         ensure_label(write)
         for item in picked:

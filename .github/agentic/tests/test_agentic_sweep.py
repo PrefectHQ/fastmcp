@@ -47,6 +47,15 @@ def test_candidates_pick_inactive_outside_items_oldest_first() -> None:
     assert [i["number"] for i in picked] == [2, 1, 4]
 
 
+def test_candidates_skip_private_maintainers_before_capping() -> None:
+    items = [item(1, 90), item(2, 80), item(3, 70)]
+    items[0]["user"]["login"] = "hidden-maintainer"
+    picked = candidates(
+        items, SweepConfig(max_items=2), NOW, lambda login: login == "hidden-maintainer"
+    )
+    assert [i["number"] for i in picked] == [2, 3]
+
+
 def test_candidates_respect_cap() -> None:
     items = [item(n, 60 + n) for n in range(10)]
     picked = candidates(items, SweepConfig(max_items=3), NOW)
@@ -85,6 +94,9 @@ class FakeGitHub:
     def __init__(self, items: list[dict], timelines: dict[int, list[dict]]):
         self.items = items
         self.timelines = timelines
+
+    def request(self, path: str, body=None, *, method=None):
+        return {"role_name": "read", "permission": "read"}
 
     def pages(self, path: str) -> list[dict]:
         if "/timeline" in path:
