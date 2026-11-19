@@ -1228,3 +1228,46 @@ async def test_transform_fn_generators_with_context_injection():
         assert async_res.structured_content == {"result": [10, 15]}
         assert isinstance(async_res.content[0], TextContent)
         assert async_res.content[0].text == "[10,15]"
+
+
+async def test_from_tool_preserves_secret_str_defaults():
+    """Tool.from_tool should preserve Python SecretStr defaults instead of masked schema defaults."""
+    from pydantic import SecretStr
+
+    mcp = FastMCP("demo")
+
+    @mcp.tool
+    def connect(token: SecretStr = SecretStr("s3cr3t")) -> str:
+        return f"using token {token.get_secret_value()}"
+
+    async def custom_connect(token: SecretStr = SecretStr("fn_s3cr3t")) -> str:
+        return f"using token {token.get_secret_value()}"
+
+    mcp.add_tool(Tool.from_tool(connect, name="connect_renamed"))
+    mcp.add_tool(
+        Tool.from_tool(
+            connect,
+            name="connect_custom_fn",
+            transform_fn=custom_connect,
+        )
+    )
+    mcp.add_tool(
+        Tool.from_tool(
+            connect,
+            name="connect_override",
+            transform_args={"token": ArgTransform(default=SecretStr("override_s3cr3t"))},
+        )
+    )
+
+    async with Client(mcp) as client:
+        orig = await client.call_tool("connect", {})
+        assert orig.data == "using token s3cr3t"
+
+        renamed = await client.call_tool("connect_renamed", {})
+        assert renamed.data == "using token s3cr3t"
+
+        custom = await client.call_tool("connect_custom_fn", {})
+        assert custom.data == "using token fn_s3cr3t"
+
+        overridden = await client.call_tool("connect_override", {})
+        assert overridden.data == "using token override_s3cr3t"
