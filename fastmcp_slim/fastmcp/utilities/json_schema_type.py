@@ -99,6 +99,8 @@ from pydantic import (
     PlainValidator,
     StringConstraints,
     TypeAdapter,
+    ValidationError,
+    ValidatorFunctionWrapHandler,
     create_model,
     model_validator,
 )
@@ -1557,14 +1559,28 @@ def _build_dataclass(
     cls = make_dataclass(sanitized_name, fields, kw_only=True)
 
     # Add model validator for defaults
-    @model_validator(mode="before")
+    @model_validator(mode="wrap")
     @classmethod
-    def _apply_defaults(cls, data: Mapping[str, Any]):
-        if isinstance(data, dict):
-            # Omitted fields fall back to the field defaults, which validate
-            # only when valid; object defaults are still merged here.
-            return _merge_defaults(data, original_schema, apply_property_defaults=False)
-        return data
+    def _apply_defaults(cls, data: Any, handler: ValidatorFunctionWrapHandler):
+        if not isinstance(data, dict):
+            return handler(data)
+        # Omitted fields fall back to the field defaults, which validate only
+        # when valid; object defaults are still merged here.
+        merged = _merge_defaults(data, original_schema, apply_property_defaults=False)
+        try:
+            return handler(merged)
+        except ValidationError:
+            if merged == data:
+                raise
+            # `default` is an annotation, not a constraint: when merging it
+            # into the provided object makes that object invalid, the data the
+            # caller sent wins. If the data is invalid on its own, report the
+            # merged error as before.
+            try:
+                return handler(data)
+            except ValidationError:
+                pass
+            raise
 
     cls._apply_defaults = _apply_defaults  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
     _conversion.get().unchecked_defaults.extend((cls, f) for f in unchecked)

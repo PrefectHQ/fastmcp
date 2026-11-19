@@ -68,6 +68,45 @@ class TestDefaultValues:
         with pytest.raises(ValidationError):
             validator.validate_python({"user": {"name": None}})
 
+    def test_object_default_that_breaks_provided_object_is_not_merged(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "meta": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": {"type": "string"},
+                    "default": {"k": None},
+                }
+            },
+        }
+        validator: TypeAdapter[Any] = TypeAdapter(json_schema_to_type(schema))
+
+        assert validator.validate_python({"meta": {}}).meta == {}
+        assert validator.validate_python({"meta": {"a": "x"}}).meta == {"a": "x"}
+        with pytest.raises(ValidationError):
+            validator.validate_python({"meta": {"a": 1}})
+
+    def test_valid_object_default_still_merges_into_provided_object(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "meta": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": {"type": "string"},
+                    "default": {"k": "x"},
+                }
+            },
+        }
+        validator: TypeAdapter[Any] = TypeAdapter(json_schema_to_type(schema))
+
+        assert validator.validate_python({"meta": {}}).meta == {"k": "x"}
+        assert validator.validate_python({"meta": {"a": "y"}}).meta == {
+            "k": "x",
+            "a": "y",
+        }
+
     @pytest.mark.parametrize("many", [False, True])
     def test_recursive_defaults_are_hydrated(self, many: bool) -> None:
         child = {"name": "child", "child": [] if many else None}
