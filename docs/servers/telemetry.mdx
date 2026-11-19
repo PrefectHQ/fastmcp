@@ -175,6 +175,10 @@ Span links preserve the causal relationship without forcing worker sampling to i
 To keep the whole request in one trace, make the worker span a child of the submission instead:
 
 ```python
+from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
+
+mcp = FastMCP("My Server")
 mcp.add_extension(TasksExtension(parent_task_spans=True))
 ```
 
