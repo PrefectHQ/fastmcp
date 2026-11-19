@@ -720,6 +720,57 @@ FastMCP 4.2.0a5 adds `SkillManifestProvider`, which serves skills from their man
 
 </Update>
 
+<Update label="v4.1.8" description="2026-11-10">
+
+**[v4.1.8: Backporch Light](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.8)**
+
+FastMCP 4.1.8 backports 28 fixes from the 4.2 line, led by OAuth proxy token revocation, which now works for the client that owns the token. It also fixes recursive and untyped schema hydration, GitHub sessions across transient verification failures, proxied sampling and prompt arguments, and a set of OpenAPI, client timeout, task and CLI edge cases. Thanks to our 21 contributors, including 9 first-time contributors.
+
+### Fixes 🐞
+* fix: keep additionalProperties on object schemas without a type by [@bfs2021](https://github.com/bfs2021) and [@alpaylan](https://github.com/alpaylan) in [#6127](https://github.com/PrefectHQ/fastmcp/pull/6127)
+* Fix hydration of mutually recursive schema types by [@zzstoatzz](https://github.com/zzstoatzz), [@wozhenbang2004](https://github.com/wozhenbang2004), and [@alpaylan](https://github.com/alpaylan) in [#6394](https://github.com/PrefectHQ/fastmcp/pull/6394)
+* Isolate filesystem component construction failures by [@PennEwan](https://github.com/PennEwan) in [#6210](https://github.com/PrefectHQ/fastmcp/pull/6210)
+* fix(config): apply tool transforms before tag filters on single servers by [@AP24110011695](https://github.com/AP24110011695) and [@arjunprabhulal](https://github.com/arjunprabhulal) in [#6214](https://github.com/PrefectHQ/fastmcp/pull/6214)
+* fix(tools): isolate mutable defaults in transformed tool calls by [@priy-anshugupta](https://github.com/priy-anshugupta) in [#6184](https://github.com/PrefectHQ/fastmcp/pull/6184)
+* fix(openapi): make resource templates for non-identifier path parameters readable by [@AP24110011695](https://github.com/AP24110011695) and [@alpaylan](https://github.com/alpaylan) in [#6187](https://github.com/PrefectHQ/fastmcp/pull/6187)
+* Document that a custom httpx_client_factory owns its timeout by [@asasemahmed](https://github.com/asasemahmed) and [@himanshuchawla0807-gif](https://github.com/himanshuchawla0807-gif) in [#5923](https://github.com/PrefectHQ/fastmcp/pull/5923)
+* Stop PingMiddleware erroring when the client has no back-channel by [@asasemahmed](https://github.com/asasemahmed) in [#5901](https://github.com/PrefectHQ/fastmcp/pull/5901)
+* Store sessionless client log levels on the connection by [@asasemahmed](https://github.com/asasemahmed) in [#5899](https://github.com/PrefectHQ/fastmcp/pull/5899)
+* Register templated MCPMixin resources as resource templates by [@asasemahmed](https://github.com/asasemahmed) in [#5895](https://github.com/PrefectHQ/fastmcp/pull/5895)
+* Send the whole body when a body $ref with siblings cannot be flattened by [@asasemahmed](https://github.com/asasemahmed) in [#5893](https://github.com/PrefectHQ/fastmcp/pull/5893)
+* Pass the transport to the fastmcp-remote proxy so it forwards server-initiated requests by [@asasemahmed](https://github.com/asasemahmed) in [#5885](https://github.com/PrefectHQ/fastmcp/pull/5885)
+* fix(cli): forward path, stateless and log-level to SDK MCPServer servers by [@BlueX888](https://github.com/BlueX888) in [#5870](https://github.com/PrefectHQ/fastmcp/pull/5870)
+* fix(client): preserve a caller-provided OAuth httpx client factory when verify is set by [@BlueX888](https://github.com/BlueX888) in [#5849](https://github.com/PrefectHQ/fastmcp/pull/5849)
+* fix(prompts): resolve postponed annotations when rendering by [@67-luck](https://github.com/67-luck) and [@BlueX888](https://github.com/BlueX888) in [#5803](https://github.com/PrefectHQ/fastmcp/pull/5803)
+* fix(openapi): hydrate data for wrapped non-object responses with validate_output=False by [@nosmile99](https://github.com/nosmile99) and [@BlueX888](https://github.com/BlueX888) in [#5784](https://github.com/PrefectHQ/fastmcp/pull/5784)
+* Carry prompt argument titles through PromptArgument and proxies by [@AarnavNoble](https://github.com/AarnavNoble) in [#5749](https://github.com/PrefectHQ/fastmcp/pull/5749)
+* Relay the client's sampling result unchanged through proxies by [@AarnavNoble](https://github.com/AarnavNoble) in [#5747](https://github.com/PrefectHQ/fastmcp/pull/5747)
+* fix(tasks): let async-generator tools run as background tasks by [@gdut4140](https://github.com/gdut4140) in [#5730](https://github.com/PrefectHQ/fastmcp/pull/5730)
+* Honor Code Mode search limits after BM25 ranking by [@Winoren](https://github.com/Winoren) and [@BlueX888](https://github.com/BlueX888) in [#5715](https://github.com/PrefectHQ/fastmcp/pull/5715)
+* Keep the client timeout from capping the HTTP read timeout by [@asasemahmed](https://github.com/asasemahmed) in [#5690](https://github.com/PrefectHQ/fastmcp/pull/5690)
+* fix(auth): avoid rereading failed authorization forms by [@pei711](https://github.com/pei711) and [@JordanAfolabiLaw](https://github.com/JordanAfolabiLaw) in [#5570](https://github.com/PrefectHQ/fastmcp/pull/5570)
+* Fix unbounded Apps dev log retention by [@mikamikasuki](https://github.com/mikamikasuki) in [#5549](https://github.com/PrefectHQ/fastmcp/pull/5549)
+* Bound error-stat cardinality in ErrorHandlingMiddleware by [@mikamikasuki](https://github.com/mikamikasuki) in [#5537](https://github.com/PrefectHQ/fastmcp/pull/5537)
+* fix(auth): preserve GitHub sessions across transient verification failures by [@sui-ni2](https://github.com/sui-ni2) and [@benjohngf](https://github.com/benjohngf) in [#4881](https://github.com/PrefectHQ/fastmcp/pull/4881)
+* Expect the extended read timeout in the factory timeout test by [@zzstoatzz](https://github.com/zzstoatzz) in [#6395](https://github.com/PrefectHQ/fastmcp/pull/6395)
+* fix(auth): keep revocation ownership separate from user identity by [@zzstoatzz](https://github.com/zzstoatzz), [@BlueX888](https://github.com/BlueX888), and [@67-luck](https://github.com/67-luck) in [#6404](https://github.com/PrefectHQ/fastmcp/pull/6404)
+* Authenticate and pin the schema download in the OpenAPI performance test by [@zzstoatzz](https://github.com/zzstoatzz) in [#6177](https://github.com/PrefectHQ/fastmcp/pull/6177)
+
+## New Contributors
+* @AP24110011695 made their first contribution in [#6214](https://github.com/PrefectHQ/fastmcp/pull/6214)
+* @JordanAfolabiLaw made their first contribution in [#5570](https://github.com/PrefectHQ/fastmcp/pull/5570)
+* @Winoren made their first contribution in [#5715](https://github.com/PrefectHQ/fastmcp/pull/5715)
+* @arjunprabhulal made their first contribution in [#6214](https://github.com/PrefectHQ/fastmcp/pull/6214)
+* @benjohngf made their first contribution in [#4881](https://github.com/PrefectHQ/fastmcp/pull/4881)
+* @bfs2021 made their first contribution in [#6127](https://github.com/PrefectHQ/fastmcp/pull/6127)
+* @pei711 made their first contribution in [#5570](https://github.com/PrefectHQ/fastmcp/pull/5570)
+* @priy-anshugupta made their first contribution in [#6184](https://github.com/PrefectHQ/fastmcp/pull/6184)
+* @wozhenbang2004 made their first contribution in [#6394](https://github.com/PrefectHQ/fastmcp/pull/6394)
+
+**Full Changelog**: [v4.1.7...v4.1.8](https://github.com/PrefectHQ/fastmcp/compare/v4.1.7...v4.1.8)
+
+</Update>
+
 <Update label="v4.2.0a4" description="2026-11-09">
 
 **[v4.2.0a4: Skills to Pay the Bills](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0a4)**
@@ -916,6 +967,95 @@ FastMCP 4.2.0a4 requires Python 3.11 or newer and adds `Annotated` dependencies.
 
 </Update>
 
+<Update label="v4.1.7" description="2026-11-09">
+
+**[v4.1.7: Dumpster Dive](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.7)**
+
+FastMCP 4.1.7 backports 42 fixes from the 4.2 line, covering OpenAPI schema and parameter handling, OAuth redirect and consent edge cases, proxy and response caching, and lost-connection errors in the client. It also requires patched joserfc and Authlib releases and closes a redirect URI validation gap for callers that pass raw strings. Thanks to our 41 contributors, including 28 first-time contributors.
+
+### Security 🔒
+* Redact passwords from the worker's backend URL by [@jaeminbird](https://github.com/jaeminbird) and [@mbishflavien](https://github.com/mbishflavien) in [#6113](https://github.com/PrefectHQ/fastmcp/pull/6113)
+* fix(auth): collapse a repeated `iss` in the client redirect by [@shi-felix](https://github.com/shi-felix) and [@alpaylan](https://github.com/alpaylan) in [#6352](https://github.com/PrefectHQ/fastmcp/pull/6352)
+* Require patched joserfc by [@zzstoatzz](https://github.com/zzstoatzz) in [#6371](https://github.com/PrefectHQ/fastmcp/pull/6371)
+* [4.1] Require patched Authlib in client and server extras by [@zzstoatzz](https://github.com/zzstoatzz) and [@zhuweid](https://github.com/zhuweid) in [#6338](https://github.com/PrefectHQ/fastmcp/pull/6338)
+* [4.1] Normalize raw-string redirect URIs through AnyUrl before validation by [@zzstoatzz](https://github.com/zzstoatzz), [@uhhgxg](https://github.com/uhhgxg), and [@alpaylan](https://github.com/alpaylan) in [#6385](https://github.com/PrefectHQ/fastmcp/pull/6385)
+### Fixes 🐞
+* fix(openapi): serialize header and path parameters per the simple style by [@Harsh23Kashyap](https://github.com/Harsh23Kashyap) in [#5091](https://github.com/PrefectHQ/fastmcp/pull/5091)
+* fix(proxy): keep stale list results out of cache by [@mikamikasuki](https://github.com/mikamikasuki) in [#5521](https://github.com/PrefectHQ/fastmcp/pull/5521)
+* fix(auth): Preserve browser consent bindings across concurrent OAuth approvals by [@mikamikasuki](https://github.com/mikamikasuki) in [#5541](https://github.com/PrefectHQ/fastmcp/pull/5541)
+* fix(openapi): preserve explicit null in nullable JSON body properties by [@mumu-bird](https://github.com/mumu-bird) in [#5633](https://github.com/PrefectHQ/fastmcp/pull/5633)
+* fix: name root self-references after the generated root class by [@BlueX888](https://github.com/BlueX888) in [#5671](https://github.com/PrefectHQ/fastmcp/pull/5671)
+* Convert OpenAPI 3.0 boolean exclusive bounds to numeric bounds by [@asasemahmed](https://github.com/asasemahmed) in [#5697](https://github.com/PrefectHQ/fastmcp/pull/5697)
+* Rewrite component refs under not, if/then/else and similar keywords by [@asasemahmed](https://github.com/asasemahmed) in [#5698](https://github.com/PrefectHQ/fastmcp/pull/5698)
+* Fall back to method and path when an OpenAPI name slugs to nothing by [@asasemahmed](https://github.com/asasemahmed) in [#5699](https://github.com/PrefectHQ/fastmcp/pull/5699)
+* fix(openapi): keep media-type $defs beside component schemas by [@BlueX888](https://github.com/BlueX888) in [#5709](https://github.com/PrefectHQ/fastmcp/pull/5709)
+* Fix namespaced file resource reads while preserving URI normalization by [@BlueLi66](https://github.com/BlueLi66) in [#5716](https://github.com/PrefectHQ/fastmcp/pull/5716)
+* fix(middleware): treat an empty methods allowlist as "log nothing" by [@gdut4140](https://github.com/gdut4140) in [#5727](https://github.com/PrefectHQ/fastmcp/pull/5727)
+* fix(server): pass typed list request messages to list middleware hooks by [@BlueX888](https://github.com/BlueX888) in [#5732](https://github.com/PrefectHQ/fastmcp/pull/5732)
+* fix(tasks): send task IDs in routing headers by [@eli-yip](https://github.com/eli-yip) in [#5810](https://github.com/PrefectHQ/fastmcp/pull/5810)
+* fix(mcp-config): reuse one OAuth client per configured server by [@kbkb628](https://github.com/kbkb628) and [@whoskn](https://github.com/whoskn) in [#6097](https://github.com/PrefectHQ/fastmcp/pull/6097)
+* Fix kept-alive stdio transports ignoring client timeouts by [@HootRock](https://github.com/HootRock) in [#6156](https://github.com/PrefectHQ/fastmcp/pull/6156)
+* fix(cli): preserve explicit null in generated tool commands by [@likecake](https://github.com/likecake) in [#6191](https://github.com/PrefectHQ/fastmcp/pull/6191)
+* Honor empty tag inclusion filters in multi-server configs by [@PennEwan](https://github.com/PennEwan) in [#6200](https://github.com/PrefectHQ/fastmcp/pull/6200)
+* Match Claude Code project keys by path on Windows by [@zzstoatzz](https://github.com/zzstoatzz) and [@yongpange](https://github.com/yongpange) in [#6240](https://github.com/PrefectHQ/fastmcp/pull/6240)
+* Stop preloading the server before launching the Inspector by [@zzstoatzz](https://github.com/zzstoatzz) and [@mikamikasuki](https://github.com/mikamikasuki) in [#6241](https://github.com/PrefectHQ/fastmcp/pull/6241)
+* Cull expired OAuth state from the default OAuthProxy file store by [@zzstoatzz](https://github.com/zzstoatzz), [@nosmile99](https://github.com/nosmile99), and [@mheidari98](https://github.com/mheidari98) in [#6242](https://github.com/PrefectHQ/fastmcp/pull/6242)
+* Match Gemini function responses to tool-use IDs by [@zzstoatzz](https://github.com/zzstoatzz) and [@mikamikasuki](https://github.com/mikamikasuki) in [#6244](https://github.com/PrefectHQ/fastmcp/pull/6244)
+* Replace parent type keywords when an ArgTransform changes the type by [@zzstoatzz](https://github.com/zzstoatzz), [@syf2211](https://github.com/syf2211), [@HootRock](https://github.com/HootRock), and [@chrikrah](https://github.com/chrikrah) in [#6246](https://github.com/PrefectHQ/fastmcp/pull/6246)
+* Expire idle per-client rate limiters by [@zzstoatzz](https://github.com/zzstoatzz) and [@mikamikasuki](https://github.com/mikamikasuki) in [#6247](https://github.com/PrefectHQ/fastmcp/pull/6247)
+* Match resource templates that spell out a literal query by [@zzstoatzz](https://github.com/zzstoatzz) and [@arieleven](https://github.com/arieleven) in [#6248](https://github.com/PrefectHQ/fastmcp/pull/6248)
+* fix(telemetry): record mounted and nested server spans as INTERNAL by [@zzstoatzz](https://github.com/zzstoatzz) and [@sonmaximum](https://github.com/sonmaximum) in [#6252](https://github.com/PrefectHQ/fastmcp/pull/6252)
+* fix(openapi): keep both values when a query object property matches another parameter by [@zzstoatzz](https://github.com/zzstoatzz) and [@alpaylan](https://github.com/alpaylan) in [#6256](https://github.com/PrefectHQ/fastmcp/pull/6256)
+* fix(middleware): map exception subclasses in ErrorHandlingMiddleware by [@zzstoatzz](https://github.com/zzstoatzz) and [@zurmag](https://github.com/zurmag) in [#6257](https://github.com/PrefectHQ/fastmcp/pull/6257)
+* fix(client): report a lost connection instead of 'Client is not connected' by [@zzstoatzz](https://github.com/zzstoatzz) and [@alex-feel](https://github.com/alex-feel) in [#6259](https://github.com/PrefectHQ/fastmcp/pull/6259)
+* Mask prompt handler exceptions when mask_error_details=True by [@pratyu2h](https://github.com/pratyu2h) and [@maxmorrish](https://github.com/maxmorrish) in [#6277](https://github.com/PrefectHQ/fastmcp/pull/6277)
+* fix(search): rebuild the BM25 index when the tool name set changes by [@shi-felix](https://github.com/shi-felix) in [#6282](https://github.com/PrefectHQ/fastmcp/pull/6282)
+* fix(tools): keep hidden parameter factories out of visible defaults by [@shi-felix](https://github.com/shi-felix) in [#6283](https://github.com/PrefectHQ/fastmcp/pull/6283)
+* fix(client): keep the response cache inert on legacy connections (#6298) by [@xunWhale](https://github.com/xunWhale) and [@alpaylan](https://github.com/alpaylan) in [#6321](https://github.com/PrefectHQ/fastmcp/pull/6321)
+* fix(auth): accept private-use scheme redirect URIs in CIMD documents by [@ColePBryan](https://github.com/ColePBryan) in [#6335](https://github.com/PrefectHQ/fastmcp/pull/6335)
+* Send `{}` for required OpenAPI object bodies with no fields by [@rome-xi](https://github.com/rome-xi) and [@wang1299](https://github.com/wang1299) in [#6340](https://github.com/PrefectHQ/fastmcp/pull/6340)
+* Report the stop reason from sampling handlers when no tools are offered by [@AarnavNoble](https://github.com/AarnavNoble) in [#6342](https://github.com/PrefectHQ/fastmcp/pull/6342)
+* fix(auth): preserve empty authority on custom-scheme redirect URIs by [@codesphere-u](https://github.com/codesphere-u) and [@alpaylan](https://github.com/alpaylan) in [#6347](https://github.com/PrefectHQ/fastmcp/pull/6347)
+* Declare items.type on multi-select list shorthand elicitations by [@zzstoatzz](https://github.com/zzstoatzz), [@shi-felix](https://github.com/shi-felix), [@Vivek1898](https://github.com/Vivek1898), and [@alpaylan](https://github.com/alpaylan) in [#6361](https://github.com/PrefectHQ/fastmcp/pull/6361)
+### Docs 📚
+* Correct how tools docs describe bytes return values by [@DivyaNarahari97](https://github.com/DivyaNarahari97) in [#6275](https://github.com/PrefectHQ/fastmcp/pull/6275)
+### Other Changes 🦾
+* Keep colon-terminated prose lines in docstring tool descriptions by [@zzstoatzz](https://github.com/zzstoatzz), [@jlx1999s](https://github.com/jlx1999s), and [@ptrailblazer89](https://github.com/ptrailblazer89) in [#6372](https://github.com/PrefectHQ/fastmcp/pull/6372)
+
+## New Contributors
+* @jaeminbird made their first contribution in [#6113](https://github.com/PrefectHQ/fastmcp/pull/6113)
+* @mbishflavien made their first contribution in [#6113](https://github.com/PrefectHQ/fastmcp/pull/6113)
+* @shi-felix made their first contribution in [#6352](https://github.com/PrefectHQ/fastmcp/pull/6352)
+* @zhuweid made their first contribution in [#6338](https://github.com/PrefectHQ/fastmcp/pull/6338)
+* @mumu-bird made their first contribution in [#5633](https://github.com/PrefectHQ/fastmcp/pull/5633)
+* @BlueLi66 made their first contribution in [#5716](https://github.com/PrefectHQ/fastmcp/pull/5716)
+* @gdut4140 made their first contribution in [#5727](https://github.com/PrefectHQ/fastmcp/pull/5727)
+* @eli-yip made their first contribution in [#5810](https://github.com/PrefectHQ/fastmcp/pull/5810)
+* @whoskn made their first contribution in [#6097](https://github.com/PrefectHQ/fastmcp/pull/6097)
+* @likecake made their first contribution in [#6191](https://github.com/PrefectHQ/fastmcp/pull/6191)
+* @PennEwan made their first contribution in [#6200](https://github.com/PrefectHQ/fastmcp/pull/6200)
+* @yongpange made their first contribution in [#6240](https://github.com/PrefectHQ/fastmcp/pull/6240)
+* @nosmile99 made their first contribution in [#6242](https://github.com/PrefectHQ/fastmcp/pull/6242)
+* @mheidari98 made their first contribution in [#6242](https://github.com/PrefectHQ/fastmcp/pull/6242)
+* @arieleven made their first contribution in [#6248](https://github.com/PrefectHQ/fastmcp/pull/6248)
+* @sonmaximum made their first contribution in [#6252](https://github.com/PrefectHQ/fastmcp/pull/6252)
+* @zurmag made their first contribution in [#6257](https://github.com/PrefectHQ/fastmcp/pull/6257)
+* @pratyu2h made their first contribution in [#6277](https://github.com/PrefectHQ/fastmcp/pull/6277)
+* @maxmorrish made their first contribution in [#6277](https://github.com/PrefectHQ/fastmcp/pull/6277)
+* @xunWhale made their first contribution in [#6321](https://github.com/PrefectHQ/fastmcp/pull/6321)
+* @ColePBryan made their first contribution in [#6335](https://github.com/PrefectHQ/fastmcp/pull/6335)
+* @rome-xi made their first contribution in [#6340](https://github.com/PrefectHQ/fastmcp/pull/6340)
+* @wang1299 made their first contribution in [#6340](https://github.com/PrefectHQ/fastmcp/pull/6340)
+* @codesphere-u made their first contribution in [#6347](https://github.com/PrefectHQ/fastmcp/pull/6347)
+* @Vivek1898 made their first contribution in [#6361](https://github.com/PrefectHQ/fastmcp/pull/6361)
+* @DivyaNarahari97 made their first contribution in [#6275](https://github.com/PrefectHQ/fastmcp/pull/6275)
+* @jlx1999s made their first contribution in [#6372](https://github.com/PrefectHQ/fastmcp/pull/6372)
+* @ptrailblazer89 made their first contribution in [#6372](https://github.com/PrefectHQ/fastmcp/pull/6372)
+
+**Full Changelog**: [v4.1.6...v4.1.7](https://github.com/PrefectHQ/fastmcp/compare/v4.1.6...v4.1.7)
+
+</Update>
+
 <Update label="v4.2.0a3" description="2026-11-03">
 
 **[v4.2.0a3: A Particular Set of Skills](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0a3)**
@@ -1069,6 +1209,19 @@ FastMCP 4.2.0a3 consolidates skills around `Skill`, `SkillCatalogProvider`, and 
 
 </Update>
 
+<Update label="v4.1.6" description="2026-11-03">
+
+**[v4.1.6: Group Therapy](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.6)**
+
+`ClientGroup` keeps its known tool routes after the group context exits, so a resolved tool can be called with only its own client connected ([#6271](https://github.com/PrefectHQ/fastmcp/pull/6271)). Thanks to @hntrl and @YingzuoLiu.
+
+### Fixes 🐞
+* fix(client): keep ClientGroup tool routes after the group context exits by [@zzstoatzz](https://github.com/zzstoatzz), [@hntrl](https://github.com/hntrl) and [@YingzuoLiu](https://github.com/YingzuoLiu) in [#6271](https://github.com/PrefectHQ/fastmcp/pull/6271)
+
+**Full Changelog**: [v4.1.5...v4.1.6](https://github.com/PrefectHQ/fastmcp/compare/v4.1.5...v4.1.6)
+
+</Update>
+
 <Update label="v4.2.0a2" description="2026-11-01">
 
 **[v4.2.0a2: Skill Waters Run Deep](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.0a2)**
@@ -1155,6 +1308,41 @@ The second 4.2 alpha carries every fix from 4.1.5 plus the ones that only land o
 * @Yash-Tripath1 made their first contribution in [#6104](https://github.com/PrefectHQ/fastmcp/pull/6104)
 
 **Full Changelog**: [v4.1.4...v4.2.0a2](https://github.com/PrefectHQ/fastmcp/compare/v4.1.4...v4.2.0a2)
+
+</Update>
+
+<Update label="v4.1.5" description="2026-11-01">
+
+**[v4.1.5: Back to the Fourture](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.5)**
+
+Twelve fixes backported from main onto the new `release/4.1` line: mounted resource templates keep their list-style query parameters, `FastMCPStdioTransport` forwards script arguments, OpenAPI tools report timeouts and concise upstream errors (and reject undeclared arguments under strict validation), a missing prompt argument returns invalid params, and JSON Schema `const`/`enum` compare by JSON equality, so `true` no longer passes for `1`. Thanks to our 12 contributors, including 7 first-time contributors.
+
+### Security 🔒
+* fix: preserve _list_query_params in FastMCPProviderResourceTemplate.wrap by [@RS-ITACHI](https://github.com/RS-ITACHI) in [#6130](https://github.com/PrefectHQ/fastmcp/pull/6130)
+### Fixes 🐞
+* fix: forward script arguments in FastMCPStdioTransport by [@KashifManzer](https://github.com/KashifManzer) and [@BlueX888](https://github.com/BlueX888) in [#6119](https://github.com/PrefectHQ/fastmcp/pull/6119)
+* Improve OpenAPI upstream error details by [@zzstoatzz](https://github.com/zzstoatzz) and [@mssaleh](https://github.com/mssaleh) in [#6141](https://github.com/PrefectHQ/fastmcp/pull/6141)
+* Compare JSON const and enum values by JSON equality by [@prassu017](https://github.com/prassu017) and [@alpaylan](https://github.com/alpaylan) in [#6126](https://github.com/PrefectHQ/fastmcp/pull/6126)
+* Return invalid params for prompts/get with a missing required argument by [@asasemahmed](https://github.com/asasemahmed) and [@xubenqiang](https://github.com/xubenqiang) in [#6027](https://github.com/PrefectHQ/fastmcp/pull/6027)
+* fix(cli): prefer Claude Code project servers by [@mikamikasuki](https://github.com/mikamikasuki) in [#5522](https://github.com/PrefectHQ/fastmcp/pull/5522)
+* fix(cli): preserve JSON content block fields by [@mikamikasuki](https://github.com/mikamikasuki) in [#5530](https://github.com/PrefectHQ/fastmcp/pull/5530)
+* Keep schema definitions when hydrating a wrapped tool result by [@asasemahmed](https://github.com/asasemahmed) in [#5927](https://github.com/PrefectHQ/fastmcp/pull/5927)
+* Reject undeclared OpenAPI tool arguments under strict input validation by [@prassu017](https://github.com/prassu017) and [@mssaleh](https://github.com/mssaleh) in [#6140](https://github.com/PrefectHQ/fastmcp/pull/6140)
+* fix(resources): reverse hostless URIs through Namespace unchanged by [@serhiizghama](https://github.com/serhiizghama) and [@andreivince](https://github.com/andreivince) in [#5230](https://github.com/PrefectHQ/fastmcp/pull/5230)
+* fix(openapi): preserve timeouts so the server maps them to the actionable message by [@BlueX888](https://github.com/BlueX888) in [#5847](https://github.com/PrefectHQ/fastmcp/pull/5847)
+* Drop client context holds left by finished tasks by [@zzstoatzz](https://github.com/zzstoatzz) in [#6205](https://github.com/PrefectHQ/fastmcp/pull/6205)
+* Backport 12 fixes to release/4.1 for v4.1.5 by [@zzstoatzz](https://github.com/zzstoatzz) in [#6218](https://github.com/PrefectHQ/fastmcp/pull/6218)
+
+## New Contributors
+* @RS-ITACHI made their first contribution in [#6130](https://github.com/PrefectHQ/fastmcp/pull/6130)
+* @KashifManzer made their first contribution in [#6119](https://github.com/PrefectHQ/fastmcp/pull/6119)
+* @mssaleh made their first contribution in [#6141](https://github.com/PrefectHQ/fastmcp/pull/6141)
+* @prassu017 made their first contribution in [#6126](https://github.com/PrefectHQ/fastmcp/pull/6126)
+* @alpaylan made their first contribution in [#6126](https://github.com/PrefectHQ/fastmcp/pull/6126)
+* @serhiizghama made their first contribution in [#5230](https://github.com/PrefectHQ/fastmcp/pull/5230)
+* @xubenqiang made their first contribution in [#6027](https://github.com/PrefectHQ/fastmcp/pull/6027)
+
+**Full Changelog**: [v4.1.4...v4.1.5](https://github.com/PrefectHQ/fastmcp/compare/v4.1.4...v4.1.5)
 
 </Update>
 
