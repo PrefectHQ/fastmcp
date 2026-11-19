@@ -40,7 +40,8 @@ The landing page's last chart is a treemap of `fastmcp_slim/fastmcp`, one box
 per module, sized by the statements inside its function bodies and colored by
 the share of those statements that ran during a property-based test. It reads
 `pbt-coverage.json` (`fastmcp-pbt-coverage/1`), which `pbt-coverage.yml`
-publishes to the `status` branch daily.
+publishes to the `status` branch on every push to main that touches the
+package, tests, docs or lockfile, plus once a day.
 
 ```sh
 uv run scripts/pbt_coverage.py --output status-site/pbt-coverage.json
