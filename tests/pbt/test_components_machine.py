@@ -84,15 +84,22 @@ class ComponentMachine(RuleBasedStateMachine):
         self.vis_rules: dict[str, list[Rule]] = {"parent": [], "child": []}
         self.client: Client | None = None
         self.page_size: int | None = None
-        logging.getLogger("fastmcp").setLevel(logging.ERROR)
+        # Quiet the expected warnings from drawn histories; teardown restores
+        # the level so later tests in the same process see their warnings.
+        self.logger = logging.getLogger("fastmcp")
+        self.log_level = self.logger.level
+        self.logger.setLevel(logging.ERROR)
 
     def run(self, coro):
         return self.loop.run_until_complete(coro)
 
     def teardown(self) -> None:
-        if self.client is not None:
-            self.run(self.client.__aexit__(None, None, None))
-        self.loop.close()
+        try:
+            if self.client is not None:
+                self.run(self.client.__aexit__(None, None, None))
+        finally:
+            self.loop.close()
+            self.logger.setLevel(self.log_level)
 
     # ---- starting state -------------------------------------------------
 
