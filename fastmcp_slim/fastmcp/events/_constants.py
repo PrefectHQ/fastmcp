@@ -2,8 +2,7 @@
 
 EVENTS_EXTENSION_ID = "io.modelcontextprotocol/events"
 
-# SEP-3415 requests these general-purpose codes; they are provisional until the
-# SEP merges.
+# Error codes SEP-3415 allocates in the specification's range.
 NOT_FOUND = -32023
 FORBIDDEN = -32024
 RESOURCE_EXHAUSTED = -32025
