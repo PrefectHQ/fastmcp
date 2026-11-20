@@ -161,6 +161,8 @@ class UsageMiddleware(Middleware):
             attributes["error.type"] = error_span_attributes(e)["error.type"]
             self._duration.record(time.perf_counter() - start, attributes)
             raise
+        if isinstance(result, ToolResult) and result.is_error:
+            attributes["error.type"] = "tool_error"
         self._duration.record(time.perf_counter() - start, attributes)
         return result
 

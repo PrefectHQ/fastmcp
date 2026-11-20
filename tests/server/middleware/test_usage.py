@@ -15,6 +15,7 @@ from fastmcp.server.auth import AccessToken
 from fastmcp.server.middleware import Middleware
 from fastmcp.server.middleware import usage as usage_module
 from fastmcp.server.middleware.usage import UsageMiddleware
+from fastmcp.tools.base import ToolResult
 
 
 @pytest.fixture
@@ -184,6 +185,23 @@ class TestUsageMiddleware:
 
         [point] = data_points(reader)
         assert point.attributes["gen_ai.tool.name"] == "fail"
+        assert point.attributes["error.type"] == "tool_error"
+
+    async def test_records_returned_tool_errors(self, meter_provider, reader):
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id="omit")
+        )
+
+        @mcp.tool
+        def soft_fail() -> ToolResult:
+            return ToolResult(content="nope", is_error=True)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("soft_fail", {}, raise_on_error=False)
+
+        assert result.is_error
+        [point] = data_points(reader)
+        assert point.attributes["gen_ai.tool.name"] == "soft_fail"
         assert point.attributes["error.type"] == "tool_error"
 
     async def test_records_prompts(self, meter_provider, reader):
