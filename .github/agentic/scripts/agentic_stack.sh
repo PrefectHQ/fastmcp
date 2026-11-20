@@ -17,7 +17,10 @@ upsert() {
   else api POST "/$kind/" --data "@$body" | jq -er .id; fi
 }
 
-DEPLOYMENTS=(cloud-stack-batch cloud-contribution-verification cloud-triage-intake cloud-triage-verify cloud-triage-finalize)
+DEPLOYMENTS=(cloud-stack-batch cloud-contribution-verification cloud-triage-intake cloud-triage-verify cloud-triage-finalize cloud-triage-sweep)
+# Runs that must finish before a deploy. The sweep is short and always has a
+# scheduled run queued, so it is registered but never waited on.
+DRAIN=(cloud-stack-batch cloud-contribution-verification cloud-triage-intake cloud-triage-verify cloud-triage-finalize)
 TRIGGERS=(fastmcp-triage-on-github-issue fastmcp-triage-on-github-pr)
 json_list() { printf '%s\n' "$@" | jq -R . | jq -sc .; }
 
@@ -85,7 +88,7 @@ case "${1:-}" in
       echo "Execution plans changed since $current; publish them and update the automations' plan versions by hand" >&2; exit 1;
     }
     validate
-    jq -n --argjson names "$(json_list "${DEPLOYMENTS[@]}")" \
+    jq -n --argjson names "$(json_list "${DRAIN[@]}")" \
       '{deployments:{name:{any_:$names}},flow_runs:{state:{type:{any_:["SCHEDULED","PENDING","RUNNING","PAUSED","CANCELLING"]}}},limit:10}' \
       > "$scratch/active.json"
     api POST /flow_runs/filter --data "@$scratch/active.json" > "$scratch/runs.json"

@@ -266,6 +266,6 @@ def _call_shape_probe(fn: Callable[..., Any]) -> Callable[..., dict[str, Any]]:
         for name, param in sig.parameters.items()
         if name in hints or param.annotation is not inspect.Parameter.empty
     }
-    probe.__signature__ = sig  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    probe.__signature__ = sig  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
     probe.__annotations__ = annotations
     return probe

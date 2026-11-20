@@ -10,6 +10,7 @@
     <title>FastMCP / backlog</title>
     <link rel="stylesheet" href="style.css" />
     <script src="app.js" defer></script>
+    <script src="pbt.js" defer></script>
   </head>
   <body>
     <main>
@@ -102,6 +103,37 @@
           independent verification.
         </p>
         <a id="triage-data" href="triage.json">Download triage JSON</a>
+      </section>
+      <section aria-labelledby="pbt-heading">
+        <div class="section-heading">
+          <h2 id="pbt-heading">Property-based test coverage</h2>
+          <div class="ranges" role="group" aria-label="Modules shown">
+            <button data-pbt-scope="public" aria-pressed="true">
+              Public API</button
+            ><button data-pbt-scope="all">All modules</button>
+          </div>
+        </div>
+        <p id="pbt-freshness" class="caption" role="status">
+          Reading property-based coverage…
+        </p>
+        <p id="pbt-notice" class="notice" hidden></p>
+        <div id="pbt-totals" class="totals"></div>
+        <div id="pbt-legend" class="legend"></div>
+        <div id="pbt-map" class="chart-container"></div>
+        <div id="pbt-readout" class="readout" aria-live="polite"></div>
+        <p class="caption">
+          Share of statements inside function bodies that ran during a
+          property-based test (any <code>test_*.py</code> file that imports hypothesis). Import-time
+          lines such as <code>def</code>, <code>class</code> and module
+          constants are excluded, so importing fastmcp earns nothing. Public
+          API means the modules the docs import from or that define a name the
+          docs import.
+        </p>
+        <details>
+          <summary>Module table</summary>
+          <div id="pbt-table" class="pbt-table"></div>
+        </details>
+        <a id="pbt-data" href="pbt-coverage.json">Download coverage JSON</a>
       </section>
       <section id="method" class="method" aria-labelledby="method-heading">
         <h2 id="method-heading">About the data</h2>

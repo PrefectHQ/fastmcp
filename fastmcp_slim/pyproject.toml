@@ -74,7 +74,7 @@ client = [
     "fastmcp-slim[mcp]=={{ version }}",
     "authlib>=1.9.5",
     "beartype>=0.23.0rc2; python_version >= '3.15'",
-    "py-key-value-aio[filetree,memory]>=0.4.6,<0.5.0",
+    "py-key-value-aio[filetree,memory]>=0.4.6,<0.6.0",
 ]
 code-mode = ["pydantic-monty>=1.1,<2"]
 jev = ["typesafe-sdk>=0.5.7"]
@@ -86,7 +86,10 @@ mcp = [
     # upstream calls, OpenAPI provider, version check, etc.) uses it too.
     "httpx2>=2.5.0",
     "mcp>=2.3.0,<3.0.0",
-    "opentelemetry-api>=1.28.0",
+    # opentelemetry-api floor: extract_trace_context feeds client-supplied
+    # _meta.traceparent to the W3C propagator. Pin past CVE-2026-126360
+    # (ReDoS on crafted traceparent), which was patched in 1.45.2.
+    "opentelemetry-api>=1.45.2",
     # starlette floor: transitive via mcp (which only requires >=0.27).
     # Pin past CVE-2026-48710, which was patched in 1.0.1.
     "starlette>=1.0.1",
@@ -105,7 +108,7 @@ server = [
     "joserfc>=1.7.6",
     "openapi-pydantic>=0.6.0",
     "packaging>=24.0",
-    "py-key-value-aio[filetree,memory]>=0.4.6,<0.5.0",
+    "py-key-value-aio[filetree,memory]>=0.4.6,<0.6.0",
     "pyperclip>=1.9.0",
     "python-multipart>=0.0.26",
     "pyyaml>=6.0,<7.0",

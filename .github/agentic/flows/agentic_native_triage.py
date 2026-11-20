@@ -105,7 +105,10 @@ def run_native_stage(
     if (
         observation["snapshot"]["execution_plan_version_id"] != str(plan.version_id)
         or run.flow_id != plan.flow_id
-        or run.parameters != intent["parameters"]
+        # Parameters come back from the API through JSON, so compare digests:
+        # an in-memory value that isn't JSON-native (an int dict key) would
+        # otherwise never equal its own round-trip and discard a finished run.
+        or digest(run.parameters) != intent["parameters_sha256"]
     ):
         raise ValueError("Native run changed the pinned admission")
     outcome = verified_outcome(ref, admission, run_id)

@@ -14,7 +14,17 @@ def apply_disposition(
 ) -> tuple[str, dict]:
     decision = review["decision"]
     if decision == "prepare_fix" and outcome.get("decision") != "reproduced":
-        raise ValueError("A fix recommendation requires a reproduced bug")
+        # The reviewer wants a fix the reproduction didn't confirm. Don't prepare
+        # one; put the disagreement in front of a maintainer instead of dropping it.
+        reproduction = outcome.get("decision") or "not attempted"
+        return "decisions", {
+            **outcome,
+            "adversarial_review": review,
+            "triage_review_run_id": run_id,
+            "next_step": review["next_action"],
+            "question": f"Reviewer recommends a fix, but reproduction was {reproduction}: "
+            + review["next_action"],
+        }
     # Intake routes an issue to review_existing when a PR claims to fix it, even
     # when native triage then files it under decisions; either is evidence.
     if (

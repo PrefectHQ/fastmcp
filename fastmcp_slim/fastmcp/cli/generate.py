@@ -2,6 +2,7 @@
 
 import keyword
 import re
+import shlex
 import sys
 import textwrap
 from collections import defaultdict
@@ -677,6 +678,42 @@ def _schema_type_label(prop_schema: dict[str, Any]) -> str:
     return label
 
 
+def _bash_quote(value: str) -> str:
+    """Quote a value as one bash word that stays on one line.
+
+    `shlex.quote` keeps newlines literal, which would split the word across
+    lines of the generated `bash` block (and a line of backticks would end the
+    block). Values with unprintable characters use ANSI-C quoting instead.
+    """
+    if value.isprintable():
+        return shlex.quote(value)
+
+    def escape(char: str) -> str:
+        if char in "\\'":
+            return "\\" + char
+        if char.isprintable():
+            return char
+        return f"\\U{ord(char):08x}"
+
+    escaped = "".join(escape(char) for char in value)
+    return f"$'{escaped}'"
+
+
+def _inert_text_block(text: str) -> str:
+    """Keep server-supplied text from adding code blocks to SKILL.md.
+
+    A description containing a code fence could otherwise plant its own
+    `bash` block next to the generated invocation. Such text is wrapped in a
+    `text` fence one backtick longer than its longest backtick run, which it
+    cannot close. Text without fences is returned unchanged.
+    """
+    if "```" not in text and "~~~" not in text:
+        return text
+    longest_run = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    fence = "`" * max(3, longest_run + 1)
+    return f"{fence}text\n{text}\n{fence}"
+
+
 def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
     """Generate a SKILL.md section for a single tool."""
     schema = tool.input_schema
@@ -697,7 +734,10 @@ def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
         else:
             flag_parts_list.append(f"{flag} <value>")
     flag_parts = " ".join(flag_parts_list)
-    invocation = f"uv run --with fastmcp python {cli_filename} call-tool {tool.name}"
+    invocation = (
+        "uv run --with fastmcp python "
+        f"{_bash_quote(cli_filename)} call-tool {_bash_quote(tool.name)}"
+    )
     if flag_parts:
         invocation += f" {flag_parts}"
 
@@ -721,9 +761,10 @@ def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
         header = "| Flag | Type | Required | Description |\n|------|------|----------|-------------|"
         param_table = f"\n{header}\n" + "\n".join(rows) + "\n"
 
-    lines: list[str] = [f"### {tool.name}"]
+    heading = " ".join(tool.name.splitlines())
+    lines: list[str] = [f"### {heading}"]
     if tool.description:
-        lines.extend(["", tool.description])
+        lines.extend(["", _inert_text_block(tool.description)])
     lines.extend(["", "```bash", invocation, "```"])
     if param_table:
         lines.extend(["", param_table.strip("\n")])

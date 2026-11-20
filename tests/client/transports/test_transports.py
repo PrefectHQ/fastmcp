@@ -55,7 +55,7 @@ async def test_oauth_uses_same_client_as_transport_streamable_http():
     async with transport.auth.httpx_client_factory() as httpx_client:
         assert httpx_client._transport is not None
         assert (
-            httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
             == VerifyMode.CERT_NONE
         )
 
@@ -73,7 +73,7 @@ async def test_oauth_uses_same_client_as_transport_sse():
     async with transport.auth.httpx_client_factory() as httpx_client:
         assert httpx_client._transport is not None
         assert (
-            httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
             == VerifyMode.CERT_NONE
         )
 
@@ -172,7 +172,7 @@ class TestSSLVerify:
         assert isinstance(transport.auth, OAuth)
         async with transport.auth.httpx_client_factory() as httpx_client:
             assert (
-                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
                 == VerifyMode.CERT_NONE
             )
 
@@ -185,7 +185,7 @@ class TestSSLVerify:
         assert isinstance(transport.auth, OAuth)
         async with transport.auth.httpx_client_factory() as httpx_client:
             assert (
-                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
                 == VerifyMode.CERT_NONE
             )
 
@@ -199,7 +199,7 @@ class TestSSLVerify:
         assert isinstance(client.transport.auth, OAuth)
         async with client.transport.auth.httpx_client_factory() as httpx_client:
             assert (
-                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
                 == VerifyMode.CERT_NONE
             )
 
@@ -212,7 +212,7 @@ class TestSSLVerify:
         assert isinstance(transport.auth, OAuth)
         async with transport.auth.httpx_client_factory() as httpx_client:
             assert (
-                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
                 == VerifyMode.CERT_NONE
             )
 
@@ -225,7 +225,7 @@ class TestSSLVerify:
         # OAuth was created without verify — factory should be default
         async with transport.auth.httpx_client_factory() as httpx_client:
             assert (
-                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
                 != VerifyMode.CERT_NONE
             )
 
@@ -234,7 +234,7 @@ class TestSSLVerify:
         assert isinstance(client.transport.auth, OAuth)
         async with client.transport.auth.httpx_client_factory() as httpx_client:
             assert (
-                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
                 == VerifyMode.CERT_NONE
             )
 
@@ -248,7 +248,7 @@ class TestSSLVerify:
         # OAuth should initially have verify=False
         async with transport.auth.httpx_client_factory() as httpx_client:
             assert (
-                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
                 == VerifyMode.CERT_NONE
             )
 
@@ -257,7 +257,7 @@ class TestSSLVerify:
         assert isinstance(client.transport.auth, OAuth)
         async with client.transport.auth.httpx_client_factory() as httpx_client:
             assert (
-                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
                 != VerifyMode.CERT_NONE
             )
 
@@ -303,7 +303,7 @@ class TestSSLVerify:
         assert client.transport.auth.httpx_client_factory is custom_factory
         async with client.transport.auth.httpx_client_factory() as httpx_client:
             assert (
-                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
                 == VerifyMode.CERT_NONE
             )
 
@@ -361,7 +361,7 @@ class TestSSLVerify:
         assert client.transport.auth.httpx_client_factory is not httpx2.AsyncClient
         async with client.transport.auth.httpx_client_factory() as httpx_client:
             assert (
-                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
                 == VerifyMode.CERT_NONE
             )
 

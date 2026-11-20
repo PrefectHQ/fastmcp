@@ -483,7 +483,7 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
         # Insert 'self' at the beginning of our new params
         self_param = next(iter(func_sig.parameters.values()))  # Should be 'self'
         new_sig = func_sig.replace(parameters=[self_param, *new_params])
-        fn.__func__.__signature__ = new_sig  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        fn.__func__.__signature__ = new_sig  # type: ignore[union-attr]  # ty:ignore[missing-attribute]
     else:
         new_sig = sig.replace(parameters=new_params)
         fn.__signature__ = new_sig  # type: ignore[attr-defined]  # ty:ignore[invalid-assignment]
@@ -831,7 +831,7 @@ def without_injected_parameters(
     except Exception:
         resolved_hints = getattr(fn, "__annotations__", {})
 
-    wrapper.__signature__ = new_sig  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    wrapper.__signature__ = new_sig  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
     wrapper.__annotations__ = {
         k: v for k, v in resolved_hints.items() if k not in exclude and k != "return"
     } | {param.name: param.annotation for param in referenced}

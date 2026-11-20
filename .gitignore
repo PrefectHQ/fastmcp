@@ -78,3 +78,6 @@ plans/
 /server.py
 /client.py
 /test.json
+
+# hypothesis example database (property-based test campaigns)
+.hypothesis/

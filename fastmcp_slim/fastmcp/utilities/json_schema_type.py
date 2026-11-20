@@ -78,6 +78,7 @@ from typing import (
     TypeVar,
     Union,
     cast,
+    get_args,
     get_type_hints,
     overload,
 )
@@ -469,7 +470,7 @@ def _resolve_recursive_types(conversion: _Conversion) -> None:
                 field_info.validate_default = True
                 rechecked.add(cls)
             continue
-        dataclass_field = cls.__dataclass_fields__[field_name]  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        dataclass_field = cls.__dataclass_fields__[field_name]  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
         factory = dataclass_field.default_factory
         default = factory() if callable(factory) else dataclass_field.default
         # A `"#"` reference in a nested dataclass stays a forward reference
@@ -843,8 +844,15 @@ def _create_prefix_items_type(
         return list(handler(tuple(value)))
 
     def build_schema(
-        _source: Any, handler: GetCoreSchemaHandler
+        source: Any, handler: GetCoreSchemaHandler
     ) -> core_schema.CoreSchema:
+        # Read the position types back from the annotation rather than this
+        # closure: a recursive `$ref` is a ForwardRef until
+        # `_resolve_recursive_types` evaluates the annotation, and only the
+        # annotation's arguments are evaluated.
+        positions_type, tail_type = get_args(source)
+        resolved_prefix = get_args(positions_type)
+
         def build_positions(json_input: bool) -> core_schema.CoreSchema:
             def item_schema(item: Any) -> core_schema.CoreSchema:
                 converted = handler.generate_schema(item)
@@ -867,11 +875,15 @@ def _create_prefix_items_type(
                     )
                     if preserve_prefix_values
                     else item_schema(position_type),
+                    # A placeholder for a missing position, sliced off after
+                    # validation; never validate it, whatever the enclosing
+                    # model's validate_default says.
                     default=None,
+                    validate_default=False,
                 )
-                for position_type in prefix_types
+                for position_type in resolved_prefix
             ]
-            positions.append(item_schema(item_type))
+            positions.append(item_schema(tail_type))
             return core_schema.tuple_schema(
                 positions,
                 variadic_item_index=len(prefix_types),
@@ -911,7 +923,10 @@ def _create_prefix_items_type(
             result["items"] = False
         return result
 
-    return Annotated[list[Any], GetPydanticSchema(build_schema, build_json_schema)]
+    # The source type carries the position types so recursive references in
+    # them are resolved; validation and the JSON schema come from build_schema.
+    source = tuple[tuple[prefix_types], item_type]  # ty:ignore[invalid-type-form]
+    return Annotated[source, GetPydanticSchema(build_schema, build_json_schema)]
 
 
 def _create_array_type(
@@ -942,7 +957,7 @@ def _create_array_type(
         base = _create_prefix_items_type(prefix_types, item_type, schema)
         if schema.get("uniqueItems") is True:
             return Annotated[
-                base,
+                base,  # ty:ignore[invalid-type-form]
                 BeforeValidator(_validate_unique_items),
                 Field(json_schema_extra={"uniqueItems": True}),
             ]
@@ -1551,7 +1566,7 @@ def _build_dataclass(
             return _merge_defaults(data, original_schema, apply_property_defaults=False)
         return data
 
-    cls._apply_defaults = _apply_defaults  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    cls._apply_defaults = _apply_defaults  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
     _conversion.get().unchecked_defaults.extend((cls, f) for f in unchecked)
     return cls
 
@@ -1569,8 +1584,8 @@ def _merge_defaults(
         # Start with parent default if available
         if parent_default:
             result = dict(parent_default)
-        # Otherwise use schema default if available
-        elif "default" in schema:
+        # Otherwise use schema default if it is an object to merge
+        elif isinstance(schema.get("default"), Mapping):
             result = dict(schema["default"])
         # Otherwise start empty
         else:
@@ -1617,6 +1632,10 @@ def _merge_defaults(
                 nested_default = parent_default[prop_name]
             elif "default" in prop_schema:
                 nested_default = prop_schema["default"]
+            # `default` is an annotation and need not match the property's
+            # type; only an object default has keys to merge.
+            if not isinstance(nested_default, Mapping):
+                nested_default = None
 
             result[prop_name] = _merge_defaults(
                 result[prop_name],
