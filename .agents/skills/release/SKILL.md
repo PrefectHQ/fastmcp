@@ -13,7 +13,9 @@ the only lineage gofastmcp.com/docs serves. Merging that docs PR drafts the rele
 its success fans out to `fastmcp-tasks`, `fastmcp-remote`, and `fastmcp`, and the
 `fastmcp` publish job opens the `published-docs` PR for stable release-triggered
 publication when the release SHA is an ancestor of the default branch. Prereleases
-and manual package-workflow dispatch do not open that PR. Mintlify builds `docs/`
+do not open that PR. The slim job waits in the `pypi` environment for a required
+reviewer; the publish workflows have no manual dispatch, so a release is the only
+way to reach PyPI. Mintlify builds `docs/`
 from `published-docs` at `https://gofastmcp.com/docs`; the separate
 `PrefectHQ/gofastmcp-website` repository deploys its `main` to Vercel for the landing
 page and `/docs` proxy. Two hand-maintained docs files mirror every release and must be on the
@@ -136,7 +138,8 @@ one gets a follow-up patch, never a re-tag.
 
 6. **Watch the fan-out.** The slim run is keyed to the tag; the others are
    `workflow_run` events on the default branch, so select them by workflow name.
-   The slim run appears within a minute of the tag; the `fastmcp` run is queued the
+   The slim run appears within a minute of the tag and waits for the maintainer to
+   approve the `pypi` deployment; the `fastmcp` run is queued the
    moment slim succeeds, so watch slim to completion first and the newest `fastmcp`
    run is the right one.
 

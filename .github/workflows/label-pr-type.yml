@@ -1,13 +1,16 @@
 name: Label PR type
 
 # Release notes sort PRs by their bug/feature/enhancement/documentation label.
-# Issues get one from their template; this copies it onto the PR that fixes the
-# issue. No model, no checkout: it reads the PR payload and the linked issues.
+# In order: a PR that only touches repository tooling (CI, scripts, tests, agent
+# skills) is kept out of the notes; otherwise the type comes from the linked
+# issue's label, then the PR template's checked "Contribution type" box, then
+# docs-only changes count as documentation. No model, no checkout: it reads the
+# PR payload, its file list, and the linked issues.
 
 on:
   pull_request_target:
     # SECURITY: never check out or run PR-head code here.
-    types: [opened, edited, reopened, ready_for_review]
+    types: [opened, edited, reopened, ready_for_review, synchronize]
 
 concurrency:
   group: label-pr-type-${{ github.event.pull_request.number }}
@@ -28,11 +31,34 @@ jobs:
           script: |
             // Most specific first: a fix for a bug is a fix even if the issue is also docs.
             const TYPES = ['bug', 'feature', 'enhancement', 'documentation'];
+            const SKIP = 'ignore in release notes';
+            // Paths that never change what users install or read.
+            const INTERNAL = /^(?:\.github\/|\.agents\/|scripts\/|tests\/|status-site\/|\.gitignore$|loq\.toml$)/;
             const { owner, repo } = context.repo;
             const pr = context.payload.pull_request;
             const current = new Set(pr.labels.map((label) => label.name));
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: pr.number, per_page: 100,
+            });
+            const toolingOnly = files.length > 0 && files.every((file) => INTERNAL.test(file.filename));
+
+            // Re-checked on every push: a PR that started as tests only and
+            // then gained the library change belongs back in the notes.
+            if (current.has(SKIP)) {
+              if (toolingOnly) {
+                console.log('Still repository tooling only');
+                return;
+              }
+              await github.rest.issues.removeLabel({ owner, repo, issue_number: pr.number, name: SKIP });
+              console.log(`Removed ${SKIP} from #${pr.number}: it now changes more than tooling`);
+            }
             if (TYPES.some((type) => current.has(type))) {
               console.log('PR already has a type label');
+              return;
+            }
+            if (toolingOnly) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number: pr.number, labels: [SKIP] });
+              console.log(`Labeled #${pr.number} ${SKIP}: repository tooling only`);
               return;
             }
 
@@ -57,11 +83,20 @@ jobs:
             }
             let type = TYPES.find((name) => found.has(name));
 
+            if (!type) {
+              // The PR template's "Contribution type" checkboxes. Use one only
+              // when exactly one is checked.
+              const BOXES = [
+                ['bug', /^\s*[-*]\s*\[x\]\s*bug fix\b/im],
+                ['documentation', /^\s*[-*]\s*\[x\]\s*documentation\b/im],
+                ['enhancement', /^\s*[-*]\s*\[x\]\s*enhancement\b/im],
+              ];
+              const checked = BOXES.filter(([, box]) => box.test(pr.body || ''));
+              if (checked.length === 1) type = checked[0][0];
+            }
+
             if (!type && numbers.length === 0) {
               // No linked issue: a docs-only change is still clearly documentation.
-              const files = await github.paginate(github.rest.pulls.listFiles, {
-                owner, repo, pull_number: pr.number, per_page: 100,
-              });
               if (files.length > 0 && files.every((file) => file.filename.startsWith('docs/'))) {
                 type = 'documentation';
               }
