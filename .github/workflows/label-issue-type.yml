@@ -49,7 +49,8 @@ jobs:
                 },
                 body: JSON.stringify({
                   model: 'claude-haiku-5-5',
-                  max_tokens: 5,
+                  max_tokens: 16,
+                  thinking: { type: 'disabled' },
                   system:
                     'Classify a GitHub issue filed against the FastMCP Python library. ' +
                     'Answer with exactly one word: bug (something is broken), enhancement ' +
@@ -64,7 +65,7 @@ jobs:
               });
               if (!response.ok) throw new Error(`HTTP ${response.status}`);
               const data = await response.json();
-              const word = (data.content?.[0]?.text || '').trim().toLowerCase().replace(/[^a-z]/g, '');
+              const word = (data.content?.find((block) => block.type === 'text')?.text || '').trim().toLowerCase().replace(/[^a-z]/g, '');
               console.log(`Model answered: ${word}`);
               if (['bug', 'enhancement', 'documentation'].includes(word)) type = word;
             } catch (error) {
