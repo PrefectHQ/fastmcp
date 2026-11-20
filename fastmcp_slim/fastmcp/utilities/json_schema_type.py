@@ -1089,7 +1089,10 @@ def _convert_schema(
         # it allows additional properties, take the object path so unknown keys
         # are kept, exactly as if "type": "object" were spelled out.
         additional_props = schema.get("additionalProperties")
-        if additional_props is True or isinstance(additional_props, Mapping):
+        # Empty schemas must not bypass the dataclass path's $ref resolution.
+        if additional_props or (
+            isinstance(additional_props, Mapping) and "$ref" not in schema
+        ):
             return _object_schema_to_type(
                 schema, schemas, resolving_refs=resolving_refs
             )
