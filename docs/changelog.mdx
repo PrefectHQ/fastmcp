@@ -6,6 +6,43 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.2.3" description="2026-11-20">
+
+**[v4.2.3: Trace Elements](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.3)**
+
+FastMCP 4.2.3 adds an opt-in `parent_task_spans` setting for background tasks: turn it on and each task's worker span nests inside the `tools/call` request that submitted it, so the whole job reads as one trace (off by default, where the worker still starts its own trace linked back to the request). It also fixes three output schema conversion bugs (non-object defaults, recursive `$ref`s in positional arrays, and placeholder validation for short positional arrays), and an OpenAPI tool called without a required path argument now returns a validation error instead of a server error. `fastmcp-tasks` now requires `pydocket>=0.29.1`. Thanks to our 4 contributors, including 2 first-time contributors.
+
+### Enhancements ✨
+* Add parent_task_spans option for background task traces by [@strawgate](https://github.com/strawgate) in [#6563](https://github.com/PrefectHQ/fastmcp/pull/6563)
+### Fixes 🐞
+* Raise ValidationError for missing OpenAPI path arguments by [@zzstoatzz](https://github.com/zzstoatzz) and [@joyrexus](https://github.com/joyrexus) in [#6559](https://github.com/PrefectHQ/fastmcp/pull/6559)
+* Ignore non-object defaults when merging object defaults by [@zzstoatzz](https://github.com/zzstoatzz) in [#6552](https://github.com/PrefectHQ/fastmcp/pull/6552)
+* Resolve recursive references in unpinned positional arrays by [@zzstoatzz](https://github.com/zzstoatzz) in [#6553](https://github.com/PrefectHQ/fastmcp/pull/6553)
+* Never validate placeholders for missing prefix positions by [@zzstoatzz](https://github.com/zzstoatzz) in [#6572](https://github.com/PrefectHQ/fastmcp/pull/6572)
+### Docs 📚
+* docs: document Redis dependencies for HTTP examples by [@statertly-pixel](https://github.com/statertly-pixel) in [#6527](https://github.com/PrefectHQ/fastmcp/pull/6527)
+* docs: point tool-only clients at ResourcesAsTools for skills by [@zzstoatzz](https://github.com/zzstoatzz) in [#6468](https://github.com/PrefectHQ/fastmcp/pull/6468)
+* docs: add v4.1.5–v4.1.8 changelog entries to main by [@zzstoatzz](https://github.com/zzstoatzz) in [#6581](https://github.com/PrefectHQ/fastmcp/pull/6581)
+* docs: add v3.4.8–v3.4.11 changelog entries by [@zzstoatzz](https://github.com/zzstoatzz) in [#6586](https://github.com/PrefectHQ/fastmcp/pull/6586)
+### Other Changes 🦾
+* Add a property-based test harness by [@zzstoatzz](https://github.com/zzstoatzz) in [#6578](https://github.com/PrefectHQ/fastmcp/pull/6578)
+* Add a property-based test coverage map to the status site by [@zzstoatzz](https://github.com/zzstoatzz) in [#6573](https://github.com/PrefectHQ/fastmcp/pull/6573)
+* Reopen the smart-home example's Fire TV connection after a socket reset by [@zzstoatzz](https://github.com/zzstoatzz) in [#5384](https://github.com/PrefectHQ/fastmcp/pull/5384)
+* Keep finished triage runs and check live state before recommending by [@zzstoatzz](https://github.com/zzstoatzz) in [#6560](https://github.com/PrefectHQ/fastmcp/pull/6560)
+* Compare triage records as JSON and file maintainer reproductions as decisions by [@zzstoatzz](https://github.com/zzstoatzz) in [#6562](https://github.com/PrefectHQ/fastmcp/pull/6562)
+* Keep timed-out people lookups from failing triage assessments by [@zzstoatzz](https://github.com/zzstoatzz) in [#6487](https://github.com/PrefectHQ/fastmcp/pull/6487)
+* Run issue closers on the actions token instead of the Marvin app by [@zzstoatzz](https://github.com/zzstoatzz) in [#6576](https://github.com/PrefectHQ/fastmcp/pull/6576)
+* Turn triage outcomes into labels and add a weekly sweep by [@zzstoatzz](https://github.com/zzstoatzz) in [#6577](https://github.com/PrefectHQ/fastmcp/pull/6577)
+* build(deps): bump the uv group across 3 directories with 2 updates by [@dependabot](https://github.com/dependabot) in [#6518](https://github.com/PrefectHQ/fastmcp/pull/6518)
+
+## New Contributors
+* @statertly-pixel made their first contribution in [#6527](https://github.com/PrefectHQ/fastmcp/pull/6527)
+* @joyrexus made their first contribution in [#6559](https://github.com/PrefectHQ/fastmcp/pull/6559)
+
+**Full Changelog**: [v4.2.2...v4.2.3](https://github.com/PrefectHQ/fastmcp/compare/v4.2.2...v4.2.3)
+
+</Update>
+
 <Update label="v4.2.2" description="2026-11-18">
 
 **[v4.2.2: Tea for Two (Too)](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.2)**
