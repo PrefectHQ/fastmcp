@@ -38,7 +38,7 @@ def test_entry_becomes_github_release_notes():
 
 
 def test_only_added_entries_are_drafted():
-    existing = Path("docs/changelog.mdx").read_text()
+    existing = Path("docs/changelog.mdx").read_text(encoding="utf-8")
     head, sep, rest = existing.partition("<Update ")
     after = head + ENTRY + "\n" + sep + rest
 
@@ -54,7 +54,9 @@ def test_prerelease_tags_draft_as_prereleases():
 
 def test_current_entries_parse():
     parsed = entries(
-        Path("docs/changelog.mdx").read_text().split('<Update label="v4.2.2"')[0]
+        Path("docs/changelog.mdx")
+        .read_text(encoding="utf-8")
+        .split('<Update label="v4.2.2"')[0]
     )
 
     assert parsed["v4.2.3"].title == "v4.2.3: Trace Elements"

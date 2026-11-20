@@ -13,7 +13,6 @@ Usage (from the repository root, with GH_TOKEN allowed to write releases):
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import subprocess
 from dataclasses import dataclass
@@ -85,21 +84,36 @@ def new_entries(before: str, after: str) -> list[Entry]:
 
 def git_show(sha: str, path: str) -> str:
     result = subprocess.run(
-        ["git", "show", f"{sha}:{path}"], capture_output=True, text=True
+        ["git", "show", f"{sha}:{path}"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
     )
     # A missing file (first commit, or a zero BEFORE sha) has no entries.
     return result.stdout if result.returncode == 0 else ""
 
 
 def gh(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["gh", "api", *args], capture_output=True, text=True)
+    return subprocess.run(
+        ["gh", "api", *args], capture_output=True, text=True, encoding="utf-8"
+    )
+
+
+def branch_exists(branch: str) -> bool:
+    """Only a confirmed 404 means absent; any other failure stops the draft."""
+    result = gh(f"repos/{REPO}/branches/{branch}", "--jq", ".name")
+    if result.returncode == 0:
+        return True
+    if "HTTP 404" in result.stderr:
+        return False
+    raise SystemExit(f"Could not look up {branch}: {result.stderr.strip()}")
 
 
 def release_branch(tag: str) -> str | None:
     """Maintenance lines release from their own branch, not from main."""
     major, minor = tag.lstrip("v").split(".")[:2]
     for branch in (f"release/{major}.{minor}", f"release/{major}.x"):
-        if gh(f"repos/{REPO}/branches/{branch}", "--jq", ".name").returncode == 0:
+        if branch_exists(branch):
             return branch
     return None
 
@@ -115,9 +129,11 @@ def target_for(tag: str, pushed_sha: str) -> str:
 
 def existing_tags() -> set[str]:
     # Drafts are invisible to the tags endpoint, so list releases (drafts included).
-    result = gh(f"repos/{REPO}/releases?per_page=100", "--jq", "[.[].tag_name]")
+    result = gh(
+        f"repos/{REPO}/releases?per_page=100", "--paginate", "--jq", ".[].tag_name"
+    )
     result.check_returncode()
-    return set(json.loads(result.stdout))
+    return set(result.stdout.split())
 
 
 def main() -> None:
