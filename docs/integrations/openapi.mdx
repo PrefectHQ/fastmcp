@@ -493,6 +493,10 @@ FastMCP handles array parameters according to OpenAPI specifications:
 # /items/red,blue,green
 ```
 
+### JSON Query Parameters
+
+Query parameters declared with `content: {"application/json": ...}` are JSON-encoded as one query value, rather than serialized with `style` and `explode`. Pass the structured value as the tool argument: for example, `{"filter": {"status": "active"}}` sends a single `filter` parameter containing `{"status": "active"}`. Omitting the argument sends no parameter; an explicit `None` sends JSON `null` only when the parameter schema permits it. JSON media types ending in `+json` follow the same behavior.
+
 ### Headers
 
 Header parameters are automatically converted to strings and included in the HTTP request.

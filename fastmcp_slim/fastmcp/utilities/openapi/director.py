@@ -530,6 +530,11 @@ class RequestDirector:
         body_props = {}
 
         route, parameter_map = _prepare_parameter_map(route)
+        json_query_names = {
+            p.name
+            for p in route.parameters
+            if p.location == "query" and _is_json_media_type(p.content_type)
+        }
         null_validator: Validator | None = None
         null_properties: dict[str, Any] = {}
 
@@ -545,16 +550,18 @@ class RequestDirector:
             openapi_name = mapping["openapi_name"]
 
             if value is None:
-                # Only JSON body properties have a null representation. Consult
-                # the normalized input schema, including its reference definitions,
+                # JSON bodies and content-based JSON query parameters can carry
+                # an explicit null. Consult the normalized input schema and refs
                 # rather than interpreting raw OpenAPI nullability a second time.
-                if location != "body" or not route.request_body:
-                    continue
-                content_type = next(iter(route.request_body.content_schema), "")
-                media_type = content_type.split(";")[0].strip().lower()
-                if media_type != "application/json" and not media_type.endswith(
-                    "+json"
-                ):
+                is_json_query = location == "query" and openapi_name in json_query_names
+                is_json_body = (
+                    location == "body"
+                    and route.request_body is not None
+                    and _is_json_media_type(
+                        next(iter(route.request_body.content_schema), "")
+                    )
+                )
+                if not (is_json_query or is_json_body):
                     continue
                 if null_validator is None:
                     schema = route.flat_param_schema
@@ -662,6 +669,9 @@ class RequestDirector:
         for key, value in query_params.items():
             param_info = param_lookup.get(key)
             if param_info is not None:
+                if _is_json_media_type(param_info.content_type):
+                    add(key, _json.dumps(value, allow_nan=False))
+                    continue
                 style = param_info.style or "form"
                 explode = param_info.explode if param_info.explode is not None else True
                 if (
