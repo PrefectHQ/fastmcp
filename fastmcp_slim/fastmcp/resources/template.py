@@ -232,6 +232,30 @@ def build_regex(template: str) -> re.Pattern[str] | None:
         return None
 
 
+def _repeated_template_params(uri_template: str) -> list[str]:
+    """Return the parameters a template captures more than once, as written.
+
+    A repeat becomes a duplicate regex group, which `build_regex` refuses, so
+    the template would register but never match a URI. Query expressions
+    (`{?a}`, `{&a}`) are stripped from the path pattern, so they are not
+    repeats, and the explode modifier does not change the name a placeholder
+    captures under, so `{a}` and `{a*}` are the same parameter.
+    """
+    template_without_query = re.sub(r"\{[?&][^}]+\}", "", uri_template)
+    seen: dict[str, str] = {}
+    repeated: set[str] = set()
+    for part in re.split(r"(\{[^}]+\})", template_without_query):
+        if not (part.startswith("{") and part.endswith("}")):
+            continue
+        name = part[1:-1].removesuffix("*")
+        group = template_param_key(name)
+        if group in seen:
+            repeated.update((seen[group], name))
+        else:
+            seen[group] = name
+    return sorted(repeated)
+
+
 def match_uri_template(
     uri: str,
     uri_template: str,
@@ -794,6 +818,20 @@ class FunctionResourceTemplate(ResourceTemplate):
                     f"Use one or the other, not both."
                 )
             seen[normalized] = raw_name
+
+        # A repeated variable compiles to a duplicate regex group, so
+        # `build_regex` refuses the template and every read misses it: the
+        # server would advertise a template it can never match. The collision
+        # check above only sees distinct spellings, so an exact repeat is
+        # caught here.
+        repeated = _repeated_template_params(uri_template)
+        if repeated:
+            names = " and ".join(f"{{{name}}}" for name in repeated)
+            raise ValueError(
+                f"URI template repeats {names}. Each parameter may appear "
+                "once; a repeat cannot be captured, so the template would "
+                "never match a URI. Use distinct parameter names."
+            )
 
         path_params = {p.replace("-", "_") for p in raw_path_params}
         query_params = {p.replace("-", "_") for p in raw_query_params}

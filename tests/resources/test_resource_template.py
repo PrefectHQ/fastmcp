@@ -1358,6 +1358,50 @@ class TestMalformedURITemplates:
                 name="collision",
             )
 
+    def test_from_function_rejects_repeated_parameter(self):
+        """A repeated variable would register but never match, so it is refused."""
+
+        def handler(tenant: str) -> str:
+            return tenant
+
+        with pytest.raises(ValueError, match=r"repeats \{tenant\}"):
+            ResourceTemplate.from_function(
+                fn=handler,
+                uri_template="test://{tenant}/{tenant}",
+                name="repeated",
+            )
+
+    def test_from_function_rejects_repeated_parameter_across_forms(self):
+        """The wildcard and literal-query spellings capture the same name."""
+
+        def handler(tenant: str) -> str:
+            return tenant
+
+        with pytest.raises(ValueError, match=r"repeats \{tenant\}"):
+            ResourceTemplate.from_function(
+                fn=handler,
+                uri_template="test://{tenant*}/{tenant}",
+                name="repeated_wildcard",
+            )
+        with pytest.raises(ValueError, match=r"repeats \{tenant\}"):
+            ResourceTemplate.from_function(
+                fn=handler,
+                uri_template="test://x?a={tenant}&b={tenant}",
+                name="repeated_literal_query",
+            )
+
+    def test_from_function_allows_query_expression_sharing_a_path_name(self):
+        """`{?name}` is stripped from the path pattern, so it is not a repeat."""
+
+        def handler(tenant: str, filter: str | None = None) -> str:
+            return tenant
+
+        ResourceTemplate.from_function(
+            fn=handler,
+            uri_template="test://{tenant}{?filter}",
+            name="shared_name",
+        )
+
     def test_build_regex_still_works_for_valid_templates(self):
         regex = build_regex("test://{name}/{id}")
         assert regex is not None
