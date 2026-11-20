@@ -94,6 +94,14 @@ def test_match_literal_query_multiple_continuations_and_fragment_stripping():
     assert match_uri_template(
         "search://items?fixed=1&limit=10#ignored", "search://items?fixed=1{&limit}"
     ) == {"limit": "10"}
+    # Literal fragments containing `?` after `#` continue to round-trip and match.
+    frag_q = "test://items/{id}#section?view={view}"
+    expanded_frag_q = expand_uri_template(frag_q, {"id": "42", "view": "full"})
+    assert expanded_frag_q == "test://items/42#section?view=full"
+    assert match_uri_template(expanded_frag_q, frag_q) == {
+        "id": "42",
+        "view": "full",
+    }
 
 
 def test_match_literal_query_placeholder_with_continuation_and_round_trip():

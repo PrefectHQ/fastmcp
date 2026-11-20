@@ -107,8 +107,7 @@ def extract_exploded_query_params(uri_template: str) -> set[str]:
 
 def _has_literal_query(uri_template: str) -> bool:
     """Whether the template writes `?` as literal text, outside a `{?...}` block."""
-    before_fragment = uri_template.partition("#")[0]
-    return before_fragment.count("?") > before_fragment.count("{?")
+    return uri_template.count("?") > uri_template.count("{?")
 
 
 def _continuation_pattern(spec: str) -> str | None:
@@ -252,10 +251,9 @@ def build_regex(template: str) -> re.Pattern[str] | None:
 
     parts = re.split(r"(\{[^}]+\})", template_to_parse)
     pattern = ""
-    # Past a literal `?` (and before `#`), a placeholder is a query value:
-    # it may be empty, may hold `/`, and ends at `&` or `#`.
+    # Past a literal `?` (and before a trailing `#`), a placeholder is a query
+    # value: it may be empty, may hold `/`, and ends at `&` or `#`.
     in_query = False
-    in_fragment = False
     for part in parts:
         if part.startswith("{") and part.endswith("}"):
             if part[1] in "?&":
@@ -276,9 +274,8 @@ def build_regex(template: str) -> re.Pattern[str] | None:
         else:
             pattern += _literal_pattern(part)
             if "#" in part:
-                in_fragment = True
-                in_query = False
-            elif "?" in part and not in_fragment:
+                in_query = "?" in part.partition("#")[2]
+            elif "?" in part:
                 in_query = True
     try:
         return re.compile(f"^{pattern}$")
@@ -469,8 +466,6 @@ def _forward_literal_query_uri(
 ) -> str:
     """Expand a literal-query template while preserving `{&...}` slices in place."""
     template_path, _, template_tail = uri_template.partition("?")
-    template_query, hash_sep, template_fragment = template_tail.partition("#")
-
     clean_uri = uri.partition("#")[0] if "#" not in uri_template else uri
     _, incoming_q_sep, incoming_tail = clean_uri.partition("?")
 
@@ -487,23 +482,17 @@ def _forward_literal_query_uri(
         re.sub(r"\{[?&][^}]+\}", "", template_path), params
     )
 
-    query_parts: list[str] = []
-    for part in re.split(r"(\{[^}]+\})", template_query):
+    tail_parts: list[str] = []
+    for part in re.split(r"(\{[^}]+\})", template_tail):
         if part.startswith("{&") and part.endswith("}"):
             if _continuation_pattern(part[2:-1]) is not None:
-                query_parts.append(next(capture_iter, ""))
+                tail_parts.append(next(capture_iter, ""))
         elif part.startswith("{?") and part.endswith("}"):
             continue
         elif part:
-            query_parts.append(expand_uri_template(part, params))
+            tail_parts.append(expand_uri_template(part, params))
 
-    forwarded = f"{forwarded_path}?{''.join(query_parts)}"
-    if hash_sep:
-        forwarded_fragment = expand_uri_template(
-            re.sub(r"\{[?&][^}]+\}", "", template_fragment), params
-        )
-        forwarded = f"{forwarded}#{forwarded_fragment}"
-    return forwarded
+    return f"{forwarded_path}?{''.join(tail_parts)}"
 
 
 def forward_uri(uri_template: str, params: dict[str, Any], uri: str) -> str:
