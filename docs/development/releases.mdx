@@ -35,8 +35,8 @@ This illustrates a pin, not a recommendation to remain on that release. Check th
 Only maintainers cut releases. Use the repository's [release skill](https://github.com/PrefectHQ/fastmcp/blob/main/.agents/skills/release/SKILL.md) for the commands and verification steps. It is the maintained procedure; the sequence below explains how the pieces fit together.
 
 1. Review changes since the last stable release on the target line and agree on the version, title, and handwritten notes.
-2. Merge the changelog documentation PR on the release branch before tagging, so the entry is included in the release commit.
-3. Create the GitHub release from that branch. Generate notes starting at the last stable tag, so intervening prereleases do not truncate the changelog.
+2. Merge the changelog documentation PR into `main`, for every release line. Generate notes starting at the last stable tag, so intervening prereleases do not truncate the changelog.
+3. The merge drafts the GitHub release from that changelog entry, targeting `main` or the maintenance branch that owns the version. A maintainer reviews and publishes the draft.
 4. Verify package publication and, for a current-major stable release, complete documentation publication.
 
 Current-major releases come from `main`. Maintenance releases come from the branch that owns their line, such as `release/3.x` or `release/2.x`. A branch's existence does not by itself promise ongoing security support; consult the security policy.
@@ -49,4 +49,4 @@ The documentation at `https://gofastmcp.com/docs` is built by Mintlify from `doc
 
 Prereleases and manual package-workflow dispatch do not open that publication PR automatically. Docs-only changes between releases can be published through a PR that synchronizes `main` to `published-docs`; follow the release skill's manual publication procedure and publication checks, including preservation of `/docs` metadata in the candidate tree. Do not push directly to the publication branch. Ordinary publication does not change domains or Mintlify's `/docs` base path.
 
-Maintenance releases update their own changelog and packages without repointing the current documentation site. The `docs/v2/` and `docs/v3/` trees preserve historical documentation; outside their release changelogs, they are frozen snapshots.
+Maintenance releases add their changelog entry on `main` and publish packages without repointing the current documentation site. The `docs/v2/` and `docs/v3/` trees preserve historical documentation; outside their release changelogs, they are frozen snapshots.
