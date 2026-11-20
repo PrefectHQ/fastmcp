@@ -48,6 +48,11 @@ def test_match_literal_query_continuation_before_literal_suffix_and_fragment():
         "search://ordered?fixed=1&limit=10&format=json", ordered
     ) == {"limit": "10"}
     assert (
+        expand_uri_template(ordered, {"limit": 10})
+        == "search://ordered?fixed=1&limit=10&format=json"
+    )
+    assert expand_uri_template(ordered, {}) == "search://ordered?fixed=1&format=json"
+    assert (
         match_uri_template("search://ordered?fixed=1&view=full&format=json", ordered)
         is None
     )
@@ -67,6 +72,11 @@ def test_match_literal_query_continuation_before_literal_suffix_and_fragment():
     assert match_uri_template(
         "search://items?fixed=1&limit=10#summary", fragmented
     ) == {"limit": "10"}
+    assert (
+        expand_uri_template(fragmented, {"limit": 10})
+        == "search://items?fixed=1&limit=10#summary"
+    )
+    assert expand_uri_template(fragmented, {}) == "search://items?fixed=1#summary"
     assert (
         match_uri_template("search://items?fixed=1&view=full#summary", fragmented)
         is None
