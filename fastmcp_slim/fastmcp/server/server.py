@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+import weakref
 from collections.abc import (
     AsyncGenerator,
     Awaitable,
@@ -35,6 +36,12 @@ import pydantic_core
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.request_state import RequestStateSecurity
 from mcp.shared.exceptions import MCPError
+from mcp.shared.subscriptions import (
+    PromptsListChanged,
+    ResourcesListChanged,
+    ResourceUpdated,
+    ToolsListChanged,
+)
 from mcp_types import (
     Annotations,
     CallToolRequestParams,
@@ -590,6 +597,10 @@ class FastMCP(
             lifespan=_lifespan_proxy(fastmcp_server=self),
             cache_hints=cache_hints,
         )
+
+        # Servers this one is mounted on, so a mounted child's `notify_*`
+        # reaches the clients listening on its parents.
+        self._mounted_on: list[weakref.ref[FastMCP[Any]]] = []
 
         self.auth: AuthProvider | None = auth
 
@@ -1943,6 +1954,59 @@ class FastMCP(
         """
         return self._local_provider.add_tool(tool)
 
+    async def notify_tools_changed(self) -> None:
+        """Tell listening clients that this server's tool list changed.
+
+        Publishes to every open `subscriptions/listen` stream that asked for
+        tool changes, so it works from background tasks with no request in
+        flight. A mounted server also notifies the servers it is mounted on.
+        Reaches clients on the 2026-07-28 protocol only; on handshake-era
+        connections, send `notifications/tools/list_changed` from a request with
+        `Context.send_notification`. Adding or removing tools never calls this
+        automatically.
+        """
+        await self._publish_list_changed(ToolsListChanged())
+
+    async def notify_prompts_changed(self) -> None:
+        """Tell listening clients that this server's prompt list changed.
+
+        See `notify_tools_changed` for delivery semantics.
+        """
+        await self._publish_list_changed(PromptsListChanged())
+
+    async def notify_resources_changed(self) -> None:
+        """Tell listening clients that this server's resource list changed.
+
+        See `notify_tools_changed` for delivery semantics.
+        """
+        await self._publish_list_changed(ResourcesListChanged())
+
+    async def notify_resource_updated(self, uri: str | AnyUrl) -> None:
+        """Tell clients listening to `uri` that the resource changed.
+
+        Matches `uri` exactly against the URIs each stream subscribed to, so
+        pass the URI as this server's clients see it. Unlike the list-change
+        methods, this does not propagate to servers this one is mounted on,
+        since a mount can rewrite the URI. See `notify_tools_changed` for
+        delivery semantics.
+        """
+        await self._mcp_server.subscriptions.publish(ResourceUpdated(uri=str(uri)))
+
+    async def _publish_list_changed(
+        self,
+        event: ToolsListChanged | PromptsListChanged | ResourcesListChanged,
+        _seen: set[int] | None = None,
+    ) -> None:
+        seen = _seen if _seen is not None else set()
+        if id(self) in seen:
+            return
+        seen.add(id(self))
+        await self._mcp_server.subscriptions.publish(event)
+        for ref in list(self._mounted_on):
+            parent = ref()
+            if parent is not None:
+                await parent._publish_list_changed(event, seen)
+
     def _get_tool_input_schema(self, name: str) -> dict[str, Any] | None:
         """Synchronous lookup served to the SDK's `get_tool_input_schema` hook
         (Mcp-Param header validation on `tools/call`, mcp>=2.3).
@@ -2515,6 +2579,7 @@ class FastMCP(
 
         # Create provider and add it with namespace
         provider: Provider = FastMCPProvider(server)
+        server._mounted_on.append(weakref.ref(self))
 
         # Apply tool renames first (scoped to this provider), then namespace
         # So foo → bar with namespace="baz" becomes baz_bar

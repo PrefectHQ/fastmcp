@@ -25,6 +25,11 @@ from mcp.server.models import InitializationOptions
 from mcp.server.request_state import RequestStateBoundary, RequestStateSecurity
 from mcp.server.session import ServerSession
 from mcp.server.stdio import stdio_server as stdio_server
+from mcp.server.subscriptions import (
+    InMemorySubscriptionBus,
+    ListenHandler,
+    SubscriptionBus,
+)
 from mcp.shared.exceptions import MCPError
 from pydantic import ValidationError
 
@@ -454,6 +459,14 @@ class FastMCPServerMiddleware:
 
 class LowLevelServer(_Server[LifespanResultT]):
     def __init__(self, fastmcp: FastMCP, *args: Any, **kwargs: Any):
+        # The 2026-07-28 era has no standing server->client channel: change
+        # notifications reach a client only through a `subscriptions/listen`
+        # stream it opens. The SDK serves that method only when a handler is
+        # supplied (and answers METHOD_NOT_FOUND without one); with it, the
+        # modern-era `listChanged`/`subscribe` capabilities are advertised.
+        # `FastMCP.notify_*` publishes to this bus.
+        self.subscriptions: SubscriptionBus = InMemorySubscriptionBus()
+        kwargs.setdefault("on_subscriptions_listen", ListenHandler(self.subscriptions))
         super().__init__(*args, **kwargs)
         # Store a weak reference to FastMCP to avoid circular references
         self._fastmcp_ref: weakref.ref[FastMCP] = weakref.ref(fastmcp)
@@ -480,7 +493,8 @@ class LowLevelServer(_Server[LifespanResultT]):
         # FastMCP servers support notifications for all components. v2 derives
         # capabilities from registered handlers + protocol_version, but legacy
         # clients still read NotificationOptions at create_initialization_options
-        # time, so keep a default here and pass it through.
+        # time, so keep a default here and pass it through. On 2026-07-28 the
+        # capabilities derive from the listen handler registered above.
         self.notification_options = NotificationOptions(
             prompts_changed=True,
             resources_changed=True,
