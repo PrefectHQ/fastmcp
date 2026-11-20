@@ -107,7 +107,45 @@ def extract_exploded_query_params(uri_template: str) -> set[str]:
 
 def _has_literal_query(uri_template: str) -> bool:
     """Whether the template writes `?` as literal text, outside a `{?...}` block."""
-    return uri_template.count("?") > uri_template.count("{?")
+    before_fragment = uri_template.partition("#")[0]
+    return before_fragment.count("?") > before_fragment.count("{?")
+
+
+def _continuation_pattern(spec: str) -> str | None:
+    """Regex matching zero or more `&key=value` pairs for a `{&...}` block.
+
+    Only keys declared in this block are accepted, preserving the strict
+    literal-query contract while allowing values to be omitted, repeated
+    (for exploded params), or passed in any order within the block.
+    """
+    key_patterns: list[str] = []
+    seen: set[str] = set()
+    for raw in spec.split(","):
+        name = raw.strip().removesuffix("*")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        encoded = quote(name, safe="")
+        if encoded == name:
+            key_patterns.append(re.escape(name))
+        else:
+            key_patterns.append(f"(?:{re.escape(name)}|(?i:{re.escape(encoded)}))")
+    if not key_patterns:
+        return None
+    keys = "|".join(key_patterns)
+    return f"((?:&(?:{keys})=[^&#]*)*)"
+
+
+def _extract_continuation_captures(
+    regex: re.Pattern[str], match: re.Match[str]
+) -> list[str]:
+    """Return captured `{&...}` slices from a literal-query regex match."""
+    named_indices = set(regex.groupindex.values())
+    return [
+        value or ""
+        for idx, value in enumerate(match.groups(), start=1)
+        if idx not in named_indices
+    ]
 
 
 # RFC 3986 reserved characters, which stay as written in a template literal.
@@ -204,20 +242,32 @@ def build_regex(template: str) -> re.Pattern[str] | None:
     Returns None if the template produces an invalid regex (e.g. two
     parameter names that normalize to the same group).
     """
-    # Remove query parameter syntax for path matching
-    template_without_query = re.sub(r"\{[?&][^}]+\}", "", template)
+    has_literal_query = _has_literal_query(template)
+    # Remove RFC 6570 query expressions for non-literal templates; for templates
+    # with a literal `?`, keep `{&...}` continuations in their declared position
+    # so only declared keys are matched and trailing literals/fragments work.
+    template_to_parse = (
+        template if has_literal_query else re.sub(r"\{[?&][^}]+\}", "", template)
+    )
 
-    parts = re.split(r"(\{[^}]+\})", template_without_query)
+    parts = re.split(r"(\{[^}]+\})", template_to_parse)
     pattern = ""
-    # Past a literal `?` a placeholder is a query value: it may be empty, may
-    # hold `/`, and ends at the next `&`.
+    # Past a literal `?` (and before `#`), a placeholder is a query value:
+    # it may be empty, may hold `/`, and ends at `&` or `#`.
     in_query = False
+    in_fragment = False
     for part in parts:
         if part.startswith("{") and part.endswith("}"):
+            if part[1] in "?&":
+                if has_literal_query and in_query and part[1] == "&":
+                    cont_pattern = _continuation_pattern(part[2:-1])
+                    if cont_pattern is not None:
+                        pattern += cont_pattern
+                continue
             name = part[1:-1]
             if in_query:
                 group = template_param_key(name.removesuffix("*"))
-                pattern += f"(?P<{group}>[^&]*)"
+                pattern += f"(?P<{group}>[^&#]*)"
             elif name.endswith("*"):
                 name = name[:-1]
                 pattern += f"(?P<{template_param_key(name)}>.+)"
@@ -225,9 +275,11 @@ def build_regex(template: str) -> re.Pattern[str] | None:
                 pattern += f"(?P<{template_param_key(name)}>[^/]+)"
         else:
             pattern += _literal_pattern(part)
-            in_query = in_query or "?" in part
-    if _has_literal_query(template) and extract_query_params(template):
-        pattern += r"(?:&(.*))?"
+            if "#" in part:
+                in_fragment = True
+                in_query = False
+            elif "?" in part and not in_fragment:
+                in_query = True
     try:
         return re.compile(f"^{pattern}$")
     except re.error:
@@ -278,8 +330,13 @@ def match_uri_template(
         return None
 
     params: dict[str, Any] = {k: unquote(v) for k, v in match.groupdict().items()}
-    if has_literal_query and extract_query_params(uri_template) and match.groups():
-        query_string = match.groups()[-1] or ""
+    if has_literal_query:
+        continuation_parts = [
+            part.lstrip("&")
+            for part in _extract_continuation_captures(regex, match)
+            if part
+        ]
+        query_string = "&".join(continuation_parts)
 
     # Extract query parameters if present in URI and template
     if query_string:
@@ -407,6 +464,48 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
     return result
 
 
+def _forward_literal_query_uri(
+    uri_template: str, params: dict[str, Any], uri: str
+) -> str:
+    """Expand a literal-query template while preserving `{&...}` slices in place."""
+    template_path, _, template_tail = uri_template.partition("?")
+    template_query, hash_sep, template_fragment = template_tail.partition("#")
+
+    clean_uri = uri.partition("#")[0] if "#" not in uri_template else uri
+    _, incoming_q_sep, incoming_tail = clean_uri.partition("?")
+
+    captures: list[str] = []
+    if incoming_q_sep:
+        tail_regex = build_regex(f"?{template_tail}")
+        if tail_regex is not None:
+            tail_match = tail_regex.match(f"?{incoming_tail}")
+            if tail_match is not None:
+                captures = _extract_continuation_captures(tail_regex, tail_match)
+
+    capture_iter = iter(captures)
+    forwarded_path = expand_uri_template(
+        re.sub(r"\{[?&][^}]+\}", "", template_path), params
+    )
+
+    query_parts: list[str] = []
+    for part in re.split(r"(\{[^}]+\})", template_query):
+        if part.startswith("{&") and part.endswith("}"):
+            if _continuation_pattern(part[2:-1]) is not None:
+                query_parts.append(next(capture_iter, ""))
+        elif part.startswith("{?") and part.endswith("}"):
+            continue
+        elif part:
+            query_parts.append(expand_uri_template(part, params))
+
+    forwarded = f"{forwarded_path}?{''.join(query_parts)}"
+    if hash_sep:
+        forwarded_fragment = expand_uri_template(
+            re.sub(r"\{[?&][^}]+\}", "", template_fragment), params
+        )
+        forwarded = f"{forwarded}#{forwarded_fragment}"
+    return forwarded
+
+
 def forward_uri(uri_template: str, params: dict[str, Any], uri: str) -> str:
     """Build the URI a forwarding layer (mount or proxy) sends to the server behind it.
 
@@ -416,20 +515,12 @@ def forward_uri(uri_template: str, params: dict[str, Any], uri: str) -> str:
     `{?name}` params hold comma-joined lists, so `?tags=a%2Cb,c` would arrive as
     one item instead of two.
     """
+    if _has_literal_query(uri_template):
+        if not extract_query_params(uri_template):
+            return expand_uri_template(uri_template, params)
+        return _forward_literal_query_uri(uri_template, params, uri)
     path_template = re.sub(r"\{[?&][^}]+\}", "", uri_template)
     forwarded = expand_uri_template(path_template, params)
-    if _has_literal_query(uri_template):
-        # The literal query is already expanded; preserve any `{&...}`
-        # continuation tail from the incoming URI byte for byte.
-        if extract_query_params(uri_template):
-            clean_uri = uri.partition("#")[0] if "#" not in uri_template else uri
-            _, _, incoming_query = clean_uri.partition("?")
-            _, _, literal_query = forwarded.partition("?")
-            literal_parts = literal_query.count("&") + 1 if literal_query else 0
-            incoming_parts = incoming_query.split("&", literal_parts)
-            if len(incoming_parts) > literal_parts and incoming_parts[literal_parts]:
-                return f"{forwarded}&{incoming_parts[literal_parts]}"
-        return forwarded
     _, _, query = uri.partition("?")
     return f"{forwarded}?{query}" if query else forwarded
 
