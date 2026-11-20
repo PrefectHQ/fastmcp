@@ -181,6 +181,8 @@ proxy = create_proxy(Path("advanced_backend.py"))
 # - Reports progress → shown in your client
 ```
 
+The proxy declares roots, sampling, and elicitation to its backend only when your client declared them, so a backend that falls back for clients without elicitation still does so through the proxy. A handler you pass to the `ProxyClient` yourself answers on the proxy and stays declared.
+
 Protocol extensions are not forwarded automatically, because the proxy doesn't know which ones its backend supports. To forward a backend's Skills discovery, pass `skills=True` to `create_proxy` or `ProxyProvider`; see [Proxied servers](/servers/skills#proxied-servers).
 
 ### Disabling Features
@@ -257,7 +259,7 @@ from pathlib import Path
 proxy = create_proxy(Path("backend_server.py"), mode="auto")
 ```
 
-Pinning breaks the end-to-end era agreement, so reserve it for a backend that only speaks one era. When the client's era and the pinned backend era disagree on a feature — a modern client asking for a guard round-trip against a handshake-pinned backend, say — the mismatch surfaces through the normal era gates rather than silently degrading. Mirroring applies to proxies created from a target the proxy connects itself (a URL, path, config, or `FastMCP` instance); when you hand `create_proxy` an already-configured `Client`, that client carries its own mode and mirroring does not override it.
+Pinning breaks the end-to-end era agreement, so reserve it for a backend that only speaks one era. A handshake client of a modern-pinned backend still gets its input requests: the proxy answers the backend's input request by sending your client an ordinary elicitation, sampling, or roots request. Other disagreements, such as a modern client asking for a guard round-trip against a handshake-pinned backend, surface through the normal era gates rather than silently degrading. Mirroring applies to proxies created from a target the proxy connects itself (a URL, path, config, or `FastMCP` instance); when you hand `create_proxy` an already-configured `Client`, that client carries its own mode and mirroring does not override it.
 
 A multi-server configuration adds a hop: FastMCP mounts one proxy per configured server onto a router, and your client talks to that router rather than to any backend directly. The era carries through the whole depth, so each real backend negotiates the era your client did — not just the router in front of them.
 
