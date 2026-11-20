@@ -163,10 +163,7 @@ def fetch_pr_rest(number: int) -> dict[str, Any]:
     for issue_number in dict.fromkeys(
         int(n) for n in CLOSING.findall(pr.get("body") or "")
     ):
-        try:
-            issue = api(f"repos/{REPO}/issues/{issue_number}")
-        except subprocess.CalledProcessError:
-            continue
+        issue = api(f"repos/{REPO}/issues/{issue_number}")
         if "pull_request" in issue:
             continue
         issues.append(
@@ -291,9 +288,12 @@ def scan_notes(
         prs = release_prs(notes)
     actors = note_actors(prs)
     entries = list(PR_ENTRY.finditer(notes))
-    permissions: dict[str, bool] = {}
+    permissions: dict[str, bool | None] = {}
 
-    def is_maintainer(login: str) -> bool:
+    def is_maintainer(login: str) -> bool | None:
+        """True or False when known; None when only the association fallback ran
+        and it couldn't confirm (private org membership shows as CONTRIBUTOR).
+        Unknown errs toward suggesting credit, which the release agent reviews."""
         key = login.lower()
         if key not in permissions:
             try:
@@ -304,7 +304,9 @@ def scan_notes(
             except subprocess.CalledProcessError:
                 # Sandboxes that refuse the permission endpoint: fall back to
                 # the association GitHub shows on the login's own items.
-                permissions[key] = association(login) in MAINTAINER_ASSOCIATIONS
+                permissions[key] = (
+                    True if association(login) in MAINTAINER_ASSOCIATIONS else None
+                )
         return permissions[key]
 
     candidates = []
@@ -325,7 +327,7 @@ def scan_notes(
         for author in humans:
             if is_human(author.get("user")):
                 login = author["user"]["login"]
-                if login.lower() not in credited and not is_maintainer(login):
+                if login.lower() not in credited and is_maintainer(login) is not True:
                     credited[login.lower()] = login
         issues = [
             issue
@@ -340,10 +342,13 @@ def scan_notes(
         ]
         if extra_reporters and pr["author"]:
             login = pr["author"]["login"]
-            if is_maintainer(login):
+            if is_maintainer(login) is not False:
                 for issue in extra_reporters:
                     reporter = issue["author"]["login"]
-                    if reporter.lower() not in credited and not is_maintainer(reporter):
+                    if (
+                        reporter.lower() not in credited
+                        and is_maintainer(reporter) is not True
+                    ):
                         credited[reporter.lower()] = reporter
                         missing_reporters.append(reporter)
         unmapped = list(
