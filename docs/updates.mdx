@@ -6,6 +6,16 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 4.2.3" description="November 20, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.2.3: Trace Elements"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.3"
+cta="Read the release notes"
+>
+FastMCP 4.2.3 adds an opt-in `parent_task_spans` setting for background tasks: turn it on and each task's worker span nests inside the `tools/call` request that submitted it, so the whole job reads as one trace (off by default, where the worker still starts its own trace linked back to the request). It also fixes three output schema conversion bugs (non-object defaults, recursive `$ref`s in positional arrays, and placeholder validation for short positional arrays), and an OpenAPI tool called without a required path argument now returns a validation error instead of a server error. `fastmcp-tasks` now requires `pydocket>=0.29.1`. Thanks to our 4 contributors, including 2 first-time contributors.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.2.2" description="November 18, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.2.2: Tea for Two (Too)"
