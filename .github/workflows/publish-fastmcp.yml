@@ -4,7 +4,6 @@ on:
   workflow_run:
     workflows: ["Publish fastmcp-slim to PyPI"]
     types: [completed]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,7 +13,8 @@ jobs:
   pypi-publish:
     name: Upload fastmcp to PyPI
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'release')
+    environment: pypi-fanout
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'release'
     outputs:
       is_prerelease: ${{ steps.package_version.outputs.is_prerelease }}
       version: ${{ steps.package_version.outputs.version }}
@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
