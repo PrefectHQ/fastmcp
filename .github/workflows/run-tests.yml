@@ -91,6 +91,8 @@ jobs:
     steps:
       # Keep local composite action definitions available to the runner.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Setup uv
         if: needs.changes.outputs.run-tests != 'false' || (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11')
@@ -127,6 +129,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Setup uv
         if: needs.changes.outputs.run-tests != 'false'
         uses: ./.github/actions/setup-uv
@@ -152,6 +156,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Setup uv (lowest-direct)
         uses: ./.github/actions/setup-uv
@@ -176,6 +182,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Setup uv
         uses: ./.github/actions/setup-uv
@@ -202,6 +210,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Setup uv
         uses: ./.github/actions/setup-uv
@@ -227,6 +237,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Setup uv
         uses: ./.github/actions/setup-uv

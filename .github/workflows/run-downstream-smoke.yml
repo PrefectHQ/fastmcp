@@ -78,6 +78,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Install uv
@@ -485,6 +486,8 @@ jobs:
       FASTMCP_EXPECTED_VERSION: ${{ needs.plan.outputs.fastmcp }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # The servers every smoke connects to run from this environment.
       - name: Setup uv
