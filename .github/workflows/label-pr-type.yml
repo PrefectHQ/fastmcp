@@ -141,7 +141,7 @@ jobs:
               const title = pr.title || '';
               if (/^(?:fix|bugfix|hotfix)(?:\(.*?\))?!?:/i.test(title)) type = 'bug';
               else if (/^docs?(?:\(.*?\))?:/i.test(title)) type = 'documentation';
-              else if (/^feat(?:ure)?(?:\(.*?\))?!?:/i.test(title)) type = 'enhancement';
+              else if (/^(?:feat|feature)(?:\(.*?\))?!?:/i.test(title)) type = 'enhancement';
             }
 
             if (!type && process.env.ANTHROPIC_API_KEY) {
