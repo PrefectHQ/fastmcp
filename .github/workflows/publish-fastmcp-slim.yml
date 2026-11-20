@@ -3,7 +3,6 @@ name: Publish fastmcp-slim to PyPI
 on:
   release:
     types: [published]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,6 +12,7 @@ jobs:
   pypi-publish:
     name: Upload fastmcp-slim to PyPI
     runs-on: ubuntu-latest
+    environment: pypi
 
     steps:
       - name: Checkout
