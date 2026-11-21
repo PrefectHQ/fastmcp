@@ -739,6 +739,7 @@ class CIMDClientManager:
         enable_cimd: bool = True,
         default_scope: str = "",
         allowed_redirect_uri_patterns: list[str] | None = None,
+        allowed_client_id_patterns: list[str] | None = None,
     ):
         """Initialize CIMD client manager.
 
@@ -746,25 +747,47 @@ class CIMDClientManager:
             enable_cimd: Whether CIMD support is enabled
             default_scope: Default scope for CIMD clients if not specified in document
             allowed_redirect_uri_patterns: Allowed redirect URI patterns (proxy's config)
+            allowed_client_id_patterns: Allowed CIMD client ID URL patterns. If None,
+                all HTTPS CIMD URLs are allowed. If empty list, none are allowed.
         """
         self.enabled = enable_cimd
         self.default_scope = default_scope
         self.allowed_redirect_uri_patterns = allowed_redirect_uri_patterns
+        self.allowed_client_id_patterns = allowed_client_id_patterns
 
         self._fetcher = CIMDFetcher()
         self._assertion_validator = CIMDAssertionValidator()
         self.logger = get_logger(__name__)
 
+    def _is_allowed_client_id(self, client_id: str) -> bool:
+        """Return whether a CIMD client_id URL matches the configured allowlist."""
+        if self.allowed_client_id_patterns is None:
+            return True
+        if not any(
+            matches_allowed_pattern(client_id, pattern)
+            for pattern in self.allowed_client_id_patterns
+        ):
+            self.logger.debug(
+                "CIMD client_id rejected by allowed_cimd_client_ids policy: %s",
+                client_id,
+            )
+            return False
+        return True
+
     def is_cimd_client_id(self, client_id: str) -> bool:
-        """Check if client_id is a CIMD URL.
+        """Check if client_id is an allowed CIMD URL.
 
         Args:
             client_id: Client ID to check
 
         Returns:
-            True if client_id is an HTTPS URL (CIMD format)
+            True if client_id is an HTTPS URL permitted by policy
         """
-        return self.enabled and self._fetcher.is_cimd_client_id(client_id)
+        return (
+            self.enabled
+            and self._fetcher.is_cimd_client_id(client_id)
+            and self._is_allowed_client_id(client_id)
+        )
 
     async def get_client(self, client_id_url: str):
         """Fetch CIMD document and create synthetic OAuth client.
@@ -779,7 +802,7 @@ class CIMDClientManager:
             Return type is left untyped to avoid circular import with oauth_proxy.
             Returns OAuthProxyClient instance or None.
         """
-        if not self.enabled:
+        if not self.enabled or not self._is_allowed_client_id(client_id_url):
             return None
 
         try:

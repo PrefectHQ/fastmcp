@@ -360,6 +360,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         token_expiry_threshold_seconds: int = 0,
         # CIMD (Client ID Metadata Document) support
         enable_cimd: bool = True,
+        allowed_cimd_client_ids: list[str] | None = None,
         # Identity assertion (SEP-990 ID-JAG) support
         identity_assertion: IdentityAssertion | None = None,
     ):
@@ -468,6 +469,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs. When True, clients can authenticate using HTTPS URLs as client
                 IDs, with metadata fetched from the URL. Supports private_key_jwt auth.
+            allowed_cimd_client_ids: List of allowed URL patterns for CIMD client IDs
+                (e.g., ``["https://claude.ai/*", "https://*.example.com/*"]``). Wildcard
+                subdomain patterns like ``https://*.example.com/*`` match subdomains only,
+                not the apex domain (``example.com``). Disallowed CIMD client IDs are
+                rejected before any DNS lookup or HTTP fetch. If None (default), any
+                HTTPS CIMD URL is accepted; if empty list, all CIMD client IDs are rejected.
             identity_assertion: Optional SEP-990 identity assertion (ID-JAG) configuration.
                 When provided, the token endpoint accepts the RFC 7523 jwt-bearer grant
                 carrying an ID-JAG issued by one of the configured trusted issuers, and
@@ -530,6 +537,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         self._allowed_client_redirect_uris: list[str] | None = (
             allowed_client_redirect_uris
         )
+        if isinstance(allowed_cimd_client_ids, list) and not allowed_cimd_client_ids:
+            logger.warning(
+                "allowed_cimd_client_ids is empty list; no CIMD client IDs will be accepted. "
+                "This will block all CIMD clients."
+            )
+        self._allowed_cimd_client_ids: list[str] | None = allowed_cimd_client_ids
 
         # PKCE configuration
         self._forward_pkce: bool = forward_pkce
@@ -733,6 +746,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 enable_cimd=True,
                 default_scope=self._default_scope_str,
                 allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
+                allowed_client_id_patterns=self._allowed_cimd_client_ids,
             )
 
         # Identity assertion (SEP-990 ID-JAG): per RFC 7523 §3 the `aud` must

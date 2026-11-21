@@ -305,6 +305,7 @@ class OIDCProxy(OAuthProxy):
         token_expiry_threshold_seconds: int = 0,
         # CIMD configuration
         enable_cimd: bool = True,
+        allowed_cimd_client_ids: list[str] | None = None,
         # Identity assertion (SEP-990 ID-JAG) support
         identity_assertion: IdentityAssertion | None = None,
     ) -> None:
@@ -405,6 +406,9 @@ class OIDCProxy(OAuthProxy):
             enable_cimd: Whether to enable CIMD (Client ID Metadata Document) client support.
                 When True, clients can use their metadata document URL as client_id instead of
                 Dynamic Client Registration. Default is True.
+            allowed_cimd_client_ids: Optional list of allowed URL patterns for CIMD client
+                IDs. Forwarded to ``OAuthProxy``. Wildcard subdomain patterns like
+                ``https://*.example.com/*`` match subdomains only, not the apex domain.
             identity_assertion: Optional SEP-990 identity assertion (ID-JAG) configuration.
                 When provided, the token endpoint accepts the RFC 7523 jwt-bearer grant
                 carrying an ID-JAG issued by one of the configured trusted issuers.
@@ -500,6 +504,7 @@ class OIDCProxy(OAuthProxy):
             "fastmcp_access_token_expiry_seconds": fastmcp_access_token_expiry_seconds,
             "token_expiry_threshold_seconds": token_expiry_threshold_seconds,
             "enable_cimd": enable_cimd,
+            "allowed_cimd_client_ids": allowed_cimd_client_ids,
             "identity_assertion": identity_assertion,
         }
 

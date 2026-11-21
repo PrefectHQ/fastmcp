@@ -854,3 +854,188 @@ class TestCIMDRedirectUriEnforcement:
         for rejected in ("com.evil.app:/oauth", "javascript:alert(1)"):
             with pytest.raises(InvalidRedirectUriError):
                 client.validate_redirect_uri(AnyUrl(rejected))
+
+
+class TestAllowedCIMDClientIDs:
+    """Tests for allowed_cimd_client_ids / allowed_client_id_patterns enforcement."""
+
+    def test_none_allows_any_https_cimd_url(self):
+        manager = CIMDClientManager(enable_cimd=True, allowed_client_id_patterns=None)
+        assert manager.is_cimd_client_id("https://any.example.com/client.json")
+        assert manager.is_cimd_client_id("https://other.org/oauth/meta.json")
+
+    async def test_empty_allowlist_blocks_all_cimd_without_fetch(self):
+        manager = CIMDClientManager(enable_cimd=True, allowed_client_id_patterns=[])
+        url = "https://trusted.example.com/client.json"
+        assert manager.is_cimd_client_id(url) is False
+        with patch.object(manager._fetcher, "fetch", new_callable=AsyncMock) as fetch:
+            assert await manager.get_client(url) is None
+            fetch.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            ("https://claude.ai/oauth/client-metadata.json", True),
+            ("https://app.partner.example/client.json", True),
+            ("https://sub.app.partner.example/client.json", True),
+            ("https://trusted.example.org/apps/my-app.json", True),
+            # Subdomain wildcard must not match apex domain or lookalike hosts
+            ("https://partner.example/client.json", False),
+            ("https://evilpartner.example/client.json", False),
+            ("https://partner.example.evil.com/client.json", False),
+            # Exact path prefix must not match sibling paths
+            ("https://claude.ai/other/client.json", False),
+            ("https://trusted.example.org/other/client.json", False),
+            # Userinfo / dot-segment tricks are rejected
+            ("https://claude.ai@evil.com/oauth/client.json", False),
+            ("https://app.partner.example/../evil/client.json", False),
+        ],
+    )
+    def test_pattern_matching_rules(self, url: str, expected: bool):
+        manager = CIMDClientManager(
+            enable_cimd=True,
+            allowed_client_id_patterns=[
+                "https://claude.ai/oauth/*",
+                "https://*.partner.example/*",
+                "https://trusted.example.org/apps/my-app.json",
+            ],
+        )
+        assert manager.is_cimd_client_id(url) is expected
+
+    async def test_oauth_proxy_denied_host_skips_fetch_and_stored_fallback(
+        self, httpx_mock
+    ):
+        from key_value.aio.stores.memory import MemoryStore
+
+        from fastmcp.server.auth.oauth_proxy import OAuthProxy
+        from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+        storage = MemoryStore()
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_client_id="upstream-id",
+            upstream_client_secret="upstream-secret",
+            token_verifier=JWTVerifier(
+                jwks_uri="https://idp.example.com/jwks.json",
+                issuer="https://idp.example.com",
+            ),
+            base_url="https://server.example.com",
+            jwt_signing_key="test-signing-key-1234",
+            client_storage=storage,
+            allowed_client_redirect_uris=["http://localhost:*"],
+            allowed_cimd_client_ids=["https://trusted.example.com/*"],
+        )
+
+        # Even if an older CIMD record was persisted previously, a disallowed
+        # client_id must be rejected without fetching or falling back to it.
+        denied_url = "https://untrusted.example.com/client.json"
+        legacy_client = ProxyDCRClient(
+            client_id=denied_url,
+            client_secret=None,
+            redirect_uris=None,
+            grant_types=["authorization_code"],
+            token_endpoint_auth_method="none",
+            cimd_document=CIMDDocument(
+                client_id=AnyHttpUrl(denied_url),
+                redirect_uris=["http://localhost:3000/callback"],
+                token_endpoint_auth_method="none",
+            ),
+        )
+        await proxy._client_store.put(key=denied_url, value=legacy_client)
+
+        assert await proxy.get_client(denied_url) is None
+        assert httpx_mock.get_requests() == []
+
+    async def test_allowed_cimd_still_enforces_allowed_redirect_uris(self, httpx_mock):
+        from key_value.aio.stores.memory import MemoryStore
+        from mcp.shared.auth import InvalidRedirectUriError
+        from pydantic import AnyUrl
+
+        from fastmcp.server.auth.oauth_proxy import OAuthProxy
+        from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+        url = "https://trusted.example.com/client.json"
+        httpx_mock.add_response(
+            json={
+                "client_id": url,
+                "client_name": "Trusted App",
+                "redirect_uris": ["https://forbidden-callback.example.com/cb"],
+                "token_endpoint_auth_method": "none",
+            },
+            headers={"content-length": "200"},
+        )
+
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_client_id="upstream-id",
+            upstream_client_secret="upstream-secret",
+            token_verifier=JWTVerifier(
+                jwks_uri="https://idp.example.com/jwks.json",
+                issuer="https://idp.example.com",
+            ),
+            base_url="https://server.example.com",
+            jwt_signing_key="test-signing-key-1234",
+            client_storage=MemoryStore(),
+            allowed_client_redirect_uris=["http://localhost:*"],
+            allowed_cimd_client_ids=["https://trusted.example.com/*"],
+        )
+
+        with patch(
+            "fastmcp.server.auth.ssrf.resolve_hostname",
+            return_value=[TEST_PUBLIC_IP],
+        ):
+            client = await proxy.get_client(url)
+        assert client is not None
+
+        # Explicit callback rejected by redirect policy
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(
+                AnyUrl("https://forbidden-callback.example.com/cb")
+            )
+        # Omitted redirect_uri single-candidate fallback is also checked against policy
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(None)
+
+    def test_oidc_proxy_forwards_allowed_cimd_client_ids(self):
+        from key_value.aio.stores.memory import MemoryStore
+
+        from fastmcp.server.auth.oidc_proxy import OIDCConfiguration, OIDCProxy
+        from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+        oidc_config = OIDCConfiguration(
+            issuer="https://idp.example.com",
+            authorization_endpoint="https://idp.example.com/authorize",
+            token_endpoint="https://idp.example.com/token",
+            jwks_uri="https://idp.example.com/jwks.json",
+            response_types_supported=["code"],
+            subject_types_supported=["public"],
+            id_token_signing_alg_values_supported=["RS256"],
+        )
+        with patch.object(
+            OIDCProxy, "get_oidc_configuration", return_value=oidc_config
+        ):
+            proxy = OIDCProxy(
+                config_url="https://idp.example.com/.well-known/openid-configuration",
+                client_id="idp-client",
+                client_secret="idp-secret",
+                base_url="https://server.example.com",
+                token_verifier=JWTVerifier(
+                    jwks_uri="https://idp.example.com/jwks.json",
+                    issuer="https://idp.example.com",
+                ),
+                client_storage=MemoryStore(),
+                allowed_cimd_client_ids=["https://*.partner.example/*"],
+            )
+
+        assert proxy._cimd_manager is not None
+        assert proxy._cimd_manager.allowed_client_id_patterns == [
+            "https://*.partner.example/*"
+        ]
+        assert proxy._cimd_manager.is_cimd_client_id(
+            "https://app.partner.example/client.json"
+        )
+        assert not proxy._cimd_manager.is_cimd_client_id(
+            "https://untrusted.example.com/client.json"
+        )
