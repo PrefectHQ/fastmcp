@@ -125,6 +125,11 @@ class UpstreamTokenSet(BaseModel):
     # Claims re-extracted at the most recent upstream refresh. None until a
     # refresh happens; an empty dict means the refresh yielded no claims.
     upstream_claims: dict[str, Any] | None = None
+    # Active client-facing token identifiers for this grant family, updated on
+    # issuance and rotation so refresh-token reuse can revoke the active family.
+    active_access_jti: str | None = None
+    active_refresh_jti: str | None = None
+    active_refresh_token_hash: str | None = None
 
 
 class JTIMapping(BaseModel):
@@ -137,6 +142,7 @@ class JTIMapping(BaseModel):
     jti: str  # JWT ID from FastMCP-issued token
     upstream_token_id: str  # References UpstreamTokenSet
     created_at: float  # Unix timestamp
+    rotated_at: float | None = None  # Unix timestamp when a refresh token was rotated
 
 
 class RefreshTokenMetadata(BaseModel):

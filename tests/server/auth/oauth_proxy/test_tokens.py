@@ -2652,3 +2652,178 @@ class TestTokenRevocation:
             await oauth_proxy._refresh_token_store.get(key=_hash_token(fastmcp_jwt))
             is None
         )
+
+
+class TestRefreshTokenReuseDetection:
+    """Replaying an already-rotated refresh token revokes the active token family."""
+
+    async def _setup_proxy_with_grant(
+        self, jwt_verifier, revocation_endpoint: str | None = None
+    ):
+        from mcp.server.auth.provider import AuthorizationCode
+        from mcp.shared.auth import OAuthClientInformationFull
+        from pydantic import AnyUrl
+
+        from fastmcp.server.auth.oauth_proxy import OAuthProxy
+        from fastmcp.server.auth.oauth_proxy.models import ClientCode
+
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_revocation_endpoint=revocation_endpoint,
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-signing-key",
+            client_storage=MemoryStore(),
+        )
+        proxy.set_mcp_path("/mcp")
+        client = OAuthClientInformationFull(
+            client_id="dcr-client",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+            token_endpoint_auth_method="none",
+        )
+        await proxy.register_client(client)
+
+        now = time.time()
+        await proxy._code_store.put(
+            key="auth-code",
+            value=ClientCode(
+                code="auth-code",
+                client_id="dcr-client",
+                redirect_uri="http://localhost:12345/callback",
+                code_challenge="challenge",
+                code_challenge_method="S256",
+                scopes=["read"],
+                idp_tokens={
+                    "access_token": "upstream-access-1",
+                    "refresh_token": "upstream-refresh-1",
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                },
+                expires_at=now + 300,
+                created_at=now,
+            ),
+        )
+        tokens1 = await proxy.exchange_authorization_code(
+            client,
+            AuthorizationCode(
+                code="auth-code",
+                scopes=["read"],
+                expires_at=now + 300,
+                client_id="dcr-client",
+                code_challenge="challenge",
+                redirect_uri=AnyUrl("http://localhost:12345/callback"),
+                redirect_uri_provided_explicitly=True,
+            ),
+        )
+        assert tokens1.refresh_token is not None
+        return proxy, client, tokens1
+
+    async def test_replay_via_load_refresh_token_revokes_active_family(
+        self, jwt_verifier
+    ):
+        proxy, client, tokens1 = await self._setup_proxy_with_grant(jwt_verifier)
+        rt1 = tokens1.refresh_token
+        assert rt1 is not None
+
+        mock_upstream = AsyncMock()
+        mock_upstream.refresh_token = AsyncMock(
+            return_value={
+                "access_token": "upstream-access-2",
+                "refresh_token": "upstream-refresh-2",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+            }
+        )
+        with patch.object(
+            proxy, "_create_upstream_oauth_client", return_value=mock_upstream
+        ):
+            tokens2 = await proxy.exchange_refresh_token(
+                client,
+                RefreshToken(token=rt1, client_id="dcr-client", scopes=["read"]),
+                ["read"],
+            )
+
+        assert tokens2.refresh_token is not None
+        assert await proxy.load_refresh_token(client, tokens2.refresh_token) is not None
+        jwt_verifier.verify_token = AsyncMock(
+            return_value=AccessToken(
+                token="upstream-access-2",
+                client_id="upstream-client",
+                scopes=["read"],
+            )
+        )
+        assert await proxy.load_access_token(tokens2.access_token) is not None
+
+        # Replaying RT1 triggers family revocation
+        assert await proxy.load_refresh_token(client, rt1) is None
+
+        # Both RT2 and AT2 are now invalidated
+        assert await proxy.load_refresh_token(client, tokens2.refresh_token) is None
+        assert await proxy.load_access_token(tokens2.access_token) is None
+
+    async def test_replay_via_exchange_refresh_token_revokes_multihop_family(
+        self, jwt_verifier, httpx_mock
+    ):
+        httpx_mock.add_response(status_code=200)
+        proxy, client, tokens1 = await self._setup_proxy_with_grant(
+            jwt_verifier, revocation_endpoint="https://idp.example.com/revoke"
+        )
+        rt1 = tokens1.refresh_token
+        assert rt1 is not None
+
+        mock_upstream = AsyncMock()
+        mock_upstream.refresh_token = AsyncMock(
+            side_effect=[
+                {
+                    "access_token": "upstream-access-2",
+                    "refresh_token": "upstream-refresh-2",
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                },
+                {
+                    "access_token": "upstream-access-3",
+                    "refresh_token": "upstream-refresh-3",
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                },
+            ]
+        )
+        with patch.object(
+            proxy, "_create_upstream_oauth_client", return_value=mock_upstream
+        ):
+            tokens2 = await proxy.exchange_refresh_token(
+                client,
+                RefreshToken(token=rt1, client_id="dcr-client", scopes=["read"]),
+                ["read"],
+            )
+            assert tokens2.refresh_token is not None
+            tokens3 = await proxy.exchange_refresh_token(
+                client,
+                RefreshToken(
+                    token=tokens2.refresh_token,
+                    client_id="dcr-client",
+                    scopes=["read"],
+                ),
+                ["read"],
+            )
+
+        assert tokens3.refresh_token is not None
+        with pytest.raises(TokenError) as exc_info:
+            await proxy.exchange_refresh_token(
+                client,
+                RefreshToken(token=rt1, client_id="dcr-client", scopes=["read"]),
+                ["read"],
+            )
+        assert exc_info.value.error == "invalid_grant"
+
+        # Active generation (RT3 / AT3) and upstream refresh token are revoked
+        assert await proxy.load_refresh_token(client, tokens3.refresh_token) is None
+        assert await proxy.load_access_token(tokens3.access_token) is None
+        revoke_requests = [
+            req for req in httpx_mock.get_requests() if "/revoke" in str(req.url)
+        ]
+        assert len(revoke_requests) == 1
+        assert "upstream-refresh-3" in revoke_requests[0].content.decode()
