@@ -8,7 +8,8 @@ The model follows docs/servers/transforms/tool-transformation.mdx:
 - construction is refused exactly when the docs or `ArgTransform` say so: a
   hidden argument with no default anywhere, two arguments mapped to one name,
   `default_factory` without `hide`, `required=True` with a default, `hide`
-  with `required`
+  with `required`; a deferred config that cannot apply hides only its own
+  tool, and every other tool still lists and runs
 - the listed schema has the visible arguments under their new names, required
   exactly when the parent requires them and no transform gave a default, or a
   transform made them required
@@ -193,6 +194,21 @@ def _close_loop():
     LOOP.close()
 
 
+async def _refused_deferred(parent: Tool, config: ToolTransformConfig) -> None:
+    """A config that cannot apply hides its own tool and nothing else."""
+    server = FastMCP("s")
+    server.add_tool(parent)
+    server.add_tool(Tool.from_function(lambda: "ok", name="other"))
+    server.add_transform(ToolTransform({"parent": config}))
+    async with Client(server) as client:
+        listed = [t.name for t in await client.list_tools()]
+        assert listed == ["other"], "a transform that cannot apply was listed"
+        result = await client.call_tool("other", {})
+        assert result.content[0].text == "ok", "an unrelated tool failed"
+        with pytest.raises(ToolError):
+            await client.call_tool("t0", {})
+
+
 @given(data=st.data())
 def test_transformed_tool_matches_model(data):
     params = data.draw(parents(), label="parent")
@@ -226,13 +242,14 @@ def test_transformed_tool_matches_model(data):
             "default_factory" not in o and not isinstance(o.get("default"), list)
             for o in raw.values()
         ):
-            if refusal:
-                event(f"skipped deferred: {refusal}")
-                return
             config = ToolTransformConfig(
                 name="t0",
                 arguments={n: ArgTransformConfig(**o) for n, o in raw.items()},
             )
+            if refusal:
+                event(f"refused deferred: {refusal}")
+                LOOP.run_until_complete(_refused_deferred(parent, config))
+                return
             assert new_layer is not None
             layer = new_layer
             break

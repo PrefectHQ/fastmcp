@@ -7,7 +7,10 @@ from typing import TYPE_CHECKING
 
 from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.tools.tool_transform import ToolTransformConfig
+from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from fastmcp.tools.base import Tool
@@ -66,11 +69,30 @@ class ToolTransform(Transform):
         result: list[Tool] = []
         for tool in tools:
             if tool.name in self._transforms:
-                transformed = self._transforms[tool.name].apply(tool)
-                result.append(transformed)
+                transformed = self._apply(self._transforms[tool.name], tool)
+                if transformed is not None:
+                    result.append(transformed)
             else:
                 result.append(tool)
         return result
+
+    def _apply(self, config: ToolTransformConfig, tool: Tool) -> Tool | None:
+        """The transformed tool, or None when the config cannot apply to it.
+
+        A config is checked against the tool it targets only here, since that
+        tool may come from a provider long after the transform is added. A
+        config that does not fit (say, hiding a required argument with no
+        default) leaves that one tool out instead of failing every request.
+        """
+        try:
+            return config.apply(tool)
+        except ValueError as e:
+            logger.error(
+                "Tool transform for %r cannot apply, so the tool is hidden: %s",
+                tool.name,
+                e,
+            )
+            return None
 
     async def get_tool(
         self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
@@ -98,9 +120,9 @@ class ToolTransform(Transform):
 
         # Apply transform if applicable
         if config is not None:
-            transformed = config.apply(tool)
+            transformed = self._apply(config, tool)
             # Only return if requested name matches transformed name
-            if transformed.name == name:
+            if transformed is not None and transformed.name == name:
                 return transformed
             return None
 
