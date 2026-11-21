@@ -1,0 +1,166 @@
+"""Subscription arguments annotated with `x-mcp-header` travel as `Mcp-Param-*`."""
+
+from __future__ import annotations
+
+import anyio
+import pytest
+from mcp_types import HEADER_MISMATCH
+from starlette.testclient import TestClient
+
+from fastmcp import Client, FastMCP
+from fastmcp.experimental.events import (
+    Event,
+    EventBatch,
+    EventPoll,
+    EventsClientExtension,
+    EventsExtension,
+    list_events,
+    poll_events_mcp,
+    subscribe_events,
+)
+from fastmcp.experimental.events._constants import EVENTS_EXTENSION_ID
+from fastmcp.server.dependencies import get_http_headers
+from fastmcp.utilities.tests import run_server_async
+
+REGION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "region": {"type": "string", "x-mcp-header": "Region"},
+        "severity": {"type": "string"},
+    },
+}
+
+
+def make_server(seen_headers: list[str | None]) -> tuple[FastMCP, EventsExtension]:
+    server = FastMCP("incidents")
+    events = EventsExtension(poll_interval_ms=10)
+    server.add_extension(events)
+
+    @events.event(name="incident.created", input_schema=REGION_SCHEMA)
+    def incident_created(poll: EventPoll) -> EventBatch:
+        seen_headers.append(get_http_headers(include_all=True).get("mcp-param-region"))
+        if poll.cursor is None:
+            return EventBatch(cursor="0")
+        region = poll.arguments.get("region", "")
+        return EventBatch(
+            events=[Event(data={"region": region}, event_id=f"incident-{region}")],
+            cursor="1",
+        )
+
+    return server, events
+
+
+async def test_poll_mirrors_annotated_arguments_into_headers() -> None:
+    seen: list[str | None] = []
+    server, _ = make_server(seen)
+
+    async with run_server_async(server) as url:
+        async with Client(url, extensions=[EventsClientExtension()]) as client:
+            await list_events(client)
+            result = await poll_events_mcp(
+                client, "incident.created", {"region": "us-west1"}, cursor="0"
+            )
+
+    assert [event.data for event in result.events] == [{"region": "us-west1"}]
+    assert seen == ["us-west1"]
+
+
+async def test_push_mirrors_annotated_arguments_into_headers() -> None:
+    seen: list[str | None] = []
+    server, _ = make_server(seen)
+
+    async with run_server_async(server) as url:
+        async with Client(url, extensions=[EventsClientExtension()]) as client:
+            subscription = subscribe_events(
+                client, "incident.created", {"region": "eu-west1"}, cursor="0"
+            )
+            with anyio.fail_after(15):
+                async for event in subscription:
+                    assert event.data == {"region": "eu-west1"}
+                    break
+
+    assert seen[0] == "eu-west1"
+
+
+def post_poll(http: TestClient, arguments: dict, headers: dict[str, str]):
+    return http.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "events/poll",
+            "params": {
+                "name": "incident.created",
+                "arguments": arguments,
+                "cursor": "0",
+                "_meta": {
+                    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                    "io.modelcontextprotocol/clientCapabilities": {
+                        "extensions": {EVENTS_EXTENSION_ID: {}}
+                    },
+                },
+            },
+        },
+        headers={
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2026-07-28",
+            "Mcp-Method": "events/poll",
+            "Mcp-Name": "incident.created",
+            **headers,
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [{}, {"Mcp-Param-Region": "us-east1"}],
+    ids=["missing", "mismatched"],
+)
+def test_server_rejects_a_param_header_that_disagrees_with_the_body(
+    headers: dict[str, str],
+) -> None:
+    server, _ = make_server([])
+    app = server.http_app(stateless_http=True, json_response=True)
+
+    with TestClient(app) as http:
+        response = post_poll(http, {"region": "us-west1"}, headers)
+
+    assert response.json()["error"]["code"] == HEADER_MISMATCH
+
+
+def test_server_accepts_a_matching_param_header() -> None:
+    server, _ = make_server([])
+    app = server.http_app(stateless_http=True, json_response=True)
+
+    with TestClient(app) as http:
+        response = post_poll(
+            http, {"region": "us-west1"}, {"Mcp-Param-Region": "us-west1"}
+        )
+
+    assert response.json()["result"]["events"][0]["data"] == {"region": "us-west1"}
+
+
+def test_registering_an_invalid_annotation_is_an_error() -> None:
+    events = EventsExtension()
+    with pytest.raises(ValueError, match="x-mcp-header"):
+        events.event(
+            name="bad",
+            input_schema={
+                "type": "object",
+                "properties": {"r": {"type": "object", "x-mcp-header": "Region"}},
+            },
+        )
+
+
+async def test_client_drops_an_event_type_with_an_invalid_annotation() -> None:
+    server, events = make_server([])
+    # A server SDK refuses to publish this, so plant it to stand in for one
+    # that does not.
+    descriptor = events._registrations["incident.created"].descriptor
+    descriptor.input_schema = {
+        "type": "object",
+        "properties": {"r": {"type": "string", "x-mcp-header": "bad token"}},
+    }
+
+    async with Client(server, extensions=[EventsClientExtension()]) as client:
+        assert await list_events(client) == []
