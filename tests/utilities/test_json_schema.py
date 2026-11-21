@@ -1439,10 +1439,14 @@ class TestIsObjectSchemaRefHopBound:
     """Verify is_object_schema bounds local $ref alias chains."""
 
     def test_excessive_local_ref_chain_returns_false_without_recursion_error(self):
+        from typing import Any
+
         from fastmcp.utilities.json_schema import _MAX_ROOT_REF_HOPS, is_object_schema
 
         depth = 1500
-        defs = {f"n{i}": {"$ref": f"#/$defs/n{i + 1}"} for i in range(depth)}
+        defs: dict[str, Any] = {
+            f"n{i}": {"$ref": f"#/$defs/n{i + 1}"} for i in range(depth)
+        }
         defs[f"n{depth}"] = {"type": "object", "properties": {"x": {"type": "string"}}}
         schema = {"$defs": defs, "$ref": "#/$defs/n0"}
 
@@ -1450,9 +1454,13 @@ class TestIsObjectSchemaRefHopBound:
         assert is_object_schema(schema) is False
 
     def test_ref_chain_within_hop_limit_still_resolves(self):
+        from typing import Any
+
         from fastmcp.utilities.json_schema import is_object_schema
 
-        defs = {f"n{i}": {"$ref": f"#/$defs/n{i + 1}"} for i in range(5)}
+        defs: dict[str, Any] = {
+            f"n{i}": {"$ref": f"#/$defs/n{i + 1}"} for i in range(5)
+        }
         defs["n5"] = {"type": "object", "properties": {"x": {"type": "string"}}}
         schema = {"$defs": defs, "$ref": "#/$defs/n0"}
 
