@@ -12,8 +12,8 @@ from mcp.client.extension import ClientExtension, NotificationBinding
 from mcp.shared.subscriptions import SUBSCRIPTION_ID_META_KEY
 from mcp_types import RequestId
 
-from fastmcp.events._constants import EVENTS_EXTENSION_ID
-from fastmcp.events.models import StreamFrame
+from fastmcp.experimental.events._constants import EVENTS_EXTENSION_ID
+from fastmcp.experimental.events.models import StreamFrame
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)

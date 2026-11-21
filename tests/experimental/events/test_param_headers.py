@@ -8,14 +8,17 @@ from mcp_types import HEADER_MISMATCH
 from starlette.testclient import TestClient
 
 from fastmcp import Client, FastMCP
-from fastmcp.events import (
+from fastmcp.experimental.events import (
     Event,
     EventBatch,
     EventPoll,
     EventsClientExtension,
     EventsExtension,
+    list_events,
+    poll_events_mcp,
+    subscribe_events,
 )
-from fastmcp.events._constants import EVENTS_EXTENSION_ID
+from fastmcp.experimental.events._constants import EVENTS_EXTENSION_ID
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.utilities.tests import run_server_async
 
@@ -53,9 +56,9 @@ async def test_poll_mirrors_annotated_arguments_into_headers() -> None:
 
     async with run_server_async(server) as url:
         async with Client(url, extensions=[EventsClientExtension()]) as client:
-            await client.list_events()
-            result = await client.poll_events_mcp(
-                "incident.created", {"region": "us-west1"}, cursor="0"
+            await list_events(client)
+            result = await poll_events_mcp(
+                client, "incident.created", {"region": "us-west1"}, cursor="0"
             )
 
     assert [event.data for event in result.events] == [{"region": "us-west1"}]
@@ -68,8 +71,8 @@ async def test_push_mirrors_annotated_arguments_into_headers() -> None:
 
     async with run_server_async(server) as url:
         async with Client(url, extensions=[EventsClientExtension()]) as client:
-            subscription = client.subscribe_events(
-                "incident.created", {"region": "eu-west1"}, cursor="0"
+            subscription = subscribe_events(
+                client, "incident.created", {"region": "eu-west1"}, cursor="0"
             )
             with anyio.fail_after(15):
                 async for event in subscription:
@@ -160,4 +163,4 @@ async def test_client_drops_an_event_type_with_an_invalid_annotation() -> None:
     }
 
     async with Client(server, extensions=[EventsClientExtension()]) as client:
-        assert await client.list_events() == []
+        assert await list_events(client) == []

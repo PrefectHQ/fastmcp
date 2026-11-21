@@ -9,16 +9,24 @@ from mcp_types import HEADER_MISMATCH, INVALID_PARAMS, METHOD_NOT_FOUND
 from starlette.testclient import TestClient
 
 from fastmcp import Client, FastMCP
-from fastmcp.client.mixins.events import EventSubscription
-from fastmcp.events import (
+from fastmcp.experimental.events import (
     Event,
     EventBatch,
     EventPoll,
     EventsClientExtension,
     EventsExtension,
+    EventSubscription,
+    list_events,
+    list_events_mcp,
+    poll_events_mcp,
+    subscribe_events,
 )
-from fastmcp.events._constants import EVENTS_EXTENSION_ID, NOT_FOUND, UNSUPPORTED
-from fastmcp.events.models import (
+from fastmcp.experimental.events._constants import (
+    EVENTS_EXTENSION_ID,
+    NOT_FOUND,
+    UNSUPPORTED,
+)
+from fastmcp.experimental.events.models import (
     EventOccurrence,
     PollEventsParams,
     PollEventsRequest,
@@ -81,7 +89,7 @@ async def test_advertises_events_capability() -> None:
 
 async def test_list_events_describes_delivery_and_schemas() -> None:
     async with events_client(make_server()) as client:
-        (event,) = await client.list_events()
+        (event,) = await list_events(client)
 
     assert event.name == "alert.fired"
     assert event.description == "An alert fired"
@@ -99,8 +107,8 @@ async def test_list_events_paginates() -> None:
         events.event(name=name)(lambda poll: EventBatch())
 
     async with events_client(server) as client:
-        first = await client.list_events_mcp()
-        listed = await client.list_events()
+        first = await list_events_mcp(client)
+        listed = await list_events(client)
 
     assert [event.name for event in first.events] == ["a", "b"]
     assert first.next_cursor is not None
@@ -111,7 +119,7 @@ async def test_first_poll_starts_from_now() -> None:
     log = [{"key": "old", "severity": "high"}]
 
     async with events_client(make_server(log)) as client:
-        result = await client.poll_events_mcp("alert.fired")
+        result = await poll_events_mcp(client, "alert.fired")
 
     assert result.events == []
     assert result.cursor == "1"
@@ -124,11 +132,11 @@ async def test_poll_returns_events_after_the_cursor() -> None:
     log = [{"key": "old", "severity": "high"}]
 
     async with events_client(make_server(log, poll_interval_ms=5_000)) as client:
-        start = await client.poll_events_mcp("alert.fired")
+        start = await poll_events_mcp(client, "alert.fired")
         log.append({"key": "disk-full", "severity": "high"})
         log.append({"key": "slow-query", "severity": "low"})
-        result = await client.poll_events_mcp(
-            "alert.fired", {"severity": "high"}, cursor=start.cursor
+        result = await poll_events_mcp(
+            client, "alert.fired", {"severity": "high"}, cursor=start.cursor
         )
 
     (event,) = result.events
@@ -144,9 +152,9 @@ async def test_max_events_leaves_a_backlog_to_drain() -> None:
     log = [{"key": str(n), "severity": "low"} for n in range(3)]
 
     async with events_client(make_server(log)) as client:
-        first = await client.poll_events_mcp("alert.fired", cursor="0", max_events=2)
-        rest = await client.poll_events_mcp(
-            "alert.fired", cursor=first.cursor, max_events=2
+        first = await poll_events_mcp(client, "alert.fired", cursor="0", max_events=2)
+        rest = await poll_events_mcp(
+            client, "alert.fired", cursor=first.cursor, max_events=2
         )
 
     assert [event.event_id for event in first.events] == ["0", "1"]
@@ -165,7 +173,7 @@ async def test_events_without_an_id_or_timestamp_get_generated_ones() -> None:
         return EventBatch(events=[Event(data={}), Event(data={})])
 
     async with events_client(server) as client:
-        result = await client.poll_events_mcp("tick")
+        result = await poll_events_mcp(client, "tick")
 
     first, second = result.events
     assert first.event_id and second.event_id and first.event_id != second.event_id
@@ -176,7 +184,7 @@ async def test_events_without_an_id_or_timestamp_get_generated_ones() -> None:
 async def test_unknown_event_is_not_found() -> None:
     async with events_client(make_server()) as client:
         with pytest.raises(MCPError) as exc_info:
-            await client.poll_events_mcp("missing")
+            await poll_events_mcp(client, "missing")
 
     assert exc_info.value.error.code == NOT_FOUND
     assert exc_info.value.error.data == {"kind": "event"}
@@ -185,7 +193,7 @@ async def test_unknown_event_is_not_found() -> None:
 async def test_arguments_outside_the_input_schema_are_invalid_params() -> None:
     async with events_client(make_server()) as client:
         with pytest.raises(MCPError) as exc_info:
-            await client.poll_events_mcp("alert.fired", {"severity": 3})
+            await poll_events_mcp(client, "alert.fired", {"severity": 3})
 
     assert exc_info.value.error.code == INVALID_PARAMS
 
@@ -195,7 +203,8 @@ async def test_subscription_drains_backlog_resumes_and_drops_repeats() -> None:
     server = make_server(log, poll_interval_ms=0)
 
     async with events_client(server) as client:
-        subscription = client.subscribe_events(
+        subscription = subscribe_events(
+            client,
             "alert.fired",
             cursor="0",
             max_events=2,
@@ -230,8 +239,8 @@ async def test_subscription_reports_a_gap() -> None:
         )
 
     async with events_client(server) as client:
-        subscription = client.subscribe_events(
-            "tick", cursor="expired", min_poll_interval=0, delivery="poll"
+        subscription = subscribe_events(
+            client, "tick", cursor="expired", min_poll_interval=0, delivery="poll"
         )
         async for _ in subscription:
             break
@@ -254,7 +263,7 @@ async def test_push_delivers_events_as_the_log_grows() -> None:
     server = make_server(log, poll_interval_ms=10)
 
     async with events_client(server) as client:
-        subscription = client.subscribe_events("alert.fired", {"severity": "high"})
+        subscription = subscribe_events(client, "alert.fired", {"severity": "high"})
 
         async def grow() -> None:
             await anyio.sleep(0.05)
@@ -279,7 +288,7 @@ async def test_push_resumes_from_a_cursor_and_drains_the_backlog() -> None:
     log = [{"key": str(n), "severity": "low"} for n in range(3)]
 
     async with events_client(make_server(log, poll_interval_ms=10)) as client:
-        subscription = client.subscribe_events("alert.fired", cursor="1")
+        subscription = subscribe_events(client, "alert.fired", cursor="1")
         with anyio.fail_after(10):
             events = await collect(subscription, 2)
 
@@ -304,7 +313,7 @@ async def test_push_reports_a_gap_and_keeps_the_stream_through_a_failed_check() 
         return EventBatch(events=[Event(data={}, event_id="recovered")], cursor="next")
 
     async with events_client(server) as client:
-        subscription = client.subscribe_events("tick", cursor="expired")
+        subscription = subscribe_events(client, "tick", cursor="expired")
         with anyio.fail_after(10):
             (event,) = await collect(subscription, 1)
 
@@ -316,7 +325,7 @@ async def test_push_reports_a_gap_and_keeps_the_stream_through_a_failed_check() 
 async def test_push_rejects_an_unknown_event_before_any_stream_opens() -> None:
     async with events_client(make_server()) as client:
         with pytest.raises(MCPError) as exc_info:
-            async for _ in client.subscribe_events("missing", delivery="push"):
+            async for _ in subscribe_events(client, "missing", delivery="push"):
                 pass
 
     assert exc_info.value.error.code == NOT_FOUND
@@ -327,12 +336,12 @@ async def test_a_server_without_push_is_polled_and_refuses_a_stream() -> None:
     server = make_server(log, poll_interval_ms=0, push=False)
 
     async with events_client(server) as client:
-        (listed,) = await client.list_events()
+        (listed,) = await list_events(client)
         polled = await collect(
-            client.subscribe_events("alert.fired", cursor="0", min_poll_interval=0), 1
+            subscribe_events(client, "alert.fired", cursor="0", min_poll_interval=0), 1
         )
         with pytest.raises(MCPError) as exc_info:
-            async for _ in client.subscribe_events("alert.fired", delivery="push"):
+            async for _ in subscribe_events(client, "alert.fired", delivery="push"):
                 pass
 
     assert listed.delivery == ["poll"]
@@ -347,7 +356,7 @@ async def test_push_is_delivered_over_streamable_http() -> None:
 
     async with run_server_async(server) as url:
         async with Client(url, extensions=[EventsClientExtension()]) as client:
-            subscription = client.subscribe_events("alert.fired")
+            subscription = subscribe_events(client, "alert.fired")
 
             async def grow() -> None:
                 await anyio.sleep(0.2)
@@ -384,8 +393,8 @@ async def test_a_refused_stream_falls_back_to_poll_unless_push_was_asked_for(
     monkeypatch.setattr(EventSubscription, "_choose_delivery", offered_push)
 
     async with events_client(server) as client:
-        subscription = client.subscribe_events(
-            "alert.fired", cursor="0", min_poll_interval=0
+        subscription = subscribe_events(
+            client, "alert.fired", cursor="0", min_poll_interval=0
         )
         polled = await collect(subscription, 1)
 
@@ -403,13 +412,13 @@ async def test_duplicate_event_name_is_rejected() -> None:
 async def test_client_requires_explicit_opt_in() -> None:
     async with Client(make_server(), mode="auto") as client:
         with pytest.raises(RuntimeError, match="did not opt into"):
-            await client.list_events()
+            await list_events(client)
 
 
 async def test_client_rejects_server_without_extension() -> None:
     async with events_client(FastMCP("plain")) as client:
         with pytest.raises(RuntimeError, match="does not advertise"):
-            await client.poll_events_mcp("alert.fired")
+            await poll_events_mcp(client, "alert.fired")
 
 
 async def test_server_without_extension_answers_method_not_found() -> None:

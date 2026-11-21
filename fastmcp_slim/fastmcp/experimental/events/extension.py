@@ -26,8 +26,12 @@ from mcp.shared.subscriptions import SUBSCRIPTION_ID_META_KEY
 from mcp_types import HEADER_MISMATCH, INTERNAL_ERROR, INVALID_PARAMS, INVALID_REQUEST
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
-from fastmcp.events._constants import EVENTS_EXTENSION_ID, NOT_FOUND, UNSUPPORTED
-from fastmcp.events.models import (
+from fastmcp.experimental.events._constants import (
+    EVENTS_EXTENSION_ID,
+    NOT_FOUND,
+    UNSUPPORTED,
+)
+from fastmcp.experimental.events.models import (
     EventOccurrence,
     EventType,
     ListEventsParams,
@@ -115,7 +119,7 @@ class EventsExtension(ServerExtension):
 
     ```python
     from fastmcp import FastMCP
-    from fastmcp.events import Event, EventBatch, EventPoll, EventsExtension
+    from fastmcp.experimental.events import Event, EventBatch, EventPoll, EventsExtension
 
     mcp = FastMCP("alerts")
     events = EventsExtension()

@@ -14,7 +14,7 @@ Tools answer when a client asks. Events cover the other direction: an alert fire
 In poll delivery the client asks "what happened since this cursor?" on an interval. Every request carries the event name, the subscription's arguments and the cursor, so your server holds no subscription state. In push delivery the client opens one long-lived request per subscription and your server writes events to it as they happen.
 
 <Warning>
-Webhook delivery (`events/subscribe`) is not implemented.
+Events support is experimental and lives in `fastmcp.experimental.events`. The extension is new, and the names and signatures here may change in any release, without a deprecation period, as the specification and its clients settle. Webhook delivery (`events/subscribe`) is not implemented.
 </Warning>
 
 ## Defining an event type
@@ -23,7 +23,7 @@ Register an `EventsExtension`, then decorate one check function per event type. 
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.events import Event, EventBatch, EventPoll, EventsExtension
+from fastmcp.experimental.events import Event, EventBatch, EventPoll, EventsExtension
 
 mcp = FastMCP("Alerts")
 events = EventsExtension()
@@ -51,7 +51,7 @@ Give each `Event` the upstream's stable identifier as `event_id`. Clients drop e
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.events import Event, EventBatch, EventPoll, EventsExtension
+from fastmcp.experimental.events import Event, EventBatch, EventPoll, EventsExtension
 
 mcp = FastMCP("Alerts")
 events = EventsExtension()
@@ -103,7 +103,7 @@ Push needs a server that can keep a response stream open. Stateless and serverle
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.events import EventsExtension
+from fastmcp.experimental.events import EventsExtension
 
 mcp = FastMCP("Alerts")
 mcp.add_extension(EventsExtension(push=False))
@@ -113,22 +113,26 @@ Poll works everywhere, because each poll is an ordinary request.
 
 ## Subscribing from a client
 
-A client opts into the extension with `EventsClientExtension`. `list_events()` returns the event types the server offers, and `subscribe_events()` subscribes to one of them. It uses push when the event type offers it and polls otherwise, and either way it skips events it has already yielded. Pass `delivery="poll"` or `delivery="push"` to choose.
+A client opts into the extension with `EventsClientExtension`. The event calls are functions that take the client, not methods on it. `list_events()` returns the event types the server offers, and `subscribe_events()` subscribes to one of them. It uses push when the event type offers it and polls otherwise, and either way it skips events it has already yielded. Pass `delivery="poll"` or `delivery="push"` to choose.
 
 ```python
 import asyncio
 
 from fastmcp import Client
-from fastmcp.events import EventsClientExtension
+from fastmcp.experimental.events import (
+    EventsClientExtension,
+    list_events,
+    subscribe_events,
+)
 
 
 async def main() -> None:
     extensions = [EventsClientExtension()]
     async with Client("https://example.com/mcp", extensions=extensions) as client:
-        for event_type in await client.list_events():
+        for event_type in await list_events(client):
             print(event_type.name, event_type.description)
 
-        subscription = client.subscribe_events("alert.fired", {"severity": "high"})
+        subscription = subscribe_events(client, "alert.fired", {"severity": "high"})
         async for event in subscription:
             print(event.event_id, event.data)
 
@@ -136,7 +140,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-The subscription lasts as long as the `async for` does. Its `cursor` attribute is the position after the last event or poll: store it, and pass it back as `subscribe_events(..., cursor=...)` to resume after a restart without missing events. `poll_events_mcp()` sends a single `events/poll` request when you want to run the loop yourself.
+The subscription lasts as long as the `async for` does. Its `cursor` attribute is the position to resume from, which moves once a whole batch of events has been yielded: store it, and pass it back as `subscribe_events(client, ..., cursor=...)` to resume after a restart without missing events. `poll_events_mcp()` sends a single `events/poll` request when you want to run the loop yourself.
 
 To try a server from the terminal, `fastmcp events watch` does the same thing and prints each event; see [the CLI](/cli/client#watching-events).
 

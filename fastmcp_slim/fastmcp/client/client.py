@@ -71,7 +71,6 @@ from fastmcp.client.logging import (
 )
 from fastmcp.client.messages import MessageHandler, MessageHandlerT
 from fastmcp.client.mixins import (
-    ClientEventsMixin,
     ClientPromptsMixin,
     ClientResourcesMixin,
     ClientSkillsMixin,
@@ -270,7 +269,6 @@ class CallToolResult:
 
 class Client(
     Generic[ClientTransportT],
-    ClientEventsMixin,
     ClientSkillsMixin,
     ClientResourcesMixin,
     ClientPromptsMixin,

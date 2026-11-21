@@ -9,7 +9,8 @@ import cyclopts
 from rich.console import Console
 
 from fastmcp.cli import client as client_cli
-from fastmcp.events.models import EventOccurrence, EventType
+from fastmcp.experimental.events import list_events, subscribe_events
+from fastmcp.experimental.events.models import EventOccurrence, EventType
 
 console = Console()
 # Status lines go to stderr so `watch --json` output stays one event per line.
@@ -102,7 +103,7 @@ async def list_events_command(
         )
         async with client:
             _require_events(client)
-            event_types = await client.list_events()
+            event_types = await list_events(client)
     except Exception as exc:
         _fail(str(exc))
         return
@@ -207,7 +208,7 @@ async def watch_command(
         )
         async with client:
             _require_events(client)
-            event_types = {t.name: t for t in await client.list_events()}
+            event_types = {t.name: t for t in await list_events(client)}
             event_type = event_types.get(name)
             if event_type is None:
                 _fail(
@@ -218,7 +219,8 @@ async def watch_command(
             subscription_args = client_cli.parse_tool_arguments(
                 arguments, input_json, event_type.input_schema or {}
             )
-            subscription = client.subscribe_events(
+            subscription = subscribe_events(
+                client,
                 name,
                 subscription_args or None,
                 cursor=cursor,

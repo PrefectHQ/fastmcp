@@ -8,7 +8,7 @@ import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.cli import client as client_module
 from fastmcp.cli.events import list_events_command, watch_command
-from fastmcp.events import (
+from fastmcp.experimental.events import (
     Event,
     EventBatch,
     EventPoll,
