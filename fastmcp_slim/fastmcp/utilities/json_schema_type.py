@@ -66,6 +66,7 @@ from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import MISSING, dataclass, field, fields, is_dataclass, make_dataclass
 from datetime import date, datetime, time, timedelta
+from fractions import Fraction
 from functools import lru_cache
 from types import MappingProxyType
 from typing import (
@@ -705,6 +706,28 @@ def _create_numeric_type(
         }.items()
         if v is not None
     }
+
+    if base is int:
+        # JSON Schema permits fractional bounds and multipleOf on integer schemas,
+        # which Pydantic's int validator rejects at build time.
+        for key, fn in (
+            ("ge", math.ceil),
+            ("gt", math.floor),
+            ("le", math.floor),
+            ("lt", math.ceil),
+        ):
+            val = constraints.get(key)
+            if isinstance(val, float) and math.isfinite(val):
+                constraints[key] = fn(val)
+
+        multiple_of = constraints.get("multiple_of")
+        if (
+            isinstance(multiple_of, float)
+            and math.isfinite(multiple_of)
+            and multiple_of > 0
+        ):
+            # An integer n is divisible by p/q (in lowest terms) iff p | n.
+            constraints["multiple_of"] = Fraction(str(multiple_of)).numerator
 
     return Annotated[base, Field(**constraints)] if constraints else base  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
 

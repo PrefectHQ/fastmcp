@@ -344,3 +344,64 @@ class TestHugeCounts:
     def test_huge_minimum_still_rejects(self, schema, value):
         with pytest.raises(ValidationError):
             TypeAdapter(json_schema_to_type(schema)).validate_python(value)
+
+
+class TestFractionalIntegerConstraints:
+    """JSON Schema permits non-integral bounds and multipleOf on integers."""
+
+    @pytest.mark.parametrize(
+        ("schema", "valid", "invalid"),
+        [
+            ({"type": "integer", "minimum": 0.5}, [1, 2], [0, -1]),
+            ({"type": "integer", "minimum": -4.5}, [-4, 0], [-5]),
+            ({"type": "integer", "maximum": 4.5}, [4, 0], [5]),
+            ({"type": "integer", "maximum": -0.5}, [-1, -2], [0, 1]),
+            ({"type": "integer", "exclusiveMinimum": 0.5}, [1, 2], [0, -1]),
+            ({"type": "integer", "exclusiveMinimum": -0.5}, [0, 1], [-1, -2]),
+            ({"type": "integer", "exclusiveMaximum": 2.5}, [2, 1], [3, 4]),
+            ({"type": "integer", "exclusiveMaximum": -0.5}, [-1, -2], [0, 1]),
+            (
+                {"type": "integer", "minimum": 1.5, "exclusiveMinimum": True},
+                [2, 3],
+                [1],
+            ),
+            (
+                {"type": "integer", "maximum": 2.5, "exclusiveMaximum": True},
+                [2, 1],
+                [3],
+            ),
+            ({"type": "integer", "multipleOf": 0.5}, [-1, 0, 1, 2], []),
+            ({"type": "integer", "multipleOf": 1.5}, [-3, 0, 3, 6], [1, 2, 4, 5]),
+        ],
+    )
+    def test_fractional_constraints_on_integer(self, schema, valid, invalid):
+        validator = TypeAdapter(json_schema_to_type(schema))
+        for item in valid:
+            assert validator.validate_python(item) == item
+        for item in invalid:
+            with pytest.raises(ValidationError):
+                validator.validate_python(item)
+
+    async def test_client_call_tool_hydrates_fractional_integer_output_schema(self):
+        from fastmcp import Client, FastMCP
+
+        mcp = FastMCP("demo")
+
+        @mcp.tool(
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "rating": {"type": "integer", "minimum": 0, "maximum": 4.5},
+                },
+                "required": ["name", "rating"],
+            }
+        )
+        def get_item() -> dict[str, object]:
+            return {"name": "widget", "rating": 4}
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_item", {})
+            assert result.structured_content == {"name": "widget", "rating": 4}
+            assert result.data is not None
+            assert result.data.rating == 4
