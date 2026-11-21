@@ -397,6 +397,7 @@ class ProxyTool(Tool):
         identity: ProxyIdentity = "proxy",
     ) -> ProxyTool:
         """Factory method to create a ProxyTool from a raw MCP tool schema."""
+        fastmcp_meta = get_fastmcp_metadata(mcp_tool.meta)
         return cls(
             client_factory=client_factory,
             identity=identity,
@@ -408,7 +409,8 @@ class ProxyTool(Tool):
             output_schema=mcp_tool.output_schema,
             icons=mcp_tool.icons,
             meta=mcp_tool.meta,
-            tags=get_fastmcp_metadata(mcp_tool.meta).get("tags", []),
+            tags=fastmcp_meta.get("tags", []),
+            version=fastmcp_meta.get("version"),
             execution=mcp_tool.execution,
         )
 
@@ -570,7 +572,7 @@ class ProxyResource(Resource):
         identity: ProxyIdentity = "proxy",
     ) -> ProxyResource:
         """Factory method to create a ProxyResource from a raw MCP resource schema."""
-
+        fastmcp_meta = get_fastmcp_metadata(mcp_resource.meta)
         return cls(
             client_factory=client_factory,
             identity=identity,
@@ -582,7 +584,8 @@ class ProxyResource(Resource):
             icons=mcp_resource.icons,
             annotations=mcp_resource.annotations,
             meta=mcp_resource.meta,
-            tags=get_fastmcp_metadata(mcp_resource.meta).get("tags", []),
+            tags=fastmcp_meta.get("tags", []),
+            version=fastmcp_meta.get("version"),
             task_config=TaskConfig(mode="forbidden"),
         )
 
@@ -688,7 +691,7 @@ class ProxyTemplate(ResourceTemplate):
         identity: ProxyIdentity = "proxy",
     ) -> ProxyTemplate:  # ty:ignore[incompatible-method-override]
         """Factory method to create a ProxyTemplate from a raw MCP template schema."""
-
+        fastmcp_meta = get_fastmcp_metadata(mcp_template.meta)
         return cls(
             client_factory=client_factory,
             identity=identity,
@@ -701,7 +704,8 @@ class ProxyTemplate(ResourceTemplate):
             annotations=mcp_template.annotations,
             parameters={},  # Remote templates don't have local parameters
             meta=mcp_template.meta,
-            tags=get_fastmcp_metadata(mcp_template.meta).get("tags", []),
+            tags=fastmcp_meta.get("tags", []),
+            version=fastmcp_meta.get("version"),
             task_config=TaskConfig(mode="forbidden"),
         )
 
@@ -738,6 +742,7 @@ class ProxyTemplate(ResourceTemplate):
                 icons=self.icons,
                 meta=self.meta,
                 tags=get_fastmcp_metadata(self.meta).get("tags", []),
+                version=self.version,
                 _cached_content=InputRequiredResourceResult(result),
             )
 
@@ -786,6 +791,7 @@ class ProxyTemplate(ResourceTemplate):
             icons=self.icons,
             meta=self.meta,
             tags=get_fastmcp_metadata(self.meta).get("tags", []),
+            version=self.version,
             _cached_content=cached_content,
         )
 
@@ -850,6 +856,7 @@ class ProxyPrompt(Prompt):
             )
             for arg in mcp_prompt.arguments or []
         ]
+        fastmcp_meta = get_fastmcp_metadata(mcp_prompt.meta)
         return cls(
             client_factory=client_factory,
             identity=identity,
@@ -859,7 +866,8 @@ class ProxyPrompt(Prompt):
             arguments=arguments,
             icons=mcp_prompt.icons,
             meta=mcp_prompt.meta,
-            tags=get_fastmcp_metadata(mcp_prompt.meta).get("tags", []),
+            tags=fastmcp_meta.get("tags", []),
+            version=fastmcp_meta.get("version"),
             task_config=TaskConfig(mode="forbidden"),
         )
 

@@ -1651,3 +1651,46 @@ async def test_proxy_forwards_mcp_param_header_to_modern_http_backend():
             result = await client.call_tool("route", {"tenant": "acme"})
 
     assert result.data == "routed:acme"
+
+
+async def test_proxy_preserves_version_metadata_for_version_filter():
+    """Proxied tools, resources, templates, and prompts retain version metadata."""
+    from fastmcp.server.transforms import VersionFilter
+
+    backend = FastMCP("Backend")
+
+    @backend.tool(version="2.0")
+    def calc() -> str:
+        return "v2"
+
+    @backend.resource("data://item", version="2.0")
+    def item() -> str:
+        return "item-v2"
+
+    @backend.resource("data://items/{item_id}", version="2.0")
+    def item_tpl(item_id: str) -> str:
+        return f"tpl-v2-{item_id}"
+
+    @backend.prompt(version="2.0")
+    def greet() -> str:
+        return "hello-v2"
+
+    proxy = create_proxy(backend)
+    proxy.add_transform(VersionFilter(version_gte="2.0", include_unversioned=False))
+
+    async with Client(proxy) as client:
+        assert [t.name for t in await client.list_tools()] == ["calc"]
+        assert (await client.call_tool("calc", {})).data == "v2"
+        assert [str(r.uri) for r in await client.list_resources()] == ["data://item"]
+        assert [t.uri_template for t in await client.list_resource_templates()] == [
+            "data://items/{item_id}"
+        ]
+        assert [p.name for p in await client.list_prompts()] == ["greet"]
+
+    hidden_proxy = create_proxy(backend)
+    hidden_proxy.add_transform(VersionFilter(version_lt="2.0"))
+    async with Client(hidden_proxy) as client:
+        assert await client.list_tools() == []
+        assert await client.list_resources() == []
+        assert await client.list_resource_templates() == []
+        assert await client.list_prompts() == []
