@@ -110,6 +110,19 @@ def test_event_intake_resolves_pull_requests_to_referenced_open_issues(github_se
     assert Intake(issues=[9]).scope() != config.scope()
 
 
+def test_event_intake_skips_closed_pull_requests(github_server):
+    read, responses, requests = github_server
+    responses["/repos/PrefectHQ/fastmcp/pulls/7"] = {
+        "number": 7,
+        "state": "closed",
+        "body": "Fixes #5",
+    }
+    responses["/repos/PrefectHQ/fastmcp/issues/5"] = issue(5)
+    result = inventory(read, Intake(pull_requests=[7], queue="events"), 1)
+    assert result["pending"] == []
+    assert "/repos/PrefectHQ/fastmcp/issues/5" not in requests
+
+
 def test_receipts_defer_but_do_not_certify_unchanged_contribution_history():
     now = datetime.now(UTC)
     config = Intake(refresh_minutes=60)

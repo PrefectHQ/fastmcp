@@ -55,6 +55,10 @@ def inventory(read: Callable[[str], object], config: Intake, page: int) -> dict:
             pull = read(f"{root}/pulls/{number}")
             if not isinstance(pull, dict):
                 raise ValueError("Invalid pull request metadata")
+            # The issue-link gate closes most outside PRs seconds after they open;
+            # by the time intake runs there's no contribution left to verify.
+            if pull.get("state") == "closed":
+                continue
             numbers.update(referenced_issues(pull.get("body") or ""))
         rows = [read(f"{root}/issues/{number}") for number in sorted(numbers)]
         pages = {"scoped": len(rows), "pull_requests": len(set(config.pull_requests))}
