@@ -169,16 +169,19 @@ def schemas(draw: st.DrawFn) -> dict[str, Any]:
         }
     if root.get("type") == "object" and draw(st.booleans()):
         # An object property with an object or non-object default, the shape
-        # default-merging has to handle.
-        default = draw(
-            st.sampled_from([None, True, 0, 1, "x", [], ["a"], {}, {"a": 1}])
-        )
+        # default-merging has to handle. With typed extras, an object default
+        # can be invalid for the object it is merged into.
+        meta: dict[str, Any] = {"type": "object"}
+        if draw(st.booleans()):
+            meta["additionalProperties"] = {"type": "string"}
+            meta["default"] = draw(st.sampled_from([{"a": 1}, {"a": "s"}, {}]))
+        else:
+            meta["default"] = draw(
+                st.sampled_from([None, True, 0, 1, "x", [], ["a"], {}, {"a": 1}])
+            )
         root = {
             **root,
-            "properties": {
-                **root.get("properties", {}),
-                "meta": {"type": "object", "default": default},
-            },
+            "properties": {**root.get("properties", {}), "meta": meta},
         }
     if root.get("type") == "object" and draw(st.booleans()):
         # A positional array inside an object whose additionalProperties is a
