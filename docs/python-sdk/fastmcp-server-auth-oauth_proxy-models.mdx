@@ -56,7 +56,7 @@ and stored in plaintext within this model. Encryption is handled transparently
 at the storage layer via FernetEncryptionWrapper. Tokens are never exposed to MCP clients.
 
 
-### `JTIMapping` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/models.py#L127" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `JTIMapping` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/models.py#L130" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Maps FastMCP token JTI to upstream token ID.
@@ -65,7 +65,7 @@ This allows stateless JWT validation while still being able to look up
 the corresponding upstream token when tools need to access upstream APIs.
 
 
-### `RefreshTokenMetadata` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/models.py#L139" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `RefreshTokenMetadata` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/models.py#L142" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Metadata for a refresh token, stored keyed by token hash.
@@ -74,7 +74,7 @@ We store only metadata (not the token itself) for security - if storage
 is compromised, attackers get hashes they can't reverse into usable tokens.
 
 
-### `ProxyDCRClient` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/models.py#L208" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ProxyDCRClient` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/models.py#L211" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Client for DCR proxy with configurable redirect URI validation.
@@ -104,7 +104,7 @@ arise from accepting arbitrary redirect URIs.
 
 **Methods:**
 
-#### `validate_redirect_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/models.py#L256" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `validate_redirect_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/models.py#L259" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl
