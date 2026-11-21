@@ -203,3 +203,33 @@ class TestResponseLimitingMiddleware:
         content = result.content[0]
         assert isinstance(content, TextContent)
         content.text.encode("utf-8")
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            "A" * 10_000,
+            '"' * 10_000,
+            "\x01" * 10_000,
+            "🌍🎉" * 5_000,
+        ],
+        ids=["plain-ascii", "quotes", "control-chars", "multibyte-utf8"],
+    )
+    async def test_truncated_serialized_size_stays_within_max_size(
+        self, mcp_server: FastMCP, payload: str
+    ):
+        """Truncated ToolResult JSON size never exceeds max_size regardless of escaping."""
+        import pydantic_core
+
+        max_size = 1000
+        middleware = ResponseLimitingMiddleware(max_size=max_size)
+        mcp_server.add_middleware(middleware)
+
+        @mcp_server.tool()
+        def emit() -> str:
+            return payload
+
+        result = await mcp_server.call_tool("emit", {})
+        assert len(pydantic_core.to_json(result, fallback=str)) <= max_size
+        block = result.content[0]
+        assert isinstance(block, TextContent)
+        assert "[Response truncated due to size limit]" in block.text

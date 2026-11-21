@@ -78,31 +78,42 @@ class ResponseLimitingMiddleware(Middleware):
         meta: dict[str, Any] | None = None,
         is_error: bool = False,
     ) -> ToolResult:
-        """Truncate text to fit within max_size and wrap in ToolResult."""
-        suffix_bytes = len(self.truncation_suffix.encode("utf-8"))
-        # Account for JSON wrapper overhead: {"content":[{"type":"text","text":"..."}]}
-        overhead = 50
-        target_size = self.max_size - suffix_bytes - overhead
+        """Truncate text so the serialized ToolResult fits within max_size."""
 
-        if target_size <= 0:
-            # Edge case: max_size too small for even the suffix
-            truncated = self.truncation_suffix
-        else:
-            # Truncate to target size, preserving UTF-8 boundaries
-            encoded = text.encode("utf-8")
-            if len(encoded) <= target_size:
-                truncated = text + self.truncation_suffix
+        def build(prefix_len: int) -> ToolResult:
+            truncated = (
+                f"{text[:prefix_len]}{self.truncation_suffix}"
+                if prefix_len
+                else self.truncation_suffix
+            )
+            return ToolResult(
+                content=[TextContent(type="text", text=truncated)],
+                meta=meta,
+                is_error=is_error,
+            )
+
+        def fits(candidate: ToolResult) -> bool:
+            return len(pydantic_core.to_json(candidate, fallback=str)) <= self.max_size
+
+        empty_result = build(0)
+        if not fits(empty_result):
+            return empty_result
+
+        # Each character occupies at least 1 byte in JSON, so min(len(text), max_size)
+        # is a tight upper bound before binary searching for JSON-escape expansion.
+        lo = 0
+        hi = min(len(text), self.max_size)
+        best_result = empty_result
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            candidate = build(mid)
+            if fits(candidate):
+                best_result = candidate
+                lo = mid + 1
             else:
-                truncated = (
-                    encoded[:target_size].decode("utf-8", errors="ignore")
-                    + self.truncation_suffix
-                )
+                hi = mid - 1
 
-        return ToolResult(
-            content=[TextContent(type="text", text=truncated)],
-            meta=meta,
-            is_error=is_error,
-        )
+        return best_result
 
     async def on_list_tools(
         self,
