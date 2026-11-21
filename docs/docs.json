@@ -569,6 +569,14 @@
     "metatags": {
       "canonical": "https://gofastmcp.com/docs"
     },
+    "paths": [
+      {
+        "path": "v2",
+        "metatags": {
+          "robots": "noindex"
+        }
+      }
+    ],
     "organization": {
       "name": "FastMCP",
       "legalName": "Prefect Technologies, Inc.",
