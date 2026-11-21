@@ -32,11 +32,14 @@ from fastmcp.utilities.types import (
 
 
 def _contains_bytes_type(tp: Any) -> bool:
-    """Check if *tp* is or contains bytes, recursing through unions and Annotated."""
+    """Check if *tp* is or contains bytes across unions, Annotated, and containers."""
     if tp is bytes:
         return True
     origin = get_origin(tp)
-    if origin is Union or origin is types.UnionType or origin is Annotated:
+    if origin is Annotated:
+        args = get_args(tp)
+        return bool(args) and _contains_bytes_type(args[0])
+    if origin is not None and origin is not Callable:
         return any(_contains_bytes_type(a) for a in get_args(tp))
     return False
 

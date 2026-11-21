@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import inspect
 import json
 import math
@@ -74,8 +75,34 @@ def _default_title(name: str) -> str:
     return name.replace("_", " ").replace("-", " ").title()
 
 
+def _encode_non_utf8_bytes(value: Any) -> Any:
+    """Encode non-UTF-8 bytes inside containers as base64 ASCII strings."""
+    if isinstance(value, bytes):
+        try:
+            return value.decode("utf-8")
+        except UnicodeDecodeError:
+            return base64.b64encode(value).decode("ascii")
+    if isinstance(value, dict):
+        return {
+            _encode_non_utf8_bytes(k): _encode_non_utf8_bytes(v)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_encode_non_utf8_bytes(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_encode_non_utf8_bytes(item) for item in value)
+    if isinstance(value, set | frozenset):
+        return [_encode_non_utf8_bytes(item) for item in value]
+    return value
+
+
 def default_serializer(data: Any) -> str:
-    return _JSONABLE_ADAPTER.dump_json(data, fallback=str).decode()
+    try:
+        return _JSONABLE_ADAPTER.dump_json(data, fallback=str).decode()
+    except (pydantic_core.PydanticSerializationError, UnicodeDecodeError):
+        return _JSONABLE_ADAPTER.dump_json(
+            _encode_non_utf8_bytes(data), fallback=str
+        ).decode()
 
 
 @lru_cache(maxsize=5000)

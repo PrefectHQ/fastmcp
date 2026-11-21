@@ -71,6 +71,37 @@ class TestToolReturnTypes:
         assert result.structured_content is None
         assert result.content[0].text == "Hello, world!"  # ty:ignore[missing-union-attribute]
 
+    async def test_nested_non_utf8_bytes_in_containers(self):
+        import base64
+        import json
+
+        from fastmcp import Client
+
+        raw = b"\xff\xfe invalid utf-8"
+        expected_b64 = base64.b64encode(raw).decode("ascii")
+        mcp = FastMCP()
+
+        @mcp.tool
+        def blob_nested() -> dict[str, bytes]:
+            return {"data": raw}
+
+        @mcp.tool
+        def blob_list() -> list[bytes]:
+            return [raw]
+
+        async with Client(mcp) as client:
+            tools = {t.name: t for t in await client.list_tools()}
+            assert tools["blob_nested"].outputSchema is None
+            assert tools["blob_list"].outputSchema is None
+
+            nested_result = await client.call_tool("blob_nested", {})
+            assert nested_result.structured_content is None
+            assert json.loads(nested_result.content[0].text) == {"data": expected_b64}  # type: ignore[union-attr]
+
+            list_result = await client.call_tool("blob_list", {})
+            assert list_result.structured_content is None
+            assert json.loads(list_result.content[0].text) == [expected_b64]  # type: ignore[union-attr]
+
     async def test_uuid(self):
         mcp = FastMCP()
 
