@@ -1,17 +1,20 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-21T02:49:49+00:00",
- "source_commit": "876e74d741bf22cd4c83f278fa97188855d5b0fa",
+ "generated_at": "2026-11-21T04:09:39+00:00",
+ "source_commit": "6ba08aa42ada6cdece30689e3c3193b581ca9888",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
   "test_files": [
    "tests/pbt/test_components_machine.py",
    "tests/pbt/test_json_schema.py",
+   "tests/pbt/test_oauth_proxy_machine.py",
+   "tests/pbt/test_openapi.py",
    "tests/pbt/test_resource_read.py",
+   "tests/pbt/test_tool_transform.py",
    "tests/pbt/test_uri_template.py"
   ],
-  "tests_reaching_fastmcp": 8
+  "tests_reaching_fastmcp": 11
  },
  "modules": [
   {
@@ -729,21 +732,23 @@
    "path": "fastmcp_slim/fastmcp/client/client.py",
    "public": true,
    "statements": 396,
-   "hit": 167,
+   "hit": 176,
    "functions": 45,
-   "functions_hit": 20,
+   "functions_hit": 22,
    "symbols": [
     {
      "name": "Client",
      "kind": "class",
      "statements": 375,
-     "hit": 155
+     "hit": 164
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -763,9 +768,9 @@
    "path": "fastmcp_slim/fastmcp/client/elicitation.py",
    "public": true,
    "statements": 24,
-   "hit": 0,
+   "hit": 2,
    "functions": 3,
-   "functions_hit": 0,
+   "functions_hit": 1,
    "symbols": [
     {
      "name": "ElicitRequestParams",
@@ -780,8 +785,10 @@
      "hit": 0
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
   },
   {
    "module": "fastmcp.client.extension_hooks",
@@ -792,10 +799,12 @@
    "functions": 2,
    "functions_hit": 1,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -833,10 +842,12 @@
      "hit": 0
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -875,7 +886,7 @@
    "path": "fastmcp_slim/fastmcp/client/mixins/prompts.py",
    "public": false,
    "statements": 42,
-   "hit": 34,
+   "hit": 31,
    "functions": 6,
    "functions_hit": 6,
    "symbols": [],
@@ -889,9 +900,9 @@
    "path": "fastmcp_slim/fastmcp/client/mixins/resources.py",
    "public": false,
    "statements": 69,
-   "hit": 41,
+   "hit": 56,
    "functions": 9,
-   "functions_hit": 6,
+   "functions_hit": 9,
    "symbols": [],
    "tests": 2,
    "test_ids": [
@@ -916,13 +927,15 @@
    "path": "fastmcp_slim/fastmcp/client/mixins/tools.py",
    "public": false,
    "statements": 95,
-   "hit": 77,
+   "hit": 78,
    "functions": 9,
    "functions_hit": 9,
    "symbols": [],
-   "tests": 1,
+   "tests": 3,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -954,21 +967,23 @@
    "path": "fastmcp_slim/fastmcp/client/roots.py",
    "public": true,
    "statements": 28,
-   "hit": 0,
+   "hit": 5,
    "functions": 6,
-   "functions_hit": 0,
+   "functions_hit": 2,
    "symbols": [],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
   },
   {
    "module": "fastmcp.client.sampling",
    "path": "fastmcp_slim/fastmcp/client/sampling/__init__.py",
    "public": true,
    "statements": 12,
-   "hit": 0,
+   "hit": 2,
    "functions": 2,
-   "functions_hit": 0,
+   "functions_hit": 1,
    "symbols": [
     {
      "name": "SamplingMessage",
@@ -983,8 +998,10 @@
      "hit": 0
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
   },
   {
    "module": "fastmcp.client.sampling.handlers",
@@ -1064,10 +1081,12 @@
    "functions": 1,
    "functions_hit": 1,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -1091,10 +1110,12 @@
    "functions": 10,
    "functions_hit": 4,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -1137,10 +1158,12 @@
    "functions": 3,
    "functions_hit": 2,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -1159,10 +1182,12 @@
      "hit": 17
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -1422,9 +1447,10 @@
      "hit": 0
     }
    ],
-   "tests": 1,
+   "tests": 2,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -1554,7 +1580,7 @@
    "path": "fastmcp_slim/fastmcp/prompts/base.py",
    "public": true,
    "statements": 45,
-   "hit": 23,
+   "hit": 28,
    "functions": 12,
    "functions_hit": 10,
    "symbols": [
@@ -1562,7 +1588,7 @@
      "name": "Message",
      "kind": "class",
      "statements": 8,
-     "hit": 5
+     "hit": 6
     },
     {
      "name": "Prompt",
@@ -1574,7 +1600,7 @@
      "name": "PromptResult",
      "kind": "class",
      "statements": 12,
-     "hit": 6
+     "hit": 10
     }
    ],
    "tests": 1,
@@ -1620,7 +1646,7 @@
    "path": "fastmcp_slim/fastmcp/resources/base.py",
    "public": true,
    "statements": 64,
-   "hit": 35,
+   "hit": 36,
    "functions": 17,
    "functions_hit": 14,
    "symbols": [
@@ -1675,9 +1701,9 @@
    "path": "fastmcp_slim/fastmcp/resources/security.py",
    "public": true,
    "statements": 23,
-   "hit": 0,
+   "hit": 1,
    "functions": 5,
-   "functions_hit": 0,
+   "functions_hit": 1,
    "symbols": [
     {
      "name": "ResourceSecurity",
@@ -1686,8 +1712,10 @@
      "hit": 0
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request"
+   ]
   },
   {
    "module": "fastmcp.resources.template",
@@ -1785,9 +1813,9 @@
    "path": "fastmcp_slim/fastmcp/server/auth/auth.py",
    "public": true,
    "statements": 330,
-   "hit": 0,
+   "hit": 24,
    "functions": 36,
-   "functions_hit": 0,
+   "functions_hit": 4,
    "symbols": [
     {
      "name": "AccessToken",
@@ -1805,7 +1833,7 @@
      "name": "OAuthProvider",
      "kind": "class",
      "statements": 54,
-     "hit": 0
+     "hit": 8
     },
     {
      "name": "RemoteAuthProvider",
@@ -1814,20 +1842,24 @@
      "hit": 0
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest"
+   ]
   },
   {
    "module": "fastmcp.server.auth.cimd",
    "path": "fastmcp_slim/fastmcp/server/auth/cimd.py",
    "public": false,
    "statements": 251,
-   "hit": 0,
+   "hit": 15,
    "functions": 20,
-   "functions_hit": 0,
+   "functions_hit": 3,
    "symbols": [],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest"
+   ]
   },
   {
    "module": "fastmcp.server.auth.handlers",
@@ -1877,12 +1909,14 @@
    "path": "fastmcp_slim/fastmcp/server/auth/jwt_issuer.py",
    "public": false,
    "statements": 55,
-   "hit": 0,
+   "hit": 41,
    "functions": 5,
-   "functions_hit": 0,
+   "functions_hit": 5,
    "symbols": [],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest"
+   ]
   },
   {
    "module": "fastmcp.server.auth.middleware",
@@ -1925,31 +1959,35 @@
    "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/models.py",
    "public": false,
    "statements": 63,
-   "hit": 0,
+   "hit": 1,
    "functions": 6,
-   "functions_hit": 0,
+   "functions_hit": 1,
    "symbols": [],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest"
+   ]
   },
   {
    "module": "fastmcp.server.auth.oauth_proxy.proxy",
    "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py",
    "public": true,
    "statements": 714,
-   "hit": 0,
+   "hit": 260,
    "functions": 34,
-   "functions_hit": 0,
+   "functions_hit": 17,
    "symbols": [
     {
      "name": "OAuthProxy",
      "kind": "class",
      "statements": 692,
-     "hit": 0
+     "hit": 260
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest"
+   ]
   },
   {
    "module": "fastmcp.server.auth.oauth_proxy.revocation",
@@ -2406,12 +2444,14 @@
    "path": "fastmcp_slim/fastmcp/server/auth/redirect_validation.py",
    "public": false,
    "statements": 159,
-   "hit": 0,
+   "hit": 28,
    "functions": 16,
-   "functions_hit": 0,
+   "functions_hit": 5,
    "symbols": [],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest"
+   ]
   },
   {
    "module": "fastmcp.server.auth.ssrf",
@@ -2434,10 +2474,12 @@
    "functions": 1,
    "functions_hit": 1,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -2457,7 +2499,7 @@
    "path": "fastmcp_slim/fastmcp/server/context.py",
    "public": true,
    "statements": 272,
-   "hit": 75,
+   "hit": 76,
    "functions": 51,
    "functions_hit": 12,
    "symbols": [
@@ -2465,13 +2507,15 @@
      "name": "Context",
      "kind": "class",
      "statements": 249,
-     "hit": 75
+     "hit": 76
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -2479,9 +2523,9 @@
    "path": "fastmcp_slim/fastmcp/server/dependencies.py",
    "public": true,
    "statements": 368,
-   "hit": 81,
+   "hit": 93,
    "functions": 61,
-   "functions_hit": 11,
+   "functions_hit": 12,
    "symbols": [
     {
      "name": "CurrentAccessToken",
@@ -2541,7 +2585,7 @@
      "name": "get_http_headers",
      "kind": "function",
      "statements": 20,
-     "hit": 0
+     "hit": 11
     },
     {
      "name": "get_http_request",
@@ -2562,10 +2606,12 @@
      "hit": 0
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -2640,9 +2686,11 @@
      "hit": 0
     }
    ],
-   "tests": 1,
+   "tests": 3,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -2687,14 +2735,16 @@
    "path": "fastmcp_slim/fastmcp/server/low_level.py",
    "public": false,
    "statements": 144,
-   "hit": 63,
+   "hit": 106,
    "functions": 19,
-   "functions_hit": 11,
+   "functions_hit": 17,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -2770,13 +2820,15 @@
    "path": "fastmcp_slim/fastmcp/server/middleware/dereference.py",
    "public": false,
    "statements": 25,
-   "hit": 14,
+   "hit": 16,
    "functions": 5,
-   "functions_hit": 3,
+   "functions_hit": 4,
    "symbols": [],
-   "tests": 1,
+   "tests": 3,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -2834,15 +2886,15 @@
    "path": "fastmcp_slim/fastmcp/server/middleware/middleware.py",
    "public": true,
    "statements": 52,
-   "hit": 40,
+   "hit": 46,
    "functions": 21,
-   "functions_hit": 13,
+   "functions_hit": 15,
    "symbols": [
     {
      "name": "Middleware",
      "kind": "class",
      "statements": 44,
-     "hit": 36
+     "hit": 42
     },
     {
      "name": "MiddlewareContext",
@@ -2851,10 +2903,12 @@
      "hit": 0
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -2978,10 +3032,12 @@
    "functions": 7,
    "functions_hit": 4,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -2993,10 +3049,12 @@
    "functions": 6,
    "functions_hit": 5,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -3004,14 +3062,16 @@
    "path": "fastmcp_slim/fastmcp/server/mixins/mcp_operations.py",
    "public": false,
    "statements": 146,
-   "hit": 78,
+   "hit": 93,
    "functions": 15,
-   "functions_hit": 10,
+   "functions_hit": 11,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -3058,14 +3118,16 @@
    "path": "fastmcp_slim/fastmcp/server/providers/aggregate.py",
    "public": false,
    "statements": 138,
-   "hit": 78,
+   "hit": 82,
    "functions": 22,
    "functions_hit": 16,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -3073,21 +3135,23 @@
    "path": "fastmcp_slim/fastmcp/server/providers/base.py",
    "public": true,
    "statements": 162,
-   "hit": 74,
+   "hit": 76,
    "functions": 40,
-   "functions_hit": 23,
+   "functions_hit": 24,
    "symbols": [
     {
      "name": "Provider",
      "kind": "class",
      "statements": 143,
-     "hit": 70
+     "hit": 72
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -3095,15 +3159,15 @@
    "path": "fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py",
    "public": true,
    "statements": 112,
-   "hit": 69,
+   "hit": 71,
    "functions": 34,
-   "functions_hit": 24,
+   "functions_hit": 25,
    "symbols": [
     {
      "name": "FastMCPProvider",
      "kind": "class",
      "statements": 66,
-     "hit": 45
+     "hit": 47
     }
    ],
    "tests": 1,
@@ -3200,13 +3264,14 @@
    "path": "fastmcp_slim/fastmcp/server/providers/local_provider/decorators/tools.py",
    "public": false,
    "statements": 75,
-   "hit": 46,
+   "hit": 47,
    "functions": 7,
    "functions_hit": 6,
    "symbols": [],
-   "tests": 1,
+   "tests": 2,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -3225,10 +3290,12 @@
      "hit": 96
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -3248,9 +3315,9 @@
    "path": "fastmcp_slim/fastmcp/server/providers/openapi/components.py",
    "public": true,
    "statements": 151,
-   "hit": 0,
+   "hit": 36,
    "functions": 16,
-   "functions_hit": 0,
+   "functions_hit": 6,
    "symbols": [
     {
      "name": "OpenAPIResource",
@@ -3268,39 +3335,43 @@
      "name": "OpenAPITool",
      "kind": "class",
      "statements": 42,
-     "hit": 0
+     "hit": 25
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request"
+   ]
   },
   {
    "module": "fastmcp.server.providers.openapi.provider",
    "path": "fastmcp_slim/fastmcp/server/providers/openapi/provider.py",
    "public": true,
    "statements": 148,
-   "hit": 0,
+   "hit": 54,
    "functions": 17,
-   "functions_hit": 0,
+   "functions_hit": 9,
    "symbols": [
     {
      "name": "OpenAPIProvider",
      "kind": "class",
      "statements": 147,
-     "hit": 0
+     "hit": 53
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request"
+   ]
   },
   {
    "module": "fastmcp.server.providers.openapi.routing",
    "path": "fastmcp_slim/fastmcp/server/providers/openapi/routing.py",
    "public": true,
    "statements": 13,
-   "hit": 0,
+   "hit": 8,
    "functions": 1,
-   "functions_hit": 0,
+   "functions_hit": 1,
    "symbols": [
     {
      "name": "MCPType",
@@ -3315,8 +3386,10 @@
      "hit": 0
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request"
+   ]
   },
   {
    "module": "fastmcp.server.providers.prefab_payload",
@@ -3327,9 +3400,11 @@
    "functions": 6,
    "functions_hit": 2,
    "symbols": [],
-   "tests": 1,
+   "tests": 3,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -3341,10 +3416,12 @@
    "functions": 11,
    "functions_hit": 4,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -3352,9 +3429,9 @@
    "path": "fastmcp_slim/fastmcp/server/providers/proxy.py",
    "public": true,
    "statements": 567,
-   "hit": 0,
+   "hit": 193,
    "functions": 89,
-   "functions_hit": 0,
+   "functions_hit": 37,
    "symbols": [
     {
      "name": "FastMCPProxy",
@@ -3366,7 +3443,7 @@
      "name": "ProxyClient",
      "kind": "class",
      "statements": 30,
-     "hit": 0
+     "hit": 11
     },
     {
      "name": "ProxyMetadataMiddleware",
@@ -3378,11 +3455,13 @@
      "name": "ProxyProvider",
      "kind": "class",
      "statements": 148,
-     "hit": 0
+     "hit": 93
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+   ]
   },
   {
    "module": "fastmcp.server.providers.skills",
@@ -3473,9 +3552,9 @@
    "path": "fastmcp_slim/fastmcp/server/providers/wrapped_provider.py",
    "public": false,
    "statements": 21,
-   "hit": 17,
+   "hit": 18,
    "functions": 16,
-   "functions_hit": 12,
+   "functions_hit": 13,
    "symbols": [],
    "tests": 1,
    "test_ids": [
@@ -3487,15 +3566,15 @@
    "path": "fastmcp_slim/fastmcp/server/server.py",
    "public": true,
    "statements": 593,
-   "hit": 334,
+   "hit": 372,
    "functions": 73,
-   "functions_hit": 46,
+   "functions_hit": 50,
    "symbols": [
     {
      "name": "FastMCP",
      "kind": "class",
      "statements": 512,
-     "hit": 279
+     "hit": 317
     },
     {
      "name": "create_proxy",
@@ -3504,10 +3583,12 @@
      "hit": 0
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -3527,7 +3608,7 @@
    "path": "fastmcp_slim/fastmcp/server/sessions.py",
    "public": true,
    "statements": 102,
-   "hit": 15,
+   "hit": 17,
    "functions": 29,
    "functions_hit": 2,
    "symbols": [
@@ -3550,10 +3631,12 @@
      "hit": 0
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -3561,14 +3644,16 @@
    "path": "fastmcp_slim/fastmcp/server/telemetry.py",
    "public": false,
    "statements": 130,
-   "hit": 83,
+   "hit": 84,
    "functions": 10,
    "functions_hit": 9,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -3576,9 +3661,9 @@
    "path": "fastmcp_slim/fastmcp/server/transforms/__init__.py",
    "public": true,
    "statements": 9,
-   "hit": 0,
+   "hit": 3,
    "functions": 9,
-   "functions_hit": 0,
+   "functions_hit": 3,
    "symbols": [
     {
      "name": "GetToolNext",
@@ -3590,11 +3675,13 @@
      "name": "Transform",
      "kind": "class",
      "statements": 9,
-     "hit": 0
+     "hit": 3
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+   ]
   },
   {
    "module": "fastmcp.server.transforms.catalog",
@@ -3613,7 +3700,7 @@
    "path": "fastmcp_slim/fastmcp/server/transforms/namespace.py",
    "public": true,
    "statements": 52,
-   "hit": 47,
+   "hit": 48,
    "functions": 14,
    "functions_hit": 13,
    "symbols": [
@@ -3621,7 +3708,7 @@
      "name": "Namespace",
      "kind": "class",
      "statements": 52,
-     "hit": 47
+     "hit": 48
     }
    ],
    "tests": 1,
@@ -3741,19 +3828,21 @@
    "path": "fastmcp_slim/fastmcp/server/transforms/tool_transform.py",
    "public": true,
    "statements": 38,
-   "hit": 0,
+   "hit": 25,
    "functions": 4,
-   "functions_hit": 0,
+   "functions_hit": 3,
    "symbols": [
     {
      "name": "ToolTransform",
      "kind": "class",
      "statements": 38,
-     "hit": 0
+     "hit": 25
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+   ]
   },
   {
    "module": "fastmcp.server.transforms.version_filter",
@@ -3779,21 +3868,23 @@
    "path": "fastmcp_slim/fastmcp/server/transforms/visibility.py",
    "public": true,
    "statements": 140,
-   "hit": 75,
+   "hit": 77,
    "functions": 22,
-   "functions_hit": 16,
+   "functions_hit": 17,
    "symbols": [
     {
      "name": "Visibility",
      "kind": "class",
      "statements": 81,
-     "hit": 52
+     "hit": 54
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -3805,16 +3896,16 @@
    "functions": 4,
    "functions_hit": 2,
    "symbols": [],
-   "tests": 8,
+   "tests": 11,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
     "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
     "tests/pbt/test_json_schema.py::test_compress_preserves_validation",
     "tests/pbt/test_json_schema.py::test_dereference_preserves_validation",
+    "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest",
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_uri_template.py::test_async_given_runs",
-    "tests/pbt/test_uri_template.py::test_reexpand",
-    "tests/pbt/test_uri_template.py::test_roundtrip"
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4028,10 +4119,12 @@
      "hit": 0
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4051,9 +4144,9 @@
    "path": "fastmcp_slim/fastmcp/tools/base.py",
    "public": true,
    "statements": 164,
-   "hit": 64,
+   "hit": 76,
    "functions": 27,
-   "functions_hit": 14,
+   "functions_hit": 17,
    "symbols": [
     {
      "name": "InputRequiredToolResult",
@@ -4065,18 +4158,20 @@
      "name": "Tool",
      "kind": "class",
      "statements": 66,
-     "hit": 31
+     "hit": 37
     },
     {
      "name": "ToolResult",
      "kind": "class",
      "statements": 29,
-     "hit": 13
+     "hit": 16
     }
    ],
-   "tests": 1,
+   "tests": 3,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4084,13 +4179,14 @@
    "path": "fastmcp_slim/fastmcp/tools/function_parsing.py",
    "public": false,
    "statements": 178,
-   "hit": 86,
+   "hit": 93,
    "functions": 11,
    "functions_hit": 9,
    "symbols": [],
-   "tests": 1,
+   "tests": 2,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4098,9 +4194,9 @@
    "path": "fastmcp_slim/fastmcp/tools/function_tool.py",
    "public": true,
    "statements": 158,
-   "hit": 75,
+   "hit": 83,
    "functions": 17,
-   "functions_hit": 11,
+   "functions_hit": 12,
    "symbols": [
     {
      "name": "tool",
@@ -4109,10 +4205,12 @@
      "hit": 0
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4120,21 +4218,21 @@
    "path": "fastmcp_slim/fastmcp/tools/tool_transform.py",
    "public": true,
    "statements": 363,
-   "hit": 0,
+   "hit": 149,
    "functions": 22,
-   "functions_hit": 0,
+   "functions_hit": 9,
    "symbols": [
     {
      "name": "ArgTransform",
      "kind": "class",
      "statements": 12,
-     "hit": 0
+     "hit": 9
     },
     {
      "name": "ToolTransformConfig",
      "kind": "class",
      "statements": 5,
-     "hit": 0
+     "hit": 4
     },
     {
      "name": "forward",
@@ -4143,8 +4241,10 @@
      "hit": 0
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+   ]
   },
   {
    "module": "fastmcp.types",
@@ -4204,10 +4304,12 @@
    "functions": 4,
    "functions_hit": 4,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4289,14 +4391,16 @@
    "path": "fastmcp_slim/fastmcp/utilities/components.py",
    "public": false,
    "statements": 66,
-   "hit": 34,
+   "hit": 42,
    "functions": 14,
-   "functions_hit": 7,
+   "functions_hit": 9,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4308,9 +4412,10 @@
    "functions": 1,
    "functions_hit": 1,
    "symbols": [],
-   "tests": 1,
+   "tests": 2,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4318,14 +4423,16 @@
    "path": "fastmcp_slim/fastmcp/utilities/exceptions.py",
    "public": false,
    "statements": 19,
-   "hit": 2,
+   "hit": 7,
    "functions": 8,
-   "functions_hit": 1,
+   "functions_hit": 5,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4361,12 +4468,14 @@
    "functions": 21,
    "functions_hit": 18,
    "symbols": [],
-   "tests": 4,
+   "tests": 6,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
     "tests/pbt/test_json_schema.py::test_compress_preserves_validation",
     "tests/pbt/test_json_schema.py::test_dereference_preserves_validation",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4374,14 +4483,16 @@
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
    "statements": 617,
-   "hit": 419,
+   "hit": 424,
    "functions": 57,
-   "functions_hit": 45,
+   "functions_hit": 46,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances"
+    "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4408,9 +4519,9 @@
    "path": "fastmcp_slim/fastmcp/utilities/logging.py",
    "public": true,
    "statements": 71,
-   "hit": 14,
+   "hit": 4,
    "functions": 8,
-   "functions_hit": 5,
+   "functions_hit": 2,
    "symbols": [
     {
      "name": "get_logger",
@@ -4419,9 +4530,11 @@
      "hit": 2
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest",
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
@@ -4565,12 +4678,14 @@
    "path": "fastmcp_slim/fastmcp/utilities/openapi/director.py",
    "public": false,
    "statements": 319,
-   "hit": 0,
+   "hit": 125,
    "functions": 22,
-   "functions_hit": 0,
+   "functions_hit": 13,
    "symbols": [],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request"
+   ]
   },
   {
    "module": "fastmcp.utilities.openapi.formatters",
@@ -4589,12 +4704,14 @@
    "path": "fastmcp_slim/fastmcp/utilities/openapi/json_schema_converter.py",
    "public": false,
    "statements": 140,
-   "hit": 0,
+   "hit": 25,
    "functions": 13,
-   "functions_hit": 0,
+   "functions_hit": 5,
    "symbols": [],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request"
+   ]
   },
   {
    "module": "fastmcp.utilities.openapi.models",
@@ -4620,24 +4737,28 @@
    "path": "fastmcp_slim/fastmcp/utilities/openapi/parser.py",
    "public": false,
    "statements": 350,
-   "hit": 0,
+   "hit": 155,
    "functions": 17,
-   "functions_hit": 0,
+   "functions_hit": 15,
    "symbols": [],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request"
+   ]
   },
   {
    "module": "fastmcp.utilities.openapi.schemas",
    "path": "fastmcp_slim/fastmcp/utilities/openapi/schemas.py",
    "public": false,
    "statements": 425,
-   "hit": 0,
+   "hit": 127,
    "functions": 17,
-   "functions_hit": 0,
+   "functions_hit": 7,
    "symbols": [],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request"
+   ]
   },
   {
    "module": "fastmcp.utilities.pagination",
@@ -4662,9 +4783,11 @@
    "functions": 7,
    "functions_hit": 4,
    "symbols": [],
-   "tests": 1,
+   "tests": 3,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4695,10 +4818,12 @@
      "hit": 4
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4729,16 +4854,16 @@
      "hit": 0
     }
    ],
-   "tests": 8,
+   "tests": 11,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
     "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
     "tests/pbt/test_json_schema.py::test_compress_preserves_validation",
     "tests/pbt/test_json_schema.py::test_dereference_preserves_validation",
+    "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest",
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_uri_template.py::test_async_given_runs",
-    "tests/pbt/test_uri_template.py::test_reexpand",
-    "tests/pbt/test_uri_template.py::test_roundtrip"
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4750,10 +4875,12 @@
    "functions": 2,
    "functions_hit": 1,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4796,10 +4923,11 @@
      "hit": 0
     }
    ],
-   "tests": 2,
+   "tests": 3,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -4831,7 +4959,7 @@
    "path": "fastmcp_slim/fastmcp/utilities/versions.py",
    "public": true,
    "statements": 93,
-   "hit": 40,
+   "hit": 44,
    "functions": 13,
    "functions_hit": 7,
    "symbols": [
@@ -4842,10 +4970,12 @@
      "hit": 4
     }
    ],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   }
  ]
