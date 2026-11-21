@@ -90,7 +90,24 @@ def _settings_holder(item: pytest.Item) -> tuple[object, str]:
     assert isinstance(item, pytest.Function)
     if item.cls is not None and issubclass(item.cls, unittest.TestCase):
         return item.cls, "settings"
-    return item.obj, "_hypothesis_internal_use_settings"
+    # A `@given` method in a plain class is a bound method; the settings live
+    # on the function under it.
+    return getattr(item.obj, "__func__", item.obj), "_hypothesis_internal_use_settings"
+
+
+def _budgeted(item: pytest.Item) -> bool:
+    """A Hypothesis property or state machine whose run size can be set."""
+    if not isinstance(item, pytest.Function):
+        return False
+    if item.cls is not None and issubclass(item.cls, unittest.TestCase):
+        return isinstance(getattr(item.cls, "settings", None), settings)
+    return getattr(item.obj, "is_hypothesis_test", False)
+
+
+def _failed(item: pytest.Item) -> bool:
+    # A unittest TestCase (a state machine) never raises from runtest(): its
+    # failure is recorded on the item and reported after the call.
+    return bool(getattr(item, "_excinfo", None))
 
 
 def _set_examples(item: pytest.Item, examples: int) -> None:
@@ -107,7 +124,7 @@ def pytest_runtest_call(item: pytest.Item) -> None:
     which pytest's own call runs, is sized to end near the deadline instead of
     overrunning it. A failure stops the loop and fails the test as usual.
     """
-    if not BUDGET or HERE not in item.path.parents:
+    if not BUDGET or HERE not in item.path.parents or not _budgeted(item):
         return
     if item.get_closest_marker("pbt_smoke"):
         return  # checks the harness itself; one pass is enough
@@ -123,6 +140,11 @@ def pytest_runtest_call(item: pytest.Item) -> None:
         took = time.monotonic() - started
         passes += 1
         examples += chunk
+        if _failed(item):
+            # The failure is recorded; pytest's own call would run the machine
+            # again and record a second one, reported as a teardown error.
+            item.runtest = lambda: None  # type: ignore[method-assign]
+            return
         left = deadline - time.monotonic()
         if left < 2 * took:
             break

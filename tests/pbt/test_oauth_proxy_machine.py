@@ -45,6 +45,8 @@ from fastmcp.server.auth.auth import RefreshToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oauth_proxy.models import ClientCode
 
+from .known import still_open
+
 CLIENTS = ["alice", "bob"]
 REDIRECT = "http://localhost:12345/callback"
 REVOKE_URL = "https://idp.example.com/revoke"
@@ -377,5 +379,5 @@ class OAuthMachine(RuleBasedStateMachine):
             assert got is not None, "an issued access token does not validate"
 
 
-ACCESS_REVOCATION_PER_GRANT = _revocation_is_per_grant()
+ACCESS_REVOCATION_PER_GRANT = still_open("F10", _revocation_is_per_grant)
 TestOAuthProxy = OAuthMachine.TestCase

@@ -19,7 +19,6 @@ plus the two servers' visibility rules, with the documented semantics
 
 import asyncio
 import logging
-import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -37,6 +36,8 @@ from fastmcp import Client, FastMCP
 from fastmcp.server.providers.proxy import ProxyClient, ProxyProvider
 from fastmcp.tools import Tool
 from fastmcp.utilities.versions import dedupe_with_versions
+
+from .known import still_open
 
 
 def _f7_reproduces() -> bool:
@@ -69,8 +70,8 @@ def _f8_reproduces() -> bool:
 
 # Skip a known finding only while it reproduces, so the property checks the
 # shape again once the fix lands. Undo mutants set PBT_ASSUME_FIXED.
-F7_OPEN = "F7" not in os.environ.get("PBT_ASSUME_FIXED", "") and _f7_reproduces()
-F8_OPEN = "F8" not in os.environ.get("PBT_ASSUME_FIXED", "") and _f8_reproduces()
+F7_OPEN = still_open("F7", _f7_reproduces)
+F8_OPEN = still_open("F8", _f8_reproduces)
 
 KINDS = ["tool", "prompt", "resource"]
 IDENTS = {

@@ -19,9 +19,9 @@ Mutant catch rates: `uv run python -m tests.pbt.mutants`.
 | component machine (tools, prompts, resources, mount, versions, visibility, pagination) | 3k histories | 4/4 at 10/10 | F4 |
 | component machine, round 2: mount with or without a namespace (2026-11-19) | 3k histories | not yet measured | F6 (warned, #6613), F7 (#6612), F8 (#6611) |
 | component machine through a `ProxyProvider` front server (2026-11-21) | 5-minute campaign | shares the machine's mutants | clean |
-| tool transforms: rename, hide, defaults, required, two layers, deferred config (2026-11-21) | 1k cases, 5-minute campaign | 4/4 | F9 |
-| OpenAPI tool sends the described request (2026-11-21) | 1k cases | 4/4 (explode default, pipe delimiter, boolean text, path quoting) | clean (K4) |
-| OAuth proxy machine: codes, refresh, revocation, concurrent redemption (2026-11-21) | 1k histories | 3/4 (the fourth, an "already used" check, is masked by the lock and re-read) | F10 |
+| tool transforms: rename, hide, defaults, required, two layers, deferred config (2026-11-21) | 1k cases, 5-minute campaign | 4/4: 10, 9, 8 and 8 of 10 seeds at 200 cases | F9 |
+| OpenAPI tool sends the described request (2026-11-21) | 1k cases | 4/4 (explode default 9/10, pipe delimiter 9/10, boolean text 10/10, path quoting 10/10) | clean (K4) |
+| OAuth proxy machine: codes, refresh, revocation, concurrent redemption (2026-11-21) | 1k histories | 3/3 at 10/10 seeds (an "already used" check is not planted: the lock and re-read mask it) | F10 |
 
 F1, F3 and F5 are fixed on `main` (#6552, #6553, #6572), so their probes
 report fixed and the harness checks those shapes again. F2 is fixed by keeping

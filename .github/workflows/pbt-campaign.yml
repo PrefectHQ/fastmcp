@@ -18,7 +18,8 @@ on:
       - ".github/workflows/pbt-campaign.yml"
 permissions: {}
 concurrency:
-  group: pbt-campaign-${{ github.event.pull_request.number || github.ref }}
+  # A manual run never cancels the nightly hunt: they get separate groups.
+  group: pbt-campaign-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   campaign:
@@ -28,7 +29,8 @@ jobs:
       contents: read
     env:
       HYPOTHESIS_PROFILE: campaign
-      # One Hypothesis run per pass; passes repeat until the budget is spent.
+      # Sizes only the `pbt_smoke` tests; budgeted properties size their own
+      # passes from the time left.
       HYPOTHESIS_MAX_EXAMPLES: "200"
       PBT_BUDGET_SECONDS: ${{ inputs.budget || (github.event_name == 'pull_request' && '20') || '120' }}
     steps:
@@ -41,7 +43,7 @@ jobs:
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .hypothesis/examples
-          key: pbt-db-${{ github.run_id }}
+          key: pbt-db-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: pbt-db-
       - name: Hunt
         run: >
@@ -52,7 +54,7 @@ jobs:
         if: always() && github.event_name != 'pull_request'
         with:
           path: .hypothesis/examples
-          key: pbt-db-${{ github.run_id }}
+          key: pbt-db-${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with:

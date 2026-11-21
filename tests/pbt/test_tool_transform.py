@@ -187,6 +187,12 @@ def _quiet():
     logger.setLevel(level)
 
 
+@pytest.fixture(autouse=True, scope="module")
+def _close_loop():
+    yield
+    LOOP.close()
+
+
 @given(data=st.data())
 def test_transformed_tool_matches_model(data):
     params = data.draw(parents(), label="parent")
@@ -246,14 +252,18 @@ def test_transformed_tool_matches_model(data):
     # A call: each visible argument sent or (when optional) omitted, plus,
     # sometimes, an argument the tool does not list.
     sent: dict[str, Any] = {}
+    parent_defaults = {p.name for p in params if p.has_default}
     for name, arg in sorted(layer.visible.items()):
-        if not arg.has_default and data.draw(st.integers(0, 19), label="omit") == 0:
+        # Omitting an argument only a transform made required is the case the
+        # parent's own validation cannot catch, so draw it far more often.
+        odds = 3 if arg.origin in parent_defaults else 19
+        if not arg.has_default and data.draw(st.integers(0, odds), label="omit") == 0:
             continue
         if arg.has_default and data.draw(st.booleans(), label=f"omit {name}"):
             continue
         sent[name] = data.draw(TYPES[kinds[arg.origin]][1], label=f"send {name}")
     stray = None
-    if data.draw(st.integers(0, 9), label="stray?") == 0:
+    if data.draw(st.integers(0, 3), label="stray?") == 0:
         stray = data.draw(st.sampled_from([*PARAMS, *NEW_NAMES]), label="stray")
     if stray is not None and stray not in layer.visible:
         sent[stray] = 1

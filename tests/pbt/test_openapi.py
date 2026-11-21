@@ -184,6 +184,12 @@ def _quiet():
     logger.setLevel(level)
 
 
+@pytest.fixture(autouse=True, scope="module")
+def _close_loop():
+    yield
+    LOOP.close()
+
+
 @given(data=st.data())
 def test_openapi_tool_sends_described_request(data):
     count = data.draw(st.integers(1, 2), label="operations")
@@ -235,14 +241,14 @@ def test_openapi_tool_sends_described_request(data):
         return httpx2.Response(200, json=answer)
 
     async def run():
-        client = httpx2.AsyncClient(
+        async with httpx2.AsyncClient(
             transport=httpx2.MockTransport(handler), base_url="http://api"
-        )
-        server = FastMCP.from_openapi(openapi_spec=spec, client=client)
-        async with Client(server) as mcp:
-            listed = {t.name: t for t in await mcp.list_tools()}
-            result = await mcp.call_tool(target, args, raise_on_error=False)
-            return listed, result
+        ) as client:
+            server = FastMCP.from_openapi(openapi_spec=spec, client=client)
+            async with Client(server) as mcp:
+                listed = {t.name: t for t in await mcp.list_tools()}
+                result = await mcp.call_tool(target, args, raise_on_error=False)
+                return listed, result
 
     listed, result = LOOP.run_until_complete(run())
 
