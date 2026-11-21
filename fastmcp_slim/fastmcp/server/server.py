@@ -232,14 +232,30 @@ async def _shown_twin(
     server mounted without a namespace holds the same identity (`key`) as the
     parent and only the parent's is hidden, the lookup returns the hidden one
     while the listing shows the mounted one. Answer with what the listing
-    shows. Only an identity the lookup itself returned qualifies, so a
-    transform that refuses a lookup still refuses it.
+    shows. Only an identity the lookup itself returned qualifies, and only a
+    mounted server's component: it runs through that server's own lookup when
+    called, so a server or transform that refuses the lookup still refuses
+    it. A plain provider's component would run directly, past any refusal in
+    its own lookup, so it never stands in.
 
     This lives here rather than in the aggregate's tie-break because the
     aggregate picks inside the lookup chain: the server's own visibility
     transforms and the session's rules are applied around it, after the pick.
     """
-    twins = [c for c in candidates if c.key == hidden.key]
+    from fastmcp.server.providers.fastmcp_provider import (
+        FastMCPProviderPrompt,
+        FastMCPProviderResource,
+        FastMCPProviderResourceTemplate,
+        FastMCPProviderTool,
+    )
+
+    delegates = (
+        FastMCPProviderTool,
+        FastMCPProviderResource,
+        FastMCPProviderPrompt,
+        FastMCPProviderResourceTemplate,
+    )
+    twins = [c for c in candidates if c.key == hidden.key and isinstance(c, delegates)]
     for twin in await apply_session_transforms(twins):
         if is_enabled(twin) and await _component_auth_allows(twin):
             return twin

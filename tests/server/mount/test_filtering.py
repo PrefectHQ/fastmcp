@@ -169,3 +169,24 @@ class TestHiddenParentComponentDoesNotShadowMounted:
 
         tool = await parent.get_tool("t", VersionSpec(gte="1"))
         assert tool is not None and tool.tags == {"x"}
+
+    async def test_plain_provider_twin_that_refuses_lookup_stays_refused(self):
+        """Only a mounted server's twin stands in; it re-resolves when called."""
+        from fastmcp.server.providers import Provider
+        from fastmcp.tools import Tool
+
+        listed = Tool.from_function(lambda: "provider", name="t", tags={"x"})
+
+        class ListsButRefuses(Provider):
+            async def _list_tools(self):
+                return [listed]
+
+            async def _get_tool(self, name, version=None):
+                return None
+
+        parent = FastMCP("Parent")
+        parent.tool(name="t")(lambda: "parent")
+        parent.add_provider(ListsButRefuses())
+        parent.enable(tags={"x"}, only=True)
+
+        assert await parent.get_tool("t") is None
