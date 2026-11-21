@@ -240,6 +240,7 @@ class CallToolSettings(SharedMethodSettings):
 
     included_tools: NotRequired[list[str]]
     excluded_tools: NotRequired[list[str]]
+    ttl_by_tool: NotRequired[dict[str, int]]
 
 
 class ReadResourceSettings(SharedMethodSettings):
@@ -529,7 +530,7 @@ class ResponseCachingMiddleware(Middleware):
         await self._call_tool_cache.put(
             key=cache_key,
             value=cacheable_tool_result,
-            ttl=self._call_tool_settings.get("ttl", ONE_HOUR_IN_SECONDS),
+            ttl=self._get_tool_ttl(tool_name),
         )
 
         return cacheable_tool_result.unwrap()
@@ -635,6 +636,13 @@ class ResponseCachingMiddleware(Middleware):
                 return False
 
         return True
+
+    def _get_tool_ttl(self, tool_name: str) -> int:
+        """Return the configured TTL in seconds for a tool, falling back to default."""
+        ttl_by_tool = self._call_tool_settings.get("ttl_by_tool")
+        if ttl_by_tool is not None and tool_name in ttl_by_tool:
+            return ttl_by_tool[tool_name]
+        return self._call_tool_settings.get("ttl", ONE_HOUR_IN_SECONDS)
 
     def statistics(self) -> ResponseCachingStatistics:
         """Get the statistics for the cache."""

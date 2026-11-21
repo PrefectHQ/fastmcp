@@ -1220,3 +1220,253 @@ class TestEmptyListCaching:
             auth_context_var.reset(tok)
 
         assert counter.list_calls == 1
+
+
+class TestPerToolTTLOverrides:
+    """Per-tool TTL overrides in CallToolSettings (#2441)."""
+
+    async def test_ttl_by_tool_overrides_and_falls_back(self):
+        from unittest.mock import patch
+
+        store = MemoryStore()
+        calls = {"weather": 0, "reference": 0, "defaulted": 0}
+
+        mcp_server = FastMCP(
+            "test",
+            middleware=[
+                ResponseCachingMiddleware(
+                    cache_storage=store,
+                    call_tool_settings=CallToolSettings(
+                        ttl=300,
+                        ttl_by_tool={"weather": 30, "reference": 3600},
+                    ),
+                )
+            ],
+        )
+
+        @mcp_server.tool
+        def weather() -> str:
+            calls["weather"] += 1
+            return "sunny"
+
+        @mcp_server.tool
+        def reference() -> str:
+            calls["reference"] += 1
+            return "static"
+
+        @mcp_server.tool
+        def defaulted() -> str:
+            calls["defaulted"] += 1
+            return "fallback"
+
+        with patch.object(store, "put", wraps=store.put) as put_spy:
+            async with Client[FastMCPTransport](transport=mcp_server) as client:
+                await client.call_tool("weather", {})
+                await client.call_tool("reference", {})
+                await client.call_tool("defaulted", {})
+                # Second round hits the cache
+                await client.call_tool("weather", {})
+                await client.call_tool("reference", {})
+                await client.call_tool("defaulted", {})
+
+        assert calls == {"weather": 1, "reference": 1, "defaulted": 1}
+        tool_ttls = [
+            call.kwargs["ttl"]
+            for call in put_spy.call_args_list
+            if call.kwargs.get("collection") == "tools/call"
+        ]
+        assert tool_ttls == [30, 3600, 300]
+
+    async def test_ttl_by_tool_defaults_to_one_hour_when_ttl_omitted(self):
+        from unittest.mock import patch
+
+        from fastmcp.server.middleware.caching import ONE_HOUR_IN_SECONDS
+
+        store = MemoryStore()
+        mcp_server = FastMCP(
+            "test",
+            middleware=[
+                ResponseCachingMiddleware(
+                    cache_storage=store,
+                    call_tool_settings=CallToolSettings(ttl_by_tool={"custom": 15}),
+                )
+            ],
+        )
+
+        @mcp_server.tool
+        def custom() -> str:
+            return "c"
+
+        @mcp_server.tool
+        def other() -> str:
+            return "o"
+
+        with patch.object(store, "put", wraps=store.put) as put_spy:
+            async with Client[FastMCPTransport](transport=mcp_server) as client:
+                await client.call_tool("custom", {})
+                await client.call_tool("other", {})
+
+        tool_ttls = [
+            call.kwargs["ttl"]
+            for call in put_spy.call_args_list
+            if call.kwargs.get("collection") == "tools/call"
+        ]
+        assert tool_ttls == [15, ONE_HOUR_IN_SECONDS]
+
+    async def test_ttl_by_tool_respects_filters_and_disabled(self):
+        from unittest.mock import patch
+
+        store = MemoryStore()
+        calls = {"blocked": 0, "unlisted": 0, "allowed": 0}
+
+        filtered_server = FastMCP(
+            "filtered",
+            middleware=[
+                ResponseCachingMiddleware(
+                    cache_storage=store,
+                    call_tool_settings=CallToolSettings(
+                        included_tools=["allowed", "blocked"],
+                        excluded_tools=["blocked"],
+                        ttl_by_tool={"blocked": 60, "unlisted": 60, "allowed": 45},
+                    ),
+                )
+            ],
+        )
+
+        @filtered_server.tool
+        def blocked() -> int:
+            calls["blocked"] += 1
+            return calls["blocked"]
+
+        @filtered_server.tool
+        def unlisted() -> int:
+            calls["unlisted"] += 1
+            return calls["unlisted"]
+
+        @filtered_server.tool
+        def allowed() -> int:
+            calls["allowed"] += 1
+            return calls["allowed"]
+
+        with patch.object(store, "put", wraps=store.put) as put_spy:
+            async with Client[FastMCPTransport](transport=filtered_server) as client:
+                await client.call_tool("blocked", {})
+                await client.call_tool("blocked", {})
+                await client.call_tool("unlisted", {})
+                await client.call_tool("unlisted", {})
+                await client.call_tool("allowed", {})
+                await client.call_tool("allowed", {})
+
+        assert calls == {"blocked": 2, "unlisted": 2, "allowed": 1}
+        tool_ttls = [
+            call.kwargs["ttl"]
+            for call in put_spy.call_args_list
+            if call.kwargs.get("collection") == "tools/call"
+        ]
+        assert tool_ttls == [45]
+
+        disabled_calls = 0
+        disabled_store = MemoryStore()
+        disabled_server = FastMCP(
+            "disabled",
+            middleware=[
+                ResponseCachingMiddleware(
+                    cache_storage=disabled_store,
+                    call_tool_settings=CallToolSettings(
+                        enabled=False, ttl_by_tool={"ping": 60}
+                    ),
+                )
+            ],
+        )
+
+        @disabled_server.tool
+        def ping() -> int:
+            nonlocal disabled_calls
+            disabled_calls += 1
+            return disabled_calls
+
+        async with Client[FastMCPTransport](transport=disabled_server) as client:
+            await client.call_tool("ping", {})
+            await client.call_tool("ping", {})
+
+        assert disabled_calls == 2
+
+    async def test_ttl_by_tool_matches_mounted_namespace_prefix(self):
+        from unittest.mock import patch
+
+        child = FastMCP("child")
+        calls = 0
+
+        @child.tool
+        def forecast() -> str:
+            nonlocal calls
+            calls += 1
+            return "clear"
+
+        store = MemoryStore()
+        parent = FastMCP(
+            "parent",
+            middleware=[
+                ResponseCachingMiddleware(
+                    cache_storage=store,
+                    call_tool_settings=CallToolSettings(
+                        ttl=300,
+                        ttl_by_tool={"weather_forecast": 25},
+                    ),
+                )
+            ],
+        )
+        parent.mount(child, namespace="weather")
+
+        with patch.object(store, "put", wraps=store.put) as put_spy:
+            async with Client[FastMCPTransport](transport=parent) as client:
+                await client.call_tool("weather_forecast", {})
+                await client.call_tool("weather_forecast", {})
+
+        assert calls == 1
+        tool_ttls = [
+            call.kwargs["ttl"]
+            for call in put_spy.call_args_list
+            if call.kwargs.get("collection") == "tools/call"
+        ]
+        assert tool_ttls == [25]
+
+    async def test_ttl_by_tool_expires_independently(self):
+        import asyncio
+
+        mcp_server = FastMCP(
+            "expiry",
+            middleware=[
+                ResponseCachingMiddleware(
+                    cache_storage=MemoryStore(),
+                    call_tool_settings=CallToolSettings(
+                        ttl=60,
+                        ttl_by_tool={"short": 1, "long": 60},
+                    ),
+                )
+            ],
+        )
+        calls = {"short": 0, "long": 0}
+
+        @mcp_server.tool
+        def short() -> int:
+            calls["short"] += 1
+            return calls["short"]
+
+        @mcp_server.tool
+        def long() -> int:
+            calls["long"] += 1
+            return calls["long"]
+
+        async with Client[FastMCPTransport](transport=mcp_server) as client:
+            assert (await client.call_tool("short", {})).data == 1
+            assert (await client.call_tool("long", {})).data == 1
+            assert (await client.call_tool("short", {})).data == 1
+            assert (await client.call_tool("long", {})).data == 1
+
+            await asyncio.sleep(1.1)
+
+            assert (await client.call_tool("short", {})).data == 2
+            assert (await client.call_tool("long", {})).data == 1
+
+        assert calls == {"short": 2, "long": 1}

@@ -461,6 +461,7 @@ Each settings class accepts:
 - `enabled` — Enable/disable caching for this operation
 - `ttl` — Time-to-live in seconds
 - `included_tools` / `excluded_tools` (`CallToolSettings` only) — Allowlist or blocklist specific tools by name
+- `ttl_by_tool` (`CallToolSettings` only) — Per-tool TTL overrides in seconds, keyed by tool name
 
 For persistence or distributed deployments, configure a different storage backend:
 
