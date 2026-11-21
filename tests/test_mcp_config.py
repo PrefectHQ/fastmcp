@@ -1620,3 +1620,37 @@ async def test_single_server_transform_added_tags_filtering_in_memory():
         tool_names = {tool.name for tool in await client.list_tools()}
 
     assert tool_names == {"add"}
+
+
+async def test_single_server_config_delegates_get_session_id():
+    """Single-server MCPConfigTransport delegates get_session_id(); multi-server returns None."""
+    from fastmcp.utilities.tests import run_server_async
+
+    server = FastMCP("session-test")
+
+    @server.tool
+    def ping() -> str:
+        return "pong"
+
+    async with run_server_async(server, transport="http") as url:
+        single_client = Client({"mcpServers": {"only": {"url": url}}}, mode="legacy")
+        assert isinstance(single_client.transport, MCPConfigTransport)
+        assert single_client.transport.get_session_id() is None
+
+        async with single_client:
+            inner_session_id = single_client.transport.transport.get_session_id()
+            assert inner_session_id is not None
+            assert single_client.transport.get_session_id() == inner_session_id
+
+        multi_client = Client(
+            {
+                "mcpServers": {
+                    "one": {"url": url},
+                    "two": {"url": url},
+                }
+            },
+            mode="legacy",
+        )
+        assert isinstance(multi_client.transport, MCPConfigTransport)
+        async with multi_client:
+            assert multi_client.transport.get_session_id() is None

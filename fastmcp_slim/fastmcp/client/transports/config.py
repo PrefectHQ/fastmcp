@@ -126,6 +126,16 @@ class MCPConfigTransport(ClientTransport):
             return self.transport.legacy_only
         return self._resolved_legacy_only
 
+    def get_session_id(self) -> str | None:
+        """Return the underlying session ID for a single-server config.
+
+        Composite multi-server configs mount proxies with no single shared
+        session, so they continue returning ``None``.
+        """
+        if len(self.config.mcpServers) == 1:
+            return self.transport.get_session_id()
+        return None
+
     @contextlib.asynccontextmanager
     async def connect_session(
         self,
