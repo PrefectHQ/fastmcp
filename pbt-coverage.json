@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-21T04:09:39+00:00",
- "source_commit": "6ba08aa42ada6cdece30689e3c3193b581ca9888",
+ "generated_at": "2026-11-21T04:49:14+00:00",
+ "source_commit": "2e5029138d2439cb5ab1dbf0822670f7a2f24424",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -1972,16 +1972,16 @@
    "module": "fastmcp.server.auth.oauth_proxy.proxy",
    "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py",
    "public": true,
-   "statements": 714,
-   "hit": 260,
+   "statements": 719,
+   "hit": 267,
    "functions": 34,
    "functions_hit": 17,
    "symbols": [
     {
      "name": "OAuthProxy",
      "kind": "class",
-     "statements": 692,
-     "hit": 260
+     "statements": 697,
+     "hit": 267
     }
    ],
    "tests": 1,
@@ -1993,13 +1993,15 @@
    "module": "fastmcp.server.auth.oauth_proxy.revocation",
    "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/revocation.py",
    "public": false,
-   "statements": 21,
-   "hit": 0,
+   "statements": 29,
+   "hit": 15,
    "functions": 11,
-   "functions_hit": 0,
+   "functions_hit": 3,
    "symbols": [],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest"
+   ]
   },
   {
    "module": "fastmcp.server.auth.oauth_proxy.ui",
@@ -3062,7 +3064,7 @@
    "path": "fastmcp_slim/fastmcp/server/mixins/mcp_operations.py",
    "public": false,
    "statements": 146,
-   "hit": 93,
+   "hit": 94,
    "functions": 15,
    "functions_hit": 11,
    "symbols": [],
@@ -3107,10 +3109,11 @@
    "functions": 7,
    "functions_hit": 2,
    "symbols": [],
-   "tests": 2,
+   "tests": 3,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip",
+    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
   {
@@ -3264,7 +3267,7 @@
    "path": "fastmcp_slim/fastmcp/server/providers/local_provider/decorators/tools.py",
    "public": false,
    "statements": 75,
-   "hit": 47,
+   "hit": 48,
    "functions": 7,
    "functions_hit": 6,
    "symbols": [],
@@ -3827,16 +3830,16 @@
    "module": "fastmcp.server.transforms.tool_transform",
    "path": "fastmcp_slim/fastmcp/server/transforms/tool_transform.py",
    "public": true,
-   "statements": 38,
-   "hit": 25,
-   "functions": 4,
-   "functions_hit": 3,
+   "statements": 53,
+   "hit": 41,
+   "functions": 5,
+   "functions_hit": 4,
    "symbols": [
     {
      "name": "ToolTransform",
      "kind": "class",
-     "statements": 38,
-     "hit": 25
+     "statements": 53,
+     "hit": 41
     }
    ],
    "tests": 1,
@@ -4144,7 +4147,7 @@
    "path": "fastmcp_slim/fastmcp/tools/base.py",
    "public": true,
    "statements": 164,
-   "hit": 76,
+   "hit": 79,
    "functions": 27,
    "functions_hit": 17,
    "symbols": [
@@ -4158,13 +4161,13 @@
      "name": "Tool",
      "kind": "class",
      "statements": 66,
-     "hit": 37
+     "hit": 39
     },
     {
      "name": "ToolResult",
      "kind": "class",
      "statements": 29,
-     "hit": 16
+     "hit": 17
     }
    ],
    "tests": 3,
@@ -4218,7 +4221,7 @@
    "path": "fastmcp_slim/fastmcp/tools/tool_transform.py",
    "public": true,
    "statements": 363,
-   "hit": 149,
+   "hit": 151,
    "functions": 22,
    "functions_hit": 9,
    "symbols": [
@@ -4226,7 +4229,7 @@
      "name": "ArgTransform",
      "kind": "class",
      "statements": 12,
-     "hit": 9
+     "hit": 8
     },
     {
      "name": "ToolTransformConfig",
@@ -4483,9 +4486,9 @@
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
    "statements": 617,
-   "hit": 424,
+   "hit": 425,
    "functions": 57,
-   "functions_hit": 46,
+   "functions_hit": 45,
    "symbols": [],
    "tests": 4,
    "test_ids": [
