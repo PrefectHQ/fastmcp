@@ -14,7 +14,10 @@ bugs (mutants) show it can fail.
 | `test_uri_template.py` | `match_uri_template` inverts `expand_uri_template` (roundtrip, reexpand) |
 | `test_resource_read.py` | the same round trip through a FastMCP server and an in-memory `Client` |
 | `test_json_schema.py` | `dereference_refs` / `compress_schema` keep what validates; `json_schema_to_type_adapter` accepts what `jsonschema` accepts |
-| `test_components_machine.py` | state machine over tools, prompts and resources on a parent and a mounted child: add, remove, versions, visibility, listing, pagination, calls |
+| `test_components_machine.py` | state machine over tools, prompts and resources on a parent and a mounted child: add, remove, versions, visibility, listing, pagination, calls; the client talks to the parent directly or through a `ProxyProvider` front server |
+| `test_tool_transform.py` | a transformed tool (stacked `Tool.from_tool` layers or a deferred `ToolTransformConfig`) lists and forwards arguments as the transformation docs describe |
+| `test_openapi.py` | an OpenAPI tool sends the method, path, query, headers and body its spec describes, and returns the response |
+| `test_oauth_proxy_machine.py` | state machine over the OAuth proxy against a fake upstream: codes are single use, refresh tokens are client-bound, revoked tokens stay dead |
 | `mutants.py` | planted bugs and their catch rate across seeds (not collected by pytest) |
 | `FINDINGS.md` | every finding, written before it is fixed: property, minimal case, reachability, cross-SDK case table |
 

@@ -18,6 +18,10 @@ Mutant catch rates: `uv run python -m tests.pbt.mutants`.
 | json_schema adapter accepts valid | 10k | `schema_fixes`, 4 undo mutants at 10/10 (below) | F1, F2, F3, F5 |
 | component machine (tools, prompts, resources, mount, versions, visibility, pagination) | 3k histories | 4/4 at 10/10 | F4 |
 | component machine, round 2: mount with or without a namespace (2026-11-19) | 3k histories | not yet measured | F6 (warned, #6613), F7 (#6612), F8 (#6611) |
+| component machine through a `ProxyProvider` front server (2026-11-21) | 5-minute campaign | shares the machine's mutants | clean |
+| tool transforms: rename, hide, defaults, required, two layers, deferred config (2026-11-21) | 1k cases, 5-minute campaign | 4/4 | F9 |
+| OpenAPI tool sends the described request (2026-11-21) | 1k cases | 4/4 (explode default, pipe delimiter, boolean text, path quoting) | clean (K4) |
+| OAuth proxy machine: codes, refresh, revocation, concurrent redemption (2026-11-21) | 1k histories | 3/4 (the fourth, an "already used" check, is masked by the lock and re-read) | F10 |
 
 F1, F3 and F5 are fixed on `main` (#6552, #6553, #6572), so their probes
 report fixed and the harness checks those shapes again. F2 is fixed by keeping
@@ -99,6 +103,15 @@ the schemas that would catch it (`PBT_ASSUME_FIXED`, set per mutant).
   author put structure where the URI grammar does not allow it. Arguably
   fastmcp could warn at registration, but the read failing is correct.
   Recorded, not a bug.
+
+### K4. a non-ASCII OpenAPI header value fails the call
+
+- property: openapi tool sends the described request
+- minimal: header parameter `X-Trace` (string), value `"ü"` → the call
+  returns an error before any request is sent.
+- reachable: yes, but the refusal is httpx's: header values must be ASCII
+  (RFC 9110 recommends it), and httpx raises before sending.
+- against: not a fastmcp choice. The harness draws ASCII header values.
 
 ## findings
 
@@ -339,6 +352,57 @@ the schemas that would catch it (`PBT_ASSUME_FIXED`, set per mutant).
 - against: none found. Listing and calling disagree, and neither doc says a
   hidden component should block one that is shown.
 
+### F9. an invalid deferred tool transform breaks every listing and unrelated calls
+
+- status: open.
+- property: tool transform matches its model — construction is refused exactly
+  when the docs say so.
+- minimal:
+  ```python
+  @server.tool
+  def parent(a: int) -> int: ...
+  @server.tool
+  def other() -> str: ...
+  server.add_transform(ToolTransform({"parent": ToolTransformConfig(
+      name="t0", arguments={"a": ArgTransformConfig(hide=True)})}))
+  ```
+  `add_transform` accepts it. Afterwards `list_tools()` and
+  `call_tool("other", {})` both return `Internal server error`; the server log
+  has `ValueError: Hidden parameter 'a' has no default value`.
+- frequency: every drawn deferred layer that hides a required argument or maps
+  two arguments to one name: 3.7% of 1k cases, 13% of the deferred ones.
+- reachable: yes, from config files and `ToolTransformConfig` alike. One bad
+  entry takes down the whole tool surface, not just the transformed tool.
+- cause: `Tool.from_tool` validates eagerly, so the same options raise at
+  construction there; the deferred path builds the tool lazily on every
+  `list_tools`/`get_tool`, so the `ValueError` escapes on each request.
+- against: none found. `Tool.from_tool` refuses the same options up front, so
+  the two paths disagree.
+
+### F10. OAuth proxy access-token revocation is per grant, and refresh undoes it
+
+- status: open.
+- property: OAuth proxy machine — a revoked access token stays dead; revoking
+  one token leaves other live tokens alone.
+- minimal: redeem a code (access token A1, refresh R1), `revoke_token(A1)`,
+  refresh with R1 (A2), then `load_access_token(A1)` validates again. Also:
+  refresh first (A2), then `revoke_token(A1)` makes A2 invalid.
+- frequency: 17% of 1k histories reach a token in a grant with a revoked access token.
+- reachable: yes, with any upstream that has a revocation endpoint. A client
+  that logs out (revokes its access token) and still holds the refresh token,
+  or a second session on the same grant, sees the wrong token live or dead.
+- cause: every fastmcp access token of a grant maps through `JTIMapping` to
+  one `upstream_token_id`, and `load_access_token` validates the grant's
+  current upstream token. Revoking an access token revokes that current
+  upstream token upstream and deletes nothing locally; a refresh writes a new
+  upstream token into the same record, so every old JTI validates again.
+- against: revocation of access tokens is optional under RFC 7009, and the
+  revoked token is short-lived. But `revoke_token` reports success, and the
+  token comes back.
+- related, read from the code, not asserted: `revoke_token` logs upstream
+  revocation failures as a warning and still succeeds; RFC 7009 lets the
+  server answer 503 instead.
+
 ## model corrections (harness was wrong, not fastmcp)
 
 - a mounted child's own `disable()` cannot be overridden by the parent's
@@ -427,3 +491,18 @@ version-not-found becomes an error it will surface as fastmcp's `isError`
 No reference composes servers, so none can say which of two components should
 answer. Every reference with enable/disable uses one predicate for listing and
 calling, which is the property F8 breaks.
+
+### F9: an invalid transform
+
+No reference SDK has tool transforms; the only comparison is fastmcp's own
+eager path, `Tool.from_tool`, which raises `ValueError` at construction for
+the same options.
+
+### F10: revoking a proxied access token
+
+| implementation | proxies an upstream AS? | revoked access token after a refresh |
+|---|---|---|
+| RFC 7009 | n/a | access revocation optional; a revoked token must not validate |
+| typescript-sdk@5ee54ee | yes, `ProxyOAuthServerProvider` passes upstream tokens through (`packages/server/src/server/auth/providers/proxyProvider.ts`) | dead: the client holds the upstream token, which the upstream revoked |
+| python-sdk@77001c9, go-sdk@a6e937f, rust-sdk@165f8fd | no proxy provider | n/a |
+| fastmcp | yes, issues its own JWTs mapped to one upstream record per grant | F10: live again |

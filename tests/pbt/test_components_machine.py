@@ -34,6 +34,7 @@ from hypothesis.stateful import (
 )
 
 from fastmcp import Client, FastMCP
+from fastmcp.server.providers.proxy import ProxyClient, ProxyProvider
 from fastmcp.tools import Tool
 from fastmcp.utilities.versions import dedupe_with_versions
 
@@ -146,18 +147,31 @@ class ComponentMachine(RuleBasedStateMachine):
     @initialize(
         page_size=st.sampled_from([None, 1, 2, 3]),
         namespace=st.sampled_from(["c", None]),
+        via=st.sampled_from(["direct", "proxy"]),
         data=st.data(),
     )
-    def start(self, page_size: int | None, namespace: str | None, data) -> None:
+    def start(
+        self, page_size: int | None, namespace: str | None, via: str, data
+    ) -> None:
         event(f"page_size={page_size}")
         event(f"namespace={namespace}")
+        event(f"via={via}")
         self.page_size = page_size
         self.namespace = namespace
         self.parent = FastMCP("parent", list_page_size=page_size)
         self.child = FastMCP("child")
         self.parent.mount(self.child, namespace=namespace)
         self.servers = {"parent": self.parent, "child": self.child}
-        client = Client(self.parent)
+        front = self.parent
+        if via == "proxy":
+            # A proxy in front of the parent must look exactly like the parent.
+            # Caching is off: the backend changes between steps, and a cached
+            # proxy serves stale listings by design until it lists again.
+            front = FastMCP("proxy", list_page_size=page_size)
+            front.add_provider(
+                ProxyProvider(lambda: ProxyClient(self.parent), cache_ttl=0)
+            )
+        client = Client(front)
         self.run(client.__aenter__())
         self.client = client
         # A drawn starting state: several identifiers, each versioned or not,
