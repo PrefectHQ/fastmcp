@@ -29,7 +29,9 @@ person.
 The Prefect Variable `fastmcp_triage_config` holds `github_writes` ("off", "dry_run" or "on",
 or per feature: `{"labels": "on", "sweep": "dry_run"}`; default "dry_run") and the sweep
 thresholds under `sweep`. Both are read on every run, so changing them needs no deploy.
-Writes go out as the triage GitHub App, which needs Issues: write.
+Writes go out as the triage GitHub App, which needs Issues: write. Under `burst`, `max_items` (default 5) and
+`window_hours` (default 24) pause triage for anyone who opens more issues and PRs than that in
+the window; Slack gets one line when they cross it.
 
 Intake skips events sent by anyone with write access to the repository, so
 maintainers' own edits and their agents' activity don't start triage. If the
