@@ -226,6 +226,8 @@ def build_regex(template: str) -> re.Pattern[str] | None:
         else:
             pattern += _literal_pattern(part)
             in_query = in_query or "?" in part
+    if _has_literal_query(template) and extract_query_params(template):
+        pattern += "(?:&.*)?"
     try:
         return re.compile(f"^{pattern}$")
     except re.error:
@@ -259,9 +261,13 @@ def match_uri_template(
     if "#" not in uri_template:
         uri = uri.partition("#")[0]
     # Likewise a template that spells out a literal `?` (`search://items?q={q}`)
-    # carries its query in the path pattern, so there is nothing to split off.
+    # carries its query in the path pattern; when it also declares `{&...}`
+    # continuation parameters, parse the query string for those parameters too.
     if _has_literal_query(uri_template):
-        uri_path, query_string = uri, ""
+        uri_path = uri
+        query_string = (
+            uri.partition("?")[2] if extract_query_params(uri_template) else ""
+        )
     else:
         uri_path, _, query_string = uri.partition("?")
 
@@ -414,7 +420,18 @@ def forward_uri(uri_template: str, params: dict[str, Any], uri: str) -> str:
     path_template = re.sub(r"\{[?&][^}]+\}", "", uri_template)
     forwarded = expand_uri_template(path_template, params)
     if _has_literal_query(uri_template):
-        # The query is literal template text, so the expansion already has it.
+        # The query is literal template text, so the expansion already has it;
+        # append any trailing continuation query segments if `{&...}` is present.
+        if extract_query_params(uri_template):
+            literal_query = path_template.partition("?")[2]
+            literal_segment_count = (
+                len(literal_query.split("&")) if literal_query else 0
+            )
+            raw_query = uri.partition("?")[2]
+            if raw_query:
+                tail_segments = raw_query.split("&")[literal_segment_count:]
+                if tail_segments:
+                    return f"{forwarded}&{'&'.join(tail_segments)}"
         return forwarded
     _, _, query = uri.partition("?")
     return f"{forwarded}?{query}" if query else forwarded

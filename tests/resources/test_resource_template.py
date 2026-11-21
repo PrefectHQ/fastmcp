@@ -1944,6 +1944,88 @@ class TestLiteralQueryInTemplate:
             assert isinstance(contents, TextResourceContents)
             assert contents.text == "q=abc"
 
+    @pytest.mark.parametrize(
+        ("uri_template", "params", "expected"),
+        [
+            (
+                "search://items?fixed=1{&limit}",
+                {"limit": "10"},
+                {"limit": "10"},
+            ),
+            (
+                "search://items?fixed=1{&limit}",
+                {},
+                {},
+            ),
+            (
+                "search://items?q={q}{&limit}",
+                {"q": "hello", "limit": "10"},
+                {"q": "hello", "limit": "10"},
+            ),
+            (
+                "search://items?q={q}{&limit}",
+                {"q": "a&b", "limit": "5"},
+                {"q": "a&b", "limit": "5"},
+            ),
+        ],
+    )
+    def test_literal_query_with_continuation_round_trips(
+        self, uri_template: str, params: dict[str, str], expected: dict[str, str]
+    ):
+        expanded = expand_uri_template(uri_template, params)
+        assert match_uri_template(expanded, uri_template) == expected
+
+    def test_literal_query_with_continuation_validates_literal_boundary(self):
+        assert (
+            match_uri_template(
+                "search://items?fixed=12&limit=10",
+                "search://items?fixed=1{&limit}",
+            )
+            is None
+        )
+        assert (
+            match_uri_template(
+                "search://items?fixed=2&limit=10",
+                "search://items?fixed=1{&limit}",
+            )
+            is None
+        )
+
+    @pytest.mark.parametrize("via", ["direct", "mount", "proxy"])
+    async def test_template_with_literal_query_and_continuation_is_readable(
+        self, via: str
+    ):
+        child = FastMCP("child")
+
+        @child.resource("search://items?fixed=1{&limit}")
+        def search_fixed(limit: int = 5) -> str:
+            return f"limit={limit}"
+
+        @child.resource("search://items?q={q}{&limit}")
+        def search_q(q: str, limit: int = 5) -> str:
+            return f"q={q},limit={limit}"
+
+        fixed_uri = "search://items?fixed=1&limit=10"
+        q_uri = "search://items?q=hello&limit=20"
+        if via == "direct":
+            server = child
+        elif via == "mount":
+            server = FastMCP("parent")
+            server.mount(child, namespace="ns")
+            fixed_uri = "search://ns/items?fixed=1&limit=10"
+            q_uri = "search://ns/items?q=hello&limit=20"
+        else:
+            server = create_proxy(child)
+
+        async with Client(server) as client:
+            [fixed_contents] = await client.read_resource(fixed_uri)
+            assert isinstance(fixed_contents, TextResourceContents)
+            assert fixed_contents.text == "limit=10"
+
+            [q_contents] = await client.read_resource(q_uri)
+            assert isinstance(q_contents, TextResourceContents)
+            assert q_contents.text == "q=hello,limit=20"
+
 
 class TestTemplateComponentMetaPropagation:
     """A template's component meta must reach list[ResourceContent] reads."""
