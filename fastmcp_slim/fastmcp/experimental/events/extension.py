@@ -359,7 +359,10 @@ class EventsExtension(ServerExtension):
                 arguments=arguments, cursor=params.cursor, max_age_ms=params.max_age_ms
             ),
         )
-        cursor = batch.cursor
+        # A backlog's cursor is the position after all of it, so a client that
+        # stops partway must still hold the position it asked from.
+        resumable = batch.events and params.cursor is not None
+        cursor = params.cursor if resumable else batch.cursor
         await send(
             "active",
             cursor=cursor,

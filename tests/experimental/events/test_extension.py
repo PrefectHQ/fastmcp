@@ -325,6 +325,20 @@ async def test_push_resumes_from_a_cursor_and_drains_the_backlog() -> None:
     assert subscription.cursor == "3"
 
 
+async def test_stopping_partway_through_a_pushed_backlog_keeps_the_rest() -> None:
+    log = [{"key": str(n), "severity": "low"} for n in range(3)]
+
+    async with events_client(make_server(log, poll_interval_ms=10)) as client:
+        subscription = subscribe_events(
+            client, "alert.fired", cursor="0", delivery="push"
+        )
+        with anyio.fail_after(10):
+            (first,) = await collect(subscription, 1)
+
+    assert first.event_id == "0"
+    assert subscription.cursor == "0"
+
+
 async def test_push_reports_a_gap_and_keeps_the_stream_through_a_failed_check() -> None:
     server = FastMCP("flaky")
     events = EventsExtension(poll_interval_ms=10)
