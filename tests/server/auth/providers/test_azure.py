@@ -1661,3 +1661,62 @@ class TestAzureScopeRoundTrip:
             provider._prefix_scopes_for_azure(original)
         )
         assert round_tripped == original
+
+    async def test_custom_token_verifier_used_instead_of_default(
+        self, memory_storage: MemoryStore
+    ):
+        """A custom token_verifier is forwarded directly to OAuthProxy."""
+        from fastmcp.server.auth import AccessToken, TokenVerifier
+
+        class RoleCheckingVerifier(TokenVerifier):
+            async def verify_token(self, token: str) -> AccessToken | None:
+                if token != "valid-token":
+                    return None
+                return AccessToken(
+                    token=token,
+                    client_id="app-client",
+                    scopes=["read"],
+                )
+
+        custom_verifier = RoleCheckingVerifier(required_scopes=["read"])
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            token_verifier=custom_verifier,
+        )
+
+        assert provider._token_validator is custom_verifier
+        verified = await provider._token_validator.verify_token("valid-token")
+        assert verified is not None
+        assert verified.client_id == "app-client"
+        assert await provider._token_validator.verify_token("bad-token") is None
+
+    def test_from_b2c_preserves_custom_token_verifier_issuer(
+        self, memory_storage: MemoryStore
+    ):
+        """from_b2c does not overwrite issuer on a caller-supplied JWTVerifier."""
+        custom_verifier = JWTVerifier(
+            jwks_uri="https://example.com/jwks",
+            issuer="https://custom-issuer.example/",
+            audience="custom-aud",
+            required_scopes=["read"],
+        )
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="test_client",
+            client_secret="test_secret",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            token_verifier=custom_verifier,
+        )
+
+        assert provider._token_validator is custom_verifier
+        assert custom_verifier.issuer == "https://custom-issuer.example/"

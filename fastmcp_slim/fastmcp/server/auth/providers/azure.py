@@ -14,7 +14,7 @@ import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 
 from fastmcp.dependencies import Dependency
-from fastmcp.server.auth.auth import MultiAuth
+from fastmcp.server.auth.auth import MultiAuth, TokenVerifier
 from fastmcp.server.auth.identity_assertion import IdentityAssertion
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
@@ -125,6 +125,7 @@ class AzureProvider(OAuthProxy):
         http_client: httpx2.AsyncClient | None = None,
         enable_cimd: bool = True,
         identity_assertion: IdentityAssertion | None = None,
+        token_verifier: TokenVerifier | None = None,
     ) -> None:
         """Initialize Azure OAuth provider.
 
@@ -203,6 +204,8 @@ class AzureProvider(OAuthProxy):
                 treat a token as expired, refreshing early to avoid races. Defaults to 0.
             identity_assertion: Optional SEP-990 ID-JAG configuration for
                 identity-bound token exchange. Disabled by default.
+            token_verifier: Optional custom token verifier. If None, creates a
+                ``JWTVerifier`` configured for the Azure / Entra ID tenant.
         """
         # Parse scopes if provided as string
         parsed_required_scopes = parse_scopes(required_scopes)
@@ -251,14 +254,15 @@ class AzureProvider(OAuthProxy):
                 "scope enforcement."
             )
 
-        token_verifier = JWTVerifier(
-            jwks_uri=jwks_uri,
-            issuer=issuer,
-            audience=[client_id, self.identifier_uri],
-            algorithm="RS256",
-            required_scopes=validation_scopes,  # Only validate non-OIDC scopes
-            http_client=http_client,
-        )
+        if token_verifier is None:
+            token_verifier = JWTVerifier(
+                jwks_uri=jwks_uri,
+                issuer=issuer,
+                audience=[client_id, self.identifier_uri],
+                algorithm="RS256",
+                required_scopes=validation_scopes,  # Only validate non-OIDC scopes
+                http_client=http_client,
+            )
 
         # Build Azure OAuth endpoints with tenant
         authorization_endpoint = (
@@ -395,7 +399,9 @@ class AzureProvider(OAuthProxy):
             token_issuer=token_issuer,
             **kwargs,
         )
-        if isinstance(provider._token_validator, JWTVerifier):
+        if kwargs.get("token_verifier") is None and isinstance(
+            provider._token_validator, JWTVerifier
+        ):
             provider._token_validator.issuer = token_issuer
         provider._obo_supported = False
         return provider
