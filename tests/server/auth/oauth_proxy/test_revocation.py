@@ -14,6 +14,7 @@ from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 from starlette.applications import Starlette
 
+from fastmcp.server.auth.auth import RefreshToken, TokenVerificationError
 from fastmcp.server.auth.identity_assertion import IdentityAssertion
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oauth_proxy.models import (
@@ -337,6 +338,101 @@ async def test_owner_revokes_upstream_refresh_token(
     assert request is not None
     assert parse_qs(request.content.decode()) == {"token": ["upstream-refresh"]}
     assert await proxy._refresh_token_store.get(key=_hash_token(token)) is None
+
+
+async def _issue_refresh_token(proxy: OAuthProxy, user: str) -> str:
+    """A refresh token on `user`'s grant, with its own jti like a real exchange."""
+    upstream = await proxy._upstream_token_store.get(key=user)
+    assert upstream is not None
+    await proxy._upstream_token_store.put(
+        key=user,
+        value=upstream.model_copy(update={"refresh_token": f"upstream-refresh-{user}"}),
+        ttl=3600,
+    )
+    jti = f"{user}-refresh"
+    await proxy._jti_mapping_store.put(
+        key=jti,
+        value=JTIMapping(jti=jti, upstream_token_id=user, created_at=time.time()),
+        ttl=3600,
+    )
+    token = proxy.jwt_issuer.issue_refresh_token(
+        client_id="dcr-client", scopes=["read"], jti=jti, expires_in=3600
+    )
+    await proxy._refresh_token_store.put(
+        key=_hash_token(token),
+        value=RefreshTokenMetadata(
+            client_id="dcr-client",
+            scopes=["read"],
+            expires_at=int(time.time()) + 3600,
+            created_at=time.time(),
+        ),
+        ttl=3600,
+    )
+    return token
+
+
+async def test_revoking_refresh_token_ends_its_access_tokens(
+    proxy: OAuthProxy,
+    issue_token: Callable[[str], Awaitable[str]],
+    httpx_mock: HTTPXMock,
+) -> None:
+    alice = await issue_token("alice")
+    bob = await issue_token("bob")
+    refresh = await _issue_refresh_token(proxy, "alice")
+    httpx_mock.add_response(url="https://idp.example.com/revoke", method="POST")
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=Starlette(routes=proxy.get_routes("/mcp"))),
+        base_url="https://proxy.example.com",
+    ) as client:
+        response = await client.post(
+            "/revoke",
+            data={"token": refresh, "client_id": "dcr-client", "client_secret": ""},
+        )
+    assert response.status_code == 200
+    request = httpx_mock.get_request()
+    assert request is not None
+    assert parse_qs(request.content.decode()) == {"token": ["upstream-refresh-alice"]}
+    assert await proxy.verify_token(alice) is None
+    assert await proxy.verify_token(bob) is not None
+
+
+async def test_revoking_refresh_token_ends_grant_without_upstream_endpoint(
+    proxy: OAuthProxy,
+    issue_token: Callable[[str], Awaitable[str]],
+    httpx_mock: HTTPXMock,
+) -> None:
+    alice = await issue_token("alice")
+    refresh = await _issue_refresh_token(proxy, "alice")
+    proxy._upstream_revocation_endpoint = None
+
+    await proxy.revoke_token(
+        RefreshToken(token=refresh, client_id="dcr-client", scopes=["read"])
+    )
+
+    assert httpx_mock.get_requests() == []
+    assert await proxy.verify_token(alice) is None
+
+
+async def test_revocation_answers_when_upstream_check_is_unavailable(
+    proxy: OAuthProxy,
+    jwt_verifier,
+    issue_token: Callable[[str], Awaitable[str]],
+    httpx_mock: HTTPXMock,
+) -> None:
+    token = await issue_token("alice")
+    jwt_verifier.verify_token = AsyncMock(
+        side_effect=TokenVerificationError("introspection unavailable")
+    )
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=Starlette(routes=proxy.get_routes("/mcp"))),
+        base_url="https://proxy.example.com",
+    ) as client:
+        response = await client.post(
+            "/revoke",
+            data={"token": token, "client_id": "dcr-client", "client_secret": ""},
+        )
+    assert response.status_code == 200
+    assert await proxy._jti_mapping_store.get(key="alice") is None
 
 
 async def test_id_jag_revocation_remains_local(

@@ -2480,7 +2480,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         """Revoke token locally and with upstream server if supported.
 
-        For refresh tokens, removes from local storage by hash. For an access
+        For refresh tokens, removes from local storage by hash and ends the
+        grant, so the access tokens issued alongside it stop validating too
+        (RFC 7009 section 2.1). For an access
         token presented to the revocation route, removes its JTI mapping, so
         the token cannot validate again after a refresh puts a new upstream
         token behind its grant. An `AccessToken` from `load_access_token`
@@ -2491,6 +2493,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # For refresh tokens, delete from local storage by hash
         if isinstance(token, RefreshToken):
             await self._refresh_token_store.delete(key=_hash_token(token.token))
+            await self._revoke_refresh_grant(token)
+            return
 
         # ID-JAG access tokens are self-contained and never known upstream, so
         # upstream revocation cannot invalidate them. Track the jti locally so
@@ -2524,69 +2528,75 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 logger.debug("Retired access token; its upstream token is gone")
                 return
 
-        # Attempt upstream revocation if endpoint is configured
-        if self._upstream_revocation_endpoint:
-            try:
-                # For refresh tokens, resolve the upstream refresh token via
-                # JTI mapping so we revoke the token the authorization server
-                # actually issued, not the FastMCP-issued JWT wrapper.
-                if isinstance(token, RefreshToken):
-                    refresh_payload = self.jwt_issuer.verify_token(
-                        token.token, expected_token_use="refresh"
-                    )
-                    refresh_jti = refresh_payload["jti"]
-                    jti_mapping = await self._jti_mapping_store.get(key=refresh_jti)
-                    if jti_mapping is None:
-                        logger.warning("No JTI mapping found for refresh token")
-                        return
-
-                    upstream_token_set = await self._upstream_token_store.get(
-                        key=jti_mapping.upstream_token_id
-                    )
-                    if (
-                        upstream_token_set is None
-                        or not upstream_token_set.refresh_token
-                    ):
-                        logger.warning("No upstream refresh token found")
-                        return
-
-                    upstream_token_to_revoke = upstream_token_set.refresh_token
-                else:
-                    upstream_token_to_revoke = token.token
-
-                async with httpx2.AsyncClient(
-                    timeout=HTTP_TIMEOUT_SECONDS
-                ) as http_client:
-                    revocation_data: dict[str, str] = {
-                        "token": upstream_token_to_revoke
-                    }
-                    request_kwargs: dict[str, Any] = {"data": revocation_data}
-
-                    # Use the factory method when available (supports alternative auth like
-                    # client assertions for managed identity), falling back to basic auth
-                    # or client_id-only for public clients per RFC 7009
-                    async with self._upstream_oauth_client() as oauth_client:
-                        if oauth_client.client_secret is not None:
-                            # Client secret is available, use HTTP Basic auth
-                            request_kwargs["auth"] = (
-                                self._upstream_client_id,
-                                oauth_client.client_secret,
-                            )
-                        else:
-                            # No secret; public client must still identify itself per RFC 7009
-                            revocation_data["client_id"] = self._upstream_client_id
-
-                    await http_client.post(
-                        self._upstream_revocation_endpoint,
-                        **request_kwargs,
-                    )
-                    logger.debug("Successfully revoked token with upstream server")
-            except Exception as e:
-                logger.warning("Failed to revoke token with upstream server: %s", e)
-        else:
-            logger.debug("No upstream revocation endpoint configured")
-
+        await self._revoke_upstream(token.token)
         logger.debug("Token revoked successfully")
+
+    async def _revoke_refresh_grant(self, token: RefreshToken) -> None:
+        """Revoke a refresh token's grant upstream and end it locally.
+
+        RFC 7009 says revoking a refresh token should also invalidate the
+        access tokens of the same grant. Every FastMCP token of a grant maps
+        to one upstream record, so removing that record ends them all.
+        """
+        try:
+            refresh_payload = self.jwt_issuer.verify_token(
+                token.token, expected_token_use="refresh"
+            )
+            refresh_jti = refresh_payload["jti"]
+        except (JoseError, ValueError, KeyError) as e:
+            logger.warning("Failed to revoke token with upstream server: %s", e)
+            return
+
+        jti_mapping = await self._jti_mapping_store.get(key=refresh_jti)
+        if jti_mapping is None:
+            logger.warning("No JTI mapping found for refresh token")
+            return
+
+        upstream_token_set = await self._upstream_token_store.get(
+            key=jti_mapping.upstream_token_id
+        )
+        if upstream_token_set is None or not upstream_token_set.refresh_token:
+            logger.warning("No upstream refresh token found")
+        else:
+            # Revoke the token the authorization server actually issued, not
+            # the FastMCP-issued JWT wrapper.
+            await self._revoke_upstream(upstream_token_set.refresh_token)
+
+        await self._jti_mapping_store.delete(key=refresh_jti)
+        await self._upstream_token_store.delete(key=jti_mapping.upstream_token_id)
+        logger.debug("Revoked refresh token and ended its grant")
+
+    async def _revoke_upstream(self, upstream_token: str) -> None:
+        """Best-effort revocation of an upstream token, when supported."""
+        if not self._upstream_revocation_endpoint:
+            logger.debug("No upstream revocation endpoint configured")
+            return
+        try:
+            async with httpx2.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as http_client:
+                revocation_data: dict[str, str] = {"token": upstream_token}
+                request_kwargs: dict[str, Any] = {"data": revocation_data}
+
+                # Use the factory method when available (supports alternative auth like
+                # client assertions for managed identity), falling back to basic auth
+                # or client_id-only for public clients per RFC 7009
+                async with self._upstream_oauth_client() as oauth_client:
+                    if oauth_client.client_secret is not None:
+                        # Client secret is available, use HTTP Basic auth
+                        request_kwargs["auth"] = (
+                            self._upstream_client_id,
+                            oauth_client.client_secret,
+                        )
+                    else:
+                        # No secret; public client must still identify itself per RFC 7009
+                        revocation_data["client_id"] = self._upstream_client_id
+
+                await http_client.post(
+                    self._upstream_revocation_endpoint,
+                    **request_kwargs,
+                )
+                logger.debug("Successfully revoked token with upstream server")
+        except Exception as e:
+            logger.warning("Failed to revoke token with upstream server: %s", e)
 
     def get_routes(
         self,
