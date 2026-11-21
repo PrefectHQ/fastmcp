@@ -6,6 +6,16 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 4.2.4" description="November 20, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.2.4: Burn After Reading"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.4"
+cta="Read the release notes"
+>
+Fixes a race where two concurrent token requests could redeem one OAuth proxy authorization code or refresh token twice (GHSA-78c8-3jhx-5mg7), and keeps a revoked proxy access token from validating again after a refresh. Also, a tool transform that can't apply now hides only its own tool instead of breaking every listing, plus a few mounted and versioned component fixes. Thanks to our 4 contributors, including 2 first-time contributors.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.2.3" description="November 20, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.2.3: Trace Elements"

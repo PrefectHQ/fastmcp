@@ -6,13 +6,16 @@ description: Cut a FastMCP release end to end. Use when the maintainer says "cut
 # Cutting a release
 
 A release is a tag on the branch that owns the line: `<branch>` below is `main` for
-the current major and `release/3.x` for 3.x maintenance. Every step runs against that
-branch, including the docs PR, so a maintenance entry lands in the maintenance
-branch's own changelog above its newest 3.x entry. The tag triggers `Publish fastmcp-slim to PyPI`;
+the current major and `release/<major>.<minor>` or `release/<major>.x` for maintenance.
+Notes are generated against that branch, but every changelog entry lands on `main`,
+the only lineage gofastmcp.com/docs serves. Merging that docs PR drafts the release
+(`draft-release.yml`); publishing the draft makes the tag. The tag triggers `Publish fastmcp-slim to PyPI`;
 its success fans out to `fastmcp-tasks`, `fastmcp-remote`, and `fastmcp`, and the
 `fastmcp` publish job opens the `published-docs` PR for stable release-triggered
 publication when the release SHA is an ancestor of the default branch. Prereleases
-and manual package-workflow dispatch do not open that PR. Mintlify builds `docs/`
+do not open that PR. The slim job waits in the `pypi` environment for a required
+reviewer; the publish workflows have no manual dispatch, so a release is the only
+way to reach PyPI. Mintlify builds `docs/`
 from `published-docs` at `https://gofastmcp.com/docs`; the separate
 `PrefectHQ/gofastmcp-website` repository deploys its `main` to Vercel for the landing
 page and `/docs` proxy. Two hand-maintained docs files mirror every release and must be on the
@@ -88,12 +91,10 @@ one gets a follow-up patch, never a re-tag.
 3. **Write the notes file** outside the repository (a temp directory), intro only.
    The release title is the heading, so the file has none.
 
-   Also write `/tmp/release-notes.md` containing that intro followed by the completed
-   `/tmp/generated-notes.md`. This is the exact body to publish; use the same completed
-   generated notes for the docs entry. Do not regenerate plain GitHub notes at
-   publication and discard the added contributor credit.
+   The changelog entry built from it and the completed `/tmp/generated-notes.md`
+   becomes the GitHub release body, so the credit added in step 1 carries over.
 
-4. **Docs entries.** Branch `docs/changelog-<new>` from `origin/<branch>` and insert
+4. **Docs entries.** Branch `docs/changelog-<new>` from `origin/main` (for every line) and insert
    both blocks (the last argument is the branch the notes are generated against):
 
    ```bash
@@ -109,32 +110,36 @@ one gets a follow-up patch, never a re-tag.
 
    (`@latest` on purpose: the hosted Mintlify build is always current.) Commit,
    push, open the PR titled `docs: add v<new> changelog entries` with base
-   `<branch>` and a one-line body, and merge it. Branch policy needs `--admin` on a maintainer-driven release.
+   `main` and a one-line body, and merge it. Branch policy needs `--admin` on a maintainer-driven release.
    The docs PR itself appears in the GitHub notes but not in the mirror; that is
    expected.
 
-5. **Tag**, immediately after the docs PR merges. Re-run the step 1 preview first;
-   if `<branch>` moved, delete the entry blocks from both docs files, re-run the
-   helper (it refuses to insert a label that already exists), and land that as a
-   follow-up docs PR before tagging.
+5. **Publish the draft.** The docs PR's merge runs `Draft release`, which turns the
+   new changelog block into a draft release titled `v<new>: <pun>`, targeting the
+   merge commit on `main`, or the head of `release/<major>.<minor>` (else
+   `release/<major>.x`) when that branch exists. A draft has no tag and publishes
+   nothing. Re-run the step 1 preview first; if `<branch>` moved, delete the draft,
+   delete the entry blocks from both docs files, re-run the helper (it refuses to
+   insert a label that already exists), and land that as a follow-up docs PR, which
+   drafts again.
 
    Refresh contributor attribution and both temporary notes files along with the
    preview when new changes enter the release. The docs-only changelog PR can appear
    in the GitHub notes without appearing in its own mirror, as described above.
 
-   ```bash
-   gh release create v<new> --target <branch> --title "v<new>: <pun>" \
-     --notes-file /tmp/release-notes.md
-   ```
+   The maintainer publishes the draft from the releases page (or
+   `gh release edit v<new> --draft=false`). Agents prepare the draft; they do not
+   publish it.
 
    `v<prev>` is the last stable tag on that branch, passed as `previous_tag_name` in
-   the notes preview. The compare link at the bottom of the created release must
+   the notes preview. The compare link at the bottom of the draft must
    read `v<prev>...v<new>`. Verify the published contributor entries and
    `New Contributors` list against the completed notes.
 
 6. **Watch the fan-out.** The slim run is keyed to the tag; the others are
    `workflow_run` events on the default branch, so select them by workflow name.
-   The slim run appears within a minute of the tag; the `fastmcp` run is queued the
+   The slim run appears within a minute of the tag and waits for the maintainer to
+   approve the `pypi` deployment; the `fastmcp` run is queued the
    moment slim succeeds, so watch slim to completion first and the newest `fastmcp`
    run is the right one.
 
@@ -237,10 +242,11 @@ connections instead of raising.
   or skipped. Only the `Deploy docs` run's verdict counts; its API-triggered
   deployment is what brings a page a skipped deploy left stale back in line.
 - Always pass the last stable tag as `previous_tag_name` when generating notes;
-  otherwise a prerelease tag can truncate the PR list. Publish the completed notes
-  with `--notes-file`, rather than replacing them with `--generate-notes`.
+  otherwise a prerelease tag can truncate the PR list. Don't replace the draft's
+  body with `--generate-notes` at publication; that discards the added credit.
 - Maintenance releases publish packages and notes but never repoint `published-docs`;
-  their changelog entries go on the maintenance branch under the matching major section.
+  their changelog entries go on `main`, in date order with the current line. Don't
+  edit the maintenance branch's own `docs/changelog.mdx`.
 
 ## Check before finishing
 
