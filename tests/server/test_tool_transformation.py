@@ -337,6 +337,33 @@ async def test_tool_transform_config_that_cannot_apply_hides_only_its_tool():
             await client.call_tool("needs_a", {})
 
 
+async def test_tool_transform_that_cannot_apply_frees_its_new_name():
+    mcp = FastMCP("Test Server")
+
+    @mcp.tool
+    def x(a: int) -> int:
+        return a
+
+    @mcp.tool
+    def y() -> str:
+        return "own y"
+
+    mcp.add_transform(
+        ToolTransform(
+            {
+                "x": ToolTransformConfig(
+                    name="y", arguments={"a": ArgTransformConfig(hide=True)}
+                )
+            }
+        )
+    )
+
+    async with Client(mcp) as client:
+        assert [t.name for t in await client.list_tools()] == ["y"]
+        result = await client.call_tool("y", {})
+        assert result.data == "own y"
+
+
 async def test_openapi_path_params_not_duplicated_in_description():
     """Path parameter details should live in inputSchema, not the description.
 

@@ -58,6 +58,9 @@ class ToolTransform(Transform):
                 )
             seen_targets[target] = original_name
 
+        # Tools whose transform failed, so each failure is logged once.
+        self._reported: set[str] = set()
+
     def __repr__(self) -> str:
         names = list(self._transforms.keys())
         if len(names) <= 3:
@@ -87,11 +90,13 @@ class ToolTransform(Transform):
         try:
             return config.apply(tool)
         except ValueError as e:
-            logger.error(
-                "Tool transform for %r cannot apply, so the tool is hidden: %s",
-                tool.name,
-                e,
-            )
+            if tool.name not in self._reported:
+                self._reported.add(tool.name)
+                logger.error(
+                    "Tool transform for %r cannot apply, so the tool is hidden: %s",
+                    tool.name,
+                    e,
+                )
             return None
 
     async def get_tool(
@@ -121,8 +126,16 @@ class ToolTransform(Transform):
         # Apply transform if applicable
         if config is not None:
             transformed = self._apply(config, tool)
+            if transformed is None:
+                # The transformed tool is hidden, so its new name is free: a
+                # tool of that name listed in its place must answer calls too.
+                if original_name != name and name not in self._transforms:
+                    fallback = await call_next(name, version=version)
+                    if fallback is not None and fallback.name == name:
+                        return fallback
+                return None
             # Only return if requested name matches transformed name
-            if transformed is not None and transformed.name == name:
+            if transformed.name == name:
                 return transformed
             return None
 

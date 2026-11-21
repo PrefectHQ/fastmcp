@@ -205,8 +205,9 @@ async def _refused_deferred(parent: Tool, config: ToolTransformConfig) -> None:
         assert listed == ["other"], "a transform that cannot apply was listed"
         result = await client.call_tool("other", {})
         assert result.content[0].text == "ok", "an unrelated tool failed"
-        with pytest.raises(ToolError):
-            await client.call_tool("t0", {})
+        for name in ("t0", "parent"):
+            with pytest.raises(ToolError):
+                await client.call_tool(name, {})
 
 
 @given(data=st.data())
