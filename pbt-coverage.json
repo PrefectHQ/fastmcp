@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-21T01:19:45+00:00",
- "source_commit": "70c0bfee939502491a942ad9726c76a1ee69a7e0",
+ "generated_at": "2026-11-21T02:01:54+00:00",
+ "source_commit": "0d0cdfe6faefb1065cf28943c5e623bed8678a86",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -1087,7 +1087,7 @@
    "path": "fastmcp_slim/fastmcp/client/transports/base.py",
    "public": false,
    "statements": 27,
-   "hit": 18,
+   "hit": 17,
    "functions": 10,
    "functions_hit": 4,
    "symbols": [],
@@ -2770,9 +2770,9 @@
    "path": "fastmcp_slim/fastmcp/server/middleware/dereference.py",
    "public": false,
    "statements": 25,
-   "hit": 16,
+   "hit": 14,
    "functions": 5,
-   "functions_hit": 4,
+   "functions_hit": 3,
    "symbols": [],
    "tests": 1,
    "test_ids": [
@@ -2834,7 +2834,7 @@
    "path": "fastmcp_slim/fastmcp/server/middleware/middleware.py",
    "public": true,
    "statements": 52,
-   "hit": 41,
+   "hit": 40,
    "functions": 21,
    "functions_hit": 13,
    "symbols": [
@@ -2842,7 +2842,7 @@
      "name": "Middleware",
      "kind": "class",
      "statements": 44,
-     "hit": 37
+     "hit": 36
     },
     {
      "name": "MiddlewareContext",
@@ -3073,7 +3073,7 @@
    "path": "fastmcp_slim/fastmcp/server/providers/base.py",
    "public": true,
    "statements": 162,
-   "hit": 75,
+   "hit": 74,
    "functions": 40,
    "functions_hit": 23,
    "symbols": [
@@ -3081,7 +3081,7 @@
      "name": "Provider",
      "kind": "class",
      "statements": 143,
-     "hit": 71
+     "hit": 70
     }
    ],
    "tests": 2,
@@ -3095,15 +3095,15 @@
    "path": "fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py",
    "public": true,
    "statements": 112,
-   "hit": 71,
+   "hit": 69,
    "functions": 34,
-   "functions_hit": 25,
+   "functions_hit": 24,
    "symbols": [
     {
      "name": "FastMCPProvider",
      "kind": "class",
      "statements": 66,
-     "hit": 47
+     "hit": 45
     }
    ],
    "tests": 1,
@@ -3214,7 +3214,7 @@
    "path": "fastmcp_slim/fastmcp/server/providers/local_provider/local_provider.py",
    "public": true,
    "statements": 113,
-   "hit": 95,
+   "hit": 96,
    "functions": 18,
    "functions_hit": 17,
    "symbols": [
@@ -3222,7 +3222,7 @@
      "name": "LocalProvider",
      "kind": "class",
      "statements": 113,
-     "hit": 95
+     "hit": 96
     }
    ],
    "tests": 2,
@@ -3473,9 +3473,9 @@
    "path": "fastmcp_slim/fastmcp/server/providers/wrapped_provider.py",
    "public": false,
    "statements": 21,
-   "hit": 18,
+   "hit": 17,
    "functions": 16,
-   "functions_hit": 13,
+   "functions_hit": 12,
    "symbols": [],
    "tests": 1,
    "test_ids": [
@@ -3487,15 +3487,15 @@
    "path": "fastmcp_slim/fastmcp/server/server.py",
    "public": true,
    "statements": 593,
-   "hit": 344,
+   "hit": 334,
    "functions": 73,
-   "functions_hit": 47,
+   "functions_hit": 46,
    "symbols": [
     {
      "name": "FastMCP",
      "kind": "class",
      "statements": 512,
-     "hit": 290
+     "hit": 279
     },
     {
      "name": "create_proxy",
@@ -3613,7 +3613,7 @@
    "path": "fastmcp_slim/fastmcp/server/transforms/namespace.py",
    "public": true,
    "statements": 52,
-   "hit": 48,
+   "hit": 47,
    "functions": 14,
    "functions_hit": 13,
    "symbols": [
@@ -3621,7 +3621,7 @@
      "name": "Namespace",
      "kind": "class",
      "statements": 52,
-     "hit": 48
+     "hit": 47
     }
    ],
    "tests": 1,
@@ -3779,15 +3779,15 @@
    "path": "fastmcp_slim/fastmcp/server/transforms/visibility.py",
    "public": true,
    "statements": 140,
-   "hit": 77,
+   "hit": 75,
    "functions": 22,
-   "functions_hit": 17,
+   "functions_hit": 16,
    "symbols": [
     {
      "name": "Visibility",
      "kind": "class",
      "statements": 81,
-     "hit": 54
+     "hit": 52
     }
    ],
    "tests": 2,
@@ -4373,10 +4373,10 @@
    "module": "fastmcp.utilities.json_schema_type",
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
-   "statements": 599,
-   "hit": 410,
-   "functions": 56,
-   "functions_hit": 44,
+   "statements": 617,
+   "hit": 395,
+   "functions": 57,
+   "functions_hit": 42,
    "symbols": [],
    "tests": 2,
    "test_ids": [
