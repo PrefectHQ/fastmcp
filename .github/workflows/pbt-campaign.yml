@@ -1,0 +1,64 @@
+name: PBT campaign
+# Time-boxed bug hunting with the property-based suite. The integration job
+# already runs every property on each PR with 50 fixed examples; this run uses
+# random seeds, many more examples, and an example database kept between runs,
+# so it keeps finding new cases instead of re-checking the same ones.
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+    inputs:
+      budget:
+        description: "Seconds of hunting per property"
+        default: "120"
+  # A short run checks harness changes before they merge.
+  pull_request:
+    paths:
+      - "tests/pbt/**"
+      - ".github/workflows/pbt-campaign.yml"
+permissions: {}
+concurrency:
+  group: pbt-campaign-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  campaign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      HYPOTHESIS_PROFILE: campaign
+      # One Hypothesis run per pass; passes repeat until the budget is spent.
+      HYPOTHESIS_MAX_EXAMPLES: "200"
+      PBT_BUDGET_SECONDS: ${{ inputs.budget || (github.event_name == 'pull_request' && '20') || '120' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Setup uv
+        uses: ./.github/actions/setup-uv
+      # Restore the newest database; a PR reads main's but saves only its own.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .hypothesis/examples
+          key: pbt-db-${{ github.run_id }}
+          restore-keys: pbt-db-
+      - name: Hunt
+        run: >
+          uv run pytest tests/pbt -m pbt
+          --numprocesses auto
+          --junitxml="$RUNNER_TEMP/pbt-campaign.xml" -q
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && github.event_name != 'pull_request'
+        with:
+          path: .hypothesis/examples
+          key: pbt-db-${{ github.run_id }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: failure()
+        with:
+          name: pbt-campaign-failures
+          path: |
+            ${{ runner.temp }}/pbt-campaign.xml
+            .hypothesis/examples
+          retention-days: 14
+          include-hidden-files: true

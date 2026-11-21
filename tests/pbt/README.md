@@ -44,6 +44,22 @@ uv run pytest tests/pbt
 HYPOTHESIS_PROFILE=campaign HYPOTHESIS_MAX_EXAMPLES=20000 uv run pytest tests/pbt --hypothesis-show-statistics
 ```
 
+A time-boxed hunt gives every property the same number of seconds instead of
+the same number of examples, so a run costs the same however fast each
+property is. Each test reruns with a fresh seed until its budget is spent,
+replaying the example database first on every pass:
+
+```bash
+HYPOTHESIS_PROFILE=campaign PBT_BUDGET_SECONDS=60 uv run pytest tests/pbt -m pbt -n auto
+```
+
+That is what the `PBT campaign` workflow runs: nightly at 120 seconds per
+property, with `.hypothesis/examples` kept in the Actions cache between runs,
+and at 20 seconds on pull requests that change this directory. A failing run
+uploads the database and the JUnit report; the failure output carries the
+`@reproduce_failure` blob. Tests marked `pbt_smoke` check the harness itself
+and run once.
+
 ```bash
 uv run python -m tests.pbt.mutants uri_template
 ```

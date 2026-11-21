@@ -17,7 +17,7 @@ Mutant catch rates: `uv run python -m tests.pbt.mutants`.
 | json_schema dereference, compress | 10k each | none planted | clean |
 | json_schema adapter accepts valid | 10k | `schema_fixes`, 4 undo mutants at 10/10 (below) | F1, F2, F3, F5 |
 | component machine (tools, prompts, resources, mount, versions, visibility, pagination) | 3k histories | 4/4 at 10/10 | F4 |
-| component machine, round 2: mount with or without a namespace (2026-11-19) | 3k histories | not yet measured | F6, F7, F8 |
+| component machine, round 2: mount with or without a namespace (2026-11-19) | 3k histories | not yet measured | F6 (warned, #6613), F7 (#6612), F8 (#6611) |
 
 F1, F3 and F5 are fixed on `main` (#6552, #6553, #6572), so their probes
 report fixed and the harness checks those shapes again. F2 is fixed by keeping
@@ -276,6 +276,8 @@ the schemas that would catch it (`PBT_ASSUME_FIXED`, set per mutant).
 
 ### F6. versioned and unversioned components under one name, from two servers
 
+- status: documented and warned about (#6613): a listing that sees the mix
+  logs one warning per name. The behaviour itself is unchanged.
 - property: component machine with `mount(child)` and no namespace. One
   server refuses to mix versioned and unversioned components under one name
   (docs/servers/versioning.mdx); nothing refuses it across a mount.
@@ -298,6 +300,7 @@ the schemas that would catch it (`PBT_ASSUME_FIXED`, set per mutant).
 
 ### F7. equal versions from two servers are listed twice in `versions`
 
+- status: fixed (#6612). Each shared version is listed once.
 - property: component machine listing — `meta.fastmcp.versions` lists the
   enabled versions, highest first.
 - minimal: parent `t@1`, child `t@1`, no namespace: `versions == ["1", "1"]`.
@@ -312,6 +315,8 @@ the schemas that would catch it (`PBT_ASSUME_FIXED`, set per mutant).
 
 ### F8. a hidden component shadows the mounted component listed in its place
 
+- status: fixed (#6611). A call answers with the shown twin when the lookup
+  returns a hidden one.
 - property: component machine `call` — what a listing shows, a call without a
   version runs.
 - minimal: parent `t` (no tags), child `t` tagged `x`, `mount(child)`,
