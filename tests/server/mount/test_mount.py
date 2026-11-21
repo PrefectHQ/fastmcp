@@ -677,6 +677,33 @@ class TestCrossProviderDuplicateDetection:
         tools = await main.list_tools()
         assert len(tools) == 2
 
+    async def test_versioned_and_unversioned_across_providers_warns(self, caplog):
+        """One server refuses the mix; across a mount it is warned about."""
+        main = FastMCP("Main")
+        sub = FastMCP("Sub")
+        main.tool(name="calc")(lambda: "main")
+        sub.tool(name="calc", version="1")(lambda: "sub")
+        main.mount(sub)
+
+        caplog.set_level(logging.WARNING, logger="fastmcp")
+        await main.list_tools()
+        warnings = [r.message for r in caplog.records if "unversioned" in r.message]
+        assert len(warnings) == 1
+        assert "'tool:calc'" in warnings[0]
+
+    async def test_versioning_mix_needs_two_providers(self, caplog):
+        """Versions of one name on one provider, or a namespace, stay quiet."""
+        main = FastMCP("Main")
+        sub = FastMCP("Sub")
+        main.tool(name="calc", version="1")(lambda: "1")
+        main.tool(name="calc", version="2")(lambda: "2")
+        sub.tool(name="calc")(lambda: "sub")
+        main.mount(sub, "ns")
+
+        caplog.set_level(logging.WARNING, logger="fastmcp")
+        await main.list_tools()
+        assert not [r for r in caplog.records if "unversioned" in r.message]
+
 
 class TestMaskErrorDetailsMismatchWarning:
     """Test that mismatched mask_error_details is warned about at mount time."""

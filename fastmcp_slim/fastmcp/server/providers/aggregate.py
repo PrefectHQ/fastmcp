@@ -209,6 +209,11 @@ class AggregateProvider(Provider):
         # so version variants of the same component are NOT reported as
         # collisions (matching _get_highest_version_result behavior).
         seen_keys: dict[str, int] = {}
+        # Identity without the version -> provider index that first listed it
+        # versioned (True) or unversioned (False). One server refuses to mix
+        # the two under one identity; across providers nothing does.
+        seen_versioning: dict[str, dict[bool, int]] = {}
+        mixed: set[str] = set()
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 if self._raises_on_provider_error():
@@ -227,6 +232,23 @@ class AggregateProvider(Provider):
                             f"Duplicate {operation} component {key!r} "
                             f"from provider {self.providers[i]} "
                             f"(first seen from provider {self.providers[first]})"
+                        )
+                    version = getattr(item, "version", None)
+                    # The key always ends "@{version}", so this leaves "tool:t".
+                    identity = key.removesuffix(version or "").removesuffix("@")
+                    by_kind = seen_versioning.setdefault(identity, {})
+                    by_kind.setdefault(version is not None, i)
+                    other = by_kind.get(version is None)
+                    if other is not None and other != i and identity not in mixed:
+                        mixed.add(identity)
+                        logger.warning(
+                            f"{operation} component {identity!r} is versioned "
+                            f"in one provider and unversioned in another "
+                            f"({self.providers[other]} and {self.providers[i]}). "
+                            "A request for a version only the versioned one "
+                            "lacks runs the unversioned one, which is not "
+                            "listed. Give the mounted server a namespace, or "
+                            "version both."
                         )
                 collected.append(item)
         return collected
