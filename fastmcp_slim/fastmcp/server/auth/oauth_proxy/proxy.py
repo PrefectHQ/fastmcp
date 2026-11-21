@@ -2483,8 +2483,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         For refresh tokens, removes from local storage by hash. For an access
         token presented to the revocation route, removes its JTI mapping, so
         the token cannot validate again after a refresh puts a new upstream
-        token behind its grant. For all tokens, attempts upstream revocation
-        if endpoint is configured.
+        token behind its grant. An `AccessToken` from `load_access_token`
+        carries only the upstream token, so revoking one directly revokes
+        upstream but cannot retire the FastMCP token. For all tokens,
+        attempts upstream revocation if endpoint is configured.
         """
         # For refresh tokens, delete from local storage by hash
         if isinstance(token, RefreshToken):
@@ -2518,6 +2520,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # token, so retire its mapping too.
         if isinstance(token, RevocableAccessToken):
             await self._jti_mapping_store.delete(key=token.fastmcp_jti)
+            if not token.upstream_live:
+                logger.debug("Retired access token; its upstream token is gone")
+                return
 
         # Attempt upstream revocation if endpoint is configured
         if self._upstream_revocation_endpoint:

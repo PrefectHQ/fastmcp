@@ -142,10 +142,12 @@ async def test_authentication_preserves_two_users_with_one_dcr_client(
 @pytest.mark.parametrize("hint", [None, "access_token", "refresh_token"])
 async def test_owner_revokes_upstream_access_token(
     proxy: OAuthProxy,
+    jwt_verifier,
     issue_token: Callable[[str], Awaitable[str]],
     httpx_mock: HTTPXMock,
     hint: str | None,
 ) -> None:
+    request_token = "upstream-alice"
     token = await issue_token("alice")
     before = await proxy.verify_token(token)
     httpx_mock.add_response(url="https://idp.example.com/revoke", method="POST")
@@ -165,6 +167,10 @@ async def test_owner_revokes_upstream_access_token(
     # Verifiers may cache their result; a revocation-only copy must not mutate it.
     assert before is not None
     assert before.client_id == "alice"
+    verification_token = "id-alice" if isinstance(proxy, OIDCProxy) else request_token
+    cached = await jwt_verifier.verify_token(verification_token)
+    assert cached is not None
+    assert cached.client_id == "alice"
     # The revoked token is retired locally, so it stays revoked even when the
     # grant's upstream record later holds a fresh upstream token.
     assert await proxy._jti_mapping_store.get(key="alice") is None
@@ -191,6 +197,29 @@ async def test_revoking_one_access_token_keeps_other_grants(
     assert response.status_code == 200
     assert await proxy.verify_token(alice) is None
     assert await proxy.verify_token(bob) is not None
+
+
+async def test_revoking_a_token_whose_upstream_is_gone_still_retires_it(
+    proxy: OAuthProxy,
+    jwt_verifier,
+    issue_token: Callable[[str], Awaitable[str]],
+    httpx_mock: HTTPXMock,
+) -> None:
+    token = await issue_token("alice")
+    # The grant's upstream token already fails validation (a sibling's
+    # revocation revoked it), so nothing upstream is left to revoke.
+    jwt_verifier.verify_token = AsyncMock(return_value=None)
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=Starlette(routes=proxy.get_routes("/mcp"))),
+        base_url="https://proxy.example.com",
+    ) as client:
+        response = await client.post(
+            "/revoke",
+            data={"token": token, "client_id": "dcr-client", "client_secret": ""},
+        )
+    assert response.status_code == 200
+    assert httpx_mock.get_requests() == []
+    assert await proxy._jti_mapping_store.get(key="alice") is None
 
 
 @pytest.mark.parametrize("client_id", ["other-client", "alice"])

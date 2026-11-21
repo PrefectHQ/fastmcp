@@ -365,12 +365,17 @@ class OAuthMachine(RuleBasedStateMachine):
     @rule(data=st.data())
     def revoke_access(self, data):
         token = data.draw(st.sampled_from(list(self.access)))
-        if not self.run(self._revoke_access(token)):
-            return  # nothing a client could present to the revocation route
+        # The route loads any genuine FastMCP token, even one whose grant's
+        # upstream token is already revoked, so every revocation lands.
+        assert self.run(self._revoke_access(token)), "the route refused a token"
+        grant = self.grant[token]
         event("revoke access token")
+        # Only a token that still validates reaches the upstream token; one
+        # already revoked, or whose grant is revoked, is only retired.
+        if token not in self.revoked_access and self.grant_live[grant]:
+            self.grant_live[grant] = False
         self.revoked_access.add(token)
-        self.grants_with_revocation.add(self.grant[token])
-        self.grant_live[self.grant[token]] = False
+        self.grants_with_revocation.add(grant)
 
     @precondition(lambda self: self.access)
     @rule(data=st.data())
