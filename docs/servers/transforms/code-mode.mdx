@@ -100,18 +100,23 @@ Multiply two numbers.
 Now the LLM knows the parameters for the tools it found, and can write code that chains the tool calls. If it needed more detail, it could have called `get_schema` with `detail="full"` to get the complete JSON schema.
 
 </Step>
-<Step title="Write and execute code that chains the tool calls">
-Finally, the LLM writes and executes code that chains the tool calls in a Python sandbox. Inside the sandbox, `call_tool(name, params)` is the only function available. The LLM uses this to compose tools into a workflow and return a final result.
+<Step title="Write and execute code that chains calls">
+Finally, the LLM writes and executes Python code in a sandbox. Inside the sandbox, three async functions are available in scope:
 
-For example, it might write the following code and call the `execute` tool with it:
+- `call_tool(name, params)` — calls a registered tool and returns its structured content (when the tool has an output schema) or its text
+- `read_resource(uri)` — reads a resource or template by URI and returns its text content
+- `get_prompt(name, arguments=None)` — renders a prompt template and returns the role-prefixed messages as a string
+
+For example, it might read a resource and chain tool calls inside `execute`:
 
 ```python
+schema = await read_resource("resource://db/schema")
 a = await call_tool("add", {"x": 3, "y": 4})
 b = await call_tool("multiply", {"x": a["result"], "y": 2})
 return b["result"]
 ```
 
-`call_tool` returns the tool's structured content when the tool has an output schema, and its text otherwise. A tool that returns a bare value such as an `int` has its output wrapped as `{"result": ...}`, which is why the code reads `a["result"]`; the Returns section from `get_schema` shows that shape. The value of the block's `return` is returned to the LLM.
+A tool that returns a bare value such as an `int` has its output wrapped as `{"result": ...}`, which is why the code reads `a["result"]`; the Returns section from `get_schema` shows that shape. The value of the block's `return` is returned to the LLM.
 </Step>
 </Steps>
 
@@ -299,7 +304,7 @@ mcp = FastMCP("Server", transforms=[code_mode])
 
 ## Sandbox Configuration
 
-The sandbox controls the Python environment used by the code submitted to `execute`. Calls to `call_tool()` dispatch registered tools through FastMCP in the current request context, with the same authorization checks as a normal tool call. Those tool functions run in the server environment and retain their configured access to files, networks, and other resources.
+The sandbox controls the Python environment used by the code submitted to `execute`. Calls to `call_tool()`, `read_resource()`, and `get_prompt()` dispatch through FastMCP in the current request context, with the same authorization checks as normal client requests. Those server handlers run in the server environment and retain their configured access to files, networks, and other resources.
 
 ### Resource Limits
 
@@ -391,4 +396,4 @@ mcp = FastMCP(
 )
 ```
 
-The `external_functions` dict contains async callables injected into the sandbox scope — `execute` uses this to provide `call_tool`.
+The `external_functions` dict contains async callables injected into the sandbox scope — `execute` uses this to provide `call_tool`, `read_resource`, and `get_prompt`.

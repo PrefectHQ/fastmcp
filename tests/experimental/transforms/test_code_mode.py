@@ -329,10 +329,9 @@ async def test_code_mode_default_execute_description() -> None:
 
     assert "single block" in desc
     assert "Use `return` to produce output." in desc
-    assert (
-        "Only `call_tool(tool_name: str, params: dict) -> Any` is available in scope."
-        in desc
-    )
+    assert "call_tool(tool_name: str, params: dict) -> Any" in desc
+    assert "read_resource(uri: str) -> str" in desc
+    assert "get_prompt(name: str, arguments: dict | None = None) -> str" in desc
 
 
 # ---------------------------------------------------------------------------
@@ -1318,3 +1317,275 @@ async def test_detailed_schema_includes_single_value_literals() -> None:
     text = str(_unwrap_result(result))
     assert 'one of "email"' in text
     assert 'one of "sms"' in text
+
+
+# ---------------------------------------------------------------------------
+# Resources and prompts in execute
+# ---------------------------------------------------------------------------
+
+
+async def test_code_mode_execute_read_resource() -> None:
+    mcp = FastMCP("CodeMode ReadResource")
+
+    @mcp.resource("resource://db/schema")
+    def schema() -> str:
+        return "CREATE TABLE users (id INT);"
+
+    @mcp.tool
+    def query(sql: str, schema_sql: str) -> str:
+        return f"{sql} | {schema_sql}"
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {
+            "code": (
+                "schema = await read_resource('resource://db/schema')\n"
+                "res = await call_tool('query', {'sql': 'SELECT 1', 'schema_sql': schema})\n"
+                "return res"
+            )
+        },
+    )
+    assert _unwrap_result(result) == {
+        "result": "SELECT 1 | CREATE TABLE users (id INT);"
+    }
+
+
+async def test_code_mode_execute_read_resource_template() -> None:
+    mcp = FastMCP("CodeMode ReadResource Template")
+
+    @mcp.resource("resource://users/{user_id}/profile")
+    def profile(user_id: str) -> str:
+        return f"profile:{user_id}"
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {"code": "return await read_resource('resource://users/alice/profile')"},
+    )
+    assert _unwrap_string_result(result) == "profile:alice"
+
+
+async def test_code_mode_execute_read_resource_multipart() -> None:
+    from fastmcp.resources.base import ResourceContent, ResourceResult
+
+    mcp = FastMCP("CodeMode Multipart Resource")
+
+    @mcp.resource("resource://parts")
+    def parts() -> ResourceResult:
+        return ResourceResult(
+            contents=[
+                ResourceContent(content="part one"),
+                ResourceContent(content="part two"),
+            ]
+        )
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {"code": "return await read_resource('resource://parts')"},
+    )
+    assert _unwrap_string_result(result) == "part one\npart two"
+
+
+async def test_code_mode_execute_read_resource_binary_raises() -> None:
+    mcp = FastMCP("CodeMode Binary Resource")
+
+    @mcp.resource("resource://image.png")
+    def image() -> bytes:
+        return b"\x89PNG\r\n"
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    with pytest.raises(ToolError, match="binary resource"):
+        await _run_tool(
+            mcp,
+            "execute",
+            {"code": "return await read_resource('resource://image.png')"},
+        )
+
+
+async def test_code_mode_execute_read_resource_respects_visibility_and_auth() -> None:
+    mcp = FastMCP("CodeMode Resource Visibility")
+
+    @mcp.resource("resource://public")
+    def public() -> str:
+        return "ok"
+
+    @mcp.resource("resource://hidden")
+    def hidden() -> str:
+        return "secret"
+
+    @mcp.resource("resource://protected", auth=lambda _ctx: False)
+    def protected() -> str:
+        return "restricted"
+
+    mcp.disable(names={"resource://hidden"}, components={"resource"})
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    with pytest.raises(ToolError, match="Unknown resource"):
+        await _run_tool(
+            mcp,
+            "execute",
+            {"code": "return await read_resource('resource://hidden')"},
+        )
+
+    with pytest.raises(ToolError, match="Unknown resource"):
+        await _run_tool(
+            mcp,
+            "execute",
+            {"code": "return await read_resource('resource://protected')"},
+        )
+
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {"code": "return await read_resource('resource://public')"},
+    )
+    assert _unwrap_string_result(result) == "ok"
+
+
+async def test_code_mode_execute_get_prompt() -> None:
+    from fastmcp.prompts import Message
+
+    mcp = FastMCP("CodeMode GetPrompt")
+
+    @mcp.prompt
+    def summarize() -> str:
+        return "Summarize the text."
+
+    @mcp.prompt
+    def dialog(topic: str) -> list[Message]:
+        return [
+            Message(f"Ask about {topic}"),
+            Message(f"Answering {topic}.", role="assistant"),
+        ]
+
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    res_default = await _run_tool(
+        mcp,
+        "execute",
+        {"code": "return await get_prompt('summarize')"},
+    )
+    assert _unwrap_string_result(res_default) == "user: Summarize the text."
+
+    res_args = await _run_tool(
+        mcp,
+        "execute",
+        {"code": "return await get_prompt('dialog', {'topic': 'MCP'})"},
+    )
+    assert (
+        _unwrap_string_result(res_args)
+        == "user: Ask about MCP\nassistant: Answering MCP."
+    )
+
+
+async def test_code_mode_execute_get_prompt_respects_visibility_and_auth() -> None:
+    mcp = FastMCP("CodeMode Prompt Visibility")
+
+    @mcp.prompt
+    def visible() -> str:
+        return "hi"
+
+    @mcp.prompt
+    def hidden() -> str:
+        return "nope"
+
+    @mcp.prompt(auth=lambda _ctx: False)
+    def protected() -> str:
+        return "secret"
+
+    mcp.disable(names={"hidden"}, components={"prompt"})
+    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+
+    with pytest.raises(ToolError, match="Unknown prompt"):
+        await _run_tool(
+            mcp,
+            "execute",
+            {"code": "return await get_prompt('hidden')"},
+        )
+
+    with pytest.raises(ToolError, match="Unknown prompt"):
+        await _run_tool(
+            mcp,
+            "execute",
+            {"code": "return await get_prompt('protected')"},
+        )
+
+    res = await _run_tool(
+        mcp,
+        "execute",
+        {"code": "return await get_prompt('visible')"},
+    )
+    assert _unwrap_string_result(res) == "user: hi"
+
+
+@requires_monty
+async def test_code_mode_monty_read_resource_and_get_prompt() -> None:
+    """Real Monty sandbox can read resources, render prompts, and call tools."""
+    mcp = FastMCP("CodeMode Monty Resources & Prompts")
+
+    @mcp.resource("resource://greeting/{name}")
+    def greeting(name: str) -> str:
+        return f"Hello, {name}!"
+
+    @mcp.prompt
+    def wrap(target: str) -> str:
+        return f"Process {target}"
+
+    @mcp.tool
+    def combine(resource_text: str, prompt_text: str) -> str:
+        return f"{resource_text} :: {prompt_text}"
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {
+            "code": (
+                "g = await read_resource('resource://greeting/Ada')\n"
+                "p = await get_prompt('wrap', {'target': 'Ada'})\n"
+                "return await call_tool('combine', {'resource_text': g, 'prompt_text': p})"
+            )
+        },
+    )
+    assert _unwrap_result(result) == {"result": "Hello, Ada! :: user: Process Ada"}
+
+
+@requires_monty
+@pytest.mark.parametrize(
+    ("failing_call", "expected_fragment"),
+    [
+        ("await read_resource('resource://missing')", "Unknown resource"),
+        ("await get_prompt('missing_prompt')", "Unknown prompt"),
+    ],
+    ids=["missing-resource", "missing-prompt"],
+)
+async def test_code_mode_monty_resource_and_prompt_errors_are_catchable(
+    failing_call: str, expected_fragment: str
+) -> None:
+    """Missing resource/prompt errors are catchable inside Monty sandbox."""
+    mcp = FastMCP("CodeMode Monty Catch Resource/Prompt Errors")
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    code = (
+        "caught = None\n"
+        "try:\n"
+        f"    {failing_call}\n"
+        "except Exception as exc:\n"
+        "    caught = str(exc)\n"
+        "return {'caught': caught}"
+    )
+    result = await _run_tool(mcp, "execute", {"code": code})
+    caught = _unwrap_result(result)["caught"]
+    assert caught is not None
+    assert expected_fragment in caught

@@ -10,11 +10,12 @@ if TYPE_CHECKING:
 
 
 import anyio
-from mcp_types import TextContent
+from mcp_types import GetPromptResult, TextContent
 from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
 
 from fastmcp.exceptions import NotFoundError, ToolError, ValidationError
+from fastmcp.resources.base import ResourceResult
 from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.catalog import CatalogTransform
@@ -128,6 +129,31 @@ def _unwrap_tool_result(result: ToolResult) -> dict[str, Any] | str:
             parts.append(content.text)
         else:
             parts.append(str(content))
+    return "\n".join(parts)
+
+
+def _unwrap_resource_result(uri: str, result: ResourceResult) -> str:
+    """Convert a ResourceResult to text for use in the sandbox."""
+    parts: list[str] = []
+    for content in result.contents:
+        if isinstance(content.content, bytes):
+            raise ToolError(
+                f"Cannot read binary resource {uri!r} as text in code mode."
+            )
+        parts.append(content.content)
+    return "\n".join(parts)
+
+
+def _unwrap_prompt_result(result: GetPromptResult) -> str:
+    """Convert a GetPromptResult into role-prefixed text lines for the sandbox."""
+    parts: list[str] = []
+    for msg in result.messages:
+        text = (
+            msg.content.text
+            if isinstance(msg.content, TextContent)
+            else str(msg.content)
+        )
+        parts.append(f"{msg.role}: {text}")
     return "\n".join(parts)
 
 
@@ -622,7 +648,8 @@ class CodeMode(CatalogTransform):
     parameter details, and execute runs code.
 
     The ``execute`` tool is always present and provides a sandboxed Python
-    environment with ``call_tool(name, params)`` in scope.
+    environment with ``call_tool(name, params)``, ``read_resource(uri)``, and
+    ``get_prompt(name, arguments)`` in scope.
     """
 
     def __init__(
@@ -690,7 +717,8 @@ class CodeMode(CatalogTransform):
         return (
             "Chain `await call_tool(...)` calls in one Python block; prefer returning the final answer from a single block.\n"
             "Use `return` to produce output.\n"
-            "Only `call_tool(tool_name: str, params: dict) -> Any` is available in scope."
+            "Available in scope: `call_tool(tool_name: str, params: dict) -> Any`, "
+            "`read_resource(uri: str) -> str`, `get_prompt(name: str, arguments: dict | None = None) -> str`."
         )
 
     @staticmethod
@@ -715,13 +743,14 @@ class CodeMode(CatalogTransform):
                 str,
                 Field(
                     description=(
-                        "Python async code to execute tool calls via call_tool(name, arguments)"
+                        "Python async code using call_tool(name, params), "
+                        "read_resource(uri), and get_prompt(name, arguments)"
                     )
                 ),
             ],
             ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> Any:
-            """Execute tool calls using Python code."""
+            """Execute code that can call tools, read resources, and render prompts."""
 
             call_count = 0
 
@@ -750,12 +779,26 @@ class CodeMode(CatalogTransform):
                     )
                 return _unwrap_tool_result(result)
 
+            async def read_resource(uri: str) -> str:
+                result = await ctx.read_resource(uri)
+                return _unwrap_resource_result(uri, result)
+
+            async def get_prompt(
+                name: str, arguments: dict[str, Any] | None = None
+            ) -> str:
+                result = await ctx.get_prompt(name, arguments)
+                return _unwrap_prompt_result(result)
+
             # Sandbox duration limits exclude time spent awaiting host
             # callbacks, so bound the whole execution on the wall clock.
             timeout = transform.wall_clock_timeout_secs
             run = transform.sandbox_provider.run(
                 code,
-                external_functions={"call_tool": call_tool},
+                external_functions={
+                    "call_tool": call_tool,
+                    "read_resource": read_resource,
+                    "get_prompt": get_prompt,
+                },
             )
             if timeout is None:
                 return await run
