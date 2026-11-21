@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-21T01:03:11+00:00",
- "source_commit": "a397048be34c706c2fd03997ef97d33f5801254f",
+ "generated_at": "2026-11-21T01:10:10+00:00",
+ "source_commit": "35c344de7b2cfd1c30c7c2807cf6f09003e1bb70",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -3486,16 +3486,16 @@
    "module": "fastmcp.server.server",
    "path": "fastmcp_slim/fastmcp/server/server.py",
    "public": true,
-   "statements": 568,
-   "hit": 328,
-   "functions": 72,
-   "functions_hit": 46,
+   "statements": 593,
+   "hit": 344,
+   "functions": 73,
+   "functions_hit": 47,
    "symbols": [
     {
      "name": "FastMCP",
      "kind": "class",
-     "statements": 494,
-     "hit": 279
+     "statements": 512,
+     "hit": 290
     },
     {
      "name": "create_proxy",
@@ -4374,7 +4374,7 @@
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
    "statements": 599,
-   "hit": 394,
+   "hit": 403,
    "functions": 56,
    "functions_hit": 44,
    "symbols": [],
