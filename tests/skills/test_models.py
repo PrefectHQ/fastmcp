@@ -258,3 +258,20 @@ def test_skill_preserves_protocol_metadata() -> None:
     assert skill.meta == metadata
     assert skill.model_dump(by_alias=True)["_meta"] == metadata
     assert make_skill().meta is None
+
+
+def test_list_result_rejects_duplicate_skill_uris() -> None:
+    first = make_skill()
+    second = make_skill()
+    with pytest.raises(ValidationError, match="Duplicate skill URI"):
+        ListSkillsResult(skills=[first, second])
+
+    other = make_skill(
+        uri="skill://acme/audit/SKILL.md",
+        frontmatter={"name": "audit", "description": "Audit"},
+        resources=[
+            {"uri": "skill://acme/audit/SKILL.md", "digest": DIGEST, "size": 42}
+        ],
+    )
+    distinct = ListSkillsResult(skills=[first, other])
+    assert len(distinct.skills) == 2
