@@ -51,9 +51,12 @@ jobs:
               // The API caps results at 3,000 files. Never skip an incomplete
               // or empty diff, including when the PR changed during pagination.
               if (!files.length || files.length !== pr.changed_files || files.length >= 3000) return true;
+              // docs/python-sdk-pages.json is the generated navigation for the
+              // generated docs/python-sdk pages; only docs.json reads it.
               const editorial = (path) =>
                 /^(README|CONTRIBUTING|CODE_OF_CONDUCT)\.md$/.test(path) ||
-                /^docs\/.*\.(md|mdx)$/.test(path);
+                /^docs\/.*\.(md|mdx)$/.test(path) ||
+                path === "docs/python-sdk-pages.json";
               return files.some((file) =>
                 !editorial(file.filename) ||
                 (file.previous_filename && !editorial(file.previous_filename))
@@ -71,20 +74,29 @@ jobs:
     name: "Tests: Python ${{ matrix.python-version }} on ${{ matrix.os }}"
     runs-on: ${{ matrix.os }}
     strategy:
+      # Pull requests run the oldest and newest Python (`on-pr`, an unquoted
+      # boolean); pushes to main and manual runs run every cell, and the nightly
+      # upgrade checks run every version again with upgraded dependencies. In
+      # nine days of history no middle version caught a failure the ends missed.
       matrix:
         os: [ubuntu-latest]
         python-version: ["3.11"]
         include:
           - os: ubuntu-latest
             python-version: "3.11"
+            on-pr: true
           - os: ubuntu-latest
             python-version: "3.12"
+            on-pr: false
           - os: ubuntu-latest
             python-version: "3.13"
+            on-pr: false
           - os: ubuntu-latest
             python-version: "3.14"
+            on-pr: false
           - os: ubuntu-latest
             python-version: "3.15"
+            on-pr: true
       fail-fast: false
     timeout-minutes: 10
 
@@ -95,18 +107,18 @@ jobs:
           persist-credentials: false
 
       - name: Setup uv
-        if: needs.changes.outputs.run-tests != 'false' || (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11')
+        if: (needs.changes.outputs.run-tests != 'false' && (github.event_name != 'pull_request' || matrix.on-pr)) || (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11')
         uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ matrix.python-version }}
           resolution: locked
 
       - name: Run unit tests
-        if: needs.changes.outputs.run-tests != 'false'
+        if: needs.changes.outputs.run-tests != 'false' && (github.event_name != 'pull_request' || matrix.on-pr)
         uses: ./.github/actions/run-pytest
 
       - name: Run serial subprocess tests
-        if: needs.changes.outputs.run-tests != 'false'
+        if: needs.changes.outputs.run-tests != 'false' && (github.event_name != 'pull_request' || matrix.on-pr)
         uses: ./.github/actions/run-pytest
         with:
           test-type: client_process
@@ -115,6 +127,13 @@ jobs:
         if: needs.changes.outputs.run-tests == 'false' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         run: uv run pytest tests/docs -n 0
 
+      - name: Note that this cell runs on main
+        if: needs.changes.outputs.run-tests != 'false' && github.event_name == 'pull_request' && matrix.on-pr == false
+        run: |
+          message="Skipped on pull requests: Python ${{ matrix.python-version }} on ${{ matrix.os }} runs on pushes to main, and nightly with upgraded dependencies."
+          echo "::notice title=Tests skipped on this PR::$message"
+          echo "$message" >> "$GITHUB_STEP_SUMMARY"
+
   run_windows_tests:
     needs: changes
     # Run Windows tests for code changes, preserving required check names
@@ -122,8 +141,14 @@ jobs:
     if: ${{ !cancelled() }}
     name: "Tests: Python ${{ matrix.python-version }} on windows-latest"
     strategy:
+      # Pull requests run one Windows cell (`on-pr`); main and nightly run both.
       matrix:
         python-version: ["3.11", "3.14"]
+        include:
+          - python-version: "3.11"
+            on-pr: false
+          - python-version: "3.14"
+            on-pr: true
       fail-fast: false
     runs-on: windows-latest
     timeout-minutes: 10
@@ -132,19 +157,26 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup uv
-        if: needs.changes.outputs.run-tests != 'false'
+        if: needs.changes.outputs.run-tests != 'false' && (github.event_name != 'pull_request' || matrix.on-pr)
         uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ matrix.python-version }}
           resolution: locked
       - name: Run unit tests
-        if: needs.changes.outputs.run-tests != 'false'
+        if: needs.changes.outputs.run-tests != 'false' && (github.event_name != 'pull_request' || matrix.on-pr)
         uses: ./.github/actions/run-pytest
       - name: Run serial subprocess tests
-        if: needs.changes.outputs.run-tests != 'false'
+        if: needs.changes.outputs.run-tests != 'false' && (github.event_name != 'pull_request' || matrix.on-pr)
         uses: ./.github/actions/run-pytest
         with:
           test-type: client_process
+      - name: Note that this cell runs on main
+        if: needs.changes.outputs.run-tests != 'false' && github.event_name == 'pull_request' && matrix.on-pr == false
+        shell: bash
+        run: |
+          message="Skipped on pull requests: Python ${{ matrix.python-version }} on Windows runs on pushes to main, and nightly with upgraded dependencies."
+          echo "::notice title=Tests skipped on this PR::$message"
+          echo "$message" >> "$GITHUB_STEP_SUMMARY"
 
   run_tests_lowest_direct:
     needs: changes
