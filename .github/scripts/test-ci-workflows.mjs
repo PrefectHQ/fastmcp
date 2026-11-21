@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -263,17 +264,38 @@ test("Windows runs code PRs and retains check names for editorial PRs", () => {
   assert.ok(windows.steps.slice(1, 4).every((step) => step.if === CELL_RUNS));
   assert.equal(windows.steps[4].if, CELL_SKIPPED_ON_PR);
 });
-test("pull requests run the oldest and newest Python, one Windows and every other job", () => {
+test("pull requests run the oldest and newest Linux Python and one Windows", () => {
+  const cells = (job) =>
+    workflow.jobs[job].strategy.matrix.include.map((cell) => ({
+      os: cell.os ?? "windows-latest",
+      version: cell["python-version"],
+      onPr: cell["on-pr"],
+    }));
   const onPr = (job) =>
-    workflow.jobs[job].strategy.matrix.include
-      .filter((cell) => cell["on-pr"] === "true")
-      .map((cell) => `${cell.os ?? "windows-latest"} ${cell["python-version"]}`);
+    cells(job)
+      .filter((cell) => cell.onPr === "true")
+      .map((cell) => `${cell.os} ${cell.version}`);
   assert.deepEqual(onPr("run_tests"), ["ubuntu-latest 3.11", "ubuntu-latest 3.15"]);
   assert.deepEqual(onPr("run_windows_tests"), ["windows-latest 3.14"]);
-  // Every Linux version still runs nightly in the upgrade checks.
-  const nightly = workflows["run-upgrade-checks"].jobs.run_tests.strategy.matrix.include;
-  for (const cell of workflow.jobs.run_tests.strategy.matrix.include)
-    assert.ok(nightly.some((n) => n.os === cell.os && n["python-version"] === cell["python-version"]));
+  // Every cell skipped on PRs still runs nightly in the upgrade checks.
+  const upgrade = workflows["run-upgrade-checks"].jobs.run_tests.strategy.matrix;
+  const nightly = [
+    ...upgrade.os.flatMap((os) => upgrade["python-version"].map((version) => ({ os, version }))),
+    ...upgrade.include.map((cell) => ({ os: cell.os, version: cell["python-version"] })),
+  ];
+  for (const cell of [...cells("run_tests"), ...cells("run_windows_tests")])
+    assert.ok(
+      nightly.some((n) => n.os === cell.os && n.version === cell.version),
+      `${cell.os} ${cell.version} has no nightly run`,
+    );
+});
+test("on-pr flags are YAML booleans, which the step conditions compare as booleans", () => {
+  // BaseLoader reads every scalar as a string, so check the source: a quoted
+  // "false" is truthy in `|| matrix.on-pr` and would run the cell on PRs.
+  const source = readFileSync(`${repoRoot}.github/workflows/run-tests.yml`, "utf8");
+  const flags = [...source.matchAll(/^\s*on-pr:\s*(.+)$/gm)].map((m) => m[1].trim());
+  assert.equal(flags.length, 7);
+  for (const flag of flags) assert.match(flag, /^(true|false)$/);
 });
 test("PR cancellation cannot supersede main or manual runs", () => {
   for (const name of ["run-tests", "run-static"]) {

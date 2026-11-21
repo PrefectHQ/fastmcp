@@ -74,10 +74,10 @@ jobs:
     name: "Tests: Python ${{ matrix.python-version }} on ${{ matrix.os }}"
     runs-on: ${{ matrix.os }}
     strategy:
-      # Pull requests run the oldest and newest Python (`on-pr`); pushes to
-      # main and manual runs run every cell, and the nightly upgrade checks run
-      # them all again. In nine days of history no middle version caught a
-      # failure the ends missed.
+      # Pull requests run the oldest and newest Python (`on-pr`, an unquoted
+      # boolean); pushes to main and manual runs run every cell, and the nightly
+      # upgrade checks run every version again with upgraded dependencies. In
+      # nine days of history no middle version caught a failure the ends missed.
       matrix:
         os: [ubuntu-latest]
         python-version: ["3.11"]
@@ -129,7 +129,10 @@ jobs:
 
       - name: Note that this cell runs on main
         if: needs.changes.outputs.run-tests != 'false' && github.event_name == 'pull_request' && matrix.on-pr == false
-        run: echo "Python ${{ matrix.python-version }} on ${{ matrix.os }} runs on pushes to main and in the nightly upgrade checks, not on pull requests." >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          message="Skipped on pull requests: Python ${{ matrix.python-version }} on ${{ matrix.os }} runs on pushes to main, and nightly with upgraded dependencies."
+          echo "::notice title=Tests skipped on this PR::$message"
+          echo "$message" >> "$GITHUB_STEP_SUMMARY"
 
   run_windows_tests:
     needs: changes
@@ -138,7 +141,7 @@ jobs:
     if: ${{ !cancelled() }}
     name: "Tests: Python ${{ matrix.python-version }} on windows-latest"
     strategy:
-      # Pull requests run one Windows cell (`on-pr`); main runs both.
+      # Pull requests run one Windows cell (`on-pr`); main and nightly run both.
       matrix:
         python-version: ["3.11", "3.14"]
         include:
@@ -170,7 +173,10 @@ jobs:
       - name: Note that this cell runs on main
         if: needs.changes.outputs.run-tests != 'false' && github.event_name == 'pull_request' && matrix.on-pr == false
         shell: bash
-        run: echo "Python ${{ matrix.python-version }} on Windows runs on pushes to main and in the nightly upgrade checks, not on pull requests." >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          message="Skipped on pull requests: Python ${{ matrix.python-version }} on Windows runs on pushes to main, and nightly with upgraded dependencies."
+          echo "::notice title=Tests skipped on this PR::$message"
+          echo "$message" >> "$GITHUB_STEP_SUMMARY"
 
   run_tests_lowest_direct:
     needs: changes

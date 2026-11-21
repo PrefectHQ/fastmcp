@@ -459,12 +459,17 @@ class TestPersistentTokenExpiry:
         # The SDK treats a token as valid while `time.time() <= expiry`. With
         # `expires_in=0` the expiry is the instant the token was stored, and
         # Windows' ~16ms clock can return that same instant at the validity
-        # check. Read the SDK's clock a second later, as any real reload would.
-        monkeypatch.setattr(
-            mcp_oauth2,
-            "time",
-            types.SimpleNamespace(time=lambda: time.time() + 1),
+        # check. Read the SDK's clock a second later, as any real reload would;
+        # every other `time` attribute passes through unchanged.
+        later = types.SimpleNamespace(
+            **{
+                name: getattr(time, name)
+                for name in dir(time)
+                if not name.startswith("_")
+            }
         )
+        later.time = lambda: time.time() + 1
+        monkeypatch.setattr(mcp_oauth2, "time", later)
 
         def make_provider() -> ClientCredentialsOAuthProvider:
             return ClientCredentialsOAuthProvider(
