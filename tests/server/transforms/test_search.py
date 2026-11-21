@@ -575,6 +575,93 @@ class TestCallToolGuard:
                     "run_tool", {"name": "find_tools", "arguments": {"pattern": "add"}}
                 )
 
+    @pytest.mark.parametrize(
+        "transform_cls", [RegexSearchTransform, BM25SearchTransform]
+    )
+    async def test_call_tool_proxy_cannot_reach_always_visible_tools(
+        self, transform_cls
+    ):
+        """Pinned tools stay directly callable but cannot be invoked through call_tool."""
+        from fastmcp.exceptions import ToolError
+
+        mcp = FastMCP("test")
+
+        @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True})
+        def delete_thing(key: str) -> str:
+            return f"deleted {key}"
+
+        @mcp.tool(annotations={"readOnlyHint": True})
+        def read_thing(key: str) -> str:
+            return f"read {key}"
+
+        mcp.add_transform(transform_cls(always_visible=["delete_thing"]))
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="delete_thing"):
+                await client.call_tool(
+                    "call_tool",
+                    {"name": "delete_thing", "arguments": {"key": "k"}},
+                )
+
+            direct = await client.call_tool("delete_thing", {"key": "k"})
+            assert direct.content[0].text == "deleted k"  # type: ignore[union-attr]
+
+            proxied = await client.call_tool(
+                "call_tool",
+                {"name": "read_thing", "arguments": {"key": "k"}},
+            )
+            assert proxied.content[0].text == "read k"  # type: ignore[union-attr]
+
+    @pytest.mark.parametrize(
+        "transform_cls", [RegexSearchTransform, BM25SearchTransform]
+    )
+    async def test_call_tool_proxy_annotations_reflect_hidden_tools(
+        self, transform_cls
+    ):
+        """call_tool aggregates conservative annotations over searchable hidden tools."""
+        mcp = FastMCP("test")
+
+        @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True})
+        def delete_thing(key: str) -> str:
+            return f"deleted {key}"
+
+        @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
+        def read_thing(key: str) -> str:
+            return f"read {key}"
+
+        mcp.add_transform(transform_cls(always_visible=["delete_thing"]))
+
+        async with Client(mcp) as client:
+            listed = {tool.name: tool for tool in await client.list_tools()}
+
+        call_proxy = listed["call_tool"]
+        assert call_proxy.annotations is not None
+        assert call_proxy.annotations.read_only_hint is True
+        assert call_proxy.annotations.destructive_hint is False
+        assert call_proxy.annotations.open_world_hint is False
+
+    async def test_call_tool_proxy_annotations_mixed_hidden_tools(self):
+        """Any non-read-only or destructive hidden tool marks call_tool non-read-only."""
+        mcp = FastMCP("test")
+
+        @mcp.tool(annotations={"readOnlyHint": True})
+        def read_thing(key: str) -> str:
+            return f"read {key}"
+
+        @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True})
+        def write_thing(key: str) -> str:
+            return f"wrote {key}"
+
+        mcp.add_transform(RegexSearchTransform())
+
+        async with Client(mcp) as client:
+            listed = {tool.name: tool for tool in await client.list_tools()}
+
+        call_proxy = listed["call_tool"]
+        assert call_proxy.annotations is not None
+        assert call_proxy.annotations.read_only_hint is False
+        assert call_proxy.annotations.destructive_hint is True
+
 
 # ---------------------------------------------------------------------------
 # catalog hash staleness

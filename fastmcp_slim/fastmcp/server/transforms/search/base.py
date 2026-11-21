@@ -32,12 +32,15 @@ from abc import abstractmethod
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Annotated, Any
 
+from mcp_types import ToolAnnotations
+
+from fastmcp.apps.config import is_model_visible
 from fastmcp.exceptions import NotFoundError
 from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.catalog import CatalogTransform
 from fastmcp.tools.base import Tool, ToolResult
-from fastmcp.utilities.versions import VersionSpec
+from fastmcp.utilities.versions import VersionSpec, dedupe_with_versions
 
 
 def _extract_searchable_text(tool: Tool) -> str:
@@ -288,6 +291,42 @@ def serialize_tools_for_output_markdown(tools: Sequence[Tool]) -> str:
     return "\n\n".join(blocks)
 
 
+def _aggregate_tool_annotations(tools: Sequence[Tool]) -> ToolAnnotations | None:
+    """Compute conservative ToolAnnotations spanning a reachable tool set."""
+    if not tools:
+        return None
+
+    read_only = all(
+        t.annotations is not None and t.annotations.read_only_hint is True
+        for t in tools
+    )
+    destructive = not all(
+        t.annotations is not None
+        and (
+            t.annotations.destructive_hint is False
+            or (
+                t.annotations.read_only_hint is True
+                and t.annotations.destructive_hint is not True
+            )
+        )
+        for t in tools
+    )
+    idempotent = all(
+        t.annotations is not None and t.annotations.idempotent_hint is True
+        for t in tools
+    )
+    open_world = not all(
+        t.annotations is not None and t.annotations.open_world_hint is False
+        for t in tools
+    )
+    return ToolAnnotations(
+        read_only_hint=read_only,
+        destructive_hint=destructive,
+        idempotent_hint=idempotent,
+        open_world_hint=open_world,
+    )
+
+
 class BaseSearchTransform(CatalogTransform):
     """Replace the tool listing with a search interface.
 
@@ -336,7 +375,17 @@ class BaseSearchTransform(CatalogTransform):
     async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """Replace the catalog with pinned + synthetic search/call tools."""
         pinned = [t for t in tools if t.name in self._always_visible]
-        return [*pinned, self._make_search_tool(), self._make_call_tool()]
+        reachable_hidden = [
+            t
+            for t in dedupe_with_versions(tools, lambda t: t.name)
+            if t.name not in self._always_visible and is_model_visible(t)
+        ]
+        annotations = _aggregate_tool_annotations(reachable_hidden)
+        return [
+            *pinned,
+            self._make_search_tool(),
+            self._make_call_tool(annotations=annotations),
+        ]
 
     async def get_tool(
         self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
@@ -357,7 +406,7 @@ class BaseSearchTransform(CatalogTransform):
         """Create the search tool. Subclasses define the parameter schema."""
         ...
 
-    def _make_call_tool(self) -> Tool:
+    def _make_call_tool(self, annotations: ToolAnnotations | None = None) -> Tool:
         """Create the call_tool proxy that executes discovered tools."""
         transform = self
 
@@ -378,14 +427,16 @@ class BaseSearchTransform(CatalogTransform):
                 )
             # The name comes from the model, so this proxy is a second way
             # into the server that no host mediates. It may reach only what
-            # the model was allowed to discover.
+            # the model can discover via search.
             if not any(
-                tool.name == name for tool in await transform.get_tool_catalog(ctx)
+                tool.name == name for tool in await transform._get_visible_tools(ctx)
             ):
                 raise NotFoundError(f"Unknown tool: {name!r}")
             return await ctx.fastmcp.call_tool(name, arguments)
 
-        return Tool.from_function(fn=call_tool, name=self._call_tool_name)
+        return Tool.from_function(
+            fn=call_tool, name=self._call_tool_name, annotations=annotations
+        )
 
     # ------------------------------------------------------------------
     # Serialization
