@@ -7,13 +7,38 @@ sidebarTitle: base
 
 ## Classes
 
-### `ClientSessionKwargs` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/base.py#L24" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ClientSessionKwargs` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/base.py#L53" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Keyword arguments for the MCP ClientSession constructor.
 
 
-### `TransportOptions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/base.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `VersionAwareClientSession` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/base.py#L70" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A session that skips output-schema revalidation for mismatched pinned calls.
+
+``ClientSession.call_tool`` revalidates a tool's structured content against
+the output schema the server advertised, looked up by tool *name*. That
+cache holds only the listed (highest) version's schema, so a call pinned to
+a different version -- which the server executes as the requested version
+-- would be checked against a schema that does not describe its result.
+
+The session records the version each listed tool advertises in
+``_meta.fastmcp.version``. A pinned call to that version validates as
+usual; a pinned call to any other version skips the check, since its schema
+is not obtainable over the wire. Every unpinned call validates as before.
+
+
+**Methods:**
+
+#### `validate_tool_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/base.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+validate_tool_result(self, name: str, result: mcp_types.CallToolResult) -> None
+```
+
+### `TransportOptions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/base.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 How one client wants its connection built.
@@ -24,9 +49,12 @@ Different client layers may own different fields; a layer that adds its
 settings must preserve the existing options rather than replace the bundle.
 
 **Attributes:**
-- `session_class`: The ClientSession class to instantiate. Proxies supply a
-session that skips output-schema validation, since they relay
-results rather than consume them.
+- `session_class`: The ClientSession class to instantiate. The default
+skips output-schema validation for a tool call pinned to a version
+other than the listed one, whose result no advertised schema
+describes; proxies additionally
+supply a session that skips it for every result, since they relay
+rather than consume them.
 - `forward_incoming_headers`: Whether to forward eligible inbound HTTP
 headers upstream, including authorization. Hop-specific HTTP headers
 and MCP transport, routing, and event-stream state are excluded
@@ -43,7 +71,7 @@ to a single backend directly, since those carry the connecting
 client's own session and era.
 
 
-### `ClientTransport` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/base.py#L80" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ClientTransport` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/base.py#L159" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Abstract base class for different MCP client transport mechanisms.
@@ -54,7 +82,7 @@ to an MCP server, and providing a ClientSession within an async context.
 
 **Methods:**
 
-#### `connect_session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/base.py#L98" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `connect_session` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/base.py#L177" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 connect_session(self, **session_kwargs: Unpack[SessionKwargs]) -> AsyncGenerator[ClientSession, None]
@@ -76,7 +104,7 @@ within this context.
               constructor (e.g., callbacks, timeouts).
 
 
-#### `close` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/base.py#L130" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `close` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/base.py#L209" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 close(self)
@@ -85,7 +113,7 @@ close(self)
 Close the transport.
 
 
-#### `get_session_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/base.py#L133" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_session_id` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/base.py#L212" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_session_id(self) -> str | None

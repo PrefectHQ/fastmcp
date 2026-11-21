@@ -85,7 +85,7 @@ Run a MCP server or connect to a remote one.
 - `stateless`: Whether to run in stateless mode (no session)
 
 
-### `run_module_command` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/run.py#L277" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `run_module_command` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/run.py#L285" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run_module_command(module_name: str) -> None
@@ -104,23 +104,30 @@ with environment setup (e.g. ``UVEnvironment.build_command``).
 - `extra_args`: Extra arguments forwarded after the module name.
 
 
-### `run_v1_server_async` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/run.py#L316" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `run_v1_server_async` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/run.py#L324" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-run_v1_server_async(server: SDKServer, host: str | None = None, port: int | None = None, transport: TransportType | None = None) -> None
+run_v1_server_async(server: SDKServer, host: str | None = None, port: int | None = None, transport: TransportType | None = None, path: str | None = None, stateless: bool = False, log_level: LogLevelType | None = None) -> None
 ```
 
 
-Run a FastMCP 1.x server using async methods.
+Run the MCP SDK's high-level `MCPServer` using async methods.
 
 **Args:**
-- `server`: FastMCP 1.x server instance
+- `server`: SDK `MCPServer` instance
 - `host`: Host to bind to
 - `port`: Port to bind to
 - `transport`: Transport protocol to use
+- `path`: Route path for the HTTP endpoint (Streamable HTTP or SSE)
+- `stateless`: Whether to run Streamable HTTP without sessions. The SDK's
+SSE transport has no stateless mode, so it is ignored for SSE.
+- `log_level`: Log level to apply to the server settings. ``MCPServer`` only
+accepts ``log_level`` at construction time, but its HTTP runners read
+``settings.log_level`` (for uvicorn), so the setting is updated before
+starting. The stdio runner does not consult it.
 
 
-### `run_with_reload` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/run.py#L384" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `run_with_reload` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/run.py#L412" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run_with_reload(cmd: list[str], reload_dirs: list[Path] | None = None, is_stdio: bool = False) -> None
