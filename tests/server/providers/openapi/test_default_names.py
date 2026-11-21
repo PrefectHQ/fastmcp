@@ -62,3 +62,26 @@ async def test_resource_uri_without_usable_name():
     async with Client(server) as client:
         resources = await client.list_resources()
     assert [str(resource.uri) for resource in resources] == ["resource://GET_users"]
+
+
+@pytest.mark.parametrize(
+    ("operation_id", "expected"),
+    [
+        ("foo/get_thing", "foo_get_thing"),
+        ("actions/list-repos", "actions_list_repos"),
+        (
+            "security-advisories/list-global-advisories",
+            "security_advisories_list_global_advisories",
+        ),
+        ("/leading/and//consecutive/", "leading_and_consecutive"),
+    ],
+)
+async def test_operation_id_slashes_become_underscores(
+    operation_id: str, expected: str
+):
+    server = FastMCP.from_openapi(
+        openapi_spec=_spec({"/items": {"operationId": operation_id}}),
+        client=_client(),
+    )
+    async with Client(server) as client:
+        assert [tool.name for tool in await client.list_tools()] == [expected]
