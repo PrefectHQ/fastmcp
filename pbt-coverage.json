@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-21T02:42:27+00:00",
- "source_commit": "dab0828d1c5a06e3bbf337410df2318bb754c07b",
+ "generated_at": "2026-11-21T02:49:49+00:00",
+ "source_commit": "876e74d741bf22cd4c83f278fa97188855d5b0fa",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -4374,9 +4374,9 @@
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
    "statements": 617,
-   "hit": 395,
+   "hit": 419,
    "functions": 57,
-   "functions_hit": 42,
+   "functions_hit": 45,
    "symbols": [],
    "tests": 2,
    "test_ids": [
