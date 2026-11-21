@@ -127,8 +127,8 @@ Load the `release` skill to cut one; it holds the procedure. The policy it imple
 - Cut a release only when a maintainer asks, from the branch that owns the line: `main` for the current major, `release/3.x` or `release/2.x` for maintenance.
 - Titles are `v<version>: <pun>`, with the pun on the release's main theme. Propose several and let the maintainer choose.
 - The handwritten notes need the maintainer's sign-off: one or two sentences for a patch, narrative prose for a point release.
-- Generate the changelog from the last stable tag (`previous_tag_name` in the notes API, or `--notes-start-tag` when using CLI generation) so a prerelease tag never truncates it. Complete contributor attribution before publication and publish those completed notes with `--notes-file`.
-- Merge the docs changelog PR on the release branch immediately *before* tagging, so the entry is in the tagged commit.
+- Generate the changelog from the last stable tag (`previous_tag_name` in the notes API, or `--notes-start-tag` when using CLI generation) so a prerelease tag never truncates it. Complete contributor attribution before the changelog PR; the release is drafted from that entry.
+- Changelog entries for every line merge to `main`. That merge drafts the GitHub release; only a maintainer publishes it.
 - gofastmcp.com/docs serves Mintlify docs from `published-docs`, which accepts changes only through PRs. `main` is the docs authoring source. The root website is maintained separately in `PrefectHQ/gofastmcp-website` and deployed by Vercel from its `main` branch.
 
 ### Commit Messages and Agent Attribution

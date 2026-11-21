@@ -299,3 +299,27 @@ def test_plain_app_handles_are_excluded_from_all_counts(
     assert result["generated_first_time_count"] == 0
     assert result["first_time_review"] == []
     assert len(calls) == 1
+
+
+def test_rest_commit_authors_include_noreply_coauthors():
+    from scripts.release_contributor_credit import rest_authors
+
+    commit = {
+        "author": {"login": "maintainer", "type": "User"},
+        "commit": {
+            "author": {"name": "Maintainer", "email": "m@example.com"},
+            "message": (
+                "Fix a thing\n\n"
+                "Co-authored-by: Reporter <123+reporter@users.noreply.github.com>\n"
+                "Co-authored-by: Someone <someone@example.com>\n"
+            ),
+        },
+    }
+
+    nodes = rest_authors(commit)["nodes"]
+
+    assert [node["user"] for node in nodes] == [
+        {"login": "maintainer", "__typename": "User"},
+        {"login": "reporter", "__typename": "User"},
+        None,
+    ]

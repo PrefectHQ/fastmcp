@@ -16,6 +16,9 @@ TEMPLATE = "fastmcp_slim/fastmcp/resources/template.py"
 SCHEMA = "fastmcp_slim/fastmcp/utilities/json_schema.py"
 SCHEMA_TYPE = "fastmcp_slim/fastmcp/utilities/json_schema_type.py"
 MACHINE = "tests/pbt/test_components_machine.py"
+TRANSFORM = "fastmcp_slim/fastmcp/tools/tool_transform.py"
+DIRECTOR = "fastmcp_slim/fastmcp/utilities/openapi/director.py"
+OAUTH = "fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py"
 
 MUTANTS: dict[str, list[dict[str, str]]] = {
     "uri_template": [
@@ -99,6 +102,14 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "new": "default=None,",
             "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
         },
+        {
+            "name": "F2 undone: a broken merged default is never dropped",
+            "fixes": "F2",
+            "file": SCHEMA_TYPE,
+            "old": "            if not broken:\n                raise\n",
+            "new": "            raise\n",
+            "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
+        },
     ],
     "components": [
         {
@@ -106,6 +117,13 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "file": "fastmcp_slim/fastmcp/utilities/pagination.py",
             "old": "next_cursor = CursorState(offset=end).encode()",
             "new": "next_cursor = CursorState(offset=end + 1).encode()",
+            "test": MACHINE,
+        },
+        {
+            "name": "F4 undone: unversioned never matches a requested version",
+            "file": "fastmcp_slim/fastmcp/utilities/versions.py",
+            "old": "        if version is None:\n            return match_none\n",
+            "new": "        if version is None:\n            return False\n",
             "test": MACHINE,
         },
         {
@@ -130,6 +148,97 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "            for k in [k for k, c in self._components.items() if isinstance(c, Tool) and c.name == name and k != key]:\n"
             "                self._remove_component(k)",
             "test": MACHINE,
+        },
+    ],
+    "tool_transform": [
+        {
+            "name": "hidden argument loses its default",
+            "file": TRANSFORM,
+            "old": "                    parent_args[old_name] = transform.default\n",
+            "new": "                    pass\n",
+            "test": "tests/pbt/test_tool_transform.py",
+        },
+        {
+            "name": "missing required arguments accepted",
+            "file": TRANSFORM,
+            "old": "            missing_args = new_required - provided_args",
+            "new": "            missing_args = set()",
+            "test": "tests/pbt/test_tool_transform.py",
+        },
+        {
+            "name": "renamed argument reaches the parent under its new name",
+            "file": TRANSFORM,
+            "old": "                old_name = new_to_old.get(new_name, new_name)",
+            "new": "                old_name = new_name",
+            "test": "tests/pbt/test_tool_transform.py",
+        },
+        {
+            "name": "unknown arguments accepted",
+            "file": TRANSFORM,
+            "old": "            if unknown_args:",
+            "new": "            if False:",
+            "test": "tests/pbt/test_tool_transform.py",
+        },
+    ],
+    "openapi": [
+        {
+            "name": "non-form arrays explode by default",
+            "file": DIRECTOR,
+            "old": "                    explode = False\n",
+            "new": "                    explode = True\n",
+            "test": "tests/pbt/test_openapi.py",
+        },
+        {
+            "name": "pipeDelimited joins with commas",
+            "file": DIRECTOR,
+            "old": '        "pipeDelimited": "|",',
+            "new": '        "pipeDelimited": ",",',
+            "test": "tests/pbt/test_openapi.py",
+        },
+        {
+            "name": "booleans sent as True/False",
+            "file": DIRECTOR,
+            "old": '        return "true" if value else "false"',
+            "new": "        return str(value)",
+            "test": "tests/pbt/test_openapi.py",
+        },
+        {
+            "name": "slash left unquoted in path values",
+            "file": DIRECTOR,
+            "old": '        return quote(serialized, safe="")',
+            "new": '        return quote(serialized, safe="/")',
+            "test": "tests/pbt/test_openapi.py",
+        },
+    ],
+    "oauth_proxy": [
+        {
+            "name": "authorization code reusable",
+            "file": OAUTH,
+            "old": "        if not await self._code_store.delete(key=authorization_code.code):",
+            "new": "        if not (await self._code_store.delete(key=authorization_code.code) or True):",
+            "test": "tests/pbt/test_oauth_proxy_machine.py",
+        },
+        {
+            "name": "refresh token usable by another client",
+            "file": OAUTH,
+            "old": "        if metadata.client_id != client.client_id:",
+            "new": "        if False:",
+            "test": "tests/pbt/test_oauth_proxy_machine.py",
+        },
+        {
+            "name": "revoked access token's mapping kept (undoes F10)",
+            "file": OAUTH,
+            "old": "            await self._jti_mapping_store.delete(key=token.fastmcp_jti)",
+            "new": "            pass",
+            "test": "tests/pbt/test_oauth_proxy_machine.py",
+            "fixes": "F10",
+        },
+        {
+            "name": "revoked refresh token kept",
+            "file": OAUTH,
+            "old": "            await self._refresh_token_store.delete(key=_hash_token(token.token))",
+            "new": "            pass",
+            "test": "tests/pbt/test_oauth_proxy_machine.py",
         },
     ],
 }

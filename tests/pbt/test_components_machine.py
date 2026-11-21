@@ -33,6 +33,45 @@ from hypothesis.stateful import (
 )
 
 from fastmcp import Client, FastMCP
+from fastmcp.server.providers.proxy import ProxyClient, ProxyProvider
+from fastmcp.tools import Tool
+from fastmcp.utilities.versions import dedupe_with_versions
+
+from .known import still_open
+
+
+def _f7_reproduces() -> bool:
+    """F7: equal versions from two servers are listed twice in `versions`."""
+    twins = [Tool.from_function(lambda: "", name="t", version="1") for _ in range(2)]
+    listed = dedupe_with_versions(twins, key_fn=lambda c: c.name)
+    meta = listed[0].meta or {}
+    return meta.get("fastmcp", {}).get("versions") == ["1", "1"]
+
+
+def _f8_reproduces() -> bool:
+    """F8: a hidden parent tool shadows the mounted tool listed in its place."""
+    parent, child = FastMCP("p"), FastMCP("c")
+    parent.tool(name="t")(lambda: "parent")
+    child.tool(name="t", tags={"x"})(lambda: "child")
+    parent.mount(child)
+    parent.enable(tags={"x"}, only=True)
+
+    async def probe() -> bool:
+        async with Client(parent) as client:
+            listed = [t.name for t in await client.list_tools()]
+            try:
+                await client.call_tool("t", {})
+            except Exception:
+                return listed == ["t"]
+            return False
+
+    return asyncio.run(probe())
+
+
+# Skip a known finding only while it reproduces, so the property checks the
+# shape again once the fix lands. Undo mutants set PBT_ASSUME_FIXED.
+F7_OPEN = still_open("F7", _f7_reproduces)
+F8_OPEN = still_open("F8", _f8_reproduces)
 
 KINDS = ["tool", "prompt", "resource"]
 IDENTS = {
@@ -45,8 +84,8 @@ TAGS = ["x", "y"]
 OWNERS = ["parent", "child"]
 
 
-def exposed(kind: str, owner: str, ident: str) -> str:
-    if owner == "parent":
+def exposed(kind: str, owner: str, ident: str, namespace: str | None = "c") -> str:
+    if owner == "parent" or namespace is None:
         return ident
     if kind == "resource":
         return ident.replace("res://", "res://c/")
@@ -90,6 +129,9 @@ class ComponentMachine(RuleBasedStateMachine):
         self.log_level = self.logger.level
         self.logger.setLevel(logging.ERROR)
 
+    def exposed(self, kind: str, owner: str, ident: str) -> str:
+        return exposed(kind, owner, ident, self.namespace)
+
     def run(self, coro):
         return self.loop.run_until_complete(coro)
 
@@ -103,15 +145,34 @@ class ComponentMachine(RuleBasedStateMachine):
 
     # ---- starting state -------------------------------------------------
 
-    @initialize(page_size=st.sampled_from([None, 1, 2, 3]), data=st.data())
-    def start(self, page_size: int | None, data) -> None:
+    @initialize(
+        page_size=st.sampled_from([None, 1, 2, 3]),
+        namespace=st.sampled_from(["c", None]),
+        via=st.sampled_from(["direct", "proxy"]),
+        data=st.data(),
+    )
+    def start(
+        self, page_size: int | None, namespace: str | None, via: str, data
+    ) -> None:
         event(f"page_size={page_size}")
+        event(f"namespace={namespace}")
+        event(f"via={via}")
         self.page_size = page_size
+        self.namespace = namespace
         self.parent = FastMCP("parent", list_page_size=page_size)
         self.child = FastMCP("child")
-        self.parent.mount(self.child, namespace="c")
+        self.parent.mount(self.child, namespace=namespace)
         self.servers = {"parent": self.parent, "child": self.child}
-        client = Client(self.parent)
+        front = self.parent
+        if via == "proxy":
+            # A proxy in front of the parent must look exactly like the parent.
+            # Caching is off: the backend changes between steps, and a cached
+            # proxy serves stale listings by design until it lists again.
+            front = FastMCP("proxy", list_page_size=page_size)
+            front.add_provider(
+                ProxyProvider(lambda: ProxyClient(self.parent), cache_ttl=0)
+            )
+        client = Client(front)
         self.run(client.__aenter__())
         self.client = client
         # A drawn starting state: several identifiers, each versioned or not,
@@ -156,19 +217,47 @@ class ComponentMachine(RuleBasedStateMachine):
             if not on:
                 return False
         for r in self.vis_rules["parent"]:
-            if r.matches(kind, exposed(kind, owner, ident), tags):
+            if r.matches(kind, self.exposed(kind, owner, ident), tags):
                 on = r.enabled
         return on
 
-    def expected_view(self, kind: str) -> dict[str, list[str | None]]:
-        """exposed name -> enabled versions, highest first."""
-        view: dict[str, list[str | None]] = {}
+    def candidates(self, kind: str) -> dict[str, list[tuple[str | None, str]]]:
+        """exposed name -> enabled (version, owner), in serving order.
+
+        Highest version first; for equal versions the provider registered
+        first wins, and the parent's own components come before any mount
+        (docs/servers/composition.mdx#conflict-resolution).
+        """
+        view: dict[str, list[tuple[str | None, str]]] = {}
         for (k, owner, ident, version), tags in self.comps.items():
             if k == kind and self.enabled(k, owner, ident, tags):
-                view.setdefault(exposed(k, owner, ident), []).append(version)
-        for versions in view.values():
-            versions.sort(key=vkey, reverse=True)
+                view.setdefault(self.exposed(k, owner, ident), []).append(
+                    (version, owner)
+                )
+        for entries in view.values():
+            entries.sort(key=lambda e: (vkey(e[0]), e[1] == "parent"), reverse=True)
         return view
+
+    def expected_view(self, kind: str) -> dict[str, list[str | None]]:
+        """exposed name -> enabled versions, highest first, each once."""
+        return {
+            name: list(dict.fromkeys(v for v, _o in entries))
+            for name, entries in self.candidates(kind).items()
+        }
+
+    def mixed(self, kind: str, name: str) -> bool:
+        """Versioned and unversioned under one name, from different servers.
+
+        One server refuses the mix, but nothing checks across a mount without
+        a namespace, and no doc says what a client should see then (F6).
+        Hidden components count: they still take part in the lookup.
+        """
+        versioned = {
+            v is None
+            for (k, o, i, v) in self.comps
+            if k == kind and self.exposed(k, o, i) == name
+        }
+        return len(versioned) > 1
 
     # ---- mutations ------------------------------------------------------
 
@@ -251,7 +340,7 @@ class ComponentMachine(RuleBasedStateMachine):
     def visibility(self, owner, enable, data, only):
         kind_for_names = data.draw(st.sampled_from(KINDS))
         pool = [
-            exposed(kind_for_names, o, i) if owner == "parent" else i
+            self.exposed(kind_for_names, o, i) if owner == "parent" else i
             for o in (OWNERS if owner == "parent" else ["child"])
             for i in IDENTS[kind_for_names]
         ]
@@ -313,6 +402,13 @@ class ComponentMachine(RuleBasedStateMachine):
         event(f"list {kind}: {min(len(want), 3)}+ visible")
         assert set(got) == set(want), "the listing shows a different set of components"
         for ident, versions in want.items():
+            if self.mixed(kind, ident):
+                event("known: F6 cross-mount version mix")
+                continue
+            if F7_OPEN and got[ident] != versions:
+                if list(dict.fromkeys(got[ident])) == versions:
+                    event("known: F7 equal versions listed twice")
+                    continue
             assert got[ident] == versions, "the listing reports different versions"
 
     @precondition(lambda self: self.page_size is not None)
@@ -369,25 +465,35 @@ class ComponentMachine(RuleBasedStateMachine):
         else:
             owner = data.draw(st.sampled_from(OWNERS))
             ident = data.draw(st.sampled_from(IDENTS[kind]))
-        name = exposed(kind, owner, ident)
-        view = self.expected_view(kind)
-        versions = view.get(name, [])
-        if version is None:
-            want = f"{owner}:{ident}@{versions[0]}" if versions else None
+        name = self.exposed(kind, owner, ident)
+        entries = self.candidates(kind).get(name, [])
+        if self.mixed(kind, name):
+            event("known: F6 cross-mount version mix")
+            return
+        if version is None or entries[:1] and entries[0][0] is None:
+            # No version asked, or only unversioned components: serve the
+            # first in order. An unversioned component matches any requested
+            # version (docs/servers/versioning.mdx, F4 in FINDINGS.md).
+            pick = entries[0] if entries else None
+            if version is not None and pick:
+                event(f"explicit version on unversioned {kind}")
         else:
-            want = f"{owner}:{ident}@{version}" if version in versions else None
+            pick = next((e for e in entries if e[0] == version), None)
+        want = None
+        if pick:
+            v, o = pick
+            want = f"{o}:{ident}@{v}"
+            if F8_OPEN and o == "child" and self.namespace is None:
+                twin = (kind, "parent", ident, v)
+                if twin in self.comps:
+                    # The parent's equal, hidden twin answers the lookup first.
+                    event("known: F8 hidden twin shadows the mounted one")
+                    return
         try:
             got = self.run(self._call(kind, name, version))
         except Exception as e:
             note(f"call {kind} {name}@{version} raised {e!r}"[:300])
             got = None
-        if (
-            version is not None
-            and versions == [None]
-            and got == f"{owner}:{ident}@None"
-        ):
-            event(f"known: F4 explicit version runs unversioned {kind}")
-            return
         event(f"call {kind}: {'ok' if want else 'error'} expected")
         note(f"call {kind} {name} version={version}: got {got!r}, want {want!r}")
         assert got == want, "a call ran a different component than the model"

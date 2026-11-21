@@ -110,7 +110,10 @@ from fastmcp.server.auth.oauth_proxy.models import (
     UpstreamTokenSet,
     _hash_token,
 )
-from fastmcp.server.auth.oauth_proxy.revocation import RevocationProvider
+from fastmcp.server.auth.oauth_proxy.revocation import (
+    RevocableAccessToken,
+    RevocationProvider,
+)
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
 from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client, OAuthError
 from fastmcp.server.auth.redirect_validation import (
@@ -1400,8 +1403,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # identifier_uri prefix Azure echoes back on custom API scopes.
         granted_scopes = self._translate_scopes_from_idp(granted_scopes)
 
-        # Clean up client code (one-time use)
-        await self._code_store.delete(key=authorization_code.code)
+        # Consume the code before issuing anything. delete() reports whether
+        # this call removed the key, so of two concurrent redemptions only one
+        # wins, including across replicas sharing a store.
+        if not await self._code_store.delete(key=authorization_code.code):
+            raise TokenError("invalid_grant", "Authorization code already used")
 
         # Generate IDs for token storage
         upstream_token_id = secrets.token_urlsafe(32)
@@ -2016,6 +2022,16 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 ),  # Keep until longest-lived token expires (min 1s for safety)
             )
 
+        # Consume the FastMCP refresh token before issuing successors.
+        # delete() reports whether this call removed the key, so of two
+        # concurrent refreshes only one wins, including across replicas sharing
+        # a store. Claiming this late means a failed upstream refresh or claims
+        # extraction leaves the token usable for a retry.
+        if not await self._refresh_token_store.delete(
+            key=_hash_token(refresh_token.token)
+        ):
+            raise TokenError("invalid_grant", "Refresh token already used")
+
         # Issue new minimal FastMCP access token (just a reference via JTI)
         if client.client_id is None:
             raise TokenError("invalid_client", "Client ID is required")
@@ -2082,9 +2098,6 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             ),
             ttl=refresh_ttl,
         )
-
-        # Delete old refresh token (by hash)
-        await self._refresh_token_store.delete(key=_hash_token(refresh_token.token))
 
         logger.info(
             "Issued new FastMCP tokens (rotated refresh) for client=%s (access_jti=%s, refresh_jti=%s)",
@@ -2467,9 +2480,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         """Revoke token locally and with upstream server if supported.
 
-        For refresh tokens, removes from local storage by hash.
-        For all tokens, attempts upstream revocation if endpoint is configured.
-        Access token JTI mappings expire via TTL.
+        For refresh tokens, removes from local storage by hash. For an access
+        token presented to the revocation route, removes its JTI mapping, so
+        the token cannot validate again after a refresh puts a new upstream
+        token behind its grant. An `AccessToken` from `load_access_token`
+        carries only the upstream token, so revoking one directly revokes
+        upstream but cannot retire the FastMCP token. For all tokens,
+        attempts upstream revocation if endpoint is configured.
         """
         # For refresh tokens, delete from local storage by hash
         if isinstance(token, RefreshToken):
@@ -2496,6 +2513,16 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 )
                 logger.debug("Revoked ID-JAG access token jti=%s", jti[:16])
             return
+
+        # Every FastMCP access token of a grant maps to the grant's one
+        # upstream record, which a refresh rewrites. Revoking upstream alone
+        # would let this token validate again against the next upstream
+        # token, so retire its mapping too.
+        if isinstance(token, RevocableAccessToken):
+            await self._jti_mapping_store.delete(key=token.fastmcp_jti)
+            if not token.upstream_live:
+                logger.debug("Retired access token; its upstream token is gone")
+                return
 
         # Attempt upstream revocation if endpoint is configured
         if self._upstream_revocation_endpoint:
