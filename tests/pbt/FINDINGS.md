@@ -17,6 +17,7 @@ Mutant catch rates: `uv run python -m tests.pbt.mutants`.
 | json_schema dereference, compress | 10k each | none planted | clean |
 | json_schema adapter accepts valid | 10k | `schema_fixes`, 4 undo mutants at 10/10 (below) | F1, F2, F3, F5 |
 | component machine (tools, prompts, resources, mount, versions, visibility, pagination) | 3k histories | 4/4 at 10/10 | F4 |
+| component machine, round 2: mount with or without a namespace (2026-11-19) | 3k histories | not yet measured | F6, F7, F8 |
 
 F1, F3 and F5 are fixed on `main` (#6552, #6553, #6572), so their probes
 report fixed and the harness checks those shapes again. F2 is fixed by keeping
@@ -273,6 +274,66 @@ the schemas that would catch it (`PBT_ASSUME_FIXED`, set per mutant).
   and the failure discards the whole result. Kept; not fixed (only F1 and F3
   were authorized).
 
+### F6. versioned and unversioned components under one name, from two servers
+
+- property: component machine with `mount(child)` and no namespace. One
+  server refuses to mix versioned and unversioned components under one name
+  (docs/servers/versioning.mdx); nothing refuses it across a mount.
+- minimal: parent `t` unversioned, child `t` version `"1"`. `list_tools()`
+  shows only the child's `t@1` (`versions: ["1"]`), the call without a version
+  runs `child@1`, and `version="2"` runs the parent's unversioned `t`, which
+  the listing never showed.
+- blob: `@reproduce_failure('6.170.15', b'AXicY3BkcGSEYlQIEmECEgwgDEaOLAwMcFmYKBMQwfQAAEy6CDI=')`
+  (resource shape: parent `res://r0` unversioned, child `res://r0@1` hidden by
+  tag; the read without a version fails although the parent's is enabled).
+- frequency: 21.7% of 3k histories touch the shape (registered, not asserted).
+- reachable: yes, by mounting two servers without a namespace where one
+  versions a name and the other does not. The aggregate already warns about
+  exact duplicate keys, but not about this.
+- against: the composition docs only say "highest matching version" and
+  "first registered wins" for equal keys; neither covers a mix, so there is no
+  documented answer to violate. The versioning docs now carry a caveat
+  (#6582). Kept as an unspecified region, not a bug, until a behaviour is
+  chosen.
+
+### F7. equal versions from two servers are listed twice in `versions`
+
+- property: component machine listing — `meta.fastmcp.versions` lists the
+  enabled versions, highest first.
+- minimal: parent `t@1`, child `t@1`, no namespace: `versions == ["1", "1"]`.
+- blob: `@reproduce_failure('6.170.15', b'AXicY3BkcGSEYiYgwcCAzECBMAIAjL8FXg==')`
+- frequency: 7.4% of 3k histories.
+- reachable: yes, by any un-namespaced mount where both servers carry the same
+  version of a name. Cosmetic: a client building a version picker shows a
+  duplicate, and both entries resolve to the parent's.
+- against: the duplicate is the honest count of providers, and only the
+  parent's is reachable anyway. But `versions` is documented as the versions a
+  client can request, and "1" is one version. Kept.
+
+### F8. a hidden component shadows the mounted component listed in its place
+
+- property: component machine `call` — what a listing shows, a call without a
+  version runs.
+- minimal: parent `t` (no tags), child `t` tagged `x`, `mount(child)`,
+  `parent.enable(tags={"x"}, only=True)`. `list_tools()` shows `t` (the
+  child's), and `call_tool("t", {})` raises `Unknown tool: 't'`. The same
+  happens with equal versions (`t@1` on both), with `version="1"`, and for
+  prompts and resources.
+- blob: `@reproduce_failure('6.170.15', b'AXicY3BkcGQEYxCJBYIIFgZGmCyIARZlReKBCCaovCMDAIpfCPk=')`
+- frequency: 0.12% of 3k histories; the shape needs two equal keys and a rule
+  that hides only the parent's.
+- reachable: yes. Mount a server without a namespace that defines a tool the
+  parent also defines, then hide the parent's by tag or name: the client sees
+  the tool and cannot call it.
+- cause: `AggregateProvider._get_highest_version_result` picks one component
+  across providers (`max`, first registered on ties) before the server applies
+  visibility, and `FastMCP.get_tool`'s fallback (`_highest_available_version`)
+  retries by version only, so it skips unversioned candidates and asks for the
+  same tied version again. Listing filters first and dedupes after, so the two
+  paths disagree.
+- against: none found. Listing and calling disagree, and neither doc says a
+  hidden component should block one that is shown.
+
 ## model corrections (harness was wrong, not fastmcp)
 
 - a mounted child's own `disable()` cannot be overridden by the parent's
@@ -348,3 +409,16 @@ fixing that sentence and flipping explicit `eq` requests to
 `match_none=False` (and those tests). Held for nate's decision. Note: if
 version-not-found becomes an error it will surface as fastmcp's `isError`
 "Unknown tool" result, not the -32602 the spec and the TS/Go/Rust SDKs use.
+
+### F6–F8: one name answered by two servers
+
+| implementation | two components under one name? | enable/disable | list vs call |
+|---|---|---|---|
+| MCP spec 2026-07-28 | no; a name identifies one tool | none | `tools/list` advertises what `tools/call` accepts |
+| typescript-sdk@5ee54ee | no; registering a taken name throws (`mcp.ts:1144`) | `RegisteredTool.disable()`; list filters `enabled` (`packages/server/src/server/mcp.ts:300`), call checks the same flag (`:337`) | agree |
+| go-sdk@a6e937f | no; `AddTool` replaces by name (`mcp/server.go:315,381`) | none (remove only) | agree |
+| fastmcp | yes, across an un-namespaced mount | visibility rules applied after the cross-provider pick | F8: listed but not callable; F6: callable but not listed |
+
+No reference composes servers, so none can say which of two components should
+answer. Every reference with enable/disable uses one predicate for listing and
+calling, which is the property F8 breaks.
