@@ -17,8 +17,12 @@ The model is RFC 6749 and RFC 7009 as the proxy documents them:
 - of two concurrent redemptions of one code or one refresh token, exactly one
   succeeds
 - a revoked refresh token never works again; a revoked access token stops
-  validating (RFC 7009 2.1)
-- an access token that was issued and not revoked validates
+  validating and never validates again (RFC 7009 2.1)
+- revoking an access token may revoke its whole grant (RFC 7009 2.1): every
+  access token of the grant stops validating until a refresh gives the grant
+  a new upstream token
+- an access token that was issued and not revoked validates while its grant
+  has a live upstream token
 """
 
 import asyncio
@@ -44,6 +48,7 @@ import fastmcp.server.auth.oauth_proxy.proxy as proxy_module
 from fastmcp.server.auth.auth import RefreshToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oauth_proxy.models import ClientCode
+from fastmcp.server.auth.oauth_proxy.revocation import RevocationProvider
 
 from .known import still_open
 
@@ -123,9 +128,8 @@ def _revocation_is_per_grant() -> bool:
         machine.start(rotates=False)
         machine.issue_code(client="alice")
         tokens = machine.run(machine._redeem_code("alice", "code-0"))
-        loaded = machine.run(machine.proxy.load_access_token(tokens.access_token))
-        assert loaded is not None and tokens.refresh_token is not None
-        machine.run(machine.proxy.revoke_token(loaded))
+        assert tokens.refresh_token is not None
+        assert machine.run(machine._revoke_access(tokens.access_token))
         machine.run(machine._refresh("alice", tokens.refresh_token))
         revived = machine.run(machine.proxy.load_access_token(tokens.access_token))
         return revived is not None
@@ -152,6 +156,8 @@ class OAuthMachine(RuleBasedStateMachine):
         # token -> the code it descends from; grants with a revoked access token
         self.grant: dict[str, str] = {}
         self.grants_with_revocation: set[str] = set()
+        # grant -> whether its current upstream access token is live
+        self.grant_live: dict[str, bool] = {}
 
     def run(self, coro):
         return self.loop.run_until_complete(coro)
@@ -234,9 +240,19 @@ class OAuthMachine(RuleBasedStateMachine):
             raise TokenError("invalid_grant", "unknown refresh token")
         return await self.proxy.exchange_refresh_token(info, loaded, loaded.scopes)
 
+    async def _revoke_access(self, token: str) -> bool:
+        """Revoke as the revocation route does; False when it cannot load."""
+        route = RevocationProvider(self.proxy)
+        loaded = await route.load_access_token(token)
+        if loaded is None:
+            return False
+        await route.revoke_token(loaded)
+        return True
+
     def _issued(self, client: str, tokens, grant: str) -> None:
         self.access[tokens.access_token] = client
         self.grant[tokens.access_token] = grant
+        self.grant_live[grant] = True
         if tokens.refresh_token:
             self.refresh[tokens.refresh_token] = client
             self.grant[tokens.refresh_token] = grant
@@ -349,13 +365,17 @@ class OAuthMachine(RuleBasedStateMachine):
     @rule(data=st.data())
     def revoke_access(self, data):
         token = data.draw(st.sampled_from(list(self.access)))
-        loaded = self.run(self.proxy.load_access_token(token))
-        if loaded is None:
-            return  # nothing a client could present to the revocation route
-        self.run(self.proxy.revoke_token(loaded))
+        # The route loads any genuine FastMCP token, even one whose grant's
+        # upstream token is already revoked, so every revocation lands.
+        assert self.run(self._revoke_access(token)), "the route refused a token"
+        grant = self.grant[token]
         event("revoke access token")
+        # Only a token that still validates reaches the upstream token; one
+        # already revoked, or whose grant is revoked, is only retired.
+        if token not in self.revoked_access and self.grant_live[grant]:
+            self.grant_live[grant] = False
         self.revoked_access.add(token)
-        self.grants_with_revocation.add(self.grant[token])
+        self.grants_with_revocation.add(grant)
 
     @precondition(lambda self: self.access)
     @rule(data=st.data())
@@ -374,6 +394,9 @@ class OAuthMachine(RuleBasedStateMachine):
         if token in self.revoked_access:
             event("check access: revoked")
             assert got is None, "a revoked access token still validates"
+        elif not self.grant_live[self.grant[token]]:
+            event("check access: grant revoked")
+            assert got is None, "an access token outlived its grant's revocation"
         else:
             event("check access: live")
             assert got is not None, "an issued access token does not validate"
