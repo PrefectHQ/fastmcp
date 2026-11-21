@@ -86,7 +86,10 @@ one gets a follow-up patch, never a re-tag.
    and a running family for a major's prereleases ("Fourst Contact", "Group
    Effourt"). Offer several; the maintainer picks. Draft the handwritten notes at the
    same time: one or two sentences for a patch, narrative prose for a point release.
-   Get sign-off on both before anything is pushed.
+   The notes say what changed for users and what they need to do. Leave out how the
+   release was made: test or CI runs, retries, smoke results, reverts, review rounds,
+   and downstream projects by name. `changelog_entry.py` refuses an intro that reads
+   as process history. Get sign-off on both before anything is pushed.
 
 3. **Write the notes file** outside the repository (a temp directory), intro only.
    The release title is the heading, so the file has none.
