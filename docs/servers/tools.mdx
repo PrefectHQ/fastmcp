@@ -127,6 +127,10 @@ def search_products_implementation(query: str, category: str | None = None) -> l
   Optional version identifier for this tool. See [Versioning](/servers/versioning) for details.
 </ParamField>
 
+<ParamField body="input_schema_extra" type="dict[str, Any] | None">
+  Adds or overrides top-level keys in the generated input schema without changing runtime validation. Use it to describe relationships between parameters, such as requiring at least one of two identifiers. See [Cross-Parameter Schema Constraints](#cross-parameter-schema-constraints).
+</ParamField>
+
 <ParamField body="output_schema" type="dict[str, Any] | None">
   <VersionBadge version="2.10.0" />
 
@@ -284,6 +288,46 @@ def search_products(
 ```
 
 In this example, the LLM must provide a `query` parameter, while `max_results`, `sort_by`, and `category` will use their default values if not explicitly provided.
+
+### Cross-Parameter Schema Constraints
+
+When a tool accepts alternative identifiers, giving both parameters defaults makes each individually optional. Use `input_schema_extra` to tell clients that at least one must be supplied without replacing the types, defaults, and descriptions inferred from your function:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
+
+mcp = FastMCP("Teams")
+teams = [{"team_id": "tigers", "club_id": "north", "name": "Tigers"}]
+
+
+@mcp.tool(
+    input_schema_extra={
+        "anyOf": [{"required": ["team_id"]}, {"required": ["club_id"]}]
+    }
+)
+def lookup_team(team_id: str | None = None, club_id: str | None = None) -> dict:
+    if team_id is None and club_id is None:
+        raise ToolError("Provide team_id or club_id")
+    for team in teams:
+        if team["team_id"] == team_id or team["club_id"] == club_id:
+            return team
+    raise ToolError("Team not found")
+```
+
+Clients discover the generated object schema with the extra top-level `anyOf`. This schema rejects empty arguments, accepts either identifier, and accepts both. Use `oneOf` instead of `anyOf` when exactly one branch must match. Each branch can list several names in `required` to describe alternative groups of parameters.
+
+<Warning>
+`input_schema_extra` changes the advertised schema, **not runtime validation**. FastMCP still validates calls against the function's annotations and defaults. Keep cross-parameter checks in your function, as above, or in your Pydantic models; clients are not guaranteed to enforce the advertised schema.
+</Warning>
+
+JSON Schema's `required` checks whether a property is present, not whether its value is non-null. In this example, `{"team_id": null}` satisfies the advertised schema because `team_id` accepts `None`, but the function's explicit check rejects it. To also exclude null in a schema branch, include a property constraint in that branch, such as `{"required": ["team_id"], "properties": {"team_id": {"type": "string"}}}`.
+
+The extra dictionary is copied at registration and merged at the top level: supplied keys replace generated values, while other keys remain unchanged. Nested dictionaries are not merged. For example, supplying `properties` replaces the entire generated properties dictionary. Keep the root `type` as `"object"`, use the exposed property names (including any Pydantic aliases), and ensure your schema describes what your function accepts. Changing `required` or a property's schema does not change Python defaults, coercion, or validation.
+
+The same option is available on the standalone `@tool` decorator, `LocalProvider.tool`, `Tool.from_function`, and `FunctionTool.from_function`. Tools without `input_schema_extra` keep their existing schema and runtime behavior.
+
+Tool-only transformations, such as `Tool.from_tool(original, name="renamed")`, preserve the full input schema. Supplying `transform_args` or a custom `transform_fn` rebuilds the schema instead; reapply any cross-parameter constraints to the resulting tool's `parameters` dictionary using its new property names. FastMCP does not rewrite these constraints for changed arguments.
 
 ### Validation Modes
 
