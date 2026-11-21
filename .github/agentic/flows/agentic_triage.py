@@ -457,7 +457,18 @@ def triage_intake(
                 message=f"Skipped: {config.sender} is a maintainer",
             )
         if config.sender and (found := sender_burst(config)):
-            if found["announce"]:
+            # Edits and pushes to the crossing item rerun intake; announce once.
+            claim = f"fastmcp-burst-{config.sender.lower()}-{found['crossing']}"
+            if found["announce"] and latest(claim) is None:
+                with get_client(sync_client=True) as client:
+                    client.create_artifact(
+                        ArtifactCreate(
+                            key=claim,
+                            flow_run_id=current.id,
+                            type="fastmcp-triage-intake",
+                            data=found,
+                        )
+                    )
                 emit_event(
                     event="fastmcp.triage.outcome",
                     resource={

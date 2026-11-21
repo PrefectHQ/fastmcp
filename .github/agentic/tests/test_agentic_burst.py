@@ -26,6 +26,7 @@ def test_only_the_first_item_past_the_limit_announces():
     assert found[:5] == [None] * 5
     assert [f["announce"] for f in found[5:]] == [True] + [False] * 6
     assert found[5]["count"] == 12
+    assert {f["crossing"] for f in found[5:]} == {6641}
 
 
 def test_search_is_scoped_to_the_repository_author_and_window():
@@ -41,6 +42,7 @@ def test_config_falls_back_to_defaults():
     assert burst_config({"burst": {"max_items": "lots"}}) == BurstConfig()
     assert burst_config({"burst": {"max_items": 3}}).max_items == 3
     assert burst_config(None) == BurstConfig()
+    assert burst_config({"burst": {"max_items": 100}}) == BurstConfig()
 
 
 def test_line_names_the_author_and_count():

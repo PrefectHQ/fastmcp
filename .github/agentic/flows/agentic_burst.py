@@ -22,7 +22,8 @@ REPOSITORY = "PrefectHQ/fastmcp"
 
 class BurstConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    max_items: int = Field(default=5, ge=1, le=100)
+    # The search lookup returns one page of 100, so the limit must stay below it.
+    max_items: int = Field(default=5, ge=1, le=99)
     window_hours: int = Field(default=24, ge=1, le=168)
 
 
@@ -64,6 +65,7 @@ def burst(
         "count": len(numbers),
         "window_hours": config.window_hours,
         "announce": len(before) == config.max_items + 1,
+        "crossing": before[config.max_items],
         "numbers": numbers,
     }
 
