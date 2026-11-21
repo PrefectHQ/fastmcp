@@ -6,6 +6,42 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.2.4" description="2026-11-20">
+
+**[v4.2.4: Burn After Reading](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.4)**
+
+Fixes a race where two concurrent token requests could redeem one OAuth proxy authorization code or refresh token twice (GHSA-78c8-3jhx-5mg7), and keeps a revoked proxy access token from validating again after a refresh. Also, a tool transform that can't apply now hides only its own tool instead of breaking every listing, plus a few mounted and versioned component fixes. Thanks to our 4 contributors, including 2 first-time contributors.
+
+### Enhancements ✨
+* Draft releases from merged changelog entries by [@zzstoatzz](https://github.com/zzstoatzz) in [#6594](https://github.com/PrefectHQ/fastmcp/pull/6594)
+* Warn when a mount mixes versioned and unversioned components under one name by [@zzstoatzz](https://github.com/zzstoatzz) in [#6613](https://github.com/PrefectHQ/fastmcp/pull/6613)
+### Fixes 🐞
+* List each version once when two providers share it by [@zzstoatzz](https://github.com/zzstoatzz) in [#6612](https://github.com/PrefectHQ/fastmcp/pull/6612)
+* Let the shown mounted component answer when the parent's twin is hidden by [@zzstoatzz](https://github.com/zzstoatzz) in [#6611](https://github.com/PrefectHQ/fastmcp/pull/6611)
+* Keep the caller's object when a merged default breaks it by [@zzstoatzz](https://github.com/zzstoatzz) in [#6582](https://github.com/PrefectHQ/fastmcp/pull/6582)
+* Redeem OAuth proxy codes and refresh tokens once under concurrency by [@zzstoatzz](https://github.com/zzstoatzz), [@SounLabs](https://github.com/SounLabs), and [@henriqueleite42](https://github.com/henriqueleite42) in [#6614](https://github.com/PrefectHQ/fastmcp/pull/6614)
+* Keep a revoked OAuth proxy access token revoked after a refresh by [@zzstoatzz](https://github.com/zzstoatzz) in [#6620](https://github.com/PrefectHQ/fastmcp/pull/6620)
+* Hide only the tool a tool transform cannot apply to by [@zzstoatzz](https://github.com/zzstoatzz) in [#6619](https://github.com/PrefectHQ/fastmcp/pull/6619)
+### Docs 📚
+* docs: add v4.2.4 changelog entries by [@zzstoatzz](https://github.com/zzstoatzz) in [#6615](https://github.com/PrefectHQ/fastmcp/pull/6615)
+### Other Changes 🦾
+* Gate PyPI publishing behind environments and drop manual dispatch by [@zzstoatzz](https://github.com/zzstoatzz) in [#6593](https://github.com/PrefectHQ/fastmcp/pull/6593)
+* Fall back to REST in the release contributor credit scan by [@zzstoatzz](https://github.com/zzstoatzz) in [#6596](https://github.com/PrefectHQ/fastmcp/pull/6596)
+* Label tooling-only PRs out of release notes and read the template's type box by [@zzstoatzz](https://github.com/zzstoatzz) in [#6595](https://github.com/PrefectHQ/fastmcp/pull/6595)
+* Bump platformdirs and markdown-it-py in lock files by [@gaker](https://github.com/gaker) in [#6608](https://github.com/PrefectHQ/fastmcp/pull/6608)
+* Pin claude-code-action, verify the gitleaks download, and set checkout credentials explicitly by [@gaker](https://github.com/gaker) in [#6609](https://github.com/PrefectHQ/fastmcp/pull/6609)
+* Store text files with LF line endings by [@gaker](https://github.com/gaker) in [#6605](https://github.com/PrefectHQ/fastmcp/pull/6605)
+* Run time-boxed property-based campaigns in CI by [@zzstoatzz](https://github.com/zzstoatzz) in [#6616](https://github.com/PrefectHQ/fastmcp/pull/6616)
+
+
+## New Contributors
+* @SounLabs made their first contribution in [#6614](https://github.com/PrefectHQ/fastmcp/pull/6614)
+* @henriqueleite42 made their first contribution in [#6614](https://github.com/PrefectHQ/fastmcp/pull/6614)
+
+**Full Changelog**: [v4.2.3...v4.2.4](https://github.com/PrefectHQ/fastmcp/compare/v4.2.3...v4.2.4)
+
+</Update>
+
 <Update label="v4.2.3" description="2026-11-20">
 
 **[v4.2.3: Trace Elements](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.3)**

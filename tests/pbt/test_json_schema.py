@@ -11,7 +11,6 @@ fastmcp's schema utilities.
   lax mode coerces `"1"` to `1` on purpose.
 """
 
-import os
 import sys
 import warnings
 from typing import Any
@@ -26,6 +25,7 @@ from pydantic import PydanticUserError, ValidationError
 from fastmcp.utilities.json_schema import compress_schema, dereference_refs
 from fastmcp.utilities.json_schema_type import json_schema_to_type_adapter
 
+from .known import still_open
 from .schema_strategies import json_values, schemas, shaped_instances
 
 
@@ -96,45 +96,56 @@ _F3_NODE = {
 # (PydanticUserError), F2 and F5 reject a valid instance (ValidationError).
 # A finding is skipped only while it still reproduces in this tree; once it is
 # fixed the harness checks it like everything else. A mutant that undoes a fix
-# sets PBT_ASSUME_FIXED so the probe does not mistake it for the open bug.
-F1_OPEN = "F1" not in os.environ.get("PBT_ASSUME_FIXED", "") and _reproduces(
-    {"type": "object", "properties": {"a": {"type": "object", "default": None}}},
-    {"a": {}},
-    TypeError,
+# sets PBT_ASSUME_FIXED so the probe does not mistake it for the open bug
+# (see known.py).
+F1_OPEN = still_open(
+    "F1",
+    lambda: _reproduces(
+        {"type": "object", "properties": {"a": {"type": "object", "default": None}}},
+        {"a": {}},
+        TypeError,
+    ),
 )
-F3_OPEN = "F3" not in os.environ.get("PBT_ASSUME_FIXED", "") and _reproduces(
-    {**_F3_NODE, "$defs": {"N": _F3_NODE}}, {}, PydanticUserError
+F3_OPEN = still_open(
+    "F3",
+    lambda: _reproduces({**_F3_NODE, "$defs": {"N": _F3_NODE}}, {}, PydanticUserError),
 )
-F2_OPEN = "F2" not in os.environ.get("PBT_ASSUME_FIXED", "") and _reproduces(
-    {
-        "type": "object",
-        "properties": {
-            "a": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": {"type": "string"},
-                "default": {"a": None},
-            }
+F2_OPEN = still_open(
+    "F2",
+    lambda: _reproduces(
+        {
+            "type": "object",
+            "properties": {
+                "a": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": {"type": "string"},
+                    "default": {"a": None},
+                }
+            },
         },
-    },
-    {"a": {}},
-    ValidationError,
+        {"a": {}},
+        ValidationError,
+    ),
 )
-F5_OPEN = "F5" not in os.environ.get("PBT_ASSUME_FIXED", "") and _reproduces(
-    {
-        "type": "object",
-        "properties": {
-            "x": {
-                "type": "object",
-                "properties": {
-                    "a": {"type": "array", "prefixItems": [{"type": "string"}]}
-                },
-                "additionalProperties": {"type": "string"},
-            }
+F5_OPEN = still_open(
+    "F5",
+    lambda: _reproduces(
+        {
+            "type": "object",
+            "properties": {
+                "x": {
+                    "type": "object",
+                    "properties": {
+                        "a": {"type": "array", "prefixItems": [{"type": "string"}]}
+                    },
+                    "additionalProperties": {"type": "string"},
+                }
+            },
         },
-    },
-    {"x": {"a": []}},
-    ValidationError,
+        {"x": {"a": []}},
+        ValidationError,
+    ),
 )
 
 

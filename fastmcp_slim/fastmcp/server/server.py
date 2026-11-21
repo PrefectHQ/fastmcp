@@ -219,6 +219,49 @@ async def _highest_available_version(
     return None
 
 
+_ServedT = TypeVar("_ServedT", Tool, Resource, ResourceTemplate, Prompt)
+
+
+async def _shown_twin(
+    hidden: _ServedT, candidates: Sequence[_ServedT]
+) -> _ServedT | None:
+    """Return a shown component with the same identity as a hidden one.
+
+    Providers answer a lookup with one component per identity before the
+    server applies visibility, and the first provider wins a tie. When a
+    server mounted without a namespace holds the same identity (`key`) as the
+    parent and only the parent's is hidden, the lookup returns the hidden one
+    while the listing shows the mounted one. Answer with what the listing
+    shows. Only an identity the lookup itself returned qualifies, and only a
+    mounted server's component: it runs through that server's own lookup when
+    called, so a server or transform that refuses the lookup still refuses
+    it. A plain provider's component would run directly, past any refusal in
+    its own lookup, so it never stands in.
+
+    This lives here rather than in the aggregate's tie-break because the
+    aggregate picks inside the lookup chain: the server's own visibility
+    transforms and the session's rules are applied around it, after the pick.
+    """
+    from fastmcp.server.providers.fastmcp_provider import (
+        FastMCPProviderPrompt,
+        FastMCPProviderResource,
+        FastMCPProviderResourceTemplate,
+        FastMCPProviderTool,
+    )
+
+    delegates = (
+        FastMCPProviderTool,
+        FastMCPProviderResource,
+        FastMCPProviderPrompt,
+        FastMCPProviderResourceTemplate,
+    )
+    twins = [c for c in candidates if c.key == hidden.key and isinstance(c, delegates)]
+    for twin in await apply_session_transforms(twins):
+        if is_enabled(twin) and await _component_auth_allows(twin):
+            return twin
+    return None
+
+
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
 
@@ -1037,6 +1080,8 @@ class FastMCP(
         When the highest version is disabled or unauthorized and no explicit
         version was requested, falls back to the highest version that is
         both enabled and authorized, matching what the list methods expose.
+        When a server mounted without a namespace holds the same identity and
+        only the first one is hidden, the shown one answers.
 
         A tool from `ToolInjectionMiddleware` takes precedence over a provider
         tool with the same name. It is matched by name alone, so a requested
@@ -1073,12 +1118,14 @@ class FastMCP(
                 return tools[0]
 
         # The highest version is disabled or unauthorized (provider lookups
-        # return None for an unauthorized tool). If an explicit version was
-        # requested, respect that. Otherwise fall back to the highest version
-        # that is both enabled and authorized, consistent with list_tools.
-        if version is not None:
+        # return None for an unauthorized tool). A mounted twin that is shown
+        # answers first. Then, if an explicit version was requested, respect
+        # that. Otherwise fall back to the highest version that is both
+        # enabled and authorized, consistent with list_tools.
+        # An explicit request has nothing to fall back to unless the lookup
+        # found a hidden component that may have a shown twin; skip listing.
+        if version is not None and tool is None:
             return None
-
         candidates = [t for t in await super().list_tools() if t.name == name]
         # During a hashed lookup, only versions of the identity being looked
         # up qualify; another tool listed under the same name does not.
@@ -1086,6 +1133,10 @@ class FastMCP(
         if found is not None:
             identity = tool_identity(found)
             candidates = [t for t in candidates if tool_identity(t) == identity]
+        if tool is not None and (twin := await _shown_twin(tool, candidates)):
+            return twin
+        if version is not None:
+            return None
         return await _highest_available_version(
             candidates, lambda spec: self.get_tool(name, spec)
         )
@@ -1187,6 +1238,8 @@ class FastMCP(
         When the highest version is disabled or unauthorized and no explicit
         version was requested, falls back to the highest version that is
         both enabled and authorized, matching what the list methods expose.
+        When a server mounted without a namespace holds the same identity and
+        only the first one is hidden, the shown one answers.
 
         Args:
             uri: The resource URI.
@@ -1206,6 +1259,7 @@ class FastMCP(
         Also reports whether a concrete resource exists at `uri` at all, so
         reads can tell a hidden resource apart from a missing one.
         """
+        hidden: Resource | None = None
         try:
             resource = await super().get_resource(uri, version)
         except AuthorizationError:
@@ -1214,6 +1268,7 @@ class FastMCP(
         else:
             if resource is None:
                 return None, False
+            hidden = resource
 
             # Apply session transforms to single item
             resources = await apply_session_transforms([resource])
@@ -1224,10 +1279,16 @@ class FastMCP(
             ):
                 return resources[0], True
 
+        # An explicit request has nothing to fall back to unless the lookup
+        # found a hidden component that may have a shown twin; skip listing.
+        if version is not None and hidden is None:
+            return None, True
+        candidates = [r for r in await super().list_resources() if str(r.uri) == uri]
+        if hidden is not None and (twin := await _shown_twin(hidden, candidates)):
+            return twin, True
         if version is not None:
             return None, True
 
-        candidates = [r for r in await super().list_resources() if str(r.uri) == uri]
         resource = await _highest_available_version(
             candidates, lambda spec: self.get_resource(uri, spec)
         )
@@ -1331,6 +1392,8 @@ class FastMCP(
         When the highest version is disabled or unauthorized and no explicit
         version was requested, falls back to the highest version that is
         both enabled and authorized, matching what the list methods expose.
+        When a server mounted without a namespace holds the same identity and
+        only the first one is hidden, the shown one answers.
 
         Args:
             uri: The template URI.
@@ -1354,15 +1417,20 @@ class FastMCP(
 
         # The highest version is disabled or unauthorized (provider lookups
         # return None for an unauthorized template).
-
-        if version is not None:
+        # An explicit request has nothing to fall back to unless the lookup
+        # found a hidden component that may have a shown twin; skip listing.
+        if version is not None and template is None:
             return None
-
         candidates = [
             t
             for t in await super().list_resource_templates()
             if t.matches(uri) is not None
         ]
+        if template is not None and (twin := await _shown_twin(template, candidates)):
+            return twin
+        if version is not None:
+            return None
+
         return await _highest_available_version(
             candidates, lambda spec: self.get_resource_template(uri, spec)
         )
@@ -1453,6 +1521,8 @@ class FastMCP(
         When the highest version is disabled or unauthorized and no explicit
         version was requested, falls back to the highest version that is
         both enabled and authorized, matching what the list methods expose.
+        When a server mounted without a namespace holds the same identity and
+        only the first one is hidden, the shown one answers.
 
         Args:
             name: The prompt name.
@@ -1476,11 +1546,16 @@ class FastMCP(
 
         # The highest version is disabled or unauthorized (provider lookups
         # return None for an unauthorized prompt).
-
+        # An explicit request has nothing to fall back to unless the lookup
+        # found a hidden component that may have a shown twin; skip listing.
+        if version is not None and prompt is None:
+            return None
+        candidates = [p for p in await super().list_prompts() if p.name == name]
+        if prompt is not None and (twin := await _shown_twin(prompt, candidates)):
+            return twin
         if version is not None:
             return None
 
-        candidates = [p for p in await super().list_prompts() if p.name == name]
         return await _highest_available_version(
             candidates, lambda spec: self.get_prompt(name, spec)
         )
