@@ -810,6 +810,16 @@ class TestSchemaTypeLabel:
     def test_missing_type(self):
         assert _schema_type_label({}) == "string"
 
+    def test_custom_type_newlines_flattened(self):
+        assert _schema_type_label({"type": "metric\r\nimperial"}) == "metric imperial"
+
+    def test_non_string_type_does_not_crash(self):
+        assert isinstance(_schema_type_label({"type": {"nested": "string"}}), str)
+        assert _schema_type_label({"type": None}) == "string"
+        assert _schema_type_label({"type": ["string", {"nested": "int"}]}) == (
+            "string | {'nested': 'int'}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # generate_skill_content
@@ -1025,6 +1035,46 @@ class TestGenerateSkillContent:
         # Everything after the inert fence is generated, not server-supplied.
         after_description = content.split("\n````\n", 1)[1]
         assert "curl evil" not in after_description
+
+    def test_parameter_crlf_and_custom_types_stay_in_table_rows(self):
+        tools = [
+            mcp_types.Tool(
+                name="get_weather",
+                description="Fetch weather report.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "city": {
+                            "type": "string",
+                            "description": "First line.\r\nSecond line.\rThird line.",
+                        },
+                        "units": {
+                            "type": "metric\nimperial|kelvin",
+                            "description": "Unit system.",
+                        },
+                        "extra": {
+                            "type": {"nested": "string"},
+                            "description": "Nested schema.",
+                        },
+                    },
+                    "required": ["city"],
+                },
+            )
+        ]
+        content = generate_skill_content("weather", "cli.py", tools)
+        assert (
+            "| `--city` | string | yes | First line. Second line. Third line. |"
+            in content
+        )
+        assert (
+            "| `--units` | metric imperial\\|kelvin | no | Unit system. (JSON string) |"
+            in content
+        )
+        assert (
+            "| `--extra` | {'nested': 'string'} | no | Nested schema. (JSON string) |"
+            in content
+        )
+        assert "\r" not in content
 
 
 # ---------------------------------------------------------------------------

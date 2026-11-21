@@ -41,8 +41,8 @@ def _is_simple_type(schema: dict[str, Any]) -> bool:
     schema_type = schema.get("type")
     if isinstance(schema_type, list):
         # Union of types - simple only if all are simple
-        return all(t in _SIMPLE_TYPES for t in schema_type)
-    return schema_type in _SIMPLE_TYPES
+        return all(isinstance(t, str) and t in _SIMPLE_TYPES for t in schema_type)
+    return isinstance(schema_type, str) and schema_type in _SIMPLE_TYPES
 
 
 def _is_simple_array(schema: dict[str, Any]) -> tuple[bool, str | None]:
@@ -54,7 +54,7 @@ def _is_simple_array(schema: dict[str, Any]) -> tuple[bool, str | None]:
         return False, None
 
     items = schema.get("items", {})
-    if not _is_simple_type(items):
+    if not isinstance(items, dict) or not _is_simple_type(items):
         return False, None
 
     # Map JSON Schema type to Python type
@@ -659,21 +659,37 @@ def _param_to_cli_flag(prop_name: str) -> str:
     return f"--{safe}" if safe else "--arg"
 
 
+def _flatten_table_cell(text: str) -> str:
+    """Collapse line breaks so Markdown table cells stay on a single line."""
+    return re.sub(r"[\r\n]+", " ", text)
+
+
 def _schema_type_label(prop_schema: dict[str, Any]) -> str:
     """Return a human-readable type label for a property schema."""
     schema_type = prop_schema.get("type", "string")
     if isinstance(schema_type, list):
-        labels = [_JSON_SCHEMA_TYPE_LABELS.get(t, t) for t in schema_type]
+        labels = [
+            _JSON_SCHEMA_TYPE_LABELS[t]
+            if isinstance(t, str) and t in _JSON_SCHEMA_TYPE_LABELS
+            else _flatten_table_cell(str(t))
+            for t in schema_type
+        ]
         return " | ".join(labels)
 
-    label = _JSON_SCHEMA_TYPE_LABELS.get(schema_type, schema_type)
+    if not isinstance(schema_type, str):
+        return (
+            "string" if schema_type is None else _flatten_table_cell(str(schema_type))
+        )
+
+    label = _JSON_SCHEMA_TYPE_LABELS.get(schema_type, _flatten_table_cell(schema_type))
 
     # For arrays, include item type if simple
     if schema_type == "array":
         items = prop_schema.get("items", {})
-        item_type = items.get("type", "")
-        if isinstance(item_type, str) and item_type in _JSON_SCHEMA_TYPE_LABELS:
-            return f"array[{item_type}]"
+        if isinstance(items, dict):
+            item_type = items.get("type", "")
+            if isinstance(item_type, str) and item_type in _JSON_SCHEMA_TYPE_LABELS:
+                return f"array[{item_type}]"
 
     return label
 
@@ -753,7 +769,7 @@ def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
             description = (
                 f"{description} (JSON string)" if description else "JSON string"
             )
-        description = description.replace("\n", " ").replace("|", "\\|")
+        description = _flatten_table_cell(description).replace("|", "\\|")
         rows.append(f"| {flag} | {type_label} | {is_required} | {description} |")
 
     param_table = ""
