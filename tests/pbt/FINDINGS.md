@@ -354,7 +354,8 @@ the schemas that would catch it (`PBT_ASSUME_FIXED`, set per mutant).
 
 ### F9. an invalid deferred tool transform breaks every listing and unrelated calls
 
-- status: open.
+- status: fixed (this branch). A config that cannot apply hides its own tool
+  and logs why; the harness now checks that every other tool still works.
 - property: tool transform matches its model — construction is refused exactly
   when the docs say so.
 - minimal:
