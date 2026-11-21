@@ -362,20 +362,62 @@ class TestToolFunctionSource:
         assert "isinstance(_arguments['options'], str)" in source
         compile(source, "<test>", "exec")
 
-    def test_name_collision_detection(self):
-        """Test that parameter name collisions are detected."""
+    def test_colliding_sanitized_names_are_disambiguated(self):
+        """Colliding sanitized parameter identifiers are suffixed instead of aborting."""
         tool = mcp_types.Tool(
-            name="test",
+            name="do",
             input_schema={
                 "properties": {
-                    "content-type": {"type": "string"},
-                    "content_type": {"type": "string"},
+                    "a-b": {"type": "string"},
+                    "a_b": {"type": "string"},
+                    "user.name": {"type": "string"},
+                    "user_name": {"type": "string"},
                 },
+                "required": ["a-b", "a_b"],
             },
         )
-        # Should raise ValueError for collision
-        with pytest.raises(ValueError, match="both sanitize to 'content_type'"):
-            _tool_function_source(tool)
+        script = generate_cli_script(
+            server_name="s",
+            server_spec="s",
+            transport_code=repr("http://x/mcp"),
+            extra_imports=set(),
+            tools=[tool],
+        )
+        compile(script, "<generated>", "exec")
+
+        namespace: dict[str, Any] = {}
+        exec(script, namespace)
+        called = []
+
+        async def mock_call_tool(name, args):
+            called.append((name, args))
+
+        namespace["_call_tool"] = mock_call_tool
+        namespace["call_tool_app"](
+            [
+                "do",
+                "--a-b",
+                "dash",
+                "--a-b-2",
+                "under",
+                "--user-name",
+                "dot",
+                "--user-name-2",
+                "plain",
+            ],
+            result_action="return_value",
+        )
+        assert called == [
+            (
+                "do",
+                {
+                    "a-b": "dash",
+                    "a_b": "under",
+                    "user.name": "dot",
+                    "user_name": "plain",
+                },
+            )
+        ]
 
 
 # ---------------------------------------------------------------------------

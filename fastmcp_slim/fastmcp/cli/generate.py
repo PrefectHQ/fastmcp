@@ -297,18 +297,23 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
         py_type, needs_json = _schema_to_python_type(prop_schema)
         help_text = prop_schema.get("description", "")
         is_required = prop_name in required
-        safe_name = _to_python_identifier(prop_name)
-        if safe_name in {"_call_tool", "isinstance", "json", "str"}:
+        reserved_names = {"_call_tool", "isinstance", "json", "str"}
+        base_name = _to_python_identifier(prop_name)
+        safe_name = base_name
+        if safe_name in reserved_names:
             # The command body refers to these names, so a parameter must not
             # shadow them. Cyclopts drops the trailing underscore from the flag.
             safe_name = f"{safe_name}_"
 
-        # Check for name collisions after sanitization
+        # Disambiguate colliding Python parameter names with a numeric suffix.
         if safe_name in seen_names:
-            raise ValueError(
-                f"Parameter name collision: '{prop_name}' and '{seen_names[safe_name]}' "
-                f"both sanitize to '{safe_name}'"
-            )
+            suffix = 2
+            while (
+                f"{base_name}_{suffix}" in seen_names
+                or f"{base_name}_{suffix}" in reserved_names
+            ):
+                suffix += 1
+            safe_name = f"{base_name}_{suffix}"
         seen_names[safe_name] = prop_name
 
         # For complex types, add schema to help text
@@ -317,7 +322,9 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             help_text = f"{help_text}\\n{schema_help}" if help_text else schema_help
             json_params.append((prop_name, safe_name))
 
-        _, explicit_name = param_flags[prop_name]
+        cli_flag, explicit_name = param_flags[prop_name]
+        if explicit_name is None and safe_name != base_name:
+            explicit_name = cli_flag
         flag_arg = f'name="{explicit_name}", ' if explicit_name else ""
 
         # Build parameter annotation
