@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal
 
 import mcp_types
 
@@ -152,20 +152,41 @@ class ResourceResult(pydantic.BaseModel):
 
     contents: list[ResourceContent]
     meta: dict[str, Any] | None = None
+    ttl_ms: int | None = Field(
+        default=None,
+        ge=0,
+        description="Per-read cache TTL in milliseconds (overrides server cache_ttl when set; 0 disables client caching).",
+    )
+    cache_scope: Literal["public", "private"] | None = Field(
+        default=None,
+        description="Per-read cache scope override ('public' or 'private').",
+    )
 
     def __init__(
         self,
         contents: str | bytes | list[ResourceContent],
         meta: dict[str, Any] | None = None,
+        *,
+        ttl_ms: int | None = None,
+        cache_scope: Literal["public", "private"] | None = None,
     ):
         """Create ResourceResult.
 
         Args:
             contents: String, bytes, or list of ResourceContent objects.
             meta: Optional metadata about the resource result.
+            ttl_ms: Optional per-read cache freshness hint in milliseconds
+                (``0`` marks the read immediately stale and opts out of server-wide
+                ``cache_ttl``).
+            cache_scope: Optional per-read cache scope (``"public"`` or ``"private"``).
         """
         normalized = self._normalize_contents(contents)
-        super().__init__(contents=normalized, meta=meta)
+        super().__init__(
+            contents=normalized,
+            meta=meta,
+            ttl_ms=ttl_ms,
+            cache_scope=cache_scope,
+        )
 
     @staticmethod
     def _normalize_contents(
@@ -205,10 +226,18 @@ class ResourceResult(pydantic.BaseModel):
             MCP ReadResourceResult with converted contents
         """
         mcp_contents = [item.to_mcp_resource_contents(uri) for item in self.contents]
-        return mcp_types.ReadResourceResult(
+        result = mcp_types.ReadResourceResult(
             contents=mcp_contents,
             _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
         )
+        # Only set ttl_ms / cache_scope when supplied by the handler so
+        # model_fields_set leaves unset fields open for the SDK's server-wide
+        # cache_hints fallback (apply_cache_hint).
+        if self.ttl_ms is not None:
+            result.ttl_ms = self.ttl_ms
+        if self.cache_scope is not None:
+            result.cache_scope = self.cache_scope
+        return result
 
 
 class InputRequiredResourceResult(ResourceResult):

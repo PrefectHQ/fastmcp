@@ -5,7 +5,7 @@ import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from logging import Logger
-from typing import Any, NotRequired, Self, TypedDict
+from typing import Any, Literal, NotRequired, Self, TypedDict
 
 import mcp_types
 import pydantic_core
@@ -103,6 +103,8 @@ class CacheableResourceResult(FastMCPBaseModel):
 
     contents: list[CacheableResourceContent]
     meta: dict[str, Any] | None = None
+    ttl_ms: int | None = None
+    cache_scope: Literal["public", "private"] | None = None
 
     def get_size(self) -> int:
         return len(self.model_dump_json())
@@ -124,6 +126,8 @@ class CacheableResourceResult(FastMCPBaseModel):
                 for item in value.contents
             ],
             meta=value.meta,
+            ttl_ms=value.ttl_ms,
+            cache_scope=value.cache_scope,
         )
 
     def unwrap(self) -> ResourceResult:
@@ -139,6 +143,8 @@ class CacheableResourceResult(FastMCPBaseModel):
                 for item in self.contents
             ],
             meta=self.meta,
+            ttl_ms=self.ttl_ms,
+            cache_scope=self.cache_scope,
         )
 
 

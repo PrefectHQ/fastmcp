@@ -20,6 +20,7 @@ import pytest
 from mcp_types.methods import CACHEABLE_METHODS
 
 from fastmcp import Client, FastMCP
+from fastmcp.resources import ResourceResult
 from fastmcp.server.caching import build_cache_hints
 
 
@@ -217,3 +218,95 @@ class TestEndToEndInterop:
 
         assert result.ttl_ms == 120000
         assert result.cache_scope == "public"
+
+
+class TestPerResourceCacheHints:
+    """ResourceResult can override or opt out of the server-wide cache_ttl."""
+
+    def test_unset_cache_hints_stay_out_of_wire_fields_set(self):
+        from fastmcp.resources import ResourceResult
+
+        wire = ResourceResult("plain").to_mcp_result("data://plain")
+        assert "ttl_ms" not in wire.model_fields_set
+        assert "cache_scope" not in wire.model_fields_set
+
+    def test_negative_ttl_ms_is_rejected(self):
+        from pydantic import ValidationError
+
+        from fastmcp.resources import ResourceResult
+
+        with pytest.raises(ValidationError):
+            ResourceResult("bad", ttl_ms=-1)
+
+    async def test_resource_result_overrides_server_cache_ttl(self):
+        from fastmcp.resources import ResourceResult
+
+        mcp = FastMCP("x", cache_ttl=3600, cache_scope="public")
+
+        @mcp.resource("status://live")
+        def live_status() -> ResourceResult:
+            return ResourceResult("fresh", ttl_ms=0, cache_scope="private")
+
+        @mcp.resource("toc://vault")
+        def vault_toc() -> ResourceResult:
+            return ResourceResult("toc", ttl_ms=5000)
+
+        @mcp.resource("data://default")
+        def default_resource() -> str:
+            return "default"
+
+        async with Client(mcp, mode="auto") as client:
+            live = await client.session.read_resource("status://live")
+            toc = await client.session.read_resource("toc://vault")
+            default = await client.session.read_resource("data://default")
+
+        assert live.ttl_ms == 0
+        assert live.cache_scope == "private"
+        assert toc.ttl_ms == 5000
+        assert toc.cache_scope == "public"
+        assert default.ttl_ms == 3600000
+        assert default.cache_scope == "public"
+
+    async def test_resource_template_result_carries_per_read_cache_hint(self):
+        from fastmcp.resources import ResourceResult
+
+        mcp = FastMCP("x", cache_ttl=3600, cache_scope="public")
+
+        @mcp.resource("notes://{slug}")
+        def get_note(slug: str) -> ResourceResult:
+            if slug == "live":
+                return ResourceResult("now", ttl_ms=0, cache_scope="private")
+            return ResourceResult(f"note:{slug}")
+
+        async with Client(mcp, mode="auto") as client:
+            live = await client.read_resource_mcp("notes://live")
+            pinned = await client.read_resource_mcp("notes://pinned")
+
+        assert live.ttl_ms == 0
+        assert live.cache_scope == "private"
+        assert pinned.ttl_ms == 3600000
+        assert pinned.cache_scope == "public"
+
+    async def test_response_caching_middleware_preserves_resource_cache_hints(self):
+        from fastmcp.resources import ResourceResult
+        from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+
+        mcp = FastMCP("x", cache_ttl=3600, cache_scope="public")
+        mcp.add_middleware(ResponseCachingMiddleware())
+        calls = 0
+
+        @mcp.resource("data://item")
+        def get_item() -> ResourceResult:
+            nonlocal calls
+            calls += 1
+            return ResourceResult("cached", ttl_ms=2500, cache_scope="private")
+
+        async with Client(mcp, mode="auto") as client:
+            first = await client.read_resource_mcp("data://item")
+            second = await client.read_resource_mcp("data://item")
+
+        assert calls == 1
+        assert first.ttl_ms == 2500
+        assert first.cache_scope == "private"
+        assert second.ttl_ms == 2500
+        assert second.cache_scope == "private"
