@@ -525,6 +525,51 @@ def _flatten_discriminator_subtypes(
     return properties
 
 
+def _flatten_nested_discriminators(
+    schema: dict[str, Any],
+    schema_defs: dict[str, Any],
+) -> dict[str, Any]:
+    """Recursively flatten discriminator mappings on nested object schemas."""
+    result = schema.copy()
+    flattened_props = _flatten_discriminator_subtypes(result, schema_defs)
+    if flattened_props is not None:
+        result["properties"] = flattened_props
+        result.pop("discriminator", None)
+
+    for map_key in (
+        "properties",
+        "$defs",
+        "$definitions",
+        "patternProperties",
+        "dependentSchemas",
+    ):
+        mapping = result.get(map_key)
+        if isinstance(mapping, dict):
+            result[map_key] = {
+                key: _flatten_nested_discriminators(sub_schema, schema_defs)
+                if isinstance(sub_schema, dict)
+                else sub_schema
+                for key, sub_schema in mapping.items()
+            }
+
+    for single_key in ("items", "additionalProperties", *_SUBSCHEMA_KEYWORDS):
+        sub_schema = result.get(single_key)
+        if isinstance(sub_schema, dict):
+            result[single_key] = _flatten_nested_discriminators(sub_schema, schema_defs)
+
+    for list_key in ("prefixItems", "allOf", "anyOf", "oneOf"):
+        items = result.get(list_key)
+        if isinstance(items, list):
+            result[list_key] = [
+                _flatten_nested_discriminators(item, schema_defs)
+                if isinstance(item, dict)
+                else item
+                for item in items
+            ]
+
+    return result
+
+
 def _combine_schemas_and_map_params(
     route: HTTPRoute,
     convert_refs: bool = True,
@@ -769,12 +814,29 @@ def _combine_schemas_and_map_params(
     schema_defs = {**route.request_schemas, **body_defs}
     if schema_defs:
         if convert_refs:
-            # Need to convert refs and prune
-            all_defs = schema_defs.copy()
-            # Convert each schema definition recursively
-            for name, schema in all_defs.items():
-                if isinstance(schema, dict):
-                    all_defs[name] = _replace_ref_with_defs(schema)
+            # Convert refs before flattening so subtype properties copied into
+            # discriminated parents already use #/$defs/... pointers and remain
+            # discoverable during pruning.
+            all_defs = {
+                name: _replace_ref_with_defs(schema)
+                if isinstance(schema, dict)
+                else schema
+                for name, schema in schema_defs.items()
+            }
+            lookup_defs = all_defs
+            properties = {
+                name: _flatten_nested_discriminators(prop_schema, lookup_defs)
+                if isinstance(prop_schema, dict)
+                else prop_schema
+                for name, prop_schema in properties.items()
+            }
+            result["properties"] = properties
+            all_defs = {
+                name: _flatten_nested_discriminators(schema, lookup_defs)
+                if isinstance(schema, dict)
+                else schema
+                for name, schema in all_defs.items()
+            }
 
             # Prune to only needed schemas
             used_refs = set()
@@ -814,7 +876,19 @@ def _combine_schemas_and_map_params(
                 }
         else:
             # From parser - already converted and pruned
-            result["$defs"] = schema_defs
+            properties = {
+                name: _flatten_nested_discriminators(prop_schema, schema_defs)
+                if isinstance(prop_schema, dict)
+                else prop_schema
+                for name, prop_schema in properties.items()
+            }
+            result["properties"] = properties
+            result["$defs"] = {
+                name: _flatten_nested_discriminators(def_schema, schema_defs)
+                if isinstance(def_schema, dict)
+                else def_schema
+                for name, def_schema in schema_defs.items()
+            }
 
     if route.openapi_version and route.openapi_version.startswith("3"):
         result = _convert_input_schema(result, set(body_props), route.openapi_version)

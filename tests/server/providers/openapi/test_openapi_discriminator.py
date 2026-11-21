@@ -284,3 +284,78 @@ class TestDiscriminatorRequestBodies:
 
         assert set(schema["properties"]) == {"petType", "meowVolume"}
         assert sorted(schema["required"]) == ["meowVolume", "petType"]
+
+    async def test_nested_ref_discriminator_subtype_fields_are_advertised(self):
+        """A discriminated $ref nested in a body property flattens subtype fields."""
+        spec = discriminator_spec(body_ref="PetEnvelope")
+        spec["components"]["schemas"]["PetEnvelope"] = {
+            "type": "object",
+            "required": ["pet"],
+            "properties": {"pet": {"$ref": "#/components/schemas/Pet"}},
+        }
+
+        schema = await tool_schema(spec)
+        pet_schema = schema["properties"]["pet"]
+
+        assert pet_schema["properties"].keys() >= {
+            "petType",
+            "meowVolume",
+            "packSize",
+        }
+        assert pet_schema["required"] == ["petType"]
+        assert "discriminator" not in pet_schema
+        description = pet_schema["properties"]["petType"]["description"]
+        assert "meowVolume" in description
+        assert "packSize" in description
+
+    async def test_nested_inline_discriminator_subtype_fields_are_advertised(self):
+        """An inline discriminated subschema nested in a body property flattens subtypes."""
+        spec = discriminator_spec(body_ref="PetEnvelope")
+        pet_def = spec["components"]["schemas"].pop("Pet")
+        spec["components"]["schemas"]["PetEnvelope"] = {
+            "type": "object",
+            "required": ["pet"],
+            "properties": {"pet": pet_def},
+        }
+        for subtype in ("Cat", "Dog"):
+            spec["components"]["schemas"][subtype]["allOf"] = [
+                spec["components"]["schemas"][subtype]["allOf"][1]
+            ]
+
+        schema = await tool_schema(spec)
+        pet_schema = schema["properties"]["pet"]
+
+        assert pet_schema["properties"].keys() >= {
+            "petType",
+            "meowVolume",
+            "packSize",
+        }
+        assert "discriminator" not in pet_schema
+
+    async def test_nested_discriminator_sends_subtype_fields(self):
+        """Calling a tool with a nested discriminator forwards variant fields."""
+        spec = discriminator_spec(body_ref="PetEnvelope")
+        spec["components"]["schemas"]["PetEnvelope"] = {
+            "type": "object",
+            "required": ["pet"],
+            "properties": {"pet": {"$ref": "#/components/schemas/Pet"}},
+        }
+        received: dict[str, object] = {}
+
+        def handler(request):
+            received["body"] = json.loads(request.content)
+            return httpx2.Response(200, json={"ok": True})
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.MockTransport(handler),
+            base_url="https://api.example.com",
+        ) as client:
+            server = create_openapi_server(spec, client)
+            async with Client(server) as mcp_client:
+                result = await mcp_client.call_tool(
+                    "create_pet",
+                    {"pet": {"petType": "cat", "meowVolume": 11}},
+                )
+
+        assert result.structured_content == {"ok": True}
+        assert received["body"] == {"pet": {"petType": "cat", "meowVolume": 11}}
