@@ -4,6 +4,7 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import NotFoundError
+from fastmcp.utilities.versions import VersionSpec
 
 
 class TestParentTagFiltering:
@@ -99,3 +100,72 @@ class TestParentTagFiltering:
         prompt_names = {p.name for p in prompts}
         assert "allowed_prompt" in prompt_names
         assert "blocked_prompt" not in prompt_names
+
+
+class TestHiddenParentComponentDoesNotShadowMounted:
+    """A hidden parent component must not block the mounted one listed in its place.
+
+    With no namespace, the parent and the mounted server can hold the same
+    identity. The listing drops the hidden parent one and shows the mounted
+    one, so a request for it must reach the mounted one too.
+    """
+
+    @staticmethod
+    def servers(version: str | None) -> FastMCP:
+        parent, child = FastMCP("Parent"), FastMCP("Child")
+
+        parent.tool(name="t", version=version)(lambda: "parent")
+        child.tool(name="t", version=version, tags={"x"})(lambda: "child")
+        parent.prompt(name="p", version=version)(lambda: "parent")
+        child.prompt(name="p", version=version, tags={"x"})(lambda: "child")
+        parent.resource("res://r", name="r", version=version)(lambda: "parent")
+        child.resource("res://r", name="r", version=version, tags={"x"})(
+            lambda: "child"
+        )
+        parent.resource("res://t/{a}", name="t", version=version)(lambda a: "parent")
+        child.resource("res://t/{a}", name="t", version=version, tags={"x"})(
+            lambda a: "child"
+        )
+
+        parent.mount(child)
+        parent.enable(tags={"x"}, only=True)
+        return parent
+
+    @pytest.mark.parametrize(
+        ("registered", "requested"),
+        [(None, None), (None, "1"), ("1", None), ("1", "1")],
+    )
+    async def test_mounted_twin_answers(self, registered, requested):
+        parent = self.servers(registered)
+        spec = VersionSpec(eq=requested) if requested else None
+
+        assert [t.name for t in await parent.list_tools()] == ["t"]
+        tool = await parent.get_tool("t", spec)
+        prompt = await parent.get_prompt("p", spec)
+        resource = await parent.get_resource("res://r", spec)
+        template = await parent.get_resource_template("res://t/1", spec)
+
+        assert tool is not None and tool.tags == {"x"}
+        assert prompt is not None and prompt.tags == {"x"}
+        assert resource is not None and resource.tags == {"x"}
+        assert template is not None and template.tags == {"x"}
+
+    async def test_hidden_twins_stay_hidden(self):
+        parent, child = FastMCP("Parent"), FastMCP("Child")
+        parent.tool(name="t", version="1")(lambda: "parent")
+        child.tool(name="t", version="1")(lambda: "child")
+        parent.mount(child)
+        parent.disable(names={"t"})
+
+        assert await parent.get_tool("t") is None
+        assert await parent.get_tool("t", VersionSpec(eq="1")) is None
+
+    async def test_range_request_reaches_the_shown_twin(self):
+        parent, child = FastMCP("Parent"), FastMCP("Child")
+        parent.tool(name="t", version="2")(lambda: "parent")
+        child.tool(name="t", version="2", tags={"x"})(lambda: "child")
+        parent.mount(child)
+        parent.enable(tags={"x"}, only=True)
+
+        tool = await parent.get_tool("t", VersionSpec(gte="1"))
+        assert tool is not None and tool.tags == {"x"}
