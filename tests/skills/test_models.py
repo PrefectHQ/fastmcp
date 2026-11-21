@@ -232,6 +232,12 @@ def test_resource_accepts_integral_json_number() -> None:
     assert resource.size == 1
 
 
+def test_list_result_rejects_duplicate_skill_uris() -> None:
+    entry = make_skill()
+    with pytest.raises(ValidationError, match="exactly once"):
+        ListSkillsResult(skills=[entry, entry])
+
+
 def test_list_result_uses_protocol_wire_names() -> None:
     wire = ListSkillsResult(skills=[make_skill()]).model_dump(
         by_alias=True, mode="json", exclude_none=True

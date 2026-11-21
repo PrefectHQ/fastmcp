@@ -205,6 +205,13 @@ class ListSkillsResult(mcp_types.PaginatedResult, mcp_types.CacheableResult):
     skills: list[MCPSkill]
     result_type: Literal["complete"] = "complete"
 
+    @model_validator(mode="after")
+    def validate_unique_skill_uris(self) -> ListSkillsResult:
+        uris = [skill.uri for skill in self.skills]
+        if len(uris) != len(set(uris)):
+            raise ValueError("skills must contain each URI exactly once")
+        return self
+
 
 class GetSkillResult(mcp_types.CacheableResult):
     """Result from `skills/get`."""
