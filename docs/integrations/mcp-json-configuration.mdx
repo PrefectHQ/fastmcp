@@ -17,7 +17,7 @@ The MCP JSON configuration format is an **emergent standard** that has developed
 
 ### Configuration Structure
 
-The standard uses a `mcpServers` object where each key represents a server name and the value contains the server's configuration:
+The standard uses a `mcpServers` object where each key represents a server name and the value configures either a local stdio process or a remote HTTP server:
 
 ```json
 {
@@ -28,6 +28,10 @@ The standard uses a `mcpServers` object where each key represents a server name 
       "env": {
         "VAR": "value"
       }
+    },
+    "remote-server": {
+      "url": "https://example.com/mcp",
+      "transport": "http"
     }
   }
 }
@@ -35,7 +39,9 @@ The standard uses a `mcpServers` object where each key represents a server name 
 
 ### Server Configuration Fields
 
-#### `command` (required)
+#### Local Servers (stdio)
+
+##### `command` (required)
 The executable command to run the MCP server. This should be an absolute path or a command available in the system PATH.
 
 ```json
@@ -44,7 +50,7 @@ The executable command to run the MCP server. This should be an absolute path or
 }
 ```
 
-#### `args` (optional)
+##### `args` (optional)
 An array of command-line arguments passed to the server executable. Arguments are passed in order.
 
 ```json
@@ -53,7 +59,7 @@ An array of command-line arguments passed to the server executable. Arguments ar
 }
 ```
 
-#### `env` (optional)
+##### `env` (optional)
 An object containing environment variables to set when launching the server. All values must be strings.
 
 ```json
@@ -62,6 +68,37 @@ An object containing environment variables to set when launching the server. All
     "API_KEY": "secret-key",
     "DEBUG": "true",
     "PORT": "8080"
+  }
+}
+```
+
+#### Remote Servers (HTTP)
+
+##### `url` (required)
+The HTTP endpoint URL for a remote MCP server.
+
+```json
+{
+  "url": "https://example.com/mcp"
+}
+```
+
+##### `transport` (optional)
+The HTTP transport protocol to use: `"http"` (recommended, Streamable HTTP), `"streamable-http"`, or `"sse"`. When omitted, clients such as FastMCP's [MCPConfig transport](/clients/transports) infer the transport from the URL.
+
+```json
+{
+  "transport": "http"
+}
+```
+
+##### `headers` (optional)
+An object containing HTTP headers sent with requests to the remote server, such as authentication headers.
+
+```json
+{
+  "headers": {
+    "Authorization": "Bearer your-api-token"
   }
 }
 ```
@@ -432,6 +469,32 @@ You can also pin Python versions or add extra dependencies:
 
 <Note>
 `fastmcp install mcp-json` generates `uv run` configurations for local development. For published packages, you'll typically write the `uvx` configuration manually or generate it through your own packaging workflow.
+</Note>
+
+### Remote HTTP Servers
+
+To connect to a remote MCP server over HTTP (for example, a server deployed separately or hosted by a third party), define a server entry with `url` and `transport` instead of `command`. You can mix local stdio servers and remote HTTP servers in the same `mcpServers` object:
+
+```json
+{
+  "mcpServers": {
+    "local-tools": {
+      "command": "python",
+      "args": ["/absolute/path/to/server.py"]
+    },
+    "remote-docs": {
+      "url": "https://example.com/mcp",
+      "transport": "http",
+      "headers": {
+        "Authorization": "Bearer your-api-token"
+      }
+    }
+  }
+}
+```
+
+<Note>
+`fastmcp install mcp-json` only generates local stdio configurations. Add remote HTTP server entries directly to `mcpServers` in your client configuration (or pass the dictionary to [`Client`](/clients/transports)).
 </Note>
 
 ## Integration with MCP Clients
