@@ -2574,10 +2574,42 @@ class FastMCP(
                 to override namespaced names. Keys are the original tool names from the
                 mounted server.
         """
+        from fastmcp.server.providers.aggregate import AggregateProvider
         from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
+        from fastmcp.server.providers.wrapped_provider import _WrappedProvider
 
         if server is self:
             raise ValueError("Cannot mount a server onto itself")
+
+        def _direct_mounted_servers(node: FastMCP) -> list[FastMCP]:
+            servers: list[FastMCP] = []
+            stack: list[Provider] = list(node.providers)
+            while stack:
+                p = stack.pop()
+                while isinstance(p, _WrappedProvider):
+                    p = p._inner
+                if isinstance(p, FastMCPProvider):
+                    servers.append(p.server)
+                elif isinstance(p, AggregateProvider):
+                    stack.extend(p.providers)
+            return servers
+
+        visited: set[int] = set()
+        queue: list[tuple[FastMCP, list[str]]] = [(server, [self.name, server.name])]
+        while queue:
+            current, path = queue.pop(0)
+            if id(current) in visited:
+                continue
+            visited.add(id(current))
+            for child in _direct_mounted_servers(current):
+                if child is self:
+                    cycle = " -> ".join([*path, self.name])
+                    raise ValueError(
+                        f"Cannot mount server {server.name!r} onto {self.name!r}: "
+                        f"would create a mount cycle ({cycle})"
+                    )
+                if id(child) not in visited:
+                    queue.append((child, [*path, child.name]))
 
         # Warn if parent masks errors but child doesn't (or vice versa)
         if self._mask_error_details and not server._mask_error_details:

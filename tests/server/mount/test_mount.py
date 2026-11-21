@@ -759,3 +759,37 @@ class TestMaskErrorDetailsMismatchWarning:
 
         parent.mount(child, "ns")
         assert child._mask_error_details is False
+
+    async def test_rejects_indirect_mount_cycles(self):
+        """Mounting servers into an indirect cycle fails immediately in mount()."""
+        a = FastMCP("A")
+        b = FastMCP("B")
+        c = FastMCP("C")
+
+        a.mount(b, "b")
+        with pytest.raises(ValueError, match="mount cycle"):
+            b.mount(a, "a")
+
+        b.mount(c, "c")
+        with pytest.raises(ValueError, match="mount cycle"):
+            c.mount(a, "a")
+
+    async def test_allows_diamond_mount_dag(self):
+        """A shared leaf mounted through two branches is a DAG, not a cycle."""
+        top = FastMCP("top")
+        left = FastMCP("left")
+        right = FastMCP("right")
+        shared = FastMCP("shared")
+
+        @shared.tool
+        def ping() -> str:
+            return "pong"
+
+        left.mount(shared, "s")
+        right.mount(shared, "s")
+        top.mount(left, "left")
+        top.mount(right, "right")
+
+        async with Client(top) as client:
+            tools = await client.list_tools()
+            assert {t.name for t in tools} == {"left_s_ping", "right_s_ping"}
