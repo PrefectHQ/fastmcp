@@ -210,3 +210,95 @@ class TestPromptAuthVersionFallback:
 
         prompt = await mcp.get_prompt("greet", VersionSpec(eq="2.0"))
         assert prompt is None
+
+
+class TestMountedListMiddlewareVersionFallback:
+    """Mounted list middleware must not break direct versionless fallback lookups."""
+
+    async def test_get_prompt_falls_back_through_mount_with_list_middleware(self):
+        from fastmcp import Client
+        from fastmcp.server.middleware import Middleware
+
+        class HideLists(Middleware):
+            async def on_list_prompts(self, context, call_next):
+                return []
+
+        child = FastMCP("child", middleware=[HideLists()])
+
+        @child.prompt(version="1")
+        def greet() -> str:
+            return "hello from v1"
+
+        @child.prompt(version="2", tags={"beta"})
+        def greet() -> str:
+            return "hello from v2"
+
+        parent = FastMCP("parent")
+        parent.mount(child)
+        parent.disable(tags={"beta"})
+
+        prompt = await parent.get_prompt("greet")
+        assert prompt is not None
+        assert prompt.version == "1"
+
+        async with Client(parent) as client:
+            assert await client.list_prompts() == []
+            result = await client.get_prompt("greet")
+            assert result.messages[0].content.text == "hello from v1"  # type: ignore[union-attr]
+
+    async def test_get_tool_and_resource_fall_back_through_mount_with_list_middleware(
+        self,
+    ):
+        from fastmcp import Client
+        from fastmcp.server.middleware import Middleware
+
+        class HideLists(Middleware):
+            async def on_list_tools(self, context, call_next):
+                return []
+
+            async def on_list_resources(self, context, call_next):
+                return []
+
+            async def on_list_resource_templates(self, context, call_next):
+                return []
+
+        child = FastMCP("child", middleware=[HideLists()])
+
+        @child.tool(version="1")
+        def calc() -> str:
+            return "v1"
+
+        @child.tool(version="2", tags={"beta"})
+        def calc() -> str:
+            return "v2"
+
+        @child.resource("data://item", version="1")
+        def item() -> str:
+            return "res-v1"
+
+        @child.resource("data://item", version="2", tags={"beta"})
+        def item() -> str:
+            return "res-v2"
+
+        @child.resource("data://items/{item_id}", version="1")
+        def item_tpl(item_id: str) -> str:
+            return f"tpl-v1-{item_id}"
+
+        @child.resource("data://items/{item_id}", version="2", tags={"beta"})
+        def item_tpl(item_id: str) -> str:
+            return f"tpl-v2-{item_id}"
+
+        parent = FastMCP("parent")
+        parent.mount(child)
+        parent.disable(tags={"beta"})
+
+        async with Client(parent) as client:
+            assert await client.list_tools() == []
+            assert await client.list_resources() == []
+            assert await client.list_resource_templates() == []
+            tool_res = await client.call_tool("calc", {})
+            assert tool_res.data == "v1"
+            res_contents = await client.read_resource("data://item")
+            assert res_contents[0].text == "res-v1"  # type: ignore[union-attr]
+            tpl_contents = await client.read_resource("data://items/42")
+            assert tpl_contents[0].text == "tpl-v1-42"  # type: ignore[union-attr]
