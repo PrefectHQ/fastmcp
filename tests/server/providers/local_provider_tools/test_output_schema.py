@@ -420,6 +420,22 @@ class TestIsObjectSchemaRefResolution:
         }
         assert is_object_schema(schema) is False
 
+    @staticmethod
+    def _make_ref_chain(hops: int) -> dict[str, Any]:
+        defs: dict[str, Any] = {
+            f"D{i}": {"$ref": f"#/$defs/D{i + 1}"} for i in range(hops - 1)
+        }
+        defs[f"D{hops - 1}"] = {"type": "object", "properties": {}}
+        return {"$ref": "#/$defs/D0", "$defs": defs}
+
+    def test_ref_chain_within_hop_bound(self):
+        assert is_object_schema(self._make_ref_chain(10)) is True
+
+    def test_ref_chain_beyond_hop_bound_returns_false(self):
+        """Long non-cyclic chains must return False, not hit RecursionError."""
+        assert is_object_schema(self._make_ref_chain(40)) is False
+        assert is_object_schema(self._make_ref_chain(5000)) is False
+
     def test_json_pointer_tilde_escape(self):
         """~0 should unescape to ~ and ~1 should unescape to /."""
         schema = {
