@@ -591,3 +591,122 @@ class TestUpstreamClientIdFallback:
 
         with pytest.raises(InvalidRedirectUriError):
             client.validate_redirect_uri(None)
+
+
+class TestClientRegistrationTTL:
+    """Tests for optional client_registration_ttl on OAuthProxy."""
+
+    def test_non_positive_client_registration_ttl_rejected(self, jwt_verifier):
+        from key_value.aio.stores.memory import MemoryStore
+
+        from fastmcp.server.auth.oauth_proxy import OAuthProxy
+
+        for bad_ttl in (0, -10):
+            with pytest.raises(
+                ValueError, match="client_registration_ttl must be positive"
+            ):
+                OAuthProxy(
+                    upstream_authorization_endpoint="https://auth.example.com/authorize",
+                    upstream_token_endpoint="https://auth.example.com/token",
+                    upstream_client_id="client-123",
+                    upstream_client_secret="secret-456",
+                    token_verifier=jwt_verifier,
+                    base_url="https://api.example.com",
+                    jwt_signing_key="test-signing-key-1234",
+                    client_storage=MemoryStore(),
+                    client_registration_ttl=bad_ttl,
+                )
+
+    async def test_register_client_passes_configured_ttl_to_client_store(
+        self, jwt_verifier
+    ):
+        from unittest.mock import patch
+
+        from key_value.aio.stores.memory import MemoryStore
+        from mcp.shared.auth import OAuthClientInformationFull
+
+        from fastmcp.server.auth.oauth_proxy import OAuthProxy
+
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://api.example.com",
+            jwt_signing_key="test-signing-key-1234",
+            client_storage=MemoryStore(),
+            client_registration_ttl=3600,
+        )
+
+        client_info = OAuthClientInformationFull(
+            client_id="dcr-client-1",
+            redirect_uris=[AnyUrl("http://localhost:3000/callback")],
+        )
+        with patch.object(
+            proxy._client_store, "put", wraps=proxy._client_store.put
+        ) as put_spy:
+            await proxy.register_client(client_info)
+
+        put_spy.assert_awaited_once()
+        assert put_spy.call_args.kwargs["key"] == "dcr-client-1"
+        assert put_spy.call_args.kwargs["ttl"] == 3600
+
+    async def test_register_client_defaults_to_none_ttl(self, oauth_proxy):
+        from unittest.mock import patch
+
+        from mcp.shared.auth import OAuthClientInformationFull
+
+        client_info = OAuthClientInformationFull(
+            client_id="dcr-client-default",
+            redirect_uris=[AnyUrl("http://localhost:3000/callback")],
+        )
+        with patch.object(
+            oauth_proxy._client_store, "put", wraps=oauth_proxy._client_store.put
+        ) as put_spy:
+            await oauth_proxy.register_client(client_info)
+
+        put_spy.assert_awaited_once()
+        assert put_spy.call_args.kwargs["ttl"] is None
+
+    async def test_renew_client_registration_refreshes_ttl_for_active_dcr_client(
+        self, jwt_verifier
+    ):
+        from unittest.mock import patch
+
+        from key_value.aio.stores.memory import MemoryStore
+        from mcp.shared.auth import OAuthClientInformationFull
+
+        from fastmcp.server.auth.oauth_proxy import OAuthProxy
+
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="upstream-client-id",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://api.example.com",
+            jwt_signing_key="test-signing-key-1234",
+            client_storage=MemoryStore(),
+            client_registration_ttl=7200,
+        )
+
+        client_info = OAuthClientInformationFull(
+            client_id="active-dcr-client",
+            redirect_uris=[AnyUrl("http://localhost:3000/callback")],
+        )
+        await proxy.register_client(client_info)
+
+        with patch.object(
+            proxy._client_store, "put", wraps=proxy._client_store.put
+        ) as put_spy:
+            await proxy._renew_client_registration("active-dcr-client")
+            put_spy.assert_awaited_once()
+            assert put_spy.call_args.kwargs["key"] == "active-dcr-client"
+            assert put_spy.call_args.kwargs["ttl"] == 7200
+
+            put_spy.reset_mock()
+            # Upstream synthetic client and unknown/unregistered IDs are skipped
+            await proxy._renew_client_registration("upstream-client-id")
+            await proxy._renew_client_registration("nonexistent-client")
+            put_spy.assert_not_called()

@@ -346,6 +346,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         extra_token_params: dict[str, str] | None = None,
         # Client storage
         client_storage: AsyncKeyValue | None = None,
+        client_registration_ttl: int | None = None,
         # JWT signing key
         jwt_signing_key: str | bytes | None = None,
         # Consent screen configuration
@@ -405,6 +406,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 Useful for provider-specific parameters during token exchange.
             client_storage: Storage backend for OAuth state (client registrations, tokens).
                 If None, an encrypted file store will be created in the data directory.
+            client_registration_ttl: Optional lifetime in seconds for DCR client
+                registrations stored in ``client_storage``. When set, abandoned
+                registrations expire after this duration, and active clients have
+                their registration TTL renewed whenever they obtain or refresh tokens.
+                Defaults to None (registrations do not expire).
             jwt_signing_key: Secret for signing FastMCP JWT tokens (any string or bytes).
                 If bytes are provided, they will be used as-is.
                 If a string is provided, it will be derived into a 32-byte key using PBKDF2 (1,000,000 iterations).
@@ -578,6 +584,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             fastmcp_access_token_expiry_seconds
         )
         self._token_expiry_threshold_seconds: int = token_expiry_threshold_seconds
+
+        if client_registration_ttl is not None and client_registration_ttl <= 0:
+            raise ValueError(
+                f"client_registration_ttl must be positive, got {client_registration_ttl}"
+            )
+        self._client_registration_ttl: int | None = client_registration_ttl
 
         if jwt_signing_key is None:
             if upstream_client_secret is None:
@@ -1135,6 +1147,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         await self._client_store.put(
             key=client_info.client_id,
             value=proxy_client,
+            ttl=self._client_registration_ttl,
         )
 
         # The SDK's RegistrationHandler serializes this same `client_info` object
@@ -1347,6 +1360,24 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             scopes=code_model.scopes,
             expires_at=code_model.expires_at,
             code_challenge=code_model.code_challenge or "",
+        )
+
+    async def _renew_client_registration(self, client_id: str | None) -> None:
+        """Refresh the storage TTL of an active DCR client registration."""
+        if self._client_registration_ttl is None or not client_id:
+            return
+        if client_id == self._upstream_client_id or (
+            self._cimd_manager is not None
+            and self._cimd_manager.is_cimd_client_id(client_id)
+        ):
+            return
+        stored = await self._client_store.get(key=client_id)
+        if stored is None or stored.cimd_document is not None:
+            return
+        await self._client_store.put(
+            key=client_id,
+            value=stored,
+            ttl=self._client_registration_ttl,
         )
 
     @override
@@ -1565,6 +1596,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 ttl=refresh_expires_in,
             )
 
+        await self._renew_client_registration(client.client_id)
+
         logger.debug(
             "Issued FastMCP tokens for client=%s (access_jti=%s, refresh_jti=%s)",
             client.client_id,
@@ -1690,6 +1723,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 "assertion_iss": str(claims.get("iss")),
             },
         )
+
+        await self._renew_client_registration(client.client_id)
 
         logger.debug(
             "Issued ID-JAG access token for subject=%s client=%s jti=%s",
@@ -2098,6 +2133,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             ),
             ttl=refresh_ttl,
         )
+
+        await self._renew_client_registration(client.client_id)
 
         logger.info(
             "Issued new FastMCP tokens (rotated refresh) for client=%s (access_jti=%s, refresh_jti=%s)",

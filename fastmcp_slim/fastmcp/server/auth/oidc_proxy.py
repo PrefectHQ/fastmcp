@@ -285,6 +285,7 @@ class OIDCProxy(OAuthProxy):
         allowed_client_redirect_uris: list[str] | None = None,
         valid_scopes: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
+        client_registration_ttl: int | None = None,
         # JWT and encryption keys
         jwt_signing_key: str | bytes | None = None,
         # Token validation configuration
@@ -354,6 +355,8 @@ class OIDCProxy(OAuthProxy):
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
                 If None, an encrypted file store will be created in the data directory
                 (derived from `platformdirs`).
+            client_registration_ttl: Optional lifetime in seconds for stored DCR client
+                registrations. Forwarded to ``OAuthProxy``. Defaults to None (no expiry).
             jwt_signing_key: Secret for signing FastMCP JWT tokens (any string or bytes). If bytes are provided,
                 they will be used as is. If a string is provided, it will be derived into a 32-byte key. If not
                 provided, the upstream client secret will be used to derive a 32-byte key using PBKDF2.
@@ -490,6 +493,7 @@ class OIDCProxy(OAuthProxy):
             "allowed_client_redirect_uris": allowed_client_redirect_uris,
             "valid_scopes": valid_scopes,
             "client_storage": client_storage,
+            "client_registration_ttl": client_registration_ttl,
             "jwt_signing_key": jwt_signing_key,
             "token_endpoint_auth_method": token_endpoint_auth_method,
             "require_authorization_consent": require_authorization_consent,
