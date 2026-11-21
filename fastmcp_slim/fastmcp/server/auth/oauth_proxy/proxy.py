@@ -1400,8 +1400,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # identifier_uri prefix Azure echoes back on custom API scopes.
         granted_scopes = self._translate_scopes_from_idp(granted_scopes)
 
-        # Clean up client code (one-time use)
-        await self._code_store.delete(key=authorization_code.code)
+        # Consume the code before issuing anything. delete() reports whether
+        # this call removed the key, so of two concurrent redemptions only one
+        # wins, including across replicas sharing a store.
+        if not await self._code_store.delete(key=authorization_code.code):
+            raise TokenError("invalid_grant", "Authorization code already used")
 
         # Generate IDs for token storage
         upstream_token_id = secrets.token_urlsafe(32)
@@ -2016,6 +2019,16 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 ),  # Keep until longest-lived token expires (min 1s for safety)
             )
 
+        # Consume the FastMCP refresh token before issuing successors.
+        # delete() reports whether this call removed the key, so of two
+        # concurrent refreshes only one wins, including across replicas sharing
+        # a store. Claiming this late means a failed upstream refresh or claims
+        # extraction leaves the token usable for a retry.
+        if not await self._refresh_token_store.delete(
+            key=_hash_token(refresh_token.token)
+        ):
+            raise TokenError("invalid_grant", "Refresh token already used")
+
         # Issue new minimal FastMCP access token (just a reference via JTI)
         if client.client_id is None:
             raise TokenError("invalid_client", "Client ID is required")
@@ -2082,9 +2095,6 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             ),
             ttl=refresh_ttl,
         )
-
-        # Delete old refresh token (by hash)
-        await self._refresh_token_store.delete(key=_hash_token(refresh_token.token))
 
         logger.info(
             "Issued new FastMCP tokens (rotated refresh) for client=%s (access_jti=%s, refresh_jti=%s)",
