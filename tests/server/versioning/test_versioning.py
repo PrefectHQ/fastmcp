@@ -8,7 +8,7 @@ from typing import cast
 import pytest
 from mcp_types import TextContent
 
-from fastmcp import FastMCP
+from fastmcp import Client, FastMCP
 from fastmcp.tools import Tool
 from fastmcp.utilities.versions import (
     VersionKey,
@@ -469,3 +469,22 @@ class TestDedupeVersionMetadataDeterminism:
         assert forward[0].meta["fastmcp"]["versions"] == ["latest", "LATEST"]
         assert reverse[0].meta is not None
         assert reverse[0].meta["fastmcp"]["versions"] == ["latest", "LATEST"]
+
+    def test_equal_versions_from_two_providers_listed_once(self):
+        result = dedupe_with_versions(
+            [self._tool("1"), self._tool("1"), self._tool("2")],
+            key_fn=lambda c: c.name,
+        )
+        assert result[0].meta is not None
+        assert result[0].meta["fastmcp"]["versions"] == ["2", "1"]
+
+    async def test_unnamespaced_mount_lists_shared_version_once(self):
+        parent, child = FastMCP("parent"), FastMCP("child")
+        parent.tool(name="t", version="1")(lambda: "parent")
+        child.tool(name="t", version="1")(lambda: "child")
+        parent.mount(child)
+
+        async with Client(parent) as client:
+            (tool,) = await client.list_tools()
+        assert tool.meta is not None
+        assert tool.meta["fastmcp"]["versions"] == ["1"]

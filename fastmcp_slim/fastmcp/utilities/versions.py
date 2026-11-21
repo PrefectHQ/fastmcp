@@ -330,8 +330,9 @@ def dedupe_with_versions(
             # Mirror version_sort_key's (VersionKey, raw) tuple so PEP 440-
             # equivalent spellings ("1" vs "1.0") order by raw string instead
             # of registration order — same determinism rule as selection.
+            # Equal versions from two providers are one version to a client.
             all_versions = sorted(
-                [c.version for c in versions if c.version is not None],
+                {c.version for c in versions if c.version is not None},
                 key=lambda v: (parse_version_key(v), v),
                 reverse=True,
             )
