@@ -17,6 +17,11 @@ Mutant catch rates: `uv run python -m tests.pbt.mutants`.
 | json_schema dereference, compress | 10k each | none planted | clean |
 | json_schema adapter accepts valid | 10k | `schema_fixes`, 4 undo mutants at 10/10 (below) | F1, F2, F3, F5 |
 | component machine (tools, prompts, resources, mount, versions, visibility, pagination) | 3k histories | 4/4 at 10/10 | F4 |
+| component machine, round 2: mount with or without a namespace (2026-11-19) | 3k histories | not yet measured | F6 (warned, #6613), F7 (#6612), F8 (#6611) |
+| component machine through a `ProxyProvider` front server (2026-11-21) | 5-minute campaign | shares the machine's mutants | clean |
+| tool transforms: rename, hide, defaults, required, two layers, deferred config (2026-11-21) | 1k cases, 5-minute campaign | 4/4: 10, 9, 8 and 8 of 10 seeds at 200 cases | F9 |
+| OpenAPI tool sends the described request (2026-11-21) | 1k cases | 4/4 (explode default 9/10, pipe delimiter 9/10, boolean text 10/10, path quoting 10/10) | clean (K4) |
+| OAuth proxy machine: codes, refresh, revocation, concurrent redemption (2026-11-21) | 1k histories | 3/3 at 10/10 seeds (an "already used" check is not planted: the lock and re-read mask it) | F10 |
 
 F1, F3 and F5 are fixed on `main` (#6552, #6553, #6572), so their probes
 report fixed and the harness checks those shapes again. F2 is fixed by keeping
@@ -98,6 +103,15 @@ the schemas that would catch it (`PBT_ASSUME_FIXED`, set per mutant).
   author put structure where the URI grammar does not allow it. Arguably
   fastmcp could warn at registration, but the read failing is correct.
   Recorded, not a bug.
+
+### K4. a non-ASCII OpenAPI header value fails the call
+
+- property: openapi tool sends the described request
+- minimal: header parameter `X-Trace` (string), value `"ü"` → the call
+  returns an error before any request is sent.
+- reachable: yes, but the refusal is httpx's: header values must be ASCII
+  (RFC 9110 recommends it), and httpx raises before sending.
+- against: not a fastmcp choice. The harness draws ASCII header values.
 
 ## findings
 
@@ -273,6 +287,122 @@ the schemas that would catch it (`PBT_ASSUME_FIXED`, set per mutant).
   and the failure discards the whole result. Kept; not fixed (only F1 and F3
   were authorized).
 
+### F6. versioned and unversioned components under one name, from two servers
+
+- status: documented and warned about (#6613): a listing that sees the mix
+  logs one warning per name. The behaviour itself is unchanged.
+- property: component machine with `mount(child)` and no namespace. One
+  server refuses to mix versioned and unversioned components under one name
+  (docs/servers/versioning.mdx); nothing refuses it across a mount.
+- minimal: parent `t` unversioned, child `t` version `"1"`. `list_tools()`
+  shows only the child's `t@1` (`versions: ["1"]`), the call without a version
+  runs `child@1`, and `version="2"` runs the parent's unversioned `t`, which
+  the listing never showed.
+- blob: `@reproduce_failure('6.170.15', b'AXicY3BkcGSEYlQIEmECEgwgDEaOLAwMcFmYKBMQwfQAAEy6CDI=')`
+  (resource shape: parent `res://r0` unversioned, child `res://r0@1` hidden by
+  tag; the read without a version fails although the parent's is enabled).
+- frequency: 21.7% of 3k histories touch the shape (registered, not asserted).
+- reachable: yes, by mounting two servers without a namespace where one
+  versions a name and the other does not. The aggregate already warns about
+  exact duplicate keys, but not about this.
+- against: the composition docs only say "highest matching version" and
+  "first registered wins" for equal keys; neither covers a mix, so there is no
+  documented answer to violate. The versioning docs now carry a caveat
+  (#6582). Kept as an unspecified region, not a bug, until a behaviour is
+  chosen.
+
+### F7. equal versions from two servers are listed twice in `versions`
+
+- status: fixed (#6612). Each shared version is listed once.
+- property: component machine listing — `meta.fastmcp.versions` lists the
+  enabled versions, highest first.
+- minimal: parent `t@1`, child `t@1`, no namespace: `versions == ["1", "1"]`.
+- blob: `@reproduce_failure('6.170.15', b'AXicY3BkcGSEYiYgwcCAzECBMAIAjL8FXg==')`
+- frequency: 7.4% of 3k histories.
+- reachable: yes, by any un-namespaced mount where both servers carry the same
+  version of a name. Cosmetic: a client building a version picker shows a
+  duplicate, and both entries resolve to the parent's.
+- against: the duplicate is the honest count of providers, and only the
+  parent's is reachable anyway. But `versions` is documented as the versions a
+  client can request, and "1" is one version. Kept.
+
+### F8. a hidden component shadows the mounted component listed in its place
+
+- status: fixed (#6611). A call answers with the shown twin when the lookup
+  returns a hidden one.
+- property: component machine `call` — what a listing shows, a call without a
+  version runs.
+- minimal: parent `t` (no tags), child `t` tagged `x`, `mount(child)`,
+  `parent.enable(tags={"x"}, only=True)`. `list_tools()` shows `t` (the
+  child's), and `call_tool("t", {})` raises `Unknown tool: 't'`. The same
+  happens with equal versions (`t@1` on both), with `version="1"`, and for
+  prompts and resources.
+- blob: `@reproduce_failure('6.170.15', b'AXicY3BkcGQEYxCJBYIIFgZGmCyIARZlReKBCCaovCMDAIpfCPk=')`
+- frequency: 0.12% of 3k histories; the shape needs two equal keys and a rule
+  that hides only the parent's.
+- reachable: yes. Mount a server without a namespace that defines a tool the
+  parent also defines, then hide the parent's by tag or name: the client sees
+  the tool and cannot call it.
+- cause: `AggregateProvider._get_highest_version_result` picks one component
+  across providers (`max`, first registered on ties) before the server applies
+  visibility, and `FastMCP.get_tool`'s fallback (`_highest_available_version`)
+  retries by version only, so it skips unversioned candidates and asks for the
+  same tied version again. Listing filters first and dedupes after, so the two
+  paths disagree.
+- against: none found. Listing and calling disagree, and neither doc says a
+  hidden component should block one that is shown.
+
+### F9. an invalid deferred tool transform breaks every listing and unrelated calls
+
+- status: open.
+- property: tool transform matches its model — construction is refused exactly
+  when the docs say so.
+- minimal:
+  ```python
+  @server.tool
+  def parent(a: int) -> int: ...
+  @server.tool
+  def other() -> str: ...
+  server.add_transform(ToolTransform({"parent": ToolTransformConfig(
+      name="t0", arguments={"a": ArgTransformConfig(hide=True)})}))
+  ```
+  `add_transform` accepts it. Afterwards `list_tools()` and
+  `call_tool("other", {})` both return `Internal server error`; the server log
+  has `ValueError: Hidden parameter 'a' has no default value`.
+- frequency: every drawn deferred layer that hides a required argument or maps
+  two arguments to one name: 3.7% of 1k cases, 13% of the deferred ones.
+- reachable: yes, from config files and `ToolTransformConfig` alike. One bad
+  entry takes down the whole tool surface, not just the transformed tool.
+- cause: `Tool.from_tool` validates eagerly, so the same options raise at
+  construction there; the deferred path builds the tool lazily on every
+  `list_tools`/`get_tool`, so the `ValueError` escapes on each request.
+- against: none found. `Tool.from_tool` refuses the same options up front, so
+  the two paths disagree.
+
+### F10. OAuth proxy access-token revocation is per grant, and refresh undoes it
+
+- status: open.
+- property: OAuth proxy machine — a revoked access token stays dead; revoking
+  one token leaves other live tokens alone.
+- minimal: redeem a code (access token A1, refresh R1), `revoke_token(A1)`,
+  refresh with R1 (A2), then `load_access_token(A1)` validates again. Also:
+  refresh first (A2), then `revoke_token(A1)` makes A2 invalid.
+- frequency: 17% of 1k histories reach a token in a grant with a revoked access token.
+- reachable: yes, with any upstream that has a revocation endpoint. A client
+  that logs out (revokes its access token) and still holds the refresh token,
+  or a second session on the same grant, sees the wrong token live or dead.
+- cause: every fastmcp access token of a grant maps through `JTIMapping` to
+  one `upstream_token_id`, and `load_access_token` validates the grant's
+  current upstream token. Revoking an access token revokes that current
+  upstream token upstream and deletes nothing locally; a refresh writes a new
+  upstream token into the same record, so every old JTI validates again.
+- against: revocation of access tokens is optional under RFC 7009, and the
+  revoked token is short-lived. But `revoke_token` reports success, and the
+  token comes back.
+- related, read from the code, not asserted: `revoke_token` logs upstream
+  revocation failures as a warning and still succeeds; RFC 7009 lets the
+  server answer 503 instead.
+
 ## model corrections (harness was wrong, not fastmcp)
 
 - a mounted child's own `disable()` cannot be overridden by the parent's
@@ -348,3 +478,31 @@ fixing that sentence and flipping explicit `eq` requests to
 `match_none=False` (and those tests). Held for nate's decision. Note: if
 version-not-found becomes an error it will surface as fastmcp's `isError`
 "Unknown tool" result, not the -32602 the spec and the TS/Go/Rust SDKs use.
+
+### F6–F8: one name answered by two servers
+
+| implementation | two components under one name? | enable/disable | list vs call |
+|---|---|---|---|
+| MCP spec 2026-07-28 | no; a name identifies one tool | none | `tools/list` advertises what `tools/call` accepts |
+| typescript-sdk@5ee54ee | no; registering a taken name throws (`mcp.ts:1144`) | `RegisteredTool.disable()`; list filters `enabled` (`packages/server/src/server/mcp.ts:300`), call checks the same flag (`:337`) | agree |
+| go-sdk@a6e937f | no; `AddTool` replaces by name (`mcp/server.go:315,381`) | none (remove only) | agree |
+| fastmcp | yes, across an un-namespaced mount | visibility rules applied after the cross-provider pick | F8: listed but not callable; F6: callable but not listed |
+
+No reference composes servers, so none can say which of two components should
+answer. Every reference with enable/disable uses one predicate for listing and
+calling, which is the property F8 breaks.
+
+### F9: an invalid transform
+
+No reference SDK has tool transforms; the only comparison is fastmcp's own
+eager path, `Tool.from_tool`, which raises `ValueError` at construction for
+the same options.
+
+### F10: revoking a proxied access token
+
+| implementation | proxies an upstream AS? | revoked access token after a refresh |
+|---|---|---|
+| RFC 7009 | n/a | access revocation optional; a revoked token must not validate |
+| typescript-sdk@5ee54ee | yes, `ProxyOAuthServerProvider` passes upstream tokens through (`packages/server/src/server/auth/providers/proxyProvider.ts`) | dead: the client holds the upstream token, which the upstream revoked |
+| python-sdk@77001c9, go-sdk@a6e937f, rust-sdk@165f8fd | no proxy provider | n/a |
+| fastmcp | yes, issues its own JWTs mapped to one upstream record per grant | F10: live again |

@@ -6,6 +6,7 @@ value and requires match to return exactly the values that were expanded.
 whatever it returns must expand back to the same URI.
 """
 
+import pytest
 from hypothesis import event, given, note
 from hypothesis import strategies as st
 
@@ -67,6 +68,7 @@ def test_reexpand(t: DrawnTemplate):
     assert again == uri, "a match does not expand back to the URI it came from"
 
 
+@pytest.mark.pbt_smoke
 @given(st.integers())
 async def test_async_given_runs(n: int):
     """pytest-asyncio's auto mode drives async @given tests."""
