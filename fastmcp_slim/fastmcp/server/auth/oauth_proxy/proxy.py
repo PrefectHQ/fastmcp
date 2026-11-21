@@ -110,7 +110,10 @@ from fastmcp.server.auth.oauth_proxy.models import (
     UpstreamTokenSet,
     _hash_token,
 )
-from fastmcp.server.auth.oauth_proxy.revocation import RevocationProvider
+from fastmcp.server.auth.oauth_proxy.revocation import (
+    RevocableAccessToken,
+    RevocationProvider,
+)
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
 from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client, OAuthError
 from fastmcp.server.auth.redirect_validation import (
@@ -2477,9 +2480,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         """Revoke token locally and with upstream server if supported.
 
-        For refresh tokens, removes from local storage by hash.
-        For all tokens, attempts upstream revocation if endpoint is configured.
-        Access token JTI mappings expire via TTL.
+        For refresh tokens, removes from local storage by hash. For an access
+        token presented to the revocation route, removes its JTI mapping, so
+        the token cannot validate again after a refresh puts a new upstream
+        token behind its grant. For all tokens, attempts upstream revocation
+        if endpoint is configured.
         """
         # For refresh tokens, delete from local storage by hash
         if isinstance(token, RefreshToken):
@@ -2506,6 +2511,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 )
                 logger.debug("Revoked ID-JAG access token jti=%s", jti[:16])
             return
+
+        # Every FastMCP access token of a grant maps to the grant's one
+        # upstream record, which a refresh rewrites. Revoking upstream alone
+        # would let this token validate again against the next upstream
+        # token, so retire its mapping too.
+        if isinstance(token, RevocableAccessToken):
+            await self._jti_mapping_store.delete(key=token.fastmcp_jti)
 
         # Attempt upstream revocation if endpoint is configured
         if self._upstream_revocation_endpoint:

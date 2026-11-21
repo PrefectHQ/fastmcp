@@ -381,7 +381,10 @@ the schemas that would catch it (`PBT_ASSUME_FIXED`, set per mutant).
 
 ### F10. OAuth proxy access-token revocation is per grant, and refresh undoes it
 
-- status: open.
+- status: fixed (this branch). The revocation route retires the presented
+  token's JTI mapping, so a refresh cannot revive it. Revoking still revokes
+  the grant's upstream token, which RFC 7009 2.1 allows: the grant's other
+  access tokens stop validating until a refresh, and the model now says so.
 - property: OAuth proxy machine — a revoked access token stays dead; revoking
   one token leaves other live tokens alone.
 - minimal: redeem a code (access token A1, refresh R1), `revoke_token(A1)`,

@@ -226,6 +226,14 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "test": "tests/pbt/test_oauth_proxy_machine.py",
         },
         {
+            "name": "revoked access token's mapping kept (undoes F10)",
+            "file": OAUTH,
+            "old": "            await self._jti_mapping_store.delete(key=token.fastmcp_jti)",
+            "new": "            pass",
+            "test": "tests/pbt/test_oauth_proxy_machine.py",
+            "fixes": "F10",
+        },
+        {
             "name": "revoked refresh token kept",
             "file": OAUTH,
             "old": "            await self._refresh_token_store.delete(key=_hash_token(token.token))",

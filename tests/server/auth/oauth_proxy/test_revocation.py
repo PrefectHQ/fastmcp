@@ -165,9 +165,32 @@ async def test_owner_revokes_upstream_access_token(
     # Verifiers may cache their result; a revocation-only copy must not mutate it.
     assert before is not None
     assert before.client_id == "alice"
-    after = await proxy.verify_token(token)
-    assert after is not None
-    assert after.client_id == "alice"
+    # The revoked token is retired locally, so it stays revoked even when the
+    # grant's upstream record later holds a fresh upstream token.
+    assert await proxy._jti_mapping_store.get(key="alice") is None
+    assert await proxy._upstream_token_store.get(key="alice") is not None
+    assert await proxy.verify_token(token) is None
+
+
+async def test_revoking_one_access_token_keeps_other_grants(
+    proxy: OAuthProxy,
+    issue_token: Callable[[str], Awaitable[str]],
+    httpx_mock: HTTPXMock,
+) -> None:
+    alice = await issue_token("alice")
+    bob = await issue_token("bob")
+    httpx_mock.add_response(url="https://idp.example.com/revoke", method="POST")
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=Starlette(routes=proxy.get_routes("/mcp"))),
+        base_url="https://proxy.example.com",
+    ) as client:
+        response = await client.post(
+            "/revoke",
+            data={"token": alice, "client_id": "dcr-client", "client_secret": ""},
+        )
+    assert response.status_code == 200
+    assert await proxy.verify_token(alice) is None
+    assert await proxy.verify_token(bob) is not None
 
 
 @pytest.mark.parametrize("client_id", ["other-client", "alice"])

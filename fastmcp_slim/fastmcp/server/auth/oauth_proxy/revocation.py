@@ -14,8 +14,21 @@ from mcp.server.auth.provider import (
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
+from fastmcp.server.auth.auth import AccessToken as FastMCPAccessToken
+
 if TYPE_CHECKING:
     from fastmcp.server.auth.oauth_proxy.proxy import OAuthProxy
+
+
+class RevocableAccessToken(FastMCPAccessToken):
+    """An access token loaded by the revocation route.
+
+    `token` is the upstream token, which every FastMCP access token of one
+    grant shares. `fastmcp_jti` names the FastMCP token the client presented,
+    so revocation can retire that token itself.
+    """
+
+    fastmcp_jti: str
 
 
 class RevocationProvider:
@@ -73,9 +86,18 @@ class RevocationProvider:
         except (JoseError, ValueError, KeyError):
             return None
         client_id = payload.get("client_id")
+        jti = payload.get("jti")
         if not isinstance(client_id, str) or not client_id:
             return None
-        return validated.model_copy(update={"client_id": client_id})
+        if not isinstance(jti, str) or not jti:
+            return None
+        return RevocableAccessToken(
+            **{
+                **validated.model_dump(exclude_none=True),
+                "client_id": client_id,
+                "fastmcp_jti": jti,
+            }
+        )
 
     async def load_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: str
