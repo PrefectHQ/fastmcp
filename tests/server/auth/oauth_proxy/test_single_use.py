@@ -220,3 +220,27 @@ class TestRefreshTokenSingleUse:
                 client, as_refresh_token(refresh_token), ["read"]
             )
         assert retried.refresh_token is not None
+
+    async def test_failed_claims_extraction_keeps_refresh_token(self, jwt_verifier):
+        """A claims hook failure issues nothing, so the client can retry."""
+        proxy = make_proxy(jwt_verifier)
+        client, refresh_token = await self._issue(proxy)
+
+        with (
+            patch.object(
+                proxy,
+                "_create_upstream_oauth_client",
+                return_value=non_rotating_upstream(),
+            ),
+            patch.object(
+                proxy,
+                "_extract_upstream_claims",
+                side_effect=RuntimeError("userinfo unavailable"),
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            await proxy.exchange_refresh_token(
+                client, as_refresh_token(refresh_token), ["read"]
+            )
+
+        assert await proxy.load_refresh_token(client, refresh_token)

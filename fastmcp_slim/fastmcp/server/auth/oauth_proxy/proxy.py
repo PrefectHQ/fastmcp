@@ -1911,16 +1911,6 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 "Upstream access token has a non-positive expires_in",
             )
 
-        # Consume the FastMCP refresh token before persisting or issuing
-        # anything. delete() reports whether this call removed the key, so of
-        # two concurrent refreshes only one wins, including across replicas
-        # sharing a store. Claiming after the upstream call means a failed
-        # upstream refresh leaves the token usable for a retry.
-        if not await self._refresh_token_store.delete(
-            key=_hash_token(refresh_token.token)
-        ):
-            raise TokenError("invalid_grant", "Refresh token already used")
-
         # Update stored upstream token
         # In refresh flow, we know there's a refresh token, so default to 1 hour
         # (user override still applies if set)
@@ -2028,6 +2018,16 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     refresh_ttl, new_expires_in, fastmcp_access_expires_in, 1
                 ),  # Keep until longest-lived token expires (min 1s for safety)
             )
+
+        # Consume the FastMCP refresh token before issuing successors.
+        # delete() reports whether this call removed the key, so of two
+        # concurrent refreshes only one wins, including across replicas sharing
+        # a store. Claiming this late means a failed upstream refresh or claims
+        # extraction leaves the token usable for a retry.
+        if not await self._refresh_token_store.delete(
+            key=_hash_token(refresh_token.token)
+        ):
+            raise TokenError("invalid_grant", "Refresh token already used")
 
         # Issue new minimal FastMCP access token (just a reference via JTI)
         if client.client_id is None:
