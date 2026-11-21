@@ -229,3 +229,28 @@ async def test_restore_skipped_for_non_fastmcp_task_keys():
     await restore_task_snapshot(key="not-a-fastmcp-key")
     await restore_task_snapshot(key="weird:client-a:task-1:tool:my_tool")
     await restore_task_snapshot(key="")
+
+
+def test_task_context_snapshot_repr_omits_credentials():
+    """Formatting TaskContextSnapshot must not leak bearer tokens or headers."""
+    snapshot = TaskContextSnapshot(
+        access_token_json='{"token":"super-secret-oauth-token","client_id":"c1"}',
+        http_headers={
+            "authorization": "Bearer super-secret-header-token",
+            "x-api-key": "super-secret-api-key",
+        },
+        origin_request_id="req-123",
+        session_id="sess-456",
+        owning_tool_name="my_tool",
+        owning_tool_version="1.0",
+    )
+
+    formatted = repr(snapshot)
+    assert "super-secret-oauth-token" not in formatted
+    assert "super-secret-header-token" not in formatted
+    assert "super-secret-api-key" not in formatted
+    assert "access_token_json" not in formatted
+    assert "http_headers" not in formatted
+    assert "req-123" in formatted
+    assert "sess-456" in formatted
+    assert "my_tool" in formatted
