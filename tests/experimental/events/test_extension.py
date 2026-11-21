@@ -225,6 +225,35 @@ async def test_subscription_drains_backlog_resumes_and_drops_repeats() -> None:
     assert subscription.truncated is False
 
 
+async def test_stopping_partway_through_a_batch_keeps_the_rest_resumable() -> None:
+    log = [{"key": str(n), "severity": "low"} for n in range(3)]
+    server = make_server(log, poll_interval_ms=0)
+
+    async with events_client(server) as client:
+        subscription = subscribe_events(
+            client, "alert.fired", cursor="0", min_poll_interval=0, delivery="poll"
+        )
+        async for _ in subscription:
+            break
+        assert subscription.cursor == "0"
+
+        resumed = subscribe_events(
+            client,
+            "alert.fired",
+            cursor=subscription.cursor,
+            min_poll_interval=0,
+            delivery="poll",
+        )
+        seen = []
+        async for event in resumed:
+            seen.append(event.event_id)
+            if len(seen) == 3:
+                break
+
+    assert seen == ["0", "1", "2"]
+    assert resumed.cursor == "3"
+
+
 async def test_subscription_reports_a_gap() -> None:
     server = FastMCP("gap")
     events = EventsExtension(poll_interval_ms=0)

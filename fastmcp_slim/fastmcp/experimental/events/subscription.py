@@ -138,12 +138,17 @@ class EventSubscription:
                 max_age_ms=self._max_age_ms,
                 max_events=self._max_events,
             )
-            self.cursor = result.cursor
             if result.truncated:
                 self._note_gap()
-            for event in result.events:
-                if self._is_new(event):
-                    yield event
+            # The cursor is the position after the whole batch, so it moves
+            # with the batch's last event: a consumer that stops partway
+            # resumes from the batch's start instead of skipping the rest.
+            fresh = [event for event in result.events if self._is_new(event)]
+            for event in fresh[:-1]:
+                yield event
+            self.cursor = result.cursor
+            if fresh:
+                yield fresh[-1]
             if not result.has_more:
                 await anyio.sleep(
                     max(result.next_poll_ms / 1000, self._min_poll_interval)
