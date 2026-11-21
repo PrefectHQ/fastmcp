@@ -223,7 +223,8 @@ class MCPServerConfig(BaseModel):
     def from_file(cls, file_path: Path) -> MCPServerConfig:
         """Load configuration from a JSON file.
 
-        Relative `source.path` and `environment.requirements` values are
+        Relative `source.path`, `environment.requirements`,
+        `environment.project`, and `environment.editable` values are
         anchored to the configuration file's directory (see `anchor_paths`).
 
         Args:
@@ -250,9 +251,10 @@ class MCPServerConfig(BaseModel):
     def anchor_paths(self, config_dir: Path) -> None:
         """Make relative file paths absolute against the config file's directory.
 
-        Anchors `source.path` and `environment.requirements`, so a config
-        loaded from another working directory still finds its files. Paths are
-        made absolute without following symlinks, so a symlinked `fastmcp.json`
+        Anchors `source.path`, `environment.requirements`,
+        `environment.project`, and `environment.editable`, so a config loaded
+        from another working directory still finds its files. Paths are made
+        absolute without following symlinks, so a symlinked `fastmcp.json`
         resolves paths beside the link. Other paths, such as `deployment.cwd`,
         keep their own resolution rules.
 
@@ -261,16 +263,24 @@ class MCPServerConfig(BaseModel):
         """
         config_dir = Path(os.path.abspath(config_dir.expanduser()))
 
-        source_path = Path(self.source.path).expanduser()
-        if not source_path.is_absolute():
-            self.source.path = os.path.abspath(config_dir / source_path)
+        def _anchor(path: Path) -> Path:
+            expanded = path.expanduser()
+            if not expanded.is_absolute():
+                return Path(os.path.abspath(config_dir / expanded))
+            return expanded
 
-        requirements = self.environment.requirements
-        if requirements is not None:
-            requirements = requirements.expanduser()
-            if not requirements.is_absolute():
-                requirements = Path(os.path.abspath(config_dir / requirements))
-            self.environment.requirements = requirements
+        self.source.path = str(_anchor(Path(self.source.path)))
+
+        if self.environment.requirements is not None:
+            self.environment.requirements = _anchor(self.environment.requirements)
+
+        if self.environment.project is not None:
+            self.environment.project = _anchor(self.environment.project)
+
+        if self.environment.editable is not None:
+            self.environment.editable = [
+                _anchor(path) for path in self.environment.editable
+            ]
 
     @classmethod
     def from_cli_args(

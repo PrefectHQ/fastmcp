@@ -305,6 +305,45 @@ class TestMCPServerConfig:
         assert config.deployment.transport == "http"
         assert config.deployment.port == 8000
 
+    def test_from_file_anchors_project_and_editable_relative_to_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Relative project and editable paths resolve against fastmcp.json's directory."""
+        proj_dir = tmp_path / "proj"
+        proj_dir.mkdir()
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+
+        config_data = {
+            "source": {"path": "server.py"},
+            "environment": {
+                "project": ".",
+                "editable": [".", "../shared_pkg"],
+                "requirements": "requirements.txt",
+            },
+        }
+        config_file = proj_dir / "fastmcp.json"
+        config_file.write_text(json.dumps(config_data))
+
+        monkeypatch.chdir(elsewhere)
+        config = MCPServerConfig.from_file(config_file)
+
+        assert config.environment.project == Path(os.path.abspath(proj_dir))
+        assert config.environment.editable == [
+            Path(os.path.abspath(proj_dir)),
+            Path(os.path.abspath(tmp_path / "shared_pkg")),
+        ]
+        assert config.environment.requirements == Path(
+            os.path.abspath(proj_dir / "requirements.txt")
+        )
+        cmd = config.environment.build_command(["fastmcp", "run", config.source.path])
+        assert "--project" in cmd
+        assert cmd[cmd.index("--project") + 1] == str(
+            Path(os.path.abspath(proj_dir)).resolve()
+        )
+        assert "--with-editable" in cmd
+        assert str(Path(os.path.abspath(tmp_path / "shared_pkg")).resolve()) in cmd
+
     def test_from_file_with_string_entrypoint(self, tmp_path):
         """Test loading config with dict source format."""
         config_data = {
