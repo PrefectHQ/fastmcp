@@ -313,6 +313,49 @@ docker run -d --name jaeger \
 
 Then view traces at http://localhost:16686
 
+## Usage Metrics
+
+<VersionBadge version="4.3.0" />
+
+Server spans already record who called which tool, how long it took, and whether it failed. Sampled traces cannot reliably answer how often each user calls a tool. `UsageMiddleware` records request counts, durations, and failures as OpenTelemetry metrics, independently of trace sampling.
+
+Add the middleware and configure a meter provider with an exporter. Like the rest of FastMCP's instrumentation, the middleware records nothing until an SDK is configured.
+
+```python
+from opentelemetry import metrics
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+
+from fastmcp import FastMCP
+from fastmcp.server.middleware.usage import UsageMiddleware
+
+reader = PeriodicExportingMetricReader(OTLPMetricExporter())
+metrics.set_meter_provider(MeterProvider(metric_readers=[reader]))
+
+mcp = FastMCP("my-server")
+mcp.add_middleware(UsageMiddleware(user_id_salt="a-secret-value"))
+```
+
+Every `tools/call` and `prompts/get` request is recorded on the `mcp.server.operation.duration` histogram, in seconds, from the [MCP semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/). The histogram's count is the number of calls. Each data point carries:
+
+| Attribute | Description |
+|-----------|-------------|
+| `mcp.method.name` | `tools/call` or `prompts/get` |
+| `gen_ai.tool.name` / `gen_ai.prompt.name` | The requested component, omitted for routing and access failures |
+| `fastmcp.server.name` | Server name |
+| `fastmcp.client.name` / `fastmcp.client.version` | Client-reported application identity, when supplied |
+| `enduser.pseudo.id` or `enduser.id` | The authenticated user, when the server has auth |
+| `error.type` | Present only on failed calls, classified as on spans |
+
+Unknown, disabled, and unauthorized component requests still count, but omit the component name so arbitrary rejected names do not create a new metric series each time. Known components retain their name on execution failures. Client names and versions are self-reported, not authenticated identities, and are omitted when unavailable.
+
+Measurements cover the request handled by middleware. For background tasks, duration measures submission and excludes eventual execution failures. Each guard continuation is another request, not another completed tool execution. Middleware that handles a request without calling the next middleware must come after `UsageMiddleware` for that request to be counted.
+
+The user attribute depends on `user_id`. The default, `"hashed"`, reports a keyed SHA-256 digest of the token subject (or client ID) as `enduser.pseudo.id`, which lets you group usage per user without exporting identities such as email addresses. Hashing requires a secret `user_id_salt`, because an unkeyed digest of a known email address can be recomputed and matched, so `UsageMiddleware()` without one raises a `ValueError`. Keep the salt stable across restarts and replicas, or the same user will show up under a new ID. Use `user_id="raw"` to report the identity itself as `enduser.id`, or `user_id="omit"` to report no user at all; neither needs a salt. Servers without authentication have no user to report, so their data points carry no user attribute.
+
+For unauthenticated servers, use `UsageMiddleware(user_id="omit")` to avoid configuring an unused salt. Each distinct user, client name, and client version adds metric cardinality; configure your metrics SDK's views and cardinality limits for your deployment.
+
 ## Custom Spans
 
 You can add your own spans using the FastMCP tracer:
