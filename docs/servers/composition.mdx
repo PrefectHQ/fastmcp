@@ -261,3 +261,5 @@ main.mount(server_b)
 
 # shared_tool returns "From A" (first mounted, same unversioned key)
 ```
+
+One server refuses to hold a versioned and an unversioned component under the same name, but two servers composed without a namespace can. FastMCP logs a warning the first time a listing sees that mix. In that state the listing shows only the versioned component, while a request for a version it lacks runs the unversioned one. Give the mounted server a namespace, or version both components, to avoid it.
