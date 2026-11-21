@@ -234,6 +234,10 @@ async def _shown_twin(
     while the listing shows the mounted one. Answer with what the listing
     shows. Only an identity the lookup itself returned qualifies, so a
     transform that refuses a lookup still refuses it.
+
+    This lives here rather than in the aggregate's tie-break because the
+    aggregate picks inside the lookup chain: the server's own visibility
+    transforms and the session's rules are applied around it, after the pick.
     """
     twins = [c for c in candidates if c.key == hidden.key]
     for twin in await apply_session_transforms(twins):
@@ -1102,6 +1106,10 @@ class FastMCP(
         # answers first. Then, if an explicit version was requested, respect
         # that. Otherwise fall back to the highest version that is both
         # enabled and authorized, consistent with list_tools.
+        # An explicit request has nothing to fall back to unless the lookup
+        # found a hidden component that may have a shown twin; skip listing.
+        if version is not None and tool is None:
+            return None
         candidates = [t for t in await super().list_tools() if t.name == name]
         # During a hashed lookup, only versions of the identity being looked
         # up qualify; another tool listed under the same name does not.
@@ -1255,6 +1263,10 @@ class FastMCP(
             ):
                 return resources[0], True
 
+        # An explicit request has nothing to fall back to unless the lookup
+        # found a hidden component that may have a shown twin; skip listing.
+        if version is not None and hidden is None:
+            return None, True
         candidates = [r for r in await super().list_resources() if str(r.uri) == uri]
         if hidden is not None and (twin := await _shown_twin(hidden, candidates)):
             return twin, True
@@ -1389,6 +1401,10 @@ class FastMCP(
 
         # The highest version is disabled or unauthorized (provider lookups
         # return None for an unauthorized template).
+        # An explicit request has nothing to fall back to unless the lookup
+        # found a hidden component that may have a shown twin; skip listing.
+        if version is not None and template is None:
+            return None
         candidates = [
             t
             for t in await super().list_resource_templates()
@@ -1514,6 +1530,10 @@ class FastMCP(
 
         # The highest version is disabled or unauthorized (provider lookups
         # return None for an unauthorized prompt).
+        # An explicit request has nothing to fall back to unless the lookup
+        # found a hidden component that may have a shown twin; skip listing.
+        if version is not None and prompt is None:
+            return None
         candidates = [p for p in await super().list_prompts() if p.name == name]
         if prompt is not None and (twin := await _shown_twin(prompt, candidates)):
             return twin
