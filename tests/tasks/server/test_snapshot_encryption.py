@@ -171,6 +171,27 @@ class TestSnapshotSerialization:
             == sensitive_snapshot
         )
 
+    def test_repr_does_not_expose_credentials(
+        self, sensitive_snapshot: TaskContextSnapshot
+    ):
+        """A formatted snapshot must never carry tokens or auth headers into logs."""
+        snapshot_repr = repr(sensitive_snapshot)
+        assert sensitive_snapshot.access_token_json is not None
+        assert "access_token_json" not in snapshot_repr
+        assert sensitive_snapshot.http_headers is not None
+        assert "http_headers" not in snapshot_repr
+        assert sensitive_snapshot.http_headers["authorization"] not in snapshot_repr
+        assert str(sensitive_snapshot.http_headers) not in snapshot_repr
+
+        snapshot_str = str(sensitive_snapshot)
+        assert "access_token_json" not in snapshot_str
+        assert "http_headers" not in snapshot_str
+        assert sensitive_snapshot.http_headers["authorization"] not in snapshot_str
+
+        # Non-sensitive fields should still be present in repr
+        assert "session-1" in snapshot_repr
+        assert "peek" in snapshot_repr
+
 
 async def _read_stored_snapshot(mcp: FastMCP, task_scope: str, task_id: str) -> str:
     """Return the raw stored value of a task's snapshot key."""
