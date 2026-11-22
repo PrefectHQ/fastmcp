@@ -100,24 +100,60 @@ def _schema_branches(node: Any, root: Any) -> list[Any]:
     return branches
 
 
-def _node_asks_json_text(node: Any, root: Any) -> bool:
-    """True when any branch of `node` declares ``format: json``."""
+def _branch_matches_wire(branch: Any, original: Any) -> bool:
+    """True when a union branch could plausibly validate the wire value.
+
+    pydantic validates a union branch by branch, so a branch whose
+    required keys the wire object lacks — or whose fixed values
+    contradict it — can never be the branch that validated the payload,
+    and its schema must not license the decode asymmetry. Values that are
+    not objects keep every branch as a candidate.
+    """
+    if not isinstance(original, Mapping) or not isinstance(branch, dict):
+        return True
+    properties = branch.get("properties")
+    for key in branch.get("required", []):
+        if not isinstance(key, str) or key not in original:
+            return False
+        if not isinstance(properties, dict):
+            continue
+        constraints = properties.get(key)
+        if not isinstance(constraints, dict):
+            continue
+        if "const" in constraints and original[key] != constraints["const"]:
+            return False
+        enum = constraints.get("enum")
+        if isinstance(enum, list) and original[key] not in enum:
+            return False
+    return True
+
+
+def _node_asks_json_text(node: Any, root: Any, original: Any = None) -> bool:
+    """True when a branch that could match the wire value declares ``format: json``."""
     return any(
         isinstance(branch, dict) and branch.get("format") == "json"
         for branch in _schema_branches(node, root)
+        if _branch_matches_wire(branch, original)
     )
 
 
 def _property_schemas(
-    schemas: list[Any] | None, key: str, root: Any
+    schemas: list[Any] | None, key: str, root: Any, original: Any = None
 ) -> list[Any] | None:
-    """Candidate schema nodes for `key` under each candidate node."""
+    """Candidate schema nodes for `key` under each candidate node.
+
+    Branches that cannot match the wire value at this position are
+    skipped: a branch the union would never pick cannot license the
+    decode asymmetry for its own properties.
+    """
     if schemas is None:
         return None
     children: list[Any] = []
     for node in schemas:
         for branch in _schema_branches(node, root):
             if not isinstance(branch, dict):
+                continue
+            if not _branch_matches_wire(branch, original):
                 continue
             properties = branch.get("properties")
             if isinstance(properties, dict) and key in properties:
@@ -141,14 +177,21 @@ def _property_schemas(
     return children
 
 
-def _item_schemas(schemas: list[Any] | None, index: int, root: Any) -> list[Any] | None:
-    """Candidate schema nodes for item `index` under each candidate node."""
+def _item_schemas(
+    schemas: list[Any] | None, index: int, root: Any, original: Any = None
+) -> list[Any] | None:
+    """Candidate schema nodes for item `index` under each candidate node.
+
+    As with `_property_schemas`, branches that cannot match the wire
+    value are skipped."""
     if schemas is None:
         return None
     children: list[Any] = []
     for node in schemas:
         for branch in _schema_branches(node, root):
             if not isinstance(branch, dict):
+                continue
+            if not _branch_matches_wire(branch, original):
                 continue
             prefix_items = branch.get("prefixItems")
             if isinstance(prefix_items, list) and index < len(prefix_items):
@@ -198,7 +241,7 @@ def _hydration_covers_payload(
     coerced value can never slip through at a path the schema does not
     exempt."""
     if schemas and root is not None:
-        node_asks = any(_node_asks_json_text(node, root) for node in schemas)
+        node_asks = any(_node_asks_json_text(node, root, original) for node in schemas)
     else:
         node_asks = schemas is None
     if node_asks and _json_text_decodes_to(original, dumped):
@@ -219,7 +262,7 @@ def _hydration_covers_payload(
             and _hydration_covers_payload(
                 dumped[key],
                 value,
-                _property_schemas(schemas, str(key), root),
+                _property_schemas(schemas, str(key), root, original),
                 root,
             )
             for key, value in original.items()
@@ -235,7 +278,7 @@ def _hydration_covers_payload(
             _hydration_covers_payload(
                 d,
                 o,
-                _item_schemas(schemas, position, root),
+                _item_schemas(schemas, position, root, original),
                 root,
             )
             for position, (o, d) in enumerate(zip(original, dumped, strict=True))
@@ -246,8 +289,18 @@ def _hydration_covers_payload(
     left = _parse_iso_instant(original)
     right = _parse_iso_instant(dumped)
     if left is not None and right is not None:
+        # A date-only spelling is not the same instant as text that names
+        # a time: one side dropping the time component is a fidelity loss.
+        if _is_date_only(original) != _is_date_only(dumped):
+            return False
         return left == right
     return False
+
+
+def _is_date_only(value: Any) -> bool:
+    return (
+        isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is not None
+    )
 
 
 def _parse_iso_instant(value: Any) -> Any:

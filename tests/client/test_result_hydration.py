@@ -465,6 +465,141 @@ class TestUnionHydrationFidelity:
         assert result.structured_content == {"value": {"n": 3}}
         assert result.data.value.n == 3
 
+    async def test_json_format_branch_that_cannot_match_does_not_license_decode(self):
+        mcp = FastMCP()
+
+        # Three reading branches; only the free-form one can validate the
+        # wire payload {"mode": "raw", "value": "5"}. The mode: "json"
+        # branch contradicts the wire's mode, so its format: json must not
+        # open the decode asymmetry for value.
+        schema = {
+            "type": "object",
+            "properties": {
+                "reading": {
+                    "anyOf": [
+                        {
+                            "type": "object",
+                            "properties": {"mode": {"const": "raw"}},
+                            "required": ["mode"],
+                            "additionalProperties": {"type": "string"},
+                        },
+                        {
+                            "type": "object",
+                            "properties": {
+                                "mode": {"const": "raw"},
+                                "value": {"type": "integer"},
+                            },
+                            "required": ["mode", "value"],
+                        },
+                        {
+                            "type": "object",
+                            "properties": {
+                                "mode": {"const": "json"},
+                                "value": {"type": "string", "format": "json"},
+                            },
+                            "required": ["mode", "value"],
+                        },
+                    ]
+                }
+            },
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"reading": {"mode": "raw", "value": "5"}}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"reading": {"mode": "raw", "value": "5"}}
+        # Hydration is rejected, so data falls back to the server's payload.
+        assert result.data == {"reading": {"mode": "raw", "value": "5"}}
+
+    async def test_json_decode_still_happens_for_a_matching_branch(self):
+        mcp = FastMCP()
+
+        # The control for the branch-compatibility gate: the wire object
+        # matches the mode: "json" branch, so its format: json value still
+        # decodes.
+        schema = {
+            "type": "object",
+            "properties": {
+                "reading": {
+                    "anyOf": [
+                        {
+                            "type": "object",
+                            "properties": {"mode": {"const": "raw"}},
+                            "required": ["mode"],
+                            "additionalProperties": {"type": "string"},
+                        },
+                        {
+                            "type": "object",
+                            "properties": {
+                                "mode": {"const": "json"},
+                                "value": {"type": "string", "format": "json"},
+                            },
+                            "required": ["mode", "value"],
+                        },
+                    ]
+                }
+            },
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"reading": {"mode": "json", "value": '{"a": 1}'}}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {
+            "reading": {"mode": "json", "value": '{"a": 1}'}
+        }
+        assert result.data.reading.value == {"a": 1}
+
+    async def test_datetime_text_is_not_hydrated_into_a_date(self):
+        mcp = FastMCP()
+
+        # The free-form branch demands a key the wire lacks, so the union
+        # falls to the branch typing ts as a plain date; pydantic then
+        # coerces the midnight text to date(2024, 6, 1) and the dump
+        # compares instant-equal to the wire text. The shape mismatch must
+        # reject the hydration instead.
+        schema = {
+            "type": "object",
+            "properties": {
+                "record": {
+                    "anyOf": [
+                        {
+                            "type": "object",
+                            "properties": {"note": {"type": "string"}},
+                            "required": ["note"],
+                            "additionalProperties": {"type": "string"},
+                        },
+                        {
+                            "type": "object",
+                            "properties": {"ts": {"type": "string", "format": "date"}},
+                            "required": ["ts"],
+                        },
+                    ]
+                }
+            },
+        }
+
+        def get_value() -> dict[str, Any]:
+            return {"record": {"ts": "2024-06-01T00:00:00"}}
+
+        mcp.add_tool(Tool.from_function(get_value, output_schema=schema))
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_value")
+
+        assert result.structured_content == {"record": {"ts": "2024-06-01T00:00:00"}}
+        # Hydration is rejected, so data falls back to the server's payload.
+        assert result.data == {"record": {"ts": "2024-06-01T00:00:00"}}
+
 
 class TestHydrationGuardNoFalsePositives:
     """The fidelity guard must not reject hydration the schema supports:
