@@ -1608,6 +1608,7 @@ def _build_dataclass(
     def _apply_defaults(cls, data: Any, handler: ValidatorFunctionWrapHandler):
         if not isinstance(data, dict):
             return handler(data)
+        _validate_object_literals(data, original_schema)
         # Omitted fields fall back to the field defaults, which validate only
         # when valid; object defaults are still merged here.
         merged = _merge_defaults(data, original_schema, apply_property_defaults=False)
