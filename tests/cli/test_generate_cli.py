@@ -810,6 +810,14 @@ class TestSchemaTypeLabel:
     def test_missing_type(self):
         assert _schema_type_label({}) == "string"
 
+    def test_newline_in_unknown_type_is_flattened(self):
+        assert _schema_type_label({"type": "metric\nimperial"}) == "metric imperial"
+
+    def test_non_string_type_is_stringified(self):
+        assert _schema_type_label({"type": {"nested": "string"}}) == (
+            "{'nested': 'string'}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # generate_skill_content
@@ -935,6 +943,31 @@ class TestGenerateSkillContent:
         ]
         content = generate_skill_content("test", "cli.py", tools)
         assert "a\\|b\\|c" in content
+
+    def test_parameter_cells_flatten_line_breaks_and_invalid_types(self):
+        tools = [
+            mcp_types.Tool(
+                name="test",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "city": {
+                            "type": "string",
+                            "description": "First line.\r\nSecond line.",
+                        },
+                        "units": {"type": "metric\nimperial"},
+                        "metadata": {"type": {"nested": "string"}},
+                    },
+                },
+            ),
+        ]
+
+        content = generate_skill_content("test", "cli.py", tools)
+
+        assert "| `--city` | string | no | First line. Second line. |" in content
+        assert "| `--units` | metric imperial | no | JSON string |" in content
+        assert "| `--metadata` | {'nested': 'string'} | no | JSON string |" in content
+        assert "\r" not in content
 
     def test_union_type_pipes_escaped(self):
         tools = [
