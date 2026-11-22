@@ -65,7 +65,7 @@ Beyond tool commands, the script includes generic MCP operations — `list-tools
 
 Parameters are mapped based on their JSON Schema type:
 
-**Simple types** (`string`, `integer`, `number`, `boolean`) become typed flags:
+**Simple types** (`string`, `integer`, `number`, `boolean`) become typed flags, as does an optional string such as `str | None`:
 
 ```bash
 python cli.py call-tool get_forecast --city London --days 3
@@ -77,7 +77,7 @@ python cli.py call-tool get_forecast --city London --days 3
 python cli.py call-tool tag_items --tags python --tags fastapi --tags mcp
 ```
 
-**Complex types** (objects, nested arrays, unions) accept JSON strings. The `--help` output shows the full schema so you know what structure to pass:
+**Complex types** (objects, nested arrays, and other unions such as `bool | None` or `str | int`) accept JSON strings. The `--help` output shows the full schema so you know what structure to pass:
 
 ```bash
 python cli.py call-tool create_user \
@@ -85,7 +85,7 @@ python cli.py call-tool create_user \
   --metadata '{"role": "admin", "dept": "engineering"}'
 ```
 
-For JSON-encoded parameters whose schema permits `null`, pass `--parameter null` to send an explicit null value. Omitting an optional flag remains distinct and allows its default to apply.
+For JSON-encoded parameters whose schema permits `null`, pass `--parameter null` to send an explicit null value. The same works for an optional string in Pydantic's `anyOf` form, which is how FastMCP describes `str | None`. Its flag also decodes a JSON string, so `--parameter '"null"'` sends the text `null` itself. Omitting an optional flag remains distinct and allows its default to apply.
 
 ## Agent Skill
 
