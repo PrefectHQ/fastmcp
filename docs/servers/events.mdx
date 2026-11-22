@@ -5,17 +5,13 @@ description: Let clients learn that something happened on your server by subscri
 icon: bell
 ---
 
-import { VersionBadge } from "/snippets/version-badge.mdx"
-
-<VersionBadge version="4.3.0" />
+<Warning>
+Events support is experimental and lives in `fastmcp.experimental.events`. The extension is new, and the names and signatures here may change in any release, without a deprecation period, as the specification and its clients settle. Webhook delivery (`events/subscribe`) is not implemented.
+</Warning>
 
 Tools answer when a client asks. Events cover the other direction: an alert fired, a build finished, an email arrived, and a client that is not in the middle of a request should find out. The MCP Events extension ([SEP-3415](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415)) defines event types a client can subscribe to, and FastMCP implements two of its delivery modes from one function you write.
 
 In poll delivery the client asks "what happened since this cursor?" on an interval. Every request carries the event name, the subscription's arguments and the cursor, so your server holds no subscription state. In push delivery the client opens one long-lived request per subscription and your server writes events to it as they happen.
-
-<Warning>
-Events support is experimental and lives in `fastmcp.experimental.events`. The extension is new, and the names and signatures here may change in any release, without a deprecation period, as the specification and its clients settle. Webhook delivery (`events/subscribe`) is not implemented.
-</Warning>
 
 ## Defining an event type
 
@@ -44,6 +40,12 @@ def alert_fired(poll: EventPoll) -> EventBatch:
 The cursor is opaque to the client and means whatever your upstream needs: a row ID, a timestamp, a history token. Derive it from durable state. A cursor that only makes sense inside one process breaks as soon as a second replica answers the next poll.
 
 Give each `Event` the upstream's stable identifier as `event_id`. Clients drop events whose ID they have already seen, and an ID FastMCP generates for you is different on every poll.
+
+Check functions may be sync or async. A sync function runs in a worker thread, as sync tools do, so a blocking upstream call does not stall the server's other requests.
+
+### Rejecting and ending subscriptions
+
+A check function rejects a subscription by raising `MCPError` from `mcp.shared.exceptions`, for example with the extension's `Forbidden` code (`-32024`) when the caller may not see the events it asked for. A poll answers with that error. A push stream answers its first check's error the same way, before the stream opens. After that, a `NotFound` (`-32023`), `Forbidden` (`-32024`) or `Unsupported` (`-32026`) error ends the subscription with `notifications/events/terminated`, which is how a server stops delivering once access is revoked. Any other error is reported to the client as a transient `notifications/events/error`, and the stream checks again on the next interval.
 
 ## Subscription arguments
 
@@ -110,6 +112,8 @@ mcp.add_extension(EventsExtension(push=False))
 ```
 
 Poll works everywhere, because each poll is an ordinary request.
+
+The extension serves the event types of the server it is added to. A server mounted into another does not expose its event types through the parent, and a proxy does not forward them, so add the extension to the server that clients connect to.
 
 ## Subscribing from a client
 
