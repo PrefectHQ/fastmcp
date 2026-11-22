@@ -6,6 +6,7 @@ dependencies = [
     "prefect==3.9.1",
     "httpx>=0.28,<0.29",
     "pyjwt[crypto]>=2.10,<3",
+    "turbopuffer>=3.1,<4",
 ]
 
 [dependency-groups]

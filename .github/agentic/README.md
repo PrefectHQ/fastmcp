@@ -26,9 +26,16 @@ PRs `sweep:close` every Monday and lists them in Slack. Removing the label keeps
 daily run closes the rest once the label has been on for 48 hours with no comment from a
 person.
 
+`cloud-triage-memory-sync` (`flows/agentic_memory_sync.py`, no model) keeps a turbopuffer index of
+every issue, PR and human comment current, every 30 minutes. While `memory.mode` is "on", each
+assessment gets the closest past issues and PRs as `related` evidence: leads for duplicates, prior
+fixes and earlier decisions, never findings on their own. A lookup failure leaves `related` empty and
+triage carries on. The key is the `turbopuffer-api-key` Secret block; run the flow once with
+`backfill=true` to index the whole repository.
+
 The Prefect Variable `fastmcp_triage_config` holds `github_writes` ("off", "dry_run" or "on",
-or per feature: `{"labels": "on", "sweep": "dry_run"}`; default "dry_run") and the sweep
-thresholds under `sweep`. Both are read on every run, so changing them needs no deploy.
+or per feature: `{"labels": "on", "sweep": "dry_run"}`; default "dry_run"), the sweep
+thresholds under `sweep`, and `memory` (`{"mode": "on"}`; default off). All are read on every run, so changing them needs no deploy.
 Writes go out as the triage GitHub App, which needs Issues: write. Under `burst`, `max_items` (default 5) and
 `window_hours` (default 24) pause triage for anyone who opens more issues and PRs than that in
 the window; Slack gets one line when they cross it.

@@ -17,9 +17,9 @@ upsert() {
   else api POST "/$kind/" --data "@$body" | jq -er .id; fi
 }
 
-DEPLOYMENTS=(cloud-stack-batch cloud-contribution-verification cloud-triage-intake cloud-triage-verify cloud-triage-finalize cloud-triage-sweep)
-# Runs that must finish before a deploy. The sweep is short and always has a
-# scheduled run queued, so it is registered but never waited on.
+DEPLOYMENTS=(cloud-stack-batch cloud-contribution-verification cloud-triage-intake cloud-triage-verify cloud-triage-finalize cloud-triage-sweep cloud-triage-memory-sync)
+# Runs that must finish before a deploy. The sweep and memory sync are short and
+# always have a scheduled run queued, so they are registered but never waited on.
 DRAIN=(cloud-stack-batch cloud-contribution-verification cloud-triage-intake cloud-triage-verify cloud-triage-finalize)
 TRIGGERS=(fastmcp-triage-on-github-issue fastmcp-triage-on-github-pr)
 json_list() { printf '%s\n' "$@" | jq -R . | jq -sc .; }
