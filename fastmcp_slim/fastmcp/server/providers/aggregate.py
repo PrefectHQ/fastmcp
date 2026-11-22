@@ -108,6 +108,13 @@ class AggregateProvider(Provider):
             for extension in provider.required_extensions()
         ]
 
+    def _served_servers(self) -> Sequence[FastMCP]:
+        return [
+            server
+            for provider in self.providers
+            for server in provider._served_servers()
+        ]
+
     @contextmanager
     def _extension_runtime(
         self, available: frozenset[str], *, root: FastMCP | None

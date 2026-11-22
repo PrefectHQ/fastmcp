@@ -600,7 +600,10 @@ class FastMCP(
 
         # Servers that serve this one as a provider (`mount`, `add_provider`,
         # `providers=`), so its `notify_*` reaches their listening clients.
-        self._mounted_on: list[weakref.ref[FastMCP[Any]]] = []
+        # Weak keys drop collected parents; the dict keeps attach order.
+        self._mounted_on: weakref.WeakKeyDictionary[FastMCP[Any], None] = (
+            weakref.WeakKeyDictionary()
+        )
 
         self.auth: AuthProvider | None = auth
 
@@ -817,25 +820,18 @@ class FastMCP(
         self._validate_provider_extensions(provider)
         self._register_provider_extensions(provider)
         super().add_provider(provider, namespace=namespace)
-        self._link_child_server(provider)
+        self._link_child_servers(provider)
 
-    def _link_child_server(self, provider: Provider) -> None:
-        """Record this server on a child server it now serves, so the child's
-        `notify_*` also reaches clients listening here."""
-        from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
-        from fastmcp.server.providers.wrapped_provider import _WrappedProvider
+    def _served_servers(self) -> Sequence[FastMCP]:
+        """Added directly as a provider, a server serves itself."""
+        return (self,)
 
-        while isinstance(provider, _WrappedProvider):
-            provider = provider._inner
-        if isinstance(provider, FastMCPProvider):
-            child = provider.server
-        elif isinstance(provider, FastMCP):
-            child = provider
-        else:
-            return
-        if child is self or any(ref() is self for ref in child._mounted_on):
-            return
-        child._mounted_on.append(weakref.ref(self))
+    def _link_child_servers(self, provider: Provider) -> None:
+        """Record this server on each child server it now serves, so the
+        children's `notify_*` also reaches clients listening here."""
+        for child in provider._served_servers():
+            if child is not self:
+                child._mounted_on.setdefault(self)
 
     def _rewrite_prefab_uris(self, tools: list[Tool]) -> list[Tool]:
         """Replace placeholder Prefab URIs with shared renderer identities.
@@ -2022,10 +2018,8 @@ class FastMCP(
             return
         seen.add(id(self))
         await self._mcp_server.subscriptions.publish(event)
-        for ref in list(self._mounted_on):
-            parent = ref()
-            if parent is not None:
-                await parent._publish_list_changed(event, seen)
+        for parent in list(self._mounted_on):
+            await parent._publish_list_changed(event, seen)
 
     def _get_tool_input_schema(self, name: str) -> dict[str, Any] | None:
         """Synchronous lookup served to the SDK's `get_tool_input_schema` hook

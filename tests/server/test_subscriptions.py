@@ -9,6 +9,7 @@ from background work with no request in flight.
 from __future__ import annotations
 
 import asyncio
+import gc
 
 import anyio
 import mcp_types as types
@@ -23,7 +24,7 @@ from mcp.shared.subscriptions import (
 )
 
 from fastmcp import Client, Context, FastMCP
-from fastmcp.server.providers import FastMCPProvider
+from fastmcp.server.providers import AggregateProvider, FastMCPProvider
 from fastmcp.server.transforms import ToolTransform
 from fastmcp.tools import Tool
 from fastmcp.tools.tool_transform import ToolTransformConfig
@@ -207,9 +208,26 @@ def _attach_by_constructor(parent: FastMCP, child: FastMCP) -> FastMCP:
     return FastMCP("parent", providers=[FastMCPProvider(child)])
 
 
+def _attach_by_aggregate(parent: FastMCP, child: FastMCP) -> FastMCP:
+    parent.add_provider(AggregateProvider([FastMCPProvider(child)]))
+    return parent
+
+
+def _attach_by_nested_transformed_aggregate(parent: FastMCP, child: FastMCP) -> FastMCP:
+    inner = AggregateProvider([child.wrap_transform(ToolTransform({}))])
+    parent.add_provider(AggregateProvider([inner]), namespace="child")
+    return parent
+
+
 @pytest.mark.parametrize(
     "attach",
-    [_attach_by_add_provider, _attach_by_transformed_provider, _attach_by_constructor],
+    [
+        _attach_by_add_provider,
+        _attach_by_transformed_provider,
+        _attach_by_constructor,
+        _attach_by_aggregate,
+        _attach_by_nested_transformed_aggregate,
+    ],
 )
 async def test_child_attached_as_provider_notify_reaches_parent_listeners(
     server: FastMCP, attach
@@ -226,6 +244,20 @@ async def test_child_attached_as_provider_notify_reaches_parent_listeners(
         async with client.listen(tools_list_changed=True) as subscription:
             await child.notify_tools_changed()
             assert await _next_event(subscription) == ToolsListChanged()
+
+
+def test_collected_parents_are_dropped_from_child_links():
+    child = FastMCP("child")
+    second = FastMCP("second", providers=[FastMCPProvider(child)])
+    for i in range(20):
+        FastMCP(f"tenant{i}", providers=[FastMCPProvider(child)])
+    first = FastMCP("first")
+    first.add_provider(child)
+    second.add_provider(child)
+    gc.collect()
+
+    assert len(child._mounted_on) == 2
+    assert list(child._mounted_on) == [second, first]
 
 
 async def test_notify_without_listeners_is_a_noop(server: FastMCP):
