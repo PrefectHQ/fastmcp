@@ -2,11 +2,11 @@
 
 The assess agent calls `search` as often as it likes and `read` to open a hit,
 the way diderot's agents use retrieve and expand. The turbopuffer key stays on
-this server; agents only hold a bearer token that can search and read.
+this server. It runs on Horizon behind gateway auth, so callers present a
+Horizon service-account key and the server itself has no auth of its own.
 
 Environment:
     TURBOPUFFER_API_KEY   turbopuffer key (server side only)
-    MEMORY_SERVER_TOKEN   bearer token the agents present
     GITHUB_TOKEN          optional, raises GitHub's rate limit for `read`
 
 Run locally with `uv run fastmcp run memory_server.py --transport http`.
@@ -14,7 +14,6 @@ Run locally with `uv run fastmcp run memory_server.py --transport http`.
 
 from __future__ import annotations
 
-import hmac
 import os
 import sys
 from pathlib import Path
@@ -22,7 +21,6 @@ from typing import Annotated, Literal
 
 import httpx
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.debug import DebugTokenVerifier
 from pydantic import Field
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -42,11 +40,6 @@ SNIPPET = 600
 MAX_COMMENTS = 100
 
 
-def valid_token(token: str) -> bool:
-    expected = os.environ.get("MEMORY_SERVER_TOKEN", "")
-    return bool(expected) and hmac.compare_digest(token, expected)
-
-
 mcp = FastMCP(
     "fastmcp-triage-memory",
     instructions=(
@@ -54,7 +47,6 @@ mcp = FastMCP(
         "findings: the nearest items always come back however weak, so read an item "
         "before calling anything a duplicate, already fixed or already decided."
     ),
-    auth=DebugTokenVerifier(validate=valid_token, client_id="triage-agent"),
 )
 
 _index: Index | None = None

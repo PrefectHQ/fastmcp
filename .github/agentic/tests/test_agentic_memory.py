@@ -228,13 +228,3 @@ def test_memory_server_search_and_read(monkeypatch):
             )
 
     asyncio.run(calls())
-
-
-def test_memory_server_rejects_unknown_tokens(monkeypatch):
-    import memory_server
-
-    monkeypatch.delenv("MEMORY_SERVER_TOKEN", raising=False)
-    assert not memory_server.valid_token("anything")
-    monkeypatch.setenv("MEMORY_SERVER_TOKEN", "s3cret")
-    assert memory_server.valid_token("s3cret")
-    assert not memory_server.valid_token("nope")
