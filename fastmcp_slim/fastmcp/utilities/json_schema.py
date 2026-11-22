@@ -1022,6 +1022,9 @@ def is_object_schema(
     if ref in seen_refs:
         return False
 
+    if len(seen_refs) >= _MAX_ROOT_REF_HOPS:
+        return False
+
     # Walk the JSON Pointer path from the root schema, unescaping each
     # token per RFC 6901 (~1 → /, ~0 → ~).
     pointer = ref.removeprefix("#/")

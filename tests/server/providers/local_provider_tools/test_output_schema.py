@@ -438,3 +438,13 @@ class TestIsObjectSchemaRefResolution:
             },
         }
         assert is_object_schema(schema) is False
+
+    def test_deep_ref_chain_is_bounded(self):
+        defs = {f"D{i}": {"$ref": f"#/$defs/D{i + 1}"} for i in range(39)}
+        defs["D39"] = {
+            "type": "object",
+            "properties": {"ok": {"type": "boolean"}},
+        }
+        schema = {"$ref": "#/$defs/D0", "$defs": defs}
+
+        assert is_object_schema(schema) is False
