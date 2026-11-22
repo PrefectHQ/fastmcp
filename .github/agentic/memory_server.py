@@ -37,7 +37,8 @@ from flows.agentic_memory import (  # noqa: E402
 )
 
 SNIPPET = 600
-MAX_COMMENTS = 100
+PAGE = 100
+MAX_PAGES = 20  # 2,000 comments, far beyond any fastmcp thread
 
 
 mcp = FastMCP(
@@ -108,10 +109,13 @@ def read(
         item.raise_for_status()
         data = item.json()
         comments: list[dict] = []
-        if data.get("comments"):
-            response = client.get(f"{base}/comments?per_page={MAX_COMMENTS}")
+        for page in range(1, MAX_PAGES + 1) if data.get("comments") else ():
+            response = client.get(f"{base}/comments?per_page={PAGE}&page={page}")
             response.raise_for_status()
-            comments = [c for c in response.json() if not is_bot(c.get("user"))]
+            batch = response.json()
+            comments.extend(c for c in batch if not is_bot(c.get("user")))
+            if len(batch) < PAGE:
+                break
     kind = "pr" if data.get("pull_request") else "issue"
     return {
         "number": number,

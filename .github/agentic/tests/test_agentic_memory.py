@@ -201,7 +201,9 @@ def test_memory_server_search_and_read(monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/comments"):
-            return httpx.Response(200, json=COMMENTS)
+            page = int(request.url.params["page"])
+            later = {**COMMENTS[0], "body": "maintainer: decided"}
+            return httpx.Response(200, json=COMMENTS * 50 if page == 1 else [later])
         return httpx.Response(200, json=issue())
 
     real = httpx.Client
