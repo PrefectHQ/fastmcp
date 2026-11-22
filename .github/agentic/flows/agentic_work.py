@@ -193,7 +193,7 @@ class Repo:
         body = response.json()
         return body["value"], body["cid"]
 
-    def list(self, collection: str, limit: int = 100) -> list[tuple[str, dict, str]]:
+    def records(self, collection: str, limit: int = 100) -> list[tuple[str, dict, str]]:
         """The newest `limit` records, as (rkey, value, cid), newest first."""
         response = self._client.get(
             self.base + "com.atproto.repo.listRecords",
@@ -363,7 +363,7 @@ class Board:
         """Live claims, after marking any lapsed ones expired."""
         now = self.clock()
         live = []
-        for _, value, cid in self.repo.list(CLAIM):
+        for _, value, cid in self.repo.records(CLAIM):
             claim = Claim.of(value, cid)
             if claim.live(now):
                 live.append(claim)
@@ -470,7 +470,7 @@ class Board:
         subscriber starts from now.
         """
         self.claims()  # mark lapsed claims expired, so expiry shows up here
-        rows = self.repo.list(ACTIVITY, limit)
+        rows = self.repo.records(ACTIVITY, limit)
         if after is None:
             return [], rows[0][0] if rows else ""
         newer = [(rkey, value) for rkey, value, _ in rows if rkey > after]
@@ -479,7 +479,7 @@ class Board:
         return entries, newer[-1][0] if newer else after
 
     def history(self, target: str, limit: int = 10) -> list[dict]:
-        rows = self.repo.list(ACTIVITY, 100)
+        rows = self.repo.records(ACTIVITY, 100)
         mine = [_public_entry(v) for _, v, _ in rows if v.get("target") == target]
         return mine[:limit]
 
