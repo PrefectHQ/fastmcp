@@ -467,8 +467,12 @@ def test_client_redirect_carries_each_parameter_once(base, segments, params, iss
             assert values[-1:] == [value]
             continue
         assert values == [value], f"{key} appears {len(values)} times"
-    kept = [s for s in after.query.split("&") if s and s.split("=", 1)[0] != "iss"]
-    original = [s for s in segments if s and s.split("=", 1)[0] != "iss"]
+    # Registered segments the response does not replace stay as written.
+    replaced = {"iss", *params}
+    kept = [
+        s for s in after.query.split("&") if s and s.split("=", 1)[0] not in replaced
+    ]
+    original = [s for s in segments if s and s.split("=", 1)[0] not in replaced]
     assert kept[: len(original)] == original, "the registered query was rewritten"
 
 
