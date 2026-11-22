@@ -270,9 +270,9 @@ async def process_common_args(
             server = await config.source.load_server()
             name = server.name
         except (Exception, SystemExit) as e:
-            logger.debug(
-                "Could not import server, using file name",
-                extra={"error": str(e)},
+            logger.warning(
+                f"Could not import server to read its name ({type(e).__name__}: {e}); "
+                f"using file name {file.stem!r}. Pass --name to set it."
             )
             name = file.stem
 
