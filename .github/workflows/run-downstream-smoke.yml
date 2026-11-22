@@ -206,9 +206,13 @@ jobs:
 
       - name: Run pydantic-ai's MCP tests
         working-directory: pydantic-ai
+        # The deselected test asserts the pre-#5318 prompt hint (a JSON-schema
+        # suffix on plain `str` args in future-import modules). Drop the
+        # deselect once pydantic-ai relaxes that assertion.
         run: >-
           $UV_RUN --quiet pytest -p no:cacheprovider -q
           --junitxml=$GITHUB_WORKSPACE/junit.xml
+          --deselect tests/test_mcp.py::TestMCPToolsetIntegration::test_list_prompts_returns_pai_types
           tests/test_mcp.py tests/models/test_mcp_sampling.py tests/test_conftest.py
 
       - name: Summarize
