@@ -19,6 +19,10 @@ MACHINE = "tests/pbt/test_components_machine.py"
 TRANSFORM = "fastmcp_slim/fastmcp/tools/tool_transform.py"
 DIRECTOR = "fastmcp_slim/fastmcp/utilities/openapi/director.py"
 OAUTH = "fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py"
+AUTHZ = "fastmcp_slim/fastmcp/server/middleware/authorization.py"
+CACHING = "fastmcp_slim/fastmcp/server/middleware/caching.py"
+RATE = "fastmcp_slim/fastmcp/server/middleware/rate_limiting.py"
+MW = "tests/pbt/test_middleware.py"
 
 MUTANTS: dict[str, list[dict[str, str]]] = {
     "uri_template": [
@@ -249,6 +253,91 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             ),
             "new": "            pass\n",
             "test": "tests/pbt/test_oauth_proxy_machine.py",
+        },
+    ],
+    "middleware": [
+        {
+            "name": "tool listing not filtered",
+            "file": AUTHZ,
+            "old": (
+                "                if await run_auth_checks(self.auth, ctx):\n"
+                "                    authorized_tools.append(tool)"
+            ),
+            "new": "                if True:\n                    authorized_tools.append(tool)",
+            "test": f"{MW}::test_listing_and_calling_agree",
+        },
+        {
+            "name": "prompt listing not filtered",
+            "file": AUTHZ,
+            "old": (
+                "                if await run_auth_checks(self.auth, ctx):\n"
+                "                    authorized_prompts.append(prompt)"
+            ),
+            "new": "                if True:\n                    authorized_prompts.append(prompt)",
+            "test": f"{MW}::test_listing_and_calling_agree",
+        },
+        {
+            "name": "tool denial names only its own layer's scopes",
+            "file": AUTHZ,
+            "old": (
+                "                missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)\n"
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for tool '{tool_name}': \"\n"
+            ),
+            "new": (
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for tool '{tool_name}': \"\n"
+            ),
+            "test": f"{MW}::test_a_denial_names_every_scope_the_chain_still_needs",
+        },
+        {
+            "name": "cache ignores the requested version",
+            "file": CACHING,
+            "old": "    return f\"__version__:{_get_arguments_str({'version': version})}\"",
+            "new": "    return DEFAULT_VERSION_CACHE_KEY",
+            "test": f"{MW}::test_a_cached_server_answers_like_an_uncached_one",
+        },
+        {
+            "name": "cache shared across callers",
+            "file": CACHING,
+            "old": "    return _hash_cache_key(token.token)",
+            "new": "    return ANONYMOUS_AUTH_KEY",
+            "test": f"{MW}::test_a_cached_server_answers_like_an_uncached_one",
+        },
+        {
+            "name": "cache ignores tool arguments",
+            "file": CACHING,
+            "old": (
+                '        f"{auth_key}:{modern_protocol}:{_get_component_version_cache_key(msg)}:{msg.name}:"\n'
+                '        f"{_get_arguments_str(msg.arguments)}"'
+            ),
+            "new": '        f"{auth_key}:{modern_protocol}:{_get_component_version_cache_key(msg)}:{msg.name}:"',
+            "test": f"{MW}::test_a_cached_server_answers_like_an_uncached_one",
+        },
+        {
+            "name": "bucket refills past capacity",
+            "file": RATE,
+            "old": "            self.tokens = min(self.capacity, self.tokens + elapsed * self.refill_rate)",
+            "new": "            self.tokens = self.tokens + elapsed * self.refill_rate",
+            "test": f"{MW}::test_token_bucket_admits_no_more_than_burst_plus_rate",
+        },
+        {
+            "name": "idle buckets pruned before they refill",
+            "file": RATE,
+            "old": "            idle_timeout = self.burst_capacity / self.max_requests_per_second",
+            "new": "            idle_timeout = self.burst_capacity / self.max_requests_per_second / 4",
+            "test": f"{MW}::test_token_bucket_admits_no_more_than_burst_plus_rate",
+        },
+        {
+            "name": "sliding window admits one extra",
+            "file": RATE,
+            "old": "            if len(self.requests) < self.max_requests:",
+            "new": "            if len(self.requests) <= self.max_requests:",
+            "test": f"{MW}::test_sliding_window_admits_no_more_than_its_max",
         },
     ],
 }
