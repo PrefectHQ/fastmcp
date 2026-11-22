@@ -21,6 +21,29 @@ from pathlib import Path
 
 REPO = "PrefectHQ/fastmcp"
 
+# The intro tells users what changed. How the release was made (test runs, retries,
+# smoke results, reverts) is process history and stays out of public notes.
+PROCESS_NARRATIVE = re.compile(
+    r"\b(?:"
+    r"(?:pass(?:ed|es)?|green|succeeded|worked) (?:on|after) (?:the |a )?"
+    r"(?:second|third|another|next|re-?)?\s?(?:run|try|attempt|retry)"
+    r"|re-?ran|flak(?:y|e|iness)|smoke(?: test)?s?|CI"
+    r"|we (?:ran|re-?ran|tested|verified|checked)"
+    r"|(?:tested|verified) (?:locally|end to end|by hand)"
+    r"|(?:were|was) reverted"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def check_intro(intro: str) -> None:
+    found = sorted({m.group(0) for m in PROCESS_NARRATIVE.finditer(intro)})
+    if found:
+        raise SystemExit(
+            "notes intro reads as process history, not a change: "
+            + ", ".join(repr(f) for f in found)
+        )
+
 
 def generate_notes(tag: str, previous: str, target: str) -> str:
     out = subprocess.check_output(
@@ -123,6 +146,7 @@ def main() -> None:
     intro = " ".join(
         line.strip() for line in args.notes_path.read_text().split("\n") if line.strip()
     )
+    check_intro(intro)
     release_notes = (
         args.release_notes.read_text()
         if args.release_notes is not None
