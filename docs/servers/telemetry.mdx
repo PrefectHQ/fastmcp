@@ -315,8 +315,6 @@ Then view traces at http://localhost:16686
 
 ## Usage Metrics
 
-<VersionBadge version="4.3.0" />
-
 Server spans already record who called which tool, how long it took, and whether it failed. Sampled traces cannot reliably answer how often each user calls a tool. `UsageMiddleware` records request counts, durations, and failures as OpenTelemetry metrics, independently of trace sampling.
 
 Add the middleware and configure a meter provider with an exporter. Like the rest of FastMCP's instrumentation, the middleware records nothing until an SDK is configured.
