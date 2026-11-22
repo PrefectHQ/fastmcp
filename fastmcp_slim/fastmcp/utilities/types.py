@@ -11,6 +11,7 @@ from types import EllipsisType, UnionType
 from typing import (
     Annotated,
     Any,
+    Literal,
     Protocol,
     TypeAlias,
     Union,
@@ -27,6 +28,12 @@ from typing_extensions import TypeVar
 
 T = TypeVar("T", default=Any)
 
+CacheScope = Literal["public", "private"]
+"""Whether a cached result may be shared across authorization contexts ("public") or reused only within the one that produced it ("private")."""
+
+# TODO(sdkv2): the SDK's `mcp.types.AnyFunction` alias was removed with the
+# mcp.types module. FastMCP owns it now; keep the same `Callable[..., Any]`
+# meaning used by tool/prompt/resource decorators.
 # MCP SDK v2 dropped the `AnyFunction` alias; FastMCP owns it now with the same `Callable[..., Any]` meaning.
 AnyFunction: TypeAlias = Callable[..., Any]
 
