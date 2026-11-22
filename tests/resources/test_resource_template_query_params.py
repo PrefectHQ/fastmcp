@@ -360,7 +360,7 @@ class TestPostponedAnnotationCoercion:
             fn=postponed_get_config, uri_template="config://{id}{?enabled}"
         )
 
-        with pytest.raises(ValueError, match="Invalid boolean value for enabled"):
+        with pytest.raises(ValidationError, match="Invalid boolean value for enabled"):
             await template.read({"id": "1", "enabled": value})
 
     async def test_values_coerce_like_real_annotations(self, postponed_get_config):
@@ -372,7 +372,7 @@ class TestPostponedAnnotationCoercion:
             "id": 7,
             "enabled": True,
         }
-        with pytest.raises(ValueError, match="invalid literal for int"):
+        with pytest.raises(ValidationError, match="Invalid int value for"):
             await template.read({"id": "1.0", "enabled": "no"})
 
 
@@ -405,7 +405,7 @@ class TestCallableInstanceAnnotationParity:
             name="config",
         )
 
-        with pytest.raises(ValueError, match="Invalid boolean value for enabled"):
+        with pytest.raises(ValidationError, match="Invalid boolean value for enabled"):
             await template.read({"id": "1", "enabled": value})
 
     async def test_values_coerce_and_defaults_apply(self, config_reader):
@@ -420,7 +420,7 @@ class TestCallableInstanceAnnotationParity:
             "enabled": True,
         }
         assert await template.read({"id": "7"}) == {"id": 7, "enabled": False}
-        with pytest.raises(ValueError, match="invalid literal for int"):
+        with pytest.raises(ValidationError, match="Invalid int value for"):
             await template.read({"id": "1.0"})
 
 
