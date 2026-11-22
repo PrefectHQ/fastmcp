@@ -56,10 +56,11 @@ Delivery = Literal["poll", "push"]
 class EventBacklogFullError(RuntimeError):
     """A push subscription's consumer fell so far behind that frames were lost.
 
-    The subscription has ended. Its `cursor` is the position after the last
-    event yielded, so resubscribing from it repeats events rather than
-    skipping them. A consumer that cannot keep up should process events
-    faster, or poll with `max_events`.
+    The subscription has ended. Its `cursor` is the last cursor the server
+    confirmed, which can be the start of the batch that overflowed, so
+    resubscribing from it repeats events rather than skipping them. A push
+    batch larger than the buffer overflows again on every retry; a consumer
+    that cannot keep up should poll with `max_events` instead.
     """
 
 
