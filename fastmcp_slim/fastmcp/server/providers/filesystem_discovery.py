@@ -476,7 +476,8 @@ def discover_and_import(root: Path, *, reload: bool = False) -> DiscoveryResult:
         DiscoveryResult with components and any failed files.
 
     Note:
-        Files that fail to import are tracked in failed_files, not logged.
+        Files that fail to import or construct components are tracked in
+        failed_files, not logged. No components from a failed file are returned.
         The caller is responsible for logging/handling failures.
         Files with no components are silently skipped.
     """
