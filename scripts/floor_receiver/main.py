@@ -14,11 +14,16 @@ Environment:
     ATPROTO_HANDLE    prefect.io
     ATPROTO_PDS       https://witchesbutter.us-west.host.bsky.network
     ATPROTO_PASSWORD  an app password for that account
-    PORT              set by Cloud Run
+    PORT              set by the host
+
+On App Engine the two secrets come from Secret Manager instead (see app.yaml):
+set SECRETS_PROJECT and the instance's service account reads
+floor-receiver-webhook-secret and floor-receiver-atproto-password at startup.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -217,7 +222,38 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(202, outcome)
 
 
+SECRETS = {
+    "WEBHOOK_SECRET": "floor-receiver-webhook-secret",
+    "ATPROTO_PASSWORD": "floor-receiver-atproto-password",
+}
+METADATA = "http://metadata.google.internal/computeMetadata/v1"
+
+
+def load_secrets() -> None:
+    """Fill missing secret env vars from Secret Manager, as the instance's account."""
+    project = os.environ.get("SECRETS_PROJECT")
+    missing = [name for name in SECRETS if not os.environ.get(name)]
+    if not project or not missing:
+        return
+    token_request = urllib.request.Request(
+        f"{METADATA}/instance/service-accounts/default/token",
+        headers={"Metadata-Flavor": "Google"},
+    )
+    with urllib.request.urlopen(token_request, timeout=5) as response:
+        token = json.loads(response.read())["access_token"]
+    for name in missing:
+        request = urllib.request.Request(
+            "https://secretmanager.googleapis.com/v1/projects/"
+            f"{project}/secrets/{SECRETS[name]}/versions/latest:access",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            data = json.loads(response.read())["payload"]["data"]
+        os.environ[name] = base64.b64decode(data).decode().strip()
+
+
 def main() -> None:
+    load_secrets()
     port = int(os.environ.get("PORT", "8080"))
     ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
 

@@ -1,6 +1,7 @@
 # Build from the repository root:
-#   gcloud run deploy floor-receiver --source . (with this Dockerfile), or
 #   docker build -f scripts/floor_receiver/Dockerfile .
+# The sandbox runs it on App Engine instead (deploy-appengine.sh): org policy
+# keeps Cloud Run private.
 FROM python:3.12-slim
 WORKDIR /app
 COPY scripts/triage_floor_feed.py scripts/floor_receiver/main.py ./
