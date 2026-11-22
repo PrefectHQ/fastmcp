@@ -33,6 +33,7 @@ from mcp.server.subscriptions import (
 from mcp.shared.exceptions import MCPError
 from pydantic import ValidationError
 
+from fastmcp import settings as fastmcp_settings
 from fastmcp.apps.config import UI_EXTENSION_ID
 from fastmcp.server.telemetry import seam_span
 from fastmcp.utilities.logging import get_logger
@@ -464,9 +465,15 @@ class LowLevelServer(_Server[LifespanResultT]):
         # stream it opens. The SDK serves that method only when a handler is
         # supplied (and answers METHOD_NOT_FOUND without one); with it, the
         # modern-era `listChanged`/`subscribe` capabilities are advertised.
-        # `FastMCP.notify_*` publishes to this bus.
-        self.subscriptions: SubscriptionBus = InMemorySubscriptionBus()
-        kwargs.setdefault("on_subscriptions_listen", ListenHandler(self.subscriptions))
+        # `FastMCP.notify_*` publishes to this bus. With
+        # `settings.enable_subscriptions_listen` off there is no bus and no
+        # handler, so the server behaves as it did before listen was served.
+        self.subscriptions: SubscriptionBus | None = None
+        if fastmcp_settings.enable_subscriptions_listen:
+            self.subscriptions = InMemorySubscriptionBus()
+            kwargs.setdefault(
+                "on_subscriptions_listen", ListenHandler(self.subscriptions)
+            )
         super().__init__(*args, **kwargs)
         # Store a weak reference to FastMCP to avoid circular references
         self._fastmcp_ref: weakref.ref[FastMCP] = weakref.ref(fastmcp)

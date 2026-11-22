@@ -1993,7 +1993,8 @@ class FastMCP(
         Reaches clients on the 2026-07-28 protocol only; on handshake-era
         connections, send `notifications/tools/list_changed` from a request with
         `Context.send_notification`. Adding or removing tools never calls this
-        automatically.
+        automatically. Does nothing when `settings.enable_subscriptions_listen`
+        was off as this server was created.
         """
         await self._publish_list_changed(ToolsListChanged())
 
@@ -2020,7 +2021,9 @@ class FastMCP(
         since a namespace can rewrite the URI. See `notify_tools_changed` for
         delivery semantics.
         """
-        await self._mcp_server.subscriptions.publish(ResourceUpdated(uri=str(uri)))
+        subscriptions = self._mcp_server.subscriptions
+        if subscriptions is not None:
+            await subscriptions.publish(ResourceUpdated(uri=str(uri)))
 
     async def _publish_list_changed(
         self,
@@ -2031,7 +2034,9 @@ class FastMCP(
         if id(self) in seen:
             return
         seen.add(id(self))
-        await self._mcp_server.subscriptions.publish(event)
+        subscriptions = self._mcp_server.subscriptions
+        if subscriptions is not None:
+            await subscriptions.publish(event)
         for parent in self._live_parents():
             await parent._publish_list_changed(event, seen)
 

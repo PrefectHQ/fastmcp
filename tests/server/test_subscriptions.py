@@ -16,6 +16,7 @@ import mcp_types as types
 import pytest
 from mcp.client.caching import CacheConfig, CacheKey, InMemoryResponseCacheStore
 from mcp.client.subscriptions import ListenNotSupportedError
+from mcp.shared.exceptions import MCPError
 from mcp.shared.subscriptions import (
     PromptsListChanged,
     ResourcesListChanged,
@@ -26,9 +27,10 @@ from mcp.shared.subscriptions import (
 from fastmcp import Client, Context, FastMCP
 from fastmcp.server.providers import AggregateProvider, FastMCPProvider
 from fastmcp.server.transforms import ToolTransform
+from fastmcp.settings import Settings
 from fastmcp.tools import Tool
 from fastmcp.tools.tool_transform import ToolTransformConfig
-from fastmcp.utilities.tests import asgi_client
+from fastmcp.utilities.tests import asgi_client, temporary_settings
 
 
 @pytest.fixture
@@ -68,6 +70,77 @@ async def test_listen_is_served_and_capabilities_advertise_it(server: FastMCP):
 
         async with client.listen(tools_list_changed=True) as subscription:
             assert subscription.honored.tools_list_changed is True
+
+
+def test_listen_is_enabled_by_default():
+    assert Settings().enable_subscriptions_listen is True
+
+
+@pytest.fixture
+def listen_disabled_server() -> FastMCP:
+    with temporary_settings(enable_subscriptions_listen=False):
+        mcp = FastMCP("listen-disabled")
+
+    @mcp.tool
+    async def poke(ctx: Context) -> str:
+        await ctx.send_notification(types.ToolListChangedNotification())
+        return "ok"
+
+    @mcp.resource("data://config")
+    def config() -> str:
+        return "v1"
+
+    return mcp
+
+
+async def test_disabled_listen_is_not_served_or_advertised(
+    listen_disabled_server: FastMCP,
+):
+    """With the setting off, modern-era connections look as they did before
+    FastMCP served `subscriptions/listen`."""
+    async with Client(listen_disabled_server) as client:
+        assert client.protocol_version == "2026-07-28"
+        caps = client.server_capabilities
+        assert caps is not None
+        assert caps.tools is not None and caps.tools.list_changed is False
+        assert caps.prompts is None or caps.prompts.list_changed is False
+        assert caps.resources is not None
+        assert caps.resources.list_changed is False
+        assert caps.resources.subscribe is False
+
+        with pytest.raises(MCPError) as exc_info:
+            async with client.listen(tools_list_changed=True):
+                pass
+        assert exc_info.value.error.code == types.METHOD_NOT_FOUND
+
+
+async def test_disabled_notify_is_a_noop(listen_disabled_server: FastMCP):
+    assert listen_disabled_server._mcp_server.subscriptions is None
+    await listen_disabled_server.notify_tools_changed()
+    await listen_disabled_server.notify_prompts_changed()
+    await listen_disabled_server.notify_resources_changed()
+    await listen_disabled_server.notify_resource_updated("data://config")
+
+
+async def test_disabled_listen_leaves_handshake_era_unchanged(
+    listen_disabled_server: FastMCP,
+):
+    received = asyncio.Event()
+
+    async def handler(message):
+        if isinstance(message, types.ToolListChangedNotification):
+            received.set()
+
+    async with Client(
+        listen_disabled_server, mode="legacy", message_handler=handler
+    ) as client:
+        caps = client.server_capabilities
+        assert caps is not None
+        assert caps.tools is not None and caps.tools.list_changed is True
+        assert caps.resources is not None and caps.resources.list_changed is True
+        await client.call_tool("poke")
+        with anyio.fail_after(2):
+            await received.wait()
 
 
 async def test_out_of_band_tool_change_reaches_listener(server: FastMCP):

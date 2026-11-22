@@ -213,6 +213,8 @@ async def watch_tools_until_lost() -> None:
             print("The server ended the stream; reconnect and refetch")
 ```
 
+A FastMCP server serves listen streams by default. Setting `FASTMCP_ENABLE_SUBSCRIPTIONS_LISTEN=false` before the server is created turns them off: on `2026-07-28` connections the server advertises `listChanged` and `resources.subscribe` as `false`, `listen()` fails with a `Method not found` error (`-32601`), and the server's `notify_*` methods do nothing. Handshake-era connections are unaffected.
+
 ## Server Requests
 
 The message handler receives only notifications and transport exceptions; server-initiated requests never reach it. Answer those through the client's dedicated parameters:
