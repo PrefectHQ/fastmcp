@@ -36,12 +36,20 @@ def burst_config(raw: object) -> BurstConfig:
 
 
 def opened_by(read: Callable[[str], object], login: str, since: datetime) -> list[int]:
-    """Issue and PR numbers `login` opened in the repository since `since`."""
-    query = f"repo:{REPOSITORY} author:{login} created:>={since.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-    result = read(f"search/issues?q={quote(query)}&per_page=100")
-    if not isinstance(result, dict) or not isinstance(result.get("items"), list):
-        raise ValueError("Invalid GitHub search result")
-    return sorted(item["number"] for item in result["items"])
+    """Issue and PR numbers `login` opened in the repository since `since`.
+
+    GitHub's issue search rejects a query that doesn't say issues or PRs
+    (HTTP 422), so each kind is its own search.
+    """
+    stamp = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+    numbers: set[int] = set()
+    for kind in ("is:issue", "is:pr"):
+        query = f"repo:{REPOSITORY} {kind} author:{login} created:>={stamp}"
+        result = read(f"search/issues?q={quote(query)}&per_page=100")
+        if not isinstance(result, dict) or not isinstance(result.get("items"), list):
+            raise ValueError("Invalid GitHub search result")
+        numbers.update(item["number"] for item in result["items"])
+    return sorted(numbers)
 
 
 def burst(

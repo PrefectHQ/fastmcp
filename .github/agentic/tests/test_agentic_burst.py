@@ -32,8 +32,10 @@ def test_only_the_first_item_past_the_limit_announces():
 def test_search_is_scoped_to_the_repository_author_and_window():
     calls: list[str] = []
     burst(search([], calls), "someone", 1, BurstConfig(window_hours=24), NOW)
+    # GitHub rejects issue searches that don't name issues or PRs (HTTP 422).
     assert calls == [
-        "search/issues?q=repo:PrefectHQ/fastmcp author:someone created:>=2026-11-20T21:30:00Z&per_page=100"
+        f"search/issues?q=repo:PrefectHQ/fastmcp {kind} author:someone created:>=2026-11-20T21:30:00Z&per_page=100"
+        for kind in ("is:issue", "is:pr")
     ]
 
 
