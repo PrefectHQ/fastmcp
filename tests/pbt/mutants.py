@@ -295,6 +295,42 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "test": f"{MW}::test_a_denial_names_every_scope_the_chain_still_needs",
         },
         {
+            "name": "resource denial names only its own layer's scopes",
+            "file": AUTHZ,
+            "old": (
+                "                missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)\n"
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for resource '{uri}': \"\n"
+            ),
+            "new": (
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for resource '{uri}': \"\n"
+            ),
+            "test": f"{MW}::test_a_denial_names_every_scope_the_chain_still_needs",
+        },
+        {
+            "name": "prompt denial names only its own layer's scopes",
+            "file": AUTHZ,
+            "old": (
+                "                missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)\n"
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for prompt '{prompt_name}': \"\n"
+            ),
+            "new": (
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for prompt '{prompt_name}': \"\n"
+            ),
+            "test": f"{MW}::test_a_denial_names_every_scope_the_chain_still_needs",
+        },
+        {
             "name": "cache ignores the requested version",
             "file": CACHING,
             "old": "    return f\"__version__:{_get_arguments_str({'version': version})}\"",

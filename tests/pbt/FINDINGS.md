@@ -22,7 +22,7 @@ Mutant catch rates: `uv run python -m tests.pbt.mutants`.
 | tool transforms: rename, hide, defaults, required, two layers, deferred config (2026-11-21) | 1k cases, 5-minute campaign | 4/4: 10, 9, 8 and 8 of 10 seeds at 200 cases | F9 |
 | OpenAPI tool sends the described request (2026-11-21) | 1k cases | 4/4 (explode default 9/10, pipe delimiter 9/10, boolean text 10/10, path quoting 10/10) | clean (K4) |
 | OAuth proxy machine: codes, refresh, revocation, concurrent redemption (2026-11-21) | 1k histories | 3/3 at 10/10 seeds (an "already used" check is not planted: the lock and re-read mask it) | F10 |
-| middleware: AuthMiddleware listing vs calling and scope step-up, response caching vs no cache, token bucket and sliding window under a fake clock (2026-11-22) | 1k cases each | 9/9: 10/10 seeds except cache-version and bucket-capacity at 9/10 | F13 |
+| middleware: AuthMiddleware listing vs calling and scope step-up, response caching vs no cache, token bucket and sliding window under a fake clock (2026-11-22) | 1k cases each | 11/11: 10/10 seeds except cache-version, prompt step-up and bucket-capacity at 9/10 | F13 |
 
 F1, F3 and F5 are fixed on `main` (#6552, #6553, #6572), so their probes
 report fixed and the harness checks those shapes again. F2 is fixed by keeping

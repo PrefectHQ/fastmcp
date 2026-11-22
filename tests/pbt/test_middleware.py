@@ -207,19 +207,31 @@ async def _use(client: Client, kind: str, name: str, version: str | None) -> str
     return contents[0].text
 
 
+def _denial(e: Exception) -> str:
+    """Why AuthMiddleware refused, or re-raise: a crash is not a denial."""
+    text = str(e)
+    if "Authorization failed" not in text:
+        raise e
+    return "insufficient" if ": insufficient " in text else "hidden"
+
+
 def _f13_probe() -> bool:
     """F13: AuthMiddleware lists an older version a caller may use, but an
     unversioned call is authorized against (and would run) the highest."""
     catalog = {"t0": {"1": frozenset(), "2": frozenset({"admin"})}}
-    mw = [AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"]))]
+    mw = [AuthMiddleware(auth=restrict_tag("admin", scopes=["read"]))]
     server = build_server("tool", catalog, mw)
 
     async def probe() -> bool:
         async with Client(server) as client:
+            if await _list(client, "tool") != {"t0": "1"}:
+                return False
+            if await _use(client, "tool", "t0", "1") != "t0@1":
+                return False
             try:
                 await client.call_tool("t0", {})
-            except Exception:
-                return True
+            except Exception as e:
+                return _denial(e) == "insufficient"
             return False
 
     with caller(None):
@@ -267,15 +279,17 @@ def test_listing_and_calling_agree(kind, catalog, layer_checks, scopes):
                         expect = f"{name}@{asked}"
                     else:
                         expect = "denied"
+                    why = None
                     try:
                         got = await _use(client, kind, name, asked)
                     except Exception as e:
                         note(f"{name}@{asked}: {type(e).__name__}: {e}"[:200])
+                        why = _denial(e)
                         got = "denied"
                     top = max(versions, key=vkey)
                     if (
                         asked is None
-                        and got == "denied"
+                        and why == "insufficient"
                         and expect != "denied"
                         and expect != f"{name}@{top}"
                         and F13_OPEN
@@ -289,20 +303,30 @@ def test_listing_and_calling_agree(kind, catalog, layer_checks, scopes):
         asyncio.run(run())
 
 
+async def _use_on_server(server: FastMCP, kind: str, name: str) -> None:
+    if kind == "tool":
+        await server.call_tool(name, {})
+    elif kind == "prompt":
+        await server.render_prompt(name)
+    else:
+        await server.read_resource(ident(kind, name))
+
+
 @given(
+    kind=st.sampled_from(KINDS),
     catalog=catalogs.filter(lambda c: all(None in v for v in c.values())),
     layer_checks=layers,
     scopes=st.frozensets(st.sampled_from(SCOPES)),
 )
 def test_a_denial_names_every_scope_the_chain_still_needs(
-    catalog, layer_checks, scopes
+    kind, catalog, layer_checks, scopes
 ):
     """SEP-2350 step-up: a caller told the missing scopes, who then obtains
     them, is let through (no scope from a later layer left unnamed)."""
     middleware = [
         AuthMiddleware(auth=[c.build() for c in layer]) for layer in layer_checks
     ]
-    server = build_server("tool", catalog, middleware)
+    server = build_server(kind, catalog, middleware)
 
     async def run() -> None:
         for name, versions in catalog.items():
@@ -316,7 +340,7 @@ def test_a_denial_names_every_scope_the_chain_still_needs(
                 None,
             )
             try:
-                await server.call_tool(name, {})
+                await _use_on_server(server, kind, name)
             except InsufficientScopeError as e:
                 assert first_denying is not None, "an allowed call was refused"
                 want = sorted(
@@ -329,9 +353,9 @@ def test_a_denial_names_every_scope_the_chain_still_needs(
                 )
                 note(f"{name}: named {e.required_scopes}, want {want}")
                 assert sorted(e.required_scopes) == want
-                event(f"named {len(want)} scopes")
+                event(f"{kind}: named {len(want)} scopes")
                 with caller(scopes | set(want)):
-                    await server.call_tool(name, {})
+                    await _use_on_server(server, kind, name)
                 continue
             except AuthorizationError:
                 raise AssertionError("a scope-only denial gave no scopes") from None
