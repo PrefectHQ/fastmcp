@@ -1,7 +1,7 @@
 {
   "schema": "fastmcp-maintenance/1",
   "publisher": "fastmcp-actions",
-  "as_of": "2026-11-22T13:02:49Z",
+  "as_of": "2026-11-22T21:02:49Z",
   "automations": [
     {
       "id": "issue-link-gate",
@@ -14,7 +14,7 @@
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/require-issue-link.yml",
       "window": "7d",
       "counts": {
-        "passed": 97,
+        "passed": 99,
         "blocked": 63
       },
       "daily": [
@@ -56,7 +56,7 @@
         },
         {
           "day": "2026-11-22",
-          "succeeded": 7,
+          "succeeded": 9,
           "failed": 0,
           "blocked": 8
         }
@@ -132,7 +132,7 @@
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/label-pr-type.yml",
       "window": "7d",
       "counts": {
-        "succeeded": 128,
+        "succeeded": 147,
         "failed": 0
       },
       "daily": [
@@ -174,7 +174,7 @@
         },
         {
           "day": "2026-11-22",
-          "succeeded": 28,
+          "succeeded": 47,
           "failed": 0,
           "blocked": 0
         }
@@ -191,7 +191,7 @@
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/label-issue-type.yml",
       "window": "7d",
       "counts": {
-        "succeeded": 8,
+        "succeeded": 9,
         "failed": 0
       },
       "daily": [
@@ -233,7 +233,7 @@
         },
         {
           "day": "2026-11-22",
-          "succeeded": 2,
+          "succeeded": 3,
           "failed": 0,
           "blocked": 0
         }
@@ -427,7 +427,7 @@
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-comment-on-issue.yml",
       "window": "7d",
       "counts": {
-        "succeeded": 56,
+        "succeeded": 59,
         "failed": 32
       },
       "daily": [
@@ -469,7 +469,7 @@
         },
         {
           "day": "2026-11-22",
-          "succeeded": 10,
+          "succeeded": 13,
           "failed": 2,
           "blocked": 0
         }
@@ -655,12 +655,6 @@
     {
       "items": [
         {
-          "number": 5195,
-          "title": "Fix TokenCache handling for expired access tokens",
-          "url": "https://github.com/PrefectHQ/fastmcp/pull/5195",
-          "age_days": 61
-        },
-        {
           "number": 5333,
           "title": "Resolve postponed annotations when describing prompt arguments",
           "url": "https://github.com/PrefectHQ/fastmcp/pull/5333",
@@ -670,7 +664,7 @@
           "number": 5380,
           "title": "Allow per-read cache hint overrides on ResourceResult ",
           "url": "https://github.com/PrefectHQ/fastmcp/pull/5380",
-          "age_days": 51
+          "age_days": 52
         },
         {
           "number": 5556,
@@ -682,25 +676,13 @@
           "number": 5646,
           "title": "feat(auth): allow custom Azure token verifiers",
           "url": "https://github.com/PrefectHQ/fastmcp/pull/5646",
-          "age_days": 43
-        },
-        {
-          "number": 5773,
-          "title": "fix(auth): reject malformed URL ports as SSRFError in validate_url",
-          "url": "https://github.com/PrefectHQ/fastmcp/pull/5773",
-          "age_days": 36
+          "age_days": 44
         },
         {
           "number": 5794,
           "title": "fix(openapi): support non-JSON successful responses in OpenAPI tools",
           "url": "https://github.com/PrefectHQ/fastmcp/pull/5794",
-          "age_days": 35
-        },
-        {
-          "number": 5829,
-          "title": "fix: enforce valid_scopes for CIMD clients",
-          "url": "https://github.com/PrefectHQ/fastmcp/pull/5829",
-          "age_days": 34
+          "age_days": 36
         },
         {
           "number": 6003,
@@ -709,10 +691,28 @@
           "age_days": 29
         },
         {
-          "number": 6106,
-          "title": "Accept plain values for optional parameters in generated CLIs",
-          "url": "https://github.com/PrefectHQ/fastmcp/pull/6106",
-          "age_days": 25
+          "number": 6148,
+          "title": "Reject non-finite floats in default tool text conversion",
+          "url": "https://github.com/PrefectHQ/fastmcp/pull/6148",
+          "age_days": 24
+        },
+        {
+          "number": 6188,
+          "title": "fix(client): keep the server's payload when typed hydration would change it",
+          "url": "https://github.com/PrefectHQ/fastmcp/pull/6188",
+          "age_days": 22
+        },
+        {
+          "number": 6195,
+          "title": "fix: Unconvertible prompt and resource template arguments return internal error instead of invalid params",
+          "url": "https://github.com/PrefectHQ/fastmcp/pull/6195",
+          "age_days": 22
+        },
+        {
+          "number": 6203,
+          "title": "Honor Docket retries before returning a background tool error",
+          "url": "https://github.com/PrefectHQ/fastmcp/pull/6203",
+          "age_days": 21
         }
       ],
       "id": "contributor-queue",
@@ -725,30 +725,30 @@
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/pulls?q=is%3Apr+is%3Aopen+label%3Amissing-issue-link",
       "window": "now",
       "counts": {
-        "waiting": 15,
-        "oldest_days": 61,
-        "waiting_over_7_days": 15
+        "waiting": 10,
+        "oldest_days": 55,
+        "waiting_over_7_days": 10
       }
     }
   ],
   "main": {
-    "sha": "2999234dc18a11a19f11166132fd97122549ef95",
-    "url": "https://github.com/PrefectHQ/fastmcp/commit/2999234dc18a11a19f11166132fd97122549ef95",
+    "sha": "410459b939121091b1c1b46616f05b3928f2297c",
+    "url": "https://github.com/PrefectHQ/fastmcp/commit/410459b939121091b1c1b46616f05b3928f2297c",
     "checks": [
       {
         "name": "Tests",
         "state": "ok",
-        "url": "https://github.com/PrefectHQ/fastmcp/actions/runs/45005005224"
+        "url": "https://github.com/PrefectHQ/fastmcp/actions/runs/45065519178"
       },
       {
         "name": "Run static analysis",
         "state": "ok",
-        "url": "https://github.com/PrefectHQ/fastmcp/actions/runs/45005005282"
+        "url": "https://github.com/PrefectHQ/fastmcp/actions/runs/45065519257"
       },
       {
         "name": "CodeQL",
         "state": "ok",
-        "url": "https://github.com/PrefectHQ/fastmcp/actions/runs/45005004824"
+        "url": "https://github.com/PrefectHQ/fastmcp/actions/runs/45065519010"
       }
     ]
   },
@@ -766,113 +766,15 @@
   "attention": {
     "schema": "fastmcp-attention/1",
     "repo": "PrefectHQ/fastmcp",
-    "as_of": "2026-11-22T13:01:42.263709+00:00",
+    "as_of": "2026-11-22T21:01:42.254062+00:00",
     "profile": "public-issue-signals",
     "judge": "jev",
     "assessment_model": "jev:jev-latest",
-    "judged": 178,
-    "examined": 178,
+    "judged": 164,
+    "examined": 164,
     "has_more": false,
     "selection": "newest open issues",
     "items": [
-      {
-        "number": 5999,
-        "title": "redirect_uri query component not matched against allowed patterns (RFC 6749 deviation)",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/5999",
-        "updated_at": "2026-10-24T04:47:45+00:00",
-        "score": 18.47,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 1.0,
-            "regression": 0.0,
-            "feature": 0.0,
-            "question": 0.0,
-            "docs": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.97,
-          "actionable": 1.0,
-          "severity": 0.9966666666666667,
-          "security": 0.97,
-          "spec": 0.06,
-          "downstream": 0.07
-        },
-        "input_digest": "5ef98dc6325a929379afaf0c46e95ec877ec36c7d2ed6d70b200e76f1bc673f8",
-        "reasons": [
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 3.88
-          },
-          {
-            "signal": "priority",
-            "text": "priority label",
-            "contribution": 3.0
-          },
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 2.99
-          },
-          {
-            "signal": "security_label",
-            "text": "security label",
-            "contribution": 2.5
-          },
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 1.95
-          },
-          {
-            "signal": "neglect",
-            "text": "awaiting maintainer reply",
-            "contribution": 1.5
-          },
-          {
-            "signal": "handled",
-            "text": "assigned or linked to a fix",
-            "contribution": -1.5
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.46
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 1.17
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "engagement",
-            "text": "community engagement",
-            "contribution": 0.36
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.11
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.06
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": [
-          6000
-        ]
-      },
       {
         "number": 5998,
         "title": "OpenAPIProvider forwards inbound custom-credential headers (x-api-key, *-token, gateway headers) to wrapped APIs, docs' \"except credential headers\" is only true for Authorization/Cookie",
@@ -969,99 +871,6 @@
         "assigned": false,
         "linked_prs": [
           6003
-        ]
-      },
-      {
-        "number": 5828,
-        "title": "[Bug] CIMD clients bypass OAuthProxy valid_scopes",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/5828",
-        "updated_at": "2026-10-19T03:17:55+00:00",
-        "score": 16.49,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 1.0,
-            "regression": 0.0,
-            "feature": 0.0,
-            "question": 0.0,
-            "docs": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.64,
-          "actionable": 1.0,
-          "severity": 1.0,
-          "security": 0.98,
-          "spec": 0.12,
-          "downstream": 0.09
-        },
-        "input_digest": "38523b0ec9678a9ff06fb160d20f7196c7cfbfa6086b69d8a3b79b7eb47da1a7",
-        "reasons": [
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 3.92
-          },
-          {
-            "signal": "priority",
-            "text": "priority label",
-            "contribution": 3.0
-          },
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 3.0
-          },
-          {
-            "signal": "security_label",
-            "text": "security label",
-            "contribution": 2.5
-          },
-          {
-            "signal": "neglect",
-            "text": "awaiting maintainer reply",
-            "contribution": 1.5
-          },
-          {
-            "signal": "handled",
-            "text": "assigned or linked to a fix",
-            "contribution": -1.5
-          },
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 1.16
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 0.96
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.69
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.14
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.12
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": [
-          5829
         ]
       },
       {
@@ -3018,243 +2827,6 @@
         "linked_prs": []
       },
       {
-        "number": 5193,
-        "title": "TokenCache keeps tokens whose expires_at is zero",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/5193",
-        "updated_at": "2026-09-21T18:38:14+00:00",
-        "score": 9.31,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "regression": 0.0,
-            "other": 0.0,
-            "feature": 0.0,
-            "docs": 0.0,
-            "bug": 1.0,
-            "question": 0.0
-          },
-          "repro": 0.98,
-          "actionable": 1.0,
-          "severity": 0.9,
-          "security": 0.64,
-          "spec": 0.1,
-          "downstream": 0.04
-        },
-        "input_digest": "1e2491e28f7ae81e50ffc27f690bc014527387a2acfc7c8bb7dbc2eba657281b",
-        "reasons": [
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 2.7
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 2.56
-          },
-          {
-            "signal": "neglect",
-            "text": "awaiting maintainer reply",
-            "contribution": 1.5
-          },
-          {
-            "signal": "handled",
-            "text": "assigned or linked to a fix",
-            "contribution": -1.5
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.47
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 0.89
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.53
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.1
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.06
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": [
-          5195
-        ]
-      },
-      {
-        "number": 5977,
-        "title": "ProxyClient drops tools and tool_choice from relayed sampling requests",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/5977",
-        "updated_at": "2026-10-21T23:05:41+00:00",
-        "score": 9.25,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 1.0,
-            "regression": 0.0,
-            "feature": 0.0,
-            "question": 0.0,
-            "docs": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.97,
-          "actionable": 1.0,
-          "severity": 0.6666666666666666,
-          "security": 0.05,
-          "spec": 0.6,
-          "downstream": 0.19
-        },
-        "input_digest": "0fbcdb9c6e3cb7e16e5c61e4cc5abb85181740e3d56593705e690dff94198684",
-        "reasons": [
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 2.32
-          },
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 2.0
-          },
-          {
-            "signal": "neglect",
-            "text": "awaiting maintainer reply",
-            "contribution": 1.5
-          },
-          {
-            "signal": "handled",
-            "text": "assigned or linked to a fix",
-            "contribution": -1.5
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.46
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 1.39
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.6
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.29
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 0.2
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": [
-          5978
-        ]
-      },
-      {
-        "number": 6672,
-        "title": "MCPMixin @mcp_resource rejects security= on templated URIs",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/6672",
-        "updated_at": "2026-11-22T07:32:39+00:00",
-        "score": 9.25,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 1.0,
-            "regression": 0.0,
-            "feature": 0.0,
-            "question": 0.0,
-            "docs": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.97,
-          "actionable": 1.0,
-          "severity": 0.71,
-          "security": 0.14,
-          "spec": 0.13,
-          "downstream": 0.19
-        },
-        "input_digest": "fcf3cdf2fb9238fe1966a326b5b858833b1a0953cca2c06fa1c10d454d4c4d25",
-        "reasons": [
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 2.31
-          },
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 2.13
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.46
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 1.38
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 0.56
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.29
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.13
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": []
-      },
-      {
         "number": 6265,
         "title": "OpenAPI rejects declared 202 JSON success after executing POST",
         "url": "https://github.com/PrefectHQ/fastmcp/issues/6265",
@@ -3336,6 +2908,92 @@
         "linked_prs": []
       },
       {
+        "number": 6153,
+        "title": "OAuthProxy: no way to limit CIMD to trusted domains",
+        "url": "https://github.com/PrefectHQ/fastmcp/issues/6153",
+        "updated_at": "2026-11-22T17:35:41+00:00",
+        "score": 9.0,
+        "kind": "feature",
+        "judged": true,
+        "assessment": {
+          "kind": {
+            "bug": 0.0,
+            "regression": 0.0,
+            "feature": 1.0,
+            "question": 0.0,
+            "docs": 0.0,
+            "other": 0.0
+          },
+          "repro": 0.04,
+          "actionable": 0.99,
+          "severity": 0.8566666666666666,
+          "security": 0.88,
+          "spec": 0.8,
+          "downstream": 0.05
+        },
+        "input_digest": "46120ae634b5f6854719cc36609a88de56fc645d27d89a7bc57b0e1a88cdf719",
+        "reasons": [
+          {
+            "signal": "security",
+            "text": "security-sensitive report",
+            "contribution": 3.52
+          },
+          {
+            "signal": "severity",
+            "text": "potential impact",
+            "contribution": 2.57
+          },
+          {
+            "signal": "neglect",
+            "text": "awaiting maintainer reply",
+            "contribution": 1.5
+          },
+          {
+            "signal": "feature_label",
+            "text": "enhancement label",
+            "contribution": -1.0
+          },
+          {
+            "signal": "feature",
+            "text": "enhancement request",
+            "contribution": -1.0
+          },
+          {
+            "signal": "actionable",
+            "text": "actionable report",
+            "contribution": 0.99
+          },
+          {
+            "signal": "engagement",
+            "text": "community engagement",
+            "contribution": 0.91
+          },
+          {
+            "signal": "spec",
+            "text": "protocol conformance",
+            "contribution": 0.8
+          },
+          {
+            "signal": "release_proximity",
+            "text": "reported near a relevant release",
+            "contribution": 0.57
+          },
+          {
+            "signal": "downstream",
+            "text": "downstream integration affected",
+            "contribution": 0.08
+          },
+          {
+            "signal": "repro",
+            "text": "reproduction provided",
+            "contribution": 0.06
+          }
+        ],
+        "maintainer_replied": false,
+        "assigned": false,
+        "linked_prs": []
+      },
+      {
         "number": 5864,
         "title": "[Bug] Proxy components lose version metadata, breaking VersionFilter on proxies",
         "url": "https://github.com/PrefectHQ/fastmcp/issues/5864",
@@ -3410,92 +3068,6 @@
             "signal": "security",
             "text": "security-sensitive report",
             "contribution": 0.16
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": []
-      },
-      {
-        "number": 6153,
-        "title": "OAuthProxy: no way to limit CIMD to trusted domains",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/6153",
-        "updated_at": "2026-11-13T20:02:00+00:00",
-        "score": 8.93,
-        "kind": "feature",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 0.0,
-            "regression": 0.0,
-            "feature": 1.0,
-            "question": 0.0,
-            "docs": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.04,
-          "actionable": 0.99,
-          "severity": 0.8566666666666666,
-          "security": 0.88,
-          "spec": 0.8,
-          "downstream": 0.05
-        },
-        "input_digest": "46120ae634b5f6854719cc36609a88de56fc645d27d89a7bc57b0e1a88cdf719",
-        "reasons": [
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 3.52
-          },
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 2.57
-          },
-          {
-            "signal": "neglect",
-            "text": "awaiting maintainer reply",
-            "contribution": 1.5
-          },
-          {
-            "signal": "feature_label",
-            "text": "enhancement label",
-            "contribution": -1.0
-          },
-          {
-            "signal": "feature",
-            "text": "enhancement request",
-            "contribution": -1.0
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 0.99
-          },
-          {
-            "signal": "engagement",
-            "text": "community engagement",
-            "contribution": 0.84
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.8
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.57
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.08
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 0.06
           }
         ],
         "maintainer_replied": false,
@@ -4935,6 +4507,84 @@
         ]
       },
       {
+        "number": 6672,
+        "title": "MCPMixin @mcp_resource rejects security= on templated URIs",
+        "url": "https://github.com/PrefectHQ/fastmcp/issues/6672",
+        "updated_at": "2026-11-22T07:32:39+00:00",
+        "score": 7.75,
+        "kind": "bug",
+        "judged": true,
+        "assessment": {
+          "kind": {
+            "bug": 1.0,
+            "regression": 0.0,
+            "feature": 0.0,
+            "question": 0.0,
+            "docs": 0.0,
+            "other": 0.0
+          },
+          "repro": 0.97,
+          "actionable": 1.0,
+          "severity": 0.71,
+          "security": 0.14,
+          "spec": 0.13,
+          "downstream": 0.19
+        },
+        "input_digest": "fcf3cdf2fb9238fe1966a326b5b858833b1a0953cca2c06fa1c10d454d4c4d25",
+        "reasons": [
+          {
+            "signal": "regression",
+            "text": "possible regression",
+            "contribution": 2.31
+          },
+          {
+            "signal": "severity",
+            "text": "potential impact",
+            "contribution": 2.13
+          },
+          {
+            "signal": "handled",
+            "text": "assigned or linked to a fix",
+            "contribution": -1.5
+          },
+          {
+            "signal": "repro",
+            "text": "reproduction provided",
+            "contribution": 1.46
+          },
+          {
+            "signal": "release_proximity",
+            "text": "reported near a relevant release",
+            "contribution": 1.38
+          },
+          {
+            "signal": "actionable",
+            "text": "actionable report",
+            "contribution": 1.0
+          },
+          {
+            "signal": "security",
+            "text": "security-sensitive report",
+            "contribution": 0.56
+          },
+          {
+            "signal": "downstream",
+            "text": "downstream integration affected",
+            "contribution": 0.29
+          },
+          {
+            "signal": "spec",
+            "text": "protocol conformance",
+            "contribution": 0.13
+          }
+        ],
+        "maintainer_replied": false,
+        "assigned": false,
+        "linked_prs": [
+          6680
+        ]
+      },
+      {
         "number": 5318,
         "title": "Prompt str arguments get the JSON schema hint under from __future__ import annotations",
         "url": "https://github.com/PrefectHQ/fastmcp/issues/5318",
@@ -5163,6 +4813,87 @@
             "signal": "spec",
             "text": "protocol conformance",
             "contribution": 0.1
+          }
+        ],
+        "maintainer_replied": false,
+        "assigned": false,
+        "linked_prs": []
+      },
+      {
+        "number": 6603,
+        "title": "Resource template that repeats a parameter never matches a URI",
+        "url": "https://github.com/PrefectHQ/fastmcp/issues/6603",
+        "updated_at": "2026-11-22T15:32:16+00:00",
+        "score": 7.51,
+        "kind": "bug",
+        "judged": true,
+        "assessment": {
+          "kind": {
+            "bug": 1.0,
+            "regression": 0.0,
+            "feature": 0.0,
+            "question": 0.0,
+            "docs": 0.0,
+            "other": 0.0
+          },
+          "repro": 0.98,
+          "actionable": 0.965,
+          "severity": 0.59,
+          "security": 0.04,
+          "spec": 0.42,
+          "downstream": 0.06
+        },
+        "input_digest": "b386c88707b1ac5b8a3f5277b63af727461ca729a86edbc2517fa29831401777",
+        "reasons": [
+          {
+            "signal": "severity",
+            "text": "potential impact",
+            "contribution": 1.77
+          },
+          {
+            "signal": "neglect",
+            "text": "awaiting maintainer reply",
+            "contribution": 1.5
+          },
+          {
+            "signal": "repro",
+            "text": "reproduction provided",
+            "contribution": 1.47
+          },
+          {
+            "signal": "actionable",
+            "text": "actionable report",
+            "contribution": 0.96
+          },
+          {
+            "signal": "regression",
+            "text": "possible regression",
+            "contribution": 0.48
+          },
+          {
+            "signal": "spec",
+            "text": "protocol conformance",
+            "contribution": 0.42
+          },
+          {
+            "signal": "engagement",
+            "text": "community engagement",
+            "contribution": 0.36
+          },
+          {
+            "signal": "release_proximity",
+            "text": "reported near a relevant release",
+            "contribution": 0.29
+          },
+          {
+            "signal": "security",
+            "text": "security-sensitive report",
+            "contribution": 0.16
+          },
+          {
+            "signal": "downstream",
+            "text": "downstream integration affected",
+            "contribution": 0.09
           }
         ],
         "maintainer_replied": false,
@@ -5745,77 +5476,6 @@
         "linked_prs": []
       },
       {
-        "number": 6674,
-        "title": "fastmcp call: a non-finite CLI argument silently reaches the server as null",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/6674",
-        "updated_at": "2026-11-22T07:56:56+00:00",
-        "score": 7.29,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 1.0,
-            "regression": 0.0,
-            "feature": 0.0,
-            "question": 0.0,
-            "docs": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.93,
-          "actionable": 1.0,
-          "severity": 0.7999999999999999,
-          "security": 0.06,
-          "spec": 0.32,
-          "downstream": 0.06
-        },
-        "input_digest": "9d6ea4cfc68b7069cda153a654e26491ac8583481fcc6f4e66be96e6c3c58b59",
-        "reasons": [
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 2.4
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.4
-          },
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 1.15
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.69
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.32
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 0.24
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.09
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": []
-      },
-      {
         "number": 5571,
         "title": "`fastmcp dev apps file.py` does not recognize app.ui() tools",
         "url": "https://github.com/PrefectHQ/fastmcp/issues/5571",
@@ -5972,172 +5632,6 @@
         "assigned": false,
         "linked_prs": [
           6231
-        ]
-      },
-      {
-        "number": 5679,
-        "title": "AzureProvider rejects every token when tenant_id is \"organizations\", \"consumers\" or \"common\"",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/5679",
-        "updated_at": "2026-10-12T11:31:53+00:00",
-        "score": 7.12,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 1.0,
-            "regression": 0.0,
-            "feature": 0.0,
-            "question": 0.0,
-            "docs": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.98,
-          "actionable": 1.0,
-          "severity": 0.6866666666666666,
-          "security": 0.23,
-          "spec": 0.07,
-          "downstream": 0.07
-        },
-        "input_digest": "cc9aa21b9dfd9e198f7b7d99e3d807de989938dbe9809bca0cfc1e3391bbb17d",
-        "reasons": [
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 2.06
-          },
-          {
-            "signal": "neglect",
-            "text": "awaiting maintainer reply",
-            "contribution": 1.5
-          },
-          {
-            "signal": "handled",
-            "text": "assigned or linked to a fix",
-            "contribution": -1.5
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.47
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 0.94
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 0.92
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.56
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.11
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.07
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": [
-          5694
-        ]
-      },
-      {
-        "number": 5906,
-        "title": "ctx.elicit() rejects a response model with an optional field (`X | None = None`)",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/5906",
-        "updated_at": "2026-10-19T23:34:10+00:00",
-        "score": 7.02,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 1.0,
-            "regression": 0.0,
-            "feature": 0.0,
-            "question": 0.0,
-            "docs": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.98,
-          "actionable": 1.0,
-          "severity": 0.66,
-          "security": 0.02,
-          "spec": 0.65,
-          "downstream": 0.07
-        },
-        "input_digest": "f3562a8bf6a5af774225d4d3830e2abd997d546b83a12b32481801c0266c8709",
-        "reasons": [
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 1.98
-          },
-          {
-            "signal": "neglect",
-            "text": "awaiting maintainer reply",
-            "contribution": 1.5
-          },
-          {
-            "signal": "handled",
-            "text": "assigned or linked to a fix",
-            "contribution": -1.5
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.47
-          },
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 1.09
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.65
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.65
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.11
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 0.08
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": [
-          5907
         ]
       },
       {
@@ -6608,94 +6102,6 @@
         ]
       },
       {
-        "number": 5785,
-        "title": "Client hydration fails for JSON Schema references into arrays",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/5785",
-        "updated_at": "2026-10-17T11:01:56+00:00",
-        "score": 6.74,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 1.0,
-            "regression": 0.0,
-            "feature": 0.0,
-            "question": 0.0,
-            "docs": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.98,
-          "actionable": 1.0,
-          "severity": 0.5066666666666667,
-          "security": 0.02,
-          "spec": 0.23,
-          "downstream": 0.07
-        },
-        "input_digest": "f84496e9800e60a284a1022dfb178cb8cf1bbcf94d6fe165c530e992166383a3",
-        "reasons": [
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 2.39
-          },
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 1.52
-          },
-          {
-            "signal": "deprioritized",
-            "text": "low-priority label",
-            "contribution": -1.5
-          },
-          {
-            "signal": "neglect",
-            "text": "awaiting maintainer reply",
-            "contribution": 1.5
-          },
-          {
-            "signal": "handled",
-            "text": "assigned or linked to a fix",
-            "contribution": -1.5
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.47
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 1.44
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.23
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.11
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 0.08
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": [
-          6098
-        ]
-      },
-      {
         "number": 6332,
         "title": "Postponed -> None annotations generate output schemas for void tools",
         "url": "https://github.com/PrefectHQ/fastmcp/issues/6332",
@@ -6946,89 +6352,6 @@
         ]
       },
       {
-        "number": 5904,
-        "title": "ctx.report_progress() fails a task=True tool when total is 0",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/5904",
-        "updated_at": "2026-10-19T22:19:10+00:00",
-        "score": 6.65,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 1.0,
-            "regression": 0.0,
-            "feature": 0.0,
-            "question": 0.0,
-            "docs": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.99,
-          "actionable": 1.0,
-          "severity": 0.64,
-          "security": 0.02,
-          "spec": 0.23,
-          "downstream": 0.13
-        },
-        "input_digest": "6db02e90da6405c1fbd57206bb21da239de8708be43341ef958c2cb169dde8dd",
-        "reasons": [
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 1.92
-          },
-          {
-            "signal": "neglect",
-            "text": "awaiting maintainer reply",
-            "contribution": 1.5
-          },
-          {
-            "signal": "handled",
-            "text": "assigned or linked to a fix",
-            "contribution": -1.5
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.48
-          },
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 1.09
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.65
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.23
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.2
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 0.08
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": [
-          5905
-        ]
-      },
-      {
         "number": 6584,
         "title": "Version check can recommend yanked releases, which pip and uv refuse to resolve",
         "url": "https://github.com/PrefectHQ/fastmcp/issues/6584",
@@ -7178,94 +6501,6 @@
         ]
       },
       {
-        "number": 4866,
-        "title": "generate-cli: generated CLI raises JSONDecodeError on any optional string parameter",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/4866",
-        "updated_at": "2026-08-22T09:36:25+00:00",
-        "score": 6.53,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "docs": 0.0,
-            "bug": 1.0,
-            "feature": 0.0,
-            "regression": 0.0,
-            "question": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.98,
-          "actionable": 1.0,
-          "severity": 0.7200000000000001,
-          "security": 0.03,
-          "spec": 0.12,
-          "downstream": 0.08
-        },
-        "input_digest": "bb5adacfa8a8f0f64dfb61674fa0e0b13f5605d741d36be6f22eb7d35f47e695",
-        "reasons": [
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 2.16
-          },
-          {
-            "signal": "neglect",
-            "text": "awaiting maintainer reply",
-            "contribution": 1.5
-          },
-          {
-            "signal": "handled",
-            "text": "assigned or linked to a fix",
-            "contribution": -1.5
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.47
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 0.74
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.44
-          },
-          {
-            "signal": "engagement",
-            "text": "community engagement",
-            "contribution": 0.36
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 0.12
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.12
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.12
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": [
-          6106
-        ]
-      },
-      {
         "number": 5743,
         "title": "Sync tool keeps running after its timeout fires (follow-up to #5379)",
         "url": "https://github.com/PrefectHQ/fastmcp/issues/5743",
@@ -7357,89 +6592,6 @@
         "linked_prs": []
       },
       {
-        "number": 5764,
-        "title": "Unauthenticated /authorize returns HTTP 500 when the client_id URL has a malformed port (validate_url raises bare ValueError instead of SSRFError)",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/5764",
-        "updated_at": "2026-10-16T11:55:05+00:00",
-        "score": 6.5,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 1.0,
-            "regression": 0.0,
-            "feature": 0.0,
-            "question": 0.0,
-            "docs": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.98,
-          "actionable": 1.0,
-          "severity": 0.8466666666666667,
-          "security": 0.23,
-          "spec": 0.08,
-          "downstream": 0.08
-        },
-        "input_digest": "0768563fa2296df36c8edc940312176f5b1ea3a94bf8549fa55a05d8e828cb3f",
-        "reasons": [
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 2.54
-          },
-          {
-            "signal": "neglect",
-            "text": "awaiting maintainer reply",
-            "contribution": 1.5
-          },
-          {
-            "signal": "handled",
-            "text": "assigned or linked to a fix",
-            "contribution": -1.5
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.47
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 0.92
-          },
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 0.23
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.14
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.12
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.08
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": [
-          5773
-        ]
-      },
-      {
         "number": 854,
         "title": "A \u201c413 Request Entity Too Large\u201d error is reported when transferring a file larger than 2MB from the client to the server.",
         "url": "https://github.com/PrefectHQ/fastmcp/issues/854",
@@ -7514,89 +6666,6 @@
         "maintainer_replied": false,
         "assigned": false,
         "linked_prs": []
-      },
-      {
-        "number": 5882,
-        "title": "`fastmcp call --command` cannot call a tool",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/5882",
-        "updated_at": "2026-10-19T22:18:24+00:00",
-        "score": 6.43,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 1.0,
-            "regression": 0.0,
-            "feature": 0.0,
-            "question": 0.0,
-            "docs": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.98,
-          "actionable": 1.0,
-          "severity": 0.6533333333333333,
-          "security": 0.03,
-          "spec": 0.07,
-          "downstream": 0.05
-        },
-        "input_digest": "f02a6e9d31f815cf700d17d666a1d3e489153c7522870a06ce31b5c6e047720d",
-        "reasons": [
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 1.96
-          },
-          {
-            "signal": "neglect",
-            "text": "awaiting maintainer reply",
-            "contribution": 1.5
-          },
-          {
-            "signal": "handled",
-            "text": "assigned or linked to a fix",
-            "contribution": -1.5
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.47
-          },
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 1.09
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.65
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 0.12
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.08
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.07
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": [
-          5883
-        ]
       },
       {
         "number": 6080,
@@ -7856,11 +6925,11 @@
         ]
       },
       {
-        "number": 6491,
-        "title": "Proxy: server-initiated input fails for legacy clients when the backend is modern, and clients without elicitation never get the backend's fallback",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/6491",
-        "updated_at": "2026-11-14T20:27:06+00:00",
-        "score": 6.2,
+        "number": 6677,
+        "title": "proxy_mcp leaks its HTTP client on non-connect send failures",
+        "url": "https://github.com/PrefectHQ/fastmcp/issues/6677",
+        "updated_at": "2026-11-22T17:11:27+00:00",
+        "score": 6.18,
         "kind": "bug",
         "judged": true,
         "assessment": {
@@ -7872,29 +6941,24 @@
             "docs": 0.0,
             "other": 0.0
           },
-          "repro": 0.43,
+          "repro": 0.48,
           "actionable": 1.0,
-          "severity": 0.6833333333333332,
-          "security": 0.04,
-          "spec": 0.77,
-          "downstream": 0.32
+          "severity": 0.62,
+          "security": 0.08,
+          "spec": 0.04,
+          "downstream": 0.05
         },
-        "input_digest": "4fa8b54537181792b52b309994b90a70da76b3f088bcc07217c02e6c0f476d9e",
+        "input_digest": "70e3fef6aece200720b728c346ed1c61214136416830fdf2e71b9224a115d149",
         "reasons": [
           {
             "signal": "severity",
             "text": "potential impact",
-            "contribution": 2.05
+            "contribution": 1.86
           },
           {
-            "signal": "neglect",
-            "text": "awaiting maintainer reply",
-            "contribution": 1.5
-          },
-          {
-            "signal": "handled",
-            "text": "assigned or linked to a fix",
-            "contribution": -1.5
+            "signal": "regression",
+            "text": "possible regression",
+            "contribution": 1.13
           },
           {
             "signal": "actionable",
@@ -7902,24 +6966,14 @@
             "contribution": 1.0
           },
           {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.77
-          },
-          {
             "signal": "repro",
             "text": "reproduction provided",
-            "contribution": 0.65
+            "contribution": 0.72
           },
           {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.48
-          },
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 0.46
+            "signal": "release_proximity",
+            "text": "reported near a relevant release",
+            "contribution": 0.68
           },
           {
             "signal": "engagement",
@@ -7927,92 +6981,9 @@
             "contribution": 0.36
           },
           {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.28
-          },
-          {
             "signal": "security",
             "text": "security-sensitive report",
-            "contribution": 0.16
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": [
-          6516
-        ]
-      },
-      {
-        "number": 6023,
-        "title": "Client(config, init_timeout=N) does not bound backend connects in a multi-server MCPConfig",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/6023",
-        "updated_at": "2026-10-25T15:34:25+00:00",
-        "score": 6.19,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 1.0,
-            "regression": 0.0,
-            "feature": 0.0,
-            "question": 0.0,
-            "docs": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.98,
-          "actionable": 1.0,
-          "severity": 0.6866666666666666,
-          "security": 0.04,
-          "spec": 0.1,
-          "downstream": 0.05
-        },
-        "input_digest": "7b4c2f1d3e73fff98eeaf02e138dc7444349bfc9389e5457fbab3f5aa0afcdfd",
-        "reasons": [
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 2.06
-          },
-          {
-            "signal": "neglect",
-            "text": "awaiting maintainer reply",
-            "contribution": 1.5
-          },
-          {
-            "signal": "handled",
-            "text": "assigned or linked to a fix",
-            "contribution": -1.5
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.47
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 0.83
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.5
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 0.16
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.1
+            "contribution": 0.32
           },
           {
             "signal": "downstream",
@@ -8022,9 +6993,7 @@
         ],
         "maintainer_replied": false,
         "assigned": false,
-        "linked_prs": [
-          6028
-        ]
+        "linked_prs": []
       },
       {
         "number": 5480,
@@ -8271,11 +7240,11 @@
         ]
       },
       {
-        "number": 6603,
-        "title": "Resource template that repeats a parameter never matches a URI",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/6603",
-        "updated_at": "2026-11-20T16:39:06+00:00",
-        "score": 5.65,
+        "number": 6674,
+        "title": "fastmcp call: a non-finite CLI argument silently reaches the server as null",
+        "url": "https://github.com/PrefectHQ/fastmcp/issues/6674",
+        "updated_at": "2026-11-22T07:56:56+00:00",
+        "score": 5.79,
         "kind": "bug",
         "judged": true,
         "assessment": {
@@ -8287,49 +7256,54 @@
             "docs": 0.0,
             "other": 0.0
           },
-          "repro": 0.98,
-          "actionable": 0.965,
-          "severity": 0.59,
-          "security": 0.04,
-          "spec": 0.42,
+          "repro": 0.93,
+          "actionable": 1.0,
+          "severity": 0.7999999999999999,
+          "security": 0.06,
+          "spec": 0.32,
           "downstream": 0.06
         },
-        "input_digest": "b386c88707b1ac5b8a3f5277b63af727461ca729a86edbc2517fa29831401777",
+        "input_digest": "9d6ea4cfc68b7069cda153a654e26491ac8583481fcc6f4e66be96e6c3c58b59",
         "reasons": [
           {
             "signal": "severity",
             "text": "potential impact",
-            "contribution": 1.77
+            "contribution": 2.4
+          },
+          {
+            "signal": "handled",
+            "text": "assigned or linked to a fix",
+            "contribution": -1.5
           },
           {
             "signal": "repro",
             "text": "reproduction provided",
-            "contribution": 1.47
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 0.96
+            "contribution": 1.4
           },
           {
             "signal": "regression",
             "text": "possible regression",
-            "contribution": 0.48
+            "contribution": 1.15
           },
           {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.42
+            "signal": "actionable",
+            "text": "actionable report",
+            "contribution": 1.0
           },
           {
             "signal": "release_proximity",
             "text": "reported near a relevant release",
-            "contribution": 0.29
+            "contribution": 0.69
+          },
+          {
+            "signal": "spec",
+            "text": "protocol conformance",
+            "contribution": 0.32
           },
           {
             "signal": "security",
             "text": "security-sensitive report",
-            "contribution": 0.16
+            "contribution": 0.24
           },
           {
             "signal": "downstream",
@@ -8339,7 +7313,9 @@
         ],
         "maintainer_replied": false,
         "assigned": false,
-        "linked_prs": []
+        "linked_prs": [
+          6681
+        ]
       },
       {
         "number": 5812,
@@ -8494,89 +7470,6 @@
         "maintainer_replied": false,
         "assigned": false,
         "linked_prs": []
-      },
-      {
-        "number": 5744,
-        "title": "Unregistered-client HTML error page discards the registration and discovery endpoints",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/5744",
-        "updated_at": "2026-11-02T18:46:30+00:00",
-        "score": 5.45,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 1.0,
-            "regression": 0.0,
-            "feature": 0.0,
-            "question": 0.0,
-            "docs": 0.0,
-            "other": 0.0
-          },
-          "repro": 0.97,
-          "actionable": 1.0,
-          "severity": 0.4666666666666666,
-          "security": 0.07,
-          "spec": 0.1,
-          "downstream": 0.05
-        },
-        "input_digest": "c7614df2450d414c5fd229e9b9c4dbe07a819690dea29b8303a5e4a8b3e8cfb1",
-        "reasons": [
-          {
-            "signal": "neglect",
-            "text": "awaiting maintainer reply",
-            "contribution": 1.5
-          },
-          {
-            "signal": "handled",
-            "text": "assigned or linked to a fix",
-            "contribution": -1.5
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.46
-          },
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 1.4
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 0.71
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.43
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 0.28
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.1
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.08
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": true,
-        "linked_prs": [
-          5745
-        ]
       },
       {
         "number": 4869,
@@ -9867,94 +8760,6 @@
         "linked_prs": []
       },
       {
-        "number": 5098,
-        "title": "from_openapi: cookie parameters with array/object values send Python repr strings",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/5098",
-        "updated_at": "2026-11-03T08:45:10+00:00",
-        "score": 3.77,
-        "kind": "bug",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "question": 0.0,
-            "regression": 0.0,
-            "docs": 0.0,
-            "feature": 0.0,
-            "other": 0.0,
-            "bug": 1.0
-          },
-          "repro": 0.98,
-          "actionable": 1.0,
-          "severity": 0.48666666666666664,
-          "security": 0.1,
-          "spec": 0.13,
-          "downstream": 0.07
-        },
-        "input_digest": "ca939859742ba9412124460534928b9ac8d978d3a723e7ecd1a29e0a8a685a74",
-        "reasons": [
-          {
-            "signal": "deprioritized",
-            "text": "low-priority label",
-            "contribution": -1.5
-          },
-          {
-            "signal": "handled",
-            "text": "assigned or linked to a fix",
-            "contribution": -1.5
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 1.47
-          },
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 1.46
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 1.0
-          },
-          {
-            "signal": "regression",
-            "text": "possible regression",
-            "contribution": 0.98
-          },
-          {
-            "signal": "engagement",
-            "text": "community engagement",
-            "contribution": 0.64
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.59
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 0.4
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.13
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.11
-          }
-        ],
-        "maintainer_replied": true,
-        "assigned": false,
-        "linked_prs": [
-          6171
-        ]
-      },
-      {
         "number": 6383,
         "title": "Add ZITADEL OAuth Provider for FastMCP Authentication",
         "url": "https://github.com/PrefectHQ/fastmcp/issues/6383",
@@ -11243,6 +10048,87 @@
             "signal": "repro",
             "text": "reproduction provided",
             "contribution": 0.09
+          },
+          {
+            "signal": "downstream",
+            "text": "downstream integration affected",
+            "contribution": 0.06
+          }
+        ],
+        "maintainer_replied": false,
+        "assigned": false,
+        "linked_prs": []
+      },
+      {
+        "number": 6600,
+        "title": "[doc] MCP JSON Configuration : show HTTP connection too?",
+        "url": "https://github.com/PrefectHQ/fastmcp/issues/6600",
+        "updated_at": "2026-11-20T14:27:01+00:00",
+        "score": 2.93,
+        "kind": "docs",
+        "judged": true,
+        "assessment": {
+          "kind": {
+            "bug": 0.0,
+            "regression": 0.0,
+            "feature": 0.33,
+            "question": 0.0,
+            "docs": 0.67,
+            "other": 0.0
+          },
+          "repro": 0.39,
+          "actionable": 0.745,
+          "severity": 0.13999999999999999,
+          "security": 0.02,
+          "spec": 0.14,
+          "downstream": 0.04
+        },
+        "input_digest": "179e405fcc0da22d5b701e0ddaa039066a94fba7a319e9a0fbcc078a2f412dfb",
+        "reasons": [
+          {
+            "signal": "neglect",
+            "text": "awaiting maintainer reply",
+            "contribution": 1.5
+          },
+          {
+            "signal": "feature_label",
+            "text": "enhancement label",
+            "contribution": -1.0
+          },
+          {
+            "signal": "actionable",
+            "text": "actionable report",
+            "contribution": 0.74
+          },
+          {
+            "signal": "release_proximity",
+            "text": "reported near a relevant release",
+            "contribution": 0.73
+          },
+          {
+            "signal": "repro",
+            "text": "reproduction provided",
+            "contribution": 0.58
+          },
+          {
+            "signal": "severity",
+            "text": "potential impact",
+            "contribution": 0.42
+          },
+          {
+            "signal": "feature",
+            "text": "enhancement request",
+            "contribution": -0.33
+          },
+          {
+            "signal": "spec",
+            "text": "protocol conformance",
+            "contribution": 0.14
+          },
+          {
+            "signal": "security",
+            "text": "security-sensitive report",
+            "contribution": 0.08
           },
           {
             "signal": "downstream",
@@ -13079,82 +11965,6 @@
             "signal": "spec",
             "text": "protocol conformance",
             "contribution": 0.07
-          }
-        ],
-        "maintainer_replied": false,
-        "assigned": false,
-        "linked_prs": []
-      },
-      {
-        "number": 6600,
-        "title": "[doc] MCP JSON Configuration : show HTTP connection too?",
-        "url": "https://github.com/PrefectHQ/fastmcp/issues/6600",
-        "updated_at": "2026-11-20T14:27:01+00:00",
-        "score": 1.43,
-        "kind": "docs",
-        "judged": true,
-        "assessment": {
-          "kind": {
-            "bug": 0.0,
-            "regression": 0.0,
-            "feature": 0.33,
-            "question": 0.0,
-            "docs": 0.67,
-            "other": 0.0
-          },
-          "repro": 0.39,
-          "actionable": 0.745,
-          "severity": 0.13999999999999999,
-          "security": 0.02,
-          "spec": 0.14,
-          "downstream": 0.04
-        },
-        "input_digest": "179e405fcc0da22d5b701e0ddaa039066a94fba7a319e9a0fbcc078a2f412dfb",
-        "reasons": [
-          {
-            "signal": "feature_label",
-            "text": "enhancement label",
-            "contribution": -1.0
-          },
-          {
-            "signal": "actionable",
-            "text": "actionable report",
-            "contribution": 0.74
-          },
-          {
-            "signal": "release_proximity",
-            "text": "reported near a relevant release",
-            "contribution": 0.73
-          },
-          {
-            "signal": "repro",
-            "text": "reproduction provided",
-            "contribution": 0.58
-          },
-          {
-            "signal": "severity",
-            "text": "potential impact",
-            "contribution": 0.42
-          },
-          {
-            "signal": "feature",
-            "text": "enhancement request",
-            "contribution": -0.33
-          },
-          {
-            "signal": "spec",
-            "text": "protocol conformance",
-            "contribution": 0.14
-          },
-          {
-            "signal": "security",
-            "text": "security-sensitive report",
-            "contribution": 0.08
-          },
-          {
-            "signal": "downstream",
-            "text": "downstream integration affected",
-            "contribution": 0.06
           }
         ],
         "maintainer_replied": false,
