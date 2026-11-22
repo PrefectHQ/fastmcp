@@ -36,6 +36,8 @@ class EventsClientExtension(ClientExtension):
 
     def __init__(self) -> None:
         self._streams: dict[RequestId, MemoryObjectSendStream[Frame]] = {}
+        # Streams ended because their consumer fell behind, to be reopened.
+        self._overflowed: set[RequestId] = set()
         # Per event name: argument path -> x-mcp-header token, from events/list.
         self._header_maps: dict[str, dict[tuple[str, ...], str]] = {}
 
@@ -59,6 +61,13 @@ class EventsClientExtension(ClientExtension):
         if send is not None:
             send.close()
 
+    def _take_overflow(self, subscription_id: RequestId) -> bool:
+        """Whether the stream ended because its backlog filled up."""
+        if subscription_id in self._overflowed:
+            self._overflowed.discard(subscription_id)
+            return True
+        return False
+
     async def _route(self, kind: str, frame: StreamFrame) -> None:
         send = self._streams.get(frame.meta.get(SUBSCRIPTION_ID_META_KEY))
         if send is None:
@@ -66,7 +75,9 @@ class EventsClientExtension(ClientExtension):
         try:
             send.send_nowait((kind, frame))
         except anyio.WouldBlock:
-            logger.warning("Event stream backlog is full; ending the stream")
-            self._close(frame.meta[SUBSCRIPTION_ID_META_KEY])
+            logger.warning("Event stream backlog is full; reopening the stream")
+            subscription_id = frame.meta[SUBSCRIPTION_ID_META_KEY]
+            self._overflowed.add(subscription_id)
+            self._close(subscription_id)
         except anyio.ClosedResourceError:
             pass

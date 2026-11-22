@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import Any, TypeAlias, cast
 
 import anyio
+import anyio.lowlevel
 import mcp_types
 from jsonschema import Draft202012Validator
 from jsonschema.protocols import Validator
@@ -28,6 +29,7 @@ from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from fastmcp.experimental.events._constants import (
     EVENTS_EXTENSION_ID,
+    FORBIDDEN,
     NOT_FOUND,
     UNSUPPORTED,
 )
@@ -46,6 +48,10 @@ from fastmcp.experimental.events.models import (
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.extensions import MethodBinding, ServerExtension
 from fastmcp.server.mixins.mcp_operations import _apply_pagination
+from fastmcp.utilities.async_utils import (
+    call_sync_fn_in_threadpool,
+    is_coroutine_function,
+)
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -53,6 +59,9 @@ logger = get_logger(__name__)
 _EVENTS_METHOD_VERSIONS = frozenset(MODERN_PROTOCOL_VERSIONS)
 _MIN_HEARTBEAT_MS = 1_000
 _MAX_HEARTBEAT_MS = 60_000
+# A check that fails with one of these mid-stream has ended the subscription
+# (access revoked, event type gone), so the stream is terminated, not retried.
+_TERMINAL_CODES = frozenset({NOT_FOUND, FORBIDDEN, UNSUPPORTED})
 
 
 @dataclass
@@ -262,7 +271,12 @@ class EventsExtension(ServerExtension):
         return registration, arguments
 
     async def _check(self, registration: _Registration, poll: EventPoll) -> EventBatch:
-        batch = registration.check(poll)
+        if is_coroutine_function(registration.check):
+            batch = registration.check(poll)
+        else:
+            # Like sync tools, a sync check runs off the event loop so that
+            # blocking I/O in it does not stall every other request.
+            batch = await call_sync_fn_in_threadpool(registration.check, poll)
         if inspect.isawaitable(batch):
             batch = await batch
         return batch
@@ -311,8 +325,10 @@ class EventsExtension(ServerExtension):
         """Serve one push subscription by running its check function on a loop.
 
         The request stays open until the client goes away, which cancels this
-        handler. Between checks the stream carries a heartbeat whenever the
-        granted interval passes with nothing else sent.
+        handler, or until a check fails with an error that ends the
+        subscription (`NotFound`, `Forbidden`, `Unsupported`), which is sent as
+        `notifications/events/terminated`. Between checks the stream carries a
+        heartbeat whenever the granted interval passes with nothing else sent.
         """
         if not self._push:
             raise MCPError(
@@ -370,6 +386,9 @@ class EventsExtension(ServerExtension):
             heartbeat_ms=heartbeat_ms,
         )
         while True:
+            # A check that never awaits must still let cancellation and other
+            # requests in, whatever interval it asks for.
+            await anyio.lowlevel.checkpoint()
             for position, event in enumerate(batch.events, start=1):
                 occurrence = self._occurrence(params.name, event)
                 # Only the batch's cursor is known, so it rides the last event;
@@ -399,7 +418,11 @@ class EventsExtension(ServerExtension):
                     registration, EventPoll(arguments=arguments, cursor=cursor)
                 )
             except MCPError as error:
-                await send("error", error=error.error.model_dump(exclude_none=True))
+                payload = error.error.model_dump(exclude_none=True)
+                if error.error.code in _TERMINAL_CODES:
+                    await send("terminated", error=payload)
+                    return StreamEventsResult(meta=meta)
+                await send("error", error=payload)
                 batch = EventBatch(cursor=cursor)
             except Exception:
                 logger.exception("Check for event %r failed", params.name)

@@ -64,16 +64,19 @@ def _require_events(client: Any) -> None:
         _fail("The server does not advertise the Events extension")
 
 
+# Everything below that comes from the server is untrusted terminal output.
+_safe = client_cli._sanitize_untrusted_text
+
+
 def _describe(event_type: EventType) -> None:
     delivery = ", ".join(event_type.delivery)
-    console.print(f"  [cyan]{event_type.name}[/cyan] [dim]({delivery})[/dim]")
+    console.print(f"  [cyan]{_safe(event_type.name)}[/cyan] [dim]({delivery})[/dim]")
     if event_type.description:
-        text = client_cli._sanitize_untrusted_text(event_type.description)
-        console.print(f"    {text}")
+        console.print(f"    {_safe(event_type.description)}")
     properties = (event_type.input_schema or {}).get("properties") or {}
     for name, schema in properties.items():
         kind = client_cli._json_schema_type_to_str(schema)
-        console.print(f"    [dim]{name}: {kind}[/dim]")
+        console.print(f"    [dim]{_safe(name)}: {_safe(kind)}[/dim]")
 
 
 @events_app.command(name="list")
@@ -121,12 +124,14 @@ async def list_events_command(
 
 
 def _print_occurrence(event: EventOccurrence, cursor: str | None) -> None:
-    eid = client_cli._sanitize_untrusted_text(event.event_id)
-    console.print(f"[green]{event.timestamp}[/green] [cyan]{event.name}[/cyan] {eid}")
+    console.print(
+        f"[green]{_safe(event.timestamp)}[/green] "
+        f"[cyan]{_safe(event.name)}[/cyan] {_safe(event.event_id)}"
+    )
     payload = json.dumps(event.data, indent=2, ensure_ascii=False)
-    console.print(client_cli._sanitize_untrusted_text(payload), highlight=False)
+    console.print(_safe(payload), highlight=False)
     if cursor is not None:
-        console.print(f"[dim]cursor {cursor}[/dim]", highlight=False)
+        console.print(f"[dim]cursor {_safe(cursor)}[/dim]", highlight=False)
 
 
 @events_app.command(name="watch")
@@ -211,9 +216,10 @@ async def watch_command(
             event_types = {t.name: t for t in await list_events(client)}
             event_type = event_types.get(name)
             if event_type is None:
+                available = ", ".join(_safe(t) for t in sorted(event_types))
                 _fail(
-                    f"Unknown event [cyan]{name}[/cyan]. "
-                    f"Available: {', '.join(sorted(event_types)) or 'none'}"
+                    f"Unknown event [cyan]{_safe(name)}[/cyan]. "
+                    f"Available: {available or 'none'}"
                 )
                 return
             subscription_args = client_cli.parse_tool_arguments(
@@ -253,6 +259,6 @@ async def watch_command(
             if subscription.cursor is not None:
                 status.print(
                     f"[dim]{seen} event(s); resume with --cursor "
-                    f"{subscription.cursor}[/dim]",
+                    f"{_safe(subscription.cursor)}[/dim]",
                     highlight=False,
                 )

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import anyio
 import pytest
 from mcp_types import HEADER_MISMATCH
@@ -80,6 +82,30 @@ async def test_push_mirrors_annotated_arguments_into_headers() -> None:
                     break
 
     assert seen[0] == "eu-west1"
+
+
+@pytest.mark.parametrize("delivery", ["poll", "push"])
+async def test_a_subscription_with_a_chosen_delivery_sends_param_headers(
+    delivery: Literal["poll", "push"],
+) -> None:
+    seen: list[str | None] = []
+    server, _ = make_server(seen)
+
+    async with run_server_async(server) as url:
+        async with Client(url, extensions=[EventsClientExtension()]) as client:
+            subscription = subscribe_events(
+                client,
+                "incident.created",
+                {"region": "ap-south1"},
+                cursor="0",
+                delivery=delivery,
+            )
+            with anyio.fail_after(15):
+                async for event in subscription:
+                    assert event.data == {"region": "ap-south1"}
+                    break
+
+    assert seen[0] == "ap-south1"
 
 
 def post_poll(http: TestClient, arguments: dict, headers: dict[str, str]):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from datetime import UTC, datetime
 
 import anyio
@@ -21,8 +22,10 @@ from fastmcp.experimental.events import (
     poll_events_mcp,
     subscribe_events,
 )
+from fastmcp.experimental.events import client as events_client_module
 from fastmcp.experimental.events._constants import (
     EVENTS_EXTENSION_ID,
+    FORBIDDEN,
     NOT_FOUND,
     UNSUPPORTED,
 )
@@ -363,6 +366,84 @@ async def test_push_reports_a_gap_and_keeps_the_stream_through_a_failed_check() 
     assert event.event_id == "recovered"
     assert subscription.truncated is True
     assert subscription.cursor == "next"
+
+
+async def test_push_terminates_when_a_check_reports_access_revoked() -> None:
+    server = FastMCP("channels")
+    events = EventsExtension(poll_interval_ms=10)
+    server.add_extension(events)
+    checks = 0
+
+    @events.event(name="message.posted")
+    def message_posted(poll: EventPoll) -> EventBatch:
+        nonlocal checks
+        checks += 1
+        if checks > 1:
+            raise MCPError(code=FORBIDDEN, message="Forbidden")
+        return EventBatch(cursor="0")
+
+    async with events_client(server) as client:
+        with pytest.raises(MCPError) as exc_info, anyio.fail_after(5):
+            async for _ in subscribe_events(client, "message.posted", delivery="push"):
+                pass
+
+    assert exc_info.value.error.code == FORBIDDEN
+    assert checks == 2
+
+
+async def test_a_sync_check_runs_off_the_event_loop() -> None:
+    server = FastMCP("threads")
+    events = EventsExtension()
+    server.add_extension(events)
+    check_threads: list[int] = []
+
+    @events.event(name="tick")
+    def tick(poll: EventPoll) -> EventBatch:
+        check_threads.append(threading.get_ident())
+        return EventBatch(cursor="0")
+
+    async with events_client(server) as client:
+        await poll_events_mcp(client, "tick")
+
+    assert check_threads and check_threads[0] != threading.get_ident()
+
+
+async def test_a_push_stream_with_no_interval_still_lets_other_tasks_run() -> None:
+    server = FastMCP("busy")
+    events = EventsExtension(poll_interval_ms=0)
+    server.add_extension(events)
+
+    @events.event(name="tick")
+    async def tick(poll: EventPoll) -> EventBatch:
+        return EventBatch(cursor="0")
+
+    async with events_client(server) as client:
+        with anyio.move_on_after(0.2) as scope:
+            async for _ in subscribe_events(client, "tick", delivery="push"):
+                pass
+
+    assert scope.cancelled_caught
+
+
+async def test_a_push_consumer_that_falls_behind_resumes_from_its_cursor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(events_client_module, "_MAX_PENDING_FRAMES", 4)
+    log = [{"key": str(n), "severity": "low"} for n in range(20)]
+
+    received: list[str] = []
+    async with events_client(make_server(log, poll_interval_ms=10)) as client:
+        subscription = subscribe_events(
+            client, "alert.fired", cursor="0", delivery="push"
+        )
+        with anyio.fail_after(10):
+            async for event in subscription:
+                received.append(event.event_id)
+                await anyio.sleep(0.01)
+                if len(received) == len(log):
+                    break
+
+    assert received == [entry["key"] for entry in log]
 
 
 async def test_push_rejects_an_unknown_event_before_any_stream_opens() -> None:

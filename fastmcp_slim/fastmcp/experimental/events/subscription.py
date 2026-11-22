@@ -112,7 +112,14 @@ class EventSubscription:
         return "poll"
 
     async def __aiter__(self) -> AsyncGenerator[EventOccurrence, None]:
-        delivery = self._delivery or await self._choose_delivery()
+        if self._delivery is not None:
+            # Listing records which arguments travel as Mcp-Param-* headers,
+            # which the server requires on every poll and stream.
+            if self.name not in _events_extension(self._client)._header_maps:
+                await list_events(self._client)
+            delivery = self._delivery
+        else:
+            delivery = await self._choose_delivery()
         if delivery == "push":
             try:
                 async with aclosing(self._push()) as events:
@@ -206,16 +213,20 @@ class EventSubscription:
 
             task_group.start_soon(drive)
             quiet_limit = _ACTIVATION_TIMEOUT
-            went_quiet = False
+            reconnect_reason: str | None = None
             try:
                 while True:
                     try:
                         with anyio.fail_after(quiet_limit):
                             kind, frame = await frames.receive()
                     except anyio.EndOfStream:
+                        # A consumer that fell behind loses the frames the
+                        # stream could not hold; reopen from the cursor.
+                        if extension._take_overflow(request_id):
+                            reconnect_reason = "fell behind"
                         break
                     except TimeoutError:
-                        went_quiet = True
+                        reconnect_reason = "went quiet"
                         break
                     if kind == "active":
                         self.cursor = frame.cursor
@@ -247,15 +258,17 @@ class EventSubscription:
             finally:
                 scope.cancel()
                 extension._close(request_id)
+                extension._take_overflow(request_id)
 
-            if failures:
+            if failures and reconnect_reason is None:
                 raise failures[0]
-            if not went_quiet:
+            if reconnect_reason is None:
                 return
             logger.warning(
-                "[%s] Event stream for %r went quiet; reconnecting",
+                "[%s] Event stream for %r %s; reconnecting",
                 client.name,
                 self.name,
+                reconnect_reason,
             )
             await anyio.sleep(random.uniform(0, 1))  # noqa: S311
 

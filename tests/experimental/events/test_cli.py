@@ -144,3 +144,25 @@ async def test_watch_without_server_support_exits(capsys: pytest.CaptureFixture[
     with resolve, build, pytest.raises(SystemExit):
         await watch_command("fake", "alert.fired")
     assert "does not advertise the Events extension" in capsys.readouterr().out
+
+
+async def test_watch_escapes_markup_in_what_the_server_sends(
+    capsys: pytest.CaptureFixture[str],
+):
+    server = FastMCP("hostile")
+    events = EventsExtension(poll_interval_ms=10)
+    server.add_extension(events)
+
+    @events.event(name="tick")
+    def tick(poll: EventPoll) -> EventBatch:
+        return EventBatch(
+            events=[Event(data={}, event_id="e1")], cursor="[link=https://x.test]c"
+        )
+
+    resolve, build = patch_client(server)
+    with resolve, build, anyio.fail_after(10):
+        await watch_command("fake", "tick", cursor="0", count=1, delivery="poll")
+
+    captured = capsys.readouterr()
+    assert "cursor [link=https://x.test]c" in captured.out
+    assert "--cursor [link=https://x.test]c" in captured.err
