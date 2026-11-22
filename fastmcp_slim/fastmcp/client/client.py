@@ -1545,8 +1545,12 @@ class Client(
                 tools = await client.list_tools()
         ```
 
-        Raises `ListenNotSupportedError` on a handshake-era connection, where
-        `message_handler` receives the same notifications instead.
+        Raises `mcp.client.subscriptions.ListenNotSupportedError` on a
+        handshake-era connection, where `message_handler` receives the same
+        notifications instead. Iterating raises
+        `mcp.client.subscriptions.SubscriptionLost` when the stream ends from
+        the server side (shutdown, restart, or a dropped connection); events
+        are not replayed, so refetch after reconnecting.
         """
         return _sdk_listen(
             self.session,

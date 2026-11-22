@@ -1083,7 +1083,7 @@ async def enable_reports_later() -> None:
     await mcp.notify_tools_changed()
 ```
 
-On the `2026-07-28` protocol, a server has no standing channel to the client, so change notifications reach only clients that opened a [listen stream](/clients/notifications#listening-for-changes), and `notify_tools_changed()` is how a server publishes to them. A mounted server's call also reaches clients listening on the servers it is mounted on, and a proxy relays list changes it receives from its upstream server. Listen streams live in the server process, so with several workers or replicas a call reaches only the clients connected to that process.
+On the `2026-07-28` protocol, a server has no standing channel to the client, so change notifications reach only clients that opened a [listen stream](/clients/notifications#listening-for-changes), and `notify_tools_changed()` is how a server publishes to them. A server attached to another, with `mount()`, `add_provider()`, or `providers=`, also reaches clients listening on that parent. A proxy relays a list change from its upstream server only when the notification arrives during a request the proxy is forwarding. Because the proxy opens upstream sessions per request, a change the upstream announces between requests does not reach the proxy's clients. Listen streams live in the server process, so with several workers or replicas a call reaches only the clients connected to that process.
 
 Clients on earlier, handshake-era protocol versions do not open listen streams and do not receive `notify_tools_changed()`. For them, the tool handling a request can tell the calling session by sending `notifications/tools/list_changed` itself:
 

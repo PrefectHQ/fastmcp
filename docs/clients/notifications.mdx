@@ -190,7 +190,30 @@ async def watch_tools() -> None:
 
 `listen()` also accepts `prompts_list_changed`, `resources_list_changed`, and `resource_subscriptions` (a list of resource URIs). While a stream is open, its events also reach the message handler. With [response caching](/clients/client#response-caching) enabled, the matching cached list is cleared before each event is yielded, so refetching right away returns the new list.
 
-A stream ends when the server closes it or the connection drops. Events are not replayed, so open a new stream and refetch after reconnecting. On a handshake-era connection `listen()` raises `ListenNotSupportedError`, and notifications reach the message handler without one.
+Leaving the `listen()` block closes the stream. When the stream ends from the server side instead, because a FastMCP server shut down or restarted or the connection dropped, iterating raises `SubscriptionLost` rather than ending the loop. The loop ends without an exception only when a server closes the stream with the protocol's graceful close, which FastMCP servers do not send. Events are not replayed, so after `SubscriptionLost`, reconnect and refetch before opening a new stream. On a handshake-era connection, entering `listen()` raises `ListenNotSupportedError`, and notifications reach the message handler without a stream. Both exceptions come from `mcp.client.subscriptions`:
+
+```python
+from pathlib import Path
+
+from mcp.client.subscriptions import ListenNotSupportedError, SubscriptionLost
+
+from fastmcp import Client
+
+client = Client(Path("my_mcp_server.py"))
+
+
+async def watch_tools_until_lost() -> None:
+    async with client:
+        try:
+            async with client.listen(tools_list_changed=True) as subscription:
+                async for event in subscription:
+                    tools = await client.list_tools()
+                    print(f"Tools changed: {[tool.name for tool in tools]}")
+        except ListenNotSupportedError:
+            print("Handshake-era server: handle changes in the message handler")
+        except SubscriptionLost:
+            print("The server ended the stream; reconnect and refetch")
+```
 
 ## Server Requests
 
