@@ -8,6 +8,14 @@
       : new URL("pbt-coverage.json", window.location.href).href;
   const COMMIT_URL = "https://github.com/PrefectHQ/fastmcp/commit/";
   const SOURCE_URL = "https://github.com/PrefectHQ/fastmcp/blob/";
+  const RUNS_URL =
+    "https://github.com/PrefectHQ/fastmcp/actions/workflows/pbt-coverage.yml";
+  // Rebuilt on every relevant push and daily, so anything older than a day
+  // and a half means the rebuild is failing or not running.
+  const STALE_HOURS = 36;
+  // #pbt-coverage/fastmcp.server.proxy links to one module.
+  const SECTION = "pbt-coverage";
+  const moduleHash = (name) => `#${SECTION}/${name}`;
   const BINS = [
     { min: 0, label: "Not reached", token: "--pbt-0" },
     { min: 0.000001, label: "Under 10%", token: "--pbt-1" },
@@ -148,6 +156,45 @@
     );
   }
 
+  // The module a URL names, if any.
+  function linked() {
+    const hash = decodeURIComponent(window.location.hash.slice(1));
+    return hash.startsWith(`${SECTION}/`)
+      ? hash.slice(SECTION.length + 1)
+      : null;
+  }
+
+  function setScope(next) {
+    scope = next;
+    document
+      .querySelectorAll("[data-pbt-scope]")
+      .forEach((b) =>
+        b.setAttribute("aria-pressed", b.dataset.pbtScope === next),
+      );
+  }
+
+  // Select and draw the module the URL names, widening to all modules for
+  // an internal one. Returns false, drawing nothing, for an unknown name.
+  function follow() {
+    const name = linked();
+    const m = name && report?.modules.find((x) => x.module === name);
+    if (!m || !m.statements) return false;
+    if (!m.public) setScope("all");
+    selected = m.module;
+    draw();
+    return true;
+  }
+
+  // Keep the address bar pointing at the selected module without adding
+  // history entries or jumping the page.
+  function remember(name) {
+    try {
+      history.replaceState(null, "", moduleHash(name));
+    } catch {
+      // Some embedded viewers refuse history changes; selection still works.
+    }
+  }
+
   function legend() {
     const host = el("pbt-legend");
     host.replaceChildren();
@@ -172,8 +219,21 @@
     const head = make("div");
     const link = make("a", m.module);
     link.href = `${SOURCE_URL}${report.source_commit || "main"}/${m.path}`;
+    const anchor = make("a", "#", "anchor");
+    anchor.href = moduleHash(m.module);
+    anchor.setAttribute("aria-label", `Link to ${m.module}`);
+    anchor.title = "Link to this module";
+    anchor.addEventListener("click", (event) => {
+      event.preventDefault();
+      remember(m.module);
+      navigator.clipboard
+        ?.writeText(anchor.href)
+        .then(() => (anchor.textContent = "# copied"))
+        .catch(() => {});
+    });
     head.append(
       link,
+      anchor,
       ` · ${pct(share(m))} of ${m.statements.toLocaleString()} lines · ${m.functions_hit}/${m.functions} functions · ${m.tests} tests${m.public ? "" : " · internal"}`,
     );
     host.append(head);
@@ -309,6 +369,7 @@
       if (index < 0) return;
       selected = cells[index].module.module;
       cursor = order.indexOf(index);
+      remember(selected);
       show(index);
     });
     graph.addEventListener("focus", () => {
@@ -356,8 +417,12 @@
       (a, b) => share(b) - share(a) || a.module.localeCompare(b.module),
     )) {
       const row = make("tr");
+      const name = make("td");
+      const link = make("a", m.module);
+      link.href = moduleHash(m.module);
+      name.append(link);
       row.append(
-        make("td", m.module),
+        name,
         make("td", `${pct(share(m))} (${m.hit}/${m.statements})`),
         make("td", `${m.functions_hit}/${m.functions}`),
         make("td", String(m.tests)),
@@ -388,12 +453,28 @@
       ` from ${files} property-based test file${files === 1 ? "" : "s"}.`,
     );
     const notice = el("pbt-notice");
-    notice.hidden = report.suite.status === "passed";
+    const parts = [];
     if (report.suite.status === "no_suite")
-      notice.textContent =
-        "No test on this commit imports hypothesis yet, so nothing is reached. The map fills in when property-based tests land.";
+      parts.push(
+        "No test on this commit imports hypothesis yet, so nothing is reached. The map fills in when property-based tests land.",
+      );
     if (report.suite.status === "failed")
-      notice.textContent = `The property-based suite failed (pytest exit ${report.suite.pytest_exit_code}). Coverage below is from the run as far as it got.`;
+      parts.push(
+        `The property-based suite failed (pytest exit ${report.suite.pytest_exit_code}). Coverage below is from the run as far as it got.`,
+      );
+    const age = (Date.now() - Date.parse(report.generated_at)) / 3600000;
+    const stale = age > STALE_HOURS;
+    if (stale)
+      parts.push(
+        `This was measured ${age < 48 ? `${Math.floor(age)} hours` : `${Math.floor(age / 24)} days`} ago, but the map rebuilds daily, so its rebuild is failing or not running.`,
+      );
+    notice.replaceChildren(...parts.map((p) => `${p} `));
+    if (stale) {
+      const runs = make("a", "See the rebuild runs.");
+      runs.href = RUNS_URL;
+      notice.append(runs);
+    }
+    notice.hidden = !parts.length;
   }
 
   async function load() {
@@ -406,7 +487,7 @@
       report = next;
       try {
         freshness();
-        draw();
+        if (previous || !follow()) draw();
       } catch (error) {
         report = previous;
         throw error;
@@ -442,13 +523,11 @@
 
   document.querySelectorAll("[data-pbt-scope]").forEach((button) =>
     button.addEventListener("click", () => {
-      scope = button.dataset.pbtScope;
-      document
-        .querySelectorAll("[data-pbt-scope]")
-        .forEach((b) => b.setAttribute("aria-pressed", b === button));
+      setScope(button.dataset.pbtScope);
       if (report) draw();
     }),
   );
+  window.addEventListener("hashchange", () => linked() && follow());
   el("pbt-data").href = PBT_URL;
   legend();
   describe(null);

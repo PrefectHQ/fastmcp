@@ -2,6 +2,11 @@ name: Maintenance status
 on:
   schedule:
     - cron: "0 13,21 * * *" # 1 PM and 9 PM UTC
+  # Ship page changes when they merge instead of at the next scheduled run.
+  push:
+    branches: [main]
+    paths:
+      - "status-site/**"
   workflow_dispatch:
   pull_request:
     paths:

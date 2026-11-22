@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="style.css" />
     <script src="app.js" defer></script>
     <script src="pbt.js" defer></script>
+    <script src="anchors.js" defer></script>
   </head>
   <body>
     <main>
@@ -31,9 +32,11 @@
         Reading public history…
       </p>
       <p id="notice" class="notice" hidden></p>
-      <section aria-labelledby="backlog-heading">
+      <section id="issues-and-prs" aria-labelledby="backlog-heading">
         <div class="section-heading">
-          <h2 id="backlog-heading">Open issues &amp; pull requests</h2>
+          <h2 id="backlog-heading">
+            Open issues &amp; pull requests<a class="anchor" href="#issues-and-prs" aria-label="Link to this section">#</a>
+          </h2>
           <div class="ranges" role="group" aria-label="Time range">
             <button data-days="7">7d</button
             ><button data-days="30" aria-pressed="true">30d</button
@@ -53,16 +56,20 @@
           <a href="#method">About the data</a>
         </p>
       </section>
-      <section aria-labelledby="recent-heading">
+      <section id="yesterday-and-today" aria-labelledby="recent-heading">
         <div class="section-heading">
-          <h2 id="recent-heading">Yesterday and today</h2>
+          <h2 id="recent-heading">
+            Yesterday and today<a class="anchor" href="#yesterday-and-today" aria-label="Link to this section">#</a>
+          </h2>
           <span class="caption">America/Chicago · today is partial</span>
         </div>
         <div id="recent" class="recent"></div>
       </section>
-      <section aria-labelledby="activity-heading">
+      <section id="incoming-and-closed" aria-labelledby="activity-heading">
         <div class="section-heading">
-          <h2 id="activity-heading">Incoming &amp; closed</h2>
+          <h2 id="activity-heading">
+            Incoming &amp; closed<a class="anchor" href="#incoming-and-closed" aria-label="Link to this section">#</a>
+          </h2>
           <div class="ranges" role="group" aria-label="Activity type">
             <button data-kind="issues" aria-pressed="true">Issues</button
             ><button data-kind="prs">Pull requests</button>
@@ -83,8 +90,10 @@
           <div id="detail-items"></div>
         </details>
       </section>
-      <section aria-labelledby="triage-heading">
-        <h2 id="triage-heading">Where review can help</h2>
+      <section id="where-review-can-help" aria-labelledby="triage-heading">
+        <h2 id="triage-heading">
+            Where review can help<a class="anchor" href="#where-review-can-help" aria-label="Link to this section">#</a>
+          </h2>
         <p class="caption">
           Oldest non-draft contributor PR leads, not approval or closure
           recommendations. Contributors may still be revising them. Read the
@@ -104,9 +113,11 @@
         </p>
         <a id="triage-data" href="triage.json">Download triage JSON</a>
       </section>
-      <section aria-labelledby="pbt-heading">
+      <section id="pbt-coverage" aria-labelledby="pbt-heading">
         <div class="section-heading">
-          <h2 id="pbt-heading">Property-based test coverage</h2>
+          <h2 id="pbt-heading">
+            Property-based test coverage<a class="anchor" href="#pbt-coverage" aria-label="Link to this section">#</a>
+          </h2>
           <div class="ranges" role="group" aria-label="Modules shown">
             <button data-pbt-scope="public" aria-pressed="true">
               Public API</button
@@ -136,7 +147,9 @@
         <a id="pbt-data" href="pbt-coverage.json">Download coverage JSON</a>
       </section>
       <section id="method" class="method" aria-labelledby="method-heading">
-        <h2 id="method-heading">About the data</h2>
+        <h2 id="method-heading">
+          About the data<a class="anchor" href="#method" aria-label="Link to this section">#</a>
+        </h2>
         <p>
           Recorded counts began October 16, 2026, from the existing half-hourly
           backlog collector. Earlier counts are reconstructed from creation and
