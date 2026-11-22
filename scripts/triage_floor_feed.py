@@ -161,6 +161,72 @@ def xrpc(pds: str, method: str, body: dict, token: str | None = None) -> dict:
         raise RuntimeError(f"{method} failed with HTTP {exc.code}") from None
 
 
+def xrpc_get(pds: str, method: str, params: dict) -> dict | None:
+    query = "&".join(f"{k}={v}" for k, v in params.items())
+    try:
+        with urllib.request.urlopen(
+            f"{pds.rstrip('/')}/xrpc/{method}?{query}", timeout=30
+        ) as response:
+            return json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        if exc.code in (400, 404):  # RecordNotFound
+            return None
+        raise RuntimeError(f"{method} failed with HTTP {exc.code}") from None
+
+
+def put_snapshot(pds: str, did: str, token: str, snap: dict) -> bool:
+    """Write the snapshot unless a run that collected later already did.
+
+    Runs overlap, so a run that read GitHub before a close could finish after
+    the run that saw it. Compare-and-swap on the record's CID, and give way to
+    any snapshot collected after ours.
+    """
+    for _ in range(3):
+        current = xrpc_get(
+            pds,
+            "com.atproto.repo.getRecord",
+            {"repo": did, "collection": f"{NSID}.snapshot", "rkey": "self"},
+        )
+        if current and current["value"].get("updatedAt", "") >= snap["updatedAt"]:
+            return False
+        body = {
+            "repo": did,
+            "collection": f"{NSID}.snapshot",
+            "rkey": "self",
+            "record": snap,
+            "validate": False,
+        }
+        if current:
+            body["swapRecord"] = current["cid"]
+        try:
+            xrpc(pds, "com.atproto.repo.putRecord", body, token)
+            return True
+        except RuntimeError as exc:
+            if "HTTP 400" not in str(exc):  # InvalidSwap: someone wrote first
+                raise
+    return False
+
+
+def recent_reviews(now: datetime) -> list[tuple[str, dict]]:
+    """Reviews from the last two hours, read from the repo's event feed.
+
+    Reviews on fork PRs run their workflow without secrets, so they are
+    collected here by trusted runs instead of from their own trigger.
+    """
+    out = []
+    for e in gh(f"repos/{REPO}/events?per_page=100"):
+        if e.get("type") != "PullRequestReviewEvent":
+            continue
+        at = datetime.fromisoformat(e["created_at"].replace("Z", "+00:00"))
+        if now - at > timedelta(hours=2):
+            continue
+        payload = {**e.get("payload", {}), "sender": e.get("actor") or {}}
+        record = to_event("pull_request_review", payload, at)
+        if record:
+            out.append((f"rv{e['id']}", record))
+    return out
+
+
 ACCESS_TTL = timedelta(minutes=90)  # bsky access tokens live about two hours
 
 
@@ -270,18 +336,24 @@ def main() -> int:
             }
         )
     if snap:
-        xrpc(
-            pds,
-            "com.atproto.repo.putRecord",
-            {
+        put_snapshot(pds, did, token, snap)
+    listed = xrpc_get(
+        pds,
+        "com.atproto.repo.listRecords",
+        {"repo": did, "collection": f"{NSID}.event", "limit": "100"},
+    )
+    seen = {r["uri"].rsplit("/", 1)[-1] for r in (listed or {}).get("records", [])}
+    for rkey, record in recent_reviews(now):
+        if rkey not in seen:
+            # putRecord, not create: two overlapping runs may both pick it up
+            body = {
                 "repo": did,
-                "collection": f"{NSID}.snapshot",
-                "rkey": "self",
-                "record": snap,
+                "collection": f"{NSID}.event",
+                "rkey": rkey,
+                "record": record,
                 "validate": False,
-            },
-            token,
-        )
+            }
+            xrpc(pds, "com.atproto.repo.putRecord", body, token)
     if writes:
         xrpc(
             pds,

@@ -5,7 +5,8 @@
 # SECURITY: pull_request_target runs with secrets, so this workflow never checks
 # out or runs PR-head code; it reads only the event payload and the GitHub API.
 # The cached session is encrypted with the app password, which PR runs from
-# forks cannot read.
+# forks cannot read. Reviews are picked up from the repo's event feed by
+# these runs, since reviews on fork PRs trigger workflows without secrets.
 name: Triage floor feed
 
 on:
@@ -16,8 +17,6 @@ on:
       [opened, reopened, closed, labeled, ready_for_review, converted_to_draft]
   issue_comment:
     types: [created]
-  pull_request_review:
-    types: [submitted]
   release:
     types: [published]
   schedule:

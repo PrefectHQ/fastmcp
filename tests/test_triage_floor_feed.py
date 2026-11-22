@@ -105,3 +105,66 @@ def test_stale_session_refreshes(tmp_path, monkeypatch):
     assert feed.session("https://pds", str(path), NOW) == ("did:plc:x", "a2")
     assert calls == ["com.atproto.server.refreshSession"]
     assert json.loads(path.read_text())["refreshJwt"] == "r2"
+
+
+def test_snapshot_gives_way_to_a_newer_one(monkeypatch):
+    newer = {"cid": "c1", "value": {"updatedAt": "2026-11-22T06:00:05.000Z"}}
+    monkeypatch.setattr(feed, "xrpc_get", lambda *a, **k: newer)
+    monkeypatch.setattr(
+        feed,
+        "xrpc",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not write")),
+    )
+    assert (
+        feed.put_snapshot(
+            "https://pds", "did:plc:x", "t", {"updatedAt": "2026-11-22T06:00:00.000Z"}
+        )
+        is False
+    )
+
+
+def test_snapshot_swaps_on_the_cid_it_read(monkeypatch):
+    older = {"cid": "c1", "value": {"updatedAt": "2026-11-22T05:00:00.000Z"}}
+    bodies = []
+    monkeypatch.setattr(feed, "xrpc_get", lambda *a, **k: older)
+    monkeypatch.setattr(
+        feed, "xrpc", lambda pds, method, body, token=None: bodies.append(body) or {}
+    )
+    assert (
+        feed.put_snapshot(
+            "https://pds", "did:plc:x", "t", {"updatedAt": "2026-11-22T06:00:00.000Z"}
+        )
+        is True
+    )
+    assert bodies[0]["swapRecord"] == "c1"
+
+
+def test_recent_reviews_come_from_the_event_feed(monkeypatch):
+    events = [
+        {
+            "id": "1",
+            "type": "PullRequestReviewEvent",
+            "created_at": "2026-11-22T05:30:00Z",
+            "actor": {"login": "nate"},
+            "payload": {
+                "action": "created",
+                "pull_request": {"number": 9, "title": "t"},
+            },
+        },
+        {
+            "id": "2",
+            "type": "PullRequestReviewEvent",
+            "created_at": "2026-11-21T05:30:00Z",
+            "actor": {"login": "old"},
+            "payload": {"pull_request": {"number": 8}},
+        },
+        {
+            "id": "3",
+            "type": "PushEvent",
+            "created_at": "2026-11-22T05:59:00Z",
+            "payload": {},
+        },
+    ]
+    monkeypatch.setattr(feed, "gh", lambda *a, **k: events)
+    reviews = feed.recent_reviews(NOW)
+    assert [(k, r["kind"], r["number"]) for k, r in reviews] == [("rv1", "review", 9)]
