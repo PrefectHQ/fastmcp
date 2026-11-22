@@ -8,12 +8,13 @@ import httpx2
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 from mcp.shared.auth import OAuthClientInformationFull
-from pydantic import AnyUrl
+from pydantic import AnyHttpUrl, AnyUrl
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
+from fastmcp.server.auth.cimd import CIMDDocument, CIMDFetcher, CIMDFetchError
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
-from fastmcp.server.auth.oauth_proxy.models import OAuthTransaction
+from fastmcp.server.auth.oauth_proxy.models import OAuthTransaction, ProxyDCRClient
 from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
 
 
@@ -123,6 +124,40 @@ class TestOAuthProxyInitialization:
         proxy.update_default_scopes(["openid", "email", "calendar"])
         assert proxy._default_scope_str == "openid email calendar"
 
+    def test_cimd_manager_receives_valid_scopes(self, jwt_verifier):
+        """The CIMD manager must know the proxy's scope allowlist."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://api.example.com",
+            valid_scopes=["read"],
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+            enable_cimd=True,
+        )
+        assert proxy._cimd_manager is not None
+        assert proxy._cimd_manager.valid_scopes == ["read"]
+
+    def test_cimd_manager_valid_scopes_fall_back_to_required_scopes(self, jwt_verifier):
+        """Without valid_scopes, required_scopes gate CIMD documents."""
+        jwt_verifier.required_scopes = ["read", "write"]
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://api.example.com",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+            enable_cimd=True,
+        )
+        assert proxy._cimd_manager is not None
+        assert proxy._cimd_manager.valid_scopes == ["read", "write"]
+
     def test_update_default_scopes_updates_cimd_manager(self, jwt_verifier):
         """update_default_scopes should update CIMD manager's default_scope."""
         proxy = OAuthProxy(
@@ -139,9 +174,11 @@ class TestOAuthProxyInitialization:
         )
         assert proxy._cimd_manager is not None
         assert proxy._cimd_manager.default_scope == "openid"
+        assert proxy._cimd_manager.valid_scopes == ["openid"]
 
         proxy.update_default_scopes(["openid", "email", "drive"])
         assert proxy._cimd_manager.default_scope == "openid email drive"
+        assert proxy._cimd_manager.valid_scopes == ["openid", "email", "drive"]
 
     def test_update_default_scopes_updates_registration_options(self, jwt_verifier):
         """update_default_scopes should update client registration scope options."""
@@ -656,3 +693,154 @@ class TestCIMDTokenEndpointAudience:
             metadata = client.get("/.well-known/oauth-authorization-server").json()
 
         assert proxy.token_endpoint_url == metadata["token_endpoint"]
+
+
+class TestCIMDScopeEnforcement:
+    """CIMD document scopes must respect the proxy's valid_scopes allowlist."""
+
+    CIMD_URL = "https://client.example.com/oauth-client.json"
+    REDIRECT = "http://localhost:5555/callback"
+
+    def _proxy(self, jwt_verifier) -> OAuthProxy:
+        return OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_client_id="upstream-id",
+            upstream_client_secret="upstream-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://mcp.example.com",
+            valid_scopes=["read"],
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+            require_authorization_consent=False,
+        )
+
+    def _doc(self, scope: str | None) -> CIMDDocument:
+        return CIMDDocument(
+            client_id=AnyHttpUrl(self.CIMD_URL),
+            client_name="CIMD Client",
+            redirect_uris=[self.REDIRECT],
+            token_endpoint_auth_method="none",
+            grant_types=["authorization_code", "refresh_token"],
+            response_types=["code"],
+            scope=scope,
+        )
+
+    def _authorize_params(self, scope: str) -> dict[str, str]:
+        return {
+            "client_id": self.CIMD_URL,
+            "redirect_uri": self.REDIRECT,
+            "response_type": "code",
+            "code_challenge": "x" * 43,
+            "code_challenge_method": "S256",
+            "state": "state-1",
+            "scope": scope,
+        }
+
+    async def test_scope_outside_valid_scopes_is_rejected(self, jwt_verifier):
+        """A document scope outside valid_scopes fails the scope gate."""
+        proxy = self._proxy(jwt_verifier)
+        app = Starlette(routes=proxy.get_routes())
+
+        doc = self._doc("admin")
+
+        async def fake_fetch(fetcher, url: str) -> CIMDDocument:
+            return doc
+
+        transport = httpx2.ASGITransport(app=app)
+        with patch.object(CIMDFetcher, "fetch", fake_fetch):
+            async with httpx2.AsyncClient(
+                transport=transport,
+                base_url="https://mcp.example.com",
+                follow_redirects=False,
+            ) as client:
+                response = await client.get(
+                    "/authorize", params=self._authorize_params("admin")
+                )
+
+        assert response.status_code == 302
+        location = response.headers["location"]
+        params = parse_qs(urlparse(location).query)
+        assert params["error"] == ["invalid_scope"]
+        # The out-of-policy scope was never forwarded to the upstream IdP.
+        assert "idp.example.com" not in location
+        assert "scope=admin" not in location
+
+    async def test_scope_within_valid_scopes_is_forwarded(self, jwt_verifier):
+        """A document scope inside valid_scopes still works end to end."""
+        proxy = self._proxy(jwt_verifier)
+        app = Starlette(routes=proxy.get_routes())
+
+        doc = self._doc("read")
+
+        async def fake_fetch(fetcher, url: str) -> CIMDDocument:
+            return doc
+
+        transport = httpx2.ASGITransport(app=app)
+        with patch.object(CIMDFetcher, "fetch", fake_fetch):
+            async with httpx2.AsyncClient(
+                transport=transport,
+                base_url="https://mcp.example.com",
+                follow_redirects=False,
+            ) as client:
+                response = await client.get(
+                    "/authorize", params=self._authorize_params("read")
+                )
+
+        assert response.status_code == 302
+        location = response.headers["location"]
+        assert location.startswith("https://idp.example.com/authorize?")
+        params = parse_qs(urlparse(location).query)
+        assert params["scope"] == ["read"]
+
+        txn_id = params["state"][0]
+        transaction = await proxy._transaction_store.get(key=txn_id)
+        assert transaction is not None
+        assert transaction.scopes == ["read"]
+
+    async def test_legacy_stored_cimd_client_scope_is_sanitized(self, jwt_verifier):
+        """A persisted pre-fix CIMD client cannot keep an out-of-policy scope.
+
+        Older versions stored CIMD clients in the DCR client store. When the
+        refresh fetch fails, the stored record is returned as a fallback; its
+        verbatim document scope must still be constrained by valid_scopes.
+        """
+        proxy = self._proxy(jwt_verifier)
+        legacy_client = ProxyDCRClient(
+            client_id=self.CIMD_URL,
+            client_secret=None,
+            redirect_uris=None,
+            scope="admin",
+            token_endpoint_auth_method="none",
+            cimd_document=self._doc("admin"),
+            cimd_fetched_at=time.time(),
+        )
+        await proxy._client_store.put(key=self.CIMD_URL, value=legacy_client)
+
+        app = Starlette(routes=proxy.get_routes())
+
+        async def failing_fetch(fetcher, url: str) -> CIMDDocument:
+            raise CIMDFetchError("refresh failed")
+
+        transport = httpx2.ASGITransport(app=app)
+        with (
+            patch.object(CIMDFetcher, "fetch", failing_fetch),
+            patch.object(proxy._transaction_store, "put", new=AsyncMock()) as store_put,
+        ):
+            async with httpx2.AsyncClient(
+                transport=transport,
+                base_url="https://mcp.example.com",
+                follow_redirects=False,
+            ) as client:
+                response = await client.get(
+                    "/authorize", params=self._authorize_params("admin")
+                )
+
+        assert response.status_code == 302
+        location = response.headers["location"]
+        params = parse_qs(urlparse(location).query)
+        assert params["error"] == ["invalid_scope"]
+        # The legacy out-of-policy scope was never forwarded or recorded.
+        assert "idp.example.com" not in location
+        assert "scope=admin" not in location
+        store_put.assert_not_awaited()
