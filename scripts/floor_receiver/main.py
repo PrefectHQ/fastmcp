@@ -27,6 +27,7 @@ import os
 import re
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
@@ -69,7 +70,7 @@ def xrpc(method: str, body: dict, token: str | None = None) -> dict:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=8) as response:
+        with urllib.request.urlopen(request, timeout=4) as response:
             return json.loads(response.read() or b"{}")
     except urllib.error.HTTPError as exc:
         # never log the body: it can carry tokens; the error name is safe
@@ -136,6 +137,17 @@ def rkey_for(delivery: str) -> str:
     return "wh" + re.sub(r"[^A-Za-z0-9]", "", delivery)[:64]
 
 
+def put(body: dict, token: str) -> None:
+    # one quick retry for a PDS blip; both tries fit inside GitHub's 10s timeout
+    try:
+        xrpc("com.atproto.repo.putRecord", body, token)
+    except (PdsError, OSError) as error:
+        if isinstance(error, PdsError) and error.status < 500:
+            raise
+        time.sleep(0.5)
+        xrpc("com.atproto.repo.putRecord", body, token)
+
+
 def publish(name: str, delivery: str, payload: dict) -> str:
     """Write the record for one event. Returns what happened, for the log."""
     if (payload.get("repository") or {}).get("full_name") != REPO:
@@ -152,12 +164,12 @@ def publish(name: str, delivery: str, payload: dict) -> str:
         "validate": False,
     }
     try:
-        xrpc("com.atproto.repo.putRecord", body, session["accessJwt"])
+        put(body, session["accessJwt"])
     except PdsError as error:
         if error.error not in {"ExpiredToken", "InvalidToken"} and error.status != 401:
             raise
         session = SESSION.get(stale=session["accessJwt"])
-        xrpc("com.atproto.repo.putRecord", body, session["accessJwt"])
+        put(body, session["accessJwt"])
     return f"{record['kind']} #{record.get('number', '')}"
 
 
@@ -198,7 +210,8 @@ class Handler(BaseHTTPRequestHandler):
             outcome = publish(name, delivery, json.loads(body))
         except (PdsError, OSError, ValueError, KeyError) as error:
             log.error("delivery %s failed: %s", delivery, error)
-            # 502 lets GitHub's delivery log show it; the Action is the backstop
+            # 502 marks it failed in the hook's delivery log, where it can be
+            # redelivered; the Action's snapshot still corrects the floor's state
             return self._reply(502)
         log.info("delivery %s %s: %s", delivery, name, outcome)
         self._reply(202, outcome)
