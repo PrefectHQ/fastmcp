@@ -1061,8 +1061,6 @@ Client-specific behavior:
 
 Adding, removing, enabling, or disabling tools at the server or provider level does not notify connected clients. Clients see the change the next time they list tools, unless you tell them sooner.
 
-<VersionBadge version="4.3.0" />
-
 `notify_tools_changed()` tells every client that is listening for tool changes. It is server-wide and needs no request in flight, so it works from a background task, a provider, or a tool:
 
 ```python

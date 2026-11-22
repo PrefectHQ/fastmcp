@@ -168,8 +168,6 @@ client = Client(Path("server.py"), message_handler=ToolCacheHandler())
 
 ## Listening for Changes
 
-<VersionBadge version="4.3.0" />
-
 On the `2026-07-28` protocol, the server has no standing channel to the client, so list change and resource update notifications arrive only on a stream the client opens with `listen()`. Pass the kinds of change you want; each event means "this changed, refetch if you care":
 
 ```python
