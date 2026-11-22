@@ -156,9 +156,14 @@
     );
   }
 
-  // The module a URL names, if any.
+  // The module a URL names, if any. A broken escape reads as raw text.
   function linked() {
-    const hash = decodeURIComponent(window.location.hash.slice(1));
+    let hash = window.location.hash.slice(1);
+    try {
+      hash = decodeURIComponent(hash);
+    } catch {
+      // Keep the raw hash; it just won't name a module.
+    }
     return hash.startsWith(`${SECTION}/`)
       ? hash.slice(SECTION.length + 1)
       : null;
@@ -387,6 +392,7 @@
       if (event.key === "Home") cursor = 0;
       if (event.key === "End") cursor = order.length - 1;
       selected = cells[order[cursor]].module.module;
+      remember(selected);
       show(order[cursor]);
     });
     show(cells.findIndex((c) => c.module.module === selected));

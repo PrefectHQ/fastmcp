@@ -18,7 +18,10 @@ on:
 permissions: {}
 
 concurrency:
-  group: maintenance-status-${{ github.event.pull_request.number || 'publisher' }}
+  # Page pushes queue apart from scheduled runs, so a merge never replaces a
+  # pending scheduled run (the only kind that makes issue judgments). The
+  # publish job still serializes every write to the status branch.
+  group: maintenance-status-${{ github.event.pull_request.number || (github.event_name == 'push' && 'site') || 'publisher' }}
   cancel-in-progress: false
 
 jobs:

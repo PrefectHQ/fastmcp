@@ -4,32 +4,52 @@
 // A hash like #pbt-coverage/fastmcp.server.proxy aligns to its section;
 // pbt.js selects the module.
 (() => {
-  const target = () => {
-    const hash = decodeURIComponent(window.location.hash.slice(1));
-    if (!hash) return null;
-    return (
-      document.getElementById(hash) ||
-      document.getElementById(hash.split("/")[0])
-    );
+  // A hand-typed hash can hold a broken escape; read it raw rather than fail.
+  const hash = () => {
+    const raw = window.location.hash.slice(1);
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
   };
-  let settling = true;
+  const target = () => {
+    const h = hash();
+    if (!h) return null;
+    return document.getElementById(h) || document.getElementById(h.split("/")[0]);
+  };
+  // A reload or back/forward restores the reader's own position; leave it.
+  const nav = performance.getEntriesByType?.("navigation")[0];
+  let settling = !nav || nav.type === "navigate";
+  let expected = null;
   const align = () => {
     const node = settling && target();
-    if (node) node.scrollIntoView({ block: "start" });
+    if (!node) return;
+    node.scrollIntoView({ block: "start" });
+    expected = window.scrollY;
   };
+  const observer = new ResizeObserver(align);
   const stop = () => {
     settling = false;
     observer.disconnect();
   };
-  const observer = new ResizeObserver(align);
-  observer.observe(document.querySelector("main"));
-  for (const event of ["wheel", "touchstart", "keydown", "pointerdown"])
-    window.addEventListener(event, stop, { once: true, passive: true });
-  setTimeout(stop, 8000);
-  // A section link clicked later (or a pasted hash) needs the same treatment
-  // only if it points into the deep-link form the browser can't resolve.
+  if (settling) {
+    observer.observe(document.querySelector("main"));
+    for (const event of ["wheel", "touchstart", "keydown", "pointerdown"])
+      window.addEventListener(event, stop, { once: true, passive: true });
+    // Scrollbar drags send none of the above; any scroll we didn't make ends it.
+    window.addEventListener(
+      "scroll",
+      () => {
+        if (expected !== null && Math.abs(window.scrollY - expected) > 4) stop();
+      },
+      { passive: true },
+    );
+    setTimeout(stop, 8000);
+  }
+  // The browser can't resolve the module form on its own.
   window.addEventListener("hashchange", () => {
-    const hash = decodeURIComponent(window.location.hash.slice(1));
-    if (hash && !document.getElementById(hash)) target()?.scrollIntoView();
+    const h = hash();
+    if (h && !document.getElementById(h)) target()?.scrollIntoView();
   });
 })();
