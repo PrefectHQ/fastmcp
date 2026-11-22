@@ -303,12 +303,13 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             # shadow them. Cyclopts drops the trailing underscore from the flag.
             safe_name = f"{safe_name}_"
 
-        # Check for name collisions after sanitization
-        if safe_name in seen_names:
-            raise ValueError(
-                f"Parameter name collision: '{prop_name}' and '{seen_names[safe_name]}' "
-                f"both sanitize to '{safe_name}'"
-            )
+        # Disambiguate parameters that sanitize to the same Python identifier.
+        # Their CLI flags have already been made unique by _resolve_tool_param_flags.
+        base_safe_name = safe_name
+        suffix = 2
+        while safe_name in seen_names:
+            safe_name = f"{base_safe_name}_{suffix}"
+            suffix += 1
         seen_names[safe_name] = prop_name
 
         # For complex types, add schema to help text

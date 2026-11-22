@@ -240,6 +240,25 @@ class TestToolFunctionSource:
         assert "content_type: Annotated[str" in source
         assert "'content-type': content_type" in source
 
+    def test_disambiguates_colliding_sanitized_param_names(self):
+        tool = mcp_types.Tool(
+            name="fetch",
+            input_schema={
+                "properties": {
+                    "a-b": {"type": "string"},
+                    "a_b": {"type": "string"},
+                },
+            },
+        )
+
+        source = _tool_function_source(tool)
+
+        assert "a_b: Annotated[str" in source
+        assert "a_b_2: Annotated[str" in source
+        assert "'a-b': a_b" in source
+        assert "'a_b': a_b_2" in source
+        compile(source, "<test>", "exec")
+
     def test_description_in_docstring(self):
         tool = mcp_types.Tool(
             name="greet",
@@ -363,7 +382,7 @@ class TestToolFunctionSource:
         compile(source, "<test>", "exec")
 
     def test_name_collision_detection(self):
-        """Test that parameter name collisions are detected."""
+        """Test that parameter name collisions are disambiguated."""
         tool = mcp_types.Tool(
             name="test",
             input_schema={
@@ -373,9 +392,13 @@ class TestToolFunctionSource:
                 },
             },
         )
-        # Should raise ValueError for collision
-        with pytest.raises(ValueError, match="both sanitize to 'content_type'"):
-            _tool_function_source(tool)
+        source = _tool_function_source(tool)
+
+        assert "content_type: Annotated[str" in source
+        assert "content_type_2: Annotated[str" in source
+        assert "'content-type': content_type" in source
+        assert "'content_type': content_type_2" in source
+        compile(source, "<test>", "exec")
 
 
 # ---------------------------------------------------------------------------
