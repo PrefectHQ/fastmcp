@@ -166,7 +166,7 @@ def test_assess_plan_gets_memory_tools_only_when_a_server_is_configured(tmp_path
 
     models["memory_server"] = {
         "url": "https://memory.example/mcp",
-        "token_block_id": "b1",
+        "auth_block_id": "b1",
     }
     (tmp_path / "stack-models.json").write_text(json.dumps(models))
     plans = build_plans(tmp_path)
@@ -230,3 +230,15 @@ def test_memory_server_search_and_read(monkeypatch):
             )
 
     asyncio.run(calls())
+
+
+def test_committed_plans_match_the_generator():
+    import json
+    from pathlib import Path
+
+    from flows.agentic_stack_plans import build_plans
+
+    directory = Path(__file__).resolve().parents[1] / "workflows"
+    for role, plan in build_plans(directory).items():
+        committed = directory / f"fastmcp-stack-{role}.plan.json"
+        assert json.loads(committed.read_text()) == plan, role
