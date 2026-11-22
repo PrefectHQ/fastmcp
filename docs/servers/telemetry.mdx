@@ -344,17 +344,18 @@ Every `tools/call` and `prompts/get` request is recorded on the `mcp.server.oper
 | `mcp.method.name` | `tools/call` or `prompts/get` |
 | `gen_ai.tool.name` / `gen_ai.prompt.name` | The requested component, omitted for routing and access failures |
 | `fastmcp.server.name` | Server name |
-| `fastmcp.client.name` / `fastmcp.client.version` | Client-reported application identity, when supplied |
 | `enduser.pseudo.id` or `enduser.id` | The authenticated user, when the server has auth |
-| `error.type` | Present only on failed calls, classified as on spans |
+| `error.type` | Present only on failed calls, classified as on spans; `cancelled` when the request was cancelled or timed out |
 
-Unknown, disabled, and unauthorized component requests still count, but omit the component name so arbitrary rejected names do not create a new metric series each time. Known components retain their name on execution failures. Client names and versions are self-reported, not authenticated identities, and are omitted when unavailable.
+Unknown, disabled, and unauthorized component requests still count, but omit the component name so arbitrary rejected names do not create a new metric series each time. Known components retain their name on execution failures.
 
-Measurements cover the request handled by middleware. For background tasks, duration measures submission and excludes eventual execution failures. Each guard continuation is another request, not another completed tool execution. Middleware that handles a request without calling the next middleware must come after `UsageMiddleware` for that request to be counted.
+Measurements cover the request handled by middleware. For background tasks, duration measures submission and excludes eventual execution failures. Each guard continuation is another request, not another completed tool execution. Middleware that handles a request without calling the next middleware must come after `UsageMiddleware` for that request to be counted. The histogram uses the bucket boundaries the semantic conventions recommend, from 10 ms to 300 s.
+
+Add `UsageMiddleware` to one server in a mounted hierarchy. If a parent and a mounted child both carry it and share a meter provider, a call to a child tool is recorded twice, once under each server's name and tool name.
 
 The user attribute depends on `user_id`. The default, `"hashed"`, reports a keyed SHA-256 digest of the token subject (or client ID) as `enduser.pseudo.id`, which lets you group usage per user without exporting identities such as email addresses. Hashing requires a secret `user_id_salt`, because an unkeyed digest of a known email address can be recomputed and matched, so `UsageMiddleware()` without one raises a `ValueError`. Keep the salt stable across restarts and replicas, or the same user will show up under a new ID. Use `user_id="raw"` to report the identity itself as `enduser.id`, or `user_id="omit"` to report no user at all; neither needs a salt. Servers without authentication have no user to report, so their data points carry no user attribute.
 
-For unauthenticated servers, use `UsageMiddleware(user_id="omit")` to avoid configuring an unused salt. Each distinct user, client name, and client version adds metric cardinality; configure your metrics SDK's views and cardinality limits for your deployment.
+For unauthenticated servers, use `UsageMiddleware(user_id="omit")` to avoid configuring an unused salt. Each distinct user adds metric cardinality; configure your metrics SDK's views and cardinality limits for your deployment.
 
 ## Custom Spans
 

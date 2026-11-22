@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 
+import anyio
 import mcp_types as mt
 import pytest
 from opentelemetry.sdk.metrics import MeterProvider
@@ -108,26 +109,94 @@ class TestUsageMiddleware:
         assert "gen_ai.tool.name" not in point.attributes
 
     @pytest.mark.parametrize("mode", ["auto", "legacy"])
-    async def test_records_client_identity(self, meter_provider, reader, mode):
+    async def test_client_info_does_not_add_series(self, meter_provider, reader, mode):
         mcp = make_server(
             UsageMiddleware(meter_provider=meter_provider, user_id="omit")
         )
-        for name in ["Claude", "Cursor"]:
+        for i in range(3):
             async with Client(
-                mcp, mode=mode, client_info=mt.Implementation(name=name, version="1.0")
+                mcp,
+                mode=mode,
+                client_info=mt.Implementation(name=f"client-{i}", version=f"{i}.0"),
             ) as client:
                 await client.call_tool("add", {"a": 1, "b": 2})
-                await client.get_prompt("greet", {"name": "nate"})
 
-        points = data_points(reader)
-        assert len(points) == 4
-        assert {point.attributes["fastmcp.client.name"] for point in points} == {
-            "Claude",
-            "Cursor",
-        }
-        assert all(
-            point.attributes["fastmcp.client.version"] == "1.0" for point in points
+        [point] = data_points(reader)
+        assert point.count == 3
+        assert not any(key.startswith("fastmcp.client.") for key in point.attributes)
+
+    async def test_uses_semconv_bucket_boundaries(self, meter_provider, reader):
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id="omit")
         )
+        await mcp.call_tool("add", {"a": 1, "b": 2})
+
+        [point] = data_points(reader)
+        assert list(point.explicit_bounds) == [
+            0.01,
+            0.02,
+            0.05,
+            0.1,
+            0.2,
+            0.5,
+            1,
+            2,
+            5,
+            10,
+            30,
+            60,
+            120,
+            300,
+        ]
+
+    async def test_records_cancelled_calls(self, meter_provider, reader):
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id="omit")
+        )
+        started = anyio.Event()
+        returned = False
+
+        @mcp.tool
+        async def hang() -> str:
+            started.set()
+            await anyio.sleep(30)
+            return "done"
+
+        async def call() -> None:
+            nonlocal returned
+            await mcp.call_tool("hang")
+            returned = True
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(call)
+            await started.wait()
+            tg.cancel_scope.cancel()
+
+        assert not returned
+        [point] = data_points(reader)
+        assert point.count == 1
+        assert point.attributes["gen_ai.tool.name"] == "hang"
+        assert point.attributes["error.type"] == "cancelled"
+
+    async def test_records_client_timeouts(self, meter_provider, reader):
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id="omit")
+        )
+
+        @mcp.tool
+        async def hang() -> str:
+            await anyio.sleep(30)
+            return "done"
+
+        async with Client(mcp) as client:
+            with pytest.raises(Exception, match="timed out"):
+                await client.call_tool("hang", {}, timeout=0.2)
+            with anyio.fail_after(2):
+                while not data_points(reader):
+                    await anyio.sleep(0.02)
+
+        [point] = data_points(reader)
+        assert point.attributes["error.type"] == "cancelled"
 
     async def test_records_tool_calls(self, meter_provider, reader):
         mcp = make_server(
@@ -146,18 +215,7 @@ class TestUsageMiddleware:
             "mcp.method.name": "tools/call",
             "gen_ai.tool.name": "add",
             "fastmcp.server.name": "usage-test",
-            "fastmcp.client.name": "test-client",
-            "fastmcp.client.version": "1.0",
         }
-
-    async def test_direct_calls_have_no_client_identity(self, meter_provider, reader):
-        mcp = make_server(
-            UsageMiddleware(meter_provider=meter_provider, user_id="omit")
-        )
-        await mcp.call_tool("add", {"a": 1, "b": 2})
-        [point] = data_points(reader)
-        assert point.attributes["gen_ai.tool.name"] == "add"
-        assert not any(key.startswith("fastmcp.client.") for key in point.attributes)
 
     async def test_execution_not_found_keeps_tool_name(self, meter_provider, reader):
         mcp = make_server(

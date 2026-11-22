@@ -12,6 +12,7 @@ import time
 from collections.abc import Callable
 from typing import Any, Literal
 
+import anyio
 import mcp_types as mt
 from opentelemetry import metrics
 from opentelemetry.metrics import Histogram, MeterProvider
@@ -28,6 +29,24 @@ UserIdMode = Literal["hashed", "raw", "omit"]
 
 OPERATION_DURATION_METRIC = "mcp.server.operation.duration"
 
+# Bucket boundaries the MCP semantic conventions recommend for this metric.
+OPERATION_DURATION_BUCKETS = (
+    0.01,
+    0.02,
+    0.05,
+    0.1,
+    0.2,
+    0.5,
+    1,
+    2,
+    5,
+    10,
+    30,
+    60,
+    120,
+    300,
+)
+
 
 class UsageMiddleware(Middleware):
     """Record tool and prompt usage as an OpenTelemetry metric.
@@ -43,12 +62,11 @@ class UsageMiddleware(Middleware):
     - `mcp.method.name`: `tools/call` or `prompts/get`
     - `gen_ai.tool.name` or `gen_ai.prompt.name`: the component name the
       client asked for, omitted for routing and access failures
-    - `fastmcp.client.name` and `fastmcp.client.version`: the client-reported
-      application identity, when supplied
     - `fastmcp.server.name`: the server handling the request
     - `enduser.pseudo.id` (default) or `enduser.id`: the authenticated
       user, when the server has auth (see `user_id`)
-    - `error.type`: present only when the call failed
+    - `error.type`: present only when the call failed, or `"cancelled"`
+      when the request was cancelled or timed out before it finished
 
     FastMCP depends only on the OpenTelemetry API, so this middleware records
     nothing until you configure an OpenTelemetry SDK `MeterProvider` with an
@@ -107,7 +125,8 @@ class UsageMiddleware(Middleware):
         self._duration: Histogram = meter.create_histogram(
             name=OPERATION_DURATION_METRIC,
             unit="s",
-            description=("MCP request duration as observed by the usage middleware."),
+            description="MCP request duration as observed by the usage middleware.",
+            explicit_bucket_boundaries_advisory=list(OPERATION_DURATION_BUCKETS),
         )
 
     async def on_call_tool(
@@ -150,11 +169,14 @@ class UsageMiddleware(Middleware):
             name_attribute: name,
             **self._server_attributes(context),
             **self._user_attributes(),
-            **self._client_attributes(context),
         }
         start = time.perf_counter()
         try:
             result = await call_next(context)
+        except anyio.get_cancelled_exc_class():
+            attributes["error.type"] = "cancelled"
+            self._duration.record(time.perf_counter() - start, attributes)
+            raise
         except Exception as e:
             if isinstance(e, (NotFoundError, DisabledError, AuthorizationError)):
                 attributes.pop(name_attribute, None)
@@ -165,19 +187,6 @@ class UsageMiddleware(Middleware):
             attributes["error.type"] = "tool_error"
         self._duration.record(time.perf_counter() - start, attributes)
         return result
-
-    @staticmethod
-    def _client_attributes(context: MiddlewareContext[Any]) -> dict[str, str]:
-        ctx = context.fastmcp_context
-        if ctx is None or ctx.request_context is None:
-            return {}
-        params = ctx.request_context.session.client_params
-        if params is None:
-            return {}
-        return {
-            "fastmcp.client.name": params.client_info.name,
-            "fastmcp.client.version": params.client_info.version,
-        }
 
     @staticmethod
     def _server_attributes(context: MiddlewareContext[Any]) -> dict[str, str]:
