@@ -1,8 +1,9 @@
 """The URL guards in front of the OAuth proxy say no to everything outside
 what they were configured to allow.
 
-Three guards, each checked against an outside reference rather than its own
-logic:
+Three guards, checked against outside references (`ipaddress`, three URL
+parsers, `parse_qsl`) where one exists, and against the documented rules
+where none does:
 
 - `ssrf`: an address the blocklist refuses stays refused however it is
   wrapped in IPv6, `validate_url` fails only with `SSRFError`, and the
@@ -72,17 +73,25 @@ def blocked_v4(draw) -> ipaddress.IPv4Address:
 
 
 def v6_wrappers(v4: ipaddress.IPv4Address) -> dict[str, ipaddress.IPv6Address]:
-    """Every IPv6 spelling that carries `v4` and that a stack may route to it."""
+    """IPv6 spellings that carry `v4` and are global on their own, so only
+    unwrapping the IPv4 inside can block them. (6to4, Teredo and the local
+    NAT64 prefix are already non-global as a whole, so they test nothing.)"""
     n = int(v4)
     return {
         "mapped": ipaddress.IPv6Address(f"::ffff:{v4}"),
         "compatible": ipaddress.IPv6Address(n),
         "translated": ipaddress.IPv6Address(f"::ffff:0:{v4}"),
-        "6to4": ipaddress.IPv6Address((0x2002 << 112) | (n << 80)),
         "nat64": ipaddress.IPv6Address(f"64:ff9b::{v4}"),
-        "nat64-local": ipaddress.IPv6Address((0x0064FF9B0001 << 80) | n),
-        "isatap": ipaddress.IPv6Address((0x20010DB8 << 96) | (0x00005EFE << 32) | n),
+        "isatap": ipaddress.IPv6Address((0x2600 << 112) | (0x00005EFE << 32) | n),
     }
+
+
+def test_every_wrapper_is_global_around_a_public_address():
+    """Guards the list above: a wrapper the blocklist refuses for its own
+    prefix would pass the property below without checking any unwrapping."""
+    public = ipaddress.IPv4Address("8.8.8.8")
+    for form, v6 in v6_wrappers(public).items():
+        assert v6.is_global, form
 
 
 @given(blocked_v4(), st.data())
@@ -131,7 +140,11 @@ def _validate(url: str, ips: list[str]) -> ssrf.ValidatedURL:
     async def resolve(hostname: str, port: int = 443) -> list[str]:
         return ips
 
-    with patch.object(ssrf, "resolve_hostname", resolve):
+    # Pinned mode only: proxy-trust mode skips resolution by design.
+    with (
+        patch.object(ssrf, "resolve_hostname", resolve),
+        patch.object(ssrf.fastmcp.settings, "ssrf_trust_proxy", False),
+    ):
         return asyncio.run(ssrf.validate_url(url))
 
 
@@ -155,7 +168,7 @@ def test_pinned_request_goes_where_validation_looked(url, ips):
     note(f"{url} -> {validated}")
     parsed = urlparse(url)
     assert parsed.scheme == "https"
-    assert validated.port == (parsed.port or 443)
+    assert validated.port == (443 if parsed.port is None else parsed.port)
     assert 1 <= validated.port <= 65535
     expected_path = parsed.path + (f"?{parsed.query}" if parsed.query else "")
     targets = ssrf._build_fetch_targets(validated)
@@ -357,13 +370,14 @@ def _changes(uri: str) -> st.SearchStrategy[tuple[str, str]]:
     q = f"?{p.query}" if p.query else ""
     edits = {
         "added query": base + (q + "&y=2" if q else "?y=2"),
-        "dropped query": base if q else base + "?z",
         "changed path": f"{p.scheme}://{p.netloc}{p.path}x{q}",
         "child path": f"{p.scheme}://{p.netloc}{p.path}/x{q}",
         "fragment": uri + "#f",
         "userinfo": f"{p.scheme}://u@{p.netloc}{p.path}{q}",
         "scheme": f"{'http' if p.scheme == 'https' else 'https'}://{p.netloc}{p.path}{q}",
     }
+    if q:
+        edits["dropped query"] = base
     if p.hostname not in ("localhost", "127.0.0.1"):
         edits["port"] = f"{p.scheme}://{p.hostname}:9{p.port or 0}{p.path}{q}"
         edits["subdomain"] = f"{p.scheme}://x.{p.netloc}{p.path}{q}"
@@ -392,11 +406,29 @@ param_values = st.text(
 )
 query_segments = st.lists(
     st.one_of(
-        st.sampled_from(["iss=a", "iss=b", "iss", "flag", "k=%FF", "k=v", "=v", ""]),
+        st.sampled_from(
+            [
+                "iss=a",
+                "iss=b",
+                "iss",
+                "flag",
+                "k=%FF",
+                "k=v",
+                "=v",
+                "",
+                "state=s",
+                "code=z",
+            ]
+        ),
         st.from_regex(r"[a-z]{1,3}=[a-z0-9%]{0,4}", fullmatch=True),
     ),
     max_size=4,
 )
+
+
+def _repeated_param_probe() -> bool:
+    out = build_client_redirect("https://c.example/cb?state=a", {"state": "b"}, iss="i")
+    return out.count("state=") > 1
 
 
 @given(
@@ -427,8 +459,14 @@ def test_client_redirect_carries_each_parameter_once(base, segments, params, iss
     assert out.startswith(registered.split("?")[0])
     pairs = parse_qsl(after.query, keep_blank_values=True)
     assert [v for k, v in pairs if k == "iss"] == [iss]
+    registered_keys = {seg.split("=", 1)[0] for seg in segments}
     for key, value in params.items():
-        assert [v for k, v in pairs if k == key][-1:] == [value]
+        values = [v for k, v in pairs if k == key]
+        if key in registered_keys and still_open("F12", _repeated_param_probe):
+            event("known: F12")
+            assert values[-1:] == [value]
+            continue
+        assert values == [value], f"{key} appears {len(values)} times"
     kept = [s for s in after.query.split("&") if s and s.split("=", 1)[0] != "iss"]
     original = [s for s in segments if s and s.split("=", 1)[0] != "iss"]
     assert kept[: len(original)] == original, "the registered query was rewritten"

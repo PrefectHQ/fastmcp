@@ -266,9 +266,16 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
         {
             "name": "port 0 rewritten to 443",
             "file": SSRF,
-            "old": "    elif port == 0:",
-            "new": "    elif False:",
+            "old": "    if port is None:\n        port = 443\n    elif port == 0:",
+            "new": "    if not port:\n        port = 443\n    elif False:",
             "test": f"{GUARDS}::test_pinned_request_goes_where_validation_looked",
+        },
+        {
+            "name": "ISATAP not unwrapped",
+            "file": SSRF,
+            "old": "    if packed[8:12] in ISATAP_INTERFACE_IDS:",
+            "new": "    if False:",
+            "test": f"{GUARDS}::test_ipv6_never_unblocks_a_blocked_ipv4",
         },
         {
             "name": "port read outside the guard (#5773 undone)",
