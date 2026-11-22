@@ -12,6 +12,7 @@ from starlette.testclient import TestClient
 from fastmcp import Client, FastMCP
 from fastmcp.experimental.events import (
     Event,
+    EventBacklogFullError,
     EventBatch,
     EventPoll,
     EventsClientExtension,
@@ -425,7 +426,7 @@ async def test_a_push_stream_with_no_interval_still_lets_other_tasks_run() -> No
     assert scope.cancelled_caught
 
 
-async def test_a_push_consumer_that_falls_behind_resumes_from_its_cursor(
+async def test_a_push_consumer_that_falls_behind_ends_with_an_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(events_client_module, "_MAX_PENDING_FRAMES", 4)
@@ -436,14 +437,38 @@ async def test_a_push_consumer_that_falls_behind_resumes_from_its_cursor(
         subscription = subscribe_events(
             client, "alert.fired", cursor="0", delivery="push"
         )
-        with anyio.fail_after(10):
+        with pytest.raises(EventBacklogFullError), anyio.fail_after(10):
             async for event in subscription:
                 received.append(event.event_id)
                 await anyio.sleep(0.01)
-                if len(received) == len(log):
-                    break
 
-    assert received == [entry["key"] for entry in log]
+    # One batch overflowed before its last event, so the cursor still points
+    # at the batch's start: resuming repeats events instead of skipping them.
+    assert received == [entry["key"] for entry in log][: len(received)]
+    assert len(received) < len(log)
+    assert subscription.cursor == "0"
+
+
+async def test_a_terminated_push_subscription_does_not_fall_back_to_poll() -> None:
+    server = FastMCP("ticks")
+    events = EventsExtension(poll_interval_ms=10)
+    server.add_extension(events)
+    checks: list[str | None] = []
+
+    @events.event(name="tick")
+    async def tick(poll: EventPoll) -> EventBatch:
+        checks.append(poll.cursor)
+        if len(checks) > 1:
+            raise MCPError(code=UNSUPPORTED, message="Schema changed")
+        return EventBatch(cursor="0")
+
+    async with events_client(server) as client:
+        with pytest.raises(MCPError) as exc_info, anyio.fail_after(5):
+            async for _ in subscribe_events(client, "tick"):
+                pass
+
+    assert exc_info.value.error.code == UNSUPPORTED
+    assert checks == [None, "0"]
 
 
 async def test_push_rejects_an_unknown_event_before_any_stream_opens() -> None:

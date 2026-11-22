@@ -76,7 +76,7 @@ def _describe(event_type: EventType) -> None:
     properties = (event_type.input_schema or {}).get("properties") or {}
     for name, schema in properties.items():
         kind = client_cli._json_schema_type_to_str(schema)
-        console.print(f"    [dim]{_safe(name)}: {_safe(kind)}[/dim]")
+        console.print(f"    [dim]{_safe(name)}: {_safe(str(kind))}[/dim]")
 
 
 @events_app.command(name="list")

@@ -7,7 +7,7 @@ import pytest
 
 from fastmcp import Client, FastMCP
 from fastmcp.cli import client as client_module
-from fastmcp.cli.events import list_events_command, watch_command
+from fastmcp.cli.events import _describe, list_events_command, watch_command
 from fastmcp.experimental.events import (
     Event,
     EventBatch,
@@ -15,6 +15,7 @@ from fastmcp.experimental.events import (
     EventsClientExtension,
     EventsExtension,
 )
+from fastmcp.experimental.events.models import EventType
 
 
 def make_server(
@@ -67,6 +68,19 @@ async def test_list_shows_event_types(capsys: pytest.CaptureFixture[str]):
     assert "alert.fired" in out
     assert "poll, push" in out
     assert "min_level: int" in out
+
+
+def test_list_shows_a_property_whose_type_is_not_a_string(
+    capsys: pytest.CaptureFixture[str],
+):
+    # FastMCP servers validate their schemas; another server may not.
+    event_type = EventType(
+        name="tick",
+        delivery=["poll"],
+        input_schema={"type": "object", "properties": {"x": {"type": None}}},
+    )
+    _describe(event_type)
+    assert "x: None" in capsys.readouterr().out
 
 
 async def test_list_json(capsys: pytest.CaptureFixture[str]):

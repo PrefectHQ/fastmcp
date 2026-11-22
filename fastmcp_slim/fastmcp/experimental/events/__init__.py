@@ -11,6 +11,7 @@ from fastmcp.experimental.events.models import (
 
 __all__ = [
     "Event",
+    "EventBacklogFullError",
     "EventBatch",
     "EventOccurrence",
     "EventPoll",
@@ -28,6 +29,7 @@ __all__ = [
 
 _LAZY = {
     "Event": "fastmcp.experimental.events.extension",
+    "EventBacklogFullError": "fastmcp.experimental.events.subscription",
     "EventBatch": "fastmcp.experimental.events.extension",
     "EventPoll": "fastmcp.experimental.events.extension",
     "EventsExtension": "fastmcp.experimental.events.extension",
@@ -40,6 +42,9 @@ _LAZY = {
 }
 
 if TYPE_CHECKING:
+    from fastmcp.experimental.events.subscription import (
+        EventBacklogFullError as EventBacklogFullError,
+    )
     from fastmcp.experimental.events.subscription import (
         EventSubscription as EventSubscription,
     )

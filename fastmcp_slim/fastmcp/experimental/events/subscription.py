@@ -53,6 +53,20 @@ _stream_ids = count(1)
 Delivery = Literal["poll", "push"]
 
 
+class EventBacklogFullError(RuntimeError):
+    """A push subscription's consumer fell so far behind that frames were lost.
+
+    The subscription has ended. Its `cursor` is the position after the last
+    event yielded, so resubscribing from it repeats events rather than
+    skipping them. A consumer that cannot keep up should process events
+    faster, or poll with `max_events`.
+    """
+
+
+class _SubscriptionTerminated(MCPError):
+    """The server ended a push subscription with `notifications/events/terminated`."""
+
+
 def _trace_meta() -> mcp_types.RequestParamsMeta | None:
     return cast("mcp_types.RequestParamsMeta | None", inject_trace_context(None))
 
@@ -128,8 +142,14 @@ class EventSubscription:
                 return
             except MCPError as error:
                 # An event type can list push on a server whose transport
-                # cannot carry it; fall back unless the caller insisted.
-                if self._delivery == "push" or error.error.code != UNSUPPORTED:
+                # cannot carry it, so a stream request refused as Unsupported
+                # falls back unless the caller insisted. A stream the server
+                # terminated has ended and is the application's to handle.
+                if (
+                    self._delivery == "push"
+                    or error.error.code != UNSUPPORTED
+                    or isinstance(error, _SubscriptionTerminated)
+                ):
                     raise
         async with aclosing(self._poll()) as events:
             async for event in events:
@@ -213,20 +233,21 @@ class EventSubscription:
 
             task_group.start_soon(drive)
             quiet_limit = _ACTIVATION_TIMEOUT
-            reconnect_reason: str | None = None
+            went_quiet = False
             try:
                 while True:
                     try:
                         with anyio.fail_after(quiet_limit):
                             kind, frame = await frames.receive()
                     except anyio.EndOfStream:
-                        # A consumer that fell behind loses the frames the
-                        # stream could not hold; reopen from the cursor.
                         if extension._take_overflow(request_id):
-                            reconnect_reason = "fell behind"
+                            raise EventBacklogFullError(
+                                f"Event stream for {self.name!r} fell behind and "
+                                "lost events; resubscribe from its cursor"
+                            ) from None
                         break
                     except TimeoutError:
-                        reconnect_reason = "went quiet"
+                        went_quiet = True
                         break
                     if kind == "active":
                         self.cursor = frame.cursor
@@ -250,7 +271,7 @@ class EventSubscription:
                         )
                     elif kind == "terminated":
                         error = frame.error or {}
-                        raise MCPError(
+                        raise _SubscriptionTerminated(
                             code=error.get("code", mcp_types.INTERNAL_ERROR),
                             message=error.get("message", "Subscription terminated"),
                             data=error.get("data"),
@@ -260,15 +281,14 @@ class EventSubscription:
                 extension._close(request_id)
                 extension._take_overflow(request_id)
 
-            if failures and reconnect_reason is None:
+            if failures:
                 raise failures[0]
-            if reconnect_reason is None:
+            if not went_quiet:
                 return
             logger.warning(
-                "[%s] Event stream for %r %s; reconnecting",
+                "[%s] Event stream for %r went quiet; reconnecting",
                 client.name,
                 self.name,
-                reconnect_reason,
             )
             await anyio.sleep(random.uniform(0, 1))  # noqa: S311
 

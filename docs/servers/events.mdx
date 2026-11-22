@@ -146,6 +146,8 @@ asyncio.run(main())
 
 The subscription lasts as long as the `async for` does. Its `cursor` attribute is the position to resume from, which moves once a whole batch of events has been yielded: store it, and pass it back as `subscribe_events(client, ..., cursor=...)` to resume after a restart without missing events. `poll_events_mcp()` sends a single `events/poll` request when you want to run the loop yourself.
 
+A push subscription can also end with an error. When the server terminates it because a check reported `NotFound`, `Forbidden` or `Unsupported`, the `async for` raises that `MCPError`; rediscover the event type with `list_events()` before subscribing again. When your loop falls so far behind that the client's buffer of pushed events overflows, it raises `EventBacklogFullError`. Events were lost, but `cursor` still points before them, so subscribing again from it repeats events rather than skipping them. A consumer that cannot keep up with a large backlog should use `delivery="poll"` with `max_events`.
+
 To try a server from the terminal, `fastmcp events watch` does the same thing and prints each event; see [the CLI](/cli/client#watching-events).
 
 What happens when an event arrives is up to your application. The extension delivers events to the client; it does not decide whether an event starts an agent turn.
