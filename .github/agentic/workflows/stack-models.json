@@ -42,6 +42,6 @@
   },
   "memory_server": {
     "url": "https://fastmcp-triage-memory.fastmcp.app/mcp",
-    "auth_block_id": "4c9b600b-6940-4e83-8ac0-f72810c08e85"
+    "header_block_id": "4c9b600b-6940-4e83-8ac0-f72810c08e85"
   }
 }

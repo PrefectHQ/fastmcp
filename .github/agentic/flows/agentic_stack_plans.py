@@ -287,7 +287,7 @@ def memory_tools(role: str, models: dict) -> dict:
                     "url": server["url"],
                     "headers": {
                         "Authorization": {
-                            "$ref": {"block_document_id": server["auth_block_id"]}
+                            "$ref": {"block_document_id": server["header_block_id"]}
                         }
                     },
                     "tools": ["search", "read"],

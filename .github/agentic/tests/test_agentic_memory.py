@@ -166,7 +166,7 @@ def test_assess_plan_gets_memory_tools_only_when_a_server_is_configured(tmp_path
 
     models["memory_server"] = {
         "url": "https://memory.example/mcp",
-        "auth_block_id": "b1",
+        "header_block_id": "b1",
     }
     (tmp_path / "stack-models.json").write_text(json.dumps(models))
     plans = build_plans(tmp_path)
