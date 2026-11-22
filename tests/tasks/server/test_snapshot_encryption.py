@@ -84,6 +84,13 @@ def sensitive_snapshot() -> TaskContextSnapshot:
 
 
 class TestSnapshotCodec:
+    def test_repr_hides_credentials(self, sensitive_snapshot: TaskContextSnapshot):
+        rendered = repr(sensitive_snapshot)
+
+        assert sensitive_snapshot.access_token_json not in rendered
+        assert sensitive_snapshot.http_headers["authorization"] not in rendered
+        assert "session_id='session-1'" in rendered
+
     def test_round_trips_a_payload(self):
         codec = EncryptedCodec(KEY)
         assert codec.decode(codec.encode('{"a": 1}')) == '{"a": 1}'

@@ -13,7 +13,7 @@ import logging
 import weakref
 from collections import OrderedDict
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from fastmcp_tasks.encryption import SnapshotDecryptionError, snapshot_codec
@@ -163,8 +163,8 @@ class TaskContextSnapshot:
     Stored as a single Redis key per task, restored once in the worker.
     """
 
-    access_token_json: str | None = None
-    http_headers: dict[str, str] | None = None
+    access_token_json: str | None = field(default=None, repr=False)
+    http_headers: dict[str, str] | None = field(default=None, repr=False)
     origin_request_id: str | None = None
     session_id: str | None = None
     owning_tool_name: str | None = None
