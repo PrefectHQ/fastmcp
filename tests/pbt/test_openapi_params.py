@@ -64,7 +64,12 @@ def parameters(draw) -> tuple[dict[str, Any], Any]:
     param: dict[str, Any] = {"in": where, "required": True}
     if where == "query":
         param["style"] = draw(st.sampled_from(["form", "deepObject"]))
-    explode = draw(st.sampled_from([None, True, False]))
+    # Cookies lean towards the joined (explode=false) forms, which encode.
+    explode = draw(
+        st.sampled_from(
+            [None, True, False, False] if where == "cookie" else [None, True, False]
+        )
+    )
     if param.get("style") == "deepObject":
         param["explode"] = True
     elif explode is not None:
@@ -75,9 +80,12 @@ def parameters(draw) -> tuple[dict[str, Any], Any]:
         # Separators inside cookie items are the interesting case. While F16
         # is open, an item sent raw (a scalar, or exploded) avoids its shape:
         # skipping whole examples would starve the joined forms.
-        strings = SEPARATORS | ANY_TEXT
+        strings = st.one_of(SEPARATORS, SEPARATORS, ANY_TEXT)
         if F16_OPEN and (shape == "scalar" or explode_of(param)):
-            strings = strings.filter(lambda v: ";" not in v and v.isascii())
+            # `%` too: sent raw, it reads back as an escape it never was.
+            strings = strings.filter(
+                lambda v: ";" not in v and "%" not in v and v.isascii()
+            )
     item = {"type": "string"}
     if shape == "scalar":
         value = draw(scalars(strings))
@@ -149,23 +157,16 @@ def cookie_pairs(header: str | None) -> list[tuple[str, str]]:
     return [(name, value) for name, _, value in pairs]
 
 
-def _unescape_cookie_item(s: str) -> str:
-    return (
-        s.replace("%3D", "=")
-        .replace("%3B", ";")
-        .replace("%2C", ",")
-        .replace("%25", "%")
-    )
-
-
 def _f16_probe() -> bool:
-    """F16: an exploded cookie value or property name holding `;` or `=` is
-    sent raw, so the backend reads cookies the call never set."""
+    """F16: a scalar or exploded cookie value holding `;` is sent raw, so the
+    backend reads cookies the call never set."""
     spec = _spec(
         [{"name": "c", "in": "cookie", "required": True, "schema": {"type": "string"}}]
     )
     req = _send(spec, {"c": "x; admin=1"})
-    return cookie_pairs(req.headers.get("cookie")) != [("c", "x; admin=1")]
+    pairs = cookie_pairs(req.headers.get("cookie"))
+    # Fixed means one cookie `c` that decodes to the value, however encoded.
+    return [(n, unquote(v)) for n, v in pairs] != [("c", "x; admin=1")]
 
 
 def _spec(params: list[dict[str, Any]]) -> dict[str, Any]:
@@ -287,14 +288,14 @@ def test_each_parameter_reaches_the_backend_as_sent(drawn):
                     )
                     if i is not None:
                         mine.append((i, cookies[i]))
-                got: Any = {n: v for _, (n, v) in mine}
+                got: Any = {n: unquote(v) for _, (n, v) in mine}
             elif kind == "array" and explode:
                 mine = [
                     (i, c)
                     for i, c in enumerate(cookies)
                     if c[0] == name and i not in claimed_cookies
                 ]
-                got = [v for _, (n, v) in mine]
+                got = [unquote(v) for _, (n, v) in mine]
             else:
                 mine = [
                     (i, c)
@@ -303,11 +304,7 @@ def test_each_parameter_reaches_the_backend_as_sent(drawn):
                 ][:1]
                 assert mine, f"cookie {name} missing from {cookies}"
                 v = mine[0][1][1]
-                got = (
-                    _split_simple(v, kind, False, _unescape_cookie_item)
-                    if kind != "scalar"
-                    else v
-                )
+                got = _split_simple(v, kind, False, unquote)
             claimed_cookies |= {i for i, _ in mine}
             assert got == want, f"cookie {name}: {cookies} reads as {got!r}"
 
@@ -345,14 +342,20 @@ def test_each_parameter_reaches_the_backend_as_sent(drawn):
             else:
                 mine = [(i, kv) for i, kv in enumerate(query) if kv[0] == name]
                 assert len(mine) == 1, f"query {name}: {query}"
-                got = (
-                    _split_simple(mine[0][1][1], kind, False, lambda s: s)
-                    if "," not in "".join([*value, *value.values()])
-                    else want
-                )  # a comma inside an item is ambiguous after decoding
+                joined = mine[0][1][1]
+                if "," in "".join([*value, *value.values()]):
+                    # A comma inside an item reads as a separator once the
+                    # value is decoded; check the text instead of splitting.
+                    event("query object: comma inside an item")
+                    pairs = [t for kv in want.items() for t in kv]
+                    assert joined == ",".join(pairs), f"query {name}: {joined!r}"
+                    got = want
+                else:
+                    got = _split_simple(joined, kind, False, lambda s: s)
             claimed_query |= {i for i, _ in mine}
             assert got == want, f"query {name}: {query} reads as {got!r}"
 
+    assert len(claimed_query) == len(query), f"query pairs never sent: {query}"
     assert len(claimed_cookies) == len(cookies), (
         f"cookies the call never set: {cookies}"
     )

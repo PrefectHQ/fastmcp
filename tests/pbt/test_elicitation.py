@@ -21,10 +21,12 @@ server. The model follows docs/servers/elicitation.mdx and the MCP 2025-11-25
 import asyncio
 import enum
 import json
+import logging
 from dataclasses import dataclass, make_dataclass
 from dataclasses import field as dc_field
 from typing import Annotated, Any, Literal
 
+import pytest
 from hypothesis import event, given, note
 from hypothesis import strategies as st
 from pydantic import Field, TypeAdapter, create_model
@@ -324,6 +326,21 @@ def forms(draw) -> Form:
     return Form(make_dataclass("Answer", dc_fields), dict(ordered), container)
 
 
+@pytest.fixture(autouse=True)
+def _quiet():
+    logger = logging.getLogger("fastmcp")
+    level = logger.level
+    logger.setLevel(logging.CRITICAL)
+    yield
+    logger.setLevel(level)
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _close_loop():
+    yield
+    LOOP.close()
+
+
 def to_json(value: Any) -> Any:
     return json.loads(json.dumps(TypeAdapter(Any).dump_python(value, mode="json")))
 
@@ -352,12 +369,20 @@ F15_OPEN = still_open("F15", _f15_probe)
 INT_CHOICES = {"literal int", "int enum"}
 
 
-def known(form: Form) -> str | None:
-    """The open finding a form runs into, if any."""
-    if F14_OPEN and any(len(s.choices) == 1 for s in form.fields.values()):
+def known(s: Spec) -> str | None:
+    """The open finding one field runs into, if any."""
+    if F14_OPEN and len(s.choices) == 1:
         return "F14"
-    if F15_OPEN and any(s.kind in INT_CHOICES for s in form.fields.values()):
+    if F15_OPEN and s.kind in INT_CHOICES:
         return "F15"
+    return None
+
+
+def refused_for_known(form: Form, error: TypeError) -> str | None:
+    """The open finding behind a refused form: the field the error names."""
+    for name, s in form.fields.items():
+        if f"field '{name}'" in str(error) and known(s) == "F14":
+            return "F14"
     return None
 
 
@@ -365,8 +390,8 @@ def known(form: Form) -> str | None:
 def test_every_requested_schema_is_a_spec_form(form):
     try:
         config = parse_elicit_response_type(form.response_type)
-    except TypeError:
-        if known(form) == "F14":
+    except TypeError as e:
+        if refused_for_known(form, e):
             event("known: F14")
             return
         raise
@@ -381,7 +406,7 @@ def test_every_requested_schema_is_a_spec_form(form):
         want_required = s.mode == "required"
         assert (name in required) == want_required, f"{name}: wrong required flag"
         shape = spec_shape(props[name])
-        if shape is None and (finding := known(form)):
+        if shape is None and (finding := known(s)):
             event(f"known: {finding}")
             continue
         assert shape is not None, f"{name}: {props[name]} is no spec shape"
@@ -418,8 +443,8 @@ def test_the_server_gets_what_the_user_chose(data, form):
     want = form.expected(chosen)
     try:
         parse_elicit_response_type(form.response_type)
-    except TypeError:
-        if known(form) == "F14":
+    except TypeError as e:
+        if refused_for_known(form, e):
             event("known: F14")
             return
         raise

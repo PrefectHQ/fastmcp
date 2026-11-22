@@ -23,7 +23,7 @@ Mutant catch rates: `uv run python -m tests.pbt.mutants`.
 | OpenAPI tool sends the described request (2026-11-21) | 1k cases | 4/4 (explode default 9/10, pipe delimiter 9/10, boolean text 10/10, path quoting 10/10) | clean (K4) |
 | OAuth proxy machine: codes, refresh, revocation, concurrent redemption (2026-11-21) | 1k histories | 3/3 at 10/10 seeds (an "already used" check is not planted: the lock and re-read mask it) | F10 |
 | elicitation: every requested schema is a spec form; the server gets what the user chose, through a `Client` (2026-11-22) | 1.5k cases each | `elicitation`: 4/4 at 10/10 seeds | F14, F15 |
-| OpenAPI path, header, cookie and object query parameters read back by a spec decoder (2026-11-22) | 3k cases | `openapi_params`: 5/5, 10/10 except joined-cookie commas at 9/10 | F16 |
+| OpenAPI path, header, cookie and object query parameters read back by a spec decoder (2026-11-22) | 3k cases | `openapi_params`: 5/5, 10/10 except cookie explode default at 8/10 | F16 |
 
 F1, F3 and F5 are fixed on `main` (#6552, #6553, #6572), so their probes
 report fixed and the harness checks those shapes again. F2 is fixed by keeping
