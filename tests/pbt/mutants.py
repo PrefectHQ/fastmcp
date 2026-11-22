@@ -19,6 +19,9 @@ MACHINE = "tests/pbt/test_components_machine.py"
 TRANSFORM = "fastmcp_slim/fastmcp/tools/tool_transform.py"
 DIRECTOR = "fastmcp_slim/fastmcp/utilities/openapi/director.py"
 OAUTH = "fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py"
+ELICIT = "fastmcp_slim/fastmcp/server/elicitation.py"
+ELICIT_TEST = "tests/pbt/test_elicitation.py"
+PARAMS_TEST = "tests/pbt/test_openapi_params.py"
 
 MUTANTS: dict[str, list[dict[str, str]]] = {
     "uri_template": [
@@ -249,6 +252,76 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             ),
             "new": "            pass\n",
             "test": "tests/pbt/test_oauth_proxy_machine.py",
+        },
+    ],
+    "elicitation": [
+        {
+            "name": "optional fields keep their null type",
+            "file": ELICIT,
+            "old": '            schema = {**schema, "schema": inner["schema"]}',
+            "new": "            pass",
+            "test": f"{ELICIT_TEST}::test_every_requested_schema_is_a_spec_form",
+        },
+        {
+            "name": "titled multi-select uses oneOf",
+            "file": ELICIT,
+            "old": '    pattern_key = "anyOf" if multi_select else "oneOf"',
+            "new": '    pattern_key = "oneOf"',
+            "test": f"{ELICIT_TEST}::test_every_requested_schema_is_a_spec_form",
+        },
+        {
+            "name": "titled single-select not required",
+            "file": ELICIT,
+            "old": (
+                '            "properties": {"value": enum_schema},\n'
+                '            "required": ["value"],\n'
+            ),
+            "new": '            "properties": {"value": enum_schema},\n',
+            "test": f"{ELICIT_TEST}::test_every_requested_schema_is_a_spec_form",
+        },
+        {
+            "name": "scalar answers stay wrapped",
+            "file": ELICIT,
+            "old": "            return AcceptedElicitation[Any](data=validated_data.value)",
+            "new": "            return AcceptedElicitation[Any](data=validated_data)",
+            "test": f"{ELICIT_TEST}::test_the_server_gets_what_the_user_chose",
+        },
+    ],
+    "openapi_params": [
+        {
+            "name": "exploded path objects keep commas",
+            "file": DIRECTOR,
+            "old": '                parts.append(f"{ek}={ev}" if explode else f"{ek},{ev}")',
+            "new": '                parts.append(f"{ek},{ev}")',
+            "test": PARAMS_TEST,
+        },
+        {
+            "name": "joined cookie items keep their commas",
+            "file": DIRECTOR,
+            "old": '            .replace(",", "%2C")\n',
+            "new": "",
+            "test": PARAMS_TEST,
+        },
+        {
+            "name": "cookies default to explode=false",
+            "file": DIRECTOR,
+            "old": "                else True\n",
+            "new": "                else False\n",
+            "test": PARAMS_TEST,
+        },
+        {
+            "name": "deepObject uses dots",
+            "file": DIRECTOR,
+            "old": '                                property_name = f"{key}[{property_name}]"',
+            "new": '                                property_name = f"{key}.{property_name}"',
+            "test": PARAMS_TEST,
+        },
+        {
+            "name": "header objects ignore explode",
+            "file": DIRECTOR,
+            "old": "                    explode=bool(header_lookup[k].explode)",
+            "new": "                    explode=False",
+            "test": PARAMS_TEST,
         },
     ],
 }

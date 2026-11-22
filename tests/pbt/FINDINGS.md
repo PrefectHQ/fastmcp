@@ -22,6 +22,8 @@ Mutant catch rates: `uv run python -m tests.pbt.mutants`.
 | tool transforms: rename, hide, defaults, required, two layers, deferred config (2026-11-21) | 1k cases, 5-minute campaign | 4/4: 10, 9, 8 and 8 of 10 seeds at 200 cases | F9 |
 | OpenAPI tool sends the described request (2026-11-21) | 1k cases | 4/4 (explode default 9/10, pipe delimiter 9/10, boolean text 10/10, path quoting 10/10) | clean (K4) |
 | OAuth proxy machine: codes, refresh, revocation, concurrent redemption (2026-11-21) | 1k histories | 3/3 at 10/10 seeds (an "already used" check is not planted: the lock and re-read mask it) | F10 |
+| elicitation: every requested schema is a spec form; the server gets what the user chose, through a `Client` (2026-11-22) | 1.5k cases each | `elicitation`: 4/4 at 10/10 seeds | F14, F15 |
+| OpenAPI path, header, cookie and object query parameters read back by a spec decoder (2026-11-22) | 3k cases | `openapi_params`: 5/5, 10/10 except joined-cookie commas at 9/10 | F16 |
 
 F1, F3 and F5 are fixed on `main` (#6552, #6553, #6572), so their probes
 report fixed and the harness checks those shapes again. F2 is fixed by keeping
@@ -407,6 +409,63 @@ the schemas that would catch it (`PBT_ASSUME_FIXED`, set per mutant).
   revocation failures as a warning and still succeeds; RFC 7009 lets the
   server answer 503 instead.
 
+### F14. a choice with one option is sent as `const`, and a multi-select of one option is refused
+
+- status: open. Numbers F11 to F13 belong to the auth-guard and middleware
+  branches.
+- property: elicitation, every requested schema is a spec form
+  (`test_every_requested_schema_is_a_spec_form`).
+- minimal: `ctx.elicit("pick", ["a"])` sends
+  `{"type": "string", "const": "a"}`; `ctx.elicit("pick", list[Literal["a"]])`
+  raises `TypeError` before anything is sent. `[["a"]]` (the shorthand) works.
+- frequency: any choice list built from data that happens to hold one item.
+- reachable: yes; choices often come from data ("which of your workspaces?"),
+  and one item is a common case.
+- spec: MCP 2025-11-25 `PrimitiveSchemaDefinition` has no `const`. The python
+  SDK's own types read the property as a plain `StringSchema` and drop the
+  `const` (run, below); the TypeScript SDK's zod schemas do the same
+  (read from `types.js`, not run). The user is shown a free text box, and any
+  answer but `a` is then rejected by the server.
+- cause: pydantic renders a one-member `Literal` as `const`; the enum
+  handling in `ElicitationJsonSchema` only rewrites `enum`.
+- fix direction: render a one-member `Literal`/`Enum` as `enum: [value]`, in
+  single and multi-select.
+
+### F15. integer choices are sent as an integer `enum`, which spec clients read as a free number
+
+- status: open.
+- property: as F14.
+- minimal: `ctx.elicit("how many?", Literal[1, 2])` (or an `Enum` with int
+  values) sends `{"type": "integer", "enum": [1, 2]}`.
+- frequency: any integer `Literal` or int-valued `Enum`.
+- reachable: yes, e.g. a rating or a count from a fixed set.
+- spec: enum shapes are string-only. The python SDK's types read the property
+  as `NumberSchema` and drop `enum` (run); fastmcp's own client honours it,
+  so fastmcp to fastmcp works and other clients show a number box.
+- note: the python SDK sends the same schema for an integer `Literal`, so this
+  is shared, not a fastmcp divergence. Options: send the choices as strings
+  and convert back on accept, or refuse integer choices with a clear error.
+
+### F16. a cookie value is sent raw, so `;` sets cookies the call never named
+
+- status: open.
+- property: OpenAPI parameters read back as sent
+  (`test_each_parameter_reaches_the_backend_as_sent`).
+- minimal: a string cookie parameter `session` called with
+  `"abc; role=admin"` sends `Cookie: session=abc; role=admin`; the backend
+  reads two cookies. Exploded arrays and objects (the default) do the same per
+  item. A non-ASCII value fails the call (httpx refuses the header).
+- frequency: any scalar or exploded cookie value holding `;`.
+- reachable: yes. Tool arguments come from a model, so text the model was shown
+  can choose them; this lets it add any cookie to the backend request.
+- cause: `_serialize_cookie_params` escapes `%`, `,`, `;` and `=` only for the
+  non-exploded forms (`_cookie_joined_item`); scalars and exploded items go
+  through `_cookie_scalar_to_str` unescaped.
+- spec: RFC 6265 cookie values exclude `;`, `,`, whitespace and non-ASCII;
+  OpenAPI 3.1 `form` style (RFC 6570) percent-encodes them.
+- fix direction: percent-encode every cookie value and exploded property name
+  the way the joined form already does (at least `;`, and non-ASCII).
+
 ## model corrections (harness was wrong, not fastmcp)
 
 - a mounted child's own `disable()` cannot be overridden by the parent's
@@ -510,3 +569,22 @@ the same options.
 | typescript-sdk@5ee54ee | yes, `ProxyOAuthServerProvider` passes upstream tokens through (`packages/server/src/server/auth/providers/proxyProvider.ts`) | dead: the client holds the upstream token, which the upstream revoked |
 | python-sdk@77001c9, go-sdk@a6e937f, rust-sdk@165f8fd | no proxy provider | n/a |
 | fastmcp | yes, issues its own JWTs mapped to one upstream record per grant | F10: live again |
+
+### F14 and F15: what the python SDK's own types make of fastmcp's properties
+
+Run through `mcp_types._v2025_11_25.PrimitiveSchemaDefinition` (installed
+`mcp` 2.3.0), the type python-sdk's `render_elicitation_schema` validates
+against:
+
+| property fastmcp sends | python-sdk reads it as | kept |
+|---|---|---|
+| `{"type": "string", "const": "a"}` | `StringSchema` | `type` only, the choice is dropped |
+| `{"type": "integer", "enum": [1, 2]}` | `NumberSchema` | `type` only, the choices are dropped |
+| `{"type": "array", "items": {"type": "string", "enum": ["a"]}}` (what `[["a"]]` sends) | `UntitledMultiSelectEnumSchema` | all |
+
+python-sdk's own server sends the same `const` and integer `enum` for those
+types; it refuses `list[Literal["a"]]` and an `Enum` field (`$ref`) outright.
+typescript-sdk@1.32.2 zod (`dist/cjs/types.js:1656-1787`): zod objects strip
+unknown keys, so `const` and an integer `enum` are dropped the same way (read,
+not run).
+
