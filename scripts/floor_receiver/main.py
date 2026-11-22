@@ -193,7 +193,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self) -> None:
-        self._reply(200 if self.path == "/healthz" else 404, "ok")
+        # not /healthz: App Engine reserves paths ending in "z"
+        self._reply(200 if self.path == "/health" else 404, "ok")
 
     def do_POST(self) -> None:
         if self.path != "/github":
