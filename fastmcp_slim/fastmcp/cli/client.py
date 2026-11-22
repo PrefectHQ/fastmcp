@@ -3,6 +3,7 @@
 import difflib
 import hashlib
 import json
+import math
 import shlex
 import sys
 import warnings
@@ -256,6 +257,7 @@ async def _terminal_elicitation_handler(
             continue
 
         result[field_name] = coerce_value(raw, field_schema)
+        _reject_nonfinite(result[field_name], field_name)
 
     return ElicitResult(action="accept", content=result)
 
@@ -448,6 +450,23 @@ def coerce_value(raw: str, schema: dict[str, Any]) -> Any:
     return raw
 
 
+def _reject_nonfinite(value: Any, name: str) -> None:
+    """Reject NaN/Infinity CLI inputs.
+
+    JSON cannot represent them, and the JSON-RPC layer serializes a non-finite
+    float to null, so the server would silently receive None instead of the
+    value that was typed. Mirrors the tool-result guard in tools/base.py.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError(f"JSON cannot represent {value!r}")
+    if isinstance(value, dict):
+        for key, item in value.items():
+            _reject_nonfinite(item, f"{name}.{key}")
+    elif isinstance(value, list | tuple):
+        for index, item in enumerate(value):
+            _reject_nonfinite(item, f"{name}[{index}]")
+
+
 def parse_tool_arguments(
     raw_args: tuple[str, ...],
     input_json: str | None,
@@ -492,6 +511,15 @@ def parse_tool_arguments(
         prop_schema = properties.get(key, {})
         try:
             result[key] = coerce_value(value, prop_schema)
+        except ValueError as exc:
+            console.print(
+                f"[bold red]Error:[/bold red] Argument [cyan]{key}[/cyan]: {exc}"
+            )
+            sys.exit(1)
+
+    for key, value in result.items():
+        try:
+            _reject_nonfinite(value, key)
         except ValueError as exc:
             console.print(
                 f"[bold red]Error:[/bold red] Argument [cyan]{key}[/cyan]: {exc}"
