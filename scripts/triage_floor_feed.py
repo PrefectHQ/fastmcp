@@ -1,9 +1,11 @@
 """Publish fastmcp triage activity as atproto records for the live triage floor.
 
-Each run turns the GitHub event that triggered it into one small public record,
-and, when the event can change what is open, rewrites a snapshot of every open
-issue and PR. Viewers of the floor subscribe to these records over Jetstream, so
-they get each change pushed to them without calling GitHub themselves.
+`to_event` turns one GitHub event into one small public record; the webhook
+receiver in scripts/floor_receiver writes those as events happen. The workflow
+that runs this script rewrites a snapshot of every open issue and PR whenever
+something can change what is open. Viewers of the floor subscribe to these
+records over Jetstream, so they get each change pushed to them without calling
+GitHub themselves.
 
 Only public data goes out: titles, numbers, labels, logins and timestamps that
 GitHub already shows to anyone. Pushes and branch activity are not published.
@@ -12,7 +14,6 @@ GitHub already shows to anyone. Pushes and branch activity are not published.
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 import urllib.error
@@ -207,26 +208,6 @@ def put_snapshot(pds: str, did: str, token: str, snap: dict) -> bool:
     return False
 
 
-def recent_reviews(now: datetime) -> list[tuple[str, dict]]:
-    """Reviews from the last two hours, read from the repo's event feed.
-
-    Reviews on fork PRs run their workflow without secrets, so they are
-    collected here by trusted runs instead of from their own trigger.
-    """
-    out = []
-    for e in gh(f"repos/{REPO}/events?per_page=100"):
-        if e.get("type") != "PullRequestReviewEvent":
-            continue
-        at = datetime.fromisoformat(e["created_at"].replace("Z", "+00:00"))
-        if now - at > timedelta(hours=2):
-            continue
-        payload = {**e.get("payload", {}), "sender": e.get("actor") or {}}
-        record = to_event("pull_request_review", payload, at)
-        if record:
-            out.append((f"rv{e['id']}", record))
-    return out
-
-
 ACCESS_TTL = timedelta(minutes=90)  # bsky access tokens live about two hours
 
 
@@ -285,11 +266,6 @@ def session(pds: str, path: str | None, now: datetime) -> tuple[str, str]:
     return fresh["did"], fresh["accessJwt"]
 
 
-def rkey_for(run_id: str, attempt: str = "1") -> str:
-    key = re.sub(r"[^A-Za-z0-9]", "", f"gh{run_id}x{attempt}")
-    return key or "gh0"
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -301,72 +277,19 @@ def main() -> int:
     args = parser.parse_args()
     now = datetime.now(UTC)
     name = os.environ.get("GITHUB_EVENT_NAME", "workflow_dispatch")
-    path = os.environ.get("GITHUB_EVENT_PATH")
-    payload = json.load(open(path)) if path and os.path.exists(path) else {}
-    # With the webhook receiver on (scripts/floor_receiver), events reach the
-    # PDS within a second of happening; this run keeps only the snapshot.
-    via_webhook = os.environ.get("FLOOR_EVENTS_VIA_WEBHOOK") == "on"
-    event = None if via_webhook else to_event(name, payload, now)
+    # Events reach the PDS from the webhook receiver (scripts/floor_receiver)
+    # within a second of happening; this workflow writes only the snapshot.
     snap = snapshot(now) if name in SNAPSHOT_EVENTS else None
-    if not event and not snap:
-        print(f"nothing to publish for {name}/{payload.get('action', '')}")
+    if not snap:
+        print(f"nothing to publish for {name}")
         return 0
     if args.dry_run:
-        print(
-            json.dumps(
-                {
-                    "event": event,
-                    "snapshot": snap and {**snap, "open": len(snap["open"])},
-                },
-                indent=2,
-            )
-        )
+        print(json.dumps({**snap, "open": len(snap["open"])}, indent=2))
         return 0
     pds = os.environ["ATPROTO_PDS"]
     did, token = session(pds, args.session_file, now)
-    writes = []
-    if event:
-        rkey = rkey_for(
-            os.environ.get("GITHUB_RUN_ID", ""),
-            os.environ.get("GITHUB_RUN_ATTEMPT", "1"),
-        )
-        writes.append(
-            {
-                "$type": "com.atproto.repo.applyWrites#create",
-                "collection": f"{NSID}.event",
-                "rkey": rkey,
-                "value": event,
-            }
-        )
-    if snap:
-        put_snapshot(pds, did, token, snap)
-    listed = xrpc_get(
-        pds,
-        "com.atproto.repo.listRecords",
-        {"repo": did, "collection": f"{NSID}.event", "limit": "100"},
-    )
-    seen = {r["uri"].rsplit("/", 1)[-1] for r in (listed or {}).get("records", [])}
-    for rkey, record in [] if via_webhook else recent_reviews(now):
-        if rkey not in seen:
-            # putRecord, not create: two overlapping runs may both pick it up
-            body = {
-                "repo": did,
-                "collection": f"{NSID}.event",
-                "rkey": rkey,
-                "record": record,
-                "validate": False,
-            }
-            xrpc(pds, "com.atproto.repo.putRecord", body, token)
-    if writes:
-        xrpc(
-            pds,
-            "com.atproto.repo.applyWrites",
-            {"repo": did, "writes": writes, "validate": False},
-            token,
-        )
-    print(
-        f"published {'event ' + event['kind'] if event else 'no event'}{' + snapshot' if snap else ''}"
-    )
+    put_snapshot(pds, did, token, snap)
+    print("published snapshot")
     return 0
 
 
