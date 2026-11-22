@@ -13,13 +13,14 @@ from mcp_types import TextResourceContents
 from pydantic import AnyUrl
 
 from fastmcp import Client, Context, FastMCP
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import FastMCPError, NotFoundError
 from fastmcp.resources import (
     Resource,
     ResourceContent,
     ResourceResult,
     ResourceTemplate,
 )
+from fastmcp.server import create_proxy
 
 
 class TestResourceContext:
@@ -833,6 +834,63 @@ class TestResourceEnabled:
 
         with pytest.raises(NotFoundError, match="Unknown resource"):
             await mcp.read_resource("resource://data")
+
+    async def test_disabled_resource_is_not_served_by_matching_template(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{name}")
+        def by_name(name: str) -> str:
+            return f"template {name}"
+
+        @mcp.resource("resource://data")
+        def sample_resource() -> str:
+            return "Hello, world!"
+
+        mcp.disable(names={"resource://data"}, components={"resource"})
+
+        with pytest.raises(NotFoundError, match="Unknown resource"):
+            await mcp.read_resource("resource://data")
+        result = await mcp.read_resource("resource://other")
+        assert result.contents[0].content == "template other"
+
+    async def test_disabled_resource_is_not_served_through_proxy_template(self):
+        backend = FastMCP("backend")
+
+        @backend.resource("resource://{name}")
+        def by_name(name: str) -> str:
+            return f"template {name}"
+
+        @backend.resource("resource://data")
+        def sample_resource() -> str:
+            return "Hello, world!"
+
+        gateway = FastMCP("gateway")
+        gateway.mount(create_proxy(backend))
+        gateway.disable(names={"resource://data"}, components={"resource"})
+
+        with pytest.raises(NotFoundError, match="Unknown resource"):
+            await gateway.read_resource("resource://data")
+
+    async def test_disabled_resource_in_mounted_server_is_not_served_by_template(
+        self,
+    ):
+        child = FastMCP("child")
+
+        @child.resource("resource://{name}")
+        def by_name(name: str) -> str:
+            return f"template {name}"
+
+        @child.resource("resource://data")
+        def sample_resource() -> str:
+            return "Hello, world!"
+
+        child.disable(names={"resource://data"}, components={"resource"})
+        parent = FastMCP("parent")
+        parent.mount(child)
+
+        # The parent surfaces the child's NotFoundError as a ResourceError
+        with pytest.raises(FastMCPError, match="Unknown resource"):
+            await parent.read_resource("resource://data")
 
 
 class TestResourceTemplatesTags:

@@ -3,9 +3,11 @@
 import asyncio
 from contextlib import asynccontextmanager
 
+import pytest
 from docket import Docket
 from docket.worker import Worker
 from fastmcp_tasks.dependencies import CurrentDocket, CurrentWorker
+from redis.credentials import CredentialProvider, StreamingCredentialProvider
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -169,3 +171,56 @@ async def test_user_lifespan_still_works_with_docket():
         assert lifespan_entered
         result = await client.call_tool("check_both", {})
         assert HUZZAH in str(result)
+
+
+async def test_memory_backend_does_not_request_credentials():
+    class UnusedCredentials(CredentialProvider):
+        def get_credentials(self) -> tuple[str, str]:
+            raise AssertionError("The memory backend must not authenticate")
+
+    mcp = FastMCP("memory-credentials")
+    mcp.add_extension(TasksExtension(credential_provider=UnusedCredentials()))
+
+    @mcp.tool(task=True)
+    async def double(value: int) -> int:
+        return value * 2
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("double", {"value": 21})
+
+    assert result.data == 42
+    assert type(result.data) is int
+
+
+def test_streaming_credential_providers_are_rejected():
+    class RefreshingCredentials(StreamingCredentialProvider):
+        def get_credentials(self) -> tuple[str, str]:
+            return "tasks", "secret"
+
+        def on_next(self, callback): ...
+
+        def on_error(self, callback): ...
+
+        def is_streaming(self) -> bool:
+            return True
+
+    with pytest.raises(ValueError, match="Streaming credential providers"):
+        TasksExtension(credential_provider=RefreshingCredentials())
+
+
+async def test_provider_and_url_credentials_are_rejected():
+    mcp = FastMCP("conflicting-credentials")
+    mcp.add_extension(
+        TasksExtension(
+            url="redis://user:password@localhost:6379/0",
+            credential_provider=CredentialProvider(),
+        )
+    )
+
+    @mcp.tool(task=True)
+    async def double(value: int) -> int:
+        return value * 2
+
+    with pytest.raises(ValueError, match="not both"):
+        async with mcp._lifespan_manager():
+            pytest.fail("Conflicting credentials must not start the task backend")

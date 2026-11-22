@@ -488,3 +488,19 @@ async def test_resource_error_masked_when_masking_enabled(mode: str) -> None:
             await client.read_resource("data://boom")
 
     assert "secret internal detail" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize("mode", ALL_MODES)
+async def test_prompt_error_masked_when_masking_enabled(mode: str) -> None:
+    """Masking still applies: prompts leak no more than tools already do."""
+    mcp = FastMCP("masked", mask_error_details=True)
+
+    @mcp.prompt
+    def render(topic: str) -> str:
+        raise RuntimeError("secret internal detail")
+
+    async with FastMCPClient(mcp, mode=mode) as client:
+        with pytest.raises(MCPError) as exc_info:
+            await client.get_prompt("render", {"topic": "x"})
+
+    assert "secret internal detail" not in str(exc_info.value)

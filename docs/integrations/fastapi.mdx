@@ -175,7 +175,7 @@ if __name__ == "__main__":
 
 Once you've converted your FastAPI app to an MCP server, you can interact with it using the FastMCP client to test functionality before deploying it to an LLM-based application.
 
-```python {3, }
+```python {3}
 # Assumes the FastAPI app from above is already defined
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -256,12 +256,12 @@ To learn more about customizing the conversion process, see the [OpenAPI Integra
 
 You can configure headers and other client options via the `httpx_client_kwargs` parameter. For example, to add authentication to your FastAPI app, you can pass a `headers` dictionary to the `httpx_client_kwargs` parameter:
 
-```python {27-31}
+```python {26-30}
 # Assumes the FastAPI app from above is already defined
 from fastmcp import FastMCP
 
 # Add authentication to your FastAPI app
-from fastapi import Depends, Header
+from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 security = HTTPBearer()
@@ -300,7 +300,8 @@ In addition to generating servers, FastMCP can facilitate adding MCP servers to 
 
 To mount an MCP server, you can use the `http_app` method on your FastMCP instance. This will return an ASGI application that can be mounted to your FastAPI application.
 
-```python {23-30}
+```python {24-30}
+# Assumes products_db from the example app above is already defined
 from fastmcp import FastMCP
 from fastapi import FastAPI
 
@@ -331,8 +332,60 @@ app = FastAPI(title="E-commerce API", lifespan=mcp_app.lifespan)
 # Mount the MCP server
 app.mount("/analytics", mcp_app)
 
-# Now: API at /products/*, MCP at /analytics/mcp/
+# Now: MCP at /analytics/mcp
 ```
+
+### Testing a Mounted Server
+
+To test the mounted HTTP endpoint, connect the FastMCP client through `StreamingASGITransport`. This sends requests through your FastAPI application in the same process, including its middleware, routing, and authentication, without starting a separate HTTP server. Use `run_asgi_lifespan` to run the parent application's startup and shutdown.
+
+The following standalone test uses a test-only bearer token. Configure `pytest-asyncio` in `auto` mode as described in the [testing guide](/servers/testing):
+
+```python
+import httpx2
+from fastapi import FastAPI
+
+from fastmcp import Client, FastMCP
+from fastmcp.client.transports import StreamableHttpTransport
+from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
+from fastmcp.utilities.asgi_transport import (
+    StreamingASGITransport,
+    run_asgi_lifespan,
+)
+
+
+async def test_mounted_mcp():
+    auth = StaticTokenVerifier(
+        tokens={"test-token": {"client_id": "test-client", "scopes": []}}
+    )
+    mcp = FastMCP("Test Tools", auth=auth)
+
+    @mcp.tool
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    mcp_app = mcp.http_app(path="/mcp")
+    app = FastAPI(lifespan=mcp_app.lifespan)
+    app.mount("/analytics", mcp_app)
+
+    def http_client_factory(**kwargs):
+        return httpx2.AsyncClient(
+            transport=StreamingASGITransport(app),
+            **kwargs,
+        )
+
+    transport = StreamableHttpTransport(
+        url="http://testserver/analytics/mcp",
+        auth="test-token",
+        httpx_client_factory=http_client_factory,
+    )
+    async with run_asgi_lifespan(app):
+        async with Client(transport) as client:
+            result = await client.call_tool("add", {"a": 1, "b": 2})
+            assert result.data == 3
+```
+
+The client URL includes both the mount prefix (`/analytics`) and the MCP application's path (`/mcp`). `StreamingASGITransport` streams responses as they arrive; the standard `httpx2.ASGITransport` buffers responses and cannot complete a long-lived SSE response. Passing `**kwargs` through the HTTP client factory preserves the transport's headers, authentication, and timeout settings.
 
 ## Offering an LLM-Friendly API
 
@@ -371,7 +424,7 @@ This approach lets you maintain a single codebase while offering both traditiona
 
 ### Operation IDs
 
-FastAPI operation IDs become MCP component names. Always specify meaningful operation IDs:
+FastAPI operation IDs become MCP component names, cut at the first double underscore (`__`). Without an explicit `operation_id`, FastAPI generates one such as `get_user_users__user_id__get`, which becomes the tool name `get_user_users`. Specify meaningful operation IDs:
 
 ```python
 # Good - explicit operation_id

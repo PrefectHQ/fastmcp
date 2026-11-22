@@ -6,7 +6,7 @@ backend tools will be *called* by the time the payload reaches a host: every
 layer above may rename them, and the outermost layer's names are the only ones
 a client can actually invoke.
 
-So the payload leaves the app addressed by identity — ``<hash>_<local_name>``,
+So the payload leaves the app addressed by identity — ``__<hash>_<local_name>``,
 stable everywhere — and every FastMCP server rewrites those references on the
 way out to whatever it lists that tool as. Servers rewrite innermost-first, so
 the edge writes last and wins.
@@ -91,7 +91,7 @@ def payload_has_identities(payload: Any) -> bool:
 def annotate_payload_identities(payload: dict[str, Any]) -> dict[str, Any]:
     """Record the identity-addressed form of each reference, at serialization.
 
-    References start out as ``<hash>_<local_name>``, so the map begins as an
+    References start out as ``__<hash>_<local_name>``, so the map begins as an
     identity map to itself. Once a later layer rewrites a name, this is the
     only remaining route back: it carries both what the reference points at
     and the address any server can fall back to.
@@ -136,7 +136,10 @@ def rewrite_payload_tool_names(
 
     rebound: dict[str, str] = {}
     for current_name, address in addresses.items():
-        parsed = parse_hashed_backend_name(address)
+        # Backends on fastmcp 4.0-4.1 emit addresses without the `__` prefix.
+        parsed = parse_hashed_backend_name(address) or parse_hashed_backend_name(
+            f"__{address}"
+        )
         new_name = resolve(parsed[0]) if parsed is not None else None
         if new_name is None:
             new_name = address

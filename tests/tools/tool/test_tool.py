@@ -1,4 +1,6 @@
+import functools
 from datetime import timedelta
+from typing import Annotated
 
 import pytest
 from dirty_equals import HasName
@@ -8,8 +10,9 @@ from mcp_types import (
     ImageContent,
     ToolExecution,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from fastmcp import Client, FastMCP
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.types import Audio, File, Image
 
@@ -270,6 +273,27 @@ class TestToolFromFunction:
             }
         )
 
+    def test_field_metadata_on_none_default_parameter(self):
+        """Annotated metadata stays on the property itself, not a nested branch.
+
+        Python 3.10's `get_type_hints` wraps `None`-defaulted hints in
+        `Optional[...]`, which used to push the description into an inner
+        `anyOf` there.
+        """
+
+        def search(
+            limit: Annotated[int | None, Field(description="How many.")] = None,
+        ) -> str:
+            return "ok"
+
+        tool = Tool.from_function(search)
+
+        assert tool.parameters["properties"]["limit"] == {
+            "anyOf": [{"type": "integer"}, {"type": "null"}],
+            "default": None,
+            "description": "How many.",
+        }
+
     def test_non_callable_fn(self):
         with pytest.raises(TypeError, match="not a callable object"):
             Tool.from_function(1)  # type: ignore
@@ -299,6 +323,93 @@ class TestToolFromFunction:
             ValueError, match="You must provide a name for lambda functions"
         ):
             Tool.from_function(lambda x: x)
+
+    async def test_partial_function(self):
+        """A partial takes its name and docstring from the wrapped function,
+        not from functools.partial's class."""
+
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers.
+
+            Args:
+                x: The first number.
+                y: The second number.
+            """
+            return x * y
+
+        tool = Tool.from_function(functools.partial(multiply, y=2))
+
+        assert tool.name == "multiply"
+        assert tool.description == "Multiply two numbers."
+        assert tool.parameters["properties"] == {
+            "x": {"type": "integer", "description": "The first number."},
+            "y": {"default": 2, "type": "integer", "description": "The second number."},
+        }
+
+        result = await tool.run({"x": 3})
+        assert result.structured_content == {"result": 6}
+
+    async def test_partial_functions_do_not_collide(self):
+        """Partials over different functions must not share the name 'partial',
+        which makes the second registration replace the first."""
+
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers."""
+            return x * y
+
+        def greet(name: str, greeting: str) -> str:
+            """Greet a person."""
+            return f"{greeting}, {name}!"
+
+        mcp = FastMCP()
+        mcp.add_tool(functools.partial(multiply, y=2))
+        mcp.add_tool(functools.partial(greet, greeting="Hello"))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+
+        assert {tool.name: tool.description for tool in tools} == {
+            "multiply": "Multiply two numbers.",
+            "greet": "Greet a person.",
+        }
+
+    @pytest.mark.parametrize("docstring", ["Double the input.", "", None])
+    async def test_partial_explicit_metadata_is_preserved(
+        self, docstring: str | None
+    ) -> None:
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers."""
+            return x * y
+
+        double = functools.partial(multiply, y=2)
+        setattr(double, "__name__", "double")
+        setattr(double, "__doc__", docstring)
+        tool = Tool.from_function(double)
+
+        assert tool.name == "double"
+        assert tool.description == (docstring or None)
+        assert (await tool.run({"x": 3})).structured_content == {"result": 6}
+        assert (await tool.run({"x": 3, "y": 5})).structured_content == {"result": 15}
+
+    def test_partial_explicit_parameter_docs_are_preserved(self) -> None:
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers.
+
+            Args:
+                x: Original input.
+            """
+            return x * y
+
+        double = functools.partial(multiply, y=2)
+        double.__doc__ = """Double the input.
+
+        Args:
+            x: Custom input.
+        """
+        tool = Tool.from_function(double, name="explicit_name", description="")
+        assert tool.name == "explicit_name"
+        assert tool.description == ""
+        assert tool.parameters["properties"]["x"]["description"] == "Custom input."
 
     def test_private_arguments(self):
         def add(_a: int, _b: int) -> int:

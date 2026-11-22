@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 from fastmcp.resources import ResourceTemplate
@@ -330,6 +332,94 @@ class TestBooleanQueryParameterValidation:
             await resource.read()
 
 
+class TestPostponedAnnotationCoercion:
+    """Under `from __future__ import annotations` the raw annotations are
+    strings, so coercion must use the resolved hints to apply the same rules."""
+
+    @pytest.fixture
+    def postponed_get_config(self):
+        # Defined by exec so the future import applies only to this function.
+        namespace: dict[str, object] = {}
+        exec(
+            "from __future__ import annotations\n"
+            "def get_config(id: int, enabled: bool = False) -> dict:\n"
+            "    return {'id': id, 'enabled': enabled}\n",
+            namespace,
+        )
+        return namespace["get_config"]
+
+    @pytest.mark.parametrize("value", ["on", "off", "t", "y"])
+    async def test_invalid_boolean_value_raises_error(
+        self, postponed_get_config, value: str
+    ):
+        template = ResourceTemplate.from_function(
+            fn=postponed_get_config, uri_template="config://{id}{?enabled}"
+        )
+
+        with pytest.raises(ValueError, match="Invalid boolean value for enabled"):
+            await template.read({"id": "1", "enabled": value})
+
+    async def test_values_coerce_like_real_annotations(self, postponed_get_config):
+        template = ResourceTemplate.from_function(
+            fn=postponed_get_config, uri_template="config://{id}{?enabled}"
+        )
+
+        assert await template.read({"id": "7", "enabled": "yes"}) == {
+            "id": 7,
+            "enabled": True,
+        }
+        with pytest.raises(ValueError, match="invalid literal for int"):
+            await template.read({"id": "1.0", "enabled": "no"})
+
+
+class TestCallableInstanceAnnotationParity:
+    """A callable instance is invoked through its `__call__`, so its hints must
+    be resolved there too, whether or not annotations are postponed."""
+
+    @pytest.fixture(params=["eager", "postponed"])
+    def config_reader(self, request):
+        # Defined by exec so the future import applies only to this class.
+        future = (
+            "from __future__ import annotations\n"
+            if request.param == "postponed"
+            else ""
+        )
+        namespace: dict[str, Any] = {}
+        exec(
+            future + "class ConfigReader:\n"
+            "    def __call__(self, id: int, enabled: bool = False) -> dict:\n"
+            "        return {'id': id, 'enabled': enabled}\n",
+            namespace,
+        )
+        return namespace["ConfigReader"]()
+
+    @pytest.mark.parametrize("value", ["on", "off", "t", "y"])
+    async def test_invalid_boolean_value_raises_error(self, config_reader, value: str):
+        template = ResourceTemplate.from_function(
+            fn=config_reader,
+            uri_template="config://{id}{?enabled}",
+            name="config",
+        )
+
+        with pytest.raises(ValueError, match="Invalid boolean value for enabled"):
+            await template.read({"id": "1", "enabled": value})
+
+    async def test_values_coerce_and_defaults_apply(self, config_reader):
+        template = ResourceTemplate.from_function(
+            fn=config_reader,
+            uri_template="config://{id}{?enabled}",
+            name="config",
+        )
+
+        assert await template.read({"id": "7", "enabled": "yes"}) == {
+            "id": 7,
+            "enabled": True,
+        }
+        assert await template.read({"id": "7"}) == {"id": 7, "enabled": False}
+        with pytest.raises(ValueError, match="invalid literal for int"):
+            await template.read({"id": "1.0"})
+
+
 class TestResourceTemplateFieldDefaults:
     """Test resource templates with Field() defaults."""
 
@@ -408,3 +498,81 @@ class TestResourceTemplateFieldDefaults:
         assert result2["limit"] == 50  # overridden
         assert result2["offset"] == 0  # default
         assert result2["format"] == "xml"  # overridden
+
+
+class TestMultipleQueryExpressions:
+    """Templates with more than one query expression (`{?a}{?b}`, `{?a}{&b}`).
+
+    RFC 6570 allows several query expressions in one template. Every block's
+    parameters must be extracted on a match, and expansion must join the
+    blocks into a single query string.
+    """
+
+    async def test_second_query_block_params_are_matched(self):
+        def get_data(id: str, x: str = "dx", y: str = "dy") -> str:
+            return f"{id}/{x}/{y}"
+
+        template = ResourceTemplate.from_function(
+            fn=get_data,
+            uri_template="data://{id}{?x}{?y}",
+            name="test",
+        )
+
+        params = template.matches("data://7?x=1&y=2")
+        assert params == {"id": "7", "x": "1", "y": "2"}
+
+    async def test_query_continuation_block_matches(self):
+        def get_data(id: str, x: str = "dx", y: str = "dy") -> str:
+            return f"{id}/{x}/{y}"
+
+        template = ResourceTemplate.from_function(
+            fn=get_data,
+            uri_template="data://{id}{?x}{&y}",
+            name="test",
+        )
+
+        params = template.matches("data://7?x=1&y=2")
+        assert params == {"id": "7", "x": "1", "y": "2"}
+
+        resource = await template.create_resource("data://7?x=1&y=2", params)
+        assert await resource.read() == "7/1/2"
+
+    async def test_exploded_param_in_second_block(self):
+        def get_data(id: str, x: str = "dx", tags: list[str] | None = None) -> str:
+            return ",".join(tags or [])
+
+        template = ResourceTemplate.from_function(
+            fn=get_data,
+            uri_template="data://{id}{?x}{&tags*}",
+            name="test",
+        )
+
+        params = template.matches("data://7?x=1&tags=a&tags=b")
+        assert params == {"id": "7", "x": "1", "tags": ["a", "b"]}
+
+    def test_expand_joins_blocks_into_one_query_string(self):
+        from fastmcp.resources.template import expand_uri_template
+
+        assert (
+            expand_uri_template("data://{id}{?x}{?y}", {"id": 1, "x": "1", "y": "2"})
+            == "data://1?x=1&y=2"
+        )
+        assert (
+            expand_uri_template("data://{id}{?x}{&y}", {"id": 1, "x": "1", "y": "2"})
+            == "data://1?x=1&y=2"
+        )
+
+    def test_expand_match_round_trip_across_blocks(self):
+        from fastmcp.resources.template import (
+            expand_uri_template,
+            match_uri_template,
+        )
+
+        uri = expand_uri_template(
+            "data://{id}{?x}{?y}", {"id": 1, "x": "a b", "y": "2"}
+        )
+        assert match_uri_template(uri, "data://{id}{?x}{?y}") == {
+            "id": "1",
+            "x": "a b",
+            "y": "2",
+        }

@@ -139,13 +139,12 @@ async def get_user_info() -> dict:
     from fastmcp.server.dependencies import get_access_token
     
     token = get_access_token()
-    # The AzureProvider stores user data in token claims
+    # Claims come from the Azure access token
     return {
-        "azure_id": token.claims.get("sub"),
-        "email": token.claims.get("email"),
+        "azure_id": token.claims.get("oid"),
+        "username": token.claims.get("preferred_username"),
         "name": token.claims.get("name"),
-        "job_title": token.claims.get("job_title"),
-        "office_location": token.claims.get("office_location")
+        "tenant_id": token.claims.get("tid"),
     }
 ```
 
@@ -195,6 +194,36 @@ FastMCP automatically prefixes `required_scopes` with your `identifier_uri` (e.g
 OIDC scopes (`openid`, `profile`, `email`, `offline_access`) are never prefixed and excluded from validation because Azure doesn't include them in access token `scp` claims.
 </Note>
 
+### Account Selection
+
+By default, `AzureProvider` sends `prompt=select_account` to Azure, so Entra shows an account picker rather than reusing whichever session the browser already holds without asking. Users signed in to several Microsoft accounts, or holding a stale session, can then pick the right one.
+
+Pass `extra_authorize_params` to send different parameters to Azure's authorization endpoint:
+
+```python server.py
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.azure import AzureProvider
+
+auth = AzureProvider(
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+    tenant_id="your-tenant-id",
+    base_url="http://localhost:8000",
+    required_scopes=["read"],
+    extra_authorize_params={"domain_hint": "contoso.com"},
+)
+
+mcp = FastMCP("My App", auth=auth)
+```
+
+A dict you pass replaces the default rather than merging with it. The example above sends `domain_hint` and no `prompt`. To keep the account picker alongside another parameter, name both:
+
+```python
+extra_authorize_params={"prompt": "select_account", "domain_hint": "contoso.com"}
+```
+
+Passing `{}` sends no extra parameters at all, which leaves Azure to its own default of silent single sign-on.
+
 ## Testing
 
 ### Running the Server
@@ -224,7 +253,7 @@ async def main():
         # Test the protected tool
         result = await client.call_tool("get_user_info")
         user_info = result.data
-        print(f"Azure user: {user_info['email']}")
+        print(f"Azure user: {user_info['username']}")
         print(f"Name: {user_info['name']}")
 
 if __name__ == "__main__":
@@ -500,6 +529,10 @@ mcp = FastMCP("My App", auth=auth)
 | Authorization endpoint | `https://{tenant_name}.b2clogin.com/{tenant_name}.onmicrosoft.com/{policy_name}/oauth2/v2.0/authorize` |
 | Token endpoint | `https://{tenant_name}.b2clogin.com/{tenant_name}.onmicrosoft.com/{policy_name}/oauth2/v2.0/token` |
 | Scope identifier URI | `https://{tenant_name}.onmicrosoft.com/{client_id}` |
+
+<Note>
+B2C user flows accept `prompt=login` and reject `prompt=select_account`. `from_b2c()` therefore sends no `prompt` at all, rather than the account-picker default described under [Account Selection](#account-selection). Pass `extra_authorize_params={"prompt": "login"}` to make B2C users re-enter their credentials.
+</Note>
 
 ### Token Issuer Validation
 

@@ -7,7 +7,7 @@ authors = [{ name = "zzstoatzz", email = "thrast36@gmail.com" }]
 requires-python = ">=3.12"
 dependencies = [
     "androidtv[async]==0.0.75",
-    "fastmcp>=4.0.3,<5",
+    "fastmcp>=4.1.2,<5",
     "phue2==1.0.0a1",
     "pydantic-settings",
 ]

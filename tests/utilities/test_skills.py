@@ -1,4 +1,4 @@
-"""Tests for skills client utilities."""
+"""Tests for the deprecated skills client utilities."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import pytest
 from mcp_types import BlobResourceContents, TextResourceContents
 
 from fastmcp import Client, FastMCP
+from fastmcp._warnings import FastMCPDeprecationWarning
 from fastmcp.server.providers.skills import SkillsDirectoryProvider
 from fastmcp.utilities.skills import (
     SkillFile,
@@ -20,6 +21,11 @@ from fastmcp.utilities.skills import (
     get_skill_manifest,
     list_skills,
     sync_skills,
+)
+
+# Every helper here is deprecated; `TestDeprecation` checks the warnings.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::fastmcp._warnings.FastMCPDeprecationWarning"
 )
 
 
@@ -99,6 +105,26 @@ def skills_server(skills_dir: Path) -> FastMCP:
     mcp = FastMCP("Skills Server")
     mcp.add_provider(SkillsDirectoryProvider(roots=skills_dir))
     return mcp
+
+
+class TestDeprecation:
+    @pytest.mark.filterwarnings("default::fastmcp._warnings.FastMCPDeprecationWarning")
+    async def test_each_helper_warns_once_with_its_replacement(
+        self, skills_server: FastMCP, tmp_path: Path
+    ):
+        async with Client(skills_server) as client:
+            with pytest.warns(FastMCPDeprecationWarning, match=r"client\.list_skills"):
+                await list_skills(client)
+            with pytest.warns(FastMCPDeprecationWarning, match=r"client\.get_skill"):
+                await get_skill_manifest(client, "pdf-processing")
+            with pytest.warns(FastMCPDeprecationWarning, match="to_directory") as one:
+                await download_skill(client, "pdf-processing", tmp_path / "one")
+            with pytest.warns(FastMCPDeprecationWarning) as record:
+                await sync_skills(client, tmp_path / "all")
+        assert len(one) == 1
+        assert len(record) == 1
+        assert one[0].filename == record[0].filename == __file__
+        assert "4.3" in str(record[0].message)
 
 
 class TestListSkills:
@@ -376,6 +402,50 @@ class TestDownloadSkill:
         assert client.requested_uris == [
             "skill://malicious/_manifest",
             "skill://malicious/SKILL.md",
+        ]
+
+    async def test_quotes_manifest_paths_when_reading_resources(self, tmp_path: Path):
+        manifest = {
+            "skill": "encoded",
+            "files": [
+                {"path": "100 score.md", "size": 5, "hash": "sha256:space"},
+                {"path": "100%20score.md", "size": 6, "hash": "sha256:percent"},
+                {"path": "notes#1.md", "size": 5, "hash": "sha256:hash"},
+                {"path": "team/ref.md", "size": 6, "hash": "sha256:nested"},
+            ],
+        }
+        client = FakeResourceReader(
+            {
+                "skill://encoded/_manifest": [
+                    text_resource("skill://encoded/_manifest", json.dumps(manifest))
+                ],
+                "skill://encoded/100%20score.md": [
+                    text_resource("skill://encoded/100%20score.md", "SPACE")
+                ],
+                "skill://encoded/100%2520score.md": [
+                    text_resource("skill://encoded/100%2520score.md", "PERCENT")
+                ],
+                "skill://encoded/notes%231.md": [
+                    text_resource("skill://encoded/notes%231.md", "HASH!")
+                ],
+                "skill://encoded/team/ref.md": [
+                    text_resource("skill://encoded/team/ref.md", "NESTED")
+                ],
+            }
+        )
+
+        result = await download_skill(cast(Client, client), "encoded", tmp_path)
+
+        assert (result / "100 score.md").read_text() == "SPACE"
+        assert (result / "100%20score.md").read_text() == "PERCENT"
+        assert (result / "notes#1.md").read_text() == "HASH!"
+        assert (result / "team" / "ref.md").read_text() == "NESTED"
+        assert client.requested_uris == [
+            "skill://encoded/_manifest",
+            "skill://encoded/100%20score.md",
+            "skill://encoded/100%2520score.md",
+            "skill://encoded/notes%231.md",
+            "skill://encoded/team/ref.md",
         ]
 
     async def test_downloads_blob_resources(self, tmp_path: Path):

@@ -116,7 +116,7 @@ class TestSingleServerRoundTrip:
         # Step 2: call the backend tool by its hashed name
         hashed_name = hashed_backend_name("contacts", "save_contact")
         backend_result = await server.call_tool(hashed_name, {"name": "Alice"})
-        assert backend_result.content[0].text == "saved Alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert backend_result.content[0].text == "saved Alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
 
 class TestNamespacedMountRoundTrip:
@@ -144,7 +144,7 @@ class TestNamespacedMountRoundTrip:
         # Backend tool reachable via hash
         hashed_name = hashed_backend_name("crm", "save")
         backend_result = await server.call_tool(hashed_name, {"name": "Bob"})
-        assert backend_result.content[0].text == "saved Bob"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert backend_result.content[0].text == "saved Bob"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
 
 class TestMountedServerRoundTrip:
@@ -171,7 +171,40 @@ class TestMountedServerRoundTrip:
         # Backend tool callable through the mount via hash dispatch
         hashed_name = hashed_backend_name("contacts", "save")
         result = await outer.call_tool(hashed_name, {"name": "Carol"})
-        assert result.content[0].text == "saved Carol"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "saved Carol"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
+
+
+@pytest.mark.parametrize("tool_name", ["abcdef012345_save", "__save"])
+@pytest.mark.parametrize("composition", ["provider", "mount"])
+async def test_hash_shaped_user_name_round_trip(tool_name: str, composition: str):
+    app = FastMCPApp("contacts")
+
+    @app.tool(name=tool_name)
+    def save(name: str) -> str:
+        return f"saved {name}"
+
+    @app.ui()
+    def form() -> Column:
+        return Column(
+            children=[Button(label="Save", on_click=CallTool(tool=tool_name))]
+        )
+
+    server = FastMCP("Platform")
+    if composition == "provider":
+        server.add_provider(app, namespace="ns")
+    else:
+        inner = FastMCP("Inner")
+        inner.add_provider(app)
+        server.mount(inner, namespace="ns")
+
+    result = await server.call_tool("ns_form", {})
+    assert result.structured_content is not None
+    (ref,) = _tool_refs(result.structured_content)
+    assert ref == f"ns_{tool_name}"
+    assert ref in [tool.name for tool in await server.list_tools()]
+
+    clicked = await server.call_tool(ref, {"name": "Alice"})
+    assert clicked.content[0].text == "saved Alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
 
 class TestProxiedServerRoundTrip:
@@ -222,7 +255,7 @@ class TestProxiedServerRoundTrip:
 
         hashed_name = hashed_backend_name("contacts", "save")
         result = await gateway.call_tool(hashed_name, {"name": "Dana"})
-        assert result.content[0].text == "saved Dana"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "saved Dana"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_backend_tool_callable_through_a_namespaced_proxy(self):
         backend = self._backend()
@@ -236,7 +269,7 @@ class TestProxiedServerRoundTrip:
 
         hashed_name = hashed_backend_name("contacts", "save")
         result = await gateway.call_tool(hashed_name, {"name": "Erin"})
-        assert result.content[0].text == "saved Erin"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "saved Erin"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_backend_tool_callable_through_chained_proxies(self):
         backend = self._backend()
@@ -247,7 +280,7 @@ class TestProxiedServerRoundTrip:
 
         hashed_name = hashed_backend_name("contacts", "save")
         result = await top.call_tool(hashed_name, {"name": "Frank"})
-        assert result.content[0].text == "saved Frank"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "saved Frank"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
 
 class TestLateBoundToolNames:
@@ -318,7 +351,7 @@ class TestLateBoundToolNames:
         assert ref in [t.name for t in await gateway.list_tools()]
 
         clicked = await gateway.call_tool(ref, {"name": "alice"})
-        assert clicked.content[0].text == "[be] saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert clicked.content[0].text == "[be] saved alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     @pytest.mark.parametrize(
         "transform_factory,expected_listing",
@@ -351,7 +384,7 @@ class TestLateBoundToolNames:
         assert ref == hashed_backend_name("contacts", "save")
 
         clicked = await server.call_tool(ref, {"name": "alice"})
-        assert clicked.content[0].text == "[cat] saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert clicked.content[0].text == "[cat] saved alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     @pytest.mark.parametrize(
         "compose",
@@ -419,7 +452,7 @@ class TestLateBoundToolNames:
         assert ref == hashed_backend_name("contacts", "save")
 
         clicked = await gateway.call_tool(ref, {"name": "alice"})
-        assert clicked.content[0].text == "[be] saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert clicked.content[0].text == "[be] saved alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_versions_of_one_tool_are_a_single_target(self):
         """Versions are listed individually and share an identity, but they
@@ -448,7 +481,7 @@ class TestLateBoundToolNames:
         assert ref == "save"
 
         clicked = await server.call_tool(ref, {"name": "alice"})
-        assert clicked.content[0].text == "v2 saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert clicked.content[0].text == "v2 saved alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_distinct_apps_sharing_a_backend_name(self):
         """Identity and name must agree in both directions. Two apps can each
@@ -527,7 +560,7 @@ class TestLateBoundToolNames:
         assert ref == hashed_backend_name("contacts", "save")
 
         clicked = await server.call_tool(ref, {"name": "alice"})
-        assert clicked.content[0].text == "[APP] saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert clicked.content[0].text == "[APP] saved alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_middleware_produced_results_are_rebound(self):
         """Middleware can answer a call itself, and such a result never
@@ -560,7 +593,7 @@ class TestLateBoundToolNames:
         assert ref == "save"
 
         clicked = await server.call_tool(ref, {"name": "alice"})
-        assert clicked.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert clicked.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_a_transform_cannot_unwire_an_app_tool(self):
         """A meta override that keeps the identity but drops app visibility
@@ -587,7 +620,7 @@ class TestLateBoundToolNames:
         assert ref == hashed_backend_name("contacts", "save")
 
         clicked = await gateway.call_tool(ref, {"name": "alice"})
-        assert clicked.content[0].text == "[be] saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert clicked.content[0].text == "[be] saved alice"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_duplicate_copies_are_not_collapsed_by_a_shared_name(self):
         """Copies whose backends collide on a name are the worst case, not the
@@ -660,7 +693,7 @@ class TestDynamicToolAdd:
         # The dynamically-added tool should be reachable.
         hashed_name = hashed_backend_name("contacts", "save")
         result = await server.call_tool(hashed_name, {"name": "Dan"})
-        assert result.content[0].text == "saved Dan"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "saved Dan"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
 
 class TestCollision:
@@ -685,12 +718,12 @@ class TestCollision:
         result = await server.call_tool(
             hashed_backend_name("shared", "save"), {"name": "Eve"}
         )
-        assert result.content[0].text == "from A: Eve"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "from A: Eve"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
         result_b = await server.call_tool(
             hashed_backend_name("shared", "save_b"), {"name": "Eve"}
         )
-        assert result_b.content[0].text == "from B: Eve"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result_b.content[0].text == "from B: Eve"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_ambiguous_identity_raises_rather_than_guessing(self):
         """The same app composed into two branches yields two tools with one
@@ -736,9 +769,9 @@ class TestCollision:
         result_a = await gateway.call_tool(
             hashed_backend_name("crm", "save"), {"name": "Eve"}
         )
-        assert result_a.content[0].text == "from A: Eve"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result_a.content[0].text == "from A: Eve"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
         result_b = await gateway.call_tool(
             hashed_backend_name("billing", "save"), {"name": "Eve"}
         )
-        assert result_b.content[0].text == "from B: Eve"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result_b.content[0].text == "from B: Eve"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]

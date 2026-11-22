@@ -1,7 +1,7 @@
 """Discord OAuth provider for FastMCP.
 
 This module provides a complete Discord OAuth integration that's ready to use
-with just a client ID and client secret. It handles all the complexity of
+with a client ID, client secret, and base URL. It handles all the complexity of
 Discord's OAuth flow, token validation, and user management.
 
 Example:
@@ -12,7 +12,8 @@ Example:
     # Simple Discord OAuth protection
     auth = DiscordProvider(
         client_id="your-discord-client-id",
-        client_secret="your-discord-client-secret"
+        client_secret="your-discord-client-secret",
+        base_url="https://my-server.com",
     )
 
     mcp = FastMCP("My Protected Server", auth=auth)
@@ -32,6 +33,7 @@ from pydantic import AnyHttpUrl
 
 from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.auth import AccessToken
+from fastmcp.server.auth.identity_assertion import IdentityAssertion
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
@@ -213,6 +215,7 @@ class DiscordProvider(OAuthProxy):
         token_expiry_threshold_seconds: int = 0,
         http_client: httpx2.AsyncClient | None = None,
         enable_cimd: bool = True,
+        identity_assertion: IdentityAssertion | None = None,
     ):
         """Initialize Discord OAuth provider.
 
@@ -261,6 +264,8 @@ class DiscordProvider(OAuthProxy):
                 refresh gracefully (e.g. `mcp-remote`). See `OAuthProxy` for details.
             token_expiry_threshold_seconds: Number of seconds before actual expiry to
                 treat a token as expired, refreshing early to avoid races. Defaults to 0.
+            identity_assertion: Optional SEP-990 ID-JAG configuration for
+                identity-bound token exchange. Disabled by default.
         """
         # Parse scopes if provided as string
         required_scopes_final = (
@@ -298,6 +303,7 @@ class DiscordProvider(OAuthProxy):
             fastmcp_access_token_expiry_seconds=fastmcp_access_token_expiry_seconds,
             token_expiry_threshold_seconds=token_expiry_threshold_seconds,
             enable_cimd=enable_cimd,
+            identity_assertion=identity_assertion,
         )
 
         logger.debug(

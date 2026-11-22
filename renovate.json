@@ -2,7 +2,8 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "github>PrefectHQ/renovate-config",
-    "github>PrefectHQ/renovate-config:python"
+    "github>PrefectHQ/renovate-config:python",
+    "helpers:pinGitHubActionDigests"
   ],
   "prConcurrentLimit": 5,
   "prHourlyLimit": 5

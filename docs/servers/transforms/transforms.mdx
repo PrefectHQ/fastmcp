@@ -15,7 +15,7 @@ Transforms modify components as they flow from providers to clients. When a clie
 
 Think of transforms as filters in a pipeline. Components flow from providers through transforms to reach clients:
 
-```
+```text
 Provider → [Transform A] → [Transform B] → Client
 ```
 
@@ -27,7 +27,7 @@ FastMCP provides several transforms for common use cases:
 
 - **[Namespace](/servers/transforms/namespace)** - Prefix component names to prevent conflicts when composing servers
 - **[Tool Transformation](/servers/transforms/tool-transformation)** - Rename tools, modify descriptions, reshape arguments
-- **[Enabled](/servers/visibility)** - Control which components are visible at runtime
+- **[Visibility](/servers/visibility)** - Control which components are visible at runtime
 - **[Tool Search](/servers/transforms/tool-search)** - Replace large tool catalogs with on-demand search
 - **[Resources as Tools](/servers/transforms/resources-as-tools)** - Expose resources to tool-only clients
 - **[Prompts as Tools](/servers/transforms/prompts-as-tools)** - Expose prompts to tool-only clients
@@ -64,12 +64,28 @@ main = FastMCP("Main", providers=[provider])
 # Tool is now: api_process with updated description
 ```
 
-When using `mount()`, the returned provider reference lets you add transforms directly.
+`mount()` returns `None`, so it gives you no provider to add transforms to. When a mounted server needs its own transforms, build the `FastMCPProvider` yourself and register it with `add_provider()`, which takes the same `namespace` argument as `mount()`.
 
 ```python
+from fastmcp import FastMCP
+from fastmcp.server.providers import FastMCPProvider
+from fastmcp.server.transforms import ToolTransform
+from fastmcp.tools.tool_transform import ToolTransformConfig
+
+sub_server = FastMCP("Sub")
+
+@sub_server.tool
+def process(data: str) -> str:
+    return f"Processed: {data}"
+
+provider = FastMCPProvider(sub_server)
+provider.add_transform(ToolTransform({
+    "process": ToolTransformConfig(description="Process data through the API"),
+}))
+
 main = FastMCP("Main")
-mount = main.mount(sub_server, namespace="api")
-mount.add_transform(ToolTransform({...}))
+main.add_provider(provider, namespace="api")
+# Tool is now: api_process with updated description
 ```
 
 ### Server-Level Transforms
@@ -96,9 +112,16 @@ Server-level transforms are useful for API versioning or applying consistent nam
 Transforms stack in the order they're added. The first transform added is innermost (closest to the provider), and subsequent transforms wrap it.
 
 ```python
+from fastmcp import FastMCP
 from fastmcp.server.providers import FastMCPProvider
 from fastmcp.server.transforms import Namespace, ToolTransform
 from fastmcp.tools.tool_transform import ToolTransformConfig
+
+server = FastMCP("Sub")
+
+@server.tool
+def verbose_name() -> str:
+    return "done"
 
 provider = FastMCPProvider(server)
 provider.add_transform(Namespace("api"))           # Applied first
@@ -117,7 +140,7 @@ Create custom transforms by subclassing `Transform` and overriding the methods y
 
 ```python
 from collections.abc import Sequence
-from fastmcp.server.transforms import Transform, GetToolNext
+from fastmcp.server.transforms import GetToolNext, Transform, VersionSpec
 from fastmcp.tools import Tool
 
 class TagFilter(Transform):
@@ -129,31 +152,37 @@ class TagFilter(Transform):
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         return [t for t in tools if t.tags & self.required_tags]
 
-    async def get_tool(self, name: str, call_next: GetToolNext) -> Tool | None:
-        tool = await call_next(name)
+    async def get_tool(
+        self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
+    ) -> Tool | None:
+        tool = await call_next(name, version=version)
         if tool and tool.tags & self.required_tags:
             return tool
         return None
 ```
 
-The `Transform` base class provides default implementations that pass through unchanged. Override only the methods relevant to your transform.
+The `Transform` base class provides default implementations that pass through unchanged. Override only the methods relevant to your transform. Get methods receive a keyword-only `version` argument; accept it and pass it to `call_next`, or lookups through your transform raise `TypeError`.
 
 Each component type has two methods with different patterns:
 
 | Method | Pattern | Purpose |
 |--------|---------|---------|
 | `list_tools(tools)` | Pure function | Transform the sequence of tools |
-| `get_tool(name, call_next)` | Middleware | Transform lookup by name |
+| `get_tool(name, call_next, *, version=None)` | Middleware | Transform lookup by name |
 | `list_resources(resources)` | Pure function | Transform the sequence of resources |
-| `get_resource(uri, call_next)` | Middleware | Transform lookup by URI |
+| `get_resource(uri, call_next, *, version=None)` | Middleware | Transform lookup by URI |
 | `list_resource_templates(templates)` | Pure function | Transform the sequence of templates |
-| `get_resource_template(uri, call_next)` | Middleware | Transform template lookup by URI |
+| `get_resource_template(uri, call_next, *, version=None)` | Middleware | Transform template lookup by URI |
 | `list_prompts(prompts)` | Pure function | Transform the sequence of prompts |
-| `get_prompt(name, call_next)` | Middleware | Transform lookup by name |
+| `get_prompt(name, call_next, *, version=None)` | Middleware | Transform lookup by name |
 
 List methods receive sequences directly and return transformed sequences. Get methods use `call_next` for routing flexibility—when a client requests "new_name", your transform maps it back to "original_name" before calling `call_next()`.
 
 ```python
+from collections.abc import Sequence
+from fastmcp.server.transforms import GetToolNext, Transform, VersionSpec
+from fastmcp.tools import Tool
+
 class PrefixTransform(Transform):
     def __init__(self, prefix: str):
         self.prefix = prefix
@@ -161,12 +190,14 @@ class PrefixTransform(Transform):
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         return [t.model_copy(update={"name": f"{self.prefix}_{t.name}"}) for t in tools]
 
-    async def get_tool(self, name: str, call_next: GetToolNext) -> Tool | None:
+    async def get_tool(
+        self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
+    ) -> Tool | None:
         # Reverse the prefix to find the original
         if not name.startswith(f"{self.prefix}_"):
             return None
         original = name[len(self.prefix) + 1:]
-        tool = await call_next(original)
+        tool = await call_next(original, version=version)
         if tool:
             return tool.model_copy(update={"name": name})
         return None

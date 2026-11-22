@@ -1,10 +1,12 @@
+import json
 import subprocess
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 
-from fastmcp.cli.cli import _parse_env_var, app
+from fastmcp.cli.cli import app
+from fastmcp.cli.install.shared import parse_env_var
 
 
 class TestMainCLI:
@@ -20,18 +22,18 @@ class TestMainCLI:
 
     def test_parse_env_var_valid(self):
         """Test parsing valid environment variables."""
-        key, value = _parse_env_var("KEY=value")
+        key, value = parse_env_var("KEY=value")
         assert key == "KEY"
         assert value == "value"
 
-        key, value = _parse_env_var("COMPLEX_KEY=complex=value=with=equals")
+        key, value = parse_env_var("COMPLEX_KEY=complex=value=with=equals")
         assert key == "COMPLEX_KEY"
         assert value == "complex=value=with=equals"
 
     def test_parse_env_var_invalid(self):
         """Test parsing invalid environment variables exits."""
         with pytest.raises(SystemExit) as exc_info:
-            _parse_env_var("INVALID_FORMAT")
+            parse_env_var("INVALID_FORMAT")
         assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 1
 
@@ -39,7 +41,7 @@ class TestMainCLI:
     def test_horizon_account_commands_are_top_level(self, name: str):
         command, bound, _ = app.parse_args([name, "--json"])
 
-        assert command.__name__ == name  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert command.__name__ == name  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
         assert bound.arguments == {"json_output": True}
 
     def test_login_accepts_a_horizon_host(self):
@@ -64,7 +66,7 @@ class TestVersionCommand:
         """Test that the version command parses arguments correctly."""
         command, bound, _ = app.parse_args(["version"])
         assert callable(command)
-        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
         # Default arguments aren't included in bound.arguments
         assert bound.arguments == {}
 
@@ -72,7 +74,7 @@ class TestVersionCommand:
         """Test that the version command parses --copy flag correctly."""
         command, bound, _ = app.parse_args(["version", "--copy"])
         assert callable(command)
-        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
         assert bound.arguments == {"copy": True}
 
     @patch("fastmcp.cli.cli.pyperclip.copy")
@@ -605,6 +607,23 @@ def test_tool(x: int) -> int:
         assert "MCP" in captured.out
         assert "Use --format [fastmcp|mcp] for complete JSON output" in captured.out
 
+    async def test_inspect_command_text_summary_keeps_brackets(self, tmp_path, capsys):
+        """Square brackets in server metadata are shown literally, not parsed as markup."""
+        server_file = tmp_path / "test_server.py"
+        server_file.write_text("""
+import fastmcp
+
+mcp = fastmcp.FastMCP("demo [dev]", instructions="Use [path] or see [/docs]")
+""")
+
+        command, bound, _ = app.parse_args(["inspect", str(server_file)])
+
+        await command(**bound.arguments)
+
+        captured = capsys.readouterr()
+        assert "demo [dev]" in captured.out
+        assert "Use [path] or see [/docs]" in captured.out
+
     async def test_inspect_command_with_real_server(self, tmp_path):
         """Test inspect command with a real server file."""
         # Create a real server file
@@ -650,3 +669,29 @@ def test_prompt(name: str) -> str:
         assert data["server"]["name"] == "InspectTestServer"
         assert len(data["tools"]) == 1
         assert len(data["prompts"]) == 1
+
+    async def test_inspect_command_stdout_is_valid_json(self, tmp_path, capsys):
+        """Long descriptions and bracketed text must reach stdout unchanged."""
+        server_file = tmp_path / "test_server.py"
+        server_file.write_text("""
+import fastmcp
+
+mcp = fastmcp.FastMCP("InspectTestServer")
+
+@mcp.tool
+def test_tool(x: int) -> int:
+    \"\"\"Multiply a number by two and return the product, as plain text [bold]with markup[/bold] inside.\"\"\"
+    return x * 2
+""")
+
+        command, bound, _ = app.parse_args(
+            ["inspect", str(server_file), "--format", "fastmcp"]
+        )
+
+        await command(**bound.arguments)
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["tools"][0]["description"] == (
+            "Multiply a number by two and return the product, as plain text "
+            "[bold]with markup[/bold] inside."
+        )

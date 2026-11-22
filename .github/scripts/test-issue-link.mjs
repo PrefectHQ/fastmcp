@@ -115,14 +115,17 @@ async function run(job, options = {}) {
 }
 const check = "check-issue-link";
 const assign = "reopen-on-assignment";
-test("linked PR waits for assignment without closing", async () => {
+test("linked but unassigned PR closes until assignment", async () => {
   const result = await run(check);
   assert.equal(result.failures.length, 1);
-  assert(!result.calls.some((c) => c.name === "updatePR"));
+  assert.equal(
+    result.calls.find((c) => c.name === "updatePR").args.state,
+    "closed",
+  );
   assert(
     result.calls
       .find((c) => c.name === "createComment")
-      .args.body.includes("awaiting maintainer assignment"),
+      .args.body.includes("reopen automatically"),
   );
 });
 
@@ -175,16 +178,13 @@ test("assignment does not change PRs for another issue", async () => {
 
 const botClosure = { event: "closed", actor: { login: "github-actions[bot]" } };
 
-test("adding a link reopens a gate-closed PR but keeps assignment required", async () => {
+test("adding a link to a gate-closed PR keeps it closed until assignment", async () => {
   const result = await run(check, {
     state: "closed",
     gated: true,
     events: [botClosure],
   });
-  assert.equal(
-    result.calls.find((c) => c.name === "updatePR")?.args.state,
-    "open",
-  );
+  assert(!result.calls.some((c) => c.name === "updatePR"));
   assert.equal(result.failures.length, 1);
   assert(!result.calls.some((c) => c.name === "removeLabel"));
 });

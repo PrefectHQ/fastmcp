@@ -28,7 +28,7 @@ from mcp.shared.exceptions import MCPError
 from fastmcp import Context, FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from fastmcp.server.dependencies import bind_request_context
+from fastmcp.server.dependencies import _serving_client_tool_call, bind_request_context
 from fastmcp.tools.base import ToolResult
 from fastmcp.utilities.tasks import TASKS_EXTENSION_ID, TaskConfig
 from fastmcp_tasks import TasksExtension
@@ -374,7 +374,7 @@ async def test_legacy_era_required_tool_raises_missing_capability():
                 "_meta": opt_in_meta(),
             },
         )
-        with bind_request_context(srctx):
+        with bind_request_context(srctx), _serving_client_tool_call():
             with pytest.raises(MCPError) as exc_info:
                 await mcp.call_tool("must_task", {"n": 3})
     assert exc_info.value.error.code == -32021

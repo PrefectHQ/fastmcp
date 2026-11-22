@@ -90,6 +90,11 @@ class AppConfig(BaseModel):
     to render and where the tool appears.  On resources, those fields must
     be left unset (the resource itself is the UI).
 
+    `visibility` declares the intended audience; it is not a security boundary.
+    Direct MCP calls remain subject to authentication and authorization,
+    regardless of visibility. The server cannot distinguish model and app
+    callers on the same connection.
+
     All fields use ``exclude_none`` serialization so only explicitly-set
     values appear on the wire.  Aliases match the MCP Apps wire format
     (camelCase).
@@ -101,9 +106,13 @@ class AppConfig(BaseModel):
         serialization_alias="resourceUri",
         description="URI of the UI resource (typically ui:// scheme). Tools only.",
     )
+    # Audience metadata, not access control: direct tools/call remains possible.
     visibility: list[Literal["app", "model"]] | None = Field(
         default=None,
-        description="Where this tool is visible: 'app', 'model', or both. Tools only.",
+        description=(
+            "Intended audience: 'app', 'model', or both. Tools only. "
+            "Not a security boundary; direct calls use the server's authorization rules."
+        ),
     )
     csp: ResourceCSP | None = Field(
         default=None, description="Content Security Policy for the app iframe"
@@ -186,7 +195,10 @@ def app_config_to_meta_dict(app: AppConfig | dict[str, Any]) -> dict[str, Any]:
 
 
 def is_model_visible(component: FastMCPComponent) -> bool:
-    """Whether a component may be shown to, or invoked by, the model.
+    """Whether a component belongs on model-facing discovery and proxy surfaces.
+
+    This is audience filtering, not authorization. Direct MCP calls do not
+    use this predicate and cannot identify model versus app callers.
 
     Visibility is a declaration, and the MCP Apps spec puts the filtering on
     the host — so ``tools/list`` carries app-only tools and the host keeps

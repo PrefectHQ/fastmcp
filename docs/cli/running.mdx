@@ -122,7 +122,9 @@ Auto-reload is on by default — save a file and the MCP server restarts automat
 | ------ | ---- | ----------- |
 | MCP Port | `--mcp-port` | Port for the MCP server (default: `8000`) |
 | Dev Port | `--dev-port` | Port for the dev UI (default: `8080`) |
+| Host | `--host` | Bind address for both servers (default: `127.0.0.1`) |
 | Auto-Reload | `--reload` / `--no-reload` | Watch for file changes (default: on) |
+| Log Panel | `--log-panel` / `--no-log-panel` | Show a panel that logs MCP traffic in the dev UI (default: on) |
 
 ## Development with the Inspector
 
@@ -130,11 +132,16 @@ Auto-reload is on by default — save a file and the MCP server restarts automat
 
 ```bash
 fastmcp dev inspector server.py
+fastmcp dev inspector server.py:create_server
 fastmcp dev inspector server.py --with-editable . --with pandas
 ```
 
+<Warning>
+When you pass a Python file, `fastmcp dev inspector` imports it without executing the `if __name__ == "__main__"` block. Setup in that block won't run, so tools registered there won't appear in the Inspector. Use a [factory function](#entrypoints) to run initialization before the server starts.
+</Warning>
+
 <Tip>
-The Inspector always runs your server via `uv run` in a subprocess — it never uses your local environment directly. Specify dependencies with `--with`, `--with-editable`, `--with-requirements`, or through a `fastmcp.json` file.
+The Inspector starts your server with `fastmcp run` in a subprocess. When you specify dependencies with `--with`, `--with-editable`, `--with-requirements`, `--python`, `--project`, or a `fastmcp.json` environment, that subprocess runs through `uv run`; otherwise it uses your current environment.
 </Tip>
 
 <Warning>
@@ -153,6 +160,7 @@ The Inspector connects over **stdio only**. When it launches, you may need to se
 | Python | `--python` | Python version |
 | Project | `--project` | Run within a uv project directory |
 | Requirements | `--with-requirements` | Install from a requirements file |
+| Module Mode | `--module`, `-m` | Run a Python module via `python -m` instead of a file path |
 
 ## Pre-Building Environments
 

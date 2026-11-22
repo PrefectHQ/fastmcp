@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import weakref
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
@@ -111,25 +111,23 @@ def _forward_ctx(
 def client_supports_extension(session: ServerSession, extension_id: str) -> bool:
     """Check whether the connected client supports a given MCP extension.
 
-    Inspects the ``extensions`` capability on ``ClientCapabilities`` sent by the
-    client during initialization. In v2 the client's initialize params are
-    reachable via ``session.client_params``.
+    Inspects the ``extensions`` capability the client declared, read from
+    ``session.client_capabilities``. On 2026-07-28+ capabilities ride every
+    request's ``_meta`` envelope while client info stays optional, so
+    capabilities can be present while ``session.client_params`` is ``None``.
 
     SDK v2 declares ``extensions`` as a real field on ``ClientCapabilities``, so
     a client sending ``ClientCapabilities(extensions={...})`` populates the field
     directly. We read that field first and fall back to ``model_extra`` only for
     legacy-serialized clients that carried ``extensions`` as an extra key.
     """
-    client_params = session.client_params
-    if client_params is None:
-        return False
-    caps = client_params.capabilities
+    caps = session.client_capabilities
     if caps is None:
         return False
     extensions: dict[str, Any] | None = caps.extensions
     if extensions is None:
         # Legacy fallback: clients that serialized `extensions` as an extra key
-        # (ClientCapabilities uses extra="allow") rather than the real field.
+        # rather than the real field.
         extras = caps.model_extra or {}
         extensions = extras.get("extensions")
     if not extensions:
@@ -277,7 +275,7 @@ class FastMCPServerMiddleware:
     @contextmanager
     def _seam_span(
         self, fastmcp: FastMCP | None, ctx: ServerRequestContext
-    ) -> Iterator[None]:
+    ) -> Generator[None, None, None]:
         """Open the per-request SERVER span at the middleware seam.
 
         The removed SDK ``OpenTelemetryMiddleware`` produced one SERVER span per
@@ -302,7 +300,9 @@ class FastMCPServerMiddleware:
             yield
 
     @contextmanager
-    def _apply_shared_context(self, fastmcp: FastMCP | None) -> Iterator[None]:
+    def _apply_shared_context(
+        self, fastmcp: FastMCP | None
+    ) -> Generator[None, None, None]:
         """Re-establish app-scoped SharedContext ContextVars for this request.
 
         The SDK v2 dispatcher runs handlers in the message sender's context, so
@@ -457,6 +457,25 @@ class LowLevelServer(_Server[LifespanResultT]):
         super().__init__(*args, **kwargs)
         # Store a weak reference to FastMCP to avoid circular references
         self._fastmcp_ref: weakref.ref[FastMCP] = weakref.ref(fastmcp)
+
+        # The SDK validates Mcp-Param-* headers on `tools/call` against the
+        # called tool's input schema. Without this sync hook the SDK falls back
+        # to a full `tools/list` per call — running every FastMCP list
+        # middleware and provider enumeration on each tool invocation (#5652).
+        # FastMCP tool resolution is async, so the hook serves FastMCP's
+        # wire-schema cache (seeded at registration, refreshed on every
+        # `tools/list`) instead of resolving through providers here.
+        def _get_tool_input_schema(name: str) -> dict[str, Any] | None:
+            # A bound method would hold a strong reference back to the
+            # FastMCP instance and recreate the cycle the weakref above
+            # exists to avoid; resolve through the weakref instead and
+            # fail open (no validation) if the server is gone.
+            resolved = self._fastmcp_ref()
+            if resolved is None:
+                return None
+            return resolved._get_tool_input_schema(name)
+
+        self.get_tool_input_schema = _get_tool_input_schema
 
         # FastMCP servers support notifications for all components. v2 derives
         # capabilities from registered handlers + protocol_version, but legacy

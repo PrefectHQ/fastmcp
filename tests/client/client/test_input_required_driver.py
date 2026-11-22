@@ -17,8 +17,9 @@ exercise the client-side *answering* path, which the spec's decisive finding say
 is era-neutral by construction once the driver is wired.
 """
 
-from typing import Annotated, cast
+from typing import Annotated, Literal, cast
 
+import mcp_types
 import pytest
 from mcp.client._input_required import (
     DEFAULT_INPUT_REQUIRED_MAX_ROUNDS,
@@ -132,6 +133,39 @@ class TestCallToolMRTR:
         assert result.is_error is False
         assert result.data.result == "Hello, Bob!"
         assert result.structured_content == {"result": "Hello, Bob!"}
+
+    @pytest.mark.parametrize("action", ["decline", "cancel"])
+    @pytest.mark.parametrize("result_type", [ElicitResult, mcp_types.ElicitResult])
+    async def test_declined_elicitation_is_not_an_accepted_answer(
+        self, action: Literal["decline", "cancel"], result_type: type
+    ):
+        """A handler's decline or cancel reaches the resolver as a refusal, whether
+        it returns FastMCP's `ElicitResult` or the SDK's own."""
+
+        async def handler(message, response_type, params, ctx):
+            return result_type(action=action)
+
+        async with Client(
+            _mrtr_server(), mode="auto", elicitation_handler=handler
+        ) as client:
+            result = await client.call_tool("greet", {}, raise_on_error=False)
+
+        assert result.is_error is True
+        assert isinstance(result.content[0], mcp_types.TextContent)
+        assert "received an accepted elicitation" not in result.content[0].text
+
+    async def test_sdk_elicit_result_accept_carries_its_content(self):
+        """An accepted SDK `ElicitResult` supplies its content to the resolver."""
+
+        async def handler(message, response_type, params, ctx):
+            return mcp_types.ElicitResult(action="accept", content={"name": "Ada"})
+
+        async with Client(
+            _mrtr_server(), mode="auto", elicitation_handler=handler
+        ) as client:
+            result = await client.call_tool("greet", {})
+
+        assert result.data.result == "Hello, Ada!"
 
     async def test_multi_round_dependent_resolvers(self):
         """A resolver depending on another's answer is asked in a later round; the

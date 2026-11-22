@@ -180,6 +180,43 @@ class TestEnhancedAuthorizationHandler:
             assert "Link" in response.headers
             assert "/register" in response.headers["Link"]
 
+    def test_malformed_post_form_returns_error_without_rereading_stream(
+        self, oauth_proxy
+    ):
+        app = Starlette(routes=oauth_proxy.get_routes())
+        body = b"--expected-boundary\r\nnot a valid multipart field"
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/authorize",
+                content=body,
+                headers={
+                    "Content-Type": "multipart/form-data; boundary=expected-boundary"
+                },
+            )
+
+        assert response.status_code == 400
+
+    def test_unregistered_post_client_still_returns_enhanced_error(self, oauth_proxy):
+        app = Starlette(routes=oauth_proxy.get_routes())
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/authorize",
+                data={
+                    "client_id": "unregistered-post-client",
+                    "redirect_uri": "http://localhost:12345/callback",
+                    "response_type": "code",
+                    "code_challenge": "test-challenge",
+                    "state": "test-state",
+                },
+                headers={"Accept": "text/html"},
+            )
+
+        assert response.status_code == 400
+        assert "text/html" in response.headers["content-type"]
+        assert "unregistered-post-client" in response.text
+
     def test_successful_authorization_not_enhanced(self, oauth_proxy):
         """Test that successful authorizations are not modified by enhancement."""
         app = Starlette(routes=oauth_proxy.get_routes())
@@ -698,6 +735,42 @@ class TestEnhancedRequireAuthMiddleware:
             www_auth = response.headers["www-authenticate"]
             assert "error=" not in www_auth
             assert response.content == b""
+
+    @pytest.mark.parametrize("authorization", ["Basic dXNlcjpwYXNz", "Token abc"])
+    def test_non_bearer_scheme_no_error_attribute(self, jwt_verifier, authorization):
+        """An unsupported auth scheme is treated like missing auth (RFC 6750 §3.1)."""
+        server = FastMCP("Test Server")
+        app = create_streamable_http_app(
+            server=server,
+            streamable_http_path="/mcp",
+            auth=jwt_verifier,
+        )
+
+        with TestClient(app) as client:
+            response = client.post("/mcp", headers={"Authorization": authorization})
+
+            assert response.status_code == 401
+            www_auth = response.headers["www-authenticate"]
+            assert www_auth.startswith("Bearer")
+            assert "error=" not in www_auth
+            assert response.content == b""
+
+    def test_lowercase_bearer_scheme_is_still_validated(self, jwt_verifier):
+        """The Bearer scheme is case-insensitive, so a bad token still errors."""
+        server = FastMCP("Test Server")
+        app = create_streamable_http_app(
+            server=server,
+            streamable_http_path="/mcp",
+            auth=jwt_verifier,
+        )
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/mcp", headers={"Authorization": "bearer invalid-token"}
+            )
+
+            assert response.status_code == 401
+            assert 'error="invalid_token"' in response.headers["www-authenticate"]
 
     def test_missing_auth_challenge_includes_supported_scopes(self):
         app = self.create_scoped_app(

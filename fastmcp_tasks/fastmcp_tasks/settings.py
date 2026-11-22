@@ -56,7 +56,7 @@ class DocketSettings(BaseSettings):
 
                 Default is memory:// for single-process scenarios. Use Redis or Valkey
                 when coordinating tasks across multiple processes (e.g., additional
-                workers via the fastmcp tasks CLI).
+                workers via `python -m fastmcp_tasks.worker_cli`).
                 """
             ),
         ),
@@ -124,6 +124,36 @@ class DocketSettings(BaseSettings):
             ),
         ),
     ] = timedelta(milliseconds=50)
+
+    execution_ttl: Annotated[
+        timedelta,
+        Field(
+            description=inspect.cleandoc(
+                """
+                How long a task's state and result are kept in the Docket
+                backend. Clients see this as the task's ttlMs. Raise it for
+                tasks that run, or whose results are retrieved, after more
+                than the default 15 minutes.
+                """
+            ),
+        ),
+    ] = timedelta(minutes=15)
+
+    parent_task_spans: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Make each background task's worker span a child of the
+                `tools/call` request that submitted it, so the execution
+                appears inside the caller's trace. When off, the worker span
+                starts a new trace with a span link back to the submission.
+                With a parent-based sampler, a task submitted from an unsampled
+                trace is then not recorded either.
+                """
+            ),
+        ),
+    ] = False
 
 
 docket_settings = DocketSettings()

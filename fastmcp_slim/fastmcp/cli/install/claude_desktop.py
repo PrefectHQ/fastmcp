@@ -115,7 +115,7 @@ def install_claude_desktop(
         if config_file.exists():
             import json
 
-            content = config_file.read_text().strip()
+            content = config_file.read_text(encoding="utf-8").strip()
             if content:
                 config = json.loads(content)
                 if "mcpServers" in config and name in config["mcpServers"]:
@@ -177,7 +177,7 @@ async def claude_desktop_command(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_requirements: Annotated[

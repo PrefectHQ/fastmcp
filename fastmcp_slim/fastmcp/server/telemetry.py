@@ -3,6 +3,7 @@
 from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 
 from opentelemetry import context as otel_context
 from opentelemetry.context import Context
@@ -15,8 +16,8 @@ from opentelemetry.trace import (
     get_current_span,
 )
 
-from fastmcp.exceptions import ToolError as _ToolError
 from fastmcp.telemetry import (
+    error_span_attributes,
     extract_trace_context,
     get_tracer,
     restore_dropped_attributes,
@@ -31,12 +32,27 @@ from fastmcp.telemetry import (
 # below (the API `Span` type does not expose readable attributes).
 SEAM_SPAN_MARKER = "fastmcp.span.seam"
 
+
 # Tracks the SERVER span opened at the current request's seam. When the
 # high-level path reaches `server_span` and this span is still the active span,
 # `server_span` enriches it with component attributes instead of opening a
 # second span — restoring attribute parity on the single per-request span.
-_active_seam_span: ContextVar[Span | None] = ContextVar(
+@dataclass
+class _SeamSpan:
+    span: Span
+    error: Exception | None = None
+
+
+_active_seam_span: ContextVar[_SeamSpan | None] = ContextVar(
     "fastmcp_active_seam_span", default=None
+)
+
+# Set once `server_span` has claimed the request's SERVER span. A mounted
+# server, or a tool calling `ctx.fastmcp.call_tool`, reaches `server_span`
+# again inside that request; it records an INTERNAL span instead, so trace
+# consumers see one request no matter how deep the call goes.
+_server_span_open: ContextVar[bool] = ContextVar(
+    "fastmcp_server_span_open", default=False
 )
 
 
@@ -48,8 +64,9 @@ def get_auth_span_attributes() -> dict[str, str]:
     try:
         token = get_access_token()
         if token:
-            if token.client_id:
-                attrs["enduser.id"] = token.client_id
+            user_id = token.subject or token.client_id
+            if user_id:
+                attrs["enduser.id"] = user_id
             if token.scopes:
                 attrs["enduser.scope"] = " ".join(token.scopes)
     except RuntimeError:
@@ -72,18 +89,23 @@ def get_session_span_attributes() -> dict[str, str]:
 
 
 def get_protocol_span_attributes() -> dict[str, str]:
-    """Get the negotiated MCP protocol version for the current request.
+    """Get the protocol attributes for the current request.
 
-    Mirrors the `mcp.protocol.version` attribute the SDK's own
-    `OpenTelemetryMiddleware` sets — FastMCP drops that middleware to avoid a
-    duplicate SERVER span, so this restores the attribute on FastMCP's span.
+    Mirrors the `mcp.protocol.version` and `jsonrpc.request.id` attributes the
+    SDK's own `OpenTelemetryMiddleware` sets — FastMCP drops that middleware to
+    avoid a duplicate SERVER span, so this restores them on FastMCP's span.
     """
     from fastmcp.server.dependencies import fastmcp_request_ctx
 
     req_ctx = fastmcp_request_ctx.get()
-    if req_ctx is not None and req_ctx.protocol_version:
-        return {"mcp.protocol.version": req_ctx.protocol_version}
-    return {}
+    attrs: dict[str, str] = {}
+    if req_ctx is None:
+        return attrs
+    if req_ctx.protocol_version:
+        attrs["mcp.protocol.version"] = req_ctx.protocol_version
+    if req_ctx.request_id is not None:
+        attrs["jsonrpc.request.id"] = req_ctx.request_id
+    return attrs
 
 
 def _get_parent_trace_context() -> Context | None:
@@ -146,6 +168,7 @@ def _build_server_span_attrs(
         attrs["mcp.resource.uri"] = resource_uri
     if tool_name is not None:
         attrs["gen_ai.tool.name"] = tool_name
+        attrs["gen_ai.operation.name"] = "execute_tool"
     if prompt_name is not None:
         attrs["gen_ai.prompt.name"] = prompt_name
     return attrs
@@ -154,8 +177,7 @@ def _build_server_span_attrs(
 def record_span_exception(span: Span, e: Exception) -> None:
     """Record an exception and error status on a span."""
     if span.is_recording():
-        error_type = "tool_error" if isinstance(e, _ToolError) else type(e).__qualname__
-        span.set_attribute("error.type", error_type)
+        span.set_attributes(error_span_attributes(e))
         span.record_exception(e)
         span.set_status(Status(StatusCode.ERROR, str(e)))
 
@@ -197,6 +219,8 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
         context=_get_parent_trace_context(),
         kind=SpanKind.SERVER,
         attributes=attrs,
+        record_exception=False,
+        set_status_on_exception=False,
     ) as span:
         # Restore: `attributes=attrs` above is what makes on_start hooks and
         # the sampler see these values at creation time (the whole point of
@@ -210,13 +234,20 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
         # an SDK attribute limit that evicted some.
         if span.is_recording():
             restore_dropped_attributes(span, attrs)
-        token = _active_seam_span.set(span)
+        seam = _SeamSpan(span)
+        token = _active_seam_span.set(seam)
+        # A seam is a new inbound request, even one an in-process proxy sends
+        # from inside another server's tool call.
+        open_token = _server_span_open.set(False)
         try:
             yield span
         except Exception as e:
-            record_span_exception(span, e)
+            seam.error = e
             raise
         finally:
+            if seam.error is not None:
+                record_span_exception(span, seam.error)
+            _server_span_open.reset(open_token)
             _active_seam_span.reset(token)
 
 
@@ -241,6 +272,10 @@ def server_span(
     e.g. in-process `mcp.call_tool()` calls that bypass the dispatcher) it opens a
     new SERVER span as before.
 
+    A call nested inside that span, through a mounted server or a tool calling
+    `ctx.fastmcp.call_tool`, gets an INTERNAL span under the current one, so a
+    request has exactly one SERVER span.
+
     Automatically records any exception on the span and sets error status.
 
     In `propagation_only` mode no span is opened or enriched. The seam has
@@ -263,22 +298,44 @@ def server_span(
         prompt_name,
     )
 
+    if _server_span_open.get():
+        with get_tracer().start_as_current_span(
+            name,
+            kind=SpanKind.INTERNAL,
+            attributes=attrs,
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            if span.is_recording():
+                restore_dropped_attributes(span, attrs)
+            try:
+                yield span
+            except Exception as e:
+                record_span_exception(span, e)
+                raise
+        return
+
     seam = _active_seam_span.get()
     active = get_current_span()
     if (
         seam is not None
-        and seam is active
-        and seam.is_recording()
-        and seam.get_span_context().is_valid
+        and seam.span is active
+        and seam.span.is_recording()
+        and seam.span.get_span_context().is_valid
     ):
         # Enrich the already-active seam span rather than opening a second one.
-        seam.update_name(name)
-        seam.set_attributes(attrs)
+        seam.span.update_name(name)
+        seam.span.set_attributes(attrs)
+        token = _server_span_open.set(True)
         try:
-            yield seam
+            yield seam.span
         except Exception as e:
-            record_span_exception(seam, e)
+            # The seam owns recording, including failures later converted to
+            # isError results and exceptions rewrapped by protocol handlers.
+            seam.error = e
             raise
+        finally:
+            _server_span_open.reset(token)
         return
 
     tracer = get_tracer()
@@ -287,6 +344,8 @@ def server_span(
         context=_get_parent_trace_context(),
         kind=SpanKind.SERVER,
         attributes=attrs,
+        record_exception=False,
+        set_status_on_exception=False,
     ) as span:
         # Restore for the same reason as `seam_span`: OTel builds the span
         # from `sampling_result.attributes`, which a custom Sampler may not
@@ -294,11 +353,14 @@ def server_span(
         # fires when the span ends up with no attributes at all.
         if span.is_recording():
             restore_dropped_attributes(span, attrs)
+        token = _server_span_open.set(True)
         try:
             yield span
         except Exception as e:
             record_span_exception(span, e)
             raise
+        finally:
+            _server_span_open.reset(token)
 
 
 @contextmanager
@@ -321,7 +383,12 @@ def delegate_span(
         attrs["mcp.method.name"] = method
 
     tracer = get_tracer()
-    with tracer.start_as_current_span(f"delegate {name}", attributes=attrs) as span:
+    with tracer.start_as_current_span(
+        f"delegate {name}",
+        attributes=attrs,
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as span:
         # Restore for the same reason as `seam_span`: OTel builds the span
         # from `sampling_result.attributes`, which a custom Sampler may not
         # forward even though it was handed `attributes=attrs` above. Only

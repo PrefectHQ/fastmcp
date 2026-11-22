@@ -1,7 +1,7 @@
 """Tests for type constraints in JSON schema conversion."""
 
 from dataclasses import Field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import AnyUrl, TypeAdapter, ValidationError
@@ -12,7 +12,7 @@ from fastmcp.utilities.json_schema_type import (
 
 
 def get_dataclass_field(type: type, field_name: str) -> Field:
-    return type.__dataclass_fields__[field_name]  # ty: ignore[unresolved-attribute]
+    return type.__dataclass_fields__[field_name]  # ty: ignore[missing-attribute]
 
 
 class TestStringConstraints:
@@ -133,6 +133,106 @@ class TestNumberConstraints:
             validator.validate_python(100)
 
 
+class TestDraftFourExclusiveBounds:
+    """A boolean exclusiveMinimum/exclusiveMaximum tightens its numeric sibling."""
+
+    def test_boolean_exclusive_maximum_excludes_sibling(self):
+        validator = TypeAdapter(
+            json_schema_to_type(
+                {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "exclusiveMaximum": True,
+                }
+            )
+        )
+        assert validator.validate_python(3) == 3
+        with pytest.raises(ValidationError):
+            validator.validate_python(5)
+
+    def test_boolean_exclusive_minimum_excludes_sibling(self):
+        validator = TypeAdapter(
+            json_schema_to_type(
+                {
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 9,
+                    "exclusiveMinimum": True,
+                }
+            )
+        )
+        assert validator.validate_python(6) == 6
+        with pytest.raises(ValidationError):
+            validator.validate_python(5)
+
+    def test_boolean_false_keeps_sibling_inclusive(self):
+        validator = TypeAdapter(
+            json_schema_to_type(
+                {"type": "integer", "maximum": 5, "exclusiveMaximum": False}
+            )
+        )
+        assert validator.validate_python(5) == 5
+        with pytest.raises(ValidationError):
+            validator.validate_python(6)
+
+    def test_boolean_exclusive_bound_without_sibling_constrains_nothing(self):
+        validator = TypeAdapter(
+            json_schema_to_type({"type": "integer", "exclusiveMaximum": True})
+        )
+        assert validator.validate_python(1000) == 1000
+
+
+def _bound_kinds(schema: dict) -> set[str]:
+    """Names of the pydantic constraints a numeric schema converts to."""
+    kinds: set[str] = set()
+    for item in getattr(json_schema_to_type(schema), "__metadata__", ()):
+        for constraint in getattr(item, "metadata", (item,)):
+            kinds.add(type(constraint).__name__)
+    return kinds
+
+
+class TestNumericExclusiveWithSibling:
+    """A numeric exclusive bound replaces its sibling only when it is as strict."""
+
+    def test_stricter_numeric_exclusive_drops_maximum(self):
+        schema = {"type": "integer", "maximum": 10, "exclusiveMaximum": 5}
+        assert _bound_kinds(schema) == {"Lt"}
+        validator = TypeAdapter(json_schema_to_type(schema))
+        assert validator.validate_python(4) == 4
+        with pytest.raises(ValidationError):
+            validator.validate_python(5)
+        with pytest.raises(ValidationError):
+            validator.validate_python(6)
+
+    def test_stricter_numeric_exclusive_drops_minimum(self):
+        schema = {"type": "integer", "minimum": 10, "exclusiveMinimum": 15}
+        assert _bound_kinds(schema) == {"Gt"}
+        validator = TypeAdapter(json_schema_to_type(schema))
+        assert validator.validate_python(16) == 16
+        with pytest.raises(ValidationError):
+            validator.validate_python(15)
+        with pytest.raises(ValidationError):
+            validator.validate_python(14)
+
+    def test_looser_numeric_exclusive_keeps_maximum(self):
+        # `maximum: 10` still forbids 12, so dropping `le` would widen the range.
+        schema = {"type": "integer", "maximum": 10, "exclusiveMaximum": 15}
+        assert _bound_kinds(schema) == {"Lt", "Le"}
+        validator = TypeAdapter(json_schema_to_type(schema))
+        assert validator.validate_python(10) == 10
+        with pytest.raises(ValidationError):
+            validator.validate_python(12)
+
+    def test_looser_numeric_exclusive_keeps_minimum(self):
+        schema = {"type": "integer", "minimum": 10, "exclusiveMinimum": 5}
+        assert _bound_kinds(schema) == {"Gt", "Ge"}
+        validator = TypeAdapter(json_schema_to_type(schema))
+        assert validator.validate_python(10) == 10
+        with pytest.raises(ValidationError):
+            validator.validate_python(7)
+
+
 class TestStringFormatConstraints:
     """String keywords apply to the raw string whatever its `format` (#4404)."""
 
@@ -168,7 +268,7 @@ class TestStringFormatConstraints:
         parsed = TypeAdapter(json_schema_to_type(schema)).validate_python(
             "2026-09-22T00:00:00Z"
         )
-        assert parsed == datetime(2026, 9, 22, tzinfo=timezone.utc)
+        assert parsed == datetime(2026, 9, 22, tzinfo=UTC)
 
     def test_format_without_constraints_is_unchanged(self):
         assert (
@@ -214,3 +314,33 @@ class TestIntegralFloatCounts:
             json_schema_to_type({"type": "string", "format": "email", "maxLength": 30})
         )
         validator.validate_python("a@b.co")
+
+
+class TestHugeCounts:
+    """Counts beyond any real length must not make a valid schema fail to convert."""
+
+    @pytest.mark.parametrize(
+        ("schema", "value"),
+        [
+            ({"type": "string", "maxLength": 10**20}, "abc"),
+            ({"type": "string", "maxLength": 1e20}, "abc"),
+            (
+                {"type": "string", "format": "date-time", "maxLength": 1e20},
+                "2026-09-22T00:00:00Z",
+            ),
+            ({"type": "array", "items": {"type": "integer"}, "maxItems": 10**20}, [1]),
+        ],
+    )
+    def test_huge_maximum_constrains_nothing(self, schema, value):
+        TypeAdapter(json_schema_to_type(schema)).validate_python(value)
+
+    @pytest.mark.parametrize(
+        ("schema", "value"),
+        [
+            ({"type": "string", "minLength": 10**20}, "abc"),
+            ({"type": "array", "items": {"type": "integer"}, "minItems": 1e20}, [1]),
+        ],
+    )
+    def test_huge_minimum_still_rejects(self, schema, value):
+        with pytest.raises(ValidationError):
+            TypeAdapter(json_schema_to_type(schema)).validate_python(value)

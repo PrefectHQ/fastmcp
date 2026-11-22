@@ -127,9 +127,7 @@ def _resolve_ref(schema: Any, defs: dict[str, Any]) -> Any:
     return schema
 
 
-def _object_fields(
-    schema: Any, defs: dict[str, Any], seen: frozenset[str] = frozenset()
-) -> list[str] | None:
+def _object_fields(schema: Any, defs: dict[str, Any]) -> list[str] | None:
     """Field names of the object a schema describes, one level deep, or None.
 
     Looks through a local `$ref`, an array's `items`, every object branch
@@ -140,28 +138,35 @@ def _object_fields(
     without this step a typed return renders as `object[]` and the caller
     has to fetch once just to learn the field names.
     """
-    if isinstance(schema, dict) and isinstance(schema.get("$ref"), str):
-        # A recursive alias (`Json = list[Json] | int`) refers back to itself
-        # through anyOf/items; stop at the second visit instead of looping.
-        if schema["$ref"] in seen:
-            return None
-        seen = seen | {schema["$ref"]}
-    schema = _resolve_ref(schema, defs)
-    if not isinstance(schema, dict):
-        return None
-    if schema.get("type") == "array":
-        return _object_fields(schema.get("items"), defs, seen)
-    fields: list[str] = []
-    for key in ("anyOf", "oneOf", "allOf"):
-        branches = schema.get(key)
-        if isinstance(branches, list):
-            for branch in branches:
-                fields.extend(_object_fields(branch, defs, seen) or [])
-    props = schema.get("properties")
-    if isinstance(props, dict):
-        fields.extend(props)
-    unique = list(dict.fromkeys(fields))
-    return unique or None
+    # Visit each resolved node once across the whole walk, so shared union
+    # branches and recursive aliases cannot repeatedly expand the same graph.
+    seen: set[int] = set()
+    fields: dict[str, None] = {}
+    pending: list[tuple[Any, bool]] = [(schema, False)]
+    while pending:
+        node, expanded = pending.pop()
+        if expanded:
+            props = node.get("properties")
+            if isinstance(props, dict):
+                fields.update(dict.fromkeys(props))
+            continue
+
+        node = _resolve_ref(node, defs)
+        if not isinstance(node, dict) or id(node) in seen:
+            continue
+        seen.add(id(node))
+        if node.get("type") == "array":
+            pending.append((node.get("items"), False))
+            continue
+
+        # Properties follow union branches, preserving the existing field order.
+        pending.append((node, True))
+        for key in ("allOf", "oneOf", "anyOf"):
+            branches = node.get(key)
+            if isinstance(branches, list):
+                pending.extend((branch, False) for branch in reversed(branches))
+
+    return list(fields) or None
 
 
 def _nested_fields(field: Any, defs: dict[str, Any]) -> str:
@@ -237,6 +242,12 @@ def _union_enum_values(variants: Any) -> list[Any] | None:
     return values or None
 
 
+def _dump(value: Any) -> str:
+    """JSON for a schema value, which may hold non-JSON objects such as the
+    `datetime.date` that YAML produces for an unquoted `2024-01-01`."""
+    return json.dumps(value, default=str)
+
+
 def _render_param(name: str, field: Any, *, required: bool) -> str:
     """One compact line per parameter: type, enum values, default.
 
@@ -252,9 +263,9 @@ def _render_param(name: str, field: Any, *, required: bool) -> str:
         if enum is None and "anyOf" in field:
             enum = _union_enum_values(field["anyOf"])
         if isinstance(enum, list) and 0 < len(enum) <= 8:
-            qualifiers.append("one of " + "/".join(json.dumps(v) for v in enum))
+            qualifiers.append("one of " + "/".join(_dump(v) for v in enum))
         if field.get("default") is not None:
-            qualifiers.append(f"default {json.dumps(field['default'])}")
+            qualifiers.append(f"default {_dump(field['default'])}")
     if required:
         qualifiers.append("required")
 

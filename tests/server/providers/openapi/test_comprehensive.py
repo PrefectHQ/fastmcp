@@ -746,7 +746,7 @@ class TestOpenAPIComprehensive:
     async def test_timeout_error_produces_useful_message(
         self, comprehensive_openapi_spec
     ):
-        """ReadTimeout should surface a clear error, not an empty string."""
+        """ReadTimeout should surface the actionable timeout message."""
         mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
@@ -765,8 +765,7 @@ class TestOpenAPIComprehensive:
                 await mcp_client.call_tool("get_user", {"id": 1})
 
             error_message = str(exc_info.value)
-            assert "timed out" in error_message
-            assert "ReadTimeout" in error_message
+            assert "Upstream request timed out, please retry" in error_message
 
 
 class TestOpenAPIPostEdgeCases:

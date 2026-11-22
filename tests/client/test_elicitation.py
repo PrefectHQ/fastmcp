@@ -2,13 +2,14 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any, Literal, cast
 
+import mcp_types
 import pytest
 from pydantic import BaseModel
 from typing_extensions import TypedDict
 
 from fastmcp import Context, FastMCP
 from fastmcp.client.client import Client
-from fastmcp.client.elicitation import ElicitResult
+from fastmcp.client.elicitation import ElicitResult, create_elicitation_callback
 from fastmcp.exceptions import ToolError
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
@@ -80,6 +81,32 @@ async def test_elicitation_decline(fastmcp_server):
     ) as client:
         result = await client.call_tool("ask_for_name")
         assert result.data == "No name provided."
+
+
+@pytest.mark.parametrize(
+    "response, expected",
+    [
+        (mcp_types.ElicitResult(action="decline"), "No name provided."),
+        (mcp_types.ElicitResult(action="cancel"), "No name provided."),
+        (
+            mcp_types.ElicitResult(action="accept", content={"name": "Alice"}),
+            "Hello, Alice!",
+        ),
+    ],
+)
+async def test_elicitation_handler_returns_sdk_elicit_result(
+    fastmcp_server, response: mcp_types.ElicitResult, expected: str
+):
+    """The SDK's ElicitResult keeps its action instead of becoming accepted content."""
+
+    async def elicitation_handler(message, response_type, params, ctx):
+        return response
+
+    async with Client(
+        fastmcp_server, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
+        result = await client.call_tool("ask_for_name")
+        assert result.data == expected
 
 
 async def test_elicitation_handler_parameters():
@@ -778,3 +805,68 @@ class TestPatternMatching:
         ) as client:
             result = await client.call_tool("pattern_match_tool", {})
             assert result.data == "Cancelled"
+
+
+class TestAcceptedContentValidation:
+    """Accepted form content must satisfy the requested schema."""
+
+    AGE_SCHEMA: dict[str, Any] = {
+        "type": "object",
+        "properties": {"age": {"type": "integer"}},
+        "required": ["age"],
+    }
+
+    async def _respond(self, schema: dict[str, Any], response: Any):
+        async def handler(message, response_type, params, ctx):
+            return response
+
+        callback = create_elicitation_callback(handler)
+        params = mcp_types.ElicitRequestFormParams(message="?", requested_schema=schema)
+        return await callback(cast(Any, None), params)
+
+    @pytest.mark.parametrize("content", [{"age": "x"}, {}, {"age": "42"}])
+    async def test_invalid_content_is_an_error(self, content: dict[str, Any]):
+        result = await self._respond(self.AGE_SCHEMA, content)
+        assert isinstance(result, mcp_types.ErrorData)
+
+    async def test_valid_content_is_accepted(self):
+        result = await self._respond(self.AGE_SCHEMA, {"age": 42})
+        assert isinstance(result, mcp_types.ElicitResult)
+        assert result.action == "accept"
+        assert result.content == {"age": 42}
+
+    async def test_auto_wrapped_scalar_is_validated(self):
+        schema = {
+            "type": "object",
+            "properties": {"value": {"type": "integer"}},
+            "required": ["value"],
+        }
+        accepted = await self._respond(schema, 5)
+        assert isinstance(accepted, mcp_types.ElicitResult)
+        assert accepted.content == {"value": 5}
+
+        rejected = await self._respond(schema, "five")
+        assert isinstance(rejected, mcp_types.ErrorData)
+
+    async def test_accept_without_content_on_empty_schema(self):
+        schema = {"type": "object", "properties": {}}
+        result = await self._respond(schema, ElicitResult(action="accept"))
+        assert isinstance(result, mcp_types.ElicitResult)
+        assert result.action == "accept"
+
+    async def test_date_time_string_is_accepted(self):
+        schema = {
+            "type": "object",
+            "properties": {"when": {"type": "string", "format": "date-time"}},
+            "required": ["when"],
+        }
+        result = await self._respond(schema, {"when": "2024-01-01T00:00:00Z"})
+        assert isinstance(result, mcp_types.ElicitResult)
+        assert result.content == {"when": "2024-01-01T00:00:00Z"}
+
+    async def test_declined_content_is_not_validated(self):
+        result = await self._respond(
+            self.AGE_SCHEMA, ElicitResult(action="decline", content={"age": "x"})
+        )
+        assert isinstance(result, mcp_types.ElicitResult)
+        assert result.action == "decline"

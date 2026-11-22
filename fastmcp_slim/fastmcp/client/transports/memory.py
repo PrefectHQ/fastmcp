@@ -1,6 +1,6 @@
 import contextlib
 import importlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
 import anyio
@@ -47,7 +47,7 @@ class FastMCPTransport(ClientTransport):
     def __init__(self, mcp: "FastMCP[Any] | SDKServer", raise_exceptions: bool = False):
         """Initialize a FastMCPTransport from a FastMCP server instance."""
 
-        # Accept both FastMCP 2.x and FastMCP 1.0 servers. Their underlying
+        # Accept both fastmcp FastMCP servers and the SDK's MCPServer. Their underlying
         # lowlevel MCP ``Server`` lives on different attributes
         # (``_mcp_server`` vs ``_lowlevel_server``); ``_lowlevel_of`` resolves
         # it uniformly so we can drive the async ``Server.run`` for both.
@@ -60,7 +60,7 @@ class FastMCPTransport(ClientTransport):
         *,
         transport_options: TransportOptions | None = None,
         **session_kwargs: Unpack[SessionKwargs],
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         options = transport_options or TransportOptions()
         async with create_client_server_memory_streams() as (
             client_streams,
@@ -118,7 +118,7 @@ class FastMCPTransport(ClientTransport):
 @contextlib.asynccontextmanager
 async def _enter_server_lifespan(
     server: "FastMCP[Any] | SDKServer",
-) -> AsyncIterator[None]:
+) -> AsyncGenerator[None, None]:
     """Enters the server's lifespan context for FastMCP servers and does nothing for the SDK's own high-level servers."""
     FastMCP2: type[Any] | None
     try:

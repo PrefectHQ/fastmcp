@@ -1,6 +1,6 @@
 name: 🐛 Bug Report
 description: Report a bug or unexpected behavior in FastMCP
-labels: [bug, pending]
+labels: [bug]
 
 body:
   - type: markdown
@@ -9,6 +9,8 @@ body:
         Thanks for reporting a bug!
 
         A good bug report is one of the most valuable contributions you can make — see [CONTRIBUTING.md](../../CONTRIBUTING.md). If the fix is straightforward, a PR is also welcome.
+
+        **Contributor credit:** If your report leads to a merged fix implemented by a maintainer, we'll credit you as a co-author of the merged commit and in the release notes, including as a new contributor if this is your first contribution. You don't need to write the fix. Opening an issue does not guarantee implementation.
 
         ### Before you submit
 

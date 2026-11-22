@@ -18,7 +18,19 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
-from _harness import INSTRUCTIONS, Report, serve, server_env, stdio_command
+import anyio
+from _harness import (
+    INSTRUCTIONS,
+    PROXY_GAPS,
+    TEMPLATE_READS,
+    TOOLS,
+    Report,
+    quiet,
+    serve,
+    server_env,
+    stdio_command,
+    stdio_transport,
+)
 from pydantic_ai import Agent, BinaryContent, ModelRetry
 from pydantic_ai.mcp import MCPToolset, load_mcp_toolsets
 from pydantic_ai.messages import (
@@ -31,18 +43,6 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 import fastmcp
-from fastmcp.client.transports import StdioTransport
-
-TOOLS = {
-    "add",
-    "forecast",
-    "divide",
-    "count_to",
-    "snapshot",
-    "chime",
-    "attachments",
-    "confirm",
-}
 
 
 def scripted_model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
@@ -73,7 +73,10 @@ async def accept(
 
 
 async def exercise(
-    report: Report, target: Any, headers: dict[str, str] | None = None
+    report: Report,
+    target: Any,
+    headers: dict[str, str] | None = None,
+    gaps: dict[str, str] | None = None,
 ) -> None:
     progress: list[float] = []
     logs: list[str] = []
@@ -144,12 +147,17 @@ async def exercise(
             result = await toolset.direct_call_tool("confirm", {"action": "deploy"})
             assert result == "deploy: approved", result
 
-        async def progress_and_logging() -> None:
+        async def progress_notifications() -> None:
+            progress.clear()
             assert (
                 await toolset.direct_call_tool("count_to", {"n": 3}) == "counted to 3"
             )
             assert progress == [1, 2, 3], progress
-            assert any("counted to 3" in line for line in logs), logs
+
+        async def log_messages() -> None:
+            logs.clear()
+            await toolset.direct_call_tool("count_to", {"n": 1})
+            assert any("counted to 1" in line for line in logs), logs
 
         async def resources() -> None:
             assert "config://app" in {
@@ -168,6 +176,27 @@ async def exercise(
             result = await toolset.get_prompt("review", {"code": "x = 1"})
             assert "x = 1" in str(result.messages[0].content), result
 
+        async def template_literals_and_list_queries() -> None:
+            for uri, expected in TEMPLATE_READS.items():
+                assert await toolset.read_resource(uri) == expected, uri
+
+        async def float_count_output_schema() -> None:
+            result = await toolset.direct_call_tool("stamp", {})
+            assert result == {"when": "2026-09-22T00:00:00Z"}, result
+
+        async def timed_out_call_leaves_connection_usable() -> None:
+            with quiet("mcp.client.sse"):
+                try:
+                    with anyio.fail_after(0.5):
+                        await toolset.direct_call_tool("sleep", {"seconds": 5})
+                except TimeoutError:
+                    pass
+                else:
+                    raise AssertionError("sleep(5) finished inside a 0.5s deadline")
+                with anyio.fail_after(10):
+                    assert await toolset.direct_call_tool("add", {"a": 1, "b": 1}) == 2
+                await anyio.sleep(0.2)
+
         for check in (
             lists_tools,
             instructions,
@@ -178,12 +207,19 @@ async def exercise(
             audio,
             mixed_content,
             elicitation,
-            progress_and_logging,
+            progress_notifications,
             resources,
             resource_template,
             prompt,
+            template_literals_and_list_queries,
+            float_count_output_schema,
+            timed_out_call_leaves_connection_usable,
         ):
-            await report.check(check.__name__.replace("_", " "), check)
+            name = check.__name__.replace("_", " ")
+            await report.check(name, check, known_gap=(gaps or {}).get(name))
+        await report.check(
+            "logging", log_messages, known_gap=(gaps or {}).get("logging")
+        )
 
 
 async def main() -> None:
@@ -207,7 +243,7 @@ async def main() -> None:
         await report.check(
             "installed build is under test", installed_build_is_under_test
         )
-        await exercise(report, StdioTransport(command, args, env=server_env()))
+        await exercise(report, stdio_transport())
 
     with tempfile.TemporaryDirectory() as tmp:
         config = Path(tmp) / "mcp.json"
@@ -233,8 +269,17 @@ async def main() -> None:
                 "agent loop from load_mcp_toolsets", agent_loop_from_config
             )
 
-    for transport, label in (("http", "streamable HTTP"), ("sse", "SSE")):
-        with report.transport(label), serve(transport) as server:
+    for transport, label in (
+        ("http", "streamable HTTP"),
+        ("sse", "SSE"),
+        ("proxy", "FastMCP proxy"),
+    ):
+        # The SDK's SSE reader logs a traceback when a check cancels a call on purpose.
+        with (
+            report.transport(label),
+            serve(transport) as server,
+            quiet("mcp.client.sse"),
+        ):
 
             async def rejects_missing_token() -> None:
                 try:
@@ -245,7 +290,12 @@ async def main() -> None:
                 raise AssertionError("connected without a bearer token")
 
             await report.check("rejects missing bearer token", rejects_missing_token)
-            await exercise(report, server.url, headers=server.headers)
+            await exercise(
+                report,
+                server.url,
+                headers=server.headers,
+                gaps=PROXY_GAPS if transport == "proxy" else None,
+            )
 
     report.finish()
 

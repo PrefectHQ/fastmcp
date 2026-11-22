@@ -65,7 +65,12 @@ from pathlib import Path
 import pytest
 import yaml
 from pydantic import TypeAdapter
-from yaml import CSafeLoader  # ty: ignore[possibly-missing-import]
+from yaml import SafeLoader
+
+try:
+    from yaml import CSafeLoader  # ty: ignore[possibly-missing-import]
+except ImportError:
+    CSafeLoader = SafeLoader
 
 from fastmcp.utilities.json_schema_type import json_schema_to_type
 

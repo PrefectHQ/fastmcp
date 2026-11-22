@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 import ssl
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Any, Literal, cast
 
 import httpx2
@@ -21,11 +21,12 @@ from fastmcp.client.auth.client_credentials import (
     PrivateKeyJWTOAuthProvider,
 )
 from fastmcp.client.auth.oauth import OAuth
-from fastmcp.client.dependencies import _get_forwardable_http_headers
+from fastmcp.client.dependencies import _merge_forwardable_http_headers
 from fastmcp.client.transports.base import (
     ClientTransport,
     SessionKwargs,
     TransportOptions,
+    _mark_verify_factory,
 )
 from fastmcp.utilities.timeout import normalize_timeout_to_timedelta
 
@@ -126,7 +127,7 @@ class SSETransport(ClientTransport):
                 kwargs["auth"] = auth
             return httpx2.AsyncClient(**kwargs)
 
-        return cast(McpHttpClientFactory, factory)
+        return _mark_verify_factory(cast(McpHttpClientFactory, factory))
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -134,7 +135,7 @@ class SSETransport(ClientTransport):
         *,
         transport_options: TransportOptions | None = None,
         **session_kwargs: Unpack[SessionKwargs],
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession, None]:
         options = transport_options or TransportOptions()
         client_kwargs: dict[str, Any] = {}
 
@@ -143,7 +144,7 @@ class SSETransport(ClientTransport):
         # This is off by default so a plain Client used inside a server tool
         # handler cannot leak caller headers to an unrelated remote server.
         if options.forward_incoming_headers:
-            client_kwargs["headers"] = _get_forwardable_http_headers() | self.headers
+            client_kwargs["headers"] = _merge_forwardable_http_headers(self.headers)
         else:
             client_kwargs["headers"] = dict(self.headers)
 

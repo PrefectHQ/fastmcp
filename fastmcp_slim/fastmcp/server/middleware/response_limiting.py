@@ -76,6 +76,7 @@ class ResponseLimitingMiddleware(Middleware):
         self,
         text: str,
         meta: dict[str, Any] | None = None,
+        is_error: bool = False,
     ) -> ToolResult:
         """Truncate text to fit within max_size and wrap in ToolResult."""
         suffix_bytes = len(self.truncation_suffix.encode("utf-8"))
@@ -100,6 +101,7 @@ class ResponseLimitingMiddleware(Middleware):
         return ToolResult(
             content=[TextContent(type="text", text=truncated)],
             meta=meta,
+            is_error=is_error,
         )
 
     async def on_list_tools(
@@ -162,4 +164,6 @@ class ResponseLimitingMiddleware(Middleware):
             else serialized.decode("utf-8", errors="replace")
         )
 
-        return self._truncate_to_result(text, meta=result.meta)
+        return self._truncate_to_result(
+            text, meta=result.meta, is_error=result.is_error
+        )

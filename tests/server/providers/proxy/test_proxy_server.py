@@ -10,7 +10,7 @@ import pytest
 from anyio import create_task_group
 from dirty_equals import Contains
 from mcp import MCPError
-from mcp_types import Icon, TextContent, TextResourceContents
+from mcp_types import Annotations, Icon, TextContent, TextResourceContents
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic import AnyUrl
 
@@ -20,6 +20,7 @@ from fastmcp.client.transports import FastMCPTransport, StreamableHttpTransport
 from fastmcp.client.transports.base import TransportOptions
 from fastmcp.exceptions import ToolError
 from fastmcp.mcp_config import MCPConfig
+from fastmcp.prompts import Message
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server import create_proxy
 from fastmcp.server.middleware import Middleware
@@ -80,6 +81,7 @@ def fastmcp_server():
         tags={"wave"},
         title="Wave",
         icons=[Icon(src="https://example.com/wave-icon.png")],
+        annotations=Annotations(audience=["user"], priority=0.5),
     )
     def wave() -> str:
         return "👋"
@@ -95,6 +97,7 @@ def fastmcp_server():
         tags={"users"},
         title="User Template",
         icons=[Icon(src="https://example.com/user-icon.png")],
+        annotations=Annotations(audience=["assistant"], priority=0.8),
     )
     async def get_user(user_id: str) -> str:
         import json
@@ -532,6 +535,7 @@ class TestResources:
         assert wave_resource.title == "Wave"
         assert wave_resource.meta == {"fastmcp": {"tags": ["wave"]}}
         assert wave_resource.icons == [Icon(src="https://example.com/wave-icon.png")]
+        assert wave_resource.annotations == Annotations(audience=["user"], priority=0.5)
 
     async def test_list_resources_same_as_original(self, fastmcp_server, proxy_server):
         async with Client(fastmcp_server) as original_client:
@@ -596,6 +600,16 @@ class TestResources:
         assert original_result[2].text == "# Markdown\nContent"
         assert original_result[2].mime_type == "text/markdown"
 
+    @pytest.mark.parametrize("mode", ["legacy", "auto"])
+    async def test_proxy_forwards_read_result_meta(self, fastmcp_server, mode):
+        """The `_meta` of the resources/read result, not just of each content item."""
+        proxy = create_proxy(fastmcp_server)
+        async with Client(proxy, mode=mode) as client:
+            result = await client.read_resource_mcp("data://multi")
+
+        assert result.meta is not None
+        assert result.meta["count"] == 3
+
     async def test_read_resource_returns_none_if_not_found(self, proxy_server):
         with pytest.raises(
             MCPError, match="Resource not found: 'resource://nonexistent'"
@@ -649,6 +663,9 @@ class TestResourceTemplates:
         assert get_user_template.icons == [
             Icon(src="https://example.com/user-icon.png")
         ]
+        assert get_user_template.annotations == Annotations(
+            audience=["assistant"], priority=0.8
+        )
 
     async def test_list_resource_templates_same_as_original(
         self, fastmcp_server, proxy_server
@@ -705,6 +722,16 @@ class TestResourceTemplates:
         assert original_result[0].mime_type == "text/plain"
         assert original_result[1].text == '{"id": "test123", "status": "active"}'
         assert original_result[1].mime_type == "application/json"
+
+    @pytest.mark.parametrize("mode", ["legacy", "auto"])
+    async def test_proxy_template_forwards_read_result_meta(self, fastmcp_server, mode):
+        """The `_meta` of the resources/read result, not just of each content item."""
+        proxy = create_proxy(fastmcp_server)
+        async with Client(proxy, mode=mode) as client:
+            result = await client.read_resource_mcp("data://multi/test123")
+
+        assert result.meta is not None
+        assert result.meta["id"] == "test123"
 
     async def test_proxy_can_overwrite_proxied_resource_template(self, proxy_server):
         """
@@ -857,6 +884,31 @@ class TestPrompts:
             proxy_result = await client.list_prompts()
         assert proxy_result == result
 
+    async def test_list_prompts_keeps_argument_titles(self):
+        """A backend's argument titles reach the proxy's clients."""
+        from fastmcp.prompts import Prompt
+        from fastmcp.prompts.base import PromptArgument
+
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        prompt = Prompt.from_function(greet)
+        prompt = prompt.model_copy(
+            update={
+                "arguments": [
+                    PromptArgument(name="name", title="Your name", required=True)
+                ]
+            }
+        )
+        backend = FastMCP("Backend")
+        backend.add_prompt(prompt)
+
+        async with Client(create_proxy(backend)) as client:
+            (listed,) = await client.list_prompts()
+        assert listed.arguments == [
+            mcp_types.PromptArgument(name="name", title="Your name", required=True)
+        ]
+
     async def test_render_prompt_same_as_original(
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
     ):
@@ -932,6 +984,25 @@ class TestPrompts:
         assert isinstance(proxy_result.messages[1].content, mcp_types.ImageContent)
         assert proxy_result.messages[1].content.data == "iVBORw0KGgoAAAANSUhEUg=="
         assert proxy_result.messages[1].content.mime_type == "image/png"
+
+    async def test_proxy_prompt_preserves_resource_link(self):
+        """A resource_link block from the backend is relayed, not flattened to text."""
+        link = mcp_types.ResourceLink(
+            type="resource_link",
+            uri="docs://guide",
+            name="guide",
+            mime_type="text/markdown",
+        )
+        backend = FastMCP("Backend")
+
+        @backend.prompt
+        def review_guide() -> list[Message]:
+            return [Message("Please review this document:"), Message(link)]
+
+        async with Client(create_proxy(backend)) as client:
+            result = await client.get_prompt("review_guide")
+
+        assert result.messages[1].content == link
 
 
 async def test_proxy_handles_multiple_concurrent_tasks_correctly(
@@ -1065,13 +1136,13 @@ class TestProxyProviderCache:
             lambda: ProxyClient(FastMCPTransport(fastmcp_server)),
         )
         await provider._list_tools()
-        first_ts = provider._tools_cache.timestamp  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        first_ts = provider._tools_cache.timestamp  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
         # Tiny sleep so monotonic clock advances
         time.sleep(0.05)
 
         await provider._list_tools()
-        assert provider._tools_cache.timestamp > first_ts  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert provider._tools_cache.timestamp > first_ts  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_cache_ttl_zero_disables_caching(self, fastmcp_server):
         """With cache_ttl=0, every _get_tool call should re-fetch."""
@@ -1123,7 +1194,7 @@ class TestProxyProviderCache:
         ) as mock_list:
             result = await proxy.call_tool("greet", {"name": "Alice"})
             mock_list.assert_not_called()
-        assert result.content[0].text == "Hello, Alice!"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "Hello, Alice!"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
 
 class TestProxySpanAttributes:

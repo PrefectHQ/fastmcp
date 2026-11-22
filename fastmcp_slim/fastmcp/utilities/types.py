@@ -27,9 +27,7 @@ from typing_extensions import TypeVar
 
 T = TypeVar("T", default=Any)
 
-# TODO(sdkv2): the SDK's `mcp.types.AnyFunction` alias was removed with the
-# mcp.types module. FastMCP owns it now; keep the same `Callable[..., Any]`
-# meaning used by tool/prompt/resource decorators.
+# MCP SDK v2 dropped the `AnyFunction` alias; FastMCP owns it now with the same `Callable[..., Any]` meaning.
 AnyFunction: TypeAlias = Callable[..., Any]
 
 # sentinel values for optional arguments
@@ -38,13 +36,18 @@ NotSetT: TypeAlias = EllipsisType
 
 
 def get_fn_name(fn: Callable[..., Any]) -> str:
-    return fn.__name__  # ty: ignore[unresolved-attribute]
+    return fn.__name__  # ty: ignore[missing-attribute]
 
 
 class FastMCPBaseModel(BaseModel):
     """Base model for FastMCP models."""
 
     model_config = ConfigDict(extra="forbid")
+
+
+def get_function_type_hints(fn: Callable[..., Any]) -> dict[str, Any]:
+    """Resolve a function's type hints, keeping `Annotated` metadata."""
+    return get_type_hints(fn, include_extras=True)
 
 
 @lru_cache(maxsize=5000)
@@ -61,7 +64,7 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
         if hasattr(cls, "__annotations__") and cls.__annotations__:
             try:
                 # Resolve forward references first
-                resolved_hints = get_type_hints(cls, include_extras=True)
+                resolved_hints = get_function_type_hints(cls)
             except Exception:
                 # If forward reference resolution fails, use original annotations
                 resolved_hints = cls.__annotations__
@@ -90,12 +93,12 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
                 # Handle both functions and methods
                 if inspect.ismethod(cls):
                     actual_func = cls.__func__
-                    code = actual_func.__code__  # ty: ignore[unresolved-attribute]
-                    globals_dict = actual_func.__globals__  # ty: ignore[unresolved-attribute]
-                    name = actual_func.__name__  # ty: ignore[unresolved-attribute]
-                    defaults = actual_func.__defaults__  # ty: ignore[unresolved-attribute]
-                    kwdefaults = actual_func.__kwdefaults__  # ty: ignore[unresolved-attribute]
-                    closure = actual_func.__closure__  # ty: ignore[unresolved-attribute]
+                    code = actual_func.__code__  # ty: ignore[missing-attribute]
+                    globals_dict = actual_func.__globals__  # ty: ignore[missing-attribute]
+                    name = actual_func.__name__  # ty: ignore[missing-attribute]
+                    defaults = actual_func.__defaults__  # ty: ignore[missing-attribute]
+                    kwdefaults = actual_func.__kwdefaults__  # ty: ignore[missing-attribute]
+                    closure = actual_func.__closure__  # ty: ignore[missing-attribute]
                 else:
                     code = cls.__code__
                     globals_dict = cls.__globals__
@@ -119,9 +122,9 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
 
                 if inspect.ismethod(cls):
                     new_method = types.MethodType(new_func, cls.__self__)
-                    return TypeAdapter(new_method)
+                    return TypeAdapter(new_method)  # ty:ignore[invalid-type-form]
                 else:
-                    return TypeAdapter(new_func)
+                    return TypeAdapter(new_func)  # ty:ignore[invalid-type-form]
 
     return TypeAdapter(cls)
 
@@ -197,17 +200,17 @@ def create_function_without_params(
 
     if inspect.ismethod(fn):
         actual_func = fn.__func__
-        code = actual_func.__code__  # ty: ignore[unresolved-attribute]
-        globals_dict = actual_func.__globals__  # ty: ignore[unresolved-attribute]
-        name = actual_func.__name__  # ty: ignore[unresolved-attribute]
-        defaults = actual_func.__defaults__  # ty: ignore[unresolved-attribute]
-        closure = actual_func.__closure__  # ty: ignore[unresolved-attribute]
+        code = actual_func.__code__  # ty: ignore[missing-attribute]
+        globals_dict = actual_func.__globals__  # ty: ignore[missing-attribute]
+        name = actual_func.__name__  # ty: ignore[missing-attribute]
+        defaults = actual_func.__defaults__  # ty: ignore[missing-attribute]
+        closure = actual_func.__closure__  # ty: ignore[missing-attribute]
     else:
-        code = fn.__code__  # ty: ignore[unresolved-attribute]
-        globals_dict = fn.__globals__  # ty: ignore[unresolved-attribute]
-        name = fn.__name__  # ty: ignore[unresolved-attribute]
-        defaults = fn.__defaults__  # ty: ignore[unresolved-attribute]
-        closure = fn.__closure__  # ty: ignore[unresolved-attribute]
+        code = fn.__code__  # ty: ignore[missing-attribute]
+        globals_dict = fn.__globals__  # ty: ignore[missing-attribute]
+        name = fn.__name__  # ty: ignore[missing-attribute]
+        defaults = fn.__defaults__  # ty: ignore[missing-attribute]
+        closure = fn.__closure__  # ty: ignore[missing-attribute]
 
     # Create a copy of annotations without the excluded parameters
     original_annotations = getattr(fn, "__annotations__", {})
@@ -231,9 +234,9 @@ def create_function_without_params(
     )
     new_func.__dict__.update(fn.__dict__)
     new_func.__module__ = fn.__module__
-    new_func.__qualname__ = getattr(fn, "__qualname__", fn.__name__)  # ty: ignore[unresolved-attribute]
+    new_func.__qualname__ = getattr(fn, "__qualname__", fn.__name__)  # ty: ignore[missing-attribute]
     new_func.__annotations__ = new_annotations
-    new_func.__signature__ = new_sig  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    new_func.__signature__ = new_sig  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
 
     if inspect.ismethod(fn):
         return types.MethodType(new_func, fn.__self__)
@@ -269,8 +272,14 @@ class Image:
 
     def _get_mime_type(self) -> str:
         """Get MIME type from format or guess from file extension."""
+        mapping = {
+            "jpg": "image/jpeg",
+            "svg": "image/svg+xml",
+            "tif": "image/tiff",
+        }
+
         if self._format:
-            return f"image/{self._format.lower()}"
+            return mapping.get(self._format.lower(), f"image/{self._format.lower()}")
 
         if self.path:
             # Workaround for WEBP in Py3.10
@@ -342,6 +351,11 @@ class Audio:
             "ogg": "audio/ogg",
             "m4a": "audio/mp4",
             "flac": "audio/flac",
+            "opus": "audio/ogg",
+            "aac": "audio/aac",
+            "webm": "audio/webm",
+            "aiff": "audio/aiff",
+            "aif": "audio/aiff",
         }
 
         if self._format:
@@ -399,12 +413,21 @@ class File:
 
     def _get_mime_type(self) -> str:
         """Get MIME type from format or guess from file extension."""
+        # Text formats whose canonical MIME type is text/*, not application/*
+        mapping = {
+            "plain": "text/plain",
+            "txt": "text/plain",
+            "text": "text/plain",
+            "csv": "text/csv",
+            "html": "text/html",
+            "htm": "text/html",
+            "md": "text/markdown",
+            "markdown": "text/markdown",
+        }
+
         if self._format:
             fmt = self._format.lower()
-            # Map common text formats to text/plain
-            if fmt in {"plain", "txt", "text"}:
-                return "text/plain"
-            return f"application/{fmt}"
+            return mapping.get(fmt, f"application/{fmt}")
 
         if self.path:
             mime_type, _ = mimetypes.guess_type(self.path)
@@ -424,15 +447,20 @@ class File:
                 uri_str = self.path.resolve().as_uri()
         elif self.data is not None:
             raw_data = self.data
+            # The URI extension follows the requested format, not the MIME
+            # subtype (format="txt" is text/plain but should stay .txt).
+            extension = (
+                f".{self._format.lower()}"
+                if self._format
+                else f".{self._mime_type.split('/')[1]}"
+            )
             if self._name:
-                extension = (
-                    ""
-                    if Path(self._name).suffix
-                    else f".{self._mime_type.split('/')[1]}"
-                )
-                uri_str = f"file:///{quote(self._name + extension)}"
+                if Path(self._name).suffix:
+                    uri_str = f"file:///{quote(self._name)}"
+                else:
+                    uri_str = f"file:///{quote(self._name + extension)}"
             else:
-                uri_str = f"file:///resource.{self._mime_type.split('/')[1]}"
+                uri_str = f"file:///resource{extension}"
         else:
             raise ValueError("No resource data available")
 

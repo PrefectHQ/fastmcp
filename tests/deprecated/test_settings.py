@@ -51,7 +51,7 @@ class TestRemovedServerInitKwargs:
 
     def test_unknown_kwarg_raises_standard_type_error(self):
         with pytest.raises(TypeError, match="unexpected keyword argument"):
-            FastMCP("TestServer", **{"totally_fake_param": True})  # ty: ignore[invalid-argument-type]
+            FastMCP("TestServer", **{"totally_fake_param": True})
 
     def test_valid_kwargs_still_work(self):
         server = FastMCP(

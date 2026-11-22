@@ -11,7 +11,7 @@ from opentelemetry.trace import Span, SpanKind, StatusCode
 
 import fastmcp
 from fastmcp import Client, FastMCP
-from fastmcp.exceptions import NotFoundError, ToolError
+from fastmcp.exceptions import MCPError, NotFoundError, ToolError
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 
@@ -38,6 +38,7 @@ class TestToolTracing:
         assert span.attributes["mcp.method.name"] == "tools/call"
         # gen_ai semantic conventions
         assert span.attributes["gen_ai.tool.name"] == "greet"
+        assert span.attributes["gen_ai.operation.name"] == "execute_tool"
         # RPC attributes must NOT be present
         assert "rpc.system" not in span.attributes
         assert "rpc.service" not in span.attributes
@@ -194,6 +195,7 @@ class TestPromptTracing:
         assert span.attributes["mcp.method.name"] == "prompts/get"
         # gen_ai semantic conventions
         assert span.attributes["gen_ai.prompt.name"] == "greeting"
+        assert "gen_ai.operation.name" not in span.attributes
         # RPC attributes must NOT be present
         assert "rpc.system" not in span.attributes
         assert "rpc.service" not in span.attributes
@@ -769,3 +771,51 @@ class TestProtocolVersionAttribute:
         version = seam_span.attributes.get("mcp.protocol.version")
         assert isinstance(version, str)
         assert version
+
+    async def test_server_span_has_jsonrpc_request_id(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(mcp) as client:
+            await client.call_tool("greet", {"name": "World"})
+
+        spans = trace_exporter.get_finished_spans()
+        server_span = next(
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER and s.name == "tools/call greet"
+        )
+        sdk_span = next(s for s in spans if s.name == "MCP send tools/call greet")
+        assert server_span.attributes is not None
+        assert sdk_span.attributes is not None
+        assert (
+            server_span.attributes["jsonrpc.request.id"]
+            == sdk_span.attributes["jsonrpc.request.id"]
+        )
+
+    async def test_jsonrpc_error_reports_error_code(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """A JSON-RPC error sets `error.type` and `rpc.response.status_code` to
+        the error code, not the exception class name."""
+        mcp = FastMCP("test-server")
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError) as caught:
+                await client.read_resource("missing://x")
+
+        code = str(caught.value.error.code)
+        server_span = next(
+            s
+            for s in trace_exporter.get_finished_spans()
+            if s.kind == SpanKind.SERVER and s.name == "resources/read"
+        )
+        assert server_span.status.status_code == StatusCode.ERROR
+        assert server_span.attributes is not None
+        assert server_span.attributes["error.type"] == code
+        assert server_span.attributes["rpc.response.status_code"] == code

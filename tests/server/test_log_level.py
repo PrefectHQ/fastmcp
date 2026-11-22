@@ -29,7 +29,7 @@ class TestLogLevelParameter:
                         server.run_stdio_async(log_level="DEBUG", show_banner=False),
                         timeout=0.1,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass  # Expected since we're mocking
 
     async def test_run_http_accepts_log_level(self):

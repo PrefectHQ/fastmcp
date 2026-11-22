@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 import mcp_types
@@ -12,14 +13,14 @@ if TYPE_CHECKING:
     import datetime
 
     from fastmcp.client.client import CallToolResult, Client
+from fastmcp.client._version_pin import PinnedCall, pinned_call
 from fastmcp.client.progress import ProgressHandler
 from fastmcp.client.telemetry import client_span
 from fastmcp.exceptions import ToolError
 from fastmcp.telemetry import inject_trace_context
-from fastmcp.utilities.json_schema_type import json_schema_to_type
+from fastmcp.utilities.json_schema_type import json_schema_to_type_adapter
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.timeout import normalize_timeout_to_seconds
-from fastmcp.utilities.types import get_cached_typeadapter
 
 logger = get_logger(__name__)
 
@@ -221,23 +222,41 @@ class ClientToolsMixin:
                     allow_claimed=has_claims,
                 )
 
-            first = await self._await_with_session_monitoring(_retry(None, None))
-            driven = await self._await_with_session_monitoring(
-                self._drive_input_required(first, _retry)
+            # A pinned call runs a specific version on the server, but the
+            # session's output-schema cache only holds the listed version's
+            # schema. Mark the call for the duration of the request so the
+            # session can skip revalidation when the pinned version is a
+            # different one; nothing else is affected. (#5721)
+            fastmcp_meta = (meta or {}).get("fastmcp")
+            pinned_version = (
+                fastmcp_meta.get("version") if isinstance(fastmcp_meta, dict) else None
             )
-            if isinstance(driven, mcp_types.CallToolResult):
-                result = driven
-            else:
-                # A claimed extension result (SEP-2133): resolve it through the
-                # owning extension's resolver into an ordinary CallToolResult.
-                # Resolution issues further session requests of its own (result
-                # validation lists tools; a resolver may make more), so it needs
-                # the same session monitoring as the calls above — otherwise a
-                # transport-level failure can kill the session runner while this
-                # await waits forever.
-                result = await self._await_with_session_monitoring(
-                    self._resolve_claimed_result(name, driven, read_timeout_seconds)
+            pin_token = (
+                pinned_call.set(PinnedCall(self.session, str(pinned_version)))
+                if pinned_version is not None
+                else None
+            )
+            try:
+                first = await self._await_with_session_monitoring(_retry(None, None))
+                driven = await self._await_with_session_monitoring(
+                    self._drive_input_required(first, _retry)
                 )
+                if isinstance(driven, mcp_types.CallToolResult):
+                    result = driven
+                else:
+                    # A claimed extension result (SEP-2133): resolve it through the
+                    # owning extension's resolver into an ordinary CallToolResult.
+                    # Resolution issues further session requests of its own (result
+                    # validation lists tools; a resolver may make more), so it needs
+                    # the same session monitoring as the calls above — otherwise a
+                    # transport-level failure can kill the session runner while this
+                    # await waits forever.
+                    result = await self._await_with_session_monitoring(
+                        self._resolve_claimed_result(name, driven, read_timeout_seconds)
+                    )
+            finally:
+                if pin_token is not None:
+                    pinned_call.reset(pin_token)
 
             # Reflect tool-level errors on the span so callers see ERROR
             # status even though the MCP protocol call itself succeeded.
@@ -257,6 +276,7 @@ class ClientToolsMixin:
         name: str,
         result: mcp_types.CallToolResult,
         raise_on_error: bool = False,
+        pinned_version: str | None = None,
     ) -> CallToolResult:
         """Parse an mcp_types.CallToolResult into our CallToolResult dataclass.
 
@@ -264,6 +284,9 @@ class ClientToolsMixin:
             name: Tool name (for schema lookup)
             result: Raw MCP protocol result
             raise_on_error: Whether to raise ToolError on errors
+            pinned_version: The tool version the call requested, if any. A
+                result pinned to a version other than the listed one is not
+                coerced through the cached schema; see the module-level parser.
 
         Returns:
             CallToolResult: Parsed result with structured data
@@ -273,9 +296,13 @@ class ClientToolsMixin:
             name=name,
             result=result,
             tool_output_schemas=self.session._tool_output_schemas,
-            list_tools_fn=self.session.list_tools,
+            # Fetch every page: a tool beyond the first page is otherwise never
+            # found, and its result is left unhydrated.
+            list_tools_fn=self.list_tools,
             client_name=self.name,
             raise_on_error=raise_on_error,
+            pinned_version=pinned_version,
+            listed_versions=getattr(self.session, "_tool_listed_versions", None),
         )
 
     async def call_tool(
@@ -334,8 +361,36 @@ class ClientToolsMixin:
             meta=request_meta or None,
         )
         return await self._parse_call_tool_result(
-            name, result, raise_on_error=raise_on_error
+            name,
+            result,
+            raise_on_error=raise_on_error,
+            pinned_version=version,
         )
+
+
+def _wrapped_result_schema(output_schema: dict[str, Any]) -> dict[str, Any] | bool:
+    """Narrow a wrapped output schema to `properties.result` and keep its defs.
+
+    The server leaves `$defs` and draft-07 `definitions` on the root schema,
+    beside `properties.result`. Validating the inner schema without them makes
+    every local `$ref` resolve to an empty object.
+    """
+    properties = output_schema.get("properties")
+    if not isinstance(properties, dict):
+        return output_schema
+    narrowed = properties.get("result")
+    if isinstance(narrowed, bool):
+        return narrowed
+    if not isinstance(narrowed, dict):
+        return output_schema
+    carried = {
+        key: output_schema[key]
+        for key in ("$defs", "definitions")
+        if key in output_schema and key not in narrowed
+    }
+    if not carried:
+        return narrowed
+    return {**narrowed, **carried}
 
 
 async def _parse_call_tool_result(
@@ -345,6 +400,8 @@ async def _parse_call_tool_result(
     list_tools_fn: Any,  # Callable[[], Awaitable[None]]
     client_name: str | None = None,
     raise_on_error: bool = False,
+    pinned_version: str | None = None,
+    listed_versions: Mapping[str, str | None] | None = None,
 ) -> CallToolResult:
     """Parse an mcp_types.CallToolResult into our CallToolResult dataclass.
 
@@ -355,6 +412,11 @@ async def _parse_call_tool_result(
         list_tools_fn: Async function to refresh tool schemas if needed
         client_name: Optional client name for logging
         raise_on_error: Whether to raise ToolError on errors
+        pinned_version: The tool version the call requested, if any.
+        listed_versions: The version each listed tool advertises, keyed by name.
+            The cached schema describes that version only, so a result pinned
+            to any other version (or when the listed version is unknown) is
+            hydrated from ``structured_content`` as it arrived instead.
 
     Returns:
         CallToolResult: Parsed result with structured data
@@ -371,7 +433,7 @@ async def _parse_call_tool_result(
         else:
             msg = f"Tool '{name}' returned an error"
         raise ToolError(msg)
-    elif result.structured_content and not result.is_error:
+    elif result.structured_content is not None and not result.is_error:
         try:
             raw_fastmcp_meta = (result.meta or {}).get("fastmcp")
             fastmcp_meta = (
@@ -386,27 +448,30 @@ async def _parse_call_tool_result(
             if name not in tool_output_schemas:
                 await list_tools_fn()
 
-            if wrap_from_meta:
-                # Meta tells us the result is wrapped — unwrap and validate.
-                structured_content = result.structured_content.get("result")
-            elif name in tool_output_schemas:
+            # The cached schema describes the listed version only. A call
+            # pinned to another version has no advertised schema, so coercing
+            # through the cached one would reject content that is valid for
+            # the version that ran; only the result meta's wrap flag applies.
+            if pinned_version is None or (
+                listed_versions is not None
+                and listed_versions.get(name) == pinned_version
+            ):
                 output_schema = tool_output_schemas.get(name)
-                if output_schema and output_schema.get("x-fastmcp-wrap-result"):
-                    structured_content = result.structured_content.get("result")
-                else:
-                    structured_content = result.structured_content
+            else:
+                output_schema = None
+
+            if wrap_from_meta or (
+                output_schema and output_schema.get("x-fastmcp-wrap-result")
+            ):
+                structured_content = result.structured_content.get("result")
             else:
                 structured_content = result.structured_content
 
             # Type-validate through the schema if available.
-            output_schema = tool_output_schemas.get(name)
             if output_schema:
                 if wrap_from_meta or output_schema.get("x-fastmcp-wrap-result"):
-                    output_schema = output_schema.get("properties", {}).get(
-                        "result", output_schema
-                    )
-                output_type = json_schema_to_type(output_schema)
-                type_adapter = get_cached_typeadapter(output_type)
+                    output_schema = _wrapped_result_schema(output_schema)
+                type_adapter = json_schema_to_type_adapter(output_schema)
                 data = type_adapter.validate_python(structured_content)
             else:
                 data = structured_content

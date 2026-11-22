@@ -3,10 +3,11 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 
 import pytest
-from mcp_types import CallToolResult, TextContent
+from mcp_types import CallToolRequestParams, CallToolResult, TextContent
 from pydantic import BaseModel, ConfigDict, Field, with_config
 
 from fastmcp import Client, FastMCP
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import Tool, ToolResult
 from tests.conftest import user_meta
 
@@ -135,7 +136,7 @@ class TestToolResultIsError:
 
         result = tool.convert_result(raw_result)
 
-        assert result.to_mcp_result() is raw_result
+        assert result.to_mcp_result() == raw_result
 
     async def test_raw_call_tool_result_preserves_protocol_fields(self):
         mcp = FastMCP()
@@ -160,6 +161,63 @@ class TestToolResultIsError:
         # the tool itself set, which is what FastMCP is responsible for.
         received["_meta"] = user_meta(received["_meta"])
         assert received == raw_result.model_dump(by_alias=True)
+
+    async def test_raw_call_tool_result_serializes_nested_models_like_the_wire(self):
+        class Usage(BaseModel):
+            token_count: int = Field(serialization_alias="tokenCount")
+            note: str | None = None
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def report() -> CallToolResult:
+            return CallToolResult(
+                content=[TextContent(type="text", text="ok")],
+                structured_content={"usage": Usage(token_count=3)},
+            )
+
+        async with Client(mcp) as client:
+            result = await client.call_tool_mcp("report", {})
+
+        assert result.structured_content == {"usage": {"tokenCount": 3}}
+
+    @pytest.mark.parametrize("edit", ["in_place", "model_copy"])
+    async def test_raw_call_tool_result_carries_middleware_edits(self, edit: str):
+        class EditResult(Middleware):
+            async def on_call_tool(
+                self,
+                context: MiddlewareContext[CallToolRequestParams],
+                call_next: CallNext[CallToolRequestParams, ToolResult],
+            ) -> ToolResult:
+                result = await call_next(context)
+                update = {
+                    "content": [TextContent(type="text", text="redacted")],
+                    "structured_content": {"secret": "redacted"},
+                    "meta": {"audited": True},
+                    "is_error": True,
+                }
+                if edit == "model_copy":
+                    return result.model_copy(update=update)
+                for field, value in update.items():
+                    setattr(result, field, value)
+                return result
+
+        mcp = FastMCP(middleware=[EditResult()])
+
+        @mcp.tool
+        def lookup() -> CallToolResult:
+            return CallToolResult(
+                content=[TextContent(type="text", text="secret: s3cr3t")],
+                structured_content={"secret": "s3cr3t"},
+            )
+
+        async with Client(mcp) as client:
+            result = await client.call_tool_mcp("lookup", {})
+
+        assert result.content == [TextContent(type="text", text="redacted")]
+        assert result.structured_content == {"secret": "redacted"}
+        assert user_meta(result.meta) == {"audited": True}
+        assert result.is_error is True
 
 
 class TestUnionReturnTypes:
@@ -433,3 +491,42 @@ class TestSerializeByAlias:
 
         assert result.structured_content == {"_id": "123"}
         assert set(tools["get_biofile"].output_schema["properties"]) == {"_id"}  # type: ignore[index]
+
+
+class TestUnserializableReturnValue:
+    """An unserializable return value must not become a silent success (#5030)."""
+
+    def _make_server(self) -> FastMCP:
+        import threading
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def with_schema() -> dict:
+            return {"host": "db1", "lock": threading.Lock()}
+
+        @mcp.tool
+        def without_schema():
+            return {"host": "db1", "lock": threading.Lock()}
+
+        return mcp
+
+    async def test_output_schema_raises_tool_error(self):
+        """With an output schema, serialization failure is an error result,
+        not a success carrying the value's repr with no structured content."""
+        async with Client(self._make_server()) as client:
+            result = await client.call_tool("with_schema", {}, raise_on_error=False)
+
+        assert result.is_error
+        assert "Could not serialize" in result.content[0].text  # type: ignore[union-attr]
+        assert "with_schema" in result.content[0].text  # type: ignore[union-attr]
+
+    async def test_no_output_schema_keeps_content_fallback(self):
+        """Without an output schema there is no structured-content contract,
+        so the content-only fallback stays."""
+        async with Client(self._make_server()) as client:
+            result = await client.call_tool("without_schema", {})
+
+        assert not result.is_error
+        assert result.structured_content is None
+        assert "db1" in result.content[0].text  # type: ignore[union-attr]

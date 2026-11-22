@@ -22,6 +22,7 @@ because core still declares them.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -34,12 +35,19 @@ from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
 from fastmcp.tools.base import Tool
-from fastmcp.tools.function_tool import FunctionTool, _resolve_param_hints
+from fastmcp.tools.function_tool import (
+    FunctionTool,
+    _resolve_param_hints,
+    _validate_input,
+)
+from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.types import get_cached_typeadapter
 from fastmcp_tasks.input_loop import reentrant_task_fn
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from docket import Docket
     from docket.execution import Execution
 
@@ -152,13 +160,18 @@ def coerce_task_arguments(
     task's Redis metadata and initial status notification exist — otherwise a
     coercion failure during queueing would orphan a task the client has already
     observed. Only ``FunctionTool`` splats arguments into a typed Python callable
-    and therefore mirrors the synchronous validation path; every other component
-    type is a no-op passthrough.
+    and therefore mirrors the synchronous validation path; ``TransformedTool`` is
+    checked against its own advertised schema (see
+    ``_validate_transformed_arguments``); every other component type is a no-op
+    passthrough.
 
     When ``strict`` is set (server-level ``strict_input_validation``), arguments
     are validated in strict mode so the task path rejects lax coercions (e.g. the
     string ``"1"`` into an ``int``) exactly as the synchronous call path does.
     """
+    if isinstance(component, TransformedTool):
+        return _validate_transformed_arguments(component, arguments)
+
     if not isinstance(component, FunctionTool):
         return arguments
 
@@ -167,16 +180,92 @@ def coerce_task_arguments(
     wrapper_fn = without_injected_parameters(
         component.fn, run_in_thread=component.run_in_thread
     )
-    hints = _resolve_param_hints(wrapper_fn)
 
-    coerced = dict(arguments)
-    for name, value in arguments.items():
-        annotation = hints.get(name)
-        if annotation is None:
-            continue
-        adapter = get_cached_typeadapter(annotation)
-        try:
-            coerced[name] = adapter.validate_python(value, strict=strict)
-        except PydanticValidationError as e:
-            raise ValidationError(str(e), log_level=logging.WARNING) from e
-    return coerced
+    # Validate the whole call through the same Pydantic call schema the
+    # synchronous path builds, so "required", "unknown" and "default" mean the
+    # same thing on both paths. Left unchecked, a bad call is only rejected
+    # inside the worker, as a task that completes with an opaque error instead
+    # of a validation failure.
+    adapter = get_cached_typeadapter(_call_shape_probe(wrapper_fn))
+    try:
+        validated: dict[str, Any] = _validate_input(adapter, arguments, strict=strict)
+    except PydanticValidationError as e:
+        raise ValidationError(str(e), log_level=logging.WARNING) from e
+
+    # Return the validated call, defaults included: the worker invokes the tool
+    # function directly, so a parameter whose default only Pydantic knows about
+    # (``Annotated[int, Field(default=5)]``) must arrive with its value filled in.
+    return validated
+
+
+def _validate_transformed_arguments(
+    tool: TransformedTool,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Reject a transformed-tool submission its own advertised schema forbids.
+
+    A transformed tool is registered with Docket as a base ``Tool``, so the
+    worker invokes ``TransformedTool.run`` — the only place its argument
+    contract is enforced. Submission happens before that, so without this check
+    a call the synchronous path rejects is instead persisted as a task and only
+    surfaces as an ``is_error`` result once a worker picks it up.
+
+    The checks mirror what the forwarding function performs before it runs the
+    parent: unknown arguments and, after schema defaults are applied, missing
+    required ones. Both are read off ``parameters``, which is the same schema
+    advertised to clients, so "required" and "unknown" mean here what they mean
+    on the wire.
+
+    Type and constraint violations are deliberately left to the worker. The
+    forwarding function rewrites arguments back onto the parent tool (renames,
+    hidden constants, injected defaults), and the parent validates them against
+    its own call schema; reproducing that rewrite here would duplicate the
+    transform's argument rules rather than reuse them.
+    """
+    parameters = tool.parameters or {}
+    properties = parameters.get("properties", {})
+
+    supplied = set(arguments) | {
+        name
+        for name, schema in properties.items()
+        if isinstance(schema, dict) and "default" in schema
+    }
+    unknown = sorted(set(arguments) - set(properties))
+    missing = sorted(set(parameters.get("required", [])) - supplied)
+
+    if not (unknown or missing):
+        return arguments
+
+    details = []
+    if unknown:
+        details.append(f"unexpected argument(s): {', '.join(unknown)}")
+    if missing:
+        details.append(f"missing required argument(s): {', '.join(missing)}")
+    raise ValidationError(
+        f"Invalid arguments for tool {tool.name!r}: {'; '.join(details)}",
+        log_level=logging.WARNING,
+    )
+
+
+def _call_shape_probe(fn: Callable[..., Any]) -> Callable[..., dict[str, Any]]:
+    """Mirror ``fn``'s signature on a function that only returns its keyword arguments.
+
+    ``TypeAdapter`` validates a callable's arguments by calling it, so validating
+    a task submission against ``fn`` itself would run the tool. The probe has the
+    identical parameters, defaults and resolved annotations, so Pydantic builds
+    the identical call schema, and calling it returns what was validated.
+    """
+
+    def probe(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return inspect.signature(probe).bind(*args, **kwargs).arguments
+
+    hints = _resolve_param_hints(fn)
+    sig = inspect.signature(fn)
+    annotations = {
+        name: hints.get(name, param.annotation)
+        for name, param in sig.parameters.items()
+        if name in hints or param.annotation is not inspect.Parameter.empty
+    }
+    probe.__signature__ = sig  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
+    probe.__annotations__ = annotations
+    return probe

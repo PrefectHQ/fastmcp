@@ -37,11 +37,21 @@ from pydantic import AnyHttpUrl
 
 from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.auth import AccessToken
+from fastmcp.server.auth.identity_assertion import IdentityAssertion
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _normalize_domain(domain: str) -> str:
+    """Strip any URL scheme and trailing slashes from a Clerk instance domain.
+
+    The Clerk dashboard shows the Frontend API URL with its scheme, so users
+    often pass it in that form.
+    """
+    return domain.removeprefix("https://").removeprefix("http://").rstrip("/")
 
 
 class ClerkTokenVerifier(TokenVerifier):
@@ -82,7 +92,7 @@ class ClerkTokenVerifier(TokenVerifier):
                 lifecycle. When None (default), a fresh client is created per call.
         """
         super().__init__(required_scopes=required_scopes)
-        self.domain = domain.rstrip("/")
+        self.domain = _normalize_domain(domain)
         self._client_id = client_id
         self._client_secret = client_secret
         self.timeout_seconds = timeout_seconds
@@ -296,6 +306,7 @@ class ClerkProvider(OAuthProxy):
         extra_authorize_params: dict[str, str] | None = None,
         http_client: httpx2.AsyncClient | None = None,
         enable_cimd: bool = True,
+        identity_assertion: IdentityAssertion | None = None,
     ):
         """Initialize Clerk OAuth provider.
 
@@ -350,8 +361,10 @@ class ClerkProvider(OAuthProxy):
                 refresh gracefully (e.g. `mcp-remote`). See `OAuthProxy` for details.
             token_expiry_threshold_seconds: Number of seconds before actual expiry to
                 treat a token as expired, refreshing early to avoid races. Defaults to 0.
+            identity_assertion: Optional SEP-990 ID-JAG configuration for
+                identity-bound token exchange. Disabled by default.
         """
-        domain = domain.rstrip("/")
+        domain = _normalize_domain(domain)
 
         required_scopes_final = (
             parse_scopes(required_scopes)
@@ -398,6 +411,7 @@ class ClerkProvider(OAuthProxy):
             extra_authorize_params=extra_authorize_params_final or None,
             valid_scopes=parsed_valid_scopes,
             enable_cimd=enable_cimd,
+            identity_assertion=identity_assertion,
         )
 
         logger.debug(

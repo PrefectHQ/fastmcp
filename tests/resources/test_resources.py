@@ -371,3 +371,72 @@ class TestResourceMetaPropagation:
             result = await client.read_resource_mcp("test://json-meta")
             assert len(result.contents) == 1
             assert result.contents[0].meta == {"csp": "default-src 'none'"}
+
+    async def test_list_resource_content_return_preserves_component_meta(self):
+        """A list[ResourceContent] return must carry component meta on every item."""
+        mcp = FastMCP()
+        component_meta = {"ui": {"csp": "default-src none"}, "team": "infra"}
+
+        @mcp.resource("test://list-meta", meta=component_meta)
+        def list_resource() -> list[ResourceContent]:
+            return [ResourceContent("a"), ResourceContent("b")]
+
+        async with Client(mcp) as client:
+            result = await client.read_resource_mcp("test://list-meta")
+
+        assert len(result.contents) == 2
+        assert [content.meta for content in result.contents] == [
+            component_meta,
+            component_meta,
+        ]
+
+    async def test_list_resource_content_item_meta_overrides_component_meta(self):
+        """Item-level keys win over component keys; other component keys merge in."""
+        mcp = FastMCP()
+        component_meta = {"ui": {"csp": "default-src none"}, "team": "infra"}
+
+        @mcp.resource("test://list-meta-override", meta=component_meta)
+        def list_resource() -> list[ResourceContent]:
+            return [
+                ResourceContent("a", meta={"team": "app", "own": 1}),
+                ResourceContent("b"),
+            ]
+
+        async with Client(mcp) as client:
+            result = await client.read_resource_mcp("test://list-meta-override")
+
+        assert [content.meta for content in result.contents] == [
+            {"ui": {"csp": "default-src none"}, "team": "app", "own": 1},
+            {"ui": {"csp": "default-src none"}, "team": "infra"},
+        ]
+
+    async def test_str_return_still_preserves_component_meta(self):
+        """Control: the str path keeps attaching component meta."""
+        mcp = FastMCP()
+
+        @mcp.resource("test://str-meta", meta={"csp": "default-src 'none'"})
+        def str_resource() -> str:
+            return "hello"
+
+        async with Client(mcp) as client:
+            result = await client.read_resource_mcp("test://str-meta")
+
+        assert len(result.contents) == 1
+        assert result.contents[0].text == "hello"
+        assert result.contents[0].meta == {"csp": "default-src 'none'"}
+
+    async def test_empty_list_return_is_unchanged(self):
+        """Control: an empty list still serializes to a single JSON item."""
+        mcp = FastMCP()
+
+        @mcp.resource("test://empty-list", meta={"csp": "default-src 'none'"})
+        def empty_list() -> list[ResourceContent]:
+            return []
+
+        async with Client(mcp) as client:
+            result = await client.read_resource_mcp("test://empty-list")
+
+        assert len(result.contents) == 1
+        assert result.contents[0].text == "[]"
+        assert result.contents[0].mime_type == "text/plain"
+        assert result.contents[0].meta == {"csp": "default-src 'none'"}

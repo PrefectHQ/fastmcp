@@ -4,14 +4,14 @@ This example demonstrates serving MCP tools from a database. Tools can be added,
 
 ## Structure
 
-- `tools.db` - SQLite database with tool configurations (committed for convenience)
+- `tools.db` - SQLite database with tool configurations (created by `setup_db.py`; gitignored)
 - `setup_db.py` - Script to create/reset the database
 - `server.py` - MCP server that loads tools from the database
 
 ## Usage
 
 ```bash
-# Reset the database (optional - tools.db is pre-seeded)
+# Create or reset the database (required before the first run)
 uv run examples/providers/sqlite/setup_db.py
 
 # Run the server
@@ -23,12 +23,14 @@ uv run fastmcp run examples/providers/sqlite/server.py
 The `SQLiteToolProvider` queries the database on every `list_tools` and `call_tool` request:
 
 ```python
-class SQLiteToolProvider(BaseToolProvider):
-    async def list_tools(self) -> list[Tool]:
+class SQLiteToolProvider(Provider):
+    async def _list_tools(self) -> Sequence[Tool]:
         # Query database for enabled tools
         ...
 
-    async def get_tool(self, name: str) -> Tool | None:
+    async def _get_tool(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Tool | None:
         # Efficient single-tool lookup
         ...
 ```

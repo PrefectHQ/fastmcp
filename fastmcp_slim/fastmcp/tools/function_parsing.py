@@ -18,7 +18,7 @@ from typing_extensions import TypeVar as TypeVarExt
 
 from fastmcp.tools.base import ToolResult
 from fastmcp.utilities.docstring_parsing import ParsedDocstring, parse_docstring
-from fastmcp.utilities.json_schema import compress_schema
+from fastmcp.utilities.json_schema import compress_schema, is_object_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.prefab import is_prefab_type
 from fastmcp.utilities.types import (
@@ -216,54 +216,6 @@ class _UnserializableType:
     pass
 
 
-def _is_object_schema(
-    schema: dict[str, Any],
-    *,
-    _root_schema: dict[str, Any] | None = None,
-    _seen_refs: set[str] | None = None,
-) -> bool:
-    """Check if a JSON schema represents an object type."""
-    root_schema = _root_schema or schema
-    seen_refs = _seen_refs or set()
-
-    # Direct object type
-    if schema.get("type") == "object":
-        return True
-
-    # Schema with properties but no explicit type is treated as object
-    if "properties" in schema:
-        return True
-
-    # Resolve local $ref definitions and recurse into the target schema.
-    ref = schema.get("$ref")
-    if not isinstance(ref, str) or not ref.startswith("#/"):
-        return False
-
-    if ref in seen_refs:
-        return False
-
-    # Walk the JSON Pointer path from the root schema, unescaping each
-    # token per RFC 6901 (~1 → /, ~0 → ~).
-    pointer = ref.removeprefix("#/")
-    segments = pointer.split("/")
-    target: Any = root_schema
-    for segment in segments:
-        unescaped = segment.replace("~1", "/").replace("~0", "~")
-        if not isinstance(target, dict) or unescaped not in target:
-            return False
-        target = target[unescaped]
-
-    target_schema = target
-    if not isinstance(target_schema, dict):
-        return False
-
-    return _is_object_schema(
-        target_schema,
-        _root_schema=root_schema,
-        _seen_refs=seen_refs | {ref},
-    )
-
-
 @dataclass
 class ParsedFunction:
     fn: Callable[..., Any]
@@ -299,9 +251,23 @@ class ParsedFunction:
                         "Functions with **kwargs are not supported as tools"
                     )
 
-        # collect name and description before we potentially modify the function
-        fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
-        outer_docstring = parse_docstring(fn)
+        # Keep the partial's bound signature, and fall back to the wrapped
+        # callable only for metadata the partial hasn't explicitly overridden.
+        target = fn
+        partial_name = None
+        partial_docstring = ParsedDocstring()
+        has_partial_docstring = False
+        while isinstance(target, functools.partial):
+            partial_name = partial_name or getattr(target, "__name__", None)
+            if not has_partial_docstring and "__doc__" in target.__dict__:
+                partial_docstring = parse_docstring(target)
+                has_partial_docstring = True
+            target = target.func
+        fn_name = partial_name or getattr(target, "__name__", None)
+        fn_name = fn_name or target.__class__.__name__
+        outer_docstring = (
+            partial_docstring if has_partial_docstring else parse_docstring(target)
+        )
 
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
@@ -316,11 +282,25 @@ class ParsedFunction:
         # describes __init__, so falling back to it would risk injecting
         # constructor docs into __call__'s schema on overlapping names.
         # The description, however, comes from the class docstring (which
-        # describes what the tool IS) when present.
-        inner_docstring = parse_docstring(fn)
+        # describes what the tool IS) when present. A partial likewise keeps
+        # its own partially-bound signature but declares its parameters in
+        # the wrapped function's docstring.
+        if isinstance(fn, functools.partial):
+            doc_fn = target if inspect.isroutine(target) else target.__call__
+        else:
+            doc_fn = fn
+        inner_docstring = parse_docstring(doc_fn)
         parsed_docstring = ParsedDocstring(
-            description=outer_docstring.description or inner_docstring.description,
-            parameters=inner_docstring.parameters,
+            description=(
+                outer_docstring.description
+                if has_partial_docstring
+                else outer_docstring.description or inner_docstring.description
+            ),
+            parameters=(
+                partial_docstring.parameters
+                if has_partial_docstring
+                else inner_docstring.parameters
+            ),
         )
 
         # Transform Context type annotations to Depends() for unified DI
@@ -335,9 +315,21 @@ class ParsedFunction:
         wrapper_fn = without_injected_parameters(fn)
 
         input_type_adapter = get_cached_typeadapter(wrapper_fn)
-        input_schema = input_type_adapter.json_schema()
+        raw_input_schema = input_type_adapter.json_schema()
 
-        input_schema = compress_schema(input_schema, prune_titles=True)
+        input_schema = compress_schema(raw_input_schema, prune_titles=True)
+
+        # Pruning drops every title, since Pydantic derives one from each
+        # parameter name. Restore the ones the author wrote with
+        # Field(title=...): those are display labels a client can't rederive.
+        properties = input_schema.get("properties", {})
+        title_from_name = GenerateJsonSchema().get_title_from_name
+        for param_name, raw_property in raw_input_schema.get("properties", {}).items():
+            if param_name not in properties or not isinstance(raw_property, dict):
+                continue
+            title = raw_property.get("title")
+            if isinstance(title, str) and title != title_from_name(param_name):
+                properties[param_name]["title"] = title
 
         # Inject parameter descriptions from the docstring into the schema.
         # Explicit annotations (Field(description=...), Annotated[x, "..."])
@@ -482,7 +474,7 @@ class ParsedFunction:
                 # because MCP requires that output schemas are objects
                 # Check if schema is an object type, resolving $ref references
                 # (self-referencing types use $ref at root level)
-                if wrap_non_object_output_schema and not _is_object_schema(base_schema):
+                if wrap_non_object_output_schema and not is_object_schema(base_schema):
                     # Use the wrapped result schema directly
                     wrapped_type = _WrappedResult[clean_output_type]
                     wrapped_adapter = get_cached_typeadapter(wrapped_type)

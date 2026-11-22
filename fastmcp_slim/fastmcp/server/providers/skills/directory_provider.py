@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
+from mcp.shared.path_security import PathEscapeError
+
+from fastmcp._warnings import FastMCPDeprecationWarning
 from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.aggregate import AggregateProvider
+from fastmcp.server.providers.skills._deprecation import warn_directory_provider
 from fastmcp.server.providers.skills.skill_provider import SkillProvider
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec
@@ -18,6 +23,11 @@ logger = get_logger(__name__)
 
 class SkillsDirectoryProvider(AggregateProvider):
     """Provider that scans directories and creates a SkillProvider per skill folder.
+
+    Deprecated since 4.2 and removed in 4.3: use
+    `fastmcp.skills.provider.SkillsDirectoryProvider`, which also serves the MCP
+    skills extension. Constructing this provider warns with the replacement call
+    and the folders that would stop the replacement from starting.
 
     This extends AggregateProvider to combine multiple SkillProviders into one.
     Each subdirectory containing a main file (default: SKILL.md) becomes a skill.
@@ -32,6 +42,9 @@ class SkillsDirectoryProvider(AggregateProvider):
         supporting_files: How supporting files are exposed in child SkillProviders:
             - "template": Accessed via ResourceTemplate, hidden from list_resources().
             - "resources": Each file exposed as individual Resource in list_resources().
+        experimental_skills: Returns the replacement provider instead, with a
+            deprecation warning. The replacement fails at startup on folders
+            that are not valid Agent Skills.
 
     Example:
         ```python
@@ -52,12 +65,27 @@ class SkillsDirectoryProvider(AggregateProvider):
         ```
     """
 
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+        if not kwargs.get("experimental_skills"):
+            return super().__new__(cls)
+        if cls is not SkillsDirectoryProvider:
+            # A subclass may carry overrides (such as access checks) that the
+            # replacement would silently drop, so refuse instead.
+            raise TypeError(
+                f"`experimental_skills=True` is no longer supported on subclasses "
+                f"such as `{cls.__name__}`. Build on "
+                "`fastmcp.skills.provider.SkillsDirectoryProvider` instead."
+            )
+        return _experimental_replacement(*args, **kwargs)
+
     def __init__(
         self,
         roots: str | Path | Sequence[str | Path],
         reload: bool = False,
         main_file_name: str = "SKILL.md",
         supporting_files: Literal["template", "resources"] = "template",
+        *,
+        experimental_skills: bool = False,
     ) -> None:
         super().__init__()
         # Normalize to sequence: single path becomes list
@@ -69,8 +97,15 @@ class SkillsDirectoryProvider(AggregateProvider):
         self._main_file_name = main_file_name
         self._supporting_files = supporting_files
         self._discovered = False
-
-        # Discover skills at init
+        # A preset subclass adds one frame between the caller and this one.
+        depth = 2 + type(self).__mro__.index(SkillsDirectoryProvider)
+        warn_directory_provider(
+            type(self),
+            self._roots,
+            reload=reload,
+            main_file_name=main_file_name,
+            stacklevel=depth,
+        )
         self._discover_skills()
 
     def _discover_skills(self) -> None:
@@ -86,6 +121,16 @@ class SkillsDirectoryProvider(AggregateProvider):
                 continue
 
             for skill_dir in root.iterdir():
+                # Skill folders may be links to directories elsewhere; the skill's
+                # own files must still resolve within the folder it links to.
+                try:
+                    skill_dir = skill_dir.resolve(strict=True)
+                except (OSError, RuntimeError):
+                    logger.warning(
+                        f"Skipping skill directory that cannot be used: {skill_dir.name}"
+                    )
+                    continue
+
                 if not skill_dir.is_dir():
                     continue
 
@@ -107,10 +152,17 @@ class SkillsDirectoryProvider(AggregateProvider):
                         skill_path=skill_dir,
                         main_file_name=self._main_file_name,
                         supporting_files=self._supporting_files,
+                        _from_directory_provider=True,
                     )
                     self.providers.append(provider)
                     seen_skill_names.add(skill_name)
-                except (FileNotFoundError, PermissionError, OSError):
+                except (
+                    FileNotFoundError,
+                    PermissionError,
+                    OSError,
+                    PathEscapeError,
+                    UnicodeDecodeError,
+                ):
                     logger.exception(f"Failed to load skill: {skill_dir.name}")
 
         self._discovered = True
@@ -151,3 +203,35 @@ class SkillsDirectoryProvider(AggregateProvider):
             f"SkillsDirectoryProvider(roots={roots_repr!r}, "
             f"reload={self._reload}, skills={len(self.providers)})"
         )
+
+
+def _experimental_replacement(
+    roots: str | Path | Sequence[str | Path],
+    reload: bool = False,
+    main_file_name: str = "SKILL.md",
+    supporting_files: Literal["template", "resources"] = "template",
+    *,
+    experimental_skills: bool,
+) -> Any:
+    # `experimental_skills` was documented as changeable without a
+    # deprecation period; it now means the replacement provider.
+    from fastmcp.skills.provider import (
+        SkillsDirectoryProvider as AgentSkillsDirectoryProvider,
+    )
+
+    if main_file_name != "SKILL.md":
+        raise ValueError("experimental_skills requires main_file_name='SKILL.md'")
+    paths = [roots] if isinstance(roots, (str, Path)) else list(roots)
+    shown = [str(path) for path in paths]
+    reload_arg = ", reload=True" if reload else ""
+    warnings.warn(
+        "`experimental_skills=True` is deprecated and will be removed in "
+        "FastMCP 4.3, and this call now returns the replacement provider. "
+        "Replace it with `from fastmcp.skills.provider import "
+        f"SkillsDirectoryProvider` and `SkillsDirectoryProvider({shown!r}"
+        f"{reload_arg})`. Registering `SkillsExtension` is no longer needed.",
+        FastMCPDeprecationWarning,
+        # Frames: this function, `__new__`, then the caller.
+        stacklevel=3,
+    )
+    return AgentSkillsDirectoryProvider(paths, reload=reload)

@@ -226,7 +226,36 @@ def test_message_to_create_message_result():
         content=TextContent(type="text", text="HELPFUL CONTENT FROM A VERY SMART LLM"),
         role="assistant",
         model="claude-3-5-sonnet-20241022",
+        stop_reason="endTurn",
     )
+
+
+@pytest.mark.parametrize(
+    ("anthropic_stop_reason", "expected"),
+    [
+        ("end_turn", "endTurn"),
+        ("stop_sequence", "stopSequence"),
+        ("max_tokens", "maxTokens"),
+    ],
+)
+def test_message_to_create_message_result_maps_stop_reason(
+    anthropic_stop_reason: Any, expected: str
+):
+    """Without tools, a reply cut off at max_tokens must say so too."""
+    message = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        content=[TextBlock(type="text", text="partial")],
+        model="claude-3-5-sonnet-20241022",
+        stop_reason=anthropic_stop_reason,
+        stop_sequence="END" if anthropic_stop_reason == "stop_sequence" else None,
+        usage=Usage(input_tokens=10, output_tokens=20),
+    )
+
+    result = AnthropicSamplingHandler._message_to_create_message_result(message)
+
+    assert result.stop_reason == expected
 
 
 def test_message_to_result_with_tools():
@@ -265,6 +294,34 @@ def test_message_to_result_with_tools():
         name="get_weather",
         input={"location": "San Francisco"},
     )
+
+
+@pytest.mark.parametrize(
+    ("anthropic_stop_reason", "expected"),
+    [
+        ("end_turn", "endTurn"),
+        ("stop_sequence", "stopSequence"),
+        ("max_tokens", "maxTokens"),
+        ("tool_use", "toolUse"),
+    ],
+)
+def test_message_to_result_with_tools_maps_stop_reason(
+    anthropic_stop_reason: Any, expected: str
+):
+    message = Message(
+        id="msg_123",
+        type="message",
+        role="assistant",
+        content=[TextBlock(type="text", text="done")],
+        model="claude-3-5-sonnet-20241022",
+        stop_reason=anthropic_stop_reason,
+        stop_sequence="END" if anthropic_stop_reason == "stop_sequence" else None,
+        usage=Usage(input_tokens=10, output_tokens=20),
+    )
+
+    result = AnthropicSamplingHandler._message_to_result_with_tools(message)
+
+    assert result.stop_reason == expected
 
 
 def test_convert_tool_choice_auto():
@@ -376,6 +433,73 @@ def test_convert_messages_with_tool_result_content():
             "tool_use_id": "toolu_123",
             "content": "72F and sunny",
             "is_error": False,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("result_content", "expected_content"),
+    [
+        pytest.param(
+            [ImageContent(type="image", data="YWJj", mime_type="image/png")],
+            [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": "YWJj",
+                    },
+                }
+            ],
+            id="image-only",
+        ),
+        pytest.param(
+            [
+                TextContent(type="text", text="caption"),
+                ImageContent(type="image", data="YWJj", mime_type="image/jpeg"),
+            ],
+            [
+                {"type": "text", "text": "caption"},
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": "YWJj",
+                    },
+                },
+            ],
+            id="text-and-image",
+        ),
+    ],
+)
+@pytest.mark.parametrize("as_block_list", [False, True], ids=["single", "list"])
+def test_convert_tool_result_preserves_nested_images(
+    result_content: list[TextContent | ImageContent],
+    expected_content: list[dict[str, Any]],
+    as_block_list: bool,
+):
+    tool_result = ToolResultContent(
+        type="tool_result", tool_use_id="toolu_image", content=result_content
+    )
+    message_content = [tool_result] if as_block_list else tool_result
+
+    messages = AnthropicSamplingHandler._convert_to_anthropic_messages(
+        messages=[SamplingMessage(role="user", content=message_content)]
+    )
+
+    assert messages == [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_image",
+                    "content": expected_content,
+                    "is_error": False,
+                }
+            ],
         }
     ]
 

@@ -14,7 +14,7 @@ Authorization controls what authenticated users can do with your FastMCP server.
 The authorization model centers on a simple concept: callable functions that receive context about the current request and return `True` to allow access or `False` to deny it. Multiple checks combine with AND logic, meaning all checks must pass for access to be granted.
 
 <Note>
-Authorization relies on OAuth tokens which are only available with HTTP transports (SSE, Streamable HTTP). In STDIO mode, there's no OAuth mechanism, so `get_access_token()` returns `None` and all auth checks are skipped.
+Authorization relies on OAuth tokens which are only available with HTTP transports (SSE, Streamable HTTP). In STDIO mode, there's no OAuth mechanism, so `get_access_token()` returns `None` and all auth checks are skipped. STDIO access is controlled by the local execution environment; component auth checks do not restrict the process connected over STDIO.
 </Note>
 
 <Note>
@@ -34,7 +34,7 @@ def my_custom_check(ctx: AuthContext) -> bool:
     return ctx.token is not None and "special" in ctx.token.scopes
 ```
 
-FastMCP provides two built-in auth checks that cover common authorization patterns.
+FastMCP provides three built-in auth checks that cover common authorization patterns: `require_scopes`, `require_roles`, and `restrict_tag`.
 
 ### require_scopes
 
@@ -214,6 +214,10 @@ from fastmcp import FastMCP
 from fastmcp.server.auth import AuthContext
 
 mcp = FastMCP("Async Auth Server")
+
+async def fetch_user_permissions(user_id: str | None) -> set[str]:
+    """Look up a user's permissions in your own store."""
+    return set()
 
 async def check_user_permissions(ctx: AuthContext) -> bool:
     """Async auth check that reads server state."""
@@ -397,7 +401,7 @@ def update_record(id: str) -> str:
 
 This holds across several `AuthMiddleware` instances too, not just several checks within one. In the [tag-based configuration](#tag-based-global-authorization) each middleware contributes its own requirement, and the first to find a shortfall reports the requirements of the others alongside its own — so one re-authorization covers the whole chain rather than one layer at a time.
 
-A shortfall is reported only when the scope requirement is what actually caused the denial. If you [combine checks](#combining-checks) and a non-scope check rejects the request first — a tenant policy, say — the denial stays a plain `AuthorizationError` and names no scopes at all. Disclosing a scope requirement for a component the caller could not reach anyway would leak information about components they are not authorized to see.
+A shortfall is reported only when the scope requirement is what actually caused the denial. If you [combine checks](#combining-checks) and a non-scope check rejects the request — a tenant policy, say — the denial stays a plain `AuthorizationError` and names no scopes at all. Disclosing a scope requirement for a component the caller could not reach anyway would leak information about components they are not authorized to see.
 
 That rule also bounds what gets aggregated. Combining requirements only reaches as far down the chain as the request itself would have gone: it stops at the first layer holding a custom check, since whether that layer would admit the caller is unknown until it runs, and running it early would trigger authorization logic the request had not reached yet. Requirements at or beyond that point sit behind an unverified gate and are left out.
 
@@ -452,9 +456,9 @@ The `AccessToken` object contains information extracted from the OAuth token.
 | Property | Type | Description |
 |----------|------|-------------|
 | `token` | `str` | The raw token string |
-| `client_id` | `str \| None` | OAuth client identifier |
+| `client_id` | `str` | OAuth client identifier |
 | `scopes` | `list[str]` | Granted OAuth scopes |
-| `expires_at` | `datetime \| None` | Token expiration time |
+| `expires_at` | `int \| None` | Token expiration as a Unix timestamp in seconds |
 | `claims` | `dict[str, Any]` | All JWT claims or custom token data |
 
 ### AuthContext

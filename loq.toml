@@ -4,11 +4,7 @@
 default_max_lines = 1000
 respect_gitignore = true
 
-exclude = ["**/uv.lock", ".git/**", ".claude/**", "docs/**"]
-
-[[rules]]
-path = "tests/**"
-max_lines = 1000
+exclude = ["**/uv.lock", ".git/**", "docs/**"]
 
 [[rules]]
 path = "fastmcp_slim/fastmcp/server/context.py"
@@ -24,7 +20,7 @@ max_lines = 2098
 
 [[rules]]
 path = "fastmcp_slim/fastmcp/cli/apps_dev.py"
-max_lines = 1814
+max_lines = 1933
 
 [[rules]]
 path = "fastmcp_slim/fastmcp/cli/cli.py"
@@ -51,10 +47,6 @@ path = "tests/server/providers/openapi/test_openapi_features.py"
 max_lines = 1029
 
 [[rules]]
-path = "tests/server/tasks/test_task_mount.py"
-max_lines = 1088
-
-[[rules]]
 path = "tests/server/test_dependencies.py"
 max_lines = 1194
 
@@ -65,3 +57,11 @@ max_lines = 1185
 [[rules]]
 path = "tests/utilities/openapi/test_director.py"
 max_lines = 1154
+
+[[rules]]
+path = "fastmcp_slim/fastmcp/utilities/json_schema_type.py"
+max_lines = 1059
+
+[[rules]]
+path = "tests/cli/test_run.py"
+max_lines = 1291

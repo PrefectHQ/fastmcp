@@ -1,9 +1,11 @@
 """Tests for docstring-to-schema parameter description extraction."""
 
+import inspect
 from typing import Annotated
 
 from pydantic import Field
 
+from fastmcp import Client, FastMCP
 from fastmcp.tools.function_parsing import ParsedFunction
 from fastmcp.utilities.docstring_parsing import parse_docstring
 
@@ -284,6 +286,115 @@ class TestEdgeCases:
         # filtering happens at the schema injection level
         assert parsed.parameters == {"nonexistent": "Wrong param name."}
 
+    def test_returns_section_excluded_no_params(self):
+        """A parameterless function's Returns section must not bleed into
+        the description, same as it doesn't for functions with Args."""
+
+        def fn() -> dict[str, bool]:
+            """Return current status.
+
+            Returns:
+                A dict containing the current status.
+            """
+            return {"ok": True}
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Return current status."
+        assert parsed.parameters == {}
+
+    def test_raises_section_excluded_no_params(self):
+        def fn() -> None:
+            """Do a thing.
+
+            Raises:
+                ValueError: If something goes wrong.
+            """
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Do a thing."
+        assert parsed.parameters == {}
+
+    def test_example_section_excluded_no_params(self):
+        def fn() -> int:
+            """Do a thing.
+
+            Example:
+                fn()
+            """
+            return 1
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Do a thing."
+        assert parsed.parameters == {}
+
+    def test_numpy_returns_section_excluded_no_params(self):
+        def fn() -> int:
+            """Do a thing.
+
+            Returns
+            -------
+            int
+                The answer.
+            """
+            return 1
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Do a thing."
+        assert parsed.parameters == {}
+
+    def test_prose_without_sections_unchanged_no_params(self):
+        def fn() -> int:
+            """Do a thing.
+
+            Then do another thing, with no section headings.
+            """
+            return 1
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == inspect.getdoc(fn)
+
+    def test_colon_line_in_prose_is_not_a_section(self):
+        def fn() -> str:
+            """Choose an execution mode.
+
+            if bSudoMode:
+                Elevated privileges
+            else:
+                Normal privileges
+            """
+            return "ok"
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == inspect.getdoc(fn)
+        assert parsed.parameters == {}
+
+    def test_custom_heading_in_prose_is_not_a_section(self):
+        def fn() -> str:
+            """Run a command.
+
+            Rules:
+                - Never run as root.
+                - Prefer dry runs.
+
+            Report the exit code.
+            """
+            return "ok"
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == inspect.getdoc(fn)
+
+    def test_note_section_excluded_no_params(self):
+        def fn() -> int:
+            """Do a thing.
+
+            Note:
+                Only call this once.
+            """
+            return 1
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Do a thing."
+
     def test_async_function(self):
         async def fn(a: float) -> float:
             """Async summary.
@@ -544,6 +655,37 @@ class TestParsedFunctionIntegration:
         assert p.description == "Describes what the tool does."
         # x's description does NOT come from the class's constructor-focused Args
         assert "description" not in p.input_schema["properties"]["x"]
+
+    def test_parameterless_tool_returns_section_excluded(self):
+        def status() -> dict[str, bool]:
+            """Return current status.
+
+            Returns:
+                A dict containing the current status.
+            """
+            return {"ok": True}
+
+        p = ParsedFunction.from_function(status)
+        assert p.description == "Return current status."
+
+    async def test_colon_line_in_prose_reaches_tool_listing(self):
+        server = FastMCP("docstrings")
+
+        @server.tool
+        def choose_mode() -> str:
+            """Choose an execution mode.
+
+            if bSudoMode:
+                Elevated privileges
+            else:
+                Normal privileges
+            """
+            return "ok"
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+
+        assert tools[0].description == inspect.getdoc(choose_mode)
 
     def test_callable_class_falls_back_to_call_description(self):
         """If the class has no docstring, fall back to __call__'s description."""

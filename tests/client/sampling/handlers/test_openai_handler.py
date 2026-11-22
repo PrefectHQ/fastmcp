@@ -13,6 +13,7 @@ from mcp_types import (
     SamplingMessage,
     TextContent,
     TextResourceContents,
+    ToolResultContent,
     ToolUseContent,
 )
 from openai import AsyncOpenAI
@@ -174,6 +175,64 @@ def test_convert_list_content_with_image_and_text():
     )
 
 
+def test_convert_tool_result_preserves_text():
+    msgs = OpenAISamplingHandler._convert_to_openai_messages(
+        system_prompt=None,
+        messages=[
+            SamplingMessage(
+                role="user",
+                content=ToolResultContent(
+                    type="tool_result",
+                    tool_use_id="call_1",
+                    content=[TextContent(type="text", text="result")],
+                ),
+            )
+        ],
+    )
+
+    assert msgs == [
+        {
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "content": "result",
+        }
+    ]
+
+
+@pytest.mark.parametrize("as_block_list", [False, True], ids=["single", "list"])
+@pytest.mark.parametrize(
+    "result_content",
+    [
+        pytest.param(
+            [ImageContent(type="image", data="YWJj", mime_type="image/png")],
+            id="image-only",
+        ),
+        pytest.param(
+            [
+                TextContent(type="text", text="caption"),
+                ImageContent(type="image", data="YWJj", mime_type="image/png"),
+            ],
+            id="text-and-image",
+        ),
+    ],
+)
+def test_convert_tool_result_rejects_unsupported_images(
+    as_block_list: bool, result_content: list[TextContent | ImageContent]
+):
+    tool_result = ToolResultContent(
+        type="tool_result", tool_use_id="call_1", content=result_content
+    )
+    message_content = [tool_result] if as_block_list else tool_result
+
+    with pytest.raises(
+        ValueError, match="ImageContent in tool results is not supported"
+    ):
+        OpenAISamplingHandler._convert_to_openai_messages(
+            system_prompt=None,
+            messages=[SamplingMessage(role="user", content=message_content)],
+        )
+
+
 def test_convert_image_in_assistant_message_raises():
     with pytest.raises(ValueError, match="ImageContent is only supported in user"):
         OpenAISamplingHandler._convert_to_openai_messages(
@@ -317,7 +376,37 @@ async def test_chat_completion_to_create_message_result():
         content=TextContent(type="text", text="HELPFUL CONTENT FROM A VERY SMART LLM"),
         role="assistant",
         model="gpt-4o-mini",
+        stop_reason="endTurn",
     )
+
+
+@pytest.mark.parametrize(
+    ("finish_reason", "expected"),
+    [("stop", "endTurn"), ("length", "maxTokens")],
+)
+def test_chat_completion_to_create_message_result_maps_stop_reason(
+    finish_reason: Any, expected: str
+):
+    """Without tools, a reply cut off at max_tokens must say so too."""
+    chat_completion = ChatCompletion(
+        id="123",
+        created=123,
+        model="gpt-4o-mini",
+        object="chat.completion",
+        choices=[
+            Choice(
+                message=ChatCompletionMessage(content="partial", role="assistant"),
+                finish_reason=finish_reason,
+                index=0,
+            )
+        ],
+    )
+
+    result = OpenAISamplingHandler._chat_completion_to_create_message_result(
+        chat_completion
+    )
+
+    assert result.stop_reason == expected
 
 
 def test_convert_messages_raises_on_unsupported_content_type():

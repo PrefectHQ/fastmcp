@@ -878,19 +878,30 @@ async def test_monty_provider_raises_informative_error_when_missing(
         await provider.run("return 1")
 
 
-async def test_monty_provider_forwards_limits() -> None:
-    provider = MontySandboxProvider(limits={"max_duration_secs": 0.1})
+@pytest.mark.parametrize(
+    "limits",
+    [
+        {"max_feed_duration_secs": 0.1},
+        {"max_turn_duration_secs": 0.1},
+    ],
+)
+async def test_monty_provider_forwards_limits(limits: dict[str, float]) -> None:
+    provider = MontySandboxProvider(limits=cast(Any, limits))
+    original_limits = limits.copy()
 
     with pytest.raises(Exception, match="time limit exceeded"):
         await provider.run("x = 0\nfor _ in range(10**9):\n    x += 1")
 
+    assert limits == original_limits
 
-async def test_monty_provider_rejects_unsupported_limits() -> None:
-    provider = MontySandboxProvider(limits=cast(Any, {"max_allocations": 1}))
+
+@pytest.mark.parametrize("key", ["max_allocations", "max_duration_secs"])
+async def test_monty_provider_rejects_unsupported_limits(key: str) -> None:
+    provider = MontySandboxProvider(limits=cast(Any, {key: 1}))
 
     with pytest.raises(
         ValueError,
-        match=r"Unsupported Monty resource limits: 'max_allocations'.*max_memory",
+        match=rf"Unsupported Monty resource limits: {key!r}.*max_memory",
     ):
         await provider.run("return list(range(10_000))")
 
@@ -919,8 +930,8 @@ async def test_monty_provider_explicit_none_disables_limits() -> None:
 
 
 async def test_monty_provider_explicit_limits_override_defaults() -> None:
-    provider = MontySandboxProvider(limits={"max_duration_secs": 0.1})
-    assert provider.limits == {"max_duration_secs": 0.1}
+    provider = MontySandboxProvider(limits={"max_feed_duration_secs": 0.1})
+    assert provider.limits == {"max_feed_duration_secs": 0.1}
 
 
 async def test_monty_provider_default_limits_are_not_shared_between_instances() -> None:
@@ -937,10 +948,13 @@ async def test_monty_provider_default_limits_are_not_shared_between_instances() 
     assert a.limits is not _DEFAULT_LIMITS
 
     assert a.limits is not None
-    a.limits["max_duration_secs"] = 1
+    a.limits["max_feed_duration_secs"] = 1
 
-    assert b.limits == {"max_duration_secs": 30.0, "max_memory": 100_000_000}
-    assert _DEFAULT_LIMITS == {"max_duration_secs": 30.0, "max_memory": 100_000_000}
+    assert b.limits == {"max_feed_duration_secs": 30.0, "max_memory": 100_000_000}
+    assert _DEFAULT_LIMITS == {
+        "max_feed_duration_secs": 30.0,
+        "max_memory": 100_000_000,
+    }
 
 
 async def test_code_mode_max_tool_calls_default_is_50() -> None:
@@ -992,6 +1006,51 @@ async def test_code_mode_max_tool_calls_none_is_unlimited() -> None:
     )
     result = await _run_tool(mcp, "execute", {"code": code})
     assert _unwrap_result(result) == 60
+
+
+async def test_code_mode_wall_clock_timeout_raises_tool_error() -> None:
+    """A tool call outlasting the wall-clock limit fails the execute call."""
+    mcp = FastMCP("CodeMode Timeout")
+
+    @mcp.tool
+    async def slow_tool() -> str:
+        await asyncio.sleep(5)
+        return "done"
+
+    mcp.add_transform(
+        CodeMode(
+            sandbox_provider=_UnsafeTestSandboxProvider(),
+            wall_clock_timeout_secs=0.05,
+        )
+    )
+
+    code = "await call_tool('slow_tool', {})\nreturn 1"
+    with pytest.raises(ToolError, match="wall-clock limit of 0.05 seconds"):
+        await _run_tool(mcp, "execute", {"code": code})
+
+
+@requires_monty
+async def test_code_mode_wall_clock_timeout_bounds_monty_callbacks() -> None:
+    """Monty's duration limits skip callback time; the wall clock does not."""
+    mcp = FastMCP("CodeMode Monty Timeout")
+    callback_cancelled = asyncio.Event()
+
+    @mcp.tool
+    async def hang() -> str:
+        try:
+            await asyncio.sleep(5)
+        except asyncio.CancelledError:
+            callback_cancelled.set()
+            raise
+        return "done"
+
+    mcp.add_transform(CodeMode(wall_clock_timeout_secs=1))
+
+    code = "await call_tool('hang', {})\nreturn 1"
+    with pytest.raises(ToolError, match="wall-clock limit"):
+        await _run_tool(mcp, "execute", {"code": code})
+
+    assert callback_cancelled.is_set()
 
 
 async def test_monty_provider_cancels_future_when_task_cancelled() -> None:

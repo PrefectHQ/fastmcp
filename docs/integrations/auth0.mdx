@@ -114,7 +114,7 @@ Create an Application in your Auth0 settings to get the credentials needed for a
     - **API Audience**: A URL that uniquely identifies the API
 
     <Tip>
-    Store this along with of the credentials above. Never commit this to version control. Use environment variables or a secrets manager in production.
+    Store the audience alongside the credentials above; `Auth0Provider` needs it.
     </Tip>
 </Step>
 </Steps>
@@ -198,7 +198,7 @@ When you run the client for the first time:
 
 <VersionBadge version="2.13.0" />
 
-For production deployments with persistent token management across server restarts, configure `jwt_signing_key`, and `client_storage`:
+For production deployments with persistent token management across server restarts, configure `jwt_signing_key` and `client_storage`:
 
 ```python server.py
 import os

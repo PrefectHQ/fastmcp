@@ -61,7 +61,10 @@ class PromptDecoratorMixin:
                     f"Expected Prompt or @prompt-decorated function, got {type(prompt).__name__}. "
                     "Use @prompt decorator or pass a Prompt instance."
                 )
-        self._add_component(prompt)
+        added = self._add_component(prompt)
+        if added is not prompt:
+            # on_duplicate="ignore" kept the existing prompt.
+            return added
         if not enabled:
             self.disable(keys={prompt.key})
         return prompt
@@ -195,7 +198,7 @@ class PromptDecoratorMixin:
                 enabled=enabled,
             )
             target = fn.__func__ if hasattr(fn, "__func__") else fn
-            target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
             self.add_prompt(fn)
             return fn
 

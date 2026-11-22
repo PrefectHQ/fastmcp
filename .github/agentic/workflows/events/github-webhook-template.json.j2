@@ -1,0 +1,14 @@
+{
+  "event": "fastmcp.github.{{ headers.get('x-github-event', 'unknown') }}.{{ body.action|default('none') }}",
+  "resource": {
+    "prefect.resource.id": "github.{{ body.repository.full_name|default('unknown') }}.{% if body.pull_request is defined %}pr.{{ body.pull_request.number }}{% elif body.issue is defined %}issue.{{ body.issue.number }}{% else %}none{% endif %}",
+    "github.repository": "{{ body.repository.full_name|default('') }}",
+    "github.kind": "{% if body.pull_request is defined %}pr{% elif body.issue is defined %}issue{% else %}other{% endif %}",
+    "github.number": "{{ body.pull_request.number if body.pull_request is defined else body.issue.number|default(0) }}",
+    "github.sender.type": "{{ body.sender.type|default('') }}",
+    "github.sender.login": "{{ body.sender.login|default('') }}",
+    "github.draft": "{{ body.pull_request.draft|default(true)|string|lower }}",
+    "github.issue-reference": "{{ ('#' in (body.pull_request.body|default('', true)) or 'github.com/PrefectHQ/fastmcp/issues/' in (body.pull_request.body|default('', true)))|string|lower }}",
+    "github.relevant-change": "{{ (body.action != 'edited' or body.changes.body is defined)|string|lower }}"
+  }
+}

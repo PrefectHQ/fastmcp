@@ -1,0 +1,6 @@
+{% set state = flow_run.state.name %}{% if state == 'Degraded' %}⚠️ triage skipped some issues
+{{ flow_run.state.message or 'See the retained artifacts for which issues and why.' }}
+Skipped issues retry on later runs, up to 3 tries. Look only if the same issue repeats.
+{% else %}{{ {'Failed': '❌', 'Crashed': '💥', 'TimedOut': '⏱️'}.get(state, '❌') }} triage {{ {'TimedOut': 'timed out', 'Crashed': 'crashed'}.get(state, 'failed') }} before finishing
+{{ flow_run.state.message or 'See the retained artifacts for the failure details.' }}
+{% endif %}<{{ flow_run|ui_url }}|run and artifacts>

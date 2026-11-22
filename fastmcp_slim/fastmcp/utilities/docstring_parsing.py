@@ -16,6 +16,33 @@ from typing import Any
 
 _PARSERS = ("google", "numpy", "sphinx")
 
+# Griffe's Google parser reads any unindented `word:` line followed by an
+# indented block as an admonition, so prose such as `if enabled:` or `Rules:`
+# parses the same way as `Note:`. Only the Google-style headings griffe leaves
+# as admonitions (Napoleon's section names with no griffe section kind) count
+# as structure that ends the free-form description.
+_SECTION_ADMONITIONS = frozenset(
+    {
+        "attention",
+        "caution",
+        "danger",
+        "error",
+        "example",
+        "hint",
+        "important",
+        "note",
+        "notes",
+        "raise",
+        "references",
+        "return",
+        "see-also",
+        "tip",
+        "todo",
+        "warning",
+        "yield",
+    }
+)
+
 logger = logging.getLogger("griffe")
 # Griffe warns about missing type annotations in docstrings, which is noisy
 # and irrelevant — we only care about descriptions.
@@ -34,8 +61,10 @@ def parse_docstring(fn: Callable[..., Any]) -> ParsedDocstring:
     """Parse a function's docstring into a summary and parameter descriptions.
 
     Tries Google, NumPy, and Sphinx parsers in order, using the first one that
-    successfully extracts parameter descriptions. If none do, returns the full
-    docstring as the description with no parameter descriptions.
+    recognizes a structured section (parameters, returns, raises, and so on).
+    The description is the free-form text before the first such section. If no
+    parser recognizes a section, returns the full docstring as the description
+    with no parameter descriptions.
     """
     doc = inspect.getdoc(fn)
     if not doc:
@@ -45,13 +74,18 @@ def parse_docstring(fn: Callable[..., Any]) -> ParsedDocstring:
     # keeps its parser and model graph out of ordinary server startup.
     from griffe import Docstring, DocstringSectionKind
 
-    # Try each parser and use the first one that finds parameters.
+    # Try each parser and use the first one that recognizes some structure
+    # (parameters, returns, raises, etc.) — not just a parameter section.
+    # A parameterless function can still have a Returns/Raises section that
+    # should be split out of the description, same as Args is for functions
+    # that take arguments.
     for parser in _PARSERS:
         docstring = Docstring(doc, lineno=1, parser=parser)
         sections = docstring.parse()
 
         description: str | None = None
         parameters: dict[str, str] = {}
+        found_structured_section = False
 
         for section in sections:
             if section.kind == DocstringSectionKind.text and description is None:
@@ -59,9 +93,15 @@ def parse_docstring(fn: Callable[..., Any]) -> ParsedDocstring:
             elif section.kind == DocstringSectionKind.parameters:
                 for param in section.value:
                     parameters[param.name] = param.description
+                found_structured_section = True
+            elif section.kind == DocstringSectionKind.admonition:
+                if section.value.kind in _SECTION_ADMONITIONS:
+                    found_structured_section = True
+            elif section.kind != DocstringSectionKind.text:
+                found_structured_section = True
 
-        if parameters:
+        if parameters or found_structured_section:
             return ParsedDocstring(description=description, parameters=parameters)
 
-    # No parser found parameters — return the full docstring unchanged.
+    # No parser recognized any structure — return the full docstring unchanged.
     return ParsedDocstring(description=doc)

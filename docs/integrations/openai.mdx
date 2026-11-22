@@ -13,7 +13,7 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 OpenAI's [Responses API](https://platform.openai.com/docs/api-reference/responses) supports [MCP servers](https://platform.openai.com/docs/guides/tools-remote-mcp) as remote tool sources, allowing you to extend AI capabilities with custom functions.
 
 <Note>
-The Responses API is a distinct API from OpenAI's Completions API or Assistants API. At this time, only the Responses API supports MCP.
+The Responses API is a distinct API from OpenAI's Chat Completions and Assistants APIs, which do not support MCP servers.
 </Note>
 
 <Tip>
@@ -76,7 +76,7 @@ You'll also need to authenticate with OpenAI. You can do this by setting the `OP
 export OPENAI_API_KEY="your-api-key"
 ```
 
-Here is an example of how to call your server from Python. Note that you'll need to replace `https://your-server-url.com` with the actual URL of your server. In addition, we use `/mcp/` as the endpoint because we deployed a streamable-HTTP server with the default path; you may need to use a different endpoint if you customized your server's deployment.
+Here is an example of how to call your server from Python. Note that you'll need to replace `https://your-server-url.com` with the actual URL of your server. In addition, we use `/mcp` as the endpoint because we deployed a streamable-HTTP server with the default path; you may need to use a different endpoint if you customized your server's deployment.
 
 ```python {4, 11-16}
 from openai import OpenAI
@@ -92,7 +92,7 @@ resp = client.responses.create(
         {
             "type": "mcp",
             "server_label": "dice_server",
-            "server_url": f"{url}/mcp/",
+            "server_url": f"{url}/mcp",
             "require_approval": "never",
         },
     ],
@@ -211,7 +211,7 @@ resp = client.responses.create(
         {
             "type": "mcp",
             "server_label": "dice_server",
-            "server_url": f"{url}/mcp/",
+            "server_url": f"{url}/mcp",
             "require_approval": "never",
             "headers": {
                 "Authorization": f"Bearer {access_token}"

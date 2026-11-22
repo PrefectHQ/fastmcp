@@ -371,6 +371,23 @@ class TestInstallCursor:
 
         assert result is False
 
+    def test_install_cursor_workspace_empty_config_file(self, tmp_path):
+        """Test that an empty .cursor/mcp.json is filled in instead of rejected."""
+        config_file = tmp_path / ".cursor" / "mcp.json"
+        config_file.parent.mkdir()
+        config_file.write_text("")
+
+        result = install_cursor_workspace(
+            file=Path("/path/to/server.py"),
+            server_object=None,
+            name="test-server",
+            workspace_path=tmp_path,
+        )
+
+        assert result is True
+        saved = json.loads(config_file.read_text(encoding="utf-8"))
+        assert list(saved["mcpServers"]) == ["test-server"]
+
     def test_install_cursor_deduplicate_packages(self):
         """Test that duplicate packages are deduplicated."""
         with patch("fastmcp.cli.install.cursor.open_deeplink") as mock_open:

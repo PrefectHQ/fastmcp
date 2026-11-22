@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Self
 
 import httpx2
 import pydantic.json
 from anyio import Path as AsyncPath
-from pydantic import Field, ValidationInfo
+from pydantic import Field
 from typing_extensions import override
 
 from fastmcp.exceptions import ResourceError
 from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
+from fastmcp.utilities.components import public_result_meta
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -28,7 +30,9 @@ class TextResource(Resource):
         return ResourceResult(
             contents=[
                 ResourceContent(
-                    content=self.text, mime_type=self.mime_type, meta=self.meta
+                    content=self.text,
+                    mime_type=self.mime_type,
+                    meta=public_result_meta(self.meta),
                 )
             ]
         )
@@ -44,7 +48,9 @@ class BinaryResource(Resource):
         return ResourceResult(
             contents=[
                 ResourceContent(
-                    content=self.data, mime_type=self.mime_type, meta=self.meta
+                    content=self.data,
+                    mime_type=self.mime_type,
+                    meta=public_result_meta(self.meta),
                 )
             ]
         )
@@ -86,14 +92,12 @@ class FileResource(Resource):
             raise ValueError("Path must be absolute")
         return path
 
-    @pydantic.field_validator("is_binary")
-    @classmethod
-    def set_binary_from_mime_type(cls, is_binary: bool, info: ValidationInfo) -> bool:
+    @pydantic.model_validator(mode="after")
+    def set_binary_from_mime_type(self) -> Self:
         """Set is_binary based on mime_type if not explicitly set."""
-        if is_binary:
-            return True
-        mime_type = info.data.get("mime_type", "text/plain")
-        return not mime_type.startswith("text/")
+        if "is_binary" not in self.model_fields_set:
+            self.is_binary = not self.mime_type.startswith("text/")
+        return self
 
     @override
     async def read(self) -> ResourceResult:
@@ -104,7 +108,13 @@ class FileResource(Resource):
             else:
                 content = await self._async_path.read_text(encoding=self.encoding)
             return ResourceResult(
-                contents=[ResourceContent(content=content, mime_type=self.mime_type)]
+                contents=[
+                    ResourceContent(
+                        content=content,
+                        mime_type=self.mime_type,
+                        meta=public_result_meta(self.meta),
+                    )
+                ]
             )
         except Exception as e:
             raise ResourceError(f"Error reading file {self.path}") from e
@@ -126,7 +136,11 @@ class HttpResource(Resource):
             _ = response.raise_for_status()
             return ResourceResult(
                 contents=[
-                    ResourceContent(content=response.text, mime_type=self.mime_type)
+                    ResourceContent(
+                        content=response.text,
+                        mime_type=self.mime_type,
+                        meta=public_result_meta(self.meta),
+                    )
                 ]
             )
 
@@ -182,7 +196,13 @@ class DirectoryResource(Resource):
 
             content = json.dumps({"files": file_list}, indent=2)
             return ResourceResult(
-                contents=[ResourceContent(content=content, mime_type=self.mime_type)]
+                contents=[
+                    ResourceContent(
+                        content=content,
+                        mime_type=self.mime_type,
+                        meta=public_result_meta(self.meta),
+                    )
+                ]
             )
         except Exception as e:
             raise ResourceError(f"Error reading directory {self.path}") from e

@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import math
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from types import TracebackType
 
@@ -221,7 +221,7 @@ class StreamingASGITransport(httpx2.AsyncBaseTransport):
 
 
 @asynccontextmanager
-async def run_asgi_lifespan(app: ASGIApp) -> AsyncIterator[None]:
+async def run_asgi_lifespan(app: ASGIApp) -> AsyncGenerator[None, None]:
     """Run an ASGI application's lifespan, driving the protocol as a real server does.
 
     The application's lifespan runs inside a dedicated task for the whole duration of

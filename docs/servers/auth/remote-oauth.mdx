@@ -130,6 +130,18 @@ The `authorization_servers` list tells MCP clients which identity providers you 
 Some identity providers use different scope formats for authorization requests versus token claims. For example, Azure AD requires clients to request full URI scopes like `api://client-id/read`, but the token's `scp` claim contains just `read`. The `scopes_supported` parameter lets you advertise the full-form scopes in metadata while validating against the short form:
 
 ```python
+from pydantic import AnyHttpUrl
+
+from fastmcp.server.auth import RemoteAuthProvider
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+token_verifier = JWTVerifier(
+    jwks_uri="https://auth.example.com/.well-known/jwks.json",
+    issuer="https://auth.example.com",
+    audience="my-api",
+    required_scopes=["read"],
+)
+
 auth = RemoteAuthProvider(
     token_verifier=token_verifier,
     authorization_servers=[AnyHttpUrl("https://auth.example.com")],
@@ -140,14 +152,43 @@ auth = RemoteAuthProvider(
 
 When not set, `scopes_supported` defaults to the token verifier's `required_scopes`. For Azure AD specifically, see the [AzureJWTVerifier](/integrations/azure#token-verification-only-managed-identity) which handles this automatically.
 
+`challenge_scopes` applies the same translation to the `WWW-Authenticate` challenge, which tells clients which scopes to request when they lack a valid token. Set it to the request-facing form of the verifier's `required_scopes`; validation still checks the short form. When omitted, the challenge comes from the token verifier's `get_challenge_scopes`, which returns `required_scopes` unchanged unless the verifier overrides it:
+
+```python
+from pydantic import AnyHttpUrl
+
+from fastmcp.server.auth import RemoteAuthProvider
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+token_verifier = JWTVerifier(
+    jwks_uri="https://auth.example.com/.well-known/jwks.json",
+    issuer="https://auth.example.com",
+    audience="my-api",
+    required_scopes=["read"],
+)
+
+auth = RemoteAuthProvider(
+    token_verifier=token_verifier,
+    authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+    base_url="https://api.example.com",
+    scopes_supported=["api://my-api/read", "api://my-api/write"],
+    challenge_scopes=["api://my-api/read"],
+)
+```
+
 ### Custom Endpoints
 
 You can extend `RemoteAuthProvider` to add additional endpoints beyond the standard OAuth protected resource metadata. These don't have to be OAuth-specific - you can add any endpoints your authentication integration requires.
 
 ```python
 import httpx2
+from pydantic import AnyHttpUrl
 from starlette.responses import JSONResponse
 from starlette.routing import Route
+
+from fastmcp import FastMCP
+from fastmcp.server.auth import RemoteAuthProvider
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 class CompanyAuthProvider(RemoteAuthProvider):
     def __init__(self):
@@ -163,11 +204,11 @@ class CompanyAuthProvider(RemoteAuthProvider):
             base_url="https://api.yourcompany.com"  # Your server base URL
         )
     
-    def get_routes(self) -> list[Route]:
+    def get_routes(self, mcp_path: str | None = None) -> list[Route]:
         """Add custom endpoints to the standard protected resource routes."""
         
         # Get the standard OAuth protected resource routes
-        routes = super().get_routes()
+        routes = super().get_routes(mcp_path)
         
         # Add authorization server metadata forwarding for client convenience
         async def authorization_server_metadata(request):
@@ -187,7 +228,7 @@ class CompanyAuthProvider(RemoteAuthProvider):
 mcp = FastMCP(name="Company API", auth=CompanyAuthProvider())
 ```
 
-This pattern uses `super().get_routes()` to get the standard protected resource routes, then adds additional endpoints as needed. A common use case is providing authorization server metadata forwarding, which allows MCP clients to discover your identity provider's capabilities through your MCP server rather than contacting the identity provider directly.
+This pattern uses `super().get_routes(mcp_path)` to get the standard protected resource routes, then adds additional endpoints as needed. `http_app()` passes the MCP path into `get_routes`, and the base implementation uses that path for the protected-resource metadata URL. A common use case is providing authorization server metadata forwarding, which allows MCP clients to discover your identity provider's capabilities through your MCP server rather than contacting the identity provider directly.
 
 ## WorkOS AuthKit Integration
 
@@ -221,7 +262,7 @@ Redirect URIs are validated by the DCR provider itself, since it owns the regist
 
 Remote OAuth integration requires careful attention to several technical details that affect reliability and security.
 
-**Token Validation Performance**: Your server validates every incoming token by checking signatures against your identity provider's public keys. Consider implementing key caching and rotation handling to minimize latency while maintaining security.
+**Token Validation Performance**: Your server validates every incoming token by checking signatures against your identity provider's public keys. `JWTVerifier` caches JWKS keys for an hour and refetches when a token arrives with an unknown key ID, at most once per `jwks_refresh_interval`. See [JWKS Endpoint Integration](/servers/auth/token-verification#jwks-endpoint-integration) for the details.
 
 **Error Handling**: Network issues with your identity provider can affect token validation. Implement appropriate timeouts, retry logic, and graceful degradation to maintain service availability during identity provider outages.
 

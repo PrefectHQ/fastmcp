@@ -1,10 +1,13 @@
 """Tests for error handling middleware."""
 
 import logging
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcp import MCPError
+from mcp_types import TextContent
+from pydantic import BaseModel, model_validator
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -133,6 +136,25 @@ class TestErrorHandlingMiddleware:
         assert result.error.code == -32602
         assert "Invalid params: test error" in result.error.message
 
+    def test_transform_error_classifies_subclasses(self, mock_context):
+        """Subclasses of a mapped exception get that exception's code."""
+
+        class Unreadable(UnicodeDecodeError):
+            pass
+
+        middleware = ErrorHandlingMiddleware()
+        cases: list[tuple[Exception, int]] = [
+            (UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad"), -32602),
+            (Unreadable("utf-8", b"\xff", 0, 1, "bad"), -32602),
+            (IsADirectoryError("dir"), -32603),
+            (TimeoutError("slow"), -32000),
+        ]
+
+        for error, code in cases:
+            result = middleware._transform_error(error, mock_context)
+            assert isinstance(result, MCPError)
+            assert result.error.code == code, error
+
     def test_transform_error_not_found_for_resource_method(self):
         """Test that not-found errors use -32002 for resource methods."""
         middleware = ErrorHandlingMiddleware()
@@ -235,6 +257,42 @@ class TestErrorHandlingMiddleware:
         assert "Invalid params: test error" in exc_info.value.error.message
         assert "Error in test_method: ToolError: test error" in caplog.text
 
+    @pytest.mark.parametrize(
+        ("transform_errors", "error"),
+        [
+            (False, ToolError("tool failed")),
+            (True, MCPError(code=-32000, message="already an MCP error")),
+        ],
+    )
+    async def test_on_message_untransformed_error_keeps_its_cause(
+        self, mock_context, transform_errors: bool, error: Exception
+    ):
+        """An error re-raised as-is must not become its own cause."""
+        original = ConnectionError("upstream unreachable")
+        error.__cause__ = original
+        middleware = ErrorHandlingMiddleware(transform_errors=transform_errors)
+        mock_call_next = AsyncMock(side_effect=error)
+
+        with pytest.raises(type(error)) as exc_info:
+            await middleware.on_message(mock_context, mock_call_next)
+
+        assert exc_info.value is error
+        assert exc_info.value.__cause__ is original
+
+    async def test_on_message_transformed_error_is_caused_by_original(
+        self, mock_context
+    ):
+        """A transformed error still chains to the error it replaces."""
+        original = ValueError("test error")
+        middleware = ErrorHandlingMiddleware()
+        mock_call_next = AsyncMock(side_effect=original)
+
+        with pytest.raises(MCPError) as exc_info:
+            await middleware.on_message(mock_context, mock_call_next)
+
+        assert exc_info.value is not original
+        assert exc_info.value.__cause__ is original
+
     def test_get_error_stats(self, mock_context):
         """Test getting error statistics."""
         middleware = ErrorHandlingMiddleware()
@@ -249,6 +307,19 @@ class TestErrorHandlingMiddleware:
         stats = middleware.get_error_stats()
         assert stats["ValueError:test_method"] == 2
         assert stats["RuntimeError:test_method"] == 1
+
+    def test_get_error_stats_bounds_distinct_methods(self, mock_context):
+        """Distinct request methods beyond the stats limit share one bucket."""
+        middleware = ErrorHandlingMiddleware(logger=MagicMock())
+
+        for index in range(1005):
+            mock_context.method = f"unsupported/{index}"
+            middleware._log_error(ValueError("failure"), mock_context)
+
+        stats = middleware.get_error_stats()
+        assert len(stats) == 1000
+        assert stats["ValueError:unsupported/0"] == 1
+        assert stats["<other>"] == 6
 
 
 class TestRetryMiddleware:
@@ -601,6 +672,34 @@ class TestRetryMiddlewareIntegration:
         # Tool should have been called 3 times: 2 failures + 1 success
         assert call_count == 3
 
+    async def test_retry_sees_cause_through_untransformed_error_handling(self):
+        """ErrorHandlingMiddleware(transform_errors=False) further in must leave
+        the tool error's cause intact for the retry decision."""
+        call_count = 0
+        server = FastMCP("RetryThroughErrorHandlingTest")
+        server.add_middleware(
+            RetryMiddleware(
+                max_retries=3,
+                base_delay=0.01,
+                retry_exceptions=(ConnectionError,),
+            )
+        )
+        server.add_middleware(ErrorHandlingMiddleware(transform_errors=False))
+
+        @server.tool
+        def fails_then_succeeds() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ConnectionError("transient failure")
+            return "success"
+
+        async with Client(server) as client:
+            result = await client.call_tool("fails_then_succeeds")
+            assert result.data == "success"
+
+        assert call_count == 3
+
     async def test_retry_middleware_with_permanent_failures(self):
         """A tool error whose cause is not in ``retry_exceptions`` should
         fail on the first attempt — no retries."""
@@ -654,3 +753,95 @@ class TestRetryMiddlewareIntegration:
 
         # Should have error logs from error handling middleware
         assert "Error in tools/call:" in log_text
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("mask_error_details", [False, True])
+@pytest.mark.parametrize("transform_errors", [False, True])
+async def test_missing_prompt_argument_preserves_invalid_params(
+    mode: Literal["auto", "legacy"], mask_error_details: bool, transform_errors: bool
+) -> None:
+    server = FastMCP(mask_error_details=mask_error_details)
+    server.add_middleware(
+        ErrorHandlingMiddleware()
+        if transform_errors
+        else ErrorHandlingMiddleware(transform_errors=False)
+    )
+    called = False
+
+    @server.prompt
+    def summarize(topic: str) -> str:
+        nonlocal called
+        called = True
+        return topic
+
+    async with Client(server, mode=mode) as client:
+        with pytest.raises(MCPError) as exc_info:
+            await client.get_prompt("summarize", {})
+        assert not called
+        result = await client.get_prompt("summarize", {"topic": "valid"})
+
+    assert exc_info.value.error.code == -32602
+    assert "Missing required arguments: {'topic'}" in exc_info.value.error.message
+    assert result.messages[0].content == TextContent(type="text", text="valid")
+    assert called
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("mask_error_details", [False, True])
+@pytest.mark.parametrize("transform_errors", [False, True])
+async def test_prompt_handler_failure_remains_internal(
+    mode: Literal["auto", "legacy"], mask_error_details: bool, transform_errors: bool
+) -> None:
+    server = FastMCP(mask_error_details=mask_error_details)
+    server.add_middleware(
+        ErrorHandlingMiddleware()
+        if transform_errors
+        else ErrorHandlingMiddleware(transform_errors=False)
+    )
+
+    @server.prompt
+    def summarize(topic: str) -> str:
+        raise RuntimeError("private handler failure")
+
+    async with Client(server, mode=mode) as client:
+        with pytest.raises(MCPError) as exc_info:
+            await client.get_prompt("summarize", {"topic": "valid"})
+
+    assert exc_info.value.error.code == -32603
+    assert (
+        "private handler failure" in exc_info.value.error.message
+    ) is not mask_error_details
+
+
+class _Payload(BaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def reject(cls, value: object) -> object:
+        raise ValueError("invalid payload")
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [("concat", {"wrong": "x"}), ("submit", {"payload": {}})],
+)
+async def test_tool_argument_validation_maps_to_invalid_params(
+    mode: Literal["auto", "legacy"], tool: str, arguments: dict[str, object]
+) -> None:
+    server = FastMCP(middleware=[ErrorHandlingMiddleware()])
+
+    @server.tool
+    def concat(a: str, b: str) -> str:
+        return a + b
+
+    @server.tool
+    def submit(payload: _Payload) -> str:
+        return "ok"
+
+    async with Client(server, mode=mode) as client:
+        with pytest.raises(MCPError) as exc_info:
+            await client.call_tool(tool, arguments)
+
+    assert exc_info.value.error.code == -32602
+    assert exc_info.value.error.message.startswith("Invalid params:")

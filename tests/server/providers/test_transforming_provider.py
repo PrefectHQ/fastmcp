@@ -194,6 +194,54 @@ class TestTransformReverseLookup:
         assert resource is not None
         assert str(resource.uri) == "resource://ns/data"
 
+    async def test_namespace_get_resource_with_hostless_uri(self):
+        """A URI with no protocol://path is listed unprefixed, so it must resolve as-is."""
+        server = FastMCP("Test")
+
+        @server.resource("urn:example:config")
+        def my_resource() -> str:
+            return "content"
+
+        provider = FastMCPProvider(server)
+        layer = Namespace("ns")
+
+        resources = await layer.list_resources(await provider.list_resources())
+        assert str(resources[0].uri) == "urn:example:config"
+
+        async def get_resource(uri: str, version=None):
+            return await provider._get_resource(uri, version)
+
+        resource = await layer.get_resource("urn:example:config", get_resource)
+
+        assert resource is not None
+        assert str(resource.uri) == "urn:example:config"
+
+    async def test_namespace_get_resource_template_with_hostless_uri(self):
+        """Same for templates, which share the URI reversal."""
+        server = FastMCP("Test")
+
+        @server.resource("urn:example:item/{item_id}")
+        def my_template(item_id: str) -> str:
+            return f"item {item_id}"
+
+        provider = FastMCPProvider(server)
+        layer = Namespace("ns")
+
+        templates = await layer.list_resource_templates(
+            await provider.list_resource_templates()
+        )
+        assert templates[0].uri_template == "urn:example:item/{item_id}"
+
+        async def get_template(uri: str, version=None):
+            return await provider._get_resource_template(uri, version)
+
+        template = await layer.get_resource_template(
+            "urn:example:item/{item_id}", get_template
+        )
+
+        assert template is not None
+        assert template.uri_template == "urn:example:item/{item_id}"
+
     async def test_nonmatching_namespace_returns_none(self):
         """Test that lookups with wrong namespace return None."""
         server = FastMCP("Test")

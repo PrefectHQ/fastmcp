@@ -474,10 +474,10 @@ async def format_mcp_info(mcp: FastMCP[Any] | SDKServer) -> bytes:
     # handshake carries, so pin the handshake era.
     async with Client(mcp, mode="legacy") as client:
         # Get all the MCP protocol objects
-        tools_result = await client.list_tools_mcp()
-        prompts_result = await client.list_prompts_mcp()
-        resources_result = await client.list_resources_mcp()
-        templates_result = await client.list_resource_templates_mcp()
+        tools = await client.list_tools()
+        prompts = await client.list_prompts()
+        resources = await client.list_resources()
+        templates = await client.list_resource_templates()
 
         # Get server info from the initialize result
         server_info = client.initialize_result.server_info
@@ -491,10 +491,10 @@ async def format_mcp_info(mcp: FastMCP[Any] | SDKServer) -> bytes:
             "serverInfo": server_info,
             "instructions": client.initialize_result.instructions,
             "capabilities": {},  # MCP format doesn't include capabilities at top level
-            "tools": tools_result.tools,
-            "prompts": prompts_result.prompts,
-            "resources": resources_result.resources,
-            "resourceTemplates": templates_result.resource_templates,
+            "tools": tools,
+            "prompts": prompts,
+            "resources": resources,
+            "resourceTemplates": templates,
         }
 
         return pydantic_core.to_json(result, indent=2)

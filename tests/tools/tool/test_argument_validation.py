@@ -4,7 +4,7 @@ See https://github.com/PrefectHQ/fastmcp/issues/4128: a bad call (invalid
 arguments) should surface as fastmcp's ``ValidationError`` so downstream error
 taxonomy (middleware, Sentry filters) can treat it as a client error, while a
 ``pydantic.ValidationError`` raised by the tool's own body is a server-side bug
-and must propagate unchanged.
+and must not be reclassified as a bad call.
 """
 
 from typing import Annotated, Any
@@ -15,6 +15,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from fastmcp.exceptions import ValidationError
 from fastmcp.tools.base import Tool
+from fastmcp.tools.function_tool import _ToolBodyError
 
 
 class _Inner(BaseModel):
@@ -67,12 +68,11 @@ class TestToolBodyErrors:
             return 1
 
         tool = Tool.from_function(tool_fn)
-        with pytest.raises(PydanticValidationError):
+        with pytest.raises(_ToolBodyError) as exc_info:
             await tool.run({"data": "valid"})
-        # And it must not be fastmcp's ValidationError.
-        with pytest.raises(PydanticValidationError) as exc_info:
-            await tool.run({"data": "valid"})
+        # It must not be fastmcp's ValidationError, and the original is chained.
         assert not isinstance(exc_info.value, ValidationError)
+        assert isinstance(exc_info.value.__cause__, PydanticValidationError)
 
     async def test_sync_body_pydantic_error_propagates(self):
         def tool_fn(data: str) -> int:
@@ -81,8 +81,9 @@ class TestToolBodyErrors:
             return 1
 
         tool = Tool.from_function(tool_fn)
-        with pytest.raises(PydanticValidationError):
+        with pytest.raises(_ToolBodyError) as exc_info:
             await tool.run({"data": "valid"})
+        assert isinstance(exc_info.value.__cause__, PydanticValidationError)
 
 
 class TestTaskArgumentValidation:

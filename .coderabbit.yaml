@@ -1,3 +1,0 @@
-reviews:
-  path_filters:
-    - "!docs/python-sdk/**"

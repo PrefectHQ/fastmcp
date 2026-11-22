@@ -26,6 +26,7 @@ from fastmcp_tasks.context import (
 from mcp import ServerSession
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+from mcp.server.connection import Connection
 from mcp_types import (
     ClientCapabilities,
     Implementation,
@@ -35,7 +36,7 @@ from mcp_types import (
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
-from fastmcp.server.context import Context
+from fastmcp.server.context import _CONNECTION_LOG_LEVEL_KEY, Context
 from fastmcp.server.dependencies import get_access_token
 from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
@@ -191,6 +192,7 @@ class TestContextBackgroundTaskLogging:
         class MockConnection:
             def __init__(self, session_id: str) -> None:
                 self.session_id = session_id
+                self.state: dict[str, Any] = {}
 
         class MockSession:
             def __init__(self, session_id: str) -> None:
@@ -210,9 +212,9 @@ class TestContextBackgroundTaskLogging:
         its logs, so sub-threshold messages are not sent to the client."""
         mcp = FastMCP("test")
         session_id = "session-abc"
-        mcp._client_log_levels[session_id] = "error"
 
         ctx, send_log_message = self._make_task_context(mcp, session_id)
+        ctx.session._connection.state[_CONNECTION_LOG_LEVEL_KEY] = "error"
         assert ctx.is_background_task is True
         assert ctx.request_context is None
 
@@ -236,35 +238,28 @@ class TestContextClientExtensionBackgroundTask:
     """Tests for Context.client_supports_extension() in background task mode.
 
     A background task may carry a stored snapshot session but no request
-    context. The client's advertised capabilities are preserved on the
-    session's ``client_params``, so extension detection reads from the session
-    rather than gating on ``request_context``.
+    context. The client's advertised capabilities are preserved on the stored
+    session, so extension detection reads from the session rather than gating
+    on ``request_context``.
     """
 
     def _make_task_context(
         self, mcp: FastMCP, extensions: dict[str, dict[str, Any]] | None
     ) -> Context:
-        capabilities = ClientCapabilities(extensions=extensions)
-        client_params = InitializeRequestParams(
+        connection = Connection.for_loop(
+            cast(Any, object()), protocol_version_hint="2025-06-18"
+        )
+        connection.client_params = InitializeRequestParams(
             protocol_version="2025-06-18",
-            capabilities=capabilities,
+            capabilities=ClientCapabilities(extensions=extensions),
             client_info=Implementation(name="test-client", version="1.0"),
         )
-
-        class MockSession:
-            _fastmcp_state_prefix = "session-ext"
-
-            def __init__(self) -> None:
-                self.client_params = client_params
-
-        session = MockSession()
-        return Context(
-            mcp, session=cast(ServerSession, session), task_id="test-task-ext"
-        )
+        session = ServerSession(cast(Any, object()), connection)
+        return Context(mcp, session=session, task_id="test-task-ext")
 
     def test_background_task_detects_advertised_extension(self):
-        """The stored session preserves the client's initialize params, so an
-        advertised extension is detected even with no request context."""
+        """The stored session preserves the client's advertised capabilities,
+        so an advertised extension is detected even with no request context."""
         mcp = FastMCP("test")
         ctx = self._make_task_context(mcp, {"ext-abc": {}})
 

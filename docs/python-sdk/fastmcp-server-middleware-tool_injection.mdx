@@ -10,28 +10,44 @@ A middleware for injecting tools into the MCP server context.
 
 ## Classes
 
-### `ToolInjectionMiddleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/tool_injection.py#L16" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ToolInjectionMiddleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/tool_injection.py#L13" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A middleware for injecting tools into the context.
 
+The server this middleware is added to lists and calls the injected tools
+alongside its own. They are resolved by the server's tool lookup, so a
+tool's `auth` check and every middleware in the chain, including
+`AuthMiddleware`, apply to them as they do to registered tools, wherever
+this middleware sits in the chain. Server and session visibility settings
+do not apply to injected tools.
+
+Injected tools are matched by name alone; a requested version is ignored.
+An injected tool takes precedence over a registered tool with the same
+name, and the registered tool is no longer listed. When several injection
+middleware provide the same name, the one added first takes precedence.
+Injected tools follow their task configuration as registered tools do.
+
 
 **Methods:**
 
-#### `on_list_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/tool_injection.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `injected_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/tool_injection.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-on_list_tools(self, context: MiddlewareContext[mcp_types.ListToolsRequest], call_next: CallNext[mcp_types.ListToolsRequest, Sequence[Tool]]) -> Sequence[Tool]
+injected_tools(self) -> Sequence[Tool]
 ```
 
-Inject tools into the response.
+The tools this middleware injects, one per name.
+
+If several given tools share a name, the last one is kept, matching
+`get_injected_tool()`.
 
 
-#### `on_call_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/tool_injection.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_injected_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/tool_injection.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-on_call_tool(self, context: MiddlewareContext[mcp_types.CallToolRequestParams], call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult]) -> ToolResult
+get_injected_tool(self, name: str) -> Tool | None
 ```
 
-Intercept tool calls to injected tools.
+Return the injected tool with this name, if there is one.
 

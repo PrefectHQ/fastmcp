@@ -50,6 +50,19 @@ class TestResponseLimitingMiddleware:
             # Verify truncated result fits within limit
             assert len(result.content[0].text.encode("utf-8")) < 500
 
+    async def test_truncation_preserves_is_error(self, mcp_server: FastMCP):
+        """Truncating an error result keeps it an error."""
+        mcp_server.add_middleware(ResponseLimitingMiddleware(max_size=500))
+
+        @mcp_server.tool()
+        def failing_tool() -> ToolResult:
+            return ToolResult(content="upstream failed: " + "x" * 1000, is_error=True)
+
+        async with Client(mcp_server) as client:
+            result = await client.call_tool("failing_tool", {}, raise_on_error=False)
+            assert result.is_error is True
+            assert "[Response truncated due to size limit]" in result.content[0].text
+
     async def test_tool_filtering(self, mcp_server: FastMCP):
         """Test that tool filtering only applies to specified tools."""
         mcp_server.add_middleware(

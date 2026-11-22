@@ -75,7 +75,14 @@ def bridge(monkeypatch):
 async def test_native_effect_discovery_and_lifespan(bridge):
     async with Client(hub_mcp) as client:
         tools = await client.list_tools()
-        assert len(tools) == 10
+        assert {tool.name for tool in tools if tool.name.startswith("hue_")} == {
+            "hue_read_lights",
+            "hue_read_rooms",
+            "hue_read_scenes",
+            "hue_set_light",
+            "hue_set_room",
+            "hue_activate_scene",
+        }
         assert all(
             "bridge" not in tool.input_schema.get("properties", {}) for tool in tools
         )

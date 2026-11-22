@@ -8,6 +8,7 @@ execution TTL (900000 ms) when none is configured.
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 
 from fastmcp import FastMCP
 from fastmcp_tasks import TasksExtension
@@ -71,6 +72,28 @@ async def test_default_ttl_when_unspecified():
         assert got.ttl_ms == DEFAULT_TTL_MS
 
 
+async def test_configured_execution_ttl_reported():
+    """A configured execution TTL reaches Docket and is reported as ttlMs."""
+    mcp = FastMCP("ttl-config-test")
+    mcp.add_extension(TasksExtension(execution_ttl=timedelta(hours=2)))
+
+    @mcp.tool(task=True)
+    async def quick_task(value: int) -> int:
+        return value * 2
+
+    async with running_task_server(mcp):
+        created = await submit_task(mcp, "quick_task", {"value": 1})
+        assert created.ttl_ms == 2 * 60 * 60 * 1000
+        final = await wait_for_task(mcp, created.task_id)
+        assert final.ttl_ms == 2 * 60 * 60 * 1000
+
+
+def test_execution_ttl_reads_from_env(monkeypatch):
+    """FASTMCP_DOCKET_EXECUTION_TTL configures the execution TTL."""
+    monkeypatch.setenv("FASTMCP_DOCKET_EXECUTION_TTL", "PT2H")
+    assert TasksExtension().docket_settings.execution_ttl == timedelta(hours=2)
+
+
 async def test_poll_refreshes_routing_key_ttl():
     """A poll extends the current-leg pointer's TTL (sliding expiration).
 
@@ -95,6 +118,32 @@ async def test_poll_refreshes_routing_key_ttl():
 
         async with docket.redis() as redis:
             # Refreshed well past the shrunk 5s, back toward the full window.
+            assert await redis.ttl(key) > 60
+
+
+async def test_poll_refreshes_args_ttl():
+    """A poll extends the stored arguments' TTL alongside the routing keys.
+
+    A re-entered leg re-reads the original arguments, and a missing args key
+    loads as an empty argument dict rather than failing, so an actively polled
+    task must never outlive them.
+    """
+    from fastmcp_tasks.input_store import _args_key
+
+    mcp = _ttl_server()
+    async with running_task_server(mcp):
+        created = await submit_task(mcp, "slow_task", {})
+        docket = mcp._docket
+        assert docket is not None
+        key = _args_key(docket, None, created.task_id)
+
+        async with docket.redis() as redis:
+            await redis.expire(key, 5)
+            assert await redis.ttl(key) <= 5
+
+        await get_task(mcp, created.task_id)
+
+        async with docket.redis() as redis:
             assert await redis.ttl(key) > 60
 
 

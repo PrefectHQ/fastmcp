@@ -1,0 +1,38 @@
+---
+title: extension
+sidebarTitle: extension
+---
+
+# `fastmcp.skills.extension`
+
+
+FastMCP server implementation of the MCP Skills extension.
+
+## Classes
+
+### `SkillsExtension` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/skills/extension.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Expose caller-scoped skill sources through SEP-2640 methods.
+
+Skill providers register this extension automatically, so most servers
+never construct it. With no `providers`, it serves every skill source
+registered directly on the server, the backend skills of each
+`ProxyProvider(..., skills=True)`, and the skills of mounted servers,
+rewritten to the URIs the parent serves them at. Pass `providers` to limit
+discovery to an explicit list of directly registered skill providers.
+
+
+**Methods:**
+
+#### `clone` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/skills/extension.py#L62" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+clone(self) -> SkillsExtension
+```
+
+#### `methods` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/skills/extension.py#L136" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+methods(self) -> Sequence[MethodBinding]
+```

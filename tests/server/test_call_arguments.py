@@ -187,3 +187,61 @@ async def test_colliding_argument_never_reaches_call_argument(mcp: FastMCP):
     assert isinstance(content, TextContent)
     assert "role=user" in content.text
     assert "admin" not in content.text
+
+
+async def test_dependency_owns_an_undeclared_argument(mcp: FastMCP):
+    """A CallArgument naming a parameter the tool lacks joins the tool's schema."""
+
+    async def current_workspace(
+        workspace: str | None = CallArgument(default=None),
+    ) -> str:
+        return workspace or "default"
+
+    @mcp.tool
+    async def list_items(resolved: str = Depends(current_workspace)) -> str:
+        return resolved
+
+    tool = await mcp.get_tool("list_items")
+    assert tool is not None
+    assert tool.parameters["properties"] == {
+        "workspace": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None}
+    }
+    assert "workspace" not in tool.parameters.get("required", [])
+
+    owned = await mcp.call_tool("list_items", {"workspace": "acme"})
+    fallback = await mcp.call_tool("list_items", {})
+    assert isinstance(owned.content[0], TextContent)
+    assert isinstance(fallback.content[0], TextContent)
+    assert owned.content[0].text == "acme"
+    assert fallback.content[0].text == "default"
+
+
+async def test_dependency_owned_argument_without_default_is_required(mcp: FastMCP):
+    def load_user(user_id: str = CallArgument()) -> str:
+        return f"user:{user_id}"
+
+    @mcp.tool
+    async def show(user: str = Depends(load_user)) -> str:
+        return user
+
+    tool = await mcp.get_tool("show")
+    assert tool is not None
+    assert tool.parameters["required"] == ["user_id"]
+    result = await mcp.call_tool("show", {"user_id": "u-1"})
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "user:u-1"
+
+
+async def test_dependency_owned_argument_reaches_prompts(mcp: FastMCP):
+    def load_topic(topic: str = CallArgument()) -> str:
+        return topic.upper()
+
+    @mcp.prompt
+    def explain(subject: str = Depends(load_topic)) -> str:
+        return f"Explain {subject}"
+
+    prompt = await mcp.get_prompt("explain")
+    assert prompt is not None
+    assert [argument.name for argument in prompt.arguments or []] == ["topic"]
+    result = await mcp.render_prompt("explain", {"topic": "mcp"})
+    assert "Explain MCP" in str(result.messages[0].content)

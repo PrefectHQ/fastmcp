@@ -2,18 +2,25 @@
 
 import io
 import json as _json
+import re
 from email.message import Message
 from typing import Any, ClassVar
-from urllib.parse import quote, urljoin
+from urllib.parse import quote, unquote
 
 import httpx2
+from jsonschema import Draft202012Validator
+from jsonschema.protocols import Validator
 from jsonschema_path import SchemaPath
 
 from fastmcp.utilities.logging import get_logger
 
 from .models import HTTPRoute, ParameterInfo
+from .schemas import _combine_schemas_and_map_params, _ref_is_mergeable_object
 
 logger = get_logger(__name__)
+
+_MAX_PATH_DECODINGS = 32
+_PATH_TEMPLATE_PARAM = re.compile(r"\{([^{}]+)\}")
 
 
 def _query_scalar_to_str(value: Any) -> str:
@@ -39,6 +46,262 @@ def _uses_default_multipart_encoding(encoding: dict[str, Any]) -> bool:
     return all(
         key in defaults and value == defaults[key] for key, value in encoding.items()
     )
+
+
+def _is_json_media_type(content_type: str | None) -> bool:
+    """Return whether a media type denotes JSON, ignoring parameters."""
+    if not content_type:
+        return False
+    media_type = content_type.split(";")[0].strip().lower()
+    return media_type == "application/json" or media_type.endswith("+json")
+
+
+def _resolve_schema_ref(
+    schema: Any,
+    definitions: dict[str, Any],
+    active_refs: frozenset[str] = frozenset(),
+) -> tuple[dict[str, Any], frozenset[str]]:
+    """Resolve a local `$ref`, tracking references active on this traversal path.
+
+    Returns the resolved schema (empty when the chain cycles or cannot be
+    resolved) plus the extended active-reference set. Callers recurse through
+    composition keywords with that set so mutually recursive component graphs
+    terminate instead of overflowing the stack.
+    """
+    while isinstance(schema, dict) and isinstance(schema.get("$ref"), str):
+        ref = schema["$ref"]
+        if ref in active_refs:
+            return {}, active_refs
+        active_refs = active_refs | {ref}
+        target = definitions.get(ref.rsplit("/", 1)[-1])
+        if not isinstance(target, dict):
+            return {}, active_refs
+        schema = target
+    return (schema if isinstance(schema, dict) else {}), active_refs
+
+
+def _schema_type_includes(schema: dict[str, Any], type_name: str) -> bool:
+    """Return whether `type` declares the given type, including type lists."""
+    schema_type = schema.get("type")
+    if schema_type == type_name:
+        return True
+    return isinstance(schema_type, list) and type_name in schema_type
+
+
+def _schema_is_object(
+    schema: Any,
+    definitions: dict[str, Any],
+    active_refs: frozenset[str] = frozenset(),
+) -> bool:
+    """Return whether a schema (or any composition branch) describes an object."""
+    schema, active_refs = _resolve_schema_ref(schema, definitions, active_refs)
+    if not schema:
+        return False
+    if (
+        _schema_type_includes(schema, "object")
+        or "properties" in schema
+        or "additionalProperties" in schema
+    ):
+        return True
+    for keyword in ("allOf", "anyOf", "oneOf"):
+        members = schema.get(keyword)
+        if isinstance(members, list) and any(
+            _schema_is_object(member, definitions, active_refs) for member in members
+        ):
+            return True
+    return False
+
+
+def _schema_is_array_of_objects(
+    schema: Any,
+    definitions: dict[str, Any],
+    value: list[Any],
+    active_refs: frozenset[str] = frozenset(),
+) -> bool:
+    """Return whether a schema describes an object array matching `value`.
+
+    Composition alternatives are chosen against the runtime items: a `oneOf`
+    or `anyOf` that offers both `array<object>` and `array<string>` keeps a
+    string list on the string branch, so it is not JSON-encoded for an unused
+    object branch.
+    """
+    schema, active_refs = _resolve_schema_ref(schema, definitions, active_refs)
+    if not schema:
+        return False
+    if _schema_type_includes(schema, "array"):
+        item_schemas: list[Any] = []
+        items = schema.get("items")
+        if isinstance(items, list):
+            item_schemas.extend(items)
+        elif items is not None:
+            item_schemas.append(items)
+        prefix_items = schema.get("prefixItems")
+        if isinstance(prefix_items, list):
+            item_schemas.extend(prefix_items)
+        if any(
+            _schema_is_object(item, definitions, active_refs) for item in item_schemas
+        ):
+            # Empty arrays carry no runtime type information; preserve the
+            # object-array behavior there.
+            return not value or any(isinstance(item, dict) for item in value)
+        return False
+    for keyword in ("allOf", "anyOf", "oneOf"):
+        members = schema.get(keyword)
+        if isinstance(members, list) and any(
+            _schema_is_array_of_objects(member, definitions, value, active_refs)
+            for member in members
+        ):
+            return True
+    return False
+
+
+def _form_property_schemas(
+    body_schema: dict[str, Any], definitions: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Collect a form body's property schemas, merging `allOf` members.
+
+    Returns the declared properties plus the `additionalProperties` schema
+    (if any) that applies to names not declared in `properties`.
+    """
+    properties: dict[str, Any] = {}
+    additional_properties: dict[str, Any] | None = None
+
+    def collect(schema: Any, active_refs: frozenset[str] = frozenset()) -> None:
+        nonlocal additional_properties
+        schema, active_refs = _resolve_schema_ref(schema, definitions, active_refs)
+        if not schema:
+            return
+        if isinstance(schema.get("properties"), dict):
+            properties.update(schema["properties"])
+        if additional_properties is None:
+            extra = schema.get("additionalProperties")
+            if isinstance(extra, dict):
+                additional_properties = extra
+        members = schema.get("allOf")
+        if isinstance(members, list):
+            for member in members:
+                collect(member, active_refs)
+
+    collect(body_schema)
+    return properties, additional_properties
+
+
+def _build_form_urlencoded_data(
+    body: dict[str, Any],
+    body_schema: dict[str, Any],
+    encoding: dict[str, dict[str, Any]],
+    definitions: dict[str, Any],
+) -> dict[str, Any]:
+    """Serialize structured urlencoded fields as JSON per the OAS Encoding Object.
+
+    Object properties default to `contentType: application/json`, so they must
+    be JSON-encoded rather than passed to httpx for Python `repr` stringification.
+    An explicit encoding `contentType` overrides that default. Scalars and
+    arrays of scalars keep httpx's form encoding (arrays repeat the key).
+    """
+    properties, additional_properties = _form_property_schemas(body_schema, definitions)
+    data: dict[str, Any] = {}
+    for name, value in body.items():
+        content_type = encoding.get(name, {}).get("contentType")
+        if content_type is not None:
+            json_encode = _is_json_media_type(content_type)
+        else:
+            prop_schema = properties.get(name, additional_properties or {})
+            json_encode = (
+                (
+                    isinstance(value, dict)
+                    and _schema_is_object(prop_schema, definitions)
+                )
+                or (
+                    isinstance(value, list)
+                    and _schema_is_array_of_objects(prop_schema, definitions, value)
+                )
+                or (value is None and _schema_is_object(prop_schema, definitions))
+            )
+        data[name] = _json.dumps(value, allow_nan=False) if json_encode else value
+    return data
+
+
+def _required_json_object_without_properties(route: HTTPRoute) -> bool:
+    """Return whether an omitted required JSON object body should be sent empty.
+
+    Flattened object properties are optional tool arguments. Leaving all of
+    them out is still an empty JSON object. Optional bodies stay absent.
+    """
+    request_body = route.request_body
+    if (
+        request_body is None
+        or not request_body.required
+        or not request_body.content_schema
+    ):
+        return False
+    content_type = next(iter(request_body.content_schema))
+    media_type = content_type.split(";")[0].strip().lower()
+    if media_type != "application/json" and not media_type.endswith("+json"):
+        return False
+    body_schema = request_body.content_schema[content_type]
+    return (
+        isinstance(body_schema, dict)
+        and bool(body_schema.get("properties"))
+        and _ref_is_mergeable_object(body_schema, route.request_schemas)
+    )
+
+
+def _prepare_parameter_map(
+    route: HTTPRoute,
+) -> tuple[HTTPRoute, dict[str, dict[str, str]]]:
+    """Return the route's parameter map, building it if the route lacks one.
+
+    Routes from the OpenAPI parser carry a precomputed map. Routes constructed
+    directly may declare parameters or a request body without one; those get
+    the map the parser would have built, computed on a copy so the caller's
+    route is left unchanged. Those routes also accept `<name>__<location>`
+    for each declared parameter, naming the parameter at that location. An
+    empty map for a route with no parameters and no request body is already
+    complete.
+    """
+    if route.parameter_map or not (route.parameters or route.request_body):
+        return route, route.parameter_map
+
+    request_body = (
+        route.request_body.model_copy(deep=True) if route.request_body else None
+    )
+    prepared = route.model_copy(update={"request_body": request_body})
+    _, parameter_map = _combine_schemas_and_map_params(prepared, convert_refs=False)
+    for param in route.parameters:
+        parameter_map.setdefault(
+            f"{param.name}__{param.location}",
+            {"location": param.location, "openapi_name": param.name},
+        )
+    return prepared, parameter_map
+
+
+def _missing_path_arguments(
+    route: HTTPRoute,
+    parameter_map: dict[str, dict[str, str]],
+    arguments: dict[str, Any],
+) -> list[str]:
+    """Name the arguments for declared path parameters that have no value.
+
+    A path parameter is satisfied when any argument mapped to it is present and
+    not None; `build` drops None path values, so null counts as missing. Only
+    parameters that appear in the path template and that the caller can supply
+    through the parameter map are checked. A template placeholder with no
+    declared parameter is a spec fault, which `build` still reports.
+    """
+    template_names = set(_PATH_TEMPLATE_PARAM.findall(route.path))
+    aliases: dict[str, list[str]] = {}
+    for arg_name, mapping in parameter_map.items():
+        if mapping["location"] == "path":
+            aliases.setdefault(mapping["openapi_name"], []).append(arg_name)
+    missing = []
+    for param in route.parameters:
+        if param.location != "path" or param.name not in template_names:
+            continue
+        names = aliases.get(param.name)
+        if names and all(arguments.get(name) is None for name in names):
+            missing.append(names[0])
+    return missing
 
 
 class RequestDirector:
@@ -82,12 +345,38 @@ class RequestDirector:
         query_params = self._serialize_query_params(route, query_params)
 
         # Step 3: Build base URL with path parameters
-        url = self._build_url(route.path, path_params, base_url)
+        url = self._build_url(
+            route.path,
+            path_params,
+            base_url,
+            path_explode={
+                p.name: bool(p.explode)
+                for p in route.parameters
+                if p.location == "path"
+            },
+        )
 
         # Step 4: Prepare request data
         method: str = route.method.upper()
         params = query_params if query_params else None
-        headers = header_params if header_params else None
+        # Header parameters always use the OpenAPI "simple" style; values must
+        # be strings or httpx rejects the request outright.
+        header_lookup: dict[str, ParameterInfo] = {
+            p.name: p for p in route.parameters if p.location == "header"
+        }
+        headers = (
+            {
+                k: self._simple_param_to_str(
+                    v,
+                    explode=bool(header_lookup[k].explode)
+                    if k in header_lookup
+                    else False,
+                )
+                for k, v in header_params.items()
+            }
+            if header_params
+            else None
+        )
         json_body: dict[str, Any] | list[Any] | str | int | float | bool | None = None
         content: str | bytes | None = None
 
@@ -148,7 +437,23 @@ class RequestDirector:
                 declared_content_type == "application/x-www-form-urlencoded"
                 and isinstance(body, dict)
             ):
-                data = body
+                request_body = route.request_body
+                body_schema = (
+                    request_body.content_schema.get(raw_content_type, {})
+                    if request_body and raw_content_type is not None
+                    else {}
+                )
+                definitions = dict(route.request_schemas)
+                if isinstance(body_schema.get("$defs"), dict):
+                    definitions.update(body_schema["$defs"])
+                encoding = (
+                    request_body.encoding.get(raw_content_type, {})
+                    if request_body and raw_content_type is not None
+                    else {}
+                )
+                data = _build_form_urlencoded_data(
+                    body, body_schema, encoding, definitions
+                )
             elif (
                 isinstance(body, dict | list)
                 or declared_content_type == "application/json"
@@ -158,7 +463,8 @@ class RequestDirector:
                 )
             ):
                 if (
-                    declared_content_type is not None
+                    raw_content_type is not None
+                    and declared_content_type is not None
                     and raw_content_type != "application/json"
                     and "json" in declared_content_type
                 ):
@@ -171,14 +477,19 @@ class RequestDirector:
                 else:
                     json_body = body
             else:
-                content = body
+                # httpx rejects numbers and booleans as raw content
+                content = (
+                    _query_scalar_to_str(body)
+                    if isinstance(body, bool | int | float)
+                    else body
+                )
                 if raw_content_type is not None:
                     headers = dict(headers) if headers else {}
                     headers["Content-Type"] = raw_content_type
-                    if isinstance(body, str):
+                    if isinstance(content, str):
                         media_type = Message()
                         media_type["Content-Type"] = raw_content_type
-                        content = body.encode(
+                        content = content.encode(
                             media_type.get_content_charset() or "utf-8"
                         )
 
@@ -201,6 +512,10 @@ class RequestDirector:
         """
         Maps flat arguments back to their OpenAPI locations using the parameter map.
 
+        The parameter map is the only source of argument locations. Arguments
+        that are not in the map are dropped, so a route that declares no
+        parameters and no request body sends none.
+
         Args:
             route: HTTPRoute with parameter_map containing location mappings
             flat_args: Flat arguments from LLM call
@@ -214,78 +529,57 @@ class RequestDirector:
         cookie_params = {}
         body_props = {}
 
-        # Use parameter map to route arguments to correct locations
-        if hasattr(route, "parameter_map") and route.parameter_map:
-            for arg_name, value in flat_args.items():
-                if value is None:
-                    continue  # Skip None values for optional parameters
+        route, parameter_map = _prepare_parameter_map(route)
+        null_validator: Validator | None = None
+        null_properties: dict[str, Any] = {}
 
-                if arg_name not in route.parameter_map:
-                    logger.warning(
-                        f"Argument '{arg_name}' not found in parameter map for {route.operation_id}"
-                    )
+        for arg_name, value in flat_args.items():
+            if arg_name not in parameter_map:
+                logger.warning(
+                    f"Argument '{arg_name}' not found in parameter map for {route.operation_id}"
+                )
+                continue
+
+            mapping = parameter_map[arg_name]
+            location = mapping["location"]
+            openapi_name = mapping["openapi_name"]
+
+            if value is None:
+                # Only JSON body properties have a null representation. Consult
+                # the normalized input schema, including its reference definitions,
+                # rather than interpreting raw OpenAPI nullability a second time.
+                if location != "body" or not route.request_body:
+                    continue
+                content_type = next(iter(route.request_body.content_schema), "")
+                media_type = content_type.split(";")[0].strip().lower()
+                if media_type != "application/json" and not media_type.endswith(
+                    "+json"
+                ):
+                    continue
+                if null_validator is None:
+                    schema = route.flat_param_schema
+                    if not schema:
+                        schema, _ = _combine_schemas_and_map_params(route)
+                    null_validator = Draft202012Validator(schema)
+                    null_properties = schema.get("properties", {})
+                property_schema = null_properties.get(arg_name, False)
+                if not null_validator.evolve(schema=property_schema).is_valid(None):
                     continue
 
-                mapping = route.parameter_map[arg_name]
-                location = mapping["location"]
-                openapi_name = mapping["openapi_name"]
-
-                if location == "path":
-                    path_params[openapi_name] = value
-                elif location == "query":
-                    query_params[openapi_name] = value
-                elif location == "header":
-                    header_params[openapi_name] = value
-                elif location == "cookie":
-                    cookie_params[openapi_name] = value
-                elif location == "body":
-                    body_props[openapi_name] = value
-                else:
-                    logger.warning(
-                        f"Unknown parameter location '{location}' for {arg_name}"
-                    )
-        else:
-            # Fallback: try to map arguments based on parameter definitions
-            logger.debug("No parameter map available, using fallback mapping")
-
-            # Create a mapping from parameter names to their locations
-            param_locations = {}
-            for param in route.parameters:
-                param_locations[param.name] = param.location
-
-            # Map arguments to locations
-            for arg_name, value in flat_args.items():
-                if value is None:
-                    continue
-
-                # Check if it's a suffixed parameter (e.g., id__path)
-                if "__" in arg_name:
-                    base_name, location = arg_name.rsplit("__", 1)
-                    if location in ["path", "query", "header", "cookie"]:
-                        if location == "path":
-                            path_params[base_name] = value
-                        elif location == "query":
-                            query_params[base_name] = value
-                        elif location == "header":
-                            header_params[base_name] = value
-                        elif location == "cookie":
-                            cookie_params[base_name] = value
-                        continue
-
-                # Check if it's a known parameter
-                if arg_name in param_locations:
-                    location = param_locations[arg_name]
-                    if location == "path":
-                        path_params[arg_name] = value
-                    elif location == "query":
-                        query_params[arg_name] = value
-                    elif location == "header":
-                        header_params[arg_name] = value
-                    elif location == "cookie":
-                        cookie_params[arg_name] = value
-                else:
-                    # Assume it's a body property
-                    body_props[arg_name] = value
+            if location == "path":
+                path_params[openapi_name] = value
+            elif location == "query":
+                query_params[openapi_name] = value
+            elif location == "header":
+                header_params[openapi_name] = value
+            elif location == "cookie":
+                cookie_params[openapi_name] = value
+            elif location == "body":
+                body_props[openapi_name] = value
+            else:
+                logger.warning(
+                    f"Unknown parameter location '{location}' for {arg_name}"
+                )
 
         # Handle body construction
         body = None
@@ -300,7 +594,11 @@ class RequestDirector:
                 body_schema = route.request_body.content_schema[content_type]
 
                 # Only named properties are flattened into individual arguments.
-                if isinstance(body_schema, dict) and body_schema.get("properties"):
+                if (
+                    isinstance(body_schema, dict)
+                    and body_schema.get("properties")
+                    and _ref_is_mergeable_object(body_schema, route.request_schemas)
+                ):
                     body = body_props
                 elif len(body_props) == 1:
                     # Free-form objects, arrays, and primitives use a single
@@ -310,6 +608,8 @@ class RequestDirector:
                     body = body_props
             else:
                 body = body_props
+        elif _required_json_object_without_properties(route):
+            body = {}
 
         return path_params, query_params, header_params, cookie_params, body
 
@@ -346,6 +646,19 @@ class RequestDirector:
         }
 
         serialized: dict[str, Any] = {}
+
+        def add(name: str, value: Any) -> None:
+            # Exploded form objects emit bare property names, which can match
+            # another parameter's name; keep every value so the key repeats.
+            if name not in serialized:
+                serialized[name] = value
+                return
+            existing = serialized[name]
+            serialized[name] = [
+                *(existing if isinstance(existing, list) else [existing]),
+                *(value if isinstance(value, list) else [value]),
+            ]
+
         for key, value in query_params.items():
             param_info = param_lookup.get(key)
             if param_info is not None:
@@ -367,7 +680,7 @@ class RequestDirector:
                             property_name = _query_scalar_to_str(k)
                             if param_info.style == "deepObject":
                                 property_name = f"{key}[{property_name}]"
-                            serialized[property_name] = _query_scalar_to_str(v)
+                            add(property_name, _query_scalar_to_str(v))
                     else:
                         delimiter = self._STYLE_DELIMITERS.get(style, ",")
                         # form,explode=false on objects: key,value pairs
@@ -376,22 +689,99 @@ class RequestDirector:
                         for k, v in value.items():
                             parts.append(_query_scalar_to_str(k))
                             parts.append(_query_scalar_to_str(v))
-                        serialized[key] = delimiter.join(parts)
+                        add(key, delimiter.join(parts))
                     continue
                 if not explode:
                     delimiter = self._STYLE_DELIMITERS.get(style, ",")
                     if isinstance(value, list):
                         if not value:
                             continue
-                        serialized[key] = delimiter.join(
-                            _query_scalar_to_str(v) for v in value
-                        )
+                        add(key, delimiter.join(_query_scalar_to_str(v) for v in value))
                         continue
-            serialized[key] = value
+            add(key, value)
         return serialized
 
+    @staticmethod
+    def _simple_param_to_str(value: Any, explode: bool = False) -> str:
+        """Serialize a value per the OpenAPI "simple" style (path and header parameters).
+
+        Arrays join with commas either way; explode only changes object
+        serialization from "k,v" pairs to "k=v" pairs.
+        """
+        if isinstance(value, dict):
+            parts: list[str] = []
+            for k, v in value.items():
+                if explode:
+                    parts.append(f"{_query_scalar_to_str(k)}={_query_scalar_to_str(v)}")
+                else:
+                    parts.append(_query_scalar_to_str(k))
+                    parts.append(_query_scalar_to_str(v))
+            return ",".join(parts)
+        if isinstance(value, list | tuple):
+            # The simple style defines primitive items only; flatten a nested
+            # list one level instead of leaking its Python repr.
+            parts = []
+            for v in value:
+                if isinstance(v, list | tuple):
+                    parts.extend(_query_scalar_to_str(i) for i in v)
+                else:
+                    parts.append(_query_scalar_to_str(v))
+            return ",".join(parts)
+        return _query_scalar_to_str(value)
+
+    def _encode_path_scalar(self, param_name: str, value: Any) -> str:
+        """Encode one scalar path item, rejecting dot segments at any encoding layer."""
+        serialized = _query_scalar_to_str(value)
+        decoded = serialized
+        for _ in range(_MAX_PATH_DECODINGS):
+            if any(
+                part in {".", ".."} for part in decoded.replace("\\", "/").split("/")
+            ):
+                raise ValueError(
+                    f"Path parameter '{param_name}' cannot contain dot segments"
+                )
+            expanded = unquote(decoded)
+            if expanded == decoded:
+                break
+            decoded = expanded
+        else:
+            raise ValueError(
+                f"Path parameter '{param_name}' has too many encoding layers"
+            )
+        # quote() leaves "." unencoded; replace it so a dot segment can never
+        # reconstitute after a server decodes the path.
+        return quote(serialized, safe="").replace(".", "%2E")
+
+    def _simple_param_to_path_segment(
+        self, param_name: str, value: Any, explode: bool = False
+    ) -> str:
+        """Serialize a path parameter per the OpenAPI "simple" style, encoding each
+        item separately so the style separators stay literal on the wire."""
+        if isinstance(value, dict):
+            parts = []
+            for k, v in value.items():
+                ek = self._encode_path_scalar(param_name, k)
+                ev = self._encode_path_scalar(param_name, v)
+                parts.append(f"{ek}={ev}" if explode else f"{ek},{ev}")
+            return ",".join(parts)
+        if isinstance(value, list | tuple):
+            # Mirror the header side: flatten a nested list one level instead
+            # of leaking its Python repr onto the wire.
+            parts = []
+            for v in value:
+                if isinstance(v, list | tuple):
+                    parts.extend(self._encode_path_scalar(param_name, i) for i in v)
+                else:
+                    parts.append(self._encode_path_scalar(param_name, v))
+            return ",".join(parts)
+        return self._encode_path_scalar(param_name, value)
+
     def _build_url(
-        self, path_template: str, path_params: dict[str, Any], base_url: str
+        self,
+        path_template: str,
+        path_params: dict[str, Any],
+        base_url: str,
+        path_explode: dict[str, bool] | None = None,
     ) -> str:
         """
         Build URL by substituting path parameters in the template.
@@ -400,21 +790,43 @@ class RequestDirector:
             path_template: OpenAPI path template (e.g., "/users/{id}")
             path_params: Path parameter values
             base_url: Base URL to prepend
+            path_explode: Per-parameter explode flags from the route's parameter
+                definitions; absent names default to the non-exploded form
 
         Returns:
             Complete URL with path parameters substituted
+
+        Raises:
+            ValueError: If the template has a parameter with no value
         """
-        # Substitute path parameters with URL-encoding to prevent
-        # path traversal and SSRF via crafted parameter values
+        missing = [
+            name
+            for name in dict.fromkeys(_PATH_TEMPLATE_PARAM.findall(path_template))
+            if name not in path_params
+        ]
+        if missing:
+            names = ", ".join(repr(name) for name in missing)
+            raise ValueError(f"Missing required path parameters: {{{names}}}")
+
+        # Path parameters default to the OpenAPI "simple" style, so values are
+        # serialized before substitution (e.g. true/false for booleans, "a,b"
+        # for arrays) instead of leaking Python reprs into the URL. Each item
+        # is encoded separately and the style separators (",", "=") stay
+        # literal, so ids=["a", "b"] and ids=["a,b"] stay distinct on the
+        # wire; dot-segment validation runs per serialized item.
+        path_explode = path_explode or {}
         url_path = path_template
         for param_name, param_value in path_params.items():
             placeholder = f"{{{param_name}}}"
             if placeholder in url_path:
-                safe_value = quote(str(param_value), safe="").replace(".", "%2E")
+                safe_value = self._simple_param_to_path_segment(
+                    param_name, param_value, path_explode.get(param_name, False)
+                )
                 url_path = url_path.replace(placeholder, safe_value)
 
-        # Combine with base URL
-        return urljoin(base_url.rstrip("/") + "/", url_path.lstrip("/"))
+        # Combine with base URL. Plain concatenation: urljoin would read a
+        # leading "name:" segment (e.g. "/job-1:cancel") as a URL scheme.
+        return f"{base_url.rstrip('/')}/{url_path.lstrip('/')}"
 
 
 # Export public symbols

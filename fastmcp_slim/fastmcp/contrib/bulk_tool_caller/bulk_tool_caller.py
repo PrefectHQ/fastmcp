@@ -1,6 +1,6 @@
 from typing import Any
 
-from mcp_types import CallToolResult, TextContent
+from mcp_types import SERVER_INFO_META_KEY, CallToolResult, TextContent
 from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
@@ -39,12 +39,22 @@ class CallToolRequestResult(CallToolResult):
     ) -> "CallToolRequestResult":
         """
         Create a CallToolRequestResult from a CallToolResult.
+
+        Result metadata is kept (including FastMCP's `wrap_result` marker), except
+        the server info entry, which describes the inner connection.
         """
+        meta = {
+            key: value
+            for key, value in (result.meta or {}).items()
+            if key != SERVER_INFO_META_KEY
+        }
         return cls(
             tool=tool,
             arguments=arguments,
             is_error=result.is_error,
             content=result.content,
+            structured_content=result.structured_content,
+            meta=meta or None,
         )
 
 
@@ -54,6 +64,10 @@ class BulkToolCaller(MCPMixin):
     """
 
     _BULK_TOOL_NAMES: frozenset[str] = frozenset({"call_tools_bulk", "call_tool_bulk"})
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._registered_bulk_tool_names = set(self._BULK_TOOL_NAMES)
 
     def register_tools(
         self,
@@ -65,8 +79,14 @@ class BulkToolCaller(MCPMixin):
         Register the tools provided by this class with the given MCP server.
         """
         self.connection = FastMCPTransport(mcp_server)
+        if prefix:
+            self._registered_bulk_tool_names.update(
+                f"{prefix}{separator}{name}" for name in self._BULK_TOOL_NAMES
+            )
 
-        super().register_tools(mcp_server=mcp_server)
+        super().register_tools(
+            mcp_server=mcp_server, prefix=prefix, separator=separator
+        )
 
     @mcp_tool()
     async def call_tools_bulk(
@@ -124,7 +144,7 @@ class BulkToolCaller(MCPMixin):
         Helper method to call a tool with the provided arguments.
         """
 
-        if tool in self._BULK_TOOL_NAMES:
+        if tool in self._registered_bulk_tool_names:
             return CallToolRequestResult(
                 tool=tool,
                 arguments=arguments,
@@ -143,9 +163,6 @@ class BulkToolCaller(MCPMixin):
         async with Client(self.connection) as client:
             result = await client.call_tool_mcp(name=tool, arguments=arguments)
 
-            return CallToolRequestResult(
-                tool=tool,
-                arguments=arguments,
-                is_error=result.is_error,
-                content=result.content,
+            return CallToolRequestResult.from_call_tool_result(
+                result, tool=tool, arguments=arguments
             )

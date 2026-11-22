@@ -5,6 +5,7 @@ import contextlib
 from typing import Any
 
 import anyio
+from mcp.shared.exceptions import NoBackChannelError
 
 from .middleware import CallNext, Middleware, MiddlewareContext
 
@@ -92,7 +93,13 @@ class PingMiddleware(Middleware):
                 await anyio.sleep(self.interval_ms / 1000)
                 try:
                     await session.send_ping()
-                except (anyio.ClosedResourceError, anyio.BrokenResourceError):
+                except (
+                    anyio.ClosedResourceError,
+                    anyio.BrokenResourceError,
+                    NoBackChannelError,
+                ):
+                    # Closed stream, or a connection that can never send the
+                    # client a request (2026-07-28 connections, stateless HTTP).
                     return
         finally:
             self._active_sessions.discard(connection_id)
