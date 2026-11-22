@@ -35,6 +35,7 @@ import json
 import logging
 import random
 import re
+import secrets
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -209,7 +210,13 @@ class Repo:
     # ---- writes ----
 
     def put(self, collection: str, rkey: str, record: dict, swap: str | None) -> str:
-        """Write `record` only if the current CID is `swap` (None: no record yet)."""
+        """Write `record` only if the current CID is `swap` (None: no record yet).
+
+        A PDS skips a write whose content matches the stored record and answers
+        200 without checking `swapRecord`, so every write carries a fresh nonce:
+        two identical claims would otherwise both appear to win.
+        """
+        record = {**record, "nonce": secrets.token_hex(8)}
         body = {
             "repo": self.did,
             "collection": collection,

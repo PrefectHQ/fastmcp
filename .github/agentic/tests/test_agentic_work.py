@@ -64,6 +64,10 @@ class Pds:
                 hook, self.before_put = self.before_put, None
                 hook()
             key = (body["collection"], body["rkey"])
+            current = self.records.get(key)
+            if current and current[0] == body["record"]:
+                # like a real PDS: identical content is a no-op, swap unchecked
+                return httpx.Response(200, json={"uri": "at://x", "cid": current[1]})
             if "swapRecord" in body:
                 current = self.records.get(key)
                 if (current[1] if current else None) != body["swapRecord"]:
@@ -169,6 +173,18 @@ def test_a_lapsed_lease_expires_and_fences_out_the_old_holder():
     late = board.progress("pr:42", "slow", old, "pushing")
     assert late["ok"] is False
     assert board.current("pr:42").holder == holder_of("fast")
+
+
+def test_identical_claims_cannot_both_win(monkeypatch):
+    # same holder, same millisecond: without a nonce the second write would be
+    # a no-op the PDS answers with 200, and both callers would think they won
+    pds = Pds()
+    board = make_board(pds)
+    rival = make_board(pds)
+    pds.before_put = lambda: rival.claim("issue:9", "same", "claude")
+    board.claim("issue:9", "same", "claude")
+    claimed = [e for e in pds.log() if e["kind"] == "claimed"]
+    assert len(claimed) == 1
 
 
 def test_a_racing_claim_loses_on_compare_and_swap():
