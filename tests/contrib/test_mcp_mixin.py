@@ -435,10 +435,19 @@ class TestMCPMixinValidation:
             def my_tool(self):
                 pass
 
-    def test_mcp_resource_rejects_unknown_param(self):
+    @pytest.mark.parametrize("uri", ["test://x", "test://{x}"])
+    def test_mcp_resource_rejects_unknown_param(self, uri: str):
         with pytest.raises(TypeError, match="unexpected keyword argument"):
 
-            @mcp_resource(uri="test://x", definitely_not_a_real_param="oops")
+            @mcp_resource(uri=uri, definitely_not_a_real_param="oops")
+            def my_resource(self):
+                pass
+
+    def test_mcp_resource_rejects_security_for_static_uri(self):
+        """A static URI has no parameters for `security` to screen."""
+        with pytest.raises(TypeError, match="security"):
+
+            @mcp_resource(uri="test://x", security=None)
             def my_resource(self):
                 pass
 
@@ -714,3 +723,17 @@ class TestMCPMixinResourceTemplates:
         assert template.mime_type == "application/json"
         assert template.tags == {"data"}
         assert template.meta == {"category": "data"}
+
+    async def test_template_security_forwarded(self):
+        mcp = FastMCP()
+
+        class MyMixin(MCPMixin):
+            @mcp_resource(uri="file:///{path*}", security=None)
+            def read_file(self, path: str) -> str:
+                return f"content:{path}"
+
+        MyMixin().register_resources(mcp)
+
+        # Traversal passes only because this template disabled screening.
+        result = await mcp.read_resource("file:///../etc/passwd")
+        assert result.contents[0].content == "content:../etc/passwd"

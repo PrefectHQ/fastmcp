@@ -36,6 +36,11 @@ _RESOURCE_VALID_KWARGS: frozenset[str] = frozenset(
     for p in inspect.signature(Resource.from_function).parameters
     if p not in ("fn", "uri")
 )
+_TEMPLATE_VALID_KWARGS: frozenset[str] = frozenset(
+    p
+    for p in inspect.signature(ResourceTemplate.from_function).parameters
+    if p not in ("fn", "uri_template")
+)
 _PROMPT_VALID_KWARGS: frozenset[str] = frozenset(
     p for p in inspect.signature(Prompt.from_function).parameters if p != "fn"
 )
@@ -90,27 +95,30 @@ def mcp_resource(
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to mark a method as an MCP resource for later registration.
 
-    Accepts all parameters supported by ``Resource.from_function``.  Any new
-    parameters added to ``Resource.from_function`` are automatically forwarded
-    without requiring changes here.
+    Accepts all parameters supported by `Resource.from_function`, or by
+    `ResourceTemplate.from_function` when the URI has `{param}` placeholders.
+    Any new parameters added to either are automatically forwarded without
+    requiring changes here.
 
     Args:
         uri: Resource URI (required).
         name: Resource name.  Defaults to the decorated method name.
-        enabled: If ``False``, the resource is skipped during registration.
-        **kwargs: Additional keyword arguments forwarded verbatim to
-            ``Resource.from_function`` (e.g. ``description``, ``tags``,
-            ``mime_type``, ``auth``, ``version``, …).
+        enabled: If `False`, the resource is skipped during registration.
+        **kwargs: Additional keyword arguments forwarded verbatim to the
+            matching `from_function` (e.g. `description`, `tags`, `mime_type`,
+            `auth`, `version`, …).
 
     Raises:
         TypeError: If an unrecognised keyword argument is supplied.  The error
             is raised immediately at decoration time rather than later.
     """
-    unknown = set(kwargs) - _RESOURCE_VALID_KWARGS
+    is_template = "{" in uri and "}" in uri
+    valid_kwargs = _TEMPLATE_VALID_KWARGS if is_template else _RESOURCE_VALID_KWARGS
+    unknown = set(kwargs) - valid_kwargs
     if unknown:
         raise TypeError(
             f"mcp_resource() got unexpected keyword argument(s): {sorted(unknown)!r}. "
-            f"Valid keyword arguments are: {sorted(_RESOURCE_VALID_KWARGS)}"
+            f"Valid keyword arguments are: {sorted(valid_kwargs)}"
         )
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
