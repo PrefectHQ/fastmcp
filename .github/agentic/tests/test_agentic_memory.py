@@ -149,3 +149,96 @@ def test_memory_failure_never_stops_triage(config, monkeypatch):
     projected = agentic_stack_runtime.with_related({"evidence": {}}, issue())
     assert projected["evidence"] == {}
     assert projected["related"] == {"unavailable": "RuntimeError: no such block"}
+
+
+def test_assess_plan_gets_memory_tools_only_when_a_server_is_configured(tmp_path):
+    import json
+    from pathlib import Path
+
+    from flows.agentic_stack_plans import build_plans
+
+    source = Path(__file__).resolve().parents[1] / "workflows"
+    models = json.loads((source / "stack-models.json").read_text())
+    models.pop("memory_server", None)
+    (tmp_path / "stack-models.json").write_text(json.dumps(models))
+    plain = build_plans(tmp_path)["assess"]["nodes"]["assess"]
+    assert "mcp" not in plain and "triage_memory" not in plain["objective"]
+
+    models["memory_server"] = {
+        "url": "https://memory.example/mcp",
+        "header_block_id": "b1",
+    }
+    (tmp_path / "stack-models.json").write_text(json.dumps(models))
+    plans = build_plans(tmp_path)
+    server = plans["assess"]["nodes"]["assess"]["mcp"]["mcpServers"]["triage_memory"]
+    assert server["url"] == "https://memory.example/mcp"
+    assert server["headers"]["Authorization"] == {"$ref": {"block_document_id": "b1"}}
+    assert server["tools"] == ["search", "read"]
+    assert "triage_memory search" in plans["assess"]["nodes"]["assess"]["objective"]
+    assert "mcp" not in plans["reproduce"]["nodes"]["reproduce"]
+    haiku = build_plans(tmp_path, "haiku")["assess"]["nodes"]["assess"]
+    assert haiku["mcp"] == plans["assess"]["nodes"]["assess"]["mcp"]
+
+
+def test_memory_server_search_and_read(monkeypatch):
+    import asyncio
+
+    import httpx
+    from fastmcp import Client
+
+    import memory_server
+
+    class FakeIndex:
+        def search(self, text, kind, exclude, limit):
+            assert kind == "pr" and exclude == {7}
+            return [
+                {"number": 9, "title": "fix", "state": "merged", "text": "x" * 900},
+                {"number": 9, "title": "fix", "state": "merged", "text": "y"},
+                {"number": 10, "title": "other", "state": "open", "text": "z"},
+            ]
+
+    monkeypatch.setattr(memory_server, "_index", FakeIndex())
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/comments"):
+            page = int(request.url.params["page"])
+            later = {**COMMENTS[0], "body": "maintainer: decided"}
+            return httpx.Response(200, json=COMMENTS * 50 if page == 1 else [later])
+        return httpx.Response(200, json=issue())
+
+    real = httpx.Client
+    monkeypatch.setattr(
+        memory_server.httpx,
+        "Client",
+        lambda **kw: real(transport=httpx.MockTransport(handler), **kw),
+    )
+
+    async def calls():
+        async with Client(memory_server.mcp) as client:
+            hits = (
+                await client.call_tool(
+                    "search", {"query": "hang", "kind": "pr", "exclude": [7]}
+                )
+            ).structured_content["result"]
+            assert [h["number"] for h in hits] == [9, 10]
+            assert len(hits[0]["snippet"]) == 600
+            assert hits[0]["url"].endswith("/pull/9")
+            item = (await client.call_tool("read", {"number": 7})).structured_content
+            assert item["state"] == "closed (completed)"
+            assert (
+                "same here" in item["text"] and "possible duplicate" not in item["text"]
+            )
+
+    asyncio.run(calls())
+
+
+def test_committed_plans_match_the_generator():
+    import json
+    from pathlib import Path
+
+    from flows.agentic_stack_plans import build_plans
+
+    directory = Path(__file__).resolve().parents[1] / "workflows"
+    for role, plan in build_plans(directory).items():
+        committed = directory / f"fastmcp-stack-{role}.plan.json"
+        assert json.loads(committed.read_text()) == plan, role

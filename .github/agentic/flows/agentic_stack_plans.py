@@ -250,11 +250,55 @@ def tier_models(models: dict, tier: str | None) -> dict:
     return {
         "connection_id": override.get("connection_id", models["connection_id"]),
         "roles": {**models["roles"], **override.get("roles", {})},
+        "memory_server": models.get("memory_server"),
     }
 
 
 def plan_suffix(tier: str | None) -> str:
     return "" if tier is None else f".{tier}"
+
+
+MEMORY_ROLES = ("assess",)
+MEMORY_NOTE = """
+
+You have two read-only tools over fastmcp's past issues, PRs and human comments:
+triage_memory search (hybrid keyword and meaning search, issues or PRs, one hit
+per item) and triage_memory read (an item's current text from GitHub). Search
+with the error message, the symptom and the API involved, and search PRs as well
+as issues. context.related has the first results for the issue text. A hit is a
+lead, not a finding: read it before naming it in prior_art or calling this a
+duplicate, already fixed or already decided."""
+
+
+def memory_tools(role: str, models: dict) -> dict:
+    """The triage memory MCP server for roles that use it, when one is configured.
+
+    The server holds the turbopuffer key; the agent presents a bearer token
+    read from a Prefect Secret block when its attempt starts.
+    """
+    server = models.get("memory_server")
+    if role not in MEMORY_ROLES or not server:
+        return {}
+    return {
+        "mcp": {
+            "mcpServers": {
+                "triage_memory": {
+                    "type": "http",
+                    "url": server["url"],
+                    "headers": {
+                        "Authorization": {
+                            "$ref": {"block_document_id": server["header_block_id"]}
+                        }
+                    },
+                    "tools": ["search", "read"],
+                }
+            }
+        }
+    }
+
+
+def memory_note(role: str, models: dict) -> str:
+    return MEMORY_NOTE if memory_tools(role, models) else ""
 
 
 def build_plans(directory: Path, tier: str | None = None) -> dict[str, dict]:
@@ -278,12 +322,16 @@ def build_plans(directory: Path, tier: str | None = None) -> dict[str, dict]:
                         "connection_id": models["connection_id"],
                         **models["roles"][model_role],
                     },
-                    "objective": COMMON + "\n" + OBJECTIVES[role],
+                    "objective": COMMON
+                    + "\n"
+                    + OBJECTIVES[role]
+                    + memory_note(role, models),
                     "inputs": {
                         name: {"schema": {"type": "object"}}
                         for name in ("instructions", "context")
                     },
                     "outputs": {"result": {"schema": output.model_json_schema()}},
+                    **memory_tools(role, models),
                     "orchestration": {
                         "output_selection": "exactly_one",
                         "evaluate_when": "all_required_inputs_produced",

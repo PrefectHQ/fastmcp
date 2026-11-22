@@ -10,7 +10,13 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8,<10", "ruff==0.17.2", "ty>=0.0.1"]
+dev = [
+    "pytest>=8,<10",
+    "ruff==0.17.2",
+    "ty>=0.0.1",
+    { include-group = "memory-server" },
+]
+memory-server = ["fastmcp>=4.2,<5"]
 
 [tool.uv]
 package = false
