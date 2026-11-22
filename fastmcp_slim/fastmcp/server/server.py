@@ -435,8 +435,13 @@ class _SchemaCacheLocalProvider(LocalProvider):
         if not isinstance(transform, Visibility):
             self._schema_cache.clear()
 
-    def add_tool(self, tool: Tool | Callable[..., Any]) -> Tool:
-        added = super().add_tool(tool)
+    def add_tool(
+        self,
+        tool: Tool | Callable[..., Any],
+        *,
+        default_task: bool | TaskConfig | None = None,
+    ) -> Tool:
+        added = super().add_tool(tool, default_task=default_task)
         # Seed from the version dispatch serves, not necessarily the one just
         # added: registering an older version after a newer one must not
         # replace the newer version's schema in the cache.
