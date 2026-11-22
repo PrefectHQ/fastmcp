@@ -79,5 +79,5 @@ For a visual change, run `npx --yes mint@latest dev` in `docs/` and look at the 
 
 - `VersionBadge` marks when a feature arrived. Leave old badges alone; they are history, not staleness.
 - `docs/v2/` and `docs/v3/` are frozen snapshots of earlier majors. Maintenance releases add changelog entries there and nothing else.
-- The version picker label lives in `docs/docs.json` under `navigation.versions[0].version` and is bumped by hand.
+- The version picker label lives in `docs/docs.json` under `navigation.versions[0].version`. It names the major (`v4`), so releases within a major leave it alone; change it when a new major ships.
 - `mcp_types` is the real name of the protocol types package in 4.x.

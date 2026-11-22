@@ -517,6 +517,40 @@ class TestSessionVisibilityNotifications:
                 == 0
             )
 
+    async def test_server_level_disable_sends_no_notification(self):
+        """Server-level disable changes the list silently; a tool can notify itself."""
+        from fastmcp import Client
+
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        def target() -> str:
+            return "target"
+
+        @mcp.tool
+        def hide_silently() -> str:
+            mcp.disable(names={"target"})
+            return "hidden"
+
+        @mcp.tool
+        async def show_and_notify(ctx: Context) -> str:
+            mcp.enable(names={"target"})
+            await ctx.send_notification(mcp_types.ToolListChangedNotification())
+            return "shown"
+
+        handler = RecordingMessageHandler()
+        async with Client(mcp, message_handler=handler) as client:
+            handler.reset()
+            await client.call_tool("hide_silently", {})
+            assert handler.get_notifications("notifications/tools/list_changed") == []
+            assert "target" not in {t.name for t in await client.list_tools()}
+
+            await client.call_tool("show_and_notify", {})
+            assert (
+                len(handler.get_notifications("notifications/tools/list_changed")) == 1
+            )
+            assert "target" in {t.name for t in await client.list_tools()}
+
 
 class TestConcurrentSessionIsolation:
     """Test that concurrent sessions don't leak visibility transforms."""

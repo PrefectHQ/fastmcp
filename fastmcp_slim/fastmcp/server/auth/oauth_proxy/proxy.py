@@ -56,7 +56,7 @@ from mcp.server.auth.provider import (
     RegistrationError,
     TokenError,
 )
-from mcp.server.auth.routes import build_metadata, cors_middleware
+from mcp.server.auth.routes import build_metadata, cors_middleware, create_auth_routes
 from mcp.server.auth.settings import (
     ClientRegistrationOptions,
     RevocationOptions,
@@ -77,6 +77,7 @@ from fastmcp.server.auth.auth import (
     OAuthProvider,
     PrivateKeyJWTClientAuthenticator,
     TokenHandler,
+    TokenVerificationError,
     TokenVerifier,
 )
 from fastmcp.server.auth.cimd import CIMDClientManager
@@ -108,6 +109,10 @@ from fastmcp.server.auth.oauth_proxy.models import (
     RefreshTokenMetadata,
     UpstreamTokenSet,
     _hash_token,
+)
+from fastmcp.server.auth.oauth_proxy.revocation import (
+    RevocableAccessToken,
+    RevocationProvider,
 )
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
 from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client, OAuthError
@@ -246,7 +251,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     5. Token Management:
        - Clients may expect different token formats/claims than upstream provides
        - Need to track tokens for revocation and refresh
-       - Solution: Store token relationships, forward upstream tokens transparently
+       - Solution: Issue FastMCP-signed JWTs and map their JTIs to the stored upstream tokens
 
     OAuth Flow Implementation
     ------------------------
@@ -266,7 +271,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
     4. Token Exchange:
        - Validate client's code and PKCE verifier
-       - Return previously obtained upstream tokens
+       - Issue FastMCP access/refresh tokens backed by the stored upstream tokens
        - Clean up one-time use authorization code
 
     5. Token Refresh:
@@ -277,8 +282,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     State Management
     ---------------
     The proxy maintains minimal but crucial state via pluggable storage (client_storage):
-    - _oauth_transactions: Active authorization flows with client context
-    - _client_codes: Authorization codes with PKCE challenges and upstream tokens
+    - _transaction_store: Active authorization flows with client context
+    - _code_store: Authorization codes with PKCE challenges and upstream tokens
+    - _upstream_token_store: Upstream token sets
     - _jti_mapping_store: Maps FastMCP token JTIs to upstream token IDs
     - _refresh_token_store: Refresh token metadata (keyed by token hash)
 
@@ -587,7 +593,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         if isinstance(jwt_signing_key, str):
             if len(jwt_signing_key) < 12:
                 logger.warning(
-                    "jwt_signing_key is less than 12 characters; it is recommended to use a longer. "
+                    "jwt_signing_key is less than 12 characters; it is recommended to use a longer "
                     "string for the key derivation."
                 )
             jwt_signing_key = derive_jwt_key(
@@ -1397,8 +1403,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # identifier_uri prefix Azure echoes back on custom API scopes.
         granted_scopes = self._translate_scopes_from_idp(granted_scopes)
 
-        # Clean up client code (one-time use)
-        await self._code_store.delete(key=authorization_code.code)
+        # Consume the code before issuing anything. delete() reports whether
+        # this call removed the key, so of two concurrent redemptions only one
+        # wins, including across replicas sharing a store.
+        if not await self._code_store.delete(key=authorization_code.code):
+            raise TokenError("invalid_grant", "Authorization code already used")
 
         # Generate IDs for token storage
         upstream_token_id = secrets.token_urlsafe(32)
@@ -1993,18 +2002,35 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Guard against past expiry (e.g. existing upstream refresh has already
         # ticked past its recorded expiry). Storage TTL must be > 0.
         refresh_ttl = max(refresh_ttl, 1)
-        await self._upstream_token_store.put(
-            key=upstream_token_set.upstream_token_id,
-            value=upstream_token_set,
-            ttl=max(
-                refresh_ttl, new_expires_in, fastmcp_access_expires_in, 1
-            ),  # Keep until longest-lived token expires (min 1s for safety)
-        )
 
-        # Re-extract upstream claims from refreshed token response
-        upstream_claims = await self._extract_upstream_claims(
-            upstream_token_set.raw_token_data
-        )
+        # Re-extract upstream claims from refreshed token response. Record them
+        # on the token set as well, so load_access_token serves them for every
+        # FastMCP token that points at this upstream session. The refreshed
+        # (possibly rotated) upstream tokens are persisted even if the
+        # extraction raises.
+        try:
+            upstream_claims = await self._extract_upstream_claims(
+                upstream_token_set.raw_token_data
+            )
+            upstream_token_set.upstream_claims = upstream_claims or {}
+        finally:
+            await self._upstream_token_store.put(
+                key=upstream_token_set.upstream_token_id,
+                value=upstream_token_set,
+                ttl=max(
+                    refresh_ttl, new_expires_in, fastmcp_access_expires_in, 1
+                ),  # Keep until longest-lived token expires (min 1s for safety)
+            )
+
+        # Consume the FastMCP refresh token before issuing successors.
+        # delete() reports whether this call removed the key, so of two
+        # concurrent refreshes only one wins, including across replicas sharing
+        # a store. Claiming this late means a failed upstream refresh or claims
+        # extraction leaves the token usable for a retry.
+        if not await self._refresh_token_store.delete(
+            key=_hash_token(refresh_token.token)
+        ):
+            raise TokenError("invalid_grant", "Refresh token already used")
 
         # Issue new minimal FastMCP access token (just a reference via JTI)
         if client.client_id is None:
@@ -2072,9 +2098,6 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             ),
             ttl=refresh_ttl,
         )
-
-        # Delete old refresh token (by hash)
-        await self._refresh_token_store.delete(key=_hash_token(refresh_token.token))
 
         logger.info(
             "Issued new FastMCP tokens (rotated refresh) for client=%s (access_jti=%s, refresh_jti=%s)",
@@ -2197,6 +2220,21 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             **token_response,
         }
 
+        # Re-extract upstream claims from the refreshed token response, as the
+        # refresh grant does. The FastMCP JWT cannot be re-issued here, so the
+        # claims are recorded on the token set and load_access_token prefers
+        # them over the copy embedded in the JWT at issuance. A failed
+        # extraction must not lose the (possibly rotated) upstream tokens, so
+        # it drops the claims instead of raising.
+        try:
+            refreshed_claims = await self._extract_upstream_claims(
+                upstream_token_set.raw_token_data
+            )
+        except Exception as e:
+            logger.debug("Upstream claim extraction failed after refresh: %s", e)
+            refreshed_claims = None
+        upstream_token_set.upstream_claims = refreshed_claims or {}
+
         refresh_ttl = new_refresh_expires_in or (
             int(upstream_token_set.refresh_token_expires_at - time.time())
             if upstream_token_set.refresh_token_expires_at
@@ -2217,7 +2255,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         return upstream_token_set
 
-    async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]  # ty:ignore[invalid-method-override]
+    async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]  # ty:ignore[incompatible-method-override]
         """Validate FastMCP JWT by swapping for upstream token.
 
         This implements the token swap pattern:
@@ -2340,6 +2378,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                                 validated = await self._token_validator.verify_token(
                                     verification_token
                                 )
+                except TokenVerificationError:
+                    raise
                 except Exception as e:
                     logger.debug("Transparent upstream refresh failed: %s", e)
                     # In a distributed deployment, another worker may have
@@ -2357,6 +2397,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                                 )
                                 if validated:
                                     upstream_token_set = reloaded
+                    except TokenVerificationError:
+                        raise
                     except Exception as reload_error:
                         logger.debug(
                             "Re-read of upstream token after refresh failure also failed: %s",
@@ -2384,10 +2426,34 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         "expires_at": int(upstream_token_set.expires_at),
                     }
                 )
+                # A verifier without its own required_scopes (e.g. one that
+                # checks an opaque token via userinfo, or an id_token) cannot
+                # enforce the provider's required_scopes. Check them here
+                # against the patched upstream scopes, so the requirement
+                # holds even when an outer layer (e.g. MultiAuth with
+                # required_scopes=[]) does not enforce it.
+                missing_scopes = (
+                    set()
+                    if self._token_validator.required_scopes
+                    else set(self.required_scopes or []) - set(validated.scopes)
+                )
+                if missing_scopes:
+                    logger.debug(
+                        "Upstream token is missing required scopes: %s",
+                        sorted(missing_scopes),
+                    )
+                    return None
 
-            # Propagate upstream claims from the verified FastMCP JWT into the
+            # The upstream session may have been refreshed since this JWT was
+            # issued. The claims extracted at that refresh are the current ones;
+            # the copy embedded in the JWT dates from issuance.
+            if upstream_token_set.upstream_claims is not None:
+                upstream_claims = upstream_token_set.upstream_claims
+
+            # Propagate upstream claims (recorded at the latest refresh, or
+            # else embedded in the verified FastMCP JWT at issuance) into the
             # final AccessToken object. This allows subclasses to access custom
-            # identity data extracted during the initial authorization flow.
+            # identity data extracted from the upstream token response.
             # We perform a model copy to avoid mutating a potentially cached
             # reference shared across concurrent requests.
             if validated and upstream_claims:
@@ -2401,6 +2467,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             )
             return validated
 
+        except TokenVerificationError:
+            raise
         except Exception as e:
             logger.debug("Token swap validation failed: %s", e)
             return None
@@ -2412,13 +2480,21 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         """Revoke token locally and with upstream server if supported.
 
-        For refresh tokens, removes from local storage by hash.
-        For all tokens, attempts upstream revocation if endpoint is configured.
-        Access token JTI mappings expire via TTL.
+        For refresh tokens, removes from local storage by hash and ends the
+        grant, so the access tokens issued alongside it stop validating too
+        (RFC 7009 section 2.1). For an access
+        token presented to the revocation route, removes its JTI mapping, so
+        the token cannot validate again after a refresh puts a new upstream
+        token behind its grant. An `AccessToken` from `load_access_token`
+        carries only the upstream token, so revoking one directly revokes
+        upstream but cannot retire the FastMCP token. For all tokens,
+        attempts upstream revocation if endpoint is configured.
         """
         # For refresh tokens, delete from local storage by hash
         if isinstance(token, RefreshToken):
             await self._refresh_token_store.delete(key=_hash_token(token.token))
+            await self._revoke_refresh_grant(token)
+            return
 
         # ID-JAG access tokens are self-contained and never known upstream, so
         # upstream revocation cannot invalidate them. Track the jti locally so
@@ -2442,69 +2518,85 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 logger.debug("Revoked ID-JAG access token jti=%s", jti[:16])
             return
 
-        # Attempt upstream revocation if endpoint is configured
-        if self._upstream_revocation_endpoint:
-            try:
-                # For refresh tokens, resolve the upstream refresh token via
-                # JTI mapping so we revoke the token the authorization server
-                # actually issued, not the FastMCP-issued JWT wrapper.
-                if isinstance(token, RefreshToken):
-                    refresh_payload = self.jwt_issuer.verify_token(
-                        token.token, expected_token_use="refresh"
-                    )
-                    refresh_jti = refresh_payload["jti"]
-                    jti_mapping = await self._jti_mapping_store.get(key=refresh_jti)
-                    if jti_mapping is None:
-                        logger.warning("No JTI mapping found for refresh token")
-                        return
+        # Every FastMCP access token of a grant maps to the grant's one
+        # upstream record, which a refresh rewrites. Revoking upstream alone
+        # would let this token validate again against the next upstream
+        # token, so retire its mapping too.
+        if isinstance(token, RevocableAccessToken):
+            await self._jti_mapping_store.delete(key=token.fastmcp_jti)
+            if not token.upstream_live:
+                logger.debug("Retired access token; its upstream token is gone")
+                return
 
-                    upstream_token_set = await self._upstream_token_store.get(
-                        key=jti_mapping.upstream_token_id
-                    )
-                    if (
-                        upstream_token_set is None
-                        or not upstream_token_set.refresh_token
-                    ):
-                        logger.warning("No upstream refresh token found")
-                        return
-
-                    upstream_token_to_revoke = upstream_token_set.refresh_token
-                else:
-                    upstream_token_to_revoke = token.token
-
-                async with httpx2.AsyncClient(
-                    timeout=HTTP_TIMEOUT_SECONDS
-                ) as http_client:
-                    revocation_data: dict[str, str] = {
-                        "token": upstream_token_to_revoke
-                    }
-                    request_kwargs: dict[str, Any] = {"data": revocation_data}
-
-                    # Use the factory method when available (supports alternative auth like
-                    # client assertions for managed identity), falling back to basic auth
-                    # or client_id-only for public clients per RFC 7009
-                    async with self._upstream_oauth_client() as oauth_client:
-                        if oauth_client.client_secret is not None:
-                            # Client secret is available, use HTTP Basic auth
-                            request_kwargs["auth"] = (
-                                self._upstream_client_id,
-                                oauth_client.client_secret,
-                            )
-                        else:
-                            # No secret; public client must still identify itself per RFC 7009
-                            revocation_data["client_id"] = self._upstream_client_id
-
-                    await http_client.post(
-                        self._upstream_revocation_endpoint,
-                        **request_kwargs,
-                    )
-                    logger.debug("Successfully revoked token with upstream server")
-            except Exception as e:
-                logger.warning("Failed to revoke token with upstream server: %s", e)
-        else:
-            logger.debug("No upstream revocation endpoint configured")
-
+        await self._revoke_upstream(token.token)
         logger.debug("Token revoked successfully")
+
+    async def _revoke_refresh_grant(self, token: RefreshToken) -> None:
+        """Revoke a refresh token's grant upstream and end it locally.
+
+        RFC 7009 says revoking a refresh token should also invalidate the
+        access tokens of the same grant. Every FastMCP token of a grant maps
+        to one upstream record, so removing that record ends them all.
+        """
+        try:
+            refresh_payload = self.jwt_issuer.verify_token(
+                token.token, expected_token_use="refresh"
+            )
+            refresh_jti = refresh_payload["jti"]
+        except (JoseError, ValueError, KeyError) as e:
+            logger.warning("Failed to revoke token with upstream server: %s", e)
+            return
+
+        jti_mapping = await self._jti_mapping_store.get(key=refresh_jti)
+        if jti_mapping is None:
+            logger.warning("No JTI mapping found for refresh token")
+            return
+
+        upstream_token_set = await self._upstream_token_store.get(
+            key=jti_mapping.upstream_token_id
+        )
+        if upstream_token_set is None or not upstream_token_set.refresh_token:
+            logger.warning("No upstream refresh token found")
+        else:
+            # Revoke the token the authorization server actually issued, not
+            # the FastMCP-issued JWT wrapper.
+            await self._revoke_upstream(upstream_token_set.refresh_token)
+
+        await self._jti_mapping_store.delete(key=refresh_jti)
+        await self._upstream_token_store.delete(key=jti_mapping.upstream_token_id)
+        logger.debug("Revoked refresh token and ended its grant")
+
+    async def _revoke_upstream(self, upstream_token: str) -> None:
+        """Best-effort revocation of an upstream token, when supported."""
+        if not self._upstream_revocation_endpoint:
+            logger.debug("No upstream revocation endpoint configured")
+            return
+        try:
+            async with httpx2.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as http_client:
+                revocation_data: dict[str, str] = {"token": upstream_token}
+                request_kwargs: dict[str, Any] = {"data": revocation_data}
+
+                # Use the factory method when available (supports alternative auth like
+                # client assertions for managed identity), falling back to basic auth
+                # or client_id-only for public clients per RFC 7009
+                async with self._upstream_oauth_client() as oauth_client:
+                    if oauth_client.client_secret is not None:
+                        # Client secret is available, use HTTP Basic auth
+                        request_kwargs["auth"] = (
+                            self._upstream_client_id,
+                            oauth_client.client_secret,
+                        )
+                    else:
+                        # No secret; public client must still identify itself per RFC 7009
+                        revocation_data["client_id"] = self._upstream_client_id
+
+                await http_client.post(
+                    self._upstream_revocation_endpoint,
+                    **request_kwargs,
+                )
+                logger.debug("Successfully revoked token with upstream server")
+        except Exception as e:
+            logger.warning("Failed to revoke token with upstream server: %s", e)
 
     def get_routes(
         self,
@@ -2515,6 +2607,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         This method creates standard OAuth routes and replaces:
         - /authorize endpoint: Enhanced error responses for unregistered clients
         - /token endpoint: OAuth 2.1 compliant error codes
+        - /revoke endpoint: Downstream client ownership without changing user identity
 
         Args:
             mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
@@ -2591,6 +2684,24 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         ),
                         methods=["POST", "OPTIONS"],
                     )
+                )
+            elif (
+                isinstance(route, Route)
+                and route.path == "/revoke"
+                and route.methods is not None
+                and "POST" in route.methods
+            ):
+                # Let the SDK retain its request-size limit, CORS, and other
+                # endpoint protections; only token ownership needs adapting.
+                revocation_routes = create_auth_routes(
+                    provider=RevocationProvider(self),
+                    issuer_url=self.base_url,  # ty: ignore[invalid-argument-type]
+                    revocation_options=self.revocation_options,
+                )
+                custom_routes.extend(
+                    candidate
+                    for candidate in revocation_routes
+                    if candidate.path == route.path
                 )
             elif (
                 isinstance(route, Route)

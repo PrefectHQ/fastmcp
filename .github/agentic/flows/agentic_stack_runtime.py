@@ -20,11 +20,15 @@ from prefect.client.orchestration import get_client
 from prefect.client.schemas.actions import ArtifactCreate
 from prefect.client.schemas.filters import ArtifactFilter, FlowRunFilter
 from prefect.utilities.asyncutils import run_coro_as_sync
+from prefect.variables import Variable
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from flows.agentic_assessment_cache import assessment_candidates, assessment_key
+from flows.agentic_labels import CONFIG_VARIABLE
+from flows.agentic_memory import SECRET_BLOCK as MEMORY_SECRET
+from flows.agentic_memory import Index, memory_config, related
 from flows.agentic_review_app import ReviewApp
-from flows.agentic_stack import digest
+from flows.agentic_stack import digest, same_json
 from flows.agentic_stack_context import assessment_context as project_assessment
 from flows.agentic_stack_plans import OUTPUTS
 
@@ -213,7 +217,7 @@ def record(owner: UUID, key: str, data: dict) -> str:
             limit=2,
         )
         if previous:
-            if len(previous) != 1 or previous[0].data != data:
+            if len(previous) != 1 or not same_json(previous[0].data, data):
                 raise ValueError("Conflicting durable controller record")
             return str(previous[0].id)
         artifact = client.create_artifact(
@@ -285,7 +289,24 @@ def assessment_context(item: dict) -> dict:
             cache[endpoint] = gh_api(endpoint, environment, 30)
         return cache[endpoint]
 
-    return project_assessment(item, read)
+    return with_related(project_assessment(item, read), item["evidence"]["issue"])
+
+
+def with_related(projected: dict, issue: dict) -> dict:
+    """Add `related` past issues and PRs to an assessment when memory is on.
+
+    Memory is a hint, so an outage must never stop triage: a failed lookup
+    records why and the assessment goes ahead without it.
+    """
+    config = memory_config(Variable.get(CONFIG_VARIABLE, default={}))
+    if config.mode == "off":
+        return projected
+    try:
+        index = Index(config, secret_sync(MEMORY_SECRET))
+        found = related(index.search, issue, config.top_k)
+    except Exception as error:  # any failure degrades to no hint
+        found = {"unavailable": f"{type(error).__name__}: {str(error)[:200]}"}
+    return {**projected, "related": found}
 
 
 def judge(

@@ -9,7 +9,7 @@ Requires ``fastmcp[apps]`` (prefab-ui).
 Usage::
 
     from fastmcp import FastMCP
-    from fastmcp.apps import FileUpload
+    from fastmcp.apps.file_upload import FileUpload
 
     mcp = FastMCP("My Server")
     mcp.add_provider(FileUpload())

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp.prompts.base import Prompt
 from fastmcp.resources.base import Resource
+from fastmcp.resources.template import ResourceTemplate
 from fastmcp.tools.base import Tool
 from fastmcp.utilities.types import get_fn_name
 
@@ -229,6 +230,9 @@ class MCPMixin:
     ) -> None:
         """Registers all methods marked with @mcp_resource with the FastMCP server.
 
+        A method whose URI contains `{param}` placeholders is registered as a
+        resource template; any other method is registered as a static resource.
+
         Args:
             mcp_server: The FastMCP server instance to register resources with.
             prefix: Optional prefix to prepend to resource names and URIs.  If
@@ -253,8 +257,17 @@ class MCPMixin:
             if enabled is False:
                 continue
 
-            resource = Resource.from_function(fn=method, **registration_info)
-            mcp_server.add_resource(resource)
+            uri = registration_info.pop("uri")
+            if "{" in uri and "}" in uri:
+                template = ResourceTemplate.from_function(
+                    fn=method, uri_template=uri, **registration_info
+                )
+                mcp_server.add_template(template)
+            else:
+                resource = Resource.from_function(
+                    fn=method, uri=uri, **registration_info
+                )
+                mcp_server.add_resource(resource)
 
     def register_prompts(
         self,

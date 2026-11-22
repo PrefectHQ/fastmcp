@@ -319,7 +319,7 @@ class ToolDecoratorMixin:
                 run_in_thread=run_in_thread,
             )
             target = fn.__func__ if hasattr(fn, "__func__") else fn
-            target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
             self.add_tool(fn)
             return fn
 

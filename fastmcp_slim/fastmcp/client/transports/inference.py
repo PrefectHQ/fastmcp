@@ -142,7 +142,7 @@ def infer_transport(
     if isinstance(transport, ClientTransport):
         return transport
 
-    # the transport is a FastMCP server (2.x or 1.0)
+    # the transport is a FastMCP server or the SDK's MCPServer
     elif _is_fastmcp_server(transport):
         inferred_transport = FastMCPTransport(
             mcp=cast("FastMCP[Any] | SDKServer", transport)

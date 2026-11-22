@@ -138,7 +138,7 @@ class TestTransformToolOutputSchema:
     ):
         """A transform_fn's ToolResult is returned unchanged when the explicit
         output schema is an object without a top-level "type": "object" key
-        (properties-only), matching _is_object_schema classification."""
+        (properties-only), matching is_object_schema classification."""
 
         async def custom_fn(x: int) -> ToolResult:
             return ToolResult(
@@ -165,7 +165,7 @@ class TestTransformToolOutputSchema:
     async def test_transform_fn_result_kept_for_root_ref_schema(self, base_string_tool):
         """A transform_fn's ToolResult is returned unchanged when the explicit
         output schema is an object via a root-level $ref, matching
-        _is_object_schema classification."""
+        is_object_schema classification."""
 
         async def custom_fn(x: int) -> ToolResult:
             return ToolResult(

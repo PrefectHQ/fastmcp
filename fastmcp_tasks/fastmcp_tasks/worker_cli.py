@@ -105,7 +105,7 @@ def check_distributed_backend(settings: DocketSettings) -> None:
             "[bold red]✗ In-memory backend not supported by CLI[/bold red]\n\n"
             "Your Docket configuration uses an in-memory backend (memory://) which\n"
             "only works within a single process.\n\n"
-            "To use [cyan]fastmcp tasks[/cyan] CLI commands (which run in separate\n"
+            "To run [cyan]fastmcp_tasks.worker_cli[/cyan] workers (which run in separate\n"
             "processes), you need a distributed backend:\n\n"
             "[bold]1. Install Redis or Valkey:[/bold]\n"
             "   [dim]macOS:[/dim]     brew install redis\n"
@@ -119,7 +119,7 @@ def check_distributed_backend(settings: DocketSettings) -> None:
             "[bold]4. Try again[/bold]\n\n"
             "The memory backend works great for single-process servers, but the CLI\n"
             "commands need a distributed backend to coordinate across processes.\n\n"
-            "Need help? See: [cyan]https://gofastmcp.com/docs/tasks[/cyan]"
+            "Need help? See: [cyan]https://gofastmcp.com/servers/tasks[/cyan]"
         )
         sys.exit(1)
 
@@ -140,8 +140,8 @@ def worker(
     (FASTMCP_DOCKET_*).
 
     Example:
-        fastmcp tasks worker server.py
-        fastmcp tasks worker examples/tasks/server.py
+        python -m fastmcp_tasks.worker_cli worker server.py
+        python -m fastmcp_tasks.worker_cli worker examples/tasks/server.py
     """
     # Load server to get task functions
     try:

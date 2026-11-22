@@ -142,6 +142,35 @@ async def test_follows_backend_pagination() -> None:
     ]
 
 
+class EmptyCursorSkillsExtension(SkillsExtension):
+    """Spells the first page's continuation cursor as the empty string."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._first_cursor: str | None = None
+
+    async def _handle_list(self, context, params):
+        if params.cursor == "":
+            params = params.model_copy(update={"cursor": self._first_cursor})
+        result = await super()._handle_list(context, params)
+        if params.cursor is None and result.next_cursor is not None:
+            self._first_cursor = result.next_cursor
+            result = result.model_copy(update={"next_cursor": ""})
+        return result
+
+
+async def test_follows_empty_backend_cursor() -> None:
+    upstream = backend(REVIEW, DEPLOY, page_size=1)
+    upstream.add_extension(EmptyCursorSkillsExtension())
+
+    async with skills_client(gateway(upstream)) as client:
+        listed = await client.list_skills()
+    assert [skill.uri for skill in listed] == [
+        "skill://deploy/SKILL.md",
+        "skill://review/SKILL.md",
+    ]
+
+
 class ListSkillsRequests(Middleware):
     def __init__(self) -> None:
         self.count = 0

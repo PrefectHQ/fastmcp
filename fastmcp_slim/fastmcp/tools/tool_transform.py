@@ -5,7 +5,7 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal, LiteralString, cast
 
 import mcp_types
 from mcp_types import ToolAnnotations
@@ -14,20 +14,26 @@ from pydantic import ValidationError as PydanticValidationError
 from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator
 from pydantic.json_schema import SkipJsonSchema
+from pydantic_core import InitErrorDetails, PydanticCustomError
 
+from fastmcp.exceptions import ValidationError
 from fastmcp.tools.base import (
     InputRequiredToolResult,
     Tool,
     ToolResult,
 )
-from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
+from fastmcp.tools.function_parsing import ParsedFunction
 from fastmcp.tools.function_tool import FunctionTool, _ToolBodyError, _wrap_body_errors
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
 from fastmcp.utilities.components import _convert_set_default_none
-from fastmcp.utilities.json_schema import _METADATA_KEYS, compress_schema
+from fastmcp.utilities.json_schema import (
+    _METADATA_KEYS,
+    compress_schema,
+    is_object_schema,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     FastMCPBaseModel,
@@ -121,6 +127,29 @@ def _structural_kind(schema: dict[str, Any]) -> tuple[Any, ...]:
             ),
         )
     return ("type", schema_type)
+
+
+def _rename_error_locations(
+    exc: PydanticValidationError, old_to_new: dict[str, str]
+) -> PydanticValidationError:
+    """Rebuild a parent tool's validation error using the transformed argument names."""
+    line_errors: list[InitErrorDetails] = []
+    for error in exc.errors(include_url=False):
+        loc = error["loc"]
+        if loc and loc[0] in old_to_new:
+            loc = (old_to_new[loc[0]], *loc[1:])
+        # Custom errors: pydantic only rebuilds built-in error types by name.
+        line_errors.append(
+            {
+                "type": PydanticCustomError(
+                    cast(LiteralString, error["type"]),
+                    cast(LiteralString, error["msg"]),
+                ),
+                "loc": loc,
+                "input": error["input"],
+            }
+        )
+    return PydanticValidationError.from_exception_data(exc.title, line_errors)
 
 
 # Context variable to store current transformed tool
@@ -445,7 +474,7 @@ class TransformedTool(Tool):
                                 break
 
                 if not has_factory_default:
-                    arguments[param_name] = param_schema["default"]
+                    arguments[param_name] = deepcopy(param_schema["default"])
 
         token = _current_tool.set(self)
         try:
@@ -476,9 +505,13 @@ class TransformedTool(Tool):
 
             # If transform function returns ToolResult, respect our output_schema setting
             if isinstance(result, ToolResult):
+                if self.output_schema == self.parent_tool.output_schema:
+                    # A forwarding transform inherits its parent's result
+                    # shape, including modern raw values and legacy wrappers.
+                    return result
                 if self.output_schema is None:
                     return result
-                elif not _is_object_schema(
+                elif not is_object_schema(
                     self.output_schema
                 ) and not self.output_schema.get("x-fastmcp-wrap-result"):
                     # Non-object explicit schemas disable structured content
@@ -734,6 +767,8 @@ class TransformedTool(Tool):
             meta=final_meta,
             transform_args=transform_args,
             auth=tool.auth,
+            task_config=tool.task_config,
+            execution=tool.execution,
         )
 
         return transformed_tool
@@ -840,6 +875,8 @@ class TransformedTool(Tool):
             schema["$defs"] = parent_defs
             schema = compress_schema(schema)
 
+        renamed_args = {old: new for new, old in new_to_old.items() if old != new}
+
         # Create forwarding function that closes over everything it needs
         async def _forward(**kwargs: Any):
             # Validate arguments
@@ -874,7 +911,17 @@ class TransformedTool(Tool):
                     if callable(transform.default_factory):
                         parent_args[old_name] = transform.default_factory()
 
-            return await parent_tool.run(parent_args)
+            try:
+                return await parent_tool.run(parent_args)
+            except ValidationError as exc:
+                # Report the parent's errors under this tool's argument names.
+                cause = exc.__cause__
+                if not renamed_args or not isinstance(cause, PydanticValidationError):
+                    raise
+                renamed = _rename_error_locations(cause, renamed_args)
+                raise ValidationError(
+                    str(renamed), log_level=exc.log_level
+                ) from renamed
 
         return schema, _forward
 

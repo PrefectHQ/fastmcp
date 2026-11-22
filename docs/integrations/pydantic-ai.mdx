@@ -62,6 +62,8 @@ Pass a FastMCP [transport](/clients/transports) such as `StdioTransport` for con
 For a bearer token, pass `headers`. For [OAuth](/clients/auth/oauth), pass `auth="oauth"` or build the `Client` yourself.
 
 ```python
+from pydantic_ai.mcp import MCPToolset
+
 toolset = MCPToolset(
     "https://your-server-url.com/mcp",
     headers={"Authorization": "Bearer your-access-token"},
@@ -95,6 +97,9 @@ agent = Agent("openai:gpt-5", toolsets=load_mcp_toolsets("mcp_config.json"))
 Pass an `elicitation_handler` to answer a server's [elicitation](/servers/elicitation) requests. It has the same signature as the FastMCP Client's [elicitation handler](/clients/elicitation).
 
 ```python
+from pydantic_ai.mcp import MCPToolset
+
+
 async def approve(message, response_type, params, context):
     return {"approved": True}
 

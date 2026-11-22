@@ -1,7 +1,7 @@
 """Google OAuth provider for FastMCP.
 
 This module provides a complete Google OAuth integration that's ready to use
-with just a client ID and client secret. It handles all the complexity of
+with a client ID, client secret, and base URL. It handles all the complexity of
 Google's OAuth flow, token validation, and user management.
 
 Example:
@@ -12,7 +12,8 @@ Example:
     # Simple Google OAuth protection
     auth = GoogleProvider(
         client_id="your-google-client-id.apps.googleusercontent.com",
-        client_secret="your-google-client-secret"
+        client_secret="your-google-client-secret",
+        base_url="https://my-server.com",
     )
 
     mcp = FastMCP("My Protected Server", auth=auth)

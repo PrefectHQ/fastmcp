@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import json
+import sys
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 
@@ -375,7 +376,8 @@ class Search:
         if search_fn is None:
             from fastmcp.server.transforms.search.bm25 import BM25SearchTransform
 
-            _bm25 = BM25SearchTransform(max_results=default_limit or 50)
+            # Search applies the per-call limit after ranking all matches.
+            _bm25 = BM25SearchTransform(max_results=sys.maxsize)
             search_fn = _bm25._search
         self._search_fn = search_fn
         self._name = name
@@ -421,7 +423,9 @@ class Search:
                 ]
             results = await search_fn(tools, query)
             if limit is not None:
-                results = results[:limit]
+                # A limit is a maximum count, not a slice offset: clamp negatives
+                # so ``limit=-1`` does not mean "all but the last match".
+                results = results[: max(limit, 0)]
             rendered = _render_tools(results, detail)
             if len(results) < catalog_size and detail != "full":
                 n = len(results)
@@ -629,11 +633,13 @@ class CodeMode(CatalogTransform):
         execute_tool_name: str = "execute",
         execute_description: str | None = None,
         max_tool_calls: int | None = 50,
+        wall_clock_timeout_secs: float | None = None,
     ) -> None:
         super().__init__()
         self.execute_tool_name = execute_tool_name
         self.execute_description = execute_description
         self.max_tool_calls = max_tool_calls
+        self.wall_clock_timeout_secs = wall_clock_timeout_secs
         self.sandbox_provider = sandbox_provider or MontySandboxProvider()
 
         self._discovery_factories = (
@@ -744,10 +750,21 @@ class CodeMode(CatalogTransform):
                     )
                 return _unwrap_tool_result(result)
 
-            return await transform.sandbox_provider.run(
+            # Sandbox duration limits exclude time spent awaiting host
+            # callbacks, so bound the whole execution on the wall clock.
+            timeout = transform.wall_clock_timeout_secs
+            run = transform.sandbox_provider.run(
                 code,
                 external_functions={"call_tool": call_tool},
             )
+            if timeout is None:
+                return await run
+            try:
+                return await asyncio.wait_for(run, timeout)
+            except TimeoutError as exc:
+                raise ToolError(
+                    f"Execution exceeded the wall-clock limit of {timeout} seconds."
+                ) from exc
 
         return Tool.from_function(
             fn=execute,

@@ -105,13 +105,13 @@ class StreamableHTTPASGIApp:
                     "passed to the parent ASGI application (e.g., FastAPI or Starlette). "
                     "Please ensure you are setting `lifespan=mcp_app.lifespan` in your "
                     "parent app's constructor, where `mcp_app` is the application instance "
-                    "returned by `fastmcp_instance.http_app()`. \\n"
+                    "returned by `fastmcp_instance.http_app()`.\n"
                     "For more details, see the FastMCP ASGI integration documentation: "
-                    "https://gofastmcp.com/deployment/asgi"
+                    "https://gofastmcp.com/deployment/http#integration-with-web-frameworks"
                 )
                 # Raise a new RuntimeError that includes the original error's message
                 # for full context, but leads with the more helpful guidance.
-                raise RuntimeError(f"{new_error_message}\\nOriginal error: {e}") from e
+                raise RuntimeError(f"{new_error_message}\nOriginal error: {e}") from e
             else:
                 # Re-raise other RuntimeErrors if they don't match the specific message
                 raise
@@ -466,6 +466,16 @@ def _served_resource_metadata_url(
     return None
 
 
+class _SSEEndpoint:
+    """Serve an ASGI handler from a `Route` without request/response wrapping."""
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        await self.app(scope, receive, send)
+
+
 def create_sse_app(
     server: FastMCP[LifespanResultT],
     message_path: str,
@@ -519,14 +529,15 @@ def create_sse_app(
     )
 
     # Create handler for SSE connections
-    async def handle_sse(scope: Scope, receive: Receive, send: Send) -> Response:
+    # connect_sse sends the whole response, so this is a raw ASGI app: a
+    # request/response endpoint would send a second response after the stream.
+    async def handle_sse(scope: Scope, receive: Receive, send: Send) -> None:
         async with sse.connect_sse(scope, receive, send) as streams:
             await server._mcp_server.run(
                 streams[0],
                 streams[1],
                 server._mcp_server.create_initialization_options(),
             )
-        return Response()
 
     # Set up auth if enabled
     if auth:
@@ -572,13 +583,10 @@ def create_sse_app(
     else:
         # auth=None removes bearer-token enforcement. A gateway's authentication
         # is outside FastMCP's guarantees and must prevent direct unauthenticated access.
-        async def sse_endpoint(request: Request) -> Response:
-            return await handle_sse(request.scope, request.receive, request._send)
-
         server_routes.append(
             Route(
                 sse_path,
-                endpoint=sse_endpoint,
+                endpoint=_SSEEndpoint(handle_sse),
                 methods=["GET"],
             )
         )

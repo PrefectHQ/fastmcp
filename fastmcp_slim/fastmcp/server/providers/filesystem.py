@@ -128,7 +128,7 @@ class FileSystemProvider(LocalProvider):
             # Warn if we haven't warned about this file, or if it changed
             last_warned_mtime = self._warned_files.get(file_path)
             if last_warned_mtime is None or last_warned_mtime != current_mtime:
-                logger.warning(f"Failed to import {file_path}: {error}")
+                logger.warning(f"Failed to load {file_path}: {error}")
                 self._warned_files[file_path] = current_mtime
 
         # Clear warnings for files that now import successfully
@@ -167,12 +167,12 @@ class FileSystemProvider(LocalProvider):
 
     @property
     def failed_files(self) -> Mapping[Path, str]:
-        """Files that failed to import or register during the most recent load.
+        """Files that failed to import, construct, or register components.
 
-        The returned mapping is a snapshot. Import failures are also logged as
-        warnings and registration failures as errors, but applications that
-        need a strict startup policy can inspect this property without
-        importing the modules again.
+        The returned mapping is a snapshot of the most recent load. Import and
+        construction failures are logged as warnings, registration failures as
+        errors. Applications that need a strict startup policy can inspect this
+        property without importing the modules again.
         """
         return dict(self._failed_files)
 

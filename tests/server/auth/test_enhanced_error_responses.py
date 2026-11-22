@@ -180,6 +180,43 @@ class TestEnhancedAuthorizationHandler:
             assert "Link" in response.headers
             assert "/register" in response.headers["Link"]
 
+    def test_malformed_post_form_returns_error_without_rereading_stream(
+        self, oauth_proxy
+    ):
+        app = Starlette(routes=oauth_proxy.get_routes())
+        body = b"--expected-boundary\r\nnot a valid multipart field"
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/authorize",
+                content=body,
+                headers={
+                    "Content-Type": "multipart/form-data; boundary=expected-boundary"
+                },
+            )
+
+        assert response.status_code == 400
+
+    def test_unregistered_post_client_still_returns_enhanced_error(self, oauth_proxy):
+        app = Starlette(routes=oauth_proxy.get_routes())
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/authorize",
+                data={
+                    "client_id": "unregistered-post-client",
+                    "redirect_uri": "http://localhost:12345/callback",
+                    "response_type": "code",
+                    "code_challenge": "test-challenge",
+                    "state": "test-state",
+                },
+                headers={"Accept": "text/html"},
+            )
+
+        assert response.status_code == 400
+        assert "text/html" in response.headers["content-type"]
+        assert "unregistered-post-client" in response.text
+
     def test_successful_authorization_not_enhanced(self, oauth_proxy):
         """Test that successful authorizations are not modified by enhancement."""
         app = Starlette(routes=oauth_proxy.get_routes())

@@ -25,7 +25,6 @@ import asyncio
 import ipaddress
 import os
 import socket
-import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -427,10 +426,37 @@ async def ssrf_safe_fetch_response(
     """Fetch URL with SSRF protection and return response metadata.
 
     This is equivalent to :func:`ssrf_safe_fetch` but returns response headers
-    and status code, and supports conditional request headers.
+    and status code, and supports conditional request headers. The overall
+    deadline includes DNS resolution. Cancelling the resolver await cannot stop
+    an operating-system `getaddrinfo` call already running in an executor
+    thread, but this coroutine stops waiting for it at the deadline.
     """
-    start_time = time.monotonic()
+    try:
+        return await asyncio.wait_for(
+            _ssrf_safe_fetch_response(
+                url,
+                require_path=require_path,
+                max_size=max_size,
+                timeout=timeout,
+                request_headers=request_headers,
+                allowed_status_codes=allowed_status_codes,
+            ),
+            timeout=overall_timeout,
+        )
+    except TimeoutError as exc:
+        raise SSRFFetchError(f"Overall timeout exceeded: {url}") from exc
 
+
+async def _ssrf_safe_fetch_response(
+    url: str,
+    *,
+    require_path: bool = False,
+    max_size: int = 5120,
+    timeout: float = 10.0,
+    request_headers: Mapping[str, str] | None = None,
+    allowed_status_codes: set[int] | None = None,
+) -> SSRFFetchResponse:
+    """Run one fetch; the public wrapper bounds this whole coroutine."""
     # Validate URL and resolve DNS
     validated = await validate_url(url, require_path=require_path)
 
@@ -441,11 +467,6 @@ async def ssrf_safe_fetch_response(
     targets = _build_fetch_targets(validated)
 
     for target in targets:
-        elapsed = time.monotonic() - start_time
-        if elapsed > overall_timeout:
-            raise SSRFFetchError(f"Overall timeout exceeded: {url}")
-        remaining = max(1.0, overall_timeout - elapsed)
-
         logger.debug("SSRF-safe fetch: %s -> %s", url, target.url)
 
         # In pinned mode Host is forced to the validated hostname; in proxy mode httpx
@@ -469,12 +490,7 @@ async def ssrf_safe_fetch_response(
             # Use httpx with streaming to enforce size limit during download
             async with (
                 httpx2.AsyncClient(
-                    timeout=httpx2.Timeout(
-                        connect=min(timeout, remaining),
-                        read=min(timeout, remaining),
-                        write=min(timeout, remaining),
-                        pool=min(timeout, remaining),
-                    ),
+                    timeout=httpx2.Timeout(timeout),
                     follow_redirects=False,
                     verify=True,
                     # Default (pinned) mode has no proxy_url and keeps trust_env's
@@ -492,9 +508,6 @@ async def ssrf_safe_fetch_response(
                     extensions=extensions,
                 ) as response,
             ):
-                if time.monotonic() - start_time > overall_timeout:
-                    raise SSRFFetchError(f"Overall timeout exceeded: {url}")
-
                 if response.status_code not in expected_statuses:
                     raise SSRFFetchError(f"HTTP {response.status_code} fetching {url}")
 
@@ -514,8 +527,6 @@ async def ssrf_safe_fetch_response(
                 chunks = []
                 total = 0
                 async for chunk in response.aiter_bytes():
-                    if time.monotonic() - start_time > overall_timeout:
-                        raise SSRFFetchError(f"Overall timeout exceeded: {url}")
                     total += len(chunk)
                     if total > max_size:
                         raise SSRFFetchError(

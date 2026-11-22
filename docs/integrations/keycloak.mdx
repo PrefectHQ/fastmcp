@@ -59,6 +59,8 @@ async def get_access_token_claims() -> dict:
 **Production security**: Always configure the `audience` parameter in production. Without it, your server accepts tokens issued for any audience. Configure Keycloak audience mappers and set `audience` to your server's base URL to ensure tokens are specifically intended for your server.
 </Warning>
 
+`required_scopes` defaults to `["openid"]`, which ensures the `sub` claim is present in access tokens. Pass your own list to require additional scopes.
+
 ## Local Development
 
 Local infrastructure tooling is deliberately kept out of the FastMCP core library to keep auth integrations slim and the associated maintenance burden as low as possible. That said, Keycloak is a popular identity provider for local development and testing, so a dedicated FastMCP-compatible setup blueprint lives in the companion project [**fastmcp-keycloak-local**](https://github.com/stephaneberle9/fastmcp-keycloak-local).
@@ -105,7 +107,17 @@ On first run, your browser will open to Keycloak's authorization page. After log
 Access user information from Keycloak JWT tokens:
 
 ```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.keycloak import KeycloakAuthProvider
 from fastmcp.server.dependencies import get_access_token
+
+auth = KeycloakAuthProvider(
+    realm_url="http://localhost:8080/realms/myrealm",
+    base_url="http://localhost:8000",
+)
+
+mcp = FastMCP("Keycloak Example Server", auth=auth)
+
 
 @mcp.tool
 async def admin_only_tool() -> str:
@@ -120,6 +132,8 @@ async def admin_only_tool() -> str:
 ## Advanced Configuration
 
 ### Custom Token Verifier
+
+Pass `token_verifier` to replace the default `JWTVerifier`. The provider's `required_scopes` and `audience` only configure the default verifier, so set them on your custom verifier instead.
 
 ```python
 from fastmcp.server.auth.providers.jwt import JWTVerifier

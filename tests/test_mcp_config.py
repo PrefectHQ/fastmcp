@@ -1533,3 +1533,90 @@ async def test_script(tmp_path: Path) -> AsyncGenerator[Path, Any]:
         yield Path(f.name)
 
     pass
+
+
+@requires_subprocess
+@pytest.mark.flaky(retries=3)
+async def test_single_server_config_transform_added_tags_filtering(tmp_path: Path):
+    """Tags added by a `tools` transform are visible to include_tags/exclude_tags
+    on a single-server config, matching the multi-server behavior (#6196)."""
+    server_script = inspect.cleandoc("""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        @mcp.tool
+        def subtract(a: int, b: int) -> int:
+            return a - b
+
+        if __name__ == '__main__':
+            mcp.run()
+        """)
+
+    script_path = tmp_path / "test.py"
+    script_path.write_text(server_script)
+
+    async def list_tool_names(server_options: dict) -> set[str]:
+        config = {
+            "mcpServers": {
+                "test": {"command": "python", "args": [str(script_path)]}
+                | server_options
+            }
+        }
+        client = Client(config)
+        async with client:
+            return {tool.name for tool in await client.list_tools()}
+
+    included = await list_tool_names(
+        {"tools": {"add": {"tags": ["keep"]}}, "include_tags": ["keep"]}
+    )
+    assert included == {"add"}
+
+    excluded = await list_tool_names(
+        {"tools": {"add": {"tags": ["drop"]}}, "exclude_tags": ["drop"]}
+    )
+    assert excluded == {"subtract"}
+
+
+async def test_single_server_transform_added_tags_filtering_in_memory():
+    """Same as the subprocess test above, but in-memory so it runs everywhere.
+
+    The transforming single-server path must apply the `tools` transform
+    before the include_tags/exclude_tags filters — tags the transform adds
+    are invisible to filters registered first.
+    """
+    from fastmcp.client.transports import FastMCPTransport
+
+    backend = FastMCP()
+
+    @backend.tool
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    @backend.tool
+    def subtract(a: int, b: int) -> int:
+        return a - b
+
+    config = TransformingStdioMCPServer(
+        command="unused",
+        args=[],
+        tools={"add": {"tags": ["keep"]}},
+        include_tags=["keep"],
+    )
+
+    with patch.object(
+        StdioMCPServer,
+        "to_transport",
+        lambda self: FastMCPTransport(mcp=backend),
+    ):
+        wrapped, _ = config._to_server_and_underlying_transport()
+
+    client = Client(FastMCPTransport(mcp=wrapped))
+    async with client:
+        tool_names = {tool.name for tool in await client.list_tools()}
+
+    assert tool_names == {"add"}

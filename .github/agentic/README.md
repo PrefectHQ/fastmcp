@@ -15,8 +15,40 @@ assesses each item, verifies existing contributions through
 public-facing outcome through the Sol `triage_review` node, which loads
 `.agents/skills/adversarial-review/SKILL.md` from the pinned revision.
 `cloud-triage-finalize` records the outcome, and accepted reviews are posted as
-COMMENT reviews by the triage review app. Nothing in this path assigns, closes, labels or
-merges.
+COMMENT reviews by the triage review app. Two reviewed outcomes also become GitHub
+labels (`flows/agentic_labels.py`), which the repository's closers act on: a request for a
+reproduction gets `needs MRE` (closed after 7 days without the author) and a duplicate gets
+`potential-duplicate` (closed after a 3-day cooldown). Nothing in this path assigns, closes
+or merges.
+
+`cloud-triage-sweep` (`flows/agentic_sweep.py`, no model) labels inactive outside issues and
+PRs `sweep:close` every Monday and lists them in Slack. Removing the label keeps an item; a
+daily run closes the rest once the label has been on for 48 hours with no comment from a
+person.
+
+`cloud-triage-memory-sync` (`flows/agentic_memory_sync.py`, no model) keeps a turbopuffer index of
+every issue, PR and human comment current, every 30 minutes. While `memory.mode` is "on", each
+assessment gets the closest past issues and PRs as `related` evidence: leads for duplicates, prior
+fixes and earlier decisions, never findings on their own. A lookup failure leaves `related` empty and
+triage carries on. The key is the `turbopuffer-api-key` Secret block; run the flow once with
+`backfill=true` to index the whole repository.
+
+Agents claim work through the triage MCP server (`memory_server.py`, on Horizon) so interactive
+sessions and triage runs don't step on each other: `claim_work` takes `issue:<n>`, `pr:<n>` or a
+deploy name and either refuses with who holds it or grants a fenced 30-minute lease and the item's
+context; `report_progress` renews it; `release_work` ends it with `pr`, `handed_back` (with a
+reason) or `abandoned`. Claims are public atproto records on prefect.io (`flows/agentic_work.py`),
+the triage floor draws them, and the `work.activity` MCP event serves the log where fastmcp has the
+events extension. With `work.mode` "on", the stack controller claims each item the same way and
+skips items someone else holds. The server needs `WORK_ATPROTO_PASSWORD`; without it the tools
+answer that claims are off.
+
+The Prefect Variable `fastmcp_triage_config` holds `github_writes` ("off", "dry_run" or "on",
+or per feature: `{"labels": "on", "sweep": "dry_run"}`; default "dry_run"), the sweep
+thresholds under `sweep`, `memory` (`{"mode": "on"}`; default off), and `work` (claims, `{"mode": "on"}`; default off). All are read on every run, so changing them needs no deploy.
+Writes go out as the triage GitHub App, which needs Issues: write. Under `burst`, `max_items` (default 5) and
+`window_hours` (default 24) pause triage for anyone who opens more issues and PRs than that in
+the window; Slack gets one line when they cross it.
 
 Intake skips events sent by anyone with write access to the repository, so
 maintainers' own edits and their agents' activity don't start triage. If the

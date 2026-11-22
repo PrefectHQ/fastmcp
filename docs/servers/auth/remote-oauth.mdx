@@ -130,6 +130,18 @@ The `authorization_servers` list tells MCP clients which identity providers you 
 Some identity providers use different scope formats for authorization requests versus token claims. For example, Azure AD requires clients to request full URI scopes like `api://client-id/read`, but the token's `scp` claim contains just `read`. The `scopes_supported` parameter lets you advertise the full-form scopes in metadata while validating against the short form:
 
 ```python
+from pydantic import AnyHttpUrl
+
+from fastmcp.server.auth import RemoteAuthProvider
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+token_verifier = JWTVerifier(
+    jwks_uri="https://auth.example.com/.well-known/jwks.json",
+    issuer="https://auth.example.com",
+    audience="my-api",
+    required_scopes=["read"],
+)
+
 auth = RemoteAuthProvider(
     token_verifier=token_verifier,
     authorization_servers=[AnyHttpUrl("https://auth.example.com")],
@@ -139,6 +151,30 @@ auth = RemoteAuthProvider(
 ```
 
 When not set, `scopes_supported` defaults to the token verifier's `required_scopes`. For Azure AD specifically, see the [AzureJWTVerifier](/integrations/azure#token-verification-only-managed-identity) which handles this automatically.
+
+`challenge_scopes` applies the same translation to the `WWW-Authenticate` challenge, which tells clients which scopes to request when they lack a valid token. Set it to the request-facing form of the verifier's `required_scopes`; validation still checks the short form. When omitted, the challenge comes from the token verifier's `get_challenge_scopes`, which returns `required_scopes` unchanged unless the verifier overrides it:
+
+```python
+from pydantic import AnyHttpUrl
+
+from fastmcp.server.auth import RemoteAuthProvider
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+token_verifier = JWTVerifier(
+    jwks_uri="https://auth.example.com/.well-known/jwks.json",
+    issuer="https://auth.example.com",
+    audience="my-api",
+    required_scopes=["read"],
+)
+
+auth = RemoteAuthProvider(
+    token_verifier=token_verifier,
+    authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+    base_url="https://api.example.com",
+    scopes_supported=["api://my-api/read", "api://my-api/write"],
+    challenge_scopes=["api://my-api/read"],
+)
+```
 
 ### Custom Endpoints
 
@@ -226,7 +262,7 @@ Redirect URIs are validated by the DCR provider itself, since it owns the regist
 
 Remote OAuth integration requires careful attention to several technical details that affect reliability and security.
 
-**Token Validation Performance**: Your server validates every incoming token by checking signatures against your identity provider's public keys. Consider implementing key caching and rotation handling to minimize latency while maintaining security.
+**Token Validation Performance**: Your server validates every incoming token by checking signatures against your identity provider's public keys. `JWTVerifier` caches JWKS keys for an hour and refetches when a token arrives with an unknown key ID, at most once per `jwks_refresh_interval`. See [JWKS Endpoint Integration](/servers/auth/token-verification#jwks-endpoint-integration) for the details.
 
 **Error Handling**: Network issues with your identity provider can affect token validation. Implement appropriate timeouts, retry logic, and graceful degradation to maintain service availability during identity provider outages.
 

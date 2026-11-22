@@ -54,6 +54,20 @@ AUTOMATIONS = [
         "workflows": ["marvin-label-triage.yml"],
     },
     {
+        "id": "pr-type-label",
+        "name": "PR type labels",
+        "what": "gives each PR a bug/enhancement/documentation label for release notes: linked issue, template box, docs-only, title prefix, then one model call",
+        "cadence": "on each new or edited PR",
+        "workflows": ["label-pr-type.yml"],
+    },
+    {
+        "id": "issue-type-label",
+        "name": "issue type labels",
+        "what": "labels an issue opened without a template bug, enhancement or documentation with one model call",
+        "cadence": "on each new issue",
+        "workflows": ["label-issue-type.yml"],
+    },
+    {
         "id": "dedupe",
         "name": "duplicate detection",
         "what": "points out when a new issue duplicates an existing one",

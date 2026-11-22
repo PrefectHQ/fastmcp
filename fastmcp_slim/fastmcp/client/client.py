@@ -109,7 +109,7 @@ from .transports import (
     StreamableHttpTransport,
     infer_transport,
 )
-from .transports.base import TransportOptions
+from .transports.base import TransportOptions, _is_verify_replaceable_factory
 
 __all__ = [
     "Client",
@@ -196,12 +196,12 @@ async def _conformant_discover_only(
     # A transport may itself have installed a `send_discover` override, so restore
     # whatever was there rather than assuming the class attribute.
     had_own = "send_discover" in vars(session)
-    session.send_discover = _checked_send_discover  # ty: ignore[invalid-assignment]
+    session.send_discover = _checked_send_discover
     try:
         yield
     finally:
         if had_own:
-            session.send_discover = send_discover  # ty: ignore[invalid-assignment]
+            session.send_discover = send_discover
         else:
             del session.send_discover
 
@@ -306,7 +306,7 @@ class Client(
                 - ClientTransport: Direct transport instance
                 - FastMCP: In-process FastMCP server
                 - AnyUrl or str: URL to connect to
-                - Path: File path for local socket
+                - Path: Python (.py) or Node (.js) script to run over stdio
                 - MCPConfig: MCP server configuration
                 - dict: Transport configuration
 
@@ -480,12 +480,16 @@ class Client(
             if isinstance(self.transport, StreamableHttpTransport | SSETransport):
                 self.transport.verify = verify
                 # Re-sync existing OAuth auth with the new verify setting,
-                # but only if the transport doesn't have a custom factory
-                # (which takes precedence and was already applied to OAuth).
+                # but only if neither the transport nor the auth provider has
+                # a custom factory (which takes precedence and was already
+                # applied to OAuth).
                 if (
                     isinstance(self.transport.auth, OAuth)
                     and auth is None
                     and self.transport.httpx_client_factory is None
+                    and _is_verify_replaceable_factory(
+                        self.transport.auth.httpx_client_factory
+                    )
                 ):
                     verify_factory = self.transport._make_verify_factory()
                     if verify_factory is not None:

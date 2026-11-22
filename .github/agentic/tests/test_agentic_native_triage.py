@@ -195,3 +195,118 @@ def test_native_cache_binds_policy_revision_probes_and_worker_source():
         owner = client.create_flow_run(native_owner)
         record.fn(owner.id, key, {"ref": "invalid", "run_id": "deleted"})
         assert find_native_result(value) is None
+
+
+def test_native_stage_keeps_a_run_whose_parameters_round_trip_through_json(
+    monkeypatch,
+):
+    """A finished run is kept when its parameters only differ by JSON round-trip.
+
+    The API returns run parameters through JSON, so an int dict key comes back as
+    a string. Comparing raw dicts used to discard the finished run as a changed
+    admission.
+    """
+    import json
+    from types import SimpleNamespace
+
+    import flows.agentic_native_triage as native
+
+    pinned = admission()
+    request = deepcopy(pinned.request)
+    request["context"]["people"] = {"reporter_prs_opened_hours_after_issue": {8: 1.5}}
+    pinned = pinned.model_copy(update={"request": request})
+    plan = pinned.runtime.triage_plan
+    assert plan is not None
+    created = {}
+
+    def api(method, path, body=None):
+        if method == "POST":
+            created.update(body)
+            return {"id": str(uuid4())}
+        if path.startswith("/flow_runs/"):
+            return {"snapshot": {"execution_plan_version_id": str(plan.version_id)}}
+        return {"active_version": {"id": str(plan.version_id)}}
+
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read_deployment(self, _):
+            return SimpleNamespace(
+                version=pinned.runtime.source_sha, work_pool_name="managed"
+            )
+
+        def read_flow_run(self, _):
+            completed = SimpleNamespace(
+                is_final=lambda: True, is_completed=lambda: True
+            )
+            return SimpleNamespace(
+                state=completed,
+                flow_id=plan.flow_id,
+                parameters=json.loads(json.dumps(created["parameters"])),
+            )
+
+    outcome = {"destination": "evidence", "result": {"issue_number": 1}}
+    monkeypatch.setattr(native, "api", api)
+    monkeypatch.setattr(native, "get_client", lambda **_: Client())
+    monkeypatch.setattr(native, "owner_alive", lambda *_: None)
+    monkeypatch.setattr(native, "saved", lambda *_: None)
+    monkeypatch.setattr(native, "record", lambda *_: "recorded")
+    monkeypatch.setattr(native, "find_native_result", lambda _: None)
+    monkeypatch.setattr(native, "verified_outcome", lambda *_: outcome)
+    monkeypatch.setattr(native, "retain_native_result", lambda *_: None)
+
+    destination, result, _ = native.run_native_stage(uuid4(), pinned, "initial")
+    assert (destination, result) == ("evidence", {"issue_number": 1})
+
+
+@pytest.mark.parametrize(
+    "decision,destination",
+    [
+        ("reproduced", "evidence"),
+        ("not_reproduced", "evidence"),
+        ("evidence_needed", "evidence"),
+        ("maintainer", "decisions"),
+        ("environment_failure", "operational"),
+    ],
+)
+def test_reproduction_outcomes_land_in_the_bin_a_maintainer_acts_on(
+    decision, destination
+):
+    from flows.agentic_triage_nodes import reproduction_destination
+
+    assert reproduction_destination(decision) == destination
+
+
+def test_durable_records_compare_as_json(monkeypatch):
+    """A rerun re-recording the same value must not conflict after a JSON trip."""
+    import flows.agentic_stack_runtime as runtime
+    from flows.agentic_stack import same_json
+
+    assert same_json({"6477": 1.5}, {6477: 1.5})
+    assert same_json([1, 2], (1, 2))
+    assert not same_json({"a": 1}, {"a": 2})
+
+    stored = SimpleNamespaceArtifact({"hours": {"6477": 1.5}})
+
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read_artifacts(self, **_):
+            return [stored]
+
+    monkeypatch.setattr(runtime, "get_client", lambda **_: Client())
+    assert runtime.record.fn(uuid4(), "key", {"hours": {6477: 1.5}}) == "stored-id"
+
+
+class SimpleNamespaceArtifact:
+    def __init__(self, data):
+        self.data = data
+        self.id = "stored-id"

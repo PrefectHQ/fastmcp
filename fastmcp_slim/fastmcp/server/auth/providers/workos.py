@@ -16,7 +16,6 @@ from typing import Annotated, Literal
 import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, TypeAdapter, UrlConstraints
-from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from fastmcp.server.auth import AccessToken, RemoteAuthProvider, TokenVerifier
@@ -253,15 +252,20 @@ class WorkOSProvider(OAuthProxy):
         authkit_domain_final = authkit_domain_str.rstrip("/")
         scopes_final = (
             parse_scopes(required_scopes) if required_scopes is not None else []
-        )
+        ) or []
         valid_scopes_final = (
             parse_scopes(valid_scopes) if valid_scopes is not None else None
         )
 
-        # Create WorkOS token verifier
+        # Do not pass provider-level required_scopes into the verifier here.
+        # WorkOS's userinfo endpoint validates opaque access tokens and
+        # returns identity claims, but granted scopes are carried reliably in
+        # the upstream token response. OAuthProxy stores those scopes, enforces
+        # provider.required_scopes against FastMCP-issued tokens, and
+        # _uses_alternate_verification() patches the stored upstream scopes
+        # onto the returned AccessToken.
         token_verifier = WorkOSTokenVerifier(
             authkit_domain=authkit_domain_final,
-            required_scopes=scopes_final,
             timeout_seconds=timeout_seconds,
             http_client=http_client,
         )
@@ -297,6 +301,18 @@ class WorkOSProvider(OAuthProxy):
             client_id,
             authkit_domain_final,
         )
+
+        self.required_scopes = scopes_final
+        self.update_default_scopes(valid_scopes_final or scopes_final)
+
+    def _uses_alternate_verification(self) -> bool:
+        """Patch returned token scopes from the upstream token response.
+
+        WorkOS access tokens are opaque. The userinfo endpoint validates the
+        token and returns identity claims, but scope information is carried by
+        the token response stored in OAuthProxy's upstream token set.
+        """
+        return True
 
 
 class AuthKitProvider(RemoteAuthProvider):
@@ -404,6 +420,7 @@ class AuthKitProvider(RemoteAuthProvider):
             scopes_supported=scopes_supported,
             resource_name=resource_name,
             resource_documentation=resource_documentation,
+            required_scopes=parsed_scopes,
         )
 
     def set_mcp_path(self, mcp_path: str | None) -> None:
@@ -445,23 +462,11 @@ class AuthKitProvider(RemoteAuthProvider):
         routes = super().get_routes(mcp_path)
 
         async def oauth_authorization_server_metadata(request):
-            """Forward AuthKit OAuth authorization server metadata with FastMCP customizations."""
-            try:
-                async with httpx2.AsyncClient() as client:
-                    response = await client.get(
-                        f"{self.authkit_domain}/.well-known/oauth-authorization-server"
-                    )
-                    response.raise_for_status()
-                    metadata = response.json()
-                    return JSONResponse(metadata)
-            except Exception as e:
-                return JSONResponse(
-                    {
-                        "error": "server_error",
-                        "error_description": f"Failed to fetch AuthKit metadata: {e}",
-                    },
-                    status_code=500,
-                )
+            """Forward AuthKit OAuth authorization server metadata (cached)."""
+            return await self._forward_authorization_server_metadata(
+                [f"{self.authkit_domain}/.well-known/oauth-authorization-server"],
+                "AuthKit",
+            )
 
         # Add AuthKit authorization server metadata forwarding
         routes.append(

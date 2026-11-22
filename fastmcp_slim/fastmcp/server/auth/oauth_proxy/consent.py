@@ -86,18 +86,36 @@ class ConsentMixin:
     """
 
     def _normalize_uri(self, uri: str) -> str:
-        """Normalize a URI to a canonical form for consent tracking."""
+        """Normalize a URI to a canonical form for consent tracking.
+
+        The query is kept: it is part of the redirect URI the consent page
+        showed, and a client's registered URIs can differ only there.
+        """
         parsed = urlparse(uri)
         path = parsed.path or ""
         normalized = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}{path}"
         if normalized.endswith("/") and len(path) > 1:
             normalized = normalized[:-1]
+        if parsed.query:
+            normalized = f"{normalized}?{parsed.query}"
         return normalized
 
-    def _make_client_key(self, client_id: str, redirect_uri: str | AnyUrl) -> str:
-        """Create a stable key for consent tracking from client_id and redirect_uri."""
+    def _make_client_key(
+        self, client_id: str, redirect_uri: str | AnyUrl, scopes: list[str]
+    ) -> str:
+        """Create a stable key for consent tracking.
+
+        The key covers what the consent page showed: the client, the redirect
+        URI and the requested scopes. A remembered decision therefore only
+        applies to a later request for that same redirect URI and scope set;
+        anything else is prompted. The parts are hashed so that the key is
+        unambiguous and its length does not grow with the scope list.
+        """
         normalized = self._normalize_uri(str(redirect_uri))
-        return f"{client_id}:{normalized}"
+        material = json.dumps(
+            [client_id, normalized, sorted(set(scopes))], separators=(",", ":")
+        )
+        return hashlib.sha256(material.encode()).hexdigest()
 
     def _validate_client_redirect_uri(
         self: OAuthProxy,
@@ -435,7 +453,9 @@ class ConsentMixin:
             )
 
         txn = txn_model.model_dump()
-        client_key = self._make_client_key(txn["client_id"], txn["client_redirect_uri"])
+        client_key = self._make_client_key(
+            txn["client_id"], txn["client_redirect_uri"], txn.get("scopes") or []
+        )
 
         # Silent consent only fires in "remember" mode, and only when the
         # request arrived via a safe navigation context. AS-in-the-middle
@@ -657,7 +677,9 @@ class ConsentMixin:
                 status_code=403,
             )
 
-        client_key = self._make_client_key(txn["client_id"], txn["client_redirect_uri"])
+        client_key = self._make_client_key(
+            txn["client_id"], txn["client_redirect_uri"], txn.get("scopes") or []
+        )
 
         remember_mode = self._require_authorization_consent == "remember"
 

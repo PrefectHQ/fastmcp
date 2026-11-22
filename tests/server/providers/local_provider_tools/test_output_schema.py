@@ -10,10 +10,9 @@ from mcp_types import (
 from pydantic import AnyUrl, BaseModel, TypeAdapter
 from typing_extensions import TypeAliasType, TypedDict
 
-from fastmcp import FastMCP
+from fastmcp import Client, FastMCP
 from fastmcp.tools.base import ToolResult
-from fastmcp.tools.function_parsing import _is_object_schema
-from fastmcp.utilities.json_schema import compress_schema
+from fastmcp.utilities.json_schema import compress_schema, is_object_schema
 
 
 def _normalize_anyof_order(schema):
@@ -335,8 +334,44 @@ class TestToolOutputSchema:
         assert result.structured_content == {"result": "foo"}
 
 
+@pytest.mark.parametrize(
+    ("schema_type", "expected"),
+    [
+        ("object", True),
+        (["object", "null"], True),
+        (["object", "array"], False),
+        ("array", False),
+    ],
+)
+def test_explicit_type_decides_object_schema(schema_type: Any, expected: bool):
+    schema = {"type": schema_type, "properties": {"value": {"type": "integer"}}}
+    assert is_object_schema(schema) is expected
+
+
+@pytest.mark.parametrize("mode", ["legacy", "auto"])
+async def test_nullable_object_output_schema_is_registrable(mode: str):
+    schema = {
+        "type": ["object", "null"],
+        "properties": {"value": {"type": "integer"}},
+    }
+    mcp = FastMCP()
+
+    @mcp.tool(output_schema=schema)
+    def maybe_value() -> dict[str, int]:
+        return {"value": 1}
+
+    async with Client(mcp, mode=mode) as client:
+        advertised = (await client.list_tools())[0].output_schema
+        result = await client.call_tool("maybe_value", {})
+
+    expected_type = "object" if mode == "legacy" else ["object", "null"]
+    assert advertised is not None
+    assert advertised["type"] == expected_type
+    assert result.structured_content == {"value": 1}
+
+
 class TestIsObjectSchemaRefResolution:
-    """Tests for $ref resolution in _is_object_schema, including JSON Pointer
+    """Tests for $ref resolution in is_object_schema, including JSON Pointer
     escaping and nested $defs paths."""
 
     def test_simple_ref_to_object(self):
@@ -346,14 +381,14 @@ class TestIsObjectSchemaRefResolution:
                 "MyModel": {"type": "object", "properties": {"x": {"type": "int"}}}
             },
         }
-        assert _is_object_schema(schema) is True
+        assert is_object_schema(schema) is True
 
     def test_simple_ref_to_non_object(self):
         schema = {
             "$ref": "#/$defs/MyEnum",
             "$defs": {"MyEnum": {"enum": ["a", "b"]}},
         }
-        assert _is_object_schema(schema) is False
+        assert is_object_schema(schema) is False
 
     def test_nested_defs_path(self):
         """Refs like #/$defs/Outer/$defs/Inner should walk into nested dicts."""
@@ -370,7 +405,7 @@ class TestIsObjectSchemaRefResolution:
                 },
             },
         }
-        assert _is_object_schema(schema) is True
+        assert is_object_schema(schema) is True
 
     def test_nested_defs_non_object(self):
         schema = {
@@ -383,7 +418,7 @@ class TestIsObjectSchemaRefResolution:
                 },
             },
         }
-        assert _is_object_schema(schema) is False
+        assert is_object_schema(schema) is False
 
     def test_json_pointer_tilde_escape(self):
         """~0 should unescape to ~ and ~1 should unescape to /."""
@@ -391,7 +426,7 @@ class TestIsObjectSchemaRefResolution:
             "$ref": "#/$defs/has~1slash~0tilde",
             "$defs": {"has/slash~tilde": {"type": "object", "properties": {}}},
         }
-        assert _is_object_schema(schema) is True
+        assert is_object_schema(schema) is True
 
     def test_missing_nested_segment_returns_false(self):
         schema = {
@@ -402,4 +437,4 @@ class TestIsObjectSchemaRefResolution:
                 },
             },
         }
-        assert _is_object_schema(schema) is False
+        assert is_object_schema(schema) is False

@@ -18,13 +18,18 @@ from fastmcp.resources import (
     ResourceResult,
     ResourceTemplate,
 )
+from fastmcp.resources.template import template_param_key
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.function_tool import _strict_input_validation
 from fastmcp.utilities.exceptions import is_request_error, is_timeout_error
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import HTTPRoute
-from fastmcp.utilities.openapi.director import RequestDirector, _prepare_parameter_map
+from fastmcp.utilities.openapi.director import (
+    RequestDirector,
+    _missing_path_arguments,
+    _prepare_parameter_map,
+)
 from fastmcp.utilities.tasks import TaskConfig
 
 if TYPE_CHECKING:
@@ -232,10 +237,10 @@ class OpenAPITool(Tool):
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Execute the HTTP request using RequestDirector."""
+        _, parameter_map = _prepare_parameter_map(self._route)
         # The director drops arguments outside its parameter map; strict
         # servers reject them instead, using the same key set.
         if _strict_input_validation():
-            _, parameter_map = _prepare_parameter_map(self._route)
             accepted = {*self.parameters.get("properties", {}), *parameter_map}
             if unknown := sorted(arguments.keys() - accepted):
                 raise ValidationError(
@@ -243,6 +248,14 @@ class OpenAPITool(Tool):
                     f"Accepted: {', '.join(sorted(accepted)) or 'none'}",
                     log_level=logging.WARNING,
                 )
+        # Without a path value there is no URL to send. That is the caller's
+        # mistake, so report it the way a function tool reports a missing
+        # required argument.
+        if missing := _missing_path_arguments(self._route, parameter_map, arguments):
+            raise ValidationError(
+                f"Missing required arguments: {', '.join(missing)}",
+                log_level=logging.WARNING,
+            )
         # Build the request — errors here are programming/schema issues,
         # not HTTP failures, so we catch them separately.
         try:
@@ -451,7 +464,10 @@ class OpenAPIResourceTemplate(ResourceTemplate):
             if parameter.name in params:
                 arguments[argument_name] = params[parameter.name]
                 continue
-            normalized_name = parameter.name.replace("-", "_")
+            # The matcher keys params by the sanitized group name; try that
+            # for parameter names the URI grammar allows but Python does not
+            # (e.g. `{$top}` matches as `_top`).
+            normalized_name = template_param_key(parameter.name)
             if normalized_name in params:
                 arguments[argument_name] = params[normalized_name]
 

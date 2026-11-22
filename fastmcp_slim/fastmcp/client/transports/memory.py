@@ -47,7 +47,7 @@ class FastMCPTransport(ClientTransport):
     def __init__(self, mcp: "FastMCP[Any] | SDKServer", raise_exceptions: bool = False):
         """Initialize a FastMCPTransport from a FastMCP server instance."""
 
-        # Accept both FastMCP 2.x and FastMCP 1.0 servers. Their underlying
+        # Accept both fastmcp FastMCP servers and the SDK's MCPServer. Their underlying
         # lowlevel MCP ``Server`` lives on different attributes
         # (``_mcp_server`` vs ``_lowlevel_server``); ``_lowlevel_of`` resolves
         # it uniformly so we can drive the async ``Server.run`` for both.

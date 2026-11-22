@@ -357,3 +357,143 @@ async def test_generic_middleware_sees_one_request_per_completion(mode):
             {"name": "path", "value": ""},
         )
     assert seen == ["completion/complete", "completion/complete"]
+
+
+def _gated_server(**kwargs: Any) -> FastMCP:
+    mcp = FastMCP(**kwargs)
+
+    @mcp.prompt(tags={"secret"})
+    def hidden_prompt(x: str) -> str:
+        return x
+
+    @mcp.resource("notes://{path}", tags={"secret"})
+    def hidden_note(path: str) -> str:
+        return path
+
+    @mcp.resource("public://{path}")
+    def public_note(path: str) -> str:
+        return path
+
+    @mcp.completion
+    def complete(ref, argument, context):
+        return ["private/salary.md"]
+
+    return mcp
+
+
+async def _completions(mcp: FastMCP, mode: str) -> tuple[list, list, list]:
+    async with Client(mcp, mode=mode) as client:
+        prompt = await client.complete(
+            PromptReference(name="hidden_prompt"), {"name": "x", "value": ""}
+        )
+        template = await client.complete(
+            ResourceTemplateReference(uri="notes://{path}"),
+            {"name": "path", "value": ""},
+        )
+        public = await client.complete(
+            ResourceTemplateReference(uri="public://{path}"),
+            {"name": "path", "value": ""},
+        )
+    return prompt.values, template.values, public.values
+
+
+@pytest.mark.parametrize("mode", MODES)
+async def test_disabled_references_complete_like_unknown_ones(mode):
+    mcp = _gated_server()
+    mcp.disable(tags={"secret"})
+    assert await _completions(mcp, mode) == ([], [], ["private/salary.md"])
+
+
+@pytest.mark.parametrize("mode", MODES)
+async def test_auth_middleware_denied_references_complete_like_unknown_ones(mode):
+    from fastmcp.server.middleware import AuthMiddleware
+
+    mcp = _gated_server(
+        middleware=[
+            AuthMiddleware(
+                auth=lambda ctx: ctx.component is None
+                or "secret" not in ctx.component.tags
+            )
+        ]
+    )
+    assert await _completions(mcp, mode) == ([], [], ["private/salary.md"])
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("gate", ["none", "disable", "auth_middleware"])
+async def test_query_only_template_completes_by_its_own_identifier(mode, gate):
+    """A template's identifier does not match it as a URI when it only has
+    query parameters, so completion must resolve the template itself."""
+    from fastmcp.server.middleware import AuthMiddleware
+
+    middleware = []
+    if gate == "auth_middleware":
+        middleware = [
+            AuthMiddleware(
+                auth=lambda ctx: ctx.component is None
+                or "secret" not in ctx.component.tags
+            )
+        ]
+    mcp = FastMCP(middleware=middleware)
+
+    @mcp.resource("data://search{?q}")
+    def search(q: str = "") -> str:
+        return q
+
+    @mcp.resource("data://hidden{?q}", tags={"secret"})
+    def hidden(q: str = "") -> str:
+        return q
+
+    @mcp.completion
+    def complete(ref, argument, context):
+        return ["v"]
+
+    if gate == "disable":
+        mcp.disable(tags={"secret"})
+
+    async with Client(mcp, mode=mode) as client:
+        visible = await client.complete(
+            ResourceTemplateReference(uri="data://search{?q}"),
+            {"name": "q", "value": ""},
+        )
+        gated = await client.complete(
+            ResourceTemplateReference(uri="data://hidden{?q}"),
+            {"name": "q", "value": ""},
+        )
+    assert visible.values == ["v"]
+    assert gated.values == ([] if gate != "none" else ["v"])
+
+
+@pytest.mark.parametrize("mode", MODES)
+async def test_versioned_template_completion_checks_the_listed_version(mode):
+    """Completion authorizes the version clients list, not the first one
+    registered."""
+    from fastmcp.server.middleware import AuthMiddleware
+
+    mcp = FastMCP(
+        middleware=[
+            AuthMiddleware(
+                auth=lambda ctx: ctx.component is None
+                or "secret" not in ctx.component.tags
+            )
+        ]
+    )
+
+    @mcp.resource("data://item/{id}", version="1", tags={"secret"})
+    def item_v1(id: str) -> str:
+        return id
+
+    @mcp.resource("data://item/{id}", version="2")
+    def item_v2(id: str) -> str:
+        return id
+
+    @mcp.completion
+    def complete(ref, argument, context):
+        return ["v"]
+
+    async with Client(mcp, mode=mode) as client:
+        result = await client.complete(
+            ResourceTemplateReference(uri="data://item/{id}"),
+            {"name": "id", "value": ""},
+        )
+    assert result.values == ["v"]
