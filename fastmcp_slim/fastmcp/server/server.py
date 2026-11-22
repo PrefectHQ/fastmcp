@@ -600,10 +600,9 @@ class FastMCP(
 
         # Servers that serve this one as a provider (`mount`, `add_provider`,
         # `providers=`), so its `notify_*` reaches their listening clients.
-        # Weak keys drop collected parents; the dict keeps attach order.
-        self._mounted_on: weakref.WeakKeyDictionary[FastMCP[Any], None] = (
-            weakref.WeakKeyDictionary()
-        )
+        # Weak references, compared by identity so subclasses that define
+        # `__eq__` link correctly; dead entries are pruned as links are read.
+        self._mounted_on: list[weakref.ref[FastMCP[Any]]] = []
 
         self.auth: AuthProvider | None = auth
 
@@ -830,8 +829,23 @@ class FastMCP(
         """Record this server on each child server it now serves, so the
         children's `notify_*` also reaches clients listening here."""
         for child in provider._served_servers():
-            if child is not self:
-                child._mounted_on.setdefault(self)
+            if child is not self and not any(
+                parent is self for parent in child._live_parents()
+            ):
+                child._mounted_on.append(weakref.ref(self))
+
+    def _live_parents(self) -> list[FastMCP[Any]]:
+        """The servers this one is attached to, in attach order, dropping
+        any that have been collected."""
+        parents = []
+        live_refs = []
+        for ref in self._mounted_on:
+            parent = ref()
+            if parent is not None:
+                parents.append(parent)
+                live_refs.append(ref)
+        self._mounted_on[:] = live_refs
+        return parents
 
     def _rewrite_prefab_uris(self, tools: list[Tool]) -> list[Tool]:
         """Replace placeholder Prefab URIs with shared renderer identities.
@@ -2018,7 +2032,7 @@ class FastMCP(
             return
         seen.add(id(self))
         await self._mcp_server.subscriptions.publish(event)
-        for parent in list(self._mounted_on):
+        for parent in self._live_parents():
             await parent._publish_list_changed(event, seen)
 
     def _get_tool_input_schema(self, name: str) -> dict[str, Any] | None:
