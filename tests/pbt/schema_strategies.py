@@ -5,6 +5,7 @@ instances drawn from the same pools hit the schema's structure often, and
 `$ref`s point at a small set of `$defs` so cycles are common.
 """
 
+from functools import cache
 from typing import Any
 
 from hypothesis import strategies as st
@@ -14,6 +15,7 @@ DEFS = ["A", "B"]
 STRINGS = ["", "x", "ab", "1", "true", "2024-01-01", "a b"]
 
 
+@cache
 def json_values(max_leaves: int = 8) -> st.SearchStrategy[Any]:
     scalars = st.one_of(
         st.none(),
@@ -35,6 +37,7 @@ def json_values(max_leaves: int = 8) -> st.SearchStrategy[Any]:
 TYPES = ["string", "integer", "number", "boolean", "null", "array", "object"]
 
 
+@cache
 def _leaf() -> st.SearchStrategy[dict[str, Any]]:
     typed = st.sampled_from(TYPES).map(lambda t: {"type": t})
     return st.one_of(
@@ -121,6 +124,7 @@ def _extend(children: st.SearchStrategy[dict[str, Any]]):
     return st.one_of(obj, arr, prefix, combo, nullable, with_default)
 
 
+@cache
 def subschemas() -> st.SearchStrategy[dict[str, Any]]:
     return st.recursive(_leaf(), _extend, max_leaves=10)
 
@@ -169,16 +173,19 @@ def schemas(draw: st.DrawFn) -> dict[str, Any]:
         }
     if root.get("type") == "object" and draw(st.booleans()):
         # An object property with an object or non-object default, the shape
-        # default-merging has to handle.
-        default = draw(
-            st.sampled_from([None, True, 0, 1, "x", [], ["a"], {}, {"a": 1}])
-        )
+        # default-merging has to handle. With typed extras, an object default
+        # can be invalid for the object it is merged into.
+        meta: dict[str, Any] = {"type": "object"}
+        if draw(st.booleans()):
+            meta["additionalProperties"] = {"type": "string"}
+            meta["default"] = draw(st.sampled_from([{"a": 1}, {"a": "s"}, {}]))
+        else:
+            meta["default"] = draw(
+                st.sampled_from([None, True, 0, 1, "x", [], ["a"], {}, {"a": 1}])
+            )
         root = {
             **root,
-            "properties": {
-                **root.get("properties", {}),
-                "meta": {"type": "object", "default": default},
-            },
+            "properties": {**root.get("properties", {}), "meta": meta},
         }
     if root.get("type") == "object" and draw(st.booleans()):
         # A positional array inside an object whose additionalProperties is a
@@ -203,6 +210,15 @@ def schemas(draw: st.DrawFn) -> dict[str, Any]:
             },
         }
     return {**root, "$defs": defs}
+
+
+_SIMPLE: dict[str, st.SearchStrategy[Any]] = {
+    "string": st.sampled_from(STRINGS),
+    "integer": st.integers(-3, 3),
+    "number": st.sampled_from([0.5, 1, -1.5]),
+    "boolean": st.booleans(),
+    "null": st.none(),
+}
 
 
 @st.composite
@@ -248,13 +264,6 @@ def shaped_instances(draw: st.DrawFn, schema: dict[str, Any]) -> Any:
                 out += [walk(node.get("items", {}), depth + 1)
                         for _ in range(draw(st.integers(0, 2)))]  # fmt: skip
             return out
-        simple = {
-            "string": st.sampled_from(STRINGS),
-            "integer": st.integers(-3, 3),
-            "number": st.sampled_from([0.5, 1, -1.5]),
-            "boolean": st.booleans(),
-            "null": st.none(),
-        }
-        return draw(simple.get(kind, json_values(2)))
+        return draw(_SIMPLE[kind] if kind in _SIMPLE else json_values(2))
 
     return walk(schema, 0)

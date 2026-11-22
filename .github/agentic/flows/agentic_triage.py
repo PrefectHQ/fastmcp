@@ -26,6 +26,7 @@ from prefect.variables import Variable
 
 from flows.agentic_artifacts import plain, published_reviews, retain_markdown
 from flows.agentic_backlog import Intake, due, inventory, settle
+from flows.agentic_burst import burst, burst_config, burst_line
 from flows.agentic_claims import claim_work
 from flows.agentic_freshness import revalidate
 from flows.agentic_github import can_write
@@ -115,6 +116,21 @@ def maintainer(sender: str, read: Callable[[str], object] = github) -> bool:
         return can_write(read, sender)
     except (RuntimeError, ValueError, OSError, subprocess.SubprocessError):
         return False
+
+
+def sender_burst(config: Intake, read: Callable[[str], object] = github) -> dict | None:
+    """The sender's burst, if this event's item is past their limit.
+
+    A failed lookup counts as no burst, so an API error never drops an event.
+    """
+    trigger = max([*config.issues, *config.pull_requests], default=0)
+    if not config.sender or not trigger:
+        return None
+    try:
+        limits = burst_config(Variable.get(CONFIG_VARIABLE, default={}))
+        return burst(read, config.sender, trigger, limits, datetime.now(UTC))
+    except (RuntimeError, ValueError, OSError, subprocess.SubprocessError, KeyError):
+        return None
 
 
 def admit(
@@ -439,6 +455,30 @@ def triage_intake(
             return Completed(
                 data={"skipped": "maintainer_sender", "sender": config.sender},
                 message=f"Skipped: {config.sender} is a maintainer",
+            )
+        if config.sender and (found := sender_burst(config)):
+            # Edits and pushes to the crossing item rerun intake; announce once.
+            claim = f"fastmcp-burst-{config.sender.lower()}-{found['crossing']}"
+            if found["announce"] and latest(claim) is None:
+                with get_client(sync_client=True) as client:
+                    client.create_artifact(
+                        ArtifactCreate(
+                            key=claim,
+                            flow_run_id=current.id,
+                            type="fastmcp-triage-intake",
+                            data=found,
+                        )
+                    )
+                emit_event(
+                    event="fastmcp.triage.outcome",
+                    resource={
+                        "prefect.resource.id": f"fastmcp.triage.intake.{current.id}"
+                    },
+                    payload={"text": burst_line(found)},
+                )
+            return Completed(
+                data={"skipped": "burst", **found},
+                message=f"Skipped: {config.sender} opened {found['count']} items",
             )
         with claim_work([config.scope()], current.id, deadline):
             return triage(config, runtime, controller_id, current.id)

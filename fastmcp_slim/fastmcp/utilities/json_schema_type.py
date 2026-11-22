@@ -10,7 +10,7 @@ for validation with Pydantic. It supports:
 - String constraints (minLength, maxLength, pattern)
 - Array constraints (minItems, maxItems, uniqueItems)
 - Object properties with defaults
-- References and recursive schemas
+- References and recursive schemas, including references into arrays
 - Enums and constants
 - Union types
 
@@ -99,6 +99,8 @@ from pydantic import (
     PlainValidator,
     StringConstraints,
     TypeAdapter,
+    ValidationError,
+    ValidatorFunctionWrapHandler,
     create_model,
     model_validator,
 )
@@ -543,10 +545,20 @@ def _resolve_ref(ref: str, schemas: Mapping[str, Any]) -> Mapping[str, Any]:
     """Resolve JSON Schema reference to target schema."""
     # Decode the URI fragment before splitting and unescaping JSON Pointer tokens.
     path = unquote(ref).removeprefix("#/").split("/")
-    current = schemas
+    current: Any = schemas
     for part in path:
         part = part.replace("~1", "/").replace("~0", "~")
-        current = current.get(part, {})
+        if isinstance(current, list):
+            if re.fullmatch(r"0|[1-9][0-9]*", part) is None:
+                raise ValueError(f"Invalid array index {part!r} in reference {ref!r}")
+            try:
+                current = current[int(part)]
+            except (IndexError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid array index {part!r} in reference {ref!r}"
+                ) from exc
+        else:
+            current = current.get(part, {})
     return current
 
 
@@ -1557,18 +1569,51 @@ def _build_dataclass(
     cls = make_dataclass(sanitized_name, fields, kw_only=True)
 
     # Add model validator for defaults
-    @model_validator(mode="before")
+    @model_validator(mode="wrap")
     @classmethod
-    def _apply_defaults(cls, data: Mapping[str, Any]):
-        if isinstance(data, dict):
-            # Omitted fields fall back to the field defaults, which validate
-            # only when valid; object defaults are still merged here.
-            return _merge_defaults(data, original_schema, apply_property_defaults=False)
-        return data
+    def _apply_defaults(cls, data: Any, handler: ValidatorFunctionWrapHandler):
+        if not isinstance(data, dict):
+            return handler(data)
+        # Omitted fields fall back to the field defaults, which validate only
+        # when valid; object defaults are still merged here.
+        merged = _merge_defaults(data, original_schema, apply_property_defaults=False)
+        try:
+            return handler(merged)
+        except ValidationError as e:
+            # `default` is an annotation, not a constraint. When a merged-in
+            # default is what fails, keep the caller's value for that property
+            # and leave every other merge in place. Errors in the caller's own
+            # data are raised as they are, so each level validates at most
+            # twice and only when a default caused the failure.
+            added = _merged_in_paths(merged, data)
+            broken: set[str] = {
+                str(loc[0])
+                for err in e.errors()
+                if (loc := err["loc"]) and any(loc[: len(a)] == a for a in added)
+            }
+            if not broken:
+                raise
+            kept = {k: v for k, v in merged.items() if k not in broken or k in data}
+            for key in broken & data.keys():
+                kept[key] = data[key]
+            return handler(kept)
 
     cls._apply_defaults = _apply_defaults  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
     _conversion.get().unchecked_defaults.extend((cls, f) for f in unchecked)
     return cls
+
+
+def _merged_in_paths(
+    merged: Mapping[str, Any], data: Mapping[str, Any], prefix: tuple = ()
+) -> list[tuple]:
+    """Paths of keys that `_merge_defaults` added to the caller's data."""
+    paths: list[tuple] = []
+    for key, value in merged.items():
+        if key not in data:
+            paths.append((*prefix, key))
+        elif isinstance(value, Mapping) and isinstance(data[key], Mapping):
+            paths.extend(_merged_in_paths(value, data[key], (*prefix, key)))
+    return paths
 
 
 def _merge_defaults(

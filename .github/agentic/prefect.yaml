@@ -84,6 +84,8 @@ deployments:
           - prefect==3.8.2
           - fastapi==0.141.1
           - PyJWT[crypto]==2.15.1
+          - turbopuffer==3.1.0
+          - fastmcp==4.2.4
         compute_profile: medium
         timeout: 7500
   - name: cloud-triage-sweep
@@ -116,3 +118,23 @@ deployments:
           - PyJWT[crypto]==2.15.1
         compute_profile: small
         timeout: 1200
+  - name: cloud-triage-memory-sync
+    version: "{{ $FASTMCP_AGENTIC_REF }}"
+    entrypoint: flows/agentic_memory_sync.py:triage_memory_sync
+    concurrency_limit: 1
+    parameters: {}
+    schedules:
+      # Re-index what changed in the last two hours; overlapping windows make a
+      # missed run harmless. Does nothing while memory is off in the config.
+      - cron: "*/30 * * * *"
+        timezone: UTC
+    work_pool:
+      name: managed
+      job_variables:
+        image: prefecthq/prefect:3-python3.12
+        pip_packages:
+          - prefect==3.8.2
+          - fastapi==0.141.1
+          - turbopuffer==3.1.0
+        compute_profile: small
+        timeout: 1800
