@@ -303,7 +303,10 @@ def main() -> int:
     name = os.environ.get("GITHUB_EVENT_NAME", "workflow_dispatch")
     path = os.environ.get("GITHUB_EVENT_PATH")
     payload = json.load(open(path)) if path and os.path.exists(path) else {}
-    event = to_event(name, payload, now)
+    # With the webhook receiver on (scripts/floor_receiver), events reach the
+    # PDS within a second of happening; this run keeps only the snapshot.
+    via_webhook = os.environ.get("FLOOR_EVENTS_VIA_WEBHOOK") == "on"
+    event = None if via_webhook else to_event(name, payload, now)
     snap = snapshot(now) if name in SNAPSHOT_EVENTS else None
     if not event and not snap:
         print(f"nothing to publish for {name}/{payload.get('action', '')}")
@@ -343,7 +346,7 @@ def main() -> int:
         {"repo": did, "collection": f"{NSID}.event", "limit": "100"},
     )
     seen = {r["uri"].rsplit("/", 1)[-1] for r in (listed or {}).get("records", [])}
-    for rkey, record in recent_reviews(now):
+    for rkey, record in [] if via_webhook else recent_reviews(now):
         if rkey not in seen:
             # putRecord, not create: two overlapping runs may both pick it up
             body = {

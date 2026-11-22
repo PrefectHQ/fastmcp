@@ -54,6 +54,7 @@ jobs:
           ATPROTO_HANDLE: ${{ vars.TRIAGE_FLOOR_ATPROTO_HANDLE }}
           ATPROTO_PDS: ${{ vars.TRIAGE_FLOOR_ATPROTO_PDS }}
           ATPROTO_PASSWORD: ${{ secrets.TRIAGE_FLOOR_ATPROTO_PASSWORD }}
+          FLOOR_EVENTS_VIA_WEBHOOK: ${{ vars.TRIAGE_FLOOR_EVENTS_VIA_WEBHOOK }}
         run: |
           if [ -z "$ATPROTO_PASSWORD" ]; then echo "no credential configured; skipping"; exit 0; fi
           enc="$RUNNER_TEMP/floor-session.enc" plain="$RUNNER_TEMP/floor-session.json"
