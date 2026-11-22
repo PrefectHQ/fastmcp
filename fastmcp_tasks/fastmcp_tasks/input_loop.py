@@ -152,8 +152,6 @@ def reentrant_task_fn(
                 result = [item async for item in pending]
             else:
                 result = await pending
-        except FastMCPError as exc:
-            return _error_result(tool_name, exc)
         except MCPError:
             # A protocol fault, not a tool error. SEP-2663 reserves `failed`
             # for exactly this, so it must escape the wrapper: the Docket
