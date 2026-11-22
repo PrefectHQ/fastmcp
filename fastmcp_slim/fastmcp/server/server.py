@@ -598,8 +598,8 @@ class FastMCP(
             cache_hints=cache_hints,
         )
 
-        # Servers this one is mounted on, so a mounted child's `notify_*`
-        # reaches the clients listening on its parents.
+        # Servers that serve this one as a provider (`mount`, `add_provider`,
+        # `providers=`), so its `notify_*` reaches their listening clients.
         self._mounted_on: list[weakref.ref[FastMCP[Any]]] = []
 
         self.auth: AuthProvider | None = auth
@@ -817,6 +817,25 @@ class FastMCP(
         self._validate_provider_extensions(provider)
         self._register_provider_extensions(provider)
         super().add_provider(provider, namespace=namespace)
+        self._link_child_server(provider)
+
+    def _link_child_server(self, provider: Provider) -> None:
+        """Record this server on a child server it now serves, so the child's
+        `notify_*` also reaches clients listening here."""
+        from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
+        from fastmcp.server.providers.wrapped_provider import _WrappedProvider
+
+        while isinstance(provider, _WrappedProvider):
+            provider = provider._inner
+        if isinstance(provider, FastMCPProvider):
+            child = provider.server
+        elif isinstance(provider, FastMCP):
+            child = provider
+        else:
+            return
+        if child is self or any(ref() is self for ref in child._mounted_on):
+            return
+        child._mounted_on.append(weakref.ref(self))
 
     def _rewrite_prefab_uris(self, tools: list[Tool]) -> list[Tool]:
         """Replace placeholder Prefab URIs with shared renderer identities.
@@ -1959,7 +1978,8 @@ class FastMCP(
 
         Publishes to every open `subscriptions/listen` stream that asked for
         tool changes, so it works from background tasks with no request in
-        flight. A mounted server also notifies the servers it is mounted on.
+        flight. A server attached to others with `mount`, `add_provider`, or
+        `providers=` also notifies them.
         Reaches clients on the 2026-07-28 protocol only; on handshake-era
         connections, send `notifications/tools/list_changed` from a request with
         `Context.send_notification`. Adding or removing tools never calls this
@@ -1986,8 +2006,8 @@ class FastMCP(
 
         Matches `uri` exactly against the URIs each stream subscribed to, so
         pass the URI as this server's clients see it. Unlike the list-change
-        methods, this does not propagate to servers this one is mounted on,
-        since a mount can rewrite the URI. See `notify_tools_changed` for
+        methods, this does not propagate to servers this one is attached to,
+        since a namespace can rewrite the URI. See `notify_tools_changed` for
         delivery semantics.
         """
         await self._mcp_server.subscriptions.publish(ResourceUpdated(uri=str(uri)))
@@ -2579,7 +2599,6 @@ class FastMCP(
 
         # Create provider and add it with namespace
         provider: Provider = FastMCPProvider(server)
-        server._mounted_on.append(weakref.ref(self))
 
         # Apply tool renames first (scoped to this provider), then namespace
         # So foo → bar with namespace="baz" becomes baz_bar

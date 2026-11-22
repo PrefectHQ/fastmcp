@@ -23,7 +23,10 @@ from mcp.shared.subscriptions import (
 )
 
 from fastmcp import Client, Context, FastMCP
+from fastmcp.server.providers import FastMCPProvider
+from fastmcp.server.transforms import ToolTransform
 from fastmcp.tools import Tool
+from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.tests import asgi_client
 
 
@@ -182,6 +185,45 @@ async def test_mounted_server_notify_reaches_parent_listeners(
             await client.call_tool(grow_name)
             assert await _next_event(subscription) == ToolsListChanged()
 
+            await child.notify_tools_changed()
+            assert await _next_event(subscription) == ToolsListChanged()
+
+
+def _attach_by_add_provider(parent: FastMCP, child: FastMCP) -> FastMCP:
+    parent.add_provider(child, namespace="child")
+    return parent
+
+
+def _attach_by_transformed_provider(parent: FastMCP, child: FastMCP) -> FastMCP:
+    provider = FastMCPProvider(child)
+    provider.add_transform(
+        ToolTransform({"grow": ToolTransformConfig(description="Grow a tool")})
+    )
+    parent.add_provider(provider, namespace="child")
+    return parent
+
+
+def _attach_by_constructor(parent: FastMCP, child: FastMCP) -> FastMCP:
+    return FastMCP("parent", providers=[FastMCPProvider(child)])
+
+
+@pytest.mark.parametrize(
+    "attach",
+    [_attach_by_add_provider, _attach_by_transformed_provider, _attach_by_constructor],
+)
+async def test_child_attached_as_provider_notify_reaches_parent_listeners(
+    server: FastMCP, attach
+):
+    child = FastMCP("child")
+
+    @child.tool
+    def grow() -> str:
+        return "ok"
+
+    parent = attach(server, child)
+
+    async with Client(parent) as client:
+        async with client.listen(tools_list_changed=True) as subscription:
             await child.notify_tools_changed()
             assert await _next_event(subscription) == ToolsListChanged()
 

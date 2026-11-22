@@ -544,6 +544,21 @@ class TestProxyClient:
 
         assert event == ToolsListChanged()
 
+    async def test_proxy_added_as_provider_relays_to_parent_listen_stream(
+        self, proxy_server: FastMCP
+    ):
+        """An upstream list change relayed by a proxy also reaches clients
+        listening on a server the proxy is attached to with `add_provider`."""
+        parent = FastMCP("parent")
+        parent.add_provider(proxy_server, namespace="up")
+        async with Client(parent) as client:
+            async with client.listen(tools_list_changed=True) as subscription:
+                await client.call_tool("up_hide_echo", {})
+                with anyio.fail_after(2):
+                    event = await anext(aiter(subscription))
+
+        assert event == ToolsListChanged()
+
     async def test_concurrent_log_requests_no_mixing(self, proxy_server: FastMCP):
         """Test that concurrent log requests don't mix handlers (fixes #1068)."""
         results: dict[str, LogMessage] = {}
