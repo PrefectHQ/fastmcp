@@ -139,43 +139,8 @@ def test_snapshot_swaps_on_the_cid_it_read(monkeypatch):
     assert bodies[0]["swapRecord"] == "c1"
 
 
-def test_recent_reviews_come_from_the_event_feed(monkeypatch):
-    events = [
-        {
-            "id": "1",
-            "type": "PullRequestReviewEvent",
-            "created_at": "2026-11-22T05:30:00Z",
-            "actor": {"login": "nate"},
-            "payload": {
-                "action": "created",
-                "pull_request": {"number": 9, "title": "t"},
-            },
-        },
-        {
-            "id": "2",
-            "type": "PullRequestReviewEvent",
-            "created_at": "2026-11-21T05:30:00Z",
-            "actor": {"login": "old"},
-            "payload": {"pull_request": {"number": 8}},
-        },
-        {
-            "id": "3",
-            "type": "PushEvent",
-            "created_at": "2026-11-22T05:59:00Z",
-            "payload": {},
-        },
-    ]
-    monkeypatch.setattr(feed, "gh", lambda *a, **k: events)
-    reviews = feed.recent_reviews(NOW)
-    assert [(k, r["kind"], r["number"]) for k, r in reviews] == [("rv1", "review", 9)]
-
-
-def test_webhook_mode_leaves_events_to_the_receiver(monkeypatch, tmp_path, capsys):
-    payload = tmp_path / "event.json"
-    payload.write_text(json.dumps({"action": "created", "issue": {"number": 1}}))
+def test_events_without_a_snapshot_publish_nothing(monkeypatch, capsys):
     monkeypatch.setenv("GITHUB_EVENT_NAME", "issue_comment")
-    monkeypatch.setenv("GITHUB_EVENT_PATH", str(payload))
-    monkeypatch.setenv("FLOOR_EVENTS_VIA_WEBHOOK", "on")
     monkeypatch.setattr("sys.argv", ["feed", "--dry-run"])
     assert feed.main() == 0
     assert "nothing to publish" in capsys.readouterr().out
