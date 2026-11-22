@@ -168,3 +168,14 @@ def test_recent_reviews_come_from_the_event_feed(monkeypatch):
     monkeypatch.setattr(feed, "gh", lambda *a, **k: events)
     reviews = feed.recent_reviews(NOW)
     assert [(k, r["kind"], r["number"]) for k, r in reviews] == [("rv1", "review", 9)]
+
+
+def test_webhook_mode_leaves_events_to_the_receiver(monkeypatch, tmp_path, capsys):
+    payload = tmp_path / "event.json"
+    payload.write_text(json.dumps({"action": "created", "issue": {"number": 1}}))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "issue_comment")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(payload))
+    monkeypatch.setenv("FLOOR_EVENTS_VIA_WEBHOOK", "on")
+    monkeypatch.setattr("sys.argv", ["feed", "--dry-run"])
+    assert feed.main() == 0
+    assert "nothing to publish" in capsys.readouterr().out
