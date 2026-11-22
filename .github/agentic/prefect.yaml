@@ -85,6 +85,7 @@ deployments:
           - fastapi==0.141.1
           - PyJWT[crypto]==2.15.1
           - turbopuffer==3.1.0
+          - fastmcp==4.2.4
         compute_profile: medium
         timeout: 7500
   - name: cloud-triage-sweep

@@ -33,9 +33,19 @@ fixes and earlier decisions, never findings on their own. A lookup failure leave
 triage carries on. The key is the `turbopuffer-api-key` Secret block; run the flow once with
 `backfill=true` to index the whole repository.
 
+Agents claim work through the triage MCP server (`memory_server.py`, on Horizon) so interactive
+sessions and triage runs don't step on each other: `claim_work` takes `issue:<n>`, `pr:<n>` or a
+deploy name and either refuses with who holds it or grants a fenced 30-minute lease and the item's
+context; `report_progress` renews it; `release_work` ends it with `pr`, `handed_back` (with a
+reason) or `abandoned`. Claims are public atproto records on prefect.io (`flows/agentic_work.py`),
+the triage floor draws them, and the `work.activity` MCP event serves the log where fastmcp has the
+events extension. With `work.mode` "on", the stack controller claims each item the same way and
+skips items someone else holds. The server needs `WORK_ATPROTO_PASSWORD`; without it the tools
+answer that claims are off.
+
 The Prefect Variable `fastmcp_triage_config` holds `github_writes` ("off", "dry_run" or "on",
 or per feature: `{"labels": "on", "sweep": "dry_run"}`; default "dry_run"), the sweep
-thresholds under `sweep`, and `memory` (`{"mode": "on"}`; default off). All are read on every run, so changing them needs no deploy.
+thresholds under `sweep`, `memory` (`{"mode": "on"}`; default off), and `work` (claims, `{"mode": "on"}`; default off). All are read on every run, so changing them needs no deploy.
 Writes go out as the triage GitHub App, which needs Issues: write. Under `burst`, `max_items` (default 5) and
 `window_hours` (default 24) pause triage for anyone who opens more issues and PRs than that in
 the window; Slack gets one line when they cross it.
