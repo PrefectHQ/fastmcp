@@ -12,7 +12,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8,<10",
-    "ruff==0.17.2",
+    "ruff==0.17.5",
     "ty>=0.0.1",
     { include-group = "memory-server" },
 ]
