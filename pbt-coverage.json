@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-23T19:26:02+00:00",
- "source_commit": "e08ea4c03dd375f3bb3272b4c75a1a5ab676df51",
+ "generated_at": "2026-11-23T19:33:43+00:00",
+ "source_commit": "4c3713d4dbee3898d1f4a8f0e44172aa19d45daf",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -1359,7 +1359,7 @@
    "module": "fastmcp.contrib.mcp_mixin.mcp_mixin",
    "path": "fastmcp_slim/fastmcp/contrib/mcp_mixin/mcp_mixin.py",
    "public": true,
-   "statements": 72,
+   "statements": 73,
    "hit": 0,
    "functions": 11,
    "functions_hit": 0,
@@ -1367,7 +1367,7 @@
     {
      "name": "MCPMixin",
      "kind": "class",
-     "statements": 42,
+     "statements": 43,
      "hit": 0
     },
     {
@@ -3188,7 +3188,7 @@
    "module": "fastmcp.server.middleware.usage",
    "path": "fastmcp_slim/fastmcp/server/middleware/usage.py",
    "public": true,
-   "statements": 74,
+   "statements": 67,
    "hit": 0,
    "functions": 9,
    "functions_hit": 0,
@@ -3196,7 +3196,7 @@
     {
      "name": "UsageMiddleware",
      "kind": "class",
-     "statements": 62,
+     "statements": 55,
      "hit": 0
     }
    ],
@@ -3836,10 +3836,10 @@
    "module": "fastmcp.server.telemetry",
    "path": "fastmcp_slim/fastmcp/server/telemetry.py",
    "public": false,
-   "statements": 130,
-   "hit": 84,
-   "functions": 10,
-   "functions_hit": 9,
+   "statements": 144,
+   "hit": 92,
+   "functions": 11,
+   "functions_hit": 10,
    "symbols": [],
    "tests": 4,
    "test_ids": [
@@ -4676,9 +4676,9 @@
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
    "statements": 637,
-   "hit": 412,
+   "hit": 433,
    "functions": 59,
-   "functions_hit": 44,
+   "functions_hit": 47,
    "symbols": [],
    "tests": 4,
    "test_ids": [
