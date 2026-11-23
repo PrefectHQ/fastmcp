@@ -74,8 +74,12 @@ async def cut_off_once(
     real: SendRaw, method: str, params: Any, options: Any, delivered: anyio.Event
 ) -> Any:
     """Run a stream until `delivered` is set, then fail it as a dropped stream."""
+
+    async def stream() -> None:
+        await real(method, params, options)
+
     async with anyio.create_task_group() as tasks:
-        tasks.start_soon(real, method, params, options)
+        tasks.start_soon(stream)
         await delivered.wait()
         tasks.cancel_scope.cancel()
     raise MCPError(code=CONNECTION_CLOSED, message="SSE stream ended")
