@@ -8,12 +8,14 @@ records over Jetstream, so they get each change pushed to them without calling
 GitHub themselves.
 
 Only public data goes out: titles, numbers, labels, logins and timestamps that
-GitHub already shows to anyone. Pushes and branch activity are not published.
+GitHub already shows to anyone. Pushes and branch activity are not published;
+CI runs on main are (`to_ci`), as are the triage flows' run states (`to_run`).
 """
 
 import argparse
 import json
 import os
+import re
 import statistics
 import subprocess
 import sys
@@ -99,6 +101,102 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
         return None
     base["kind"] = kind
     return {k: v for k, v in base.items() if v is not None}
+
+
+# GitHub Actions workflows that run on pushes to main: the floor's CI. One
+# record per run, rewritten as the run moves from queued to done.
+CI_EVENTS = {"push"}
+
+
+def stamp(value: str | None) -> str | None:
+    """A GitHub or Prefect timestamp as the floor's UTC ISO form, or None."""
+    if not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def to_ci(payload: dict) -> tuple[str, dict] | None:
+    """A workflow_run webhook -> (rkey, floor.ci record), for runs on main only."""
+    run = payload.get("workflow_run") or {}
+    if run.get("head_branch") != "main" or run.get("event") not in CI_EVENTS:
+        return None
+    if not isinstance(run.get("id"), int) or run.get("status") is None:
+        return None
+    record = {
+        "$type": f"{NSID}.ci",
+        "workflow": (run.get("name") or "")[:100],
+        "status": run["status"],
+        "conclusion": run.get("conclusion"),
+        "sha": (run.get("head_sha") or "")[:7],
+        "title": (run.get("display_title") or "").split("\n")[0][:200],
+        "url": run.get("html_url", ""),
+        "startedAt": stamp(run.get("run_started_at")),
+        # when GitHub last changed the run; an older delivery never overwrites a newer one
+        "at": stamp(run.get("updated_at")),
+    }
+    # zero-padded run ids sort the same as numbers, so listRecords gives newest first
+    return f"{run['id']:016d}", {k: v for k, v in record.items() if v is not None}
+
+
+# Prefect flows the floor shows, by flow name. Anything else is ignored.
+FLOWS = {
+    "fastmcp-stack-batch",
+    "fastmcp-triage-intake",
+    "fastmcp-triage-verify",
+    "fastmcp-triage-finalize",
+    "fastmcp-verify-contribution",
+    "fastmcp-triage-sweep",
+}
+NUMBER_KEYS = {"issues", "pull_requests", "issue", "pull_request", "number", "pr"}
+
+
+def item_numbers(params: object, depth: int = 0) -> list[int]:
+    """Issue and PR numbers a flow run was started for, from its parameters."""
+    found: list[int] = []
+    if depth > 3 or not isinstance(params, dict):
+        return found
+    for key, value in params.items():
+        if key in NUMBER_KEYS:
+            values = value if isinstance(value, list) else [value]
+            found += [v for v in values if isinstance(v, int) and 0 < v < 10**6]
+        elif isinstance(value, dict):
+            found += item_numbers(value, depth + 1)
+    return list(dict.fromkeys(found))[:10]
+
+
+def to_run(body: dict) -> tuple[str, dict] | None:
+    """A Prefect automation's flow-run state change -> (rkey, floor.run record).
+
+    Only the flow's name, the state, times and issue/PR numbers go out: never
+    the run's name, parameters, logs or Prefect URLs.
+    """
+    flow = body.get("flow")
+    run_id = str(body.get("id") or "")
+    state = str(body.get("event") or "").rsplit(".", 1)[-1]
+    created = stamp(body.get("created"))
+    at = stamp(body.get("occurred"))
+    if flow not in FLOWS or not created or not at or not state.isalpha():
+        return None
+    if not re.fullmatch(r"[0-9a-f-]{36}", run_id):
+        return None
+    record = {
+        "$type": f"{NSID}.run",
+        "flow": flow,
+        "state": state.lower(),
+        "numbers": item_numbers(body.get("params")),
+        "createdAt": created,
+        "startedAt": stamp(body.get("start")),
+        "at": at,
+    }
+    # created time first, so listRecords gives the newest runs first
+    rkey = created[:19].replace("-", "").replace(":", "") + "-" + run_id[:8]
+    return rkey, {k: v for k, v in record.items() if v is not None}
 
 
 def gh(path: str, *, paginate: bool = False, timeout: int = 60):

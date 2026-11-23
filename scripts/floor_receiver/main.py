@@ -1,6 +1,8 @@
 """GitHub webhooks -> triage floor event records on prefect.io, as they happen.
 
-GitHub posts each issue, PR, comment, review and release event here. The
+GitHub posts each issue, PR, comment, review, release and workflow run event
+here, and a Prefect Cloud automation posts each triage flow run's state
+changes to /prefect. The
 receiver checks GitHub's signature, turns the event into the same
 `io.prefect.fastmcp.floor.event` record the triage-floor-feed Action writes
 (using that script's own `to_event`), and writes it to the PDS straight away.
@@ -14,11 +16,13 @@ Environment:
     ATPROTO_HANDLE    prefect.io
     ATPROTO_PDS       https://witchesbutter.us-west.host.bsky.network
     ATPROTO_PASSWORD  an app password for that account
+    PREFECT_TOKEN     bearer token the Prefect Cloud automation sends to /prefect
     PORT              set by the host
 
 On App Engine the two secrets come from Secret Manager instead (see app.yaml):
 set SECRETS_PROJECT and the instance's service account reads
-floor-receiver-webhook-secret and floor-receiver-atproto-password at startup.
+floor-receiver-webhook-secret, floor-receiver-atproto-password and (if it
+exists) floor-receiver-prefect-token at startup.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -41,7 +46,7 @@ from pathlib import Path
 
 # In the image the feed script sits next to this file; in the repo, one level up.
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-from triage_floor_feed import NSID, REPO, to_event  # noqa: E402
+from triage_floor_feed import NSID, REPO, to_ci, to_event, to_run  # noqa: E402
 
 MAX_BODY = 5 * 1024 * 1024  # GitHub caps webhook payloads at 25MB; ours are small
 # GitHub event names the feed script knows how to turn into records
@@ -51,6 +56,7 @@ EVENTS = {
     "issue_comment",
     "pull_request_review",
     "release",
+    "workflow_run",
 }
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -153,29 +159,88 @@ def put(body: dict, token: str) -> None:
         xrpc("com.atproto.repo.putRecord", body, token)
 
 
-def publish(name: str, delivery: str, payload: dict) -> str:
-    """Write the record for one event. Returns what happened, for the log."""
-    if (payload.get("repository") or {}).get("full_name") != REPO:
-        return "other repository"
-    record = to_event(name, payload, datetime.now(UTC))
-    if record is None:
-        return "nothing to show"
+def expired(error: PdsError) -> bool:
+    return error.error in {"ExpiredToken", "InvalidToken"} or error.status == 401
+
+
+def get_record(collection: str, rkey: str, session: dict) -> dict | None:
+    request = urllib.request.Request(
+        f"{os.environ['ATPROTO_PDS'].rstrip('/')}/xrpc/com.atproto.repo.getRecord?"
+        + urllib.parse.urlencode(
+            {"repo": session["did"], "collection": collection, "rkey": rkey}
+        ),
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=4) as response:
+            return json.loads(response.read()).get("value")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 400:  # RecordNotFound
+            return None
+        raise PdsError("com.atproto.repo.getRecord", exc.code, None) from None
+
+
+def write(collection: str, rkey: str, record: dict, newer_only: bool = False) -> bool:
+    """Put one record, logging in again once if the session went stale.
+
+    With newer_only, a record whose `at` is older than the stored one is
+    dropped: webhooks can arrive out of order, and a late "in progress" must
+    not overwrite "completed". Returns whether it was written.
+    """
     session = SESSION.get()
+    if newer_only:
+        stored = get_record(collection, rkey, session)
+        if stored and str(stored.get("at", "")) > str(record.get("at", "")):
+            return False
     body = {
         "repo": session["did"],
-        "collection": f"{NSID}.event",
-        "rkey": rkey_for(delivery),
+        "collection": collection,
+        "rkey": rkey,
         "record": record,
         "validate": False,
     }
     try:
         put(body, session["accessJwt"])
     except PdsError as error:
-        if error.error not in {"ExpiredToken", "InvalidToken"} and error.status != 401:
+        if not expired(error):
             raise
         session = SESSION.get(stale=session["accessJwt"])
         put(body, session["accessJwt"])
+    return True
+
+
+def publish(name: str, delivery: str, payload: dict) -> str:
+    """Write the record for one event. Returns what happened, for the log."""
+    if (payload.get("repository") or {}).get("full_name") != REPO:
+        return "other repository"
+    if name == "workflow_run":
+        ci = to_ci(payload)
+        if ci is None:
+            return "nothing to show"
+        rkey, record = ci
+        if not write(f"{NSID}.ci", rkey, record, newer_only=True):
+            return "older than what is stored"
+        return f"ci {record['workflow']} {record['status']}"
+    record = to_event(name, payload, datetime.now(UTC))
+    if record is None:
+        return "nothing to show"
+    write(f"{NSID}.event", rkey_for(delivery), record)
     return f"{record['kind']} #{record.get('number', '')}"
+
+
+def publish_run(body: dict) -> str:
+    """Write the floor.run record for one Prefect flow-run state change."""
+    run = to_run(body)
+    if run is None:
+        return "nothing to show"
+    rkey, record = run
+    if not write(f"{NSID}.run", rkey, record, newer_only=True):
+        return "older than what is stored"
+    return f"run {record['flow']} {record['state']}"
+
+
+def prefect_token_ok(header: str | None) -> bool:
+    token = os.environ.get("PREFECT_TOKEN", "")
+    return bool(token) and hmac.compare_digest(f"Bearer {token}", header or "")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -197,12 +262,14 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(200 if self.path == "/health" else 404, "ok")
 
     def do_POST(self) -> None:
-        if self.path != "/github":
+        if self.path not in {"/github", "/prefect"}:
             return self._reply(404)
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0 or length > MAX_BODY:
             return self._reply(413)
         body = self.rfile.read(length)
+        if self.path == "/prefect":
+            return self._prefect(body)
         if not signed(body, self.headers.get("X-Hub-Signature-256")):
             log.warning("rejected a delivery with a bad signature")
             return self._reply(401)
@@ -222,11 +289,28 @@ class Handler(BaseHTTPRequestHandler):
         log.info("delivery %s %s: %s", delivery, name, outcome)
         self._reply(202, outcome)
 
+    def _prefect(self, body: bytes) -> None:
+        # a Prefect Cloud automation posts each triage flow run's state changes here
+        if not prefect_token_ok(self.headers.get("Authorization")):
+            log.warning("rejected a Prefect call with a bad token")
+            return self._reply(401)
+        try:
+            payload = json.loads(body)
+            outcome = publish_run(payload if isinstance(payload, dict) else {})
+        except (PdsError, OSError, ValueError, KeyError) as error:
+            log.error("prefect call failed: %s", error)
+            return self._reply(502)
+        log.info("prefect: %s", outcome)
+        self._reply(202, outcome)
+
 
 SECRETS = {
     "WEBHOOK_SECRET": "floor-receiver-webhook-secret",
     "ATPROTO_PASSWORD": "floor-receiver-atproto-password",
+    "PREFECT_TOKEN": "floor-receiver-prefect-token",
 }
+# without a Prefect token the /prefect endpoint refuses everything; GitHub still works
+OPTIONAL = {"PREFECT_TOKEN"}
 METADATA = "http://metadata.google.internal/computeMetadata/v1"
 
 
@@ -248,8 +332,14 @@ def load_secrets() -> None:
             f"{project}/secrets/{SECRETS[name]}/versions/latest:access",
             headers={"Authorization": f"Bearer {token}"},
         )
-        with urllib.request.urlopen(request, timeout=5) as response:
-            data = json.loads(response.read())["payload"]["data"]
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                data = json.loads(response.read())["payload"]["data"]
+        except urllib.error.HTTPError:
+            if name in OPTIONAL:
+                log.warning("no %s: %s stays off", SECRETS[name], name)
+                continue
+            raise
         os.environ[name] = base64.b64decode(data).decode().strip()
 
 
