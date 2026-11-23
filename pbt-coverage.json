@@ -1,11 +1,12 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-23T15:44:51+00:00",
- "source_commit": "82491fdca3041855be50cfd9b48456e3907806c5",
+ "generated_at": "2026-11-23T18:41:53+00:00",
+ "source_commit": "130275d42409b6736dc492715c52df0a211d7651",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
   "test_files": [
+   "tests/pbt/test_auth_url_guards.py",
    "tests/pbt/test_components_machine.py",
    "tests/pbt/test_json_schema.py",
    "tests/pbt/test_oauth_proxy_machine.py",
@@ -14,7 +15,7 @@
    "tests/pbt/test_tool_transform.py",
    "tests/pbt/test_uri_template.py"
   ],
-  "tests_reaching_fastmcp": 11
+  "tests_reaching_fastmcp": 21
  },
  "modules": [
   {
@@ -2012,12 +2013,14 @@
    "path": "fastmcp_slim/fastmcp/server/auth/cimd.py",
    "public": false,
    "statements": 260,
-   "hit": 16,
+   "hit": 49,
    "functions": 21,
-   "functions_hit": 3,
+   "functions_hit": 5,
    "symbols": [],
-   "tests": 1,
+   "tests": 3,
    "test_ids": [
+    "tests/pbt/test_auth_url_guards.py::test_cache_headers_never_break_a_fetch",
+    "tests/pbt/test_auth_url_guards.py::test_document_scopes_never_widen_the_servers",
     "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest"
    ]
   },
@@ -2606,12 +2609,15 @@
    "path": "fastmcp_slim/fastmcp/server/auth/redirect_validation.py",
    "public": false,
    "statements": 165,
-   "hit": 28,
+   "hit": 132,
    "functions": 16,
-   "functions_hit": 5,
+   "functions_hit": 16,
    "symbols": [],
-   "tests": 1,
+   "tests": 4,
    "test_ids": [
+    "tests/pbt/test_auth_url_guards.py::test_a_match_lands_on_the_patterns_host",
+    "tests/pbt/test_auth_url_guards.py::test_an_exact_pattern_matches_only_itself",
+    "tests/pbt/test_auth_url_guards.py::test_client_redirect_carries_each_parameter_once",
     "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest"
    ]
   },
@@ -2620,12 +2626,17 @@
    "path": "fastmcp_slim/fastmcp/server/auth/ssrf.py",
    "public": false,
    "statements": 136,
-   "hit": 0,
+   "hit": 53,
    "functions": 11,
-   "functions_hit": 0,
+   "functions_hit": 6,
    "symbols": [],
-   "tests": 0,
-   "test_ids": []
+   "tests": 4,
+   "test_ids": [
+    "tests/pbt/test_auth_url_guards.py::test_ipv6_never_unblocks_a_blocked_ipv4",
+    "tests/pbt/test_auth_url_guards.py::test_pinned_request_goes_where_validation_looked",
+    "tests/pbt/test_auth_url_guards.py::test_spelling_does_not_change_the_verdict",
+    "tests/pbt/test_auth_url_guards.py::test_validate_url_fails_only_with_ssrf_error"
+   ]
   },
   {
    "module": "fastmcp.server.caching",
@@ -4078,16 +4089,16 @@
    "functions": 4,
    "functions_hit": 2,
    "symbols": [],
-   "tests": 11,
+   "tests": 21,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
-    "tests/pbt/test_json_schema.py::test_compress_preserves_validation",
-    "tests/pbt/test_json_schema.py::test_dereference_preserves_validation",
-    "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest",
-    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_auth_url_guards.py::test_a_match_lands_on_the_patterns_host",
+    "tests/pbt/test_auth_url_guards.py::test_an_exact_pattern_matches_only_itself",
+    "tests/pbt/test_auth_url_guards.py::test_cache_headers_never_break_a_fetch",
+    "tests/pbt/test_auth_url_guards.py::test_client_redirect_carries_each_parameter_once",
+    "tests/pbt/test_auth_url_guards.py::test_document_scopes_never_widen_the_servers",
+    "tests/pbt/test_auth_url_guards.py::test_every_wrapper_is_global_around_a_public_address",
+    "tests/pbt/test_auth_url_guards.py::test_ipv6_never_unblocks_a_blocked_ipv4",
+    "tests/pbt/test_auth_url_guards.py::test_pinned_request_goes_where_validation_looked"
    ]
   },
   {
@@ -4665,9 +4676,9 @@
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
    "statements": 637,
-   "hit": 432,
+   "hit": 442,
    "functions": 59,
-   "functions_hit": 47,
+   "functions_hit": 46,
    "symbols": [],
    "tests": 4,
    "test_ids": [
@@ -4712,8 +4723,10 @@
      "hit": 2
     }
    ],
-   "tests": 4,
+   "tests": 6,
    "test_ids": [
+    "tests/pbt/test_auth_url_guards.py::test_cache_headers_never_break_a_fetch",
+    "tests/pbt/test_auth_url_guards.py::test_document_scopes_never_widen_the_servers",
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
     "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
@@ -5036,16 +5049,16 @@
      "hit": 0
     }
    ],
-   "tests": 11,
+   "tests": 21,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest",
-    "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
-    "tests/pbt/test_json_schema.py::test_compress_preserves_validation",
-    "tests/pbt/test_json_schema.py::test_dereference_preserves_validation",
-    "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest",
-    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_auth_url_guards.py::test_a_match_lands_on_the_patterns_host",
+    "tests/pbt/test_auth_url_guards.py::test_an_exact_pattern_matches_only_itself",
+    "tests/pbt/test_auth_url_guards.py::test_cache_headers_never_break_a_fetch",
+    "tests/pbt/test_auth_url_guards.py::test_client_redirect_carries_each_parameter_once",
+    "tests/pbt/test_auth_url_guards.py::test_document_scopes_never_widen_the_servers",
+    "tests/pbt/test_auth_url_guards.py::test_every_wrapper_is_global_around_a_public_address",
+    "tests/pbt/test_auth_url_guards.py::test_ipv6_never_unblocks_a_blocked_ipv4",
+    "tests/pbt/test_auth_url_guards.py::test_pinned_request_goes_where_validation_looked"
    ]
   },
   {
