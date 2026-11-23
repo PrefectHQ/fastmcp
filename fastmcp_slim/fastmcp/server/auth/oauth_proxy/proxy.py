@@ -1376,7 +1376,6 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             code_challenge=code_model.code_challenge or "",
         )
 
-    @override
     async def _renew_client_registration(
         self, client: OAuthClientInformationFull
     ) -> None:
@@ -1392,6 +1391,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             ttl=self._client_registration_ttl_seconds,
         )
 
+    @override
     async def exchange_authorization_code(
         self,
         client: OAuthClientInformationFull,
