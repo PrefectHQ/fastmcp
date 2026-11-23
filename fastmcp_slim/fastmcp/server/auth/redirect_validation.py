@@ -316,12 +316,13 @@ def _has_dot_segments(path: str) -> bool:
     return False
 
 
-def _match_path(uri_path: str, pattern_path: str) -> bool:
+def _match_path(uri_path: str, pattern_path: str, *, wildcard_pattern: bool) -> bool:
     """Match path component using fnmatch for wildcard support.
 
     Args:
         uri_path: The path from the URI
         pattern_path: The path pattern (may contain * wildcards)
+        wildcard_pattern: Whether the pattern contains a wildcard anywhere
 
     Returns:
         True if the path matches
@@ -330,10 +331,13 @@ def _match_path(uri_path: str, pattern_path: str) -> bool:
     uri_path = uri_path or "/"
     pattern_path = pattern_path or "/"
 
-    # Empty or root pattern path matches any path
-    # This makes http://localhost:* match http://localhost:3000/callback
+    # A wildcard pattern with an empty or root path matches any path, so
+    # http://localhost:* matches http://localhost:3000/callback. A pattern
+    # with no wildcard at all is a registered redirect URI and is compared
+    # exactly (RFC 6749 §3.1.2.3): https://client.example/ matches only the
+    # root, never every path on the origin.
     if pattern_path == "/":
-        return True
+        return wildcard_pattern or uri_path == "/"
 
     # Use fnmatch for path wildcards (e.g., /auth/*)
     return fnmatch.fnmatch(uri_path, pattern_path)
@@ -498,7 +502,16 @@ def matches_allowed_pattern(uri: str, pattern: str) -> bool:
         return False
 
     # Path must match (with fnmatch wildcards)
-    return _match_path(uri_parsed.path, pattern_parsed.path)
+    # A loopback pattern without a port already accepts any port (RFC 8252
+    # §7.3), so any process on the machine can receive the redirect; holding
+    # its root path to an exact match would protect nothing and break the
+    # bare `http://localhost` form. It is treated like a wildcard pattern.
+    open_loopback = is_loopback_host(pattern_host) and pattern_port is None
+    return _match_path(
+        uri_parsed.path,
+        pattern_parsed.path,
+        wildcard_pattern="*" in pattern or open_loopback,
+    )
 
 
 def is_redirect_uri_allowed_for_application_type(
